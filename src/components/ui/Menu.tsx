@@ -1,5 +1,6 @@
 import { cva } from 'class-variance-authority';
 import { Fragment, type ReactNode, useState } from 'react';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
@@ -160,9 +161,7 @@ export function Menu({
                 {it.icon && (
                   <span className="relative inline-flex shrink-0 -translate-y-px">
                     <Icon name={it.icon} />
-                    {it.dot && (
-                      <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-overlay" />
-                    )}
+                    {it.dot && <PendingDot className="-top-1 -right-1" />}
                   </span>
                 )}
                 <span className="flex flex-col items-start">

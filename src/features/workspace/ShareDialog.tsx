@@ -319,14 +319,14 @@ export function ShareDialog({
               aria-label={copied ? m.action_copied() : m.action_copy()}
               className="aspect-square px-0"
               onClick={copy}
-              variant="outline"
+              variant="ghost-hover"
             >
               <ContentSwap contentKey={String(copied)} kind="icon">
                 <Icon name={copied ? 'check' : 'copy'} />
               </ContentSwap>
             </Button>
             {workspaceId && (
-              <UnderlineLink accent asChild>
+              <UnderlineLink accent asChild noArrow>
                 <a
                   href={absoluteLink}
                   rel="noopener noreferrer"

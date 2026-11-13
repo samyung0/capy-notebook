@@ -117,7 +117,7 @@ test('Agent lists chats and archives, restores and deletes them', async ({
   const dialog = page.getByRole('dialog', { name: m.chat_archived_title() });
   await expect(dialog.getByText('What is a cell?')).toBeVisible();
   await dialog.getByRole('button', { name: m.chat_unarchive_all() }).click();
-  await expect(dialog.getByText(m.chat_no_archived())).toBeVisible();
+  await expect(dialog.getByText(m.common_nothing_yet())).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(target).toBeVisible();
 

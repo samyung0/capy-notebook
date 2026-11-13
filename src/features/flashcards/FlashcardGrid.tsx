@@ -40,7 +40,7 @@ export function FlashcardGrid({
         {action}
       </div>
       {cards.length === 0 ? (
-        <p className="text-fg-muted">{m.flashcards_empty_flashcards()}</p>
+        <p className="text-fg-muted">{m.common_nothing_yet()}</p>
       ) : (
         <CardGrid>
           {cards.map((card, index) => (

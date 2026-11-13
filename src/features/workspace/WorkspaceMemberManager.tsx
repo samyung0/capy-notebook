@@ -437,9 +437,12 @@ export function RoleSelect({
   options,
   label,
   className,
+  variant,
 }: {
   className: string;
   value: AssignableRole;
+  /** ghost-hover: no border or fill until hovered, for a row's own role. */
+  variant?: 'ghost-hover';
   onChange: (role: AssignableRole) => void;
   disabled?: boolean;
   options: ReturnType<typeof roleOptions>;
@@ -451,7 +454,11 @@ export function RoleSelect({
       onValueChange={(next) => onChange(next as AssignableRole)}
       value={value}
     >
-      <SelectTrigger aria-label={label} className={className}>
+      <SelectTrigger
+        aria-label={label}
+        className={cn(className, variant && 'bg-transparent')}
+        variant={variant}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

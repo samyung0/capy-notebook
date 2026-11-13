@@ -106,7 +106,7 @@ export function TaskFilesField({
     <div className="flex flex-col gap-2">
       <ChooseFileRow count={value.length}>
         <TaskFileMenu
-          empty={m.assignment_no_files_match()}
+          empty={m.common_no_matches()}
           full={value.length >= createAssignmentBodyFilesMax}
           held={value.map(refId)}
           label={m.assignment_search_files()}

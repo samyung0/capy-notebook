@@ -243,7 +243,7 @@ export function StudyBody({
             takenAt={takenAt}
             usePrevious={usePrevious}
           />
-          {/* Where a quiz result has Redo quiz, sized like it. */}
+          {/* Where a quiz result has its Study again, sized like it. */}
           <div className="mt-12 flex justify-end">
             <Button
               className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
@@ -305,9 +305,7 @@ export function StudyBody({
               <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
                 <Icon className="non-scaling-svg" name="check" size={30} />
               </span>
-              <h2 className="t-large-card-title">
-                {m.flashcards_empty_flashcards()}
-              </h2>
+              <h2 className="t-large-card-title">{m.common_nothing_yet()}</h2>
             </div>
           )}
           {footer}

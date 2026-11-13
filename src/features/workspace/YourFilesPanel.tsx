@@ -139,7 +139,7 @@ export function YourFilesPanel({
             </div>
           ) : files.length === 0 ? (
             <p className="t-meta py-8 text-center text-fg-muted">
-              {m.source_your_files_empty()}
+              {m.common_no_matches()}
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">

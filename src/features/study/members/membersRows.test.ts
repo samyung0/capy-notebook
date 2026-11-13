@@ -44,7 +44,7 @@ describe('sortMembers', () => {
       member('Gus', { overall: 0.53, topics: [topic('a', 'needs_practice')] }),
       member('Farah', { overall: 0.78 }),
     ];
-    expect(sortMembers(list, 'attention').map((m) => m.name)).toEqual([
+    expect(sortMembers(list, 'attention', false).map((m) => m.name)).toEqual([
       'Dan',
       'Cara',
       'Gus',
@@ -64,7 +64,7 @@ describe('focusOf', () => {
     });
     expect(
       focusOf(member('a', { topics: [topic('x', 'attempted')] })).kind
-    ).toBe('attempted');
+    ).toBe('nothing');
     expect(
       focusOf(member('a', { topics: [topic('x', 'familiar')] })).kind
     ).toBe('nothing');

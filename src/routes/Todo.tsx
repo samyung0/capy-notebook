@@ -30,6 +30,7 @@ import {
   type TodoType,
 } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 /** Due and To do read ascending first; Done's date newest first. */
 const ascendsFirst = (sort: TodoSort) => sort !== 'done';
@@ -92,6 +93,7 @@ export default function Todo() {
   const error = onDone ? doneError : todoError;
   const fetchStatus = onDone ? doneFetch : todoFetch;
   const isLoading = onDone ? doneLoading : todoLoading;
+  const revealRef = useLoadingReveal(isLoading);
   const refetch = onDone ? doneRefetch : todoRefetch;
   const sections = onDone
     ? doneSections(done?.pages ?? [])
@@ -188,7 +190,7 @@ export default function Todo() {
         }
       />
       <PageBody belowToolbar>
-        <div>
+        <div ref={revealRef}>
           {waitsForConnection(fetchStatus, data) ? (
             <QueryPausedState />
           ) : isLoading ? (

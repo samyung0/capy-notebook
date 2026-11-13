@@ -181,7 +181,7 @@ export function MemberProfilePage({
             <section>
               <h2 className="t-subtitle">{m.study_panel_assignments()}</h2>
               {data.assignments.length === 0 ? (
-                <Empty>{m.member_no_assignments({ name: data.name })}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-1">
                   {data.assignments.map((a) => (
@@ -212,7 +212,7 @@ export function MemberProfilePage({
             <section>
               <h2 className="t-subtitle">{m.summary_topics()}</h2>
               {data.topics.length === 0 ? (
-                <Empty>{m.member_no_topic_answers()}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-1">
                   {data.topics.map((t) => (
@@ -256,7 +256,7 @@ export function MemberProfilePage({
             <section>
               <h2 className="t-subtitle">{m.member_frequently_wrong()}</h2>
               {data.missed.length === 0 ? (
-                <Empty>{m.member_none_wrong()}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-0.5">
                   {data.missed.map((q) => (
@@ -268,7 +268,7 @@ export function MemberProfilePage({
             <section>
               <h2 className="t-subtitle">{m.member_recent_activity()}</h2>
               {data.activity.length === 0 ? (
-                <Empty>{m.member_no_activity()}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-0.5">
                   {data.activity.map((a, i) => (

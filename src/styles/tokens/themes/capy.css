@@ -185,6 +185,8 @@
   --solid-accent-1: #8c7bd9;
   --solid-accent-2: #7bd9ab;
   --solid-success: #7bd9ab;
+  /* Mastered's fill: dark enough for white text (4.5:1+). */
+  --solid-mastered: #2f7d56;
   --solid-info: #8ec9f9;
   --solid-warning: #ffcc61;
   --solid-error: #f35a71;
@@ -309,6 +311,8 @@
   --solid-accent-1: #b5a1f8;
   --solid-accent-2: #a6e3a1;
   --solid-success: #a6e3a1;
+  /* Mastered's fill: dark enough for white text (4.5:1+). */
+  --solid-mastered: #3b7d58;
   --solid-info: #89b4fa;
   --solid-warning: #f9e2af;
   --solid-error: #f38ba8;
@@ -446,6 +450,8 @@
   --solid-accent-1: #b5a1f8;
   --solid-accent-2: #a6e3a1;
   --solid-success: #a6e3a1;
+  /* Mastered's fill: dark enough for white text (4.5:1+). */
+  --solid-mastered: #3b7d58;
   --solid-info: #89b4fa;
   --solid-warning: #f9e2af;
   --solid-error: #f38ba8;

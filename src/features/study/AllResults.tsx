@@ -10,7 +10,6 @@ import type { ColumnSort } from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
-import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { materialKindLabel } from '@/features/materials/MaterialListCard';
 import { getLocale, m } from '@/i18n';
@@ -68,48 +67,6 @@ export function AllResults() {
       setSearch(sortSearch('results', next, asc, RESULT_SORT_DEFAULT)),
     sort,
   };
-  // Attempts of a deleted quiz or set have nothing to redo.
-  const redo = ({ kind, materialId }: Attempt) =>
-    materialId
-      ? kind === 'flashcards'
-        ? [
-            {
-              icon: 'refresh' as const,
-              label: m.flashcards_study_again(),
-              onClick: () =>
-                navigate({
-                  params: { flashcardSetId: materialId },
-                  to: '/flashcards/$flashcardSetId',
-                }),
-            },
-          ]
-        : [
-            {
-              icon: 'refresh' as const,
-              label: m.quiz_redo(),
-              onClick: () =>
-                navigate({
-                  params: { quizId: materialId },
-                  to: '/quizzes/$quizId/attempt',
-                }),
-            },
-          ]
-      : [];
-  const menu = (a: Attempt) => (
-    <div className="relative z-10 -my-2 flex justify-end">
-      <Menu
-        items={[
-          {
-            icon: 'list',
-            label: m.quiz_check_result(),
-            onClick: () => navigate(resultLink(a)),
-          },
-          ...redo(a),
-        ]}
-      />
-    </div>
-  );
-
   return (
     <>
       <ListToolbar
@@ -126,7 +83,7 @@ export function AllResults() {
             selected: kinds,
           },
           {
-            emptyLabel: m.create_filter_no_workspaces(),
+            emptyLabel: m.common_nothing_yet(),
             key: 'workspace',
             label: m.files_filter_workspace(),
             onToggle: (value) =>
@@ -173,12 +130,10 @@ export function AllResults() {
                   sort: 'workspace',
                 },
                 { id: 'score', label: m.quiz_col_score(), sort: 'score' },
-                { align: 'right', id: 'menu', label: '' },
               ]}
               rows={rows.map((a) => ({
                 cells: {
                   date: formatDate(a),
-                  menu: menu(a),
                   quiz: <ResultLink attempt={a} />,
                   score: scoreText(a),
                   workspace: (

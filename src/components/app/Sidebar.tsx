@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { useTodo, useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
 import { todoCount } from '@/features/study/assignments/todoRows';
 import { VoiceCard } from '@/features/voice/VoiceCard';
@@ -150,14 +151,7 @@ function Row({
     >
       <span className="relative shrink-0">
         <Icon name={item.icon} size={19} />
-        {!!unreadCount && (
-          <span
-            className={cn(
-              'absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1',
-              active ? 'ring-action' : 'ring-page'
-            )}
-          />
-        )}
+        {!!unreadCount && <PendingDot className="-top-1 -right-1" />}
       </span>
       <span className="translate-y-px font-semibold" data-label>
         {item.label}

@@ -2204,7 +2204,22 @@ the caller can open: the workspace list's set (`visibleWorkspacesSQL`) and its
 standalone materials, never a row it only pays for; the dashboard's Recent uses
 it and offers Rename/Properties/Delete only where the workspace's
 `capabilities` allow editing. Global search (`Store.Search`) follows the same
-set for workspaces, files and flashcard sets.
+set for workspaces, files and every material not embedded in a note (Epo
+2026-11-13), and adds the caller's own canvases (a workspace's opens on its
+Canvas panel). It matches names and titles only, never content: a
+case-folded substring with `%` and `_` literal, or a name in which every query
+word is within a few edits of a word or word start (`search_typos`,
+fuzzystrmatch `levenshtein_less_equal`, migration 0172). A query word allows
+Meilisearch's typo counts: none under five characters, one from five, two from
+nine, so "biolgy" finds Biology 101, "adv chemsitry" Advanced chemistry and
+"math" not Mats. Typos widen only when hits are few (Typesense's
+`typo_tokens_threshold`): a kind shows hits a typo further away only while it
+has fewer than three closer ones, so three sets named "Plans" hide "Plants".
+Words split on anything not a letter or digit, so an accent counts as one edit
+(ecole finds École) and Chinese and Japanese names, written without spaces,
+match as substrings only. It ranks the whole name, then names starting with the
+query, then ones holding it, then fewer typos, then shorter names, and keeps
+five hits of each kind; the dialog shows each kind under its own heading.
 
 The Files page shows one list (Epo 2026-11-09, `GET /api/items`,
 `store.ListItems`): to the user a file is any of them, so uploaded files, the

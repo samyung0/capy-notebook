@@ -888,10 +888,16 @@ The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
 period start) next to storage. `GET /api/usage` groups this actor's current
 month by `surface`, which the Usage tab draws as one credit bar coloured by area
-(chat, generate, ingest, editor, everything else as Other) with reserved credits
-faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
+(Chat, Quiz creation and grading, File processing for `ingest`, Editor,
+everything else as Other) with reserved credits faint at the end. Quiz creation
+and grading is two surfaces (`areaOf`, Epo 2026-11-13): `generate`, the two
+quiz writers, Make my own practice (`POST /generate`) and Make a quiz's question
+extraction from a paper (`POST /extractions`); and `quiz`, grading and paper
+marking. Other is what is left, such as emails (`system`); a quiz or deck the
+chat agent writes bills as Chat. `GET /api/usage/events` keyset-pages the actor's `usage_events`
 rows newest first (`before` cursor from the previous page's `next`, 20 rows at
-most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`,
+most) for the Detailed usage tab (hidden from the tab row since Epo
+2026-11-13; `?tab=details` still opens it): kind (`llm`, `embedding`, `rerank`,
 `audio`, `web_search`, `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
 tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe

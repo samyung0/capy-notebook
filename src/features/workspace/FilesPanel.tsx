@@ -26,6 +26,7 @@ import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
 import { addSourceIntent } from './LazyAddSourceDialog';
@@ -95,6 +96,7 @@ export function FilesPanel({
   uploadTopic?: string | null;
 }) {
   const { data: topics } = useTopics(workspaceId);
+  const revealRef = useLoadingReveal(!topics);
   const { data: files } = useFiles(workspaceId);
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
@@ -492,11 +494,11 @@ export function FilesPanel({
         )}
         {searching && !shownTopics?.length && !shownUnfiled.length && (
           <p className="px-2 py-1.5 text-fg-muted text-sm">
-            {m.workspace_no_files_match()}
+            {m.common_no_matches()}
           </p>
         )}
         {topics && shownTopics && (
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-px" ref={revealRef}>
             <div className="flex flex-col gap-px empty:hidden">
               {shownTopics.map((ch) => {
                 const idx = topics.indexOf(ch);

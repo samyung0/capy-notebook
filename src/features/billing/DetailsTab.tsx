@@ -95,7 +95,7 @@ export function DetailsTab() {
   ) : isPending ? (
     <BillingTableSkeleton columns={columns()} />
   ) : items.length === 0 ? (
-    <p className="text-fg-muted">{m.billing_recent_empty()}</p>
+    <p className="text-fg-muted">{m.common_nothing_yet()}</p>
   ) : (
     <>
       <BillingTable

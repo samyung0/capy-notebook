@@ -62,6 +62,10 @@ const save = async (canvas: MockCanvas, request: Request) => {
 };
 
 /** `workspaces` names a workspace and its icon, for the list's rows. */
+/** Canvases whose title holds q, for the mock global search. */
+export const searchCanvases = (q: string) =>
+  [...canvases.values()].filter((c) => c.title.toLowerCase().includes(q));
+
 export const canvasHandlers = (
   workspaces: (id: string) => { iconId: string; name: string } | undefined
 ) => {

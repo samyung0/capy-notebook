@@ -53,6 +53,7 @@ import { FILE_KINDS } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import type { FilesTab } from '@/lib/tabSearch';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Files() {
   const navigate = useNavigate();
@@ -228,6 +229,7 @@ function TrashTab({
     isLoading,
     refetch,
   } = useTrash(undefined, true);
+  const revealRef = useLoadingReveal(isLoading);
   // Icons for the list's Workspace column; a deleted workspace has none.
   const { data: workspaces = [] } = useWorkspaces(
     { sort: 'accessed' },
@@ -352,32 +354,34 @@ function TrashTab({
           ) : items.length === 0 ? (
             <p className="text-fg-muted">{m.trash_empty()}</p>
           ) : (
-            <ItemPick.Provider value={selection.pickContext}>
-              <ItemList
-                columns={[
-                  m.list_col_name(),
-                  m.create_filter_workspace(),
-                  m.list_col_details(),
-                  m.list_col_expires(),
-                ]}
-                view={view}
-              >
-                {items.map((item) => (
-                  <TrashCard
-                    item={item}
-                    key={`${item.kind}:${item.id}:${item.episodeId}`}
-                    onPurge={purgeOne}
-                    onRestore={restoreOne}
-                    selected={selection.isSelected(item)}
-                    view={view}
-                    workspaceIconId={
-                      workspaces.find((ws) => ws.id === item.workspaceId)
-                        ?.iconId
-                    }
-                  />
-                ))}
-              </ItemList>
-            </ItemPick.Provider>
+            <div ref={revealRef}>
+              <ItemPick.Provider value={selection.pickContext}>
+                <ItemList
+                  columns={[
+                    m.list_col_name(),
+                    m.create_filter_workspace(),
+                    m.list_col_details(),
+                    m.list_col_expires(),
+                  ]}
+                  view={view}
+                >
+                  {items.map((item) => (
+                    <TrashCard
+                      item={item}
+                      key={`${item.kind}:${item.id}:${item.episodeId}`}
+                      onPurge={purgeOne}
+                      onRestore={restoreOne}
+                      selected={selection.isSelected(item)}
+                      view={view}
+                      workspaceIconId={
+                        workspaces.find((ws) => ws.id === item.workspaceId)
+                          ?.iconId
+                      }
+                    />
+                  ))}
+                </ItemList>
+              </ItemPick.Provider>
+            </div>
           )}
           <ListEnd
             fetchNextPage={fetchNextPage}

@@ -2716,7 +2716,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
                     </div>`
                   : this.renderGifs(found)
                 : html`<p class="note">
-                    ${stickers ? m.drawing_board_sticker_none() : m.drawing_board_gif_none()}
+                    ${m.common_no_matches()}
                   </p>`
         }
       </div>

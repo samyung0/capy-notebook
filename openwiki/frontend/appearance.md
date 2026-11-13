@@ -308,7 +308,8 @@ How it is drawn:
 - Anything that paints its own fill across a panel hides the frost, so it
   drops it there: the workspace viewer's wrapper fills only in fullscreen,
   the note toolbar and source editor go transparent, a CSV's sticky header
-  blurs instead.
+  blurs instead, and the Members Topics grid's All members row turns a light
+  wash.
 - Office views: `set-appearance` carries `frosted` (Office protocol 13) when
   the centre frosts over a shown frame and no show is presenting. The
   runtime then marks its `<html>` `data-frosted` and `office-runtime.css`

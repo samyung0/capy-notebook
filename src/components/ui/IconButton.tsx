@@ -1,5 +1,6 @@
 import { Slot, Slottable } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
 import { Icon, type IconName } from './Icon';
@@ -88,9 +89,7 @@ export function IconButton({
               strokeWidth={strokeWidth}
             />
             {content}
-            {dot && (
-              <span className="absolute top-1.75 right-1.75 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
-            )}
+            {dot && <PendingDot className="top-1 right-1" />}
           </>
         )}
       </Slottable>

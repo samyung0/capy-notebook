@@ -352,14 +352,16 @@ and editor members; To do, Practice, Members and Study for every other member,
 in a class or a personal workspace; a link or public visitor has no Members,
 as they may not read who the members are. Outside a class's staff Members shows
 no marks (`MembersRoster.tsx`, Epo 2026-11-11, mock C): the people and their
-roles, with the count in its heading. First, in the settings page's order,
+roles. First, in the settings page's order,
 whoever shares the workspace (owner and editors) sets Visibility, what anyone
 with access may do, and copies the link: the Share dialog's controls without
 its own list of people. Under them its owner invites from a row (address, role
 dropdown, Invite), changes a role with the row's dropdown and removes with the
 row's Remove button after a confirmation; pending invitations list under the
 people with Cancel. Roles and buttons keep one width each, so every row ends
-on the same line. It shares its logic
+on the same line. In a class on a phone, where Teaching assistant leaves no
+room, each row has a Manage button instead, opening a dialog with the role
+dropdown and Remove (Epo 2026-11-12). It shares its logic
 with the Share dialog's list (`useMemberManager`). A class's owner and teaching
 assistants get the same page as Members' Manage tab, beside Overview (their
 marks). Workspace settings has no Sharing tab (Epo 2026-11-11): the rail
@@ -428,36 +430,43 @@ Assignments' overall joins it once they exist. Make my own practice sits at the 
 and G2 on the study-tracking canvas, Epo 2026-11-02/03; built 2026-11-08), for a
 class's owner and teaching assistants (editor members) only: every other member
 gets the people without marks (above), a visitor is sent to Practice, and the
-routes refuse both. Two tabs under one heading (Epo 2026-11-11): **Overview**,
-the marks below, and **Manage** (`manage=true`), the roster page with link
-sharing, the invite row and each person's role and Remove, where a class's
-roles read Member and Teaching assistant and on phones a row's dropdown and
-button go under the name. Overview keeps its view while Manage is open. The
-heading has no New assignment (Epo 2026-11-11): Assignments has it. It lists the
+routes refuse both. Three tabs under one heading (Epo 2026-11-12): **Overview**,
+the Summary below, **Topics** (`show=topics`), the By topic grid below, and
+**Manage** (`manage=true`), the roster page with link sharing, the invite row
+and each person's role and Remove, where a class's roles read Member and
+Teaching assistant and on phones a row's dropdown and button go under the name.
+The heading has no New assignment (Epo 2026-11-11): Assignments has it. It lists the
 class's viewer members; `GET /api/workspaces/{id}/study/members`
 (`WorkspaceMembersProgress` in `store/members_progress.go`, `qk.membersProgress`,
 under the workspace's `study` key).
 
-- **Show: Summary** (Main): one 52px line per member: Assignments ("76% · 3 of
+- **Overview** (Main): one 52px line per member: Assignments ("76% · 3 of
   4 done", then "2 missing"), Practice this week (questions checked in quizzes
   and reviews over the last seven days, never assignments; "–" for none) and
-  Needs practice (the topics labelled so, as amber chips; else a grey Attempted
-  while nothing is past Attempted, Not started before any answer, Nothing
-  flagged otherwise). Overall is the counted submission's mark after any late
+  Needs practice (the topics labelled so, as amber chips; else Not started
+  before any answer, Nothing flagged otherwise: Attempted shows only on
+  Topics, Epo 2026-11-12). Overall is the counted submission's mark after any late
   penalty (`countedAttemptOrder`, `attemptMarkSQL`) over the marks decided so
   far, summed across submitted marked assignments; "x of y" counts published
   assignments given to them, submitted or ticked; missing is marked ones past
-  due with nothing submitted. Sort: Needs attention (missing, then topics
-  needing practice, then lowest overall; no grade yet sorts after a grade;
-  `sortMembers`) or Name. A line opens the profile; there is no accordion.
+  due with nothing submitted. The list pages' sort button (`SortMenu`, Epo
+  2026-11-12), not kept in the URL: Name A to Z first, or Needs attention
+  (missing, then topics needing practice, then lowest overall; no grade yet
+  sorts after a grade; `sortMembers`), most to look at first; picking the
+  active one reverses it. A line opens the profile; there is no accordion.
 - **Storage full** (Epo 2026-11-08, added since the mock): a red chip by the
   name while the member's own storage is full (`StorageUsage.Full`; the list
   reads every member's in one query, `membersStorageFull`). Hover or tap says
   "Their storage is full. They can't upload files, including for new
   assignments." (Q722; [backend-storage-quota.md](backend-storage-quota.md)).
-  It shows on Members and the profile to class staff, owner and editor members
-  alike (Q720), never on an assignment's pages.
-- **Show: By topic** (G4, `show=topics`): members × topics, 64px rows, each cell
+  It shows to class staff, owner and editor members alike (Q720), on the
+  member's row in Manage, where the owner acts on it, and on the profile; not
+  in Overview, Topics or an assignment's pages (Epo 2026-11-12). While any
+  member's storage is full the Manage tab and the rail's Members carry a red
+  dot (`useMembersNeedAction`, from the same members query, asked only by
+  staff).
+- **Topics** (G4, `show=topics`): members × topics, by name, at every width (a
+  phone scrolls it sideways), 64px rows, each cell
   the member's label as a pill with "9 of 10 right" (or "–" and Not started),
   under a pinned All members row: how many need practice when any do, else the
   commonest label, a tie to the stronger (`topicCount`). Columns are the
@@ -468,9 +477,9 @@ under the workspace's `study` key).
   whole class in one pass (`membersStandings`: the quizzes, their sizes, then
   the class's answers grouped by member, `review.TopicLabel` per member),
   which `TestMembersStandingsMatchSummary` keeps equal to `topicStandings`.
-  The grid scrolls both ways in a box no taller than the window
-  (`100dvh` less the page's head), so the header and the All members row stay
-  pinned (Q723, finding 9).
+  The grid scrolls sideways only and the page scrolls down (Epo 2026-11-12,
+  replacing Q723's pinned header: a box capped at the window's height scrolled
+  inside a scrolling page).
 - **Profile** (G2, `member=<id>`, keeping `show`): back to Members, name, "Joined
   2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
   Done or the due date; a row opens their results, or the report's Members tab
@@ -500,7 +509,7 @@ under the workspace's `study` key).
   Dan Kim, Farah Ali, Gus Ito and Cara Moss show these cases.
 - Phones and narrow panes (below the `@4xl` container, where the table no
   longer fits) get a plain list instead of either view (Epo 2026-11-08): the
-  name and any Storage full chip, "3 of 4 done · 2 missing" under it and the
+  name, "3 of 4 done · 2 missing" under it and the
   overall on the right, with Sort but no Show. Practice and topic labels are
   left to the profile.
 
@@ -619,7 +628,7 @@ cards in set order, then those last rated Again; skips are not kept. Note
 embeds keep nothing. While studying, once the run has a rating, an outline md
 Reset at the far right of the title (`ResetButton`, also on quiz pages once a
 question is checked) starts a new run and forgets the kept one; the run so far
-stays an attempt. A result shows Study again (Redo quiz) instead. When the
+stays an attempt. A result shows Study again instead. When the
 run ends, the page shows `FlashcardResult` (`src/features/flashcards/FlashcardResult.tsx`)
 in the quiz result's layout (TabContent, left aligned) from the page's own
 ratings, so embeds and share pages show it too. The score of first ratings
@@ -635,9 +644,9 @@ fading; no image) in a grid (`CardGrid`, the one every flashcard grid uses, colu
 page is `TabContent wide`, max-w-4xl) with its number in
 first-rated order and its ratings as tinted chips; the list pages' `SortMenu`
 orders them by Flashcard order, Hardest (first rating, then last) or
-Easiest. Study again sits where a quiz result's Redo quiz does. A recorded
+Easiest. Study again sits where a quiz result's does. A recorded
 attempt's page, `/flashcards/attempts/$attemptId`, is `AttemptResult` with
-the same body and Study again in place of Redo quiz. Quiz results show
+the same body and the same Study again. Quiz results show
 minutes too: each check sends when the try began, and the minutes run to the
 latest check; the score
 row reads "18.5 / 26 marks" with the minutes beside it under a clock
@@ -713,7 +722,12 @@ the browser (Epo 2026-11-06, Q663 A). Embedded sets study there too and send no 
 ## Learning
 
 Rules and scores, no AI (Epo 2026-11-04; `features.learning`, on). Tabs:
-Overview (default), Past reviews and All results; `src/routes/Learning.tsx`. The
+Overview (default), Past reviews and All results; `src/routes/Learning.tsx`.
+The page calls a review a revision and a quiz or set attempt a practice (Epo
+2026-11-13): the tabs read Revisions and Practices, Overview's workspace row
+"Biology 101 revision", the empty tabs "No revisions done yet" and "No
+practices done yet", and a revision's result Revise again, Revision order and
+"This revision is unavailable."; the code and this doc keep Past reviews and All results. The
 session and result pages stay under
 `/learning/review/$workspaceId` and `/learning/reviews/$sessionId`.
 
@@ -750,7 +764,7 @@ yet" and an outline Go to Workspaces. An empty section is not shown.
 
 ### Past reviews
 
-`src/features/study/PastReviews.tsx`, its own tab, its filter at the top right: finished sessions in Billing's plain table
+`src/features/study/PastReviews.tsx`, its own tab laid out as All results (Epo 2026-11-13): the list toolbar's filter right under the tabs, rows loading as skeletons, then finished sessions in Billing's plain table
 (`BillingTable`, no border, scrolls sideways) at every width (Date,
 Workspace, Topic, Quiz, Flashcards, Time, Status; Time and Status
 from xl; no row menu: a click anywhere on a row opens the result, which has
@@ -795,9 +809,9 @@ its half alone.
 
 `src/features/study/AllResults.tsx`: quiz and flashcard attempts (Date
 with the time, newest first by default; Name with the item's icon, Workspace,
-Score, ⋮ with See result and Redo quiz or
-Study again), the same table switch below md. A click anywhere on a row
-opens See result (`resultLink` in `src/features/study/attempts.ts`:
+Score; no row menu since Epo 2026-11-13, the result page having Study
+again), the same table switch below md. A click anywhere on a row
+opens the result (`resultLink` in `src/features/study/attempts.ts`:
 `/quizzes/attempts/$id` or `/flashcards/attempts/$id`, one `AttemptResult`
 route for both). A flashcard score reads "14 / 18 good". Attempts carry the
 workspace's `iconId` (left out once the item is deleted).

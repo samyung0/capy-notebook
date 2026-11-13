@@ -44,7 +44,8 @@ export function UsageTab() {
 
   const storageLimit = billing?.storageLimitBytes ?? 0;
   const storageUsed = billing?.storageUsedBytes ?? 0;
-  // What the storage holds by kind (Epo 2026-11-06, mock S1).
+  // What the storage holds by kind (Epo 2026-11-06, mock S1): files with the
+  // notes and quizzes, images, canvas (2026-11-13).
   const breakdown = billing?.storageBreakdown;
   const storageParts: Segment[] = [
     {
@@ -54,10 +55,10 @@ export function UsageTab() {
       label: m.billing_storage_files(),
     },
     {
-      amount: breakdown?.otherBytes ?? 0,
+      amount: breakdown?.imagesBytes ?? 0,
       color: userColorPair('green').bg,
-      key: 'other',
-      label: m.billing_storage_other(),
+      key: 'images',
+      label: m.billing_storage_images(),
     },
     {
       amount: breakdown?.canvasBytes ?? 0,

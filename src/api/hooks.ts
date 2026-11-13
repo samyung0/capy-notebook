@@ -3848,9 +3848,11 @@ export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>
  * assistants. */
 export const useMembersProgress = (
   workspaceId: string,
-  options?: QueryUiOptions
+  options?: QueryUiOptions,
+  enabled = true
 ) =>
   useQuery({
+    enabled,
     meta: queryMeta(options),
     queryFn: () =>
       api.get<MembersProgress>(`/workspaces/${workspaceId}/study/members`),

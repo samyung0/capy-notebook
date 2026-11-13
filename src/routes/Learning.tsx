@@ -31,13 +31,15 @@ export default function Learning() {
         ]}
         value={tab}
       />
-      {/* All results lays out as Files does: toolbar right under the tabs,
-       * then the table in the list's padding. */}
+      {/* Past reviews and All results lay out as Files does: toolbar right
+       * under the tabs, then the table in the list's padding. */}
       {tab === 'results' ? (
         <AllResults />
+      ) : tab === 'past' ? (
+        <PastReviews />
       ) : (
         <TabContent fill>
-          {tab === 'past' ? <PastReviews /> : <LearningOverviewTab />}
+          <LearningOverviewTab />
         </TabContent>
       )}
     </PagePanel>

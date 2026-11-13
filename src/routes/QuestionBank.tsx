@@ -596,10 +596,7 @@ export default function QuestionBank() {
         topicId={topicId}
       />
     );
-  else
-    body = (
-      <p className="text-fg-muted">{m.question_ui_no_questions_match()}</p>
-    );
+  else body = <p className="text-fg-muted">{m.common_no_matches()}</p>;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 xl:flex-row">
@@ -1498,7 +1495,7 @@ function TopicTree({
         : !syllabus.exams.length) && (
         <p className="px-2 text-fg-muted">
           {needle
-            ? m.question_ui_no_topics_match()
+            ? m.common_no_matches()
             : m.question_ui_no_syllabi_have_been_published_yet()}
         </p>
       )}

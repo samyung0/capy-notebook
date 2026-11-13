@@ -4,8 +4,10 @@ import type { Workspace } from '@/api/types';
 import { ProfileMenu } from '@/components/app/ProfileMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { useAssignmentCount } from '@/features/study/assignments/useAssignmentCount';
+import { useMembersNeedAction } from '@/features/study/members/membersAttention';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -103,6 +105,7 @@ const ITEM =
 function RailItem({
   active,
   count,
+  dot,
   icon,
   label,
   onClick,
@@ -110,6 +113,8 @@ function RailItem({
   active: boolean;
   /** What waits there, by the icon. */
   count?: number;
+  /** Something waits there with no count to show. */
+  dot?: boolean;
   icon: IconName;
   label: string;
   onClick: () => void;
@@ -127,10 +132,11 @@ function RailItem({
       <span className="relative">
         <Icon name={icon} size={20} />
         {!!count && (
-          <span className="absolute -top-1.5 left-3.5 min-w-4 rounded-full bg-tint-accent-1 px-1 text-center font-bold text-[10px] text-tint-accent-1-fg leading-4">
+          <span className="absolute -top-1.5 left-3.5 min-w-4 rounded-full bg-solid-error px-1 text-center font-bold text-[10px] text-white leading-4">
             {count}
           </span>
         )}
+        {dot && <PendingDot className="-top-1 -right-1.5" />}
       </span>
       <span>{label}</span>
     </button>
@@ -155,6 +161,7 @@ export function WorkspaceRail({
 }) {
   const { data: unread } = useUnreadNotificationCount({ errorBoundary: false });
   const assignmentCount = useAssignmentCount(workspace);
+  const membersNeedAction = useMembersNeedAction(workspace);
   return (
     // No panel of its own: on the shell like the app sidebar's background, so a
     // page frame shows straight through.
@@ -170,6 +177,7 @@ export function WorkspaceRail({
         <RailItem
           active={active === section.value}
           count={section.value === 'todo' ? assignmentCount : undefined}
+          dot={section.value === 'members' && membersNeedAction}
           icon={section.icon}
           key={section.value}
           label={section.label}

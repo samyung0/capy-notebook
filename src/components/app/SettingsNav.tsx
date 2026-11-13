@@ -101,7 +101,7 @@ export function SettingsNav<T extends string>({
         </div>
       ) : (
         <p className="t-meta mt-3 px-3.5 text-fg-muted">
-          {m.workspace_settings_no_match()}
+          {m.common_no_matches()}
         </p>
       )}
     </nav>

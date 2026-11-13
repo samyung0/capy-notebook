@@ -405,7 +405,7 @@ function Session({
           ) : sample ? (
             <SampleReview />
           ) : session.order.length === 0 ? (
-            <p className="t-card-title m-auto">{m.review_nothing()}</p>
+            <p className="t-card-title m-auto">{m.common_nothing_yet()}</p>
           ) : (
             <SessionResult
               next={nextSuggestion}
@@ -476,7 +476,7 @@ function SessionResult({
   }, [saved]);
   const { data } = useReviewResult(sessionId, { enabled: ready });
   if (!saved)
-    return <p className="t-card-title m-auto">{m.review_nothing()}</p>;
+    return <p className="t-card-title m-auto">{m.common_nothing_yet()}</p>;
   if (!data) return <SkeletonList count={4} rowHeight={52} />;
   return (
     <div className="mx-auto w-full max-w-4xl">

@@ -8,33 +8,34 @@ import type {
   Workspace,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
+import { SortMenu, type SortOption } from '@/components/app/ListToolbar';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
-import { Menu } from '@/components/ui/Menu';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { percentText } from '../assignments/assignmentText';
 import { PracticeFrame } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { LabelPill } from '../topicLabels';
 import { MemberProfilePage } from './MemberProfile';
 import { MembersRoster } from './MembersRoster';
+import { storageFullOf } from './membersAttention';
 import {
   focusOf,
-  type MembersShow,
   type MembersSort,
+  type MembersTab,
   sortMembers,
   standingIn,
   topicCount,
   topicName,
 } from './membersRows';
-import { StorageFullChip } from './StorageFullChip';
 
 /** Members' URL, under `study=members`: `member` opens one's profile, `show`
- * picks Overview's view, `manage` the Manage tab. */
+ * the Topics tab, `manage` the Manage tab. */
 export type MembersSearch = {
   manage?: true;
   member?: string;
@@ -42,9 +43,9 @@ export type MembersSearch = {
 };
 
 /** Members (its own page on the rail since Epo 2026-11-11). A class's owner and
- * teaching assistants get two tabs (Epo 2026-11-11): Overview, every member's
- * marks (boards Main, G4, G2), and Manage, the people with sharing and
- * invitations (`MembersRoster`). Every other member gets that list alone,
+ * teaching assistants get three tabs: Overview, every member's marks (boards
+ * Main, G2), Topics, members × topics (board G4), and Manage, the people with
+ * sharing and invitations (`MembersRoster`). Every other member gets that list alone,
  * without marks. A visitor who is no member is sent to Practice. */
 export function MembersPage({
   search,
@@ -72,20 +73,17 @@ export function MembersPage({
     );
   return (
     <MembersList
-      manage={!!search.manage}
-      show={search.show ? 'topics' : 'summary'}
+      tab={search.manage ? 'manage' : search.show ? 'topics' : 'overview'}
       workspace={ws}
     />
   );
 }
 
 function MembersList({
-  manage,
-  show,
+  tab,
   workspace,
 }: {
-  manage: boolean;
-  show: MembersShow;
+  tab: MembersTab;
   workspace: Workspace;
 }) {
   const workspaceId = workspace.id;
@@ -94,34 +92,25 @@ function MembersList({
     workspaceId,
     { errorBoundary: false }
   );
-  const [sort, setSort] = useState<MembersSort>('attention');
-  const count = data?.members.length;
-  const meta = [
-    workspace.name,
-    count === undefined
-      ? null
-      : count === 1
-        ? m.workspace_members_one()
-        : m.workspace_members_count({ count }),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const setShow = (next: MembersShow) =>
-    navigate({
-      replace: true,
-      search: {
-        show: next === 'topics' ? ('topics' as const) : undefined,
-        study: 'members' as const,
-      },
-      to: '.',
-    });
-  // Overview keeps its view while Manage is open.
+  const revealRef = useLoadingReveal(isPending);
+  const needsAction = storageFullOf(data);
+  // Name A to Z first; Needs attention starts with the most to look at.
+  const [sorting, setSorting] = useState<{
+    ascending: boolean;
+    sort: MembersSort;
+  }>({ ascending: true, sort: 'name' });
+  const sorts: SortOption<MembersSort>[] = [
+    { icon: 'pencil', label: m.members_sort_name(), value: 'name' },
+    { icon: 'alert', label: m.members_sort_attention(), value: 'attention' },
+  ];
+  const sorted = (members: MemberProgress[]) =>
+    sortMembers(members, sorting.sort, sorting.ascending);
   const setTab = (next: string) =>
     navigate({
       replace: true,
       search: {
         manage: next === 'manage' ? (true as const) : undefined,
-        show: show === 'topics' ? ('topics' as const) : undefined,
+        show: next === 'topics' ? ('topics' as const) : undefined,
         study: 'members' as const,
       },
       to: '.',
@@ -130,101 +119,76 @@ function MembersList({
     navigate({
       search: {
         member: member.userId,
-        show: show === 'topics' ? ('topics' as const) : undefined,
+        show: tab === 'topics' ? ('topics' as const) : undefined,
         study: 'members' as const,
       },
       to: '.',
     });
-  const showLabel =
-    show === 'topics' ? m.members_show_topics() : m.members_show_summary();
-  const sortLabel =
-    sort === 'name' ? m.members_sort_name() : m.members_sort_attention();
   const header = (
     <>
       {/* No New assignment here: Assignments has it (Epo 2026-11-11). */}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3">
-        <h1 className="t-page-title">{m.study_panel_members()}</h1>
-        <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
-      </div>
+      <h1 className="t-page-title">{m.study_panel_members()}</h1>
       <Tabs
         className="page-bleed page-tabs-px mt-2 w-auto"
         onChange={(next) => void setTab(next)}
         tabs={[
           { label: m.members_tab_overview(), value: 'overview' },
-          { label: m.members_tab_manage(), value: 'manage' },
+          { label: m.members_tab_topics(), value: 'topics' },
+          {
+            // Something waits on the staff there, a member's full storage.
+            label: (
+              <span className="relative">
+                {m.members_tab_manage()}
+                {needsAction.size > 0 && (
+                  <PendingDot className="-top-0.5 -right-2.5" />
+                )}
+              </span>
+            ),
+            value: 'manage',
+          },
         ]}
-        value={manage ? 'manage' : 'overview'}
+        value={tab}
       />
     </>
   );
-  if (manage) return <MembersRoster header={header} workspace={workspace} />;
+  if (tab === 'manage')
+    return (
+      <MembersRoster
+        header={header}
+        storageFull={needsAction}
+        workspace={workspace}
+      />
+    );
+  const topics = tab === 'topics';
   return (
     <PracticeFrame className="@container">
       {header}
-      <div
-        className={cn(
-          'mt-4 flex flex-wrap items-center gap-2',
-          show === 'topics' ? 'mb-2' : 'mb-1.5'
-        )}
-      >
-        <div className="@4xl:block hidden">
-          <Menu
-            align="start"
-            items={(['summary', 'topics'] as const).map((value) => ({
-              checked: show === value,
-              label:
-                value === 'topics'
-                  ? m.members_show_topics()
-                  : m.members_show_summary(),
-              onClick: () => void setShow(value),
-            }))}
-            trigger={
-              <Button
-                className="px-2.5"
-                iconRight="chevronDown"
-                size="sm"
-                variant="outline"
-              >
-                {m.members_show({ view: showLabel })}
-              </Button>
-            }
-          />
-        </div>
-        <div className={cn(show === 'topics' && '@4xl:hidden')}>
-          <Menu
-            align="start"
-            items={(['attention', 'name'] as const).map((value) => ({
-              checked: sort === value,
-              label:
-                value === 'name'
-                  ? m.members_sort_name()
-                  : m.members_sort_attention(),
-              onClick: () => setSort(value),
-            }))}
-            trigger={
-              <Button
-                className="px-2.5"
-                iconRight="chevronDown"
-                size="sm"
-                variant="outline"
-              >
-                {m.members_sort({ order: sortLabel })}
-              </Button>
-            }
-          />
-        </div>
-        {show === 'topics' && (
-          <span className="t-meta ml-auto @4xl:inline hidden text-fg-muted">
+      {/* The list pages' sort (Files, Workspaces); Topics lists by name. */}
+      <div className="mt-4 mb-1.5 flex min-h-10 flex-wrap items-center gap-2 sm:min-h-11.5">
+        {topics ? (
+          <span className="t-meta text-fg-muted">
             {m.members_labels_need()}
           </span>
+        ) : (
+          // -ml-1 with the button's -mx-1 puts its icon on the gutter, as ListToolbar does.
+          <div className="-ml-1 flex">
+            <SortMenu
+              ascending={sorting.ascending}
+              onSortChange={(sort, ascending) =>
+                setSorting({
+                  ascending:
+                    sort === sorting.sort ? ascending : sort === 'name',
+                  sort,
+                })
+              }
+              sort={sorting.sort}
+              sorts={sorts}
+            />
+          </div>
         )}
       </div>
       {isPending ? (
-        <SkeletonList
-          className="mt-4"
-          count={6}
-          rowHeight={show === 'topics' ? 64 : 52}
-        />
+        <SkeletonList className="mt-4" count={6} rowHeight={topics ? 64 : 52} />
       ) : isError ? (
         <ErrorState
           className="h-auto py-20"
@@ -236,32 +200,36 @@ function MembersList({
       ) : data.members.length === 0 ? (
         <p className="t-meta mt-6 text-fg-muted">{m.members_empty()}</p>
       ) : (
-        <>
-          {/* Where the table fits: the boards' Summary or By topic. */}
-          <div className="@4xl:block hidden">
-            {show === 'topics' ? (
-              <TopicsGrid data={data} onOpen={(mp) => void open(mp)} />
-            ) : (
-              <SummaryList
-                members={sortMembers(data.members, sort)}
+        <div ref={revealRef}>
+          {topics ? (
+            <TopicsGrid data={data} onOpen={(mp) => void open(mp)} />
+          ) : (
+            <>
+              {/* Where the table fits: the boards' Summary. */}
+              <div className="@4xl:block hidden">
+                <SummaryList
+                  members={sorted(data.members)}
+                  onOpen={(mp) => void open(mp)}
+                />
+              </div>
+              {/* Phones and narrow panes: a plain list; labels wait for the
+                  profile (Epo 2026-11-08). */}
+              <PhoneList
+                members={sorted(data.members)}
                 onOpen={(mp) => void open(mp)}
               />
-            )}
-          </div>
-          {/* Phones and narrow panes: a plain list; labels wait for the
-              profile (Epo 2026-11-08). */}
-          <PhoneList
-            members={sortMembers(data.members, sort)}
-            onOpen={(mp) => void open(mp)}
-          />
-        </>
+            </>
+          )}
+        </div>
       )}
     </PracticeFrame>
   );
 }
 
+/** The rows bleed 12px into the gutter: text lines up with the toolbar and
+ * Manage's list, the hover keeps room around it. */
 const GRID =
-  'grid grid-cols-[240px_280px_180px_minmax(0,1fr)] items-center gap-3 px-3';
+  '-mx-3 grid grid-cols-[240px_280px_180px_minmax(0,1fr)] items-center gap-3 px-3';
 
 /** Summary (board Main): one 52px line per member; a line opens the profile. */
 function SummaryList({
@@ -340,19 +308,16 @@ function PhoneList({
             src={member.avatarUrl || undefined}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="flex min-w-0 items-center gap-2">
-              <button
-                className="min-w-0 truncate rounded-sm text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onOpen(member);
-                }}
-                type="button"
-              >
-                {member.name}
-              </button>
-              {member.storageFull && <StorageFullChip />}
-            </span>
+            <button
+              className="min-w-0 self-start truncate rounded-sm text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen(member);
+              }}
+              type="button"
+            >
+              {member.name}
+            </button>
             {member.assigned > 0 && (
               <span className="t-meta truncate text-fg-muted">
                 {m.assignment_done_of({
@@ -390,23 +355,15 @@ const questionsText = (count: number) =>
 function MemberName({
   member,
   onOpen,
-  stacked,
 }: {
   member: MemberProgress;
   onOpen?: () => void;
-  /** The storage chip under the name, in By topic's narrow column. */
-  stacked?: boolean;
 }) {
   return (
-    <span
-      className={cn(
-        'flex min-w-0 items-center gap-2.5',
-        stacked && 'grid grid-cols-[auto_minmax(0,1fr)] gap-y-1'
-      )}
-    >
+    <span className="flex min-w-0 items-center gap-2.5">
       <Avatar
         aria-hidden
-        className={cn('size-7.5 shrink-0 text-xs', stacked && 'row-span-2')}
+        className="size-7.5 shrink-0 text-xs"
         name={member.name}
         src={member.avatarUrl || undefined}
       />
@@ -423,11 +380,6 @@ function MemberName({
         </button>
       ) : (
         <span className="min-w-0 truncate font-semibold">{member.name}</span>
-      )}
-      {member.storageFull && (
-        <span className={cn(stacked && 'col-start-2')}>
-          <StorageFullChip />
-        </span>
       )}
     </span>
   );
@@ -475,12 +427,6 @@ function FocusCell({ member }: { member: MemberProgress }) {
           {topicName(t)}
         </span>
       ));
-    case 'attempted':
-      return (
-        <span className={cn(CHIP, 'bg-page-hover text-fg-secondary')}>
-          {m.topic_label_attempted()}
-        </span>
-      );
     case 'not_started':
       return (
         <span className="font-semibold text-fg-muted">
@@ -508,10 +454,8 @@ const COUNT: Record<SummaryTopic['label'], (count: number) => string> = {
   proficient: (count) => m.members_count_proficient({ count }),
 };
 
-/** By topic (board G4): members × topics, under a pinned All members row of
- * counts. A member's row opens their profile. The grid scrolls both ways in a
- * box no taller than the window, so the header and All members stay in view
- * (Q723, finding 9): a sideways scroller would otherwise hold them. */
+/** Topics (board G4): members × topics, under an All members row of counts. A
+ * member's row opens their profile. */
 function TopicsGrid({
   data,
   onOpen,
@@ -521,30 +465,34 @@ function TopicsGrid({
 }) {
   const { members, topics } = data;
   return (
-    <div className="-mx-4 max-h-[calc(100dvh-190px)] overflow-auto px-4 sm:mx-0 sm:px-0">
+    // Sideways only: the page scrolls down (Epo 2026-11-12). The box bleeds
+    // into the gutter so the cells' 12px start lines up with the page text, as
+    // Overview's rows do; phones keep 4px so text sits at 16px.
+    <div className="-mx-4 overflow-x-auto px-1 sm:-mx-3 sm:px-0">
       <table
         className="w-full table-fixed border-separate border-spacing-0"
         style={{ minWidth: 190 + topics.length * 120 }}
       >
-        {/* Opaque rows: the card's colour, then All members on the page's. */}
-        <thead className="sticky top-0 z-10">
-          <tr className="bg-surface">
-            <th className="t-meta w-47.5 border-divider border-b py-3 pr-2 pl-3 text-left align-bottom font-semibold text-fg-muted">
+        {/* All members sits on the page's colour, a light wash over a
+            frosted page frame. */}
+        <thead>
+          <tr>
+            <th className="t-meta w-47.5 border-divider border-b py-3 pr-2 pl-3 text-left align-bottom font-semibold">
               {m.members_col_member()}
             </th>
             {topics.map((topic) => (
               <th
-                className="t-meta border-divider border-b px-2 py-3 text-center align-bottom font-semibold text-fg-muted"
+                className="t-meta border-divider border-b px-2 py-3 text-center align-bottom font-semibold"
                 key={topic.topicId ?? topic.group}
               >
                 <div className="line-clamp-2">{topicName(topic)}</div>
-                <div className="font-medium">
+                <div className="font-medium text-fg-muted">
                   {questionsText(topic.questions)}
                 </div>
               </th>
             ))}
           </tr>
-          <tr className="bg-page">
+          <tr className="bg-page frosted:bg-black/4 dark:frosted:bg-white/5">
             <td className="h-10 border-divider border-b pr-2 pl-3 font-semibold">
               {m.members_all()}
             </td>
@@ -569,11 +517,7 @@ function TopicsGrid({
               onClick={() => onOpen(member)}
             >
               <td className="h-16 border-divider border-b py-2 pr-2 pl-3">
-                <MemberName
-                  member={member}
-                  onOpen={() => onOpen(member)}
-                  stacked
-                />
+                <MemberName member={member} onOpen={() => onOpen(member)} />
               </td>
               {topics.map((topic) => (
                 <TopicCell

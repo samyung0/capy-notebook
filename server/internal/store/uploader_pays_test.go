@@ -411,9 +411,12 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The files alone: search also finds the workspace and its materials.
 		ids := []string{}
 		for _, result := range results {
-			ids = append(ids, result.ID)
+			if result.Kind == SearchFile {
+				ids = append(ids, result.ID)
+			}
 		}
 		slices.Sort(ids)
 		return ids

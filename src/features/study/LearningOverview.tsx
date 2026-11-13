@@ -68,6 +68,16 @@ export function LearningOverviewTab() {
       {data.workspaces.length > 0 && (
         <section>
           <h2 className="t-subtitle mb-1">{m.learning_workspaces()}</h2>
+          <div
+            aria-hidden
+            className={cn(
+              WORKSPACE_GRID,
+              't-meta -mx-2 hidden w-[calc(100%+1rem)] gap-x-3.5 px-2 py-1.5 font-semibold text-fg-muted md:grid'
+            )}
+          >
+            <span className="col-start-4">{m.learning_col_progress()}</span>
+            <span>{m.learning_col_last_practised()}</span>
+          </div>
           {data.workspaces.map((ws) => (
             <WorkspaceRow
               key={ws.workspaceId}
@@ -140,11 +150,17 @@ function RowButton({
   );
 }
 
-function WorkspaceIcon({ iconId }: { iconId: string }) {
+function WorkspaceIcon({
+  className,
+  iconId,
+}: {
+  className?: string;
+  iconId: string;
+}) {
   return (
     <img
       alt=""
-      className="size-8 rounded-button"
+      className={cn('size-8 rounded-button', className)}
       height={32}
       src={iconUrl(iconId)}
       width={32}
@@ -217,15 +233,18 @@ function NextRow({ row }: { row: LearningRow }) {
     group ||
     m.learning_workspace_review({ workspace: workspaceName });
   const ownReview = !(row.title || group);
+  const continues = row.kind === 'session' || row.kind === 'quiz';
   const when = row.at ? relativeTime(row.at) : '';
   return (
     <RowButton className="grid-cols-[20px_minmax(0,1fr)]" onClick={open}>
       <RowIcon row={row} />
       <span className="min-w-0">
         <span className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
-          <span className="truncate font-semibold">{title}</span>
+          <span className="truncate font-semibold">
+            {continues ? m.learning_continue_title({ title }) : title}
+          </span>
           {!ownReview && (
-            <span className="truncate text-fg-muted text-xs">
+            <span className="t-meta truncate text-fg-secondary">
               {workspaceName}
             </span>
           )}
@@ -244,7 +263,7 @@ function NextRow({ row }: { row: LearningRow }) {
               when,
             })}
           {row.kind === 'start' &&
-            `${m.learning_not_started()} · ${
+            `${m.learning_not_done()} · ${
               row.materialKind === 'flashcards'
                 ? row.total === 1
                   ? m.learning_cards_one()
@@ -254,7 +273,7 @@ function NextRow({ row }: { row: LearningRow }) {
           {s && reviewReason(s)}
         </span>
         {s && (
-          <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+          <span className="t-meta mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
             <span
               className={cn(
                 'inline-flex items-center gap-1 font-bold',
@@ -275,6 +294,9 @@ function NextRow({ row }: { row: LearningRow }) {
   );
 }
 
+/** The Workspaces columns from md: icon, name, labels, items done, when. */
+const WORKSPACE_GRID = 'md:grid-cols-[32px_200px_minmax(0,1fr)_150px_110px]';
+
 function WorkspaceRow({
   onOpen,
   ws,
@@ -282,15 +304,20 @@ function WorkspaceRow({
   onOpen: () => void;
   ws: LearningWorkspace;
 }) {
-  const tried = m.learning_items_tried({ items: ws.items, tried: ws.tried });
+  const done = m.learning_items_done({ done: ws.tried, items: ws.items });
   const notStarted = ws.labels.every((l) => l.label === 'not_started');
   const when = ws.lastPractisedAt ? relativeTime(ws.lastPractisedAt) : '';
   return (
     <RowButton
-      className="grid-cols-[32px_minmax(0,1fr)] items-start md:grid-cols-[32px_200px_minmax(0,1fr)_150px_110px] md:items-center"
+      className={cn(
+        'grid-cols-[32px_minmax(0,1fr)] items-start md:items-center',
+        WORKSPACE_GRID
+      )}
       onClick={onOpen}
     >
-      <WorkspaceIcon iconId={ws.iconId} />
+      {/* Phones stack name, labels and count beside it: spanning their rows,
+          the 32px icon leaves the name's row its own height. */}
+      <WorkspaceIcon className="row-span-3 md:row-span-1" iconId={ws.iconId} />
       <span className="flex min-w-0 items-baseline justify-between gap-2 md:contents">
         <span className="truncate font-semibold md:self-center">{ws.name}</span>
         {when && (
@@ -313,7 +340,7 @@ function WorkspaceRow({
         {notStarted && (
           <span className="md:hidden">{`${m.learning_not_started()} · `}</span>
         )}
-        {tried}
+        {done}
       </span>
       <span className="t-meta hidden text-fg-muted md:block">{when}</span>
     </RowButton>

@@ -104,7 +104,7 @@ export default function Workspaces() {
         }
         filters={[
           {
-            emptyLabel: m.workspaces_filter_no_tags(),
+            emptyLabel: m.common_nothing_yet(),
             key: 'tags',
             label: m.workspaces_filter_tags(),
             onToggle: (value) =>
@@ -148,7 +148,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-23 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
+              className="min-h-26 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"

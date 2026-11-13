@@ -23,6 +23,7 @@ import { SuggestedList } from '@/features/study/practice/SuggestedList';
 import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { isWorkspaceReadOnly } from './access';
 import { HiddenMark } from './HiddenChip';
 import { addSourceIntent } from './LazyAddSourceDialog';
@@ -50,8 +51,15 @@ export function WorkspaceDashboard({
     'capabilities' | 'iconId' | 'id' | 'kind' | 'name' | 'role'
   >;
 }) {
-  const { data } = useWorkspaceDashboard(workspace.id);
-  const { data: recent } = useWorkspaceRecent(workspace.id);
+  const { data, isPending: dashboardPending } = useWorkspaceDashboard(
+    workspace.id
+  );
+  const { data: recent, isPending: recentPending } = useWorkspaceRecent(
+    workspace.id
+  );
+  // The sections fade in once their skeleton (or nothing) gives way.
+  const recentRef = useLoadingReveal(recentPending);
+  const activityRef = useLoadingReveal<HTMLUListElement>(dashboardPending);
   const { manages } = studyView(workspace);
   const practises = !manages;
   const { data: practice } = usePractice(workspace.id, {
@@ -170,7 +178,10 @@ export function WorkspaceDashboard({
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
-          <div className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4">
+          <div
+            className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4"
+            ref={recentRef}
+          >
             {items.map((item) => (
               <RecentCard
                 item={item}
@@ -184,7 +195,7 @@ export function WorkspaceDashboard({
       {!!data?.activity.length && (
         <section className="flex flex-col">
           <h2 className="t-subtitle mb-2">{m.dashboard_activity()}</h2>
-          <ul>
+          <ul ref={activityRef}>
             {data.activity.map((row) => (
               <ActivityRow
                 key={`${row.fileId ?? row.materialId ?? row.assignmentId}-${row.at}`}

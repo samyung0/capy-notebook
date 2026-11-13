@@ -3,6 +3,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -45,9 +46,7 @@ export function ProfilePillButton({
         ) : (
           <Avatar className={avatarClass} name={name} src={avatarUrl} />
         )}
-        {dot && (
-          <span className="absolute top-0 right-0 size-2.5 animate-pulse rounded-full bg-solid-error ring-2 ring-surface" />
-        )}
+        {dot && <PendingDot className="top-0 right-0" />}
       </button>
     );
   // The loading pill is one skeleton of the pill's shape, in the pill's own

@@ -227,7 +227,7 @@ export function AttemptBody({
 
   // Public pages keep their ⋮ on every state; the app page shows Clone only
   // while taking the quiz. While taking it, Reset sits at the far right once
-  // a question is checked; the result has Redo quiz instead.
+  // a question is checked; the result has Study again instead.
   const header = (
     headerActions = inApp ? undefined : actions,
     taking = false

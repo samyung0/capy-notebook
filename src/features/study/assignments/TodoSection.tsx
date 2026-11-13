@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { TodoTable, useTodoTicks } from './TodoTable';
 import { type TodoTableSection, todoRows, todoSections } from './todoRows';
@@ -32,6 +33,7 @@ export function TodoSection({
   const { data, error, isPending, refetch } = useAssignments(workspace.id, {
     errorBoundary: false,
   });
+  const revealRef = useLoadingReveal(isPending);
   const [showDone, setShowDone] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sort, setSort] = useState<'due' | 'title'>('due');
@@ -130,21 +132,24 @@ export function TodoSection({
         />
       )}
       {data && (
-        <TodoTable
-          doneTab={false}
-          sections={sections}
-          single
-          sorting={{
-            ascending,
-            ascendingFirst: ['due', 'title'],
-            onSortChange: (next, asc) => {
-              setSort(next === 'title' ? 'title' : 'due');
-              setAscending(asc);
-            },
-            sort,
-          }}
-          ticks={ticks}
-        />
+        // Fades in as the other pages' lists do once loaded.
+        <div ref={revealRef}>
+          <TodoTable
+            doneTab={false}
+            sections={sections}
+            single
+            sorting={{
+              ascending,
+              ascendingFirst: ['due', 'title'],
+              onSortChange: (next, asc) => {
+                setSort(next === 'title' ? 'title' : 'due');
+                setAscending(asc);
+              },
+              sort,
+            }}
+            ticks={ticks}
+          />
+        </div>
       )}
       {creating && (
         <NewAssignmentDialog

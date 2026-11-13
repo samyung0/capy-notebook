@@ -71,20 +71,15 @@ export function dueText(
   dueAt: string | undefined,
   ticked: boolean,
   now = new Date()
-): { text: string; tone?: 'overdue' | 'soon' } {
-  if (!dueAt) return { text: m.todo_no_due() };
+): string {
+  if (!dueAt) return m.todo_no_due();
   const due = new Date(dueAt);
   if (!ticked && due.getTime() <= now.getTime())
-    return {
-      text: m.todo_overdue({ date: dateLabel(dueAt) }),
-      tone: 'overdue',
-    };
+    return m.todo_overdue({ date: dateLabel(dueAt) });
   const days = Math.round((dayStart(due) - dayStart(now)) / 86_400_000);
-  if (days === 0)
-    return { text: m.todo_due_today({ time: timeLabel(dueAt) }), tone: 'soon' };
-  if (days === 1)
-    return { text: m.todo_due_tomorrow({ time: timeLabel(dueAt) }) };
-  return { text: dateLabel(dueAt) };
+  if (days === 0) return m.todo_due_today({ time: timeLabel(dueAt) });
+  if (days === 1) return m.todo_due_tomorrow({ time: timeLabel(dueAt) });
+  return dateLabel(dueAt);
 }
 
 export const kindLabel = (kind: Assignment['kind']) =>

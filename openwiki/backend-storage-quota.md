@@ -383,6 +383,13 @@ save committing between its delta read and the recount is counted twice until
 the next run; and its `storage_counter_drift` report compares the counter
 without the pending deltas, so it reports drift whenever deltas are pending.
 
+Billing's storage bar (`storageBreakdown`, Epo 2026-11-13) recounts the same
+rows on every read, in three parts adding up to the used bytes: Files
+(uploads with their saved documents, notes, quizzes, sets, assignment copies
+and the PDF and file attachments inside them), Images and audio (the image and
+audio assets of anything but a canvas) and Canvas (drawn answers, every
+`board` asset, canvases with their assets).
+
 Accounting helpers no-op when the owner user row is already gone, because
 foreign-key cascades can fire resource delete triggers after the user is
 removed.

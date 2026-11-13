@@ -166,15 +166,22 @@ it('lays out a table where it fits and a plain list on phones', async () => {
 
 // Epo 2026-11-11: the marks are Overview; sharing, invitations and roles are
 // Manage, under the same heading.
-it("gives a class's staff Overview and Manage", async () => {
+it("gives a class's staff Overview, Topics and Manage", async () => {
   const root = await show();
   const tabs = [...host.querySelectorAll('[role="tab"]')];
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     m.members_tab_overview(),
+    m.members_tab_topics(),
     m.members_tab_manage(),
   ]);
   expect(tabs[0].getAttribute('aria-selected')).toBe('true');
   await press(tabs[1]);
+  expect(navigate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      search: { manage: undefined, show: 'topics', study: 'members' },
+    })
+  );
+  await press(tabs[2]);
   expect(navigate).toHaveBeenCalledWith(
     expect.objectContaining({
       search: { manage: true, show: undefined, study: 'members' },
@@ -191,18 +198,12 @@ it("gives a class's staff Overview and Manage", async () => {
   act(() => managing.unmount());
 });
 
-it('marks a member whose storage is full, with its hint', async () => {
+it('dots Manage while a member needs something done', async () => {
   const root = await show();
-  const [table, phones] = [...host.querySelectorAll('ul')];
-  for (const list of [table, phones]) {
-    const [ann, ben] = [...list.querySelectorAll('li')];
-    expect(ann.textContent).not.toContain(m.members_storage_full());
-    expect(ben.textContent).toContain(m.members_storage_full());
-    expect(ben.textContent).toContain(m.members_storage_full_hint());
-  }
-  // A tap on the chip leaves the row where it is.
-  await press(button(m.members_storage_full()));
-  expect(navigate).not.toHaveBeenCalled();
+  const manage = [...host.querySelectorAll('[role="tab"]')][2];
+  expect(manage.querySelector('[aria-hidden]')).not.toBeNull();
+  // The chip itself is Manage's alone.
+  expect(host.textContent).not.toContain(m.members_storage_full());
   await act(async () => root.unmount());
 });
 

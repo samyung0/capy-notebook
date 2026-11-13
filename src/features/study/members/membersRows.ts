@@ -2,7 +2,7 @@ import type { MemberProgress, MembersTopic, SummaryTopic } from '@/api/types';
 import { m } from '@/i18n';
 
 export type MembersSort = 'attention' | 'name';
-export type MembersShow = 'summary' | 'topics';
+export type MembersTab = 'overview' | 'topics' | 'manage';
 type Label = SummaryTopic['label'];
 
 /** A topic's name, Other files for the group without one. */
@@ -18,34 +18,41 @@ export const standingIn = (member: MemberProgress, topic: MembersTopic) =>
 export const needsPractice = (member: MemberProgress) =>
   member.topics.filter((t) => t.label === 'needs_practice');
 
-/** Needs attention (board Main): missing work first, then the most topics that
- * need practice, then the lowest overall; no grade yet sorts after a grade.
- * Ties keep the server's order, by name. */
-export function sortMembers(members: MemberProgress[], sort: MembersSort) {
-  if (sort === 'name') return members;
+/** Name is the server's order, A to Z. Needs attention (board Main): missing
+ * work first, then the most topics that need practice, then the lowest
+ * overall; no grade yet sorts after a grade, ties by name. `ascending` false
+ * reverses either: Z to A, or the least to look at first. */
+export function sortMembers(
+  members: MemberProgress[],
+  sort: MembersSort,
+  ascending: boolean
+) {
   const overall = (m: MemberProgress) => m.overall ?? Number.POSITIVE_INFINITY;
-  return [...members].sort(
-    (a, b) =>
-      b.missing - a.missing ||
-      needsPractice(b).length - needsPractice(a).length ||
-      overall(a) - overall(b)
-  );
+  const sorted =
+    sort === 'name'
+      ? [...members]
+      : [...members].sort(
+          (a, b) =>
+            b.missing - a.missing ||
+            needsPractice(b).length - needsPractice(a).length ||
+            overall(a) - overall(b)
+        );
+  // Needs attention reads most-first as its first direction.
+  const forward = sort === 'name' ? ascending : !ascending;
+  return forward ? sorted : sorted.reverse();
 }
 
-/** The Needs practice column: the topics that need it, else Attempted while
- * nothing is past Attempted, else nothing flagged; Not started before any
- * answer. */
+/** The Needs practice column: the topics that need it, else nothing flagged
+ * (Attempted only shows By topic); Not started before any answer. */
 export function focusOf(
   member: MemberProgress
 ):
   | { kind: 'topics'; topics: SummaryTopic[] }
-  | { kind: 'attempted' | 'nothing' | 'not_started' } {
+  | { kind: 'nothing' | 'not_started' } {
   const topics = needsPractice(member);
   if (topics.length > 0) return { kind: 'topics', topics };
-  const labels = member.topics.map((t) => t.label);
-  if (labels.every((l) => l === 'not_started')) return { kind: 'not_started' };
-  if (labels.every((l) => l === 'not_started' || l === 'attempted'))
-    return { kind: 'attempted' };
+  if (member.topics.every((t) => t.label === 'not_started'))
+    return { kind: 'not_started' };
   return { kind: 'nothing' };
 }
 

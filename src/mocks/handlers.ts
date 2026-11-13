@@ -79,7 +79,7 @@ import {
   submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
-import { canvasHandlers } from './canvas';
+import { canvasHandlers, searchCanvases } from './canvas';
 import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
@@ -1256,18 +1256,40 @@ export const handlers = [
           subtitle: e.location,
           title: e.title,
         });
-    // Embedded sets live only inside their note, as on the server.
-    for (const mt of db.flashcardSetMaterials())
+    // Every material by title, as on the server: embedded ones live only
+    // inside their note; canvases are the canvas mock's, below.
+    for (const mt of db.materials)
       if (!mt.parentMaterialId && mt.title.toLowerCase().includes(q))
         results.push({
           color: mt.color,
-          href: `/flashcards/${mt.id}`,
+          href:
+            mt.kind === 'flashcards'
+              ? `/flashcards/${mt.id}`
+              : `/materials/${mt.id}`,
           id: mt.id,
-          kind: 'flashcards',
+          kind: mt.kind,
           subtitle: mt.workspaceName,
           title: mt.title,
         });
-    return HttpResponse.json(results.slice(0, 20));
+    for (const c of searchCanvases(q))
+      results.push({
+        href: c.workspaceId
+          ? `/workspaces/${c.workspaceId}?panel=canvas`
+          : `/canvas?c=${c.id}`,
+        id: c.id,
+        kind: 'canvas',
+        subtitle: db.workspaces.find((w) => w.id === c.workspaceId)?.name,
+        title: c.title,
+      });
+    // Five of each kind, as the server keeps.
+    const shown = new Map<string, number>();
+    return HttpResponse.json(
+      results.filter((r) => {
+        const n = shown.get(r.kind) ?? 0;
+        shown.set(r.kind, n + 1);
+        return n < 5;
+      })
+    );
   }),
 
   /* ---------------- notifications ---------------- */
@@ -3651,7 +3673,7 @@ export const handlers = [
       storageBreakdown: {
         canvasBytes: 140 * 1024,
         filesBytes: Math.round(db.accountStatus.storageUsedBytes * 0.8),
-        otherBytes:
+        imagesBytes:
           db.accountStatus.storageUsedBytes -
           Math.round(db.accountStatus.storageUsedBytes * 0.8) -
           140 * 1024,

@@ -12,5 +12,10 @@ export const SearchKind = {
   workspace: 'workspace',
   file: 'file',
   event: 'event',
+  note: 'note',
+  quiz: 'quiz',
   flashcards: 'flashcards',
+  mindmap: 'mindmap',
+  diagram: 'diagram',
+  canvas: 'canvas',
 } as const;

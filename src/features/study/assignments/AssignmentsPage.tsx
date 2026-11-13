@@ -17,6 +17,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
@@ -193,6 +194,7 @@ function StaffList({
     workspaceId,
     { errorBoundary: false }
   );
+  const revealRef = useLoadingReveal(isPending);
   const { mutate: remove } = useDeleteAssignment(workspaceId);
   const [creating, setCreating] = useState(!!newFromQuiz);
   const [showClosed, setShowClosed] = useState(false);
@@ -269,12 +271,10 @@ function StaffList({
         />
       ) : rows.length === 0 ? (
         <p className="t-meta mt-6 text-fg-muted">
-          {items.length === 0
-            ? m.assignment_empty()
-            : m.assignment_none_shown()}
+          {items.length === 0 ? m.common_nothing_yet() : m.common_no_matches()}
         </p>
       ) : (
-        <>
+        <div ref={revealRef}>
           <table className="@4xl:table hidden w-full border-separate border-spacing-0">
             <thead>
               <tr>
@@ -354,7 +354,7 @@ function StaffList({
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
       {creating && (
         <NewAssignmentDialog
@@ -459,6 +459,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
     workspaceId,
     { errorBoundary: false }
   );
+  const revealRef = useLoadingReveal(isPending);
   const { mutate: setDone, isPending: ticking } =
     useSetAssignmentDone(workspaceId);
   const { dialog, start, starting } = useAssignmentStart(workspaceId);
@@ -580,7 +581,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
           {m.todo_empty()}
         </p>
       ) : (
-        <>
+        <div ref={revealRef}>
           <table className="@2xl:table hidden w-full border-separate border-spacing-0">
             <thead>
               <tr>
@@ -633,7 +634,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
       {dialog}
       {adding && (

@@ -3,7 +3,8 @@ import { useMemo } from 'react';
 import { useLearningOverview, usePastReviews } from '@/api/hooks';
 import type { PastReview, PastReviewSort, SessionScore } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
-import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
+import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
+import { PageBody } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
@@ -21,8 +22,8 @@ import {
 } from './reviewSearch';
 import { groupName } from './reviewText';
 
-/** Learning → Review's last section: finished review sessions in the Files
- * table style, with the list pages' filter beside the heading; every column
+/** Learning → Past reviews: finished review sessions in the Files
+ * table style under the list toolbar, as All results; every column
  * header sorts, and a row opens its result. */
 export function PastReviews() {
   const search = useSearch({ strict: false }) as PastReviewsSearch;
@@ -58,123 +59,122 @@ export function PastReviews() {
       setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
     sort,
   };
-  // No past reviews yet says so. A filter that hides every row keeps the
-  // table, so the filter can be reset.
+  // No past reviews yet says so; a filter that hides every row says nothing
+  // is shown, the filter above to reset.
   const filtered = has.length > 0 || workspaceIds.length > 0;
-  if (!filtered && isLoading) return null;
-  if (!filtered && data && rows.length === 0)
-    return <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>;
 
+  // All results' layout: the list toolbar right under the tabs, then the
+  // table in the list's padding.
   return (
-    <section>
-      <div className="mb-3 flex items-center justify-end gap-4">
-        <FilterPopover
-          filters={[
-            {
-              emptyLabel: m.create_filter_no_workspaces(),
-              key: 'workspace',
-              label: m.files_filter_workspace(),
-              onToggle: (value) =>
-                setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
-              options: (overview?.workspaces ?? []).map((ws) => ({
-                label: ws.name,
-                value: ws.workspaceId,
-              })),
-              selected: workspaceIds,
-            },
-            {
-              key: 'has',
-              label: m.past_filter_has(),
-              onToggle: (value) =>
-                setSearch({ has: csv(toggleValue(has, value)) }),
-              options: [
-                { label: m.past_has_quiz(), value: 'quiz' },
-                { label: m.past_has_cards(), value: 'flashcards' },
-              ],
-              selected: has,
-            },
-          ]}
-          onResetFilters={() =>
-            setSearch({ has: undefined, workspace: undefined })
-          }
-        />
-      </div>
-      {waitsForConnection(fetchStatus, data) ? (
-        <QueryPausedState />
-      ) : isLoading ? (
-        <SkeletonList count={6} rowHeight={52} />
-      ) : rows.length === 0 ? (
-        <p className="py-8 text-center text-fg-muted">
-          {m.progress_nothing_shown()}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-3" ref={revealRef}>
-          {/* Billing's plain table, scrolling sideways; Time and Status
-           * from xl. */}
-          <BillingTable
-            columns={[
-              { id: 'date', label: m.quiz_col_date(), sort: 'date' },
-              {
-                clamp: true,
-                id: 'workspace',
-                label: m.quiz_col_workspace(),
-                sort: 'workspace',
-              },
-              {
-                clamp: true,
-                id: 'topic',
-                label: m.past_col_topic(),
-                sort: 'topic',
-              },
-              { id: 'quiz', label: m.past_col_quiz(), sort: 'quiz' },
-              { id: 'cards', label: m.past_col_cards(), sort: 'cards' },
-              {
-                className: 'max-xl:hidden',
-                id: 'time',
-                label: m.past_col_time(),
-                sort: 'time',
-              },
-              {
-                className: 'max-xl:hidden',
-                id: 'status',
-                label: m.past_col_status(),
-                sort: 'status',
-              },
-            ]}
-            rows={rows.map((r) => ({
-              cells: {
-                cards: <ScoreText score={r.cards} />,
-                date: (
-                  <Link
-                    className="after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
-                    params={{ sessionId: r.id }}
-                    to="/learning/reviews/$sessionId"
-                  >
-                    {formatDate(r.startedAt)}
-                  </Link>
-                ),
-                quiz: <ScoreText score={r.quiz} />,
-                status: <Status review={r} />,
-                time: m.past_minutes({ count: minutes(r) }),
-                topic: groupName(r.group, r.topicName),
-                workspace: (
-                  <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
-                ),
-              },
-              className: 'relative hover:bg-surface-hover-bg',
-              key: r.id,
-            }))}
-            sorting={sorting}
-          />
-          <ListEnd
-            fetchNextPage={fetchNextPage}
-            hasNextPage={hasNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-            isFetchNextPageError={isFetchNextPageError}
-          />
-        </div>
-      )}
-    </section>
+    <>
+      <ListToolbar
+        filters={[
+          {
+            emptyLabel: m.common_nothing_yet(),
+            key: 'workspace',
+            label: m.files_filter_workspace(),
+            onToggle: (value) =>
+              setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
+            options: (overview?.workspaces ?? []).map((ws) => ({
+              label: ws.name,
+              value: ws.workspaceId,
+            })),
+            selected: workspaceIds,
+          },
+          {
+            key: 'has',
+            label: m.past_filter_has(),
+            onToggle: (value) =>
+              setSearch({ has: csv(toggleValue(has, value)) }),
+            options: [
+              { label: m.past_has_quiz(), value: 'quiz' },
+              { label: m.past_has_cards(), value: 'flashcards' },
+            ],
+            selected: has,
+          },
+        ]}
+        onResetFilters={() =>
+          setSearch({ has: undefined, workspace: undefined })
+        }
+      />
+      <PageBody belowToolbar>
+        {waitsForConnection(fetchStatus, data) ? (
+          <QueryPausedState />
+        ) : isLoading ? (
+          <SkeletonList count={6} rowHeight={52} />
+        ) : rows.length === 0 ? (
+          <p className="py-8 text-center text-fg-muted">
+            {filtered ? m.common_no_matches() : m.past_empty()}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3" ref={revealRef}>
+            {/* Billing's plain table, scrolling sideways; Time and Status
+             * from xl. */}
+            <BillingTable
+              columns={[
+                { id: 'date', label: m.quiz_col_date(), sort: 'date' },
+                {
+                  clamp: true,
+                  id: 'workspace',
+                  label: m.quiz_col_workspace(),
+                  sort: 'workspace',
+                },
+                {
+                  clamp: true,
+                  id: 'topic',
+                  label: m.past_col_topic(),
+                  sort: 'topic',
+                },
+                { id: 'quiz', label: m.past_col_quiz(), sort: 'quiz' },
+                { id: 'cards', label: m.past_col_cards(), sort: 'cards' },
+                {
+                  className: 'max-xl:hidden',
+                  id: 'time',
+                  label: m.past_col_time(),
+                  sort: 'time',
+                },
+                {
+                  className: 'max-xl:hidden',
+                  id: 'status',
+                  label: m.past_col_status(),
+                  sort: 'status',
+                },
+              ]}
+              rows={rows.map((r) => ({
+                cells: {
+                  cards: <ScoreText score={r.cards} />,
+                  date: (
+                    <Link
+                      className="after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+                      params={{ sessionId: r.id }}
+                      to="/learning/reviews/$sessionId"
+                    >
+                      {formatDate(r.startedAt)}
+                    </Link>
+                  ),
+                  quiz: <ScoreText score={r.quiz} />,
+                  status: <Status review={r} />,
+                  time: m.past_minutes({ count: minutes(r) }),
+                  topic: groupName(r.group, r.topicName),
+                  workspace: (
+                    <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
+                  ),
+                },
+                className: 'relative hover:bg-surface-hover-bg',
+                key: r.id,
+              }))}
+              sorting={sorting}
+            />
+            <ListEnd
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              isFetchNextPageError={isFetchNextPageError}
+            />
+          </div>
+        )}
+      </PageBody>
+    </>
   );
 }
 

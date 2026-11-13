@@ -713,6 +713,9 @@ type SearchResult struct {
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a file's page-1 thumbnail"`
 	// Preview is a flashcard set's list-card preview, or {text} for a text file.
 	Preview MaterialPreview `json:"preview,omitempty" doc:"A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md"`
+	// Typos is how many edits the title needed (0 when it holds the query),
+	// for Search to look further only when closer hits are few.
+	Typos int `json:"-"`
 }
 
 type PublicWorkspace struct {

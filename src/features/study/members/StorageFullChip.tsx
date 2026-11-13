@@ -7,7 +7,7 @@ import {
 import { m } from '@/i18n';
 
 /** A member's storage is full (Epo 2026-11-08): they can't upload files, new
- * assignments' included (Q722). Hover or tap says so. Only on Study → Members,
+ * assignments' included (Q722). Hover or tap says so. On Members → Manage and the profile,
  * to class staff (Q720), never on an assignment's pages. */
 export function StorageFullChip() {
   const [open, setOpen] = useState(false);

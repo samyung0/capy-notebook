@@ -113,17 +113,10 @@ function DueCell({ a, doneTab }: { a: Assignment; doneTab: boolean }) {
       </span>
     ) : null;
   }
-  const due = dueText(a.dueAt, false);
+  // Every date reads alike; only No due date is quieter.
   return (
-    <span
-      className={cn(
-        't-meta',
-        !a.dueAt && 'text-fg-muted',
-        due.tone === 'overdue' && 'font-semibold text-tint-error-fg',
-        due.tone === 'soon' && 'font-semibold text-fg'
-      )}
-    >
-      {due.text}
+    <span className={cn('t-meta', !a.dueAt && 'text-fg-muted')}>
+      {dueText(a.dueAt, false)}
     </span>
   );
 }

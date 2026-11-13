@@ -94,98 +94,201 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	out := []SearchResult{}
 	like := containsPattern(q)
 
-	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id,
+	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, `+searchTypos("w.name")+`,
 			COALESCE((SELECT array_agg(t.name) FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id), '{}')
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		WHERE w.id IN (`+visibleWorkspacesSQL("$2")+`)
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND (lower(w.name) LIKE $1
+			AND (`+searchMatch("w.name")+`
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+		ORDER BY `+searchRank("w.name")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
+		var typos int
 		var id, name, iconID string
 		var tags []string
-		if err := rows.Scan(&id, &name, &iconID, &tags); err != nil {
+		if err := rows.Scan(&id, &name, &iconID, &typos, &tags); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "workspace", IconID: iconID, Title: name, Subtitle: strings.Join(tags, " · "), Href: "/workspaces/" + id})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "workspace", IconID: iconID, Title: name, Subtitle: strings.Join(tags, " · "), Href: "/workspaces/" + id})
 	}
 	rows.Close()
 
 	// Files in what the caller can open: the workspaces above (Sam
 	// 2026-10-19) and its own standalone files. Never rows it only pays for.
-	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
+	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, `+searchTypos("f.name")+`, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
 		LEFT JOIN workspaces w ON w.id=f.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, f.user_id)
 		WHERE (f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`) OR (f.workspace_id IS NULL AND f.user_id=$2))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND f.trashed_at IS NULL AND f.submission_position IS NULL AND lower(f.name) LIKE $1
+			AND f.trashed_at IS NULL AND f.submission_position IS NULL AND `+searchMatch("f.name")+`
 			AND workspace_item_visible(f.hidden, f.workspace_id, $2)
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+		ORDER BY `+searchRank("f.name")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
+		var typos int
 		var id, name, wsID, wsName, thumbKey string
 		var fileKind FileKind
 		var preview MaterialPreview
-		if err := rows.Scan(&id, &name, &wsID, &wsName, &fileKind, &thumbKey, &preview); err != nil {
+		if err := rows.Scan(&id, &name, &typos, &wsID, &wsName, &fileKind, &thumbKey, &preview); err != nil {
 			return nil, err
 		}
 		href := "/workspaces/" + wsID + "?file=" + id
 		if wsID == "" {
 			href = "/files/" + id
 		}
-		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href, ThumbnailKey: thumbKey, Preview: preview})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href, ThumbnailKey: thumbKey, Preview: preview})
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT id, title, COALESCE(location,'') FROM events WHERE user_id=$2 AND lower(title) LIKE $1
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+	rows, err = s.pool.Query(ctx, `SELECT id, title, `+searchTypos("title")+`, COALESCE(location,'') FROM events WHERE user_id=$2 AND `+searchMatch("title")+`
+		ORDER BY `+searchRank("title")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
+		var typos int
 		var id, title, loc string
-		if err := rows.Scan(&id, &title, &loc); err != nil {
+		if err := rows.Scan(&id, &title, &typos, &loc); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "event", Title: title, Subtitle: loc, Href: "/schedule"})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "event", Title: title, Subtitle: loc, Href: "/schedule"})
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, m.preview
+	// Every material the caller can open by its title (Epo 2026-11-13), as
+	// the flashcard sets were: not an embedded one, which lives in its note.
+	// A canvas is its owner's alone, so it is read apart below.
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, `+searchTypos("m.title")+`, m.workspace_name, m.preview
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR m.workspace_id IN (`+visibleWorkspacesSQL("$2")+`))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1
+			AND m.kind <> 'canvas' AND m.parent_material_id IS NULL AND `+searchMatch("m.title")+`
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+		ORDER BY `+searchRank("m.title")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name, wsName string
+		var typos int
+		var id, kind, name, wsName string
 		var preview MaterialPreview
-		if err := rows.Scan(&id, &name, &wsName, &preview); err != nil {
+		if err := rows.Scan(&id, &kind, &name, &typos, &wsName, &preview); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: "/flashcards/" + id, Preview: preview})
+		href := "/materials/" + id
+		if kind == string(MaterialFlashcards) {
+			href = "/flashcards/" + id
+		}
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(kind), Title: name, Subtitle: wsName, Href: href, Preview: preview})
 	}
 	rows.Close()
 
-	if len(out) > 20 {
-		out = out[:20]
+	// The caller's own canvases: one of a workspace opens on its Canvas
+	// panel, one of their own on the Canvas page.
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, `+searchTypos("m.title")+`, COALESCE(m.canvas_workspace_id, ''), COALESCE(w.name, '')
+		FROM materials m
+		LEFT JOIN workspaces w ON w.id=m.canvas_workspace_id
+		WHERE m.owner_user_id=$2 AND m.kind='canvas' AND m.trashed_at IS NULL AND `+searchMatch("m.title")+`
+		ORDER BY `+searchRank("m.title")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	for rows.Next() {
+		var typos int
+		var id, name, wsID, wsName string
+		if err := rows.Scan(&id, &name, &typos, &wsID, &wsName); err != nil {
+			return nil, err
+		}
+		href := "/canvas?c=" + id
+		if wsID != "" {
+			href = "/workspaces/" + wsID + "?panel=canvas"
+		}
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(MaterialCanvas), Title: name, Subtitle: wsName, Href: href})
+	}
+	rows.Close()
+
+	return firstOfEachKind(fewestTypos(out, searchFewHits), searchKindLimit), nil
+}
+
+// searchKindLimit is how many hits of each kind a search shows.
+const searchKindLimit = 5
+
+// searchMatch is whether a name matches the search: it holds the query ($1),
+// or every query word is within the edits its length allows of the name's
+// words (search_typos, migration 0172). $3 is the lowered query.
+func searchMatch(col string) string {
+	return `(lower(` + col + `) LIKE $1 OR search_typos(` + col + `, $3) IS NOT NULL)`
+}
+
+// searchTypos is a hit's typo count, 0 for one holding the query.
+func searchTypos(col string) string {
+	return `COALESCE(search_typos(` + col + `, $3), 0)`
+}
+
+// searchRank orders a section's hits: the whole name first, then names
+// starting with the query, then ones holding it, then fewer typos, then
+// shorter names.
+func searchRank(col string) string {
+	return `lower(` + col + `) = $3 DESC, starts_with(lower(` + col + `), $3) DESC, lower(` + col + `) LIKE $1 DESC, ` +
+		searchTypos(col) + `, length(` + col + `), ` + col
+}
+
+// searchFewHits is when a kind looks further: hits a typo away show only while
+// it has fewer closer ones than this, and two typos away likewise (Typesense's
+// typo_tokens_threshold), so a close match is not buried under loose ones.
+const searchFewHits = 3
+
+// fewestTypos keeps, per kind, each hit whose kind has fewer than few hits
+// with fewer typos than it.
+func fewestTypos(results []SearchResult, few int) []SearchResult {
+	closer := map[SearchKind]map[int]int{}
+	for _, r := range results {
+		if closer[r.Kind] == nil {
+			closer[r.Kind] = map[int]int{}
+		}
+		closer[r.Kind][r.Typos]++
+	}
+	out := make([]SearchResult, 0, len(results))
+	for _, r := range results {
+		under := 0
+		for typos, n := range closer[r.Kind] {
+			if typos < r.Typos {
+				under += n
+			}
+		}
+		if under < few {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// firstOfEachKind keeps the first n hits of every kind, in order.
+func firstOfEachKind(results []SearchResult, n int) []SearchResult {
+	seen := map[SearchKind]int{}
+	out := results[:0]
+	for _, r := range results {
+		if seen[r.Kind] < n {
+			seen[r.Kind]++
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 /* --------------------------------------------------------------- workspaces */

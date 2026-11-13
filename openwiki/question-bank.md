@@ -205,8 +205,9 @@ Files › Canvas (`CanvasTab`, mocks S2 and S3) lists the payer's drawings whose
 parts are marked (`GET /api/drawings`), named by the quiz with no score; the
 payer deletes one (`DELETE /api/drawings/{id}`) or all (`DELETE
 /api/drawings`), the marks staying, and the result then says "Drawing deleted".
-Billing's storage bar splits into Files, "Notes, quizzes and images" and Canvas
-(`BillingInfo.storageBreakdown`, recounted from the same rows as the meter).
+Billing's storage bar splits into Files, "Images and audio" and Canvas
+(`BillingInfo.storageBreakdown`, recounted from the same rows as the meter;
+see [backend-storage-quota.md](backend-storage-quota.md#counter-model)).
 Marking (M1, Epo 2026-11-07): a drawing goes to the grading slot's model on the
 open answer's path, credits and settings, its marking image sent as a data URL
 in place of the answer (`grading.py` `drawing_message`), with the system prompt
@@ -750,7 +751,7 @@ clock and Submit along the bottom. Study has Previous, Check (the review session
 which grades it and shows its key in place) and Next, the list marks what's been checked,
 and "N of M checked" sits in the header. A try picked up again opens at the first question
 not checked. Checking the last question opens the result, a Result row at the list's top; it
-ends with a small outline Redo quiz on the right (confetti only when the last check happened
+ends with a small outline Study again on the right (confetti only when the last check happened
 on the page, not on a reopened result). Public shared pages and a note's embed keep every
 question on one page (`QuizQuestionList`), each with its own Check. While taking it, once a
 question is checked, an outline md Reset at the far right of the title starts
@@ -768,8 +769,8 @@ On a shared quiz page, signed in or out, `useLocalRun` keeps the id under
 attempts, showing the run it holds so a failed save loses nothing on the page;
 a quiz in a note (in the app, graded through `/check` with nothing stored) or
 a shared note keeps the try only on the page (`useMemoryRun`). Completion and saved attempt pages
-share the part review renderer. The saved attempt page has Redo quiz as an
-accent link beside the title; both pages lead with the score (`ResultSummary`,
+share the part review renderer. The saved attempt page has Study again (`quiz_redo`, named as a set's
+since Epo 2026-11-13) as a dark button under the header; both pages lead with the score (`ResultSummary`,
 shared with the /qb topic summary): "awarded / max" large with "marks" and the
 percentage small, one numbered square per question (green full marks, amber
 partial, red none, blank answers are wrong; grey for a question with a part Not

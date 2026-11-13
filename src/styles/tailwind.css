@@ -92,6 +92,7 @@
   --color-tint-accent-2: var(--tint-accent-2-bg);
   --color-tint-accent-2-fg: var(--tint-accent-2-fg);
   --color-solid-success: var(--solid-success);
+  --color-solid-mastered: var(--solid-mastered);
   --color-solid-info: var(--solid-info);
   --color-solid-warning: var(--solid-warning);
   --color-solid-error: var(--solid-error);
@@ -331,6 +332,14 @@
   font-weight: var(--page-title-font-weight);
   line-height: var(--page-title-line-height);
   letter-spacing: var(--page-title-letter-spacing);
+}
+
+/* A result's big score ("23 / 34"): 28px on the smallest phones up to 36px
+   from 768px, scaling with the width as the page title does. */
+@utility t-result-score {
+  font-size: clamp(1.75rem, calc(1.75rem + 8 * (100vw - 360px) / 408), 2.25rem);
+  font-weight: 800;
+  line-height: 1;
 }
 
 @utility t-large-card-title {

@@ -452,7 +452,7 @@ export function NewAssignmentDialog({
                 {/* The quiz field's own trigger, over every quiz its maker
                     can open: Add a file's menu, on quizzes alone. */}
                 <TaskFileMenu
-                  empty={m.assignment_no_quizzes_match()}
+                  empty={m.common_no_matches()}
                   held={quizId ? [quizId] : []}
                   kinds={['quiz']}
                   label={m.assignment_search_quizzes()}
@@ -1084,7 +1084,7 @@ function QuizPicker({
           <p className="px-2.5 py-2 text-fg-secondary text-sm">
             {canMake
               ? m.assignment_make_quiz_to_begin()
-              : m.assignment_no_quizzes()}
+              : m.common_nothing_yet()}
           </p>
         ) : (
           <>
@@ -1118,7 +1118,7 @@ function QuizPicker({
             </ul>
             {shown.length === 0 && (
               <p className="px-2.5 py-2 text-fg-secondary text-sm">
-                {m.assignment_no_quizzes_match()}
+                {m.common_no_matches()}
               </p>
             )}
           </>
@@ -1387,7 +1387,7 @@ function FilesField({
                   </FileMenuRow>
                 ))}
                 {shown.length === 0 && (
-                  <FileMenuNote>{m.assignment_no_files_match()}</FileMenuNote>
+                  <FileMenuNote>{m.common_no_matches()}</FileMenuNote>
                 )}
               </>
             );

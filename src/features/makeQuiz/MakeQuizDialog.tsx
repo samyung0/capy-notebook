@@ -242,7 +242,7 @@ function FileMenu({
               />
             ))}
             {shown.length === 0 && (
-              <FileMenuNote>{m.make_quiz_no_files()}</FileMenuNote>
+              <FileMenuNote>{m.common_no_matches()}</FileMenuNote>
             )}
           </>
         );

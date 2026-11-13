@@ -2111,7 +2111,7 @@ export const GetBillingResponse = zod.object({
   "storageBreakdown": zod.object({
   "canvasBytes": zod.int(),
   "filesBytes": zod.int(),
-  "otherBytes": zod.int()
+  "imagesBytes": zod.int()
 }),
   "storageLimitBytes": zod.int(),
   "storageReservedBytes": zod.int(),
@@ -7724,7 +7724,7 @@ export const SearchResponseItem = zod.object({
   "href": zod.string(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['workspace', 'file', 'event', 'flashcards']),
+  "kind": zod.enum(['workspace', 'file', 'event', 'note', 'quiz', 'flashcards', 'mindmap', 'diagram', 'canvas']),
   "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A flashcard set\'s list-card preview, or {text} for a text file; see openwiki/thumbnails.md'),
   "subtitle": zod.string().optional(),
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail'),

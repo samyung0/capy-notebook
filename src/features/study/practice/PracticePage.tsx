@@ -20,6 +20,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { dayMonth } from '../assignments/assignmentText';
 import { MakePractice } from './MakePractice';
 import { questionsLabel, scoreText } from './practiceText';
@@ -106,6 +107,7 @@ function PracticeList({
     workspaceId,
     { errorBoundary: false }
   );
+  const revealRef = useLoadingReveal(isPending);
   const [topic, setTopic] = useState<string | null | undefined>(undefined);
   const [making, setMaking] = useState(false);
   const navigate = useNavigate();
@@ -172,7 +174,7 @@ function PracticeList({
           variant="panel"
         />
       ) : (
-        <>
+        <div ref={revealRef}>
           {suggested && (
             <section className="mt-5.5">
               <h2 className="t-subtitle">{m.practice_suggested()}</h2>
@@ -199,7 +201,7 @@ function PracticeList({
             topicName={topicName}
             topics={topics ?? []}
           />
-        </>
+        </div>
       )}
       {making && (
         <MakePractice

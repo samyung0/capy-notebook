@@ -245,7 +245,7 @@ it('offers no way to make a quiz in a frozen workspace', async () => {
   frozen.value = true;
   const root = await show();
   expect(row(m.assignment_new_quiz())).toBeUndefined();
-  expect(host.textContent).toContain(m.assignment_no_quizzes());
+  expect(host.textContent).toContain(m.common_nothing_yet());
   await act(async () => root.unmount());
 });
 

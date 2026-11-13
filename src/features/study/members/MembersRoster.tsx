@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Controller } from 'react-hook-form';
 import { useMe, useUpdateWorkspaceSharing } from '@/api/hooks';
-import type { AssignableRole, Workspace } from '@/api/types';
+import type { AssignableRole, Workspace, WorkspaceMember } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError } from '@/components/ui/Input';
@@ -21,6 +22,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { PracticeFrame } from '../practice/studyPage';
+import { StorageFullChip } from './StorageFullChip';
 
 /** Members without marks (Epo 2026-11-11, mock C "Manage in place"): everyone in
  * a personal workspace, a class's viewers, who see no one's marks, and the
@@ -32,11 +34,14 @@ import { PracticeFrame } from '../practice/studyPage';
  * link sharing above the people, in the settings page's order. */
 export function MembersRoster({
   header,
+  storageFull,
   workspace,
 }: {
   /** A class's staff: the Members heading with its tabs, in place of this
    * page's own. */
   header?: ReactNode;
+  /** A class's staff: the members whose storage is full, marked on their row. */
+  storageFull?: ReadonlySet<string>;
   workspace: Workspace;
 }) {
   const canManage = workspace.capabilities.canManageMembers;
@@ -67,33 +72,23 @@ export function MembersRoster({
     updateMember,
     updatingRole,
   } = useMemberManager(workspace.id, canManage);
-  const count = membersData?.length;
-  const meta = [
-    workspace.name,
-    count === undefined
-      ? null
-      : count === 1
-        ? m.workspace_members_one()
-        : m.workspace_members_count({ count }),
-  ]
-    .filter(Boolean)
-    .join(' · ');
   // Teaching assistant needs the room a class's role names take: on phones a
-  // row's dropdown and button go under the name.
+  // row's dropdown and Remove move into a dialog behind its Manage button.
   const roleWidth = isClass ? 'w-44' : 'w-22 sm:w-24';
   const stacks = isClass && canManage;
+  // A role being saved shows as chosen.
+  const roleOf = (member: WorkspaceMember) =>
+    updatingRole && updated?.userId === member.userId
+      ? updated.role
+      : (member.role as AssignableRole);
+  const [managing, setManaging] = useState<WorkspaceMember | null>(null);
   const roleName = (role: string) =>
     role === 'owner'
       ? m.common_owner()
       : roles.find((option) => option.value === role)?.label;
   return (
     <PracticeFrame>
-      {header ?? (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3">
-          <h1 className="t-page-title">{m.study_panel_members()}</h1>
-          <span className="t-meta mt-1.5 text-fg-muted">{meta}</span>
-        </div>
-      )}
+      {header ?? <h1 className="t-page-title">{m.study_panel_members()}</h1>}
       {/* First, as the settings page has it; a line then parts it from the
           invitation. An editor's list starts with its own top line. */}
       {shares && (
@@ -120,7 +115,15 @@ export function MembersRoster({
       )}
       {canManage && (
         <>
-          <form className="mt-6 flex flex-wrap gap-2" onSubmit={onInvite}>
+          {/* Between the sharing line and the list's top line, 14px each way;
+              without sharing it starts the tab body. */}
+          <form
+            className={cn(
+              'flex flex-wrap gap-2',
+              shares ? 'mt-3.5' : 'tab-body-mt'
+            )}
+            onSubmit={onInvite}
+          >
             <Controller
               control={control}
               name="identifier"
@@ -187,10 +190,7 @@ export function MembersRoster({
         >
           {membersData?.map((member) => (
             <li
-              className={cn(
-                'flex min-h-13 items-center gap-2 border-divider border-b py-1.5',
-                stacks && 'flex-wrap sm:flex-nowrap'
-              )}
+              className="flex min-h-13 items-center gap-2 border-divider border-b py-1.5"
               key={member.userId}
             >
               <Avatar
@@ -198,19 +198,35 @@ export function MembersRoster({
                 name={member.name}
                 src={member.avatarUrl}
               />
-              <p className="min-w-0 flex-1 truncate pl-1 font-semibold">
-                {member.name}
-                {member.userId === me?.id && (
-                  <span className="t-meta ml-1.5 font-normal text-fg-muted">
-                    {m.assignment_you()}
-                  </span>
-                )}
-              </p>
+              <div className="flex min-w-0 flex-1 items-center gap-2 pl-1">
+                <p className="min-w-0 truncate font-semibold">
+                  {member.name}
+                  {member.userId === me?.id && (
+                    <span className="t-meta ml-1.5 font-normal text-fg-muted">
+                      {m.assignment_you()}
+                    </span>
+                  )}
+                </p>
+                {storageFull?.has(member.userId) && <StorageFullChip />}
+              </div>
+              {canManage && member.role !== 'owner' && stacks && (
+                // Phones: the role and Remove would take a line of their own;
+                // they open from here instead.
+                <Button
+                  aria-label={m.members_manage_named({ name: member.name })}
+                  className="shrink-0 sm:hidden"
+                  onClick={() => setManaging(member)}
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.members_tab_manage()}
+                </Button>
+              )}
               {canManage && member.role !== 'owner' ? (
                 <div
                   className={cn(
                     'flex shrink-0 gap-2',
-                    stacks && 'w-full justify-end sm:w-auto'
+                    stacks && 'hidden sm:flex'
                   )}
                 >
                   <RoleSelect
@@ -221,17 +237,14 @@ export function MembersRoster({
                       updateMember({ role, userId: member.userId })
                     }
                     options={roles}
-                    value={
-                      updatingRole && updated?.userId === member.userId
-                        ? updated.role
-                        : (member.role as AssignableRole)
-                    }
+                    value={roleOf(member)}
+                    variant="ghost-hover"
                   />
                   <Button
                     aria-label={m.members_remove_named({ name: member.name })}
                     className="w-20 sm:w-22"
                     onClick={() => setRemoving(member)}
-                    variant="outline"
+                    variant="ghost-hover"
                   >
                     {m.action_remove()}
                   </Button>
@@ -302,7 +315,7 @@ export function MembersRoster({
                     className="w-20 shrink-0 sm:w-22"
                     disabled={cancelling !== null}
                     onClick={() => void cancel(pending.id)}
-                    variant="outline"
+                    variant="ghost-hover"
                   >
                     {cancelling === pending.id ? (
                       <Spinner />
@@ -319,6 +332,34 @@ export function MembersRoster({
             />
           </section>
         )}
+      {managing && (
+        <SimpleDialog
+          footer={
+            <Button
+              onClick={() => {
+                setManaging(null);
+                setRemoving(managing);
+              }}
+              variant="danger-outline"
+            >
+              {m.action_remove()}
+            </Button>
+          }
+          onClose={() => setManaging(null)}
+          open
+          title={managing.name}
+        >
+          <p className="t-label mb-1.5">{m.members_role()}</p>
+          <RoleSelect
+            className="w-full"
+            disabled={updatingRole}
+            label={m.members_role_of({ name: managing.name })}
+            onChange={(role) => updateMember({ role, userId: managing.userId })}
+            options={roles}
+            value={roleOf(managing)}
+          />
+        </SimpleDialog>
+      )}
       {removing && (
         <RemoveMemberDialog
           member={removing}

@@ -7027,7 +7027,12 @@ components:
         - workspace
         - file
         - event
+        - note
+        - quiz
         - flashcards
+        - mindmap
+        - diagram
+        - canvas
       type: string
     SearchResult:
       additionalProperties: false
@@ -7995,13 +8000,13 @@ components:
         filesBytes:
           format: int64
           type: integer
-        otherBytes:
+        imagesBytes:
           format: int64
           type: integer
       required:
         - filesBytes
+        - imagesBytes
         - canvasBytes
-        - otherBytes
       type: object
     StorageFullBy:
       enum:

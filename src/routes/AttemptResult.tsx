@@ -9,9 +9,8 @@ import { ErrorState } from '@/components/app/ErrorState';
 import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
-import { ErrorAction } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { FlashcardResult } from '@/features/flashcards/FlashcardResult';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
@@ -146,10 +145,11 @@ export default function AttemptResult() {
       }
     >
       <TabContent>
-        {/* In the gap under the header, flush with the content's right edge. */}
+        {/* In the gap under the header, flush with the content's right edge: a
+            dark button, no arrow (Epo 2026-11-13). */}
         {attempt.materialId && (
           <div className="-mt-2 mb-6 flex justify-end sm:-mt-5 sm:mb-3">
-            <UnderlineLink accent asChild>
+            <Button asChild variant="dark">
               {cards ? (
                 <Link
                   params={{ flashcardSetId: attempt.materialId }}
@@ -167,7 +167,7 @@ export default function AttemptResult() {
                   {m.quiz_redo()}
                 </Link>
               )}
-            </UnderlineLink>
+            </Button>
           </div>
         )}
         {cards ? (
