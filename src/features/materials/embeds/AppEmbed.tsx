@@ -29,6 +29,7 @@ import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { type QuizRunControl, useMemoryRun } from '@/features/quizzes/quizRun';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
@@ -70,7 +71,12 @@ export function AppEmbedView({
   refKind,
   ownerId,
   live = true,
-}: OwnedProps & { live?: boolean }) {
+  fill,
+}: OwnedProps & {
+  live?: boolean;
+  /** A canvas card: a set's card face takes the room the card has. */
+  fill?: boolean;
+}) {
   switch (refKind) {
     case 'quiz':
       return <QuizView live={live} materialId={materialId} ownerId={ownerId} />;
@@ -78,7 +84,12 @@ export function AppEmbedView({
       return (
         <SetGate materialId={materialId} ownerId={ownerId}>
           {(material, refresh) => (
-            <LiveSetStudy live={live} material={material} refresh={refresh} />
+            <LiveSetStudy
+              fill={fill}
+              live={live}
+              material={material}
+              refresh={refresh}
+            />
           )}
         </SetGate>
       );
@@ -90,10 +101,12 @@ export function AppEmbedView({
 /** A set in a note's View: its room joins while the block is near the
  * screen, as in Edit (REVIEW5 S5). */
 function LiveSetStudy({
+  fill,
   material,
   live = true,
   refresh,
 }: {
+  fill?: boolean;
   material: Material;
   live?: boolean;
   refresh?: () => unknown;
@@ -107,10 +120,11 @@ function LiveSetStudy({
   });
   useRefreshOnEnter(live, entered, refresh);
   return (
-    <div ref={box}>
+    <div className={cn(fill && 'h-full')} ref={box}>
       <StudyBody
         cards={cards}
         embedded
+        fill={fill}
         name=""
         onRate={() => undefined}
         provenance={material.provenance}

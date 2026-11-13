@@ -4490,9 +4490,19 @@ that branch.
   at the root (text, icon, panel, border, hover, shadow, font), since BlockSuite's
   parts read them from inside shadow roots and from popups under `<body>`. It
   outranks the theme sheet and the board's dark palette, and stands down while the
-  marking image is drawn (`[data-board-light]`). The note's active colour is the
-  app's accent; the board keeps AFFiNE's blue, as its selection frames and pieces
-  are drawn in it (`drawingBoard.css`).
+  marking image is drawn (`[data-board-light]`). What is selected or active is the
+  app's accent on the board as in the note (Epo 2026-11-13, F1; until then the board
+  kept AFFiNE's blue), so the notion style's is blue. The selection frame is
+  Excalidraw's (local change 56): a 1px accent line 6px off the selection, dashed
+  round several, 9px square corners filled with the board's paper
+  (`--capy-handle-fill`), a faint bar outside each side that resizes, and a rotate
+  knob above the middle for whatever turns, in place of AFFiNE's hidden ring past
+  each corner. A turn within 4° of a multiple of 45° lands on it (local change 58),
+  Shift snaps to every 15°, and the angle shows in one place while turning, under
+  the circle the selection turns in (above it when the bottom toolbar would hide
+  it). Quiz, set and link cards turn their content with the frame
+  (`boardCards.ts`), as a picture does. The selection's toolbar stands 30px further off, clear of the
+  knob.
 - **One floating bar:** BlockSuite's `editor-toolbar` draws every bar: a text
   selection, a selected block (table, callout, image), a link, and on the board a
   selected element or several (Group, Align, Lock). It is an opaque overlay panel:
@@ -4738,8 +4748,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   AFFiNE's dragged-out box). A paragraph's placeholder clips both axes
   (local change 49), so a heading's shows no scrollbar. The note menu marks a kind only while a note of it is in
   hand (Epo 2026-11-13): AFFiNE's menu marks the tool's kind, which stayed the last one
-  picked. A tooltip of something inside a toolbar menu (a popover in the top layer) is
-  shown in the top layer too (local change 51), so it lands above the menu.
+  picked. Where the board takes link cards (the workspace and the Canvas page), the
+  note menu starts with Link (Epo 2026-11-13, P1; local change 57 gives the menu a
+  `lead` button and an `above` slot): its field (`capy-link-add`) opens above the
+  row and places a link card as Misc's YouTube tile does (`placeLink`). A tooltip of
+  something inside a toolbar menu (a popover in the top layer) is shown in the top
+  layer too (local change 51), so it lands above the menu.
 - **Select after placing** (Epo 2026-11-13, replacing 2026-11-12's return to the
   drawing tool): whatever is placed (a shape, a preset, a carried piece, a Misc card,
   a GIF, sticker or emoji, a picked image) leaves Select on with it selected, whatever
@@ -5033,11 +5047,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `focus` listener, since the app's queries never refetch on focus), and
     `WorkspaceCanvas` invalidates the quiz and material queries of the material the
     item dialog showed when the dialog closes (the dialog's saves go through its live
-    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12): a person who
-    can edit the material (`capabilities.canEdit` from `useMaterial`, read once the
-    card is near) sees Edit at the top of the card's body, which swaps the body for
+    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12; on the
+    toolbar since 2026-11-13): a person who can edit the material
+    (`capabilities.canEditContent` from `useMaterial`, read once the card is near)
+    gets Edit on the card's floating toolbar (`a.edit-card`), not in its body. The
+    page tells the board which cards those are and the board's toolbar names the card
+    being edited, both through `materialCardHosts.ts` (`setCardEditable`,
+    `setCardEditing`, `onCardState`); the board sets a selected card's selection again
+    when that changes, so its toolbar follows. Edit swaps the body for
     the note embed's editor (`AppEmbedEdit`: per-question Edit and Remove for a quiz,
-    per-card Edit and Add card for a set) on its live rooms; Done swaps back and
+    per-card Edit and Add card for a set) on its live rooms; Done (lit, where Edit
+    was) swaps back and
     invalidates the material's quiz and material queries so every card redraws. One
     card edits at a time (`CanvasMaterialCards`): with no note seat to join inside,
     each edited card takes its own places among the user's 22 joined documents. The
@@ -5045,7 +5065,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     its last question, a set keeps its last card. A card stops editing on Done,
     another card's Edit or leaving the board, and each of those reads its material
     again. Edit shows on `canEditContent`, so an owner at their storage limit gets
-    none. The block is a BlockSuite block
+    none. A card is placed 440 by 500 screen pixels for a quiz and 400 by 340 for a
+    set (Epo 2026-11-13), and a set's card face takes the height its card has, under
+    the count and above Previous and Next (`fill` on `AppEmbedView`, `StudyBody` and
+    `CardStack`), where a note's set sizes it from the window; a quiz scrolls in its
+    card. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
@@ -5245,13 +5269,26 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
 - **Notes:** a note is inline or a card (Epo 2026-11-13, local change 52). Inline is
   its text on the canvas with no fill, padding or edge (a `transparent` fill, no shadow,
-  no border); every placed note starts inline. An inline note is as wide as its text,
+  no border); every placed note starts inline. On the workspace canvas a double click
+  on empty canvas places an inline text note there and types in it, as the Note
+  tool's Text does; an answer board's double click keeps placing a canvas text label,
+  which has the maths symbol row and the font menu (Epo 2026-11-13, local change 59,
+  the `enable_dblclick_note` flag). An inline note is as wide as its text,
   wrapping at a card's 498, with its first and last block's margins dropped
   (`drawingBoard.css`), so its frame hugs the text; its corners scale it and it has no
   side handles, and an empty one shows its whole placeholder (local change 53). Card
-  keeps its lines, widening it by the card's padding. A card takes its stored style from the
-  style panel (fill half see-through, shadow, border, corner), with 8×10 px padding and
-  the same size while typing (N2, 2026-11-08); its Box shadow is the board's 1 px
+  keeps its lines, widening it by the card's padding. An inline note's toolbar has no
+  Style button (a card's). A note has no custom height or fold: it is always as tall
+  as its text (local change 55). A card's sides set its width, its text rewrapping and
+  its height following, down to 40 (times its scale), and its corners scale it. A note
+  turns by the frame's knob about its middle (`rotate`, local change 56). Its links
+  are underlined; hovering one while no note is typed in (or a tap on a touch
+  screen) shows its address and Open, a new tab (`boardNoteLinks.ts`, Epo 2026-11-13,
+  L1), as the note's mask keeps the pointer off the link. A card
+  takes its stored style from the style panel (fill half see-through, shadow, border,
+  corner), with 8×10 px padding and
+  the same size while typing (N2, 2026-11-08); note text is weight 500, the app's
+  (headings keep 600/700); its Box shadow is the board's 1 px
   hairline (`--affine-note-shadow-box` on `.capy-board`). The style panel opens with an
   Inline | Card switch (Inline on the left; the other sections only for a card), and
   the note toolbar's Inline button (lit while inline) turns it either way; Card brings
@@ -5291,7 +5328,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   nothing. Laid-out formulas stay until the board closes. Saving answers still needs
   limits on the server.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
-  double click there opens the plane), or a double click on empty canvas. They have a
+  double click there opens the plane), or, on an answer board, a double click on empty
+  canvas (on the workspace canvas that places an inline note). They have a
   maths symbol row while typing. Board text starts at 16 px (local change 45; the size
   menu offers 12, 16, 20, 24, 32, 40, 64 and 128). **Fonts** (local change 44, Epo
   2026-11-12): the font menu offers Fustat (BlockSuite's default `Inter` name drawn in

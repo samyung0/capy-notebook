@@ -6,8 +6,6 @@ import './note-styles.css';
 export const ACTIVE_NOTE_EXTRA_PADDING = 20;
 
 export const edgelessNoteContainer = 'affine-note-container';
-export const collapseButton = 'affine-note-collapse-button';
 export const clipContainer = 'affine-note-clip';
-export const collapsedContent = 'affine-note-collapsed';
 export const noteBackground = 'affine-note-background';
 export const pageBlockTitle = 'affine-note-page-title';

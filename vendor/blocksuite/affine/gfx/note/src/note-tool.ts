@@ -11,7 +11,10 @@ import {
   StrokeStyle,
 } from '@blocksuite/affine-model';
 import { focusTextModel } from '@blocksuite/affine-rich-text';
-import { TelemetryProvider } from '@blocksuite/affine-shared/services';
+import {
+  FeatureFlagService,
+  TelemetryProvider,
+} from '@blocksuite/affine-shared/services';
 import type { NoteChildrenFlavour } from '@blocksuite/affine-shared/types';
 import { handleNativeRangeAtPoint } from '@blocksuite/affine-shared/utils';
 import { type IPoint, Point, serializeXYWH } from '@blocksuite/global/gfx';
@@ -20,6 +23,8 @@ import {
   BaseTool,
   type GfxBlockElementModel,
   GfxControllerIdentifier,
+  type GfxInteractivityContext,
+  InteractivityExtension,
 } from '@blocksuite/std/gfx';
 
 export type NoteToolOption = {
@@ -64,6 +69,27 @@ export class NoteTool extends BaseTool<NoteToolOption> {
       childFlavour,
       childType,
       line: firstLineOf(childType),
+    });
+  }
+}
+
+/** Capy (local change 59; Epo 2026-11-13): with `enable_dblclick_note`, a double
+ * click on empty canvas places an inline text note there, as the Note tool's Text
+ * does, in place of a canvas text label (`DblClickAddEdgelessText` stands aside). */
+export class DblClickAddNote extends InteractivityExtension {
+  static override key = 'dbl-click-add-note';
+
+  override mounted() {
+    this.event.on('dblclick', ({ event }: GfxInteractivityContext) => {
+      const flags = this.std.store.get(FeatureFlagService);
+      if (!flags.getFlag('enable_dblclick_note')) return;
+      const [x, y] = this.gfx.viewport.toModelCoord(event.x, event.y);
+      if (this.gfx.getElementByPoint(x, y)) return;
+      addNote(this.std, new Point(event.x, event.y), {
+        childFlavour: 'affine:paragraph',
+        childType: 'text',
+        line: firstLineOf('text'),
+      });
     });
   }
 }

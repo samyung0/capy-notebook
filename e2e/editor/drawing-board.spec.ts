@@ -241,7 +241,7 @@ test('a note takes typing, leaves $$ as text and turns from inline to a card and
     'see $$x^2$$ here'
   );
 
-  // Selected, it has its height button, and nothing about a page mode.
+  // Selected, it has nothing about a page mode.
   await page.keyboard.press('Escape');
   await page.evaluate(() => {
     const { gfx } = document.querySelector(
@@ -255,7 +255,6 @@ test('a note takes typing, leaves $$ as text and turns from inline to a card and
     gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
   });
   const toolbar = page.locator('affine-toolbar-widget');
-  await expect(toolbar.getByLabel('Size', { exact: true })).toBeVisible();
   await expect(toolbar.getByText('Display in Page')).toHaveCount(0);
 
   // It starts inline (Epo 2026-11-13); the toolbar's Inline makes it a card, and
@@ -271,14 +270,19 @@ test('a note takes typing, leaves $$ as text and turns from inline to a card and
   });
   expect(width).toBeLessThan(200);
   expect(height).toBeLessThan(30);
+  // Style is a card's; no note has Size, as no note has a custom height.
+  await expect(toolbar.getByLabel('Note Style')).toHaveCount(0);
+  await expect(toolbar.getByLabel('Size', { exact: true })).toHaveCount(0);
   await toolbar.getByLabel('Inline', { exact: true }).click();
   await expect(container).toHaveAttribute('data-inline', 'false');
+  await expect(toolbar.getByLabel('Size', { exact: true })).toHaveCount(0);
   await toolbar.getByLabel('Note Style').click();
   const panel = page.locator('edgeless-note-style-panel');
   await expect(panel.getByText('Fill color')).toBeVisible();
   await panel.getByRole('button', { name: 'Inline' }).click();
   await expect(container).toHaveAttribute('data-inline', 'true');
   await expect(panel.getByText('Fill color')).toHaveCount(0);
+  await expect(toolbar.getByLabel('Note Style')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -1448,6 +1452,162 @@ test("Misc's YouTube tile places a video, and Edit link changes it in place", as
   const after = await card.boundingBox();
   expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
   expect(after?.height).toBeLessThan(before?.height ?? 0);
+});
+
+test("a placed set fills its card, and its Edit is on the card's toolbar", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  const tab = page.getByRole('button', { name: 'Canvas' });
+  await tab.waitFor();
+  await tab.click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'Flashcards' }).click();
+  await misc.getByRole('button', { name: /Cell organelles/ }).click();
+  const card = page.locator('capy-material-card');
+  await expect(card).toContainText('Card 1 of 6');
+  // Its face takes the card's height: nothing to scroll (Epo 2026-11-13).
+  const body = card.locator('.capy-card-body');
+  await expect
+    .poll(() => body.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeLessThanOrEqual(1);
+  // No Edit in the card; the toolbar's Edit opens its editor, Done closes it.
+  await expect(card.getByRole('button', { name: 'Edit' })).toHaveCount(0);
+  const toolbar = page.locator('affine-toolbar-widget');
+  await toolbar.getByLabel('Edit', { exact: true }).click();
+  await expect(card).not.toContainText('Card 1 of 6');
+  await toolbar.getByLabel('Done', { exact: true }).click();
+  await expect(card).toContainText('Card 1 of 6');
+});
+
+test("the note menu's Link places a link card", async ({ page }) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // Link before the note kinds, where the board takes link cards (Epo
+  // 2026-11-13, P1): its field opens above the menu's row.
+  await page.locator('capy-note-button').click();
+  await page
+    .locator('edgeless-note-menu')
+    .getByLabel('Link', { exact: true })
+    .click();
+  const field = page.locator('capy-link-add input');
+  await field.fill('nope');
+  await field.press('Enter');
+  await expect(page.locator('capy-link-add .error')).toBeVisible();
+  await field.fill('example.com/notes');
+  await field.press('Enter');
+  await expect(page.locator('capy-link-card')).toContainText('example.com');
+  await expect(page.locator('capy-link-add')).toHaveCount(0);
+});
+
+test('a double click places an inline note on the workspace canvas', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // Epo 2026-11-13: a note that takes links and lists, not a canvas label (an
+  // answer board keeps the label).
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  await page.mouse.dblclick(board.x + board.width / 2, board.y + 160);
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
+  await page.keyboard.type('Photosynthesis');
+  const note = page.locator('affine-edgeless-note');
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText('Photosynthesis');
+  await expect(note.locator('[data-inline="true"]')).toHaveCount(1);
+  await expect(page.locator('edgeless-text-editor')).toHaveCount(0);
+});
+
+test("a note's link shows its address on hover, and the frame's knob turns the note", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const at = await onCard(page);
+  await page.locator('capy-note-button').first().click();
+  await page
+    .locator('edgeless-note-menu edgeless-tool-icon-button')
+    .first()
+    .click();
+  await page.mouse.click(...at(0.5, 0.5));
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
+  await page.keyboard.type('Read osmosis notes');
+  await page.keyboard.press('Escape');
+  // "osmosis" links to a page, as the text toolbar's link button would.
+  await page.evaluate(() => {
+    const text = document.querySelector(
+      'affine-edgeless-note rich-text'
+    ) as unknown as {
+      inlineEditor: {
+        formatText(range: object, attributes: object): void;
+      };
+    };
+    text.inlineEditor.formatText(
+      { index: 5, length: 7 },
+      { link: 'https://example.com/osmosis' }
+    );
+  });
+  await page.mouse.click(...at(0.05, 0.05));
+
+  // L1 (Epo 2026-11-13): hovering it, with nothing being typed, shows its address
+  // and Open, a new tab.
+  const link = await page
+    .locator('affine-edgeless-note affine-link')
+    .boundingBox();
+  if (!link) throw new Error('the link is not drawn');
+  await page.mouse.move(link.x + link.width / 2, link.y + link.height / 2);
+  const chip = page.locator('.capy-link-chip');
+  await expect(chip).toContainText('example.com/osmosis');
+  await expect(chip.getByRole('link', { name: 'Open' })).toHaveAttribute(
+    'href',
+    'https://example.com/osmosis'
+  );
+
+  // F1: the selected note's frame has a knob above its middle that turns it.
+  await page.evaluate(() => {
+    const { gfx } = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as {
+      gfx: {
+        layer: { blocks: { id: string }[] };
+        selection: { set(selection: object): void };
+      };
+    };
+    gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
+  });
+  const knob = await page
+    .locator('edgeless-selected-rect .handle[aria-label="rotate"]')
+    .boundingBox();
+  if (!knob) throw new Error('the frame has no rotate knob');
+  await page.mouse.move(knob.x + knob.width / 2, knob.y + knob.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(knob.x + 80, knob.y + 40, { steps: 6 });
+  await page.mouse.up();
+  const turned = await page.evaluate(
+    () =>
+      (
+        document.querySelector('affine-edgeless-note') as unknown as {
+          model: { rotate: number };
+        }
+      ).model.rotate
+  );
+  expect(turned).not.toBe(0);
 });
 
 test("the Canvas page's Misc lists every quiz with its workspace, and New opens a quiz in no workspace in a dialog", async ({

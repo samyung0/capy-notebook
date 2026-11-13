@@ -2,8 +2,13 @@ import { parseHTML } from 'linkedom';
 import { expect, it } from 'vitest';
 import {
   adoptMaterialHost,
+  cardEditable,
+  cardEditing,
+  onCardState,
   onMaterialHosts,
   releaseMaterialHost,
+  setCardEditable,
+  setCardEditing,
 } from './materialCardHosts';
 
 // The registry makes its hosts with `document`; the tests run without a DOM.
@@ -64,5 +69,24 @@ it('follows a card repointed at another material', () => {
     adoptMaterialHost('block-3', { kind: 'quiz', materialId: 'qz_3' })
   ).toBe(host);
   expect(seen.at(-1)?.get('block-3')?.materialId).toBe('qz_3');
+  stop();
+});
+
+// The board's toolbar offers Edit for a card the page says may be edited, and its
+// Done or another card's Edit moves the one card being edited (Epo 2026-11-13).
+it('tells the board which cards may be edited and which one is', () => {
+  let told = 0;
+  const stop = onCardState(() => {
+    told += 1;
+  });
+  setCardEditable('block-4', true);
+  expect(cardEditable('block-4')).toBe(true);
+  setCardEditing({ id: 'block-4', materialId: 'qz_4' });
+  expect(cardEditing()?.materialId).toBe('qz_4');
+  setCardEditing({ id: 'block-5', materialId: 'set_5' });
+  expect(cardEditing()?.id).toBe('block-5');
+  setCardEditing(null);
+  expect(cardEditing()).toBeNull();
+  expect(told).toBe(4);
   stop();
 });

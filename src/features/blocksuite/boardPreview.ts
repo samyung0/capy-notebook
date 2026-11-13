@@ -128,7 +128,9 @@ export function drawBoardPreview(
     const drawn = drawItem(item, pen, blocks);
     if (!drawn) continue;
     const { dx, dy } = shifts[i];
-    const rotate = Number(item.fields.rotate) || 0;
+    // A block keeps its turn as `prop:rotate` (a note, local change 56; an image).
+    const rotate =
+      Number(item.fields.rotate ?? item.fields['prop:rotate']) || 0;
     const { h, w, x, y } = item.box;
     const moves = [
       dx || dy ? `translate(${num(-dx)} ${num(-dy)})` : '',

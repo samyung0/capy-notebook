@@ -59,6 +59,7 @@ import {
 import {
   ArrowLeft04Icon,
   Cancel01Icon,
+  Link04Icon,
   Pen01Icon,
   PlusSignIcon,
   TextIcon,
@@ -82,6 +83,11 @@ import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import type { MaterialPreview, QuizPreviewQuestion } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
+import {
+  cardEditable,
+  cardEditing,
+  setCardEditing,
+} from '@/features/canvas/materialCardHosts';
 import {
   cardCountLabel,
   questionCountLabel,
@@ -1045,6 +1051,9 @@ class CapyNoteButton extends EdgelessNoteSeniorButton {
       });
       keepEventsIn(menu.element);
       unlisten = closeOnPressOutside(this, menu.element);
+      // Link first, where the board takes link cards (Epo 2026-11-13, P1).
+      if (boardKinds.get(this.edgeless.std)?.board === 'workspace')
+        this.showLink(menu.element, false);
       Object.assign(menu.element, {
         childFlavour: this.childFlavour,
         // Marked only while a note of that kind is in hand: the last one picked
@@ -1063,6 +1072,34 @@ class CapyNoteButton extends EdgelessNoteSeniorButton {
         tip: this.tip,
       });
     });
+  }
+
+  /** The menu's Link button, lit while its field is open above the row. */
+  private showLink(
+    menu: HTMLElement & { above?: unknown; lead?: unknown },
+    open: boolean
+  ) {
+    const label = m.drawing_board_link();
+    menu.lead = html`<edgeless-tool-icon-button
+      .active=${open}
+      .activeMode=${'background'}
+      .tooltip=${label}
+      aria-label=${label}
+      @click=${() => this.showLink(menu, !open)}
+      >${hugeIcon(Link04Icon)}</edgeless-tool-icon-button
+    >`;
+    menu.above = open
+      ? html`<capy-link-add
+          .gfx=${this.edgeless.std.get(GfxControllerIdentifier)}
+          @placed=${() => {
+            closePopper(this);
+            this.requestUpdate();
+          }}
+        ></capy-link-add>`
+      : nothing;
+    // The popper's clip is 100 px, the row's height: room for the field.
+    if (menu.parentElement)
+      menu.parentElement.style.height = open ? '180px' : '100px';
   }
 }
 
@@ -1182,6 +1219,110 @@ function readLink(value: string) {
   )
     return null;
   return { url: url.href, videoId: '' };
+}
+
+/** A typed link's card in the view's middle, selected: a YouTube video 16:9, any
+ * other web address a web card. False when it isn't a web address. */
+function placeLink(gfx: GfxController, value: string) {
+  const link = readLink(value);
+  if (!link) return false;
+  addCard(gfx, LINK_FLAVOUR, link, link.videoId ? [320, 180] : [280, 76]);
+  return true;
+}
+
+/** The note menu's Link field (Epo 2026-11-13, P1): the address Misc's YouTube
+ * tile takes, above the menu's row; Add places its card. */
+class CapyLinkAdd extends LitElement {
+  static override styles = css`
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 320px;
+      max-width: calc(100vw - 32px);
+      padding: 6px;
+      box-sizing: border-box;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 10px;
+      background: var(--affine-background-overlay-panel-color);
+      box-shadow: var(--affine-overlay-shadow);
+    }
+    form {
+      display: flex;
+      gap: 6px;
+    }
+    input {
+      flex: 1;
+      min-width: 0;
+      height: 32px;
+      padding: 0 10px;
+      box-sizing: border-box;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--affine-text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus {
+      border-color: var(--affine-primary-color);
+    }
+    button {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--affine-text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .error {
+      margin: 0 2px;
+      color: var(--affine-error-color);
+      font-size: 12px;
+    }
+  `;
+
+  gfx!: GfxController;
+  private invalid = false;
+
+  override firstUpdated() {
+    this.renderRoot.querySelector('input')?.focus();
+  }
+
+  override render() {
+    return html`<div class="panel">
+      <form
+        @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          const input = this.renderRoot.querySelector('input');
+          if (input && placeLink(this.gfx, input.value)) {
+            this.dispatchEvent(new Event('placed'));
+            return;
+          }
+          this.invalid = true;
+          this.requestUpdate();
+        }}
+      >
+        <input
+          aria-label=${m.drawing_board_link_address()}
+          maxlength=${BOARD_CATALOG.limits.LINK_URL_MAX}
+          placeholder=${m.drawing_board_link_address()}
+          type="text"
+          @input=${() => {
+            if (!this.invalid) return;
+            this.invalid = false;
+            this.requestUpdate();
+          }}
+        />
+        <button type="submit">${m.drawing_board_link_add()}</button>
+      </form>
+      ${this.invalid ? html`<p class="error">${m.drawing_board_link_invalid()}</p>` : nothing}
+    </div>`;
+  }
 }
 
 /** A placed link's Edit link (Epo 2026-11-13, E1): a field under the toolbar with
@@ -1335,6 +1476,16 @@ const editLinkAction = {
   when: onlyOne,
 };
 
+/** Whether a note is inline, read through its props' signals, so an undo
+ * redraws the toolbar. */
+const isInline = ({ props }: NoteBlockModel) =>
+  isInlineNote({
+    background: props.background$.value,
+    edgeless: props.edgeless$.value,
+  });
+const anyCard = (ctx: ToolbarContext) =>
+  ctx.getSurfaceModelsByType(NoteBlockModel).some((note) => !isInline(note));
+
 /** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
  * It goes without what makes no sense on an answer, or needs other documents or a page
  * mode. The cards
@@ -1440,6 +1591,41 @@ export const boardToolbar = [
     config: { actions: [editLinkAction] },
     id: BlockFlavourIdentifier('affine:surface:embed-capy-link'),
   }),
+  // A quiz or set card's Edit, and Done while it is edited, for whoever may edit
+  // its material (Epo 2026-11-13): the card itself has no button.
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        {
+          generate: (ctx: ToolbarContext) => {
+            const [model] = ctx.getSurfaceModels();
+            if (!(onlyOne(ctx) && model && cardEditable(model.id))) return null;
+            const card = model as unknown as {
+              id: string;
+              props: { materialId: string };
+            };
+            const editing = cardEditing()?.id === card.id;
+            const label = editing ? m.drawing_board_done() : m.action_edit();
+            return {
+              active: editing,
+              icon: html`${hugeIcon(Pen01Icon)}`,
+              label,
+              run: () =>
+                setCardEditing(
+                  editing
+                    ? null
+                    : { id: card.id, materialId: card.props.materialId }
+                ),
+              showLabel: true,
+              tooltip: label,
+            };
+          },
+          id: 'a.edit-card',
+        },
+      ],
+    },
+    id: BlockFlavourIdentifier('affine:surface:embed-capy-material'),
+  }),
   // I2 (Epo 2026-11-13): Inline lights while the notes are inline; a press turns
   // them into cards, or cards inline.
   ToolbarModuleExtension({
@@ -1450,13 +1636,7 @@ export const boardToolbar = [
             const notes = ctx.getSurfaceModelsByType(NoteBlockModel);
             if (!notes.length || notes.length !== ctx.getSurfaceModels().length)
               return null;
-            // Through the props' signals, so an undo relights the button.
-            const inline = notes.every(({ props }) =>
-              isInlineNote({
-                background: props.background$.value,
-                edgeless: props.edgeless$.value,
-              })
-            );
+            const inline = notes.every(isInline);
             return {
               active: inline,
               icon: html`${hugeIcon(TextIcon)}`,
@@ -1468,6 +1648,11 @@ export const boardToolbar = [
           },
           id: 'd.t-inline',
         },
+        // Style is a card's (Epo 2026-11-13): an inline note has no fill,
+        // shadow, border or corner. Size switched to a custom height, which
+        // notes no longer have (local change 55): a note is its text's height.
+        { id: 'd.style', when: anyCard },
+        { id: 'f.auto-height', when: false },
       ],
     },
     id: BlockFlavourIdentifier('custom:affine:surface:note'),
@@ -2977,17 +3162,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** A link card: a YouTube video shows its poster; any other address its host. */
   private addLink(value: string) {
-    const link = readLink(value);
-    if (!link) {
+    if (!placeLink(this.gfx, value)) {
       this.linkError = true;
       return;
     }
-    addCard(
-      this.gfx,
-      LINK_FLAVOUR,
-      link,
-      link.videoId ? [320, 180] : [280, 76]
-    );
     this.placed();
   }
 
@@ -3525,5 +3703,6 @@ for (const [tag, element] of [
   ['capy-misc-button', CapyMiscButton],
   ['capy-gif-sticker-button', CapyGifStickerButton],
   ['capy-link-edit', CapyLinkEdit],
+  ['capy-link-add', CapyLinkAdd],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);

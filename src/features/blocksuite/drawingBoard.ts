@@ -98,6 +98,7 @@ import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
+import { onCardState } from '@/features/canvas/materialCardHosts';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
@@ -113,12 +114,14 @@ import {
 import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
+import { watchNoteLinks } from './boardNoteLinks';
 import { addPlane, planeExtensions, planeMarks } from './boardPlane';
 import './boardChartEditor';
 import {
   CardsStoreExtension,
   cardViews,
   lendWorkspace,
+  MATERIAL_FLAVOUR,
   refreshMaterialCards,
   type WorkspaceLinks,
 } from './boardCards';
@@ -607,8 +610,13 @@ export function mountDrawingBoard(
     event.stopPropagation();
   };
   document.addEventListener('keydown', slotKeys);
-  // A double click types on the canvas, so the label is in the exported image.
+  // A double click on empty canvas: a canvas text label on an answer board, with
+  // its maths symbol row and fonts; an inline note on the workspace canvas, which
+  // takes links, lists and bold (Epo 2026-11-13; local change 59).
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
+  store
+    .get(FeatureFlagService)
+    .setFlag('enable_dblclick_note', options.board === 'workspace');
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
   outlineNewShapes(gfx);
   // The canvas draws in the app's light or dark (the dark class ThemeProvider sets).
@@ -629,6 +637,19 @@ export function mountDrawingBoard(
   void document.fonts.load('24px "blocksuite:surface:Inter"');
   const symbols = readOnly ? null : mountSymbolRow(gfx);
   if (symbols) board?.append(symbols.element);
+  const unwatchLinks =
+    board instanceof HTMLElement ? watchNoteLinks(gfx, board) : null;
+  // A card's toolbar reads who may edit it and which card is edited, which the page
+  // learns after the card is selected: the selection is set again so its toolbar
+  // follows (Edit appears, Edit turns to Done).
+  const unwatchCards = onCardState(() => {
+    const { selection } = gfx;
+    const elements = [...selection.selectedIds];
+    if (elements.length !== 1 || selection.editing) return;
+    if (store.getBlock(elements[0])?.flavour !== MATERIAL_FLAVOUR) return;
+    selection.clear();
+    selection.set({ editing: false, elements });
+  });
 
   // A preset being sized shows on this layer, under the strokes and outside the
   // document. It moves with the board.
@@ -932,6 +953,8 @@ export function mountDrawingBoard(
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
+      unwatchLinks?.();
+      unwatchCards();
       themeWatch.disconnect();
       document.fonts.removeEventListener('loadingdone', redrawOnFont);
       closeBoardEditor(gfx);

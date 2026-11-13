@@ -7,12 +7,8 @@ import {
   NoteDisplayMode,
 } from '@blocksuite/affine-model';
 import { focusTextModel } from '@blocksuite/affine-rich-text';
-import { EDGELESS_BLOCK_CHILD_PADDING } from '@blocksuite/affine-shared/consts';
 import { TelemetryProvider } from '@blocksuite/affine-shared/services';
-import {
-  handleNativeRangeAtPoint,
-  stopPropagation,
-} from '@blocksuite/affine-shared/utils';
+import { handleNativeRangeAtPoint } from '@blocksuite/affine-shared/utils';
 import { almostEqual, Bound } from '@blocksuite/global/gfx';
 import { toGfxBlockComponent } from '@blocksuite/std';
 import {
@@ -21,137 +17,25 @@ import {
 } from '@blocksuite/std/gfx';
 import { html, nothing, type PropertyValues } from 'lit';
 import { query, state } from 'lit/decorators.js';
-import { classMap } from 'lit/directives/class-map.js';
-import { ifDefined } from 'lit/directives/if-defined.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import clamp from 'lodash-es/clamp';
 
-import { MoreIndicator } from './components/more-indicator';
-import { NoteConfigExtension } from './config';
 import { NoteBlockComponent } from './note-block';
 import * as styles from './note-styles';
-import { ACTIVE_NOTE_EXTRA_PADDING } from './note-styles';
 
 export const AFFINE_EDGELESS_NOTE = 'affine-edgeless-note';
 
+// Capy (local change 55; Epo 2026-11-13): a note has no fold. It is always as
+// tall as its text: no custom height (`edgeless.collapse`), no pale strip of the
+// hidden part on hover and no fold arrow, and the hover and resize tracking that
+// only fed them is gone.
 export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
   NoteBlockComponent
 ) {
-  private get _isShowCollapsedContent() {
-    return (
-      !!this.model.props.edgeless.collapse &&
-      this.selected$.value &&
-      !this._dragging &&
-      (this._isResizing || this._isHover || this._editing)
-    );
-  }
-
-  private get _dragging() {
-    return this._isHover && this.gfx.tool.dragging$.value;
-  }
-
-  private _collapsedContent() {
-    if (!this._isShowCollapsedContent) {
-      return nothing;
-    }
-
-    const { xywh, edgeless } = this.model.props;
-    const { borderSize } = edgeless.style;
-
-    const extraPadding = this._editing ? ACTIVE_NOTE_EXTRA_PADDING : 0;
-    const extraBorder = this._editing ? borderSize : 0;
-    const bound = Bound.deserialize(xywh);
-    const scale = edgeless.scale ?? 1;
-    const width = bound.w / scale + extraPadding * 2 + extraBorder;
-    const height = bound.h / scale;
-
-    const rect = this._noteContent?.getBoundingClientRect();
-    if (!rect) return nothing;
-
-    const zoom = this.gfx.viewport.zoom;
-    this._noteFullHeight =
-      rect.height / scale / zoom + 2 * EDGELESS_BLOCK_CHILD_PADDING;
-
-    if (height >= this._noteFullHeight) {
-      return nothing;
-    }
-
-    return html`
-      <div
-        class=${styles.collapsedContent}
-        style=${styleMap({
-          width: `${width}px`,
-          height: `${this._noteFullHeight - height}px`,
-          left: `${-(extraPadding + extraBorder / 2)}px`,
-          top: `${height + extraPadding + extraBorder / 2}px`,
-        })}
-      ></div>
-    `;
-  }
-
   private _handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'ArrowUp') {
       this._docTitle?.inlineEditor?.focusEnd();
     }
-  }
-
-  private _hovered() {
-    if (
-      this.selection.value.some(
-        sel => sel.type === 'surface' && sel.blockId === this.model.id
-      )
-    ) {
-      if (this._hoverTimeout) {
-        clearTimeout(this._hoverTimeout);
-        this._hoverTimeout = null;
-      }
-      this._isHover = true;
-    }
-  }
-
-  private _hoverTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  private _leaved(e: MouseEvent) {
-    if (this._hoverTimeout) {
-      clearTimeout(this._hoverTimeout);
-      this._hoverTimeout = null;
-    }
-    const rect = this.getBoundingClientRect();
-    const threshold = -10;
-    const leavedFromBottom =
-      e.clientY - rect.bottom > threshold &&
-      rect.left < e.clientX &&
-      e.clientX < rect.right;
-
-    if (leavedFromBottom) {
-      this._hoverTimeout = setTimeout(() => {
-        this._isHover = false;
-      }, 300);
-    } else {
-      this._isHover = false;
-    }
-  }
-
-  private _setCollapse(event: MouseEvent) {
-    event.stopImmediatePropagation();
-
-    const { collapse, collapsedHeight } = this.model.props.edgeless;
-
-    if (collapse) {
-      this.model.store.updateBlock(this.model, () => {
-        this.model.props.edgeless.collapse = false;
-      });
-    } else if (collapsedHeight) {
-      const { xywh, edgeless } = this.model.props;
-      const bound = Bound.deserialize(xywh);
-      bound.h = collapsedHeight * (edgeless.scale ?? 1);
-      this.model.store.updateBlock(this.model, () => {
-        this.model.props.edgeless.collapse = true;
-        this.model.props.xywh = bound.serialize();
-      });
-    }
-
-    this.selection.clear();
   }
 
   override connectedCallback(): void {
@@ -173,58 +57,12 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
     this.disposables.addFromEvent(this, 'keydown', this._handleKeyDown);
   }
 
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this._hoverTimeout) {
-      clearTimeout(this._hoverTimeout);
-      this._hoverTimeout = null;
-    }
-  }
-
   get edgelessSlots() {
     return this.std.get(EdgelessLegacySlotIdentifier);
   }
 
   override firstUpdated() {
     const { _disposables } = this;
-    const selection = this.gfx.selection;
-
-    _disposables.add(
-      this.edgelessSlots.elementResizeStart.subscribe(() => {
-        if (selection.selectedElements.includes(this.model)) {
-          this._isResizing = true;
-        }
-      })
-    );
-
-    _disposables.add(
-      this.edgelessSlots.elementResizeEnd.subscribe(() => {
-        this._isResizing = false;
-      })
-    );
-
-    // Capy (local change 23): the height is read once a frame, not on every mutation
-    // batch; each read forced a layout, 874 ms on a large board's first render.
-    let frame = 0;
-    const observer = new MutationObserver(() => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const rect = this._noteContent?.getBoundingClientRect();
-        if (!rect) return;
-        const zoom = this.gfx.viewport.zoom;
-        const scale = this.model.props.edgeless.scale ?? 1;
-        this._noteFullHeight =
-          rect.height / scale / zoom + 2 * EDGELESS_BLOCK_CHILD_PADDING;
-      });
-    });
-    if (this._noteContent) {
-      observer.observe(this, { childList: true, subtree: true });
-      _disposables.add(() => {
-        observer.disconnect();
-        cancelAnimationFrame(frame);
-      });
-    }
 
     // Capy (local change 53): an inline note is as wide as its text (up to a
     // card's width, where it wraps), so its frame hugs it as a text box does.
@@ -260,11 +98,10 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
 
   override getRenderingRect() {
     const { xywh, edgeless } = this.model.props;
-    const { collapse, scale = 1 } = edgeless;
+    const { scale = 1 } = edgeless;
 
     const bound = Bound.deserialize(xywh);
     const width = bound.w / scale;
-    const height = bound.h / scale;
 
     // Capy (local change 53): an inline note sizes to its text.
     const inline = isInlineNote(this.model.props);
@@ -272,7 +109,7 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
       x: bound.x,
       y: bound.y,
       w: inline ? 'max-content' : width,
-      h: collapse && !inline ? height : 'unset',
+      h: 'unset',
       zIndex: this.toZIndex(),
     };
   }
@@ -289,30 +126,16 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
 
     const { xywh, edgeless } = model.props;
     const { borderRadius } = edgeless.style;
-    const { collapse = false, collapsedHeight, scale = 1 } = edgeless;
-
-    const { tool } = this.gfx;
+    const { scale = 1 } = edgeless;
 
     const bound = Bound.deserialize(xywh);
-    const height = bound.h / scale;
 
+    // Capy (local change 56): turned about its middle.
     const style = {
       borderRadius: borderRadius + 'px',
+      transform: model.rotate ? `rotate(${model.rotate}deg)` : undefined,
+      transformOrigin: 'center',
     };
-
-    const extra = this._editing ? ACTIVE_NOTE_EXTRA_PADDING : 0;
-
-    const isCollapsable =
-      collapse != null &&
-      collapsedHeight != null &&
-      collapsedHeight !== this._noteFullHeight;
-
-    const isCollapseArrowUp = collapse
-      ? this._noteFullHeight < height
-      : !!collapsedHeight && collapsedHeight < height;
-
-    const hasHeader = !!this.std.getOptional(NoteConfigExtension.identifier)
-      ?.edgelessNoteHeader;
 
     return html`
       <div
@@ -321,10 +144,7 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
         data-model-height="${bound.h}"
         data-editing=${this._editing}
         data-inline=${isInlineNote(model.props) /* Capy (local change 52) */}
-        data-collapse=${ifDefined(collapse)}
         data-testid="edgeless-note-container"
-        @mouseleave=${this._leaved}
-        @mousemove=${this._hovered}
         data-scale="${scale}"
       >
         <edgeless-note-background
@@ -335,9 +155,7 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
         <div
           data-testid="edgeless-note-clip-container"
           class=${styles.clipContainer}
-          style=${styleMap({
-            'overflow-y': this._isShowCollapsedContent ? 'initial' : 'clip',
-          })}
+          style=${styleMap({ 'overflow-y': 'clip' })}
         >
           <div>
             <edgeless-page-block-title
@@ -359,29 +177,6 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
           .disableMask=${this.hideMask}
           .editing=${this._editing}
         ></edgeless-note-mask>
-
-        ${
-          isCollapsable &&
-          tool.currentToolName$.value !== 'frameNavigator' &&
-          (!this.model.isPageBlock() || !hasHeader)
-            ? html`<div
-                class="${classMap({
-                  [styles.collapseButton]: true,
-                  flip: isCollapseArrowUp,
-                })}"
-                style=${styleMap({
-                  bottom: this._editing ? `${-extra}px` : '0',
-                })}
-                data-testid="edgeless-note-collapse-button"
-                @mousedown=${stopPropagation}
-                @mouseup=${stopPropagation}
-                @click=${this._setCollapse}
-              >
-                ${MoreIndicator}
-              </div>`
-            : nothing
-        }
-        ${this._collapsedContent()}
       </div>
     `;
   }
@@ -394,19 +189,7 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
   private accessor _editing = false;
 
   @state()
-  private accessor _isHover = false;
-
-  @state()
-  private accessor _isResizing = false;
-
-  @state()
-  private accessor _noteFullHeight = 0;
-
-  @state()
   accessor hideMask = false;
-
-  @query(`.${styles.clipContainer} > div`)
-  private accessor _noteContent: HTMLElement | null = null;
 
   @query('doc-title')
   private accessor _docTitle: DocTitle | null = null;
@@ -422,23 +205,28 @@ export const EdgelessNoteInteraction =
   GfxViewInteractionExtension<EdgelessNoteBlockComponent>(
     NoteBlockSchema.model.flavour,
     {
+      // Capy (local change 56): a note turns by the frame's knob, as text does;
+      // AFFiNE's notes did not turn.
+      // Capy (local change 55): a card is resized by its sides, which set its
+      // width (its text rewraps, its height follows), or its corners, which
+      // scale it; an inline note by its corners only (local change 53). AFFiNE
+      // kept a card 218 wide at least, and its top and bottom set a custom
+      // height.
       resizeConstraint: {
-        minWidth: 170 + 24 * 2,
-        minHeight: 92,
-      },
-      handleRotate: () => {
-        return {
-          beforeRotate(context) {
-            context.set({
-              rotatable: false,
-            });
-          },
-        };
+        allowedHandlers: [
+          'top-left',
+          'top-right',
+          'bottom-left',
+          'bottom-right',
+          'left',
+          'right',
+        ],
+        lockRatio: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+        minWidth: 40,
+        minHeight: 1,
       },
       handleResize: ({ model }) => {
         const initialScale: number = model.props.edgeless.scale ?? 1;
-        // Capy (local change 53): an inline note is resized by its corners only,
-        // which scale it; its width follows its text.
         const inline = isInlineNote(model.props);
         return {
           beforeResize(context): void {
@@ -450,8 +238,6 @@ export const EdgelessNoteInteraction =
                 'bottom-left',
                 'bottom-right',
               ],
-              lockRatio: true,
-              minHeight: 1,
               minWidth: 1,
             });
           },
@@ -461,34 +247,33 @@ export const EdgelessNoteInteraction =
           },
 
           onResizeMove(context): void {
-            const { originalBound, newBound, lockRatio, constraint } = context;
-            if (inline) {
+            const { handle, originalBound, newBound, lockRatio, constraint } =
+              context;
+            if (lockRatio) {
               const scale = (newBound.w / originalBound.w) * initialScale;
               model.props.edgeless = { ...model.props.edgeless, scale };
               model.props.xywh = newBound.serialize();
               return;
             }
-            const { minWidth, minHeight, maxHeight, maxWidth } = constraint;
-
-            let scale = initialScale;
-            let edgelessProp = { ...model.props.edgeless };
-            const originalRealWidth = originalBound.w / scale;
-
-            if (lockRatio) {
-              scale = newBound.w / originalRealWidth;
-              edgelessProp.scale = scale;
-            }
-
-            newBound.w = clamp(newBound.w, minWidth * scale, maxWidth);
-            newBound.h = clamp(newBound.h, minHeight * scale, maxHeight);
-
-            if (newBound.h > minHeight * scale) {
-              edgelessProp.collapse = true;
-              edgelessProp.collapsedHeight = newBound.h / scale;
-            }
-
-            model.props.edgeless = edgelessProp;
-            model.props.xywh = newBound.serialize();
+            // A side: the width alone, the height left to the text. The other
+            // side's middle stays where it is, along the note's turn too
+            // (local change 56).
+            const bound = Bound.deserialize(model.xywh);
+            const w = clamp(
+              newBound.w,
+              constraint.minWidth * initialScale,
+              constraint.maxWidth
+            );
+            const radians = (model.rotate * Math.PI) / 180;
+            const shift =
+              ((handle === 'left' ? -1 : 1) * (w - originalBound.w)) / 2;
+            const centerX = originalBound.center[0] + shift * Math.cos(radians);
+            const centerY =
+              originalBound.y + bound.h / 2 + shift * Math.sin(radians);
+            bound.w = w;
+            bound.x = centerX - w / 2;
+            bound.y = centerY - bound.h / 2;
+            model.props.xywh = bound.serialize();
           },
 
           onResizeEnd(context): void {

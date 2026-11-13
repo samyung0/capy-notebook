@@ -10,6 +10,7 @@ import {
 } from '@blocksuite/affine-model';
 import { Bound } from '@blocksuite/global/gfx';
 import type { BlockStdScope } from '@blocksuite/std';
+import { GfxControllerIdentifier } from '@blocksuite/std/gfx';
 
 const CARD_PADDING_X = 10;
 
@@ -44,4 +45,11 @@ export function setNotesInline(
       },
     } satisfies Partial<NoteProps>);
   }
+  // The selection frame works out its handles when the selection changes (the
+  // same selection set again changes nothing): a card has side handles, an
+  // inline note only corners (local change 55).
+  const { selection } = std.get(GfxControllerIdentifier);
+  const elements = [...selection.selectedIds];
+  selection.clear();
+  selection.set({ elements, editing: false });
 }

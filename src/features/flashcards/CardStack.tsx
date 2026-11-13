@@ -42,12 +42,15 @@ export type CardStackState = ReturnType<typeof useCardStack>;
 
 export function CardStack({
   card,
+  fill,
   label,
   onRate,
   rated,
   stack,
 }: {
   card: FlashcardContent;
+  /** The face takes the height its box has (a canvas card), not the window's. */
+  fill?: boolean;
   /** The front's label: the card's topic, where the page names it
    * nowhere else. */
   label?: string;
@@ -58,15 +61,17 @@ export function CardStack({
 }) {
   const { flipped, leaving, setFlipped, setLeaving, turn } = stack;
   return (
-    <div className="relative">
+    <div className={cn('relative', fill && 'flex min-h-24 flex-1 flex-col')}>
       <StudyCard
         card={card}
         className={cn(
+          fill && 'flex-1',
           turn.n > 0 &&
             (turn.back
               ? 'motion-safe:motion-card-swipe-in'
               : 'motion-safe:motion-card-rise')
         )}
+        fill={fill}
         flipped={flipped}
         key={turn.n}
         label={label}
@@ -79,8 +84,10 @@ export function CardStack({
           card={leaving.card}
           className={cn(
             // Its ratings stay put instead of rising in again.
-            'motion-safe:motion-card-swipe-out pointer-events-none absolute inset-x-0 top-0 motion-reduce:hidden [&_button]:[animation:none]'
+            'motion-safe:motion-card-swipe-out pointer-events-none absolute inset-x-0 top-0 motion-reduce:hidden [&_button]:[animation:none]',
+            fill && 'bottom-0'
           )}
+          fill={fill}
           flipped={leaving.flipped}
           inert
           key={`leaving-${turn.n}`}
@@ -112,6 +119,7 @@ export function CardPreview({ card }: { card: FlashcardContent }) {
 function StudyCard({
   card,
   className,
+  fill,
   flipped,
   inert,
   label,
@@ -123,6 +131,8 @@ function StudyCard({
 }: {
   card: FlashcardContent;
   className?: string;
+  /** Its box's height (CardStack's `fill`). */
+  fill?: boolean;
   flipped: boolean;
   rated?: SrsRating;
   /** Off for a preview: the back shows no ratings. */
@@ -159,8 +169,10 @@ function StudyCard({
       className={cn(
         'relative flex w-full flex-col overflow-hidden rounded-flashcard border border-line bg-surface frosted:bg-(--frost-fill) shadow-card',
         // Grows with a long back up to its cap, then the answer scrolls under
-        // the front.
-        'max-h-[clamp(320px,50vh,440px)] min-h-[clamp(220px,30vh,260px)]',
+        // the front; filling its box, the answer scrolls there.
+        fill
+          ? 'min-h-0'
+          : 'max-h-[clamp(320px,50vh,440px)] min-h-[clamp(220px,30vh,260px)]',
         className
       )}
       inert={inert}

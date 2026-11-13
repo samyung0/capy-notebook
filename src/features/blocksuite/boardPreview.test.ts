@@ -13,6 +13,7 @@ const BLUE_POLYGON =
   /<path d="M[^"]*L[^"]*L[^"]*L[^"]*L[^"]*Z" fill="none" stroke="#1971c2"/;
 const RED_STROKE = /<path d="([^"]*)" stroke="#e03131"/;
 const INLINE_NOTE_TEXT = /<tspan x="0" [^>]*>Osmosis/;
+const TURNED_NOTE = /transform="rotate\(30 100 20\)"/;
 const CARD_NOTE_BOX =
   /<rect [^>]*rx="16" fill="#fff" fill-opacity="0.5" stroke="#e6e6e6"/;
 
@@ -128,8 +129,13 @@ it('draws a polygon shape from the corners the board draws it with', () => {
   expect(svg).toMatch(BLUE_POLYGON);
 });
 
-/** The saved board with a note on the page: `background` and its style. */
-function withNote(background: string, style: Record<string, unknown>) {
+/** The saved board with a note on the page: `background`, its style and any other
+ * props (`rotate`). */
+function withNote(
+  background: string,
+  style: Record<string, unknown>,
+  props: Record<string, unknown> = {}
+) {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, fromBase64(SAVED));
   const blocks = doc.getMap<Y.Map<unknown>>('blocks');
@@ -153,6 +159,7 @@ function withNote(background: string, style: Record<string, unknown>) {
     edgeless: { style },
     index: 'a1',
     xywh: '[0,0,200,40]',
+    ...props,
   });
   block('para', 'affine:paragraph', {
     text: new Y.Text('Osmosis'),
@@ -183,4 +190,20 @@ it('draws an inline note as text and a card with its corner and edge', () => {
     'workspace'
   );
   expect(card).toMatch(CARD_NOTE_BOX);
+});
+
+// A note turns about its middle (Epo 2026-11-13, F1; vendor local change 56).
+it('draws a turned note turned about its middle', () => {
+  const svg = drawBoardPreview(
+    withNote(
+      'transparent',
+      { borderStyle: 'none', shadowType: '' },
+      {
+        rotate: 30,
+      }
+    ),
+    SIZE,
+    'workspace'
+  );
+  expect(svg).toMatch(TURNED_NOTE);
 });

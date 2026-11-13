@@ -82,6 +82,7 @@ export function StudyBody({
   cards,
   topic,
   embedded,
+  fill,
   footer,
   frame,
   name,
@@ -102,6 +103,9 @@ export function StudyBody({
   topic?: string;
   /** Inside a note: no header, frame or page padding. */
   embedded?: boolean;
+  /** A canvas card (Epo 2026-11-13): the card face takes the height the box
+   * has, under the count and above the steps, instead of the window's. */
+  fill?: boolean;
   footer?: ReactNode;
   frame?: Frame;
   name: string;
@@ -268,11 +272,18 @@ export function StudyBody({
 
   return (
     <Shell header={header}>
-      <div className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6')}>
-        <div className="mx-auto flex max-w-160 flex-col gap-6">
+      <div
+        className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6', fill && 'h-full')}
+      >
+        <div
+          className={cn(
+            'mx-auto flex max-w-160 flex-col gap-6',
+            fill && 'h-full gap-3'
+          )}
+        >
           {card ? (
             <>
-              <div>
+              <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
                 {embedded ? (
                   <p className="t-meta mb-1 text-center text-fg-muted">
                     {m.flashcards_card_of_total({ position, total })}
@@ -286,6 +297,7 @@ export function StudyBody({
                 )}
                 <CardStack
                   card={card}
+                  fill={fill}
                   label={topic}
                   onRate={rate}
                   rated={shown.record}
@@ -295,9 +307,20 @@ export function StudyBody({
               <StepNav
                 canNext={!!shown?.past || steps.steps.queue.length > 1}
                 canPrevious={steps.steps.cursor > 0}
-                className="pt-2"
+                className={cn(!fill && 'pt-2')}
                 onNext={next}
                 onPrevious={previous}
+                start={
+                  // An embedded set has no header for Reset: it starts the run
+                  // over from the far left of this row once it has moved on
+                  // (Epo 2026-11-13).
+                  embedded &&
+                  (rated.length > 0 || steps.steps.cursor > 0) && (
+                    <Button onClick={studyAgain} size="sm" variant="outline">
+                      {m.action_reset()}
+                    </Button>
+                  )
+                }
               />
             </>
           ) : (

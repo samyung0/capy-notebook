@@ -312,14 +312,11 @@
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
   --capy-note-edge: #e6e6e6;
-  /* The board keeps AFFiNE's blue for what is selected or active, as its selection
-     frames and pieces are drawn in it; chrome.css maps it to the app's accent for
-     the note. */
-  --affine-primary-color: #1e96eb;
-  --affine-brand-color: #1e96eb;
-  --affine-v2-icon-activated: #1e96eb;
-  --affine-v2-button-primary: #1e96eb;
-  --affine-v2-table-indicator-activated: #1e96eb;
+  /* What is selected or active is in the app's accent, as in the note (Epo
+     2026-11-13, F1): the selection frame and its handles (vendor local change 56),
+     lit buttons and menus. The handles are filled with the board's paper. */
+  --affine-v2-table-indicator-activated: var(--action-accent-bg);
+  --capy-handle-fill: #fff;
   /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
      against a page box that starts higher (a tablet's header row above it). */
   position: relative;
@@ -330,6 +327,7 @@
 html.dark:not([data-board-light]) .capy-board {
   --capy-navy: #5683b3;
   --capy-note-edge: var(--affine-border-color);
+  --capy-handle-fill: var(--affine-background-primary-color);
 }
 
 /* Notes take their stored style (P1, Epo 2026-11-13): fill, shadow, border and
@@ -342,6 +340,9 @@ html.dark:not([data-board-light]) .capy-board {
 }
 .capy-board .affine-note-container {
   padding: 8px 10px;
+  /* Medium, as the app's text (Epo 2026-11-13); AFFiNE's 400 read thin. Headings
+     keep their own 600 and 700. */
+  font-weight: 500;
 }
 /* An inline note is its text alone: no padding, and none of its first and last
    block's margins, a heading's or quote's on its text (local change 53 sizes its
@@ -920,4 +921,49 @@ html.dark:not([data-board-light]) .capy-board {
   flex: 1;
   font-size: 14px;
   color: var(--affine-text-primary-color);
+}
+
+/* A note's links are underlined, and hovering one (or a tap on a touch screen)
+   while no note is typed in shows its address and Open (Epo 2026-11-13, L1;
+   boardNoteLinks.ts). The link sets `text-decoration: none` inline, hence the
+   !important. */
+.capy-board affine-edgeless-note affine-link a {
+  text-decoration: underline 1px
+    color-mix(in srgb, currentColor 55%, transparent) !important;
+  text-underline-offset: 3px;
+}
+.capy-link-chip {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: min(320px, calc(100% - 8px));
+  padding: 4px 4px 4px 10px;
+  font: 500 13px / 20px var(--affine-font-family);
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: var(--affine-overlay-shadow);
+}
+.capy-link-chip .address {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--affine-text-secondary-color);
+  white-space: nowrap;
+}
+.capy-link-chip .open {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 6px;
+  font-weight: 600;
+  color: var(--affine-text-primary-color);
+  border-radius: 6px;
+}
+.capy-link-chip .open:hover {
+  background: var(--affine-hover-color);
 }

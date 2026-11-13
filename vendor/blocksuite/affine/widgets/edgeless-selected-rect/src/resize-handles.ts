@@ -16,7 +16,6 @@ export enum HandleDirection {
 
 function ResizeHandleRenderer(
   handle: ResizeHandle,
-  rotatable: boolean,
   onPointerDown?: (e: PointerEvent, direction: ResizeHandle) => void,
   getCursor?: (options: {
     type: 'resize' | 'rotate';
@@ -28,27 +27,11 @@ function ResizeHandleRenderer(
     onPointerDown && onPointerDown(e, handle);
   };
 
-  const rotationTpl =
-    handle.length > 6 && rotatable
-      ? html`<div
-          class="rotate"
-          style=${styleMap({
-            cursor: getCursor
-              ? getCursor({
-                  type: 'rotate',
-                  handle,
-                })
-              : 'default',
-          })}
-        ></div>`
-      : nothing;
-
   return html`<div
     class="handle"
     aria-label=${handle}
     @pointerdown=${handlerPointerDown}
   >
-    ${rotationTpl}
     <div
       class="resize transparent-handle"
       style=${styleMap({
@@ -58,6 +41,34 @@ function ResizeHandleRenderer(
               handle,
             })
           : 'default',
+      })}
+    ></div>
+  </div>`;
+}
+
+/** Capy (local change 56): the rotate knob above the frame's middle, in place of
+ * AFFiNE's hidden ring past each corner. It reports `top-right`, whose cursor is
+ * the turning arrow upright. */
+function RotateKnobRenderer(
+  onPointerDown: (e: PointerEvent, direction: ResizeHandle) => void,
+  getCursor?: (options: {
+    type: 'resize' | 'rotate';
+    handle: ResizeHandle;
+  }) => string
+) {
+  const handle: ResizeHandle = 'top-right';
+  return html`<div
+    class="handle"
+    aria-label="rotate"
+    @pointerdown=${(e: PointerEvent) => {
+      e.stopPropagation();
+      onPointerDown(e, handle);
+    }}
+  >
+    <div
+      class="rotate"
+      style=${styleMap({
+        cursor: getCursor ? getCursor({ type: 'rotate', handle }) : 'default',
       })}
     ></div>
   </div>`;
@@ -87,8 +98,8 @@ export function RenderResizeHandles(
     ${repeat(
       resizeHandles,
       handle => handle,
-      handle =>
-        ResizeHandleRenderer(handle, rotatable, onPointerDown, getCursor)
+      handle => ResizeHandleRenderer(handle, onPointerDown, getCursor)
     )}
+    ${rotatable ? RotateKnobRenderer(onPointerDown, getCursor) : nothing}
   `;
 }

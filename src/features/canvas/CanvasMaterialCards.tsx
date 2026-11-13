@@ -1,19 +1,30 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { qk } from '@/api/client';
 import { useMaterial } from '@/api/hooks';
 import type { MaterialListItem, MaterialPreview } from '@/api/types';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
-import { Button } from '@/components/ui/Button';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
-import { m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import {
   type CardMaterialKind,
+  cardEditing,
+  type EditingCard,
   type MaterialCardHost,
+  onCardState,
   onMaterialHosts,
+  setCardEditable,
+  setCardEditing,
 } from './materialCardHosts';
 
 /** The runner and the editor a note's embed uses, loaded when a card first
@@ -40,7 +51,10 @@ type Placed = MaterialCardHost & { id: string };
  * A card's Edit (Epo 2026-11-12) turns it into the editor a note's embed has,
  * for one card at a time: the canvas has no room of its own for the cards' rooms
  * to join inside, so each edited card takes its own place among the user's 22
- * joined documents, and the others stay snapshots. */
+ * joined documents, and the others stay snapshots. Edit and Done are on the
+ * board's toolbar (Epo 2026-11-13), for a card whose material the person may edit:
+ * this tells the board which those are (`setCardEditable`), and draws the editor
+ * for the card it names (`setCardEditing`). */
 export function CanvasMaterialCards({
   materials,
 }: {
@@ -81,21 +95,20 @@ function PlacedCards({
   );
   // The one card being edited, by its block: the same material placed twice
   // edits in one of them.
-  const [editing, setEditing] = useState<{
-    id: string;
-    materialId: string;
-  } | null>(null);
+  const editing = useSyncExternalStore(onCardState, cardEditing);
   const qc = useQueryClient();
   // The edits went through the live rooms, not the snapshot every card draws:
   // read again whenever a card stops editing (Done, another card's Edit, or the
   // card leaving the board).
-  const edit = (next: typeof editing) => {
-    if (editing) {
-      void qc.invalidateQueries({ queryKey: qk.quiz(editing.materialId) });
-      void qc.invalidateQueries({ queryKey: qk.material(editing.materialId) });
-    }
-    setEditing(next);
-  };
+  const last = useRef<EditingCard | null>(null);
+  useEffect(() => {
+    const before = last.current;
+    last.current = editing;
+    if (!before || before.id === editing?.id) return;
+    void qc.invalidateQueries({ queryKey: qk.quiz(before.materialId) });
+    void qc.invalidateQueries({ queryKey: qk.material(before.materialId) });
+  }, [editing, qc]);
+  useEffect(() => () => setCardEditing(null), []);
   const gone =
     editing &&
     !cards.some(
@@ -105,18 +118,18 @@ function PlacedCards({
         listed?.has(materialId) !== false
     );
   useEffect(() => {
-    if (gone) edit(null);
+    if (gone) setCardEditing(null);
   }, [gone]);
   return (
     <>
       {cards.map(({ host, id, kind, materialId }) =>
         createPortal(
           <CanvasMaterial
+            blockId={id}
             editing={editing?.id === id}
             kind={kind}
             listed={listed?.has(materialId)}
             materialId={materialId}
-            onEdit={(on) => edit(on ? { id, materialId } : null)}
             preview={listed?.get(materialId)?.preview}
           />,
           host,
@@ -128,19 +141,19 @@ function PlacedCards({
 }
 
 function CanvasMaterial({
+  blockId,
   editing,
   kind,
   listed,
   materialId,
-  onEdit,
   preview,
 }: {
+  blockId: string;
   editing: boolean;
   kind: CardMaterialKind;
   /** `undefined` while the workspace's list loads. */
   listed: boolean | undefined;
   materialId: string;
-  onEdit: (on: boolean) => void;
   preview?: MaterialPreview;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -150,22 +163,15 @@ function CanvasMaterial({
   const { data: material } = useMaterial(near ? materialId : null, {
     errorBoundary: false,
   });
-  const canEdit = !!material?.capabilities.canEditContent;
+  const editable = !!material?.capabilities.canEditContent && !!listed;
+  useEffect(() => {
+    setCardEditable(blockId, editable);
+    return () => setCardEditable(blockId, false);
+  }, [blockId, editable]);
   // The workspace no longer lists it: the card's own chrome says so.
   if (listed === false) return null;
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 p-3" ref={box}>
-      {canEdit && listed && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() => onEdit(!editing)}
-            size="sm"
-            variant={editing ? 'accent' : 'outline'}
-          >
-            {editing ? m.drawing_board_done() : m.action_edit()}
-          </Button>
-        </div>
-      )}
+    <div className="flex h-full min-h-0 flex-col p-3" ref={box}>
       <div className="min-h-0 flex-1">
         {listed === undefined ? (
           <EmbedLoading />
@@ -180,7 +186,12 @@ function CanvasMaterial({
           <Suspense fallback={<EmbedLoading />}>
             {/* The workspace's own quiz or set, not a note's copy: there is no
                 owner to wait for, so no ownerId. */}
-            <AppEmbed live={false} materialId={materialId} refKind={kind} />
+            <AppEmbed
+              fill
+              live={false}
+              materialId={materialId}
+              refKind={kind}
+            />
           </Suspense>
         ) : (
           <ThumbnailPanel icon={materialIconName(kind)} preview={preview} />
