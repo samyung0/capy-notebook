@@ -11,7 +11,7 @@ shapes, the fields telling them apart:
   explanation?
 - open: question, marks, markscheme [{text, marks}] adding up to marks,
   model_answer? (the part's one optional sample answer, Epo 2026-10-15),
-  hints?, explanation?
+  explanation?
 
 add_questions takes a list of them, and add_question_media puts a chart, a
 plot or a library figure after one question's text. A note's ```quiz fence
@@ -72,7 +72,6 @@ FIELDS = {
         "marks",
         "markscheme",
         "model_answer",
-        "hints",
         "explanation",
         "replaces",
     },
@@ -102,7 +101,7 @@ SHAPES = {
     'a quantity; accepted then holds plain numbers>", "explanation": "…"}',
     "open": 'An open question: {"question": "…", "marks": 2, "markscheme": [{"text": '
     '"…", "marks": 1}, {"text": "…", "marks": 1}], "model_answer": "<optional: a '
-    'full-marks answer>", "hints": ["…"], "explanation": "…"}',
+    'full-marks answer>", "explanation": "…"}',
 }
 # What a missing field should have held.
 EXPECTED = {
@@ -242,8 +241,8 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
             "a multiple-choice or short-answer question is worth 1 mark; a question "
             "worth more is an open question"
         )
-    if key in ("model_answer", "hints"):
-        return f"only an open question has {key}"
+    if key == "model_answer":
+        return "only an open question has model_answer"
     if key in ("accepted", "unit"):
         return "a multiple-choice question names its answer in correct"
     if key in ("options", "correct"):
@@ -418,7 +417,7 @@ def kind_of(item: dict[str, Any]) -> str | None:
         return "mcq"
     if "accepted" in item or "unit" in item:
         return "short"
-    if item.keys() & {"marks", "markscheme", "model_answer", "hints"}:
+    if item.keys() & {"marks", "markscheme", "model_answer"}:
         return "open"
     return None
 
@@ -563,7 +562,6 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
             "type": "open",
             # The one sample answer is optional (Epo 2026-10-15).
             "accepted": [item["model_answer"]] if item.get("model_answer") else [],
-            "hints": list(item.get("hints") or []),
         }
         part["marks"] = item["marks"]
         part["markscheme"] = [
@@ -583,9 +581,15 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
 def authored(question: dict[str, Any]) -> dict[str, Any] | None:
     """A stored question as the add_questions item a quiz fence takes (expand's
     inverse), or None when it holds more than that form writes: a stem, a group,
-    more parts, media or a non-text solution, another answer type."""
+    its own topics, more parts, media or a non-text solution, another answer type
+    (a Multiple answer or Shuffle options mcq among them)."""
     parts = question.get("parts") or []
-    if question.get("stem") or question.get("groups") or len(parts) != 1:
+    if (
+        question.get("stem")
+        or question.get("groups")
+        or question.get("topicIds")
+        or len(parts) != 1
+    ):
         return None
     part = parts[0]
     blocks = part.get("blocks") or []
@@ -601,6 +605,8 @@ def authored(question: dict[str, Any]) -> dict[str, Any] | None:
     options, correct = answer.get("options") or [], answer.get("correct") or []
     if (
         answer.get("type") == "mcq"
+        and not answer.get("multiple")
+        and not answer.get("shuffle")
         and len(correct) == 1
         and isinstance(correct[0], int)
         and 0 <= correct[0] < len(options)
@@ -621,8 +627,6 @@ def authored(question: dict[str, Any]) -> dict[str, Any] | None:
         # A part without a sample answer leaves model_answer out.
         if answer.get("accepted"):
             item["model_answer"] = answer["accepted"][0]
-        if answer.get("hints"):
-            item["hints"] = list(answer["hints"])
     else:
         return None
     if solution:

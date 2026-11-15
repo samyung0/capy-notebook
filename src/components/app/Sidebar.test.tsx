@@ -52,7 +52,7 @@ const row = (html: string, href: string) =>
 
 it('opens the account chat at /chat from its Chat row, active there', () => {
   const chat = row(renderToStaticMarkup(<Sidebar account />), '/chat');
-  expect(chat).toContain(m.nav_chat());
+  expect(chat).toContain(m.nav_agent());
   expect(chat).not.toContain('bg-action');
 
   route.pathname = '/chat/conv_1';

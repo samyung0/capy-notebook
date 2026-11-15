@@ -148,6 +148,7 @@ type CreateMaterialReq struct {
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
 	ScopeTopics    []string              `json:"scopeTopics,omitempty"`
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
+	GradedQuiz     bool                  `json:"gradedQuiz,omitempty" doc:"Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day"`
 }
 
 // CreateEmbeddedMaterialReq is the body for POST /api/materials/{id}/embedded:
@@ -288,13 +289,14 @@ type CreateFlashcardSetReq struct {
 // preferences. detail, diagramType, and types have explicit defaults so
 // OpenAPI/orval capture them; the handler does not invent values after the gate.
 type GenerateReq struct {
-	Count   int                          `json:"count" minimum:"1" maximum:"50"`
-	Levels  []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
-	Types   []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
-	Topics  []string                     `json:"topics,omitempty" nullable:"false"`
-	FileIds []string                     `json:"fileIds,omitempty" nullable:"false"`
-	Title   MaterialTitle                `json:"title" minLength:"1"`
-	Mix     bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
+	Count      int                          `json:"count" minimum:"1" maximum:"50"`
+	Levels     []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
+	Types      []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
+	Topics     []string                     `json:"topics,omitempty" nullable:"false"`
+	FileIds    []string                     `json:"fileIds,omitempty" maxItems:"5" nullable:"false"` // fieldlimits.GenerateFiles
+	Title      MaterialTitle                `json:"title" minLength:"1"`
+	Mix        bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
+	GradedQuiz bool                         `json:"gradedQuiz,omitempty" doc:"Made in the New graded quiz dialog (CreateMaterialReq.gradedQuiz); only an editor's quiz is a workspace file"`
 }
 
 // CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8): the
@@ -307,6 +309,8 @@ type CreateExtractionReq struct {
 	Answers []ExtractionFile `json:"answers,omitempty" nullable:"false"`
 	// Hidden starts the quiz hidden from members: the dialog's switch (Epo 2026-11-11).
 	Hidden bool `json:"hidden"`
+	// GradedQuiz: started in the New graded quiz dialog (CreateMaterialReq.GradedQuiz).
+	GradedQuiz bool `json:"gradedQuiz,omitempty" doc:"Started in the New graded quiz dialog: its quiz starts hidden and waits for the graded quiz to take it; one never taken goes to the trash after a day"`
 }
 
 // ConfirmExtractionReq says how many of the questions a paused run found to make, from

@@ -6,27 +6,32 @@ import {
   type LearnerAnswer,
   type LearnerQuestion,
   type MarkItem,
+  multipleAnswers,
   type Question,
   type QuestionAnswer,
   type QuestionBlock,
   type QuestionGroup,
   type QuestionPart,
+  shuffledOrder,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
 import { keyBetween } from '@/lib/orderKey';
+import { Rng } from '@/lib/rng';
 
 /* A quiz's two live documents (live-items DESIGN.md 1.2, 1.3; Epo
  * 2026-10-10). The content document, which readers join too, holds
- * `questions`: question id -> {order, layout, labels, level?, stem, groups?,
- * parts}, group id -> {blocks}, part id -> {order, marks, blocks, answer,
- * group?}. A group has no order of its own: it sits where its first part sits,
+ * `questions`: question id -> {order, layout, labels, level?, topicIds?, stem,
+ * groups?, parts} (topicIds a plain list, never empty), group id ->
+ * {blocks}, part id -> {order, marks, blocks, answer, group?}. A group has no order of its own: it sits where its first part sits,
  * and what a merge leaves reads repaired (`repairGroups`, Epo 2026-11-04). The
- * answer map holds the type and what a learner may see: mcq options and
- * `multiple` (true while several are correct), a short answer's unit and
- * matching left items. The keys document, which only editors with write
- * access join, holds `keys`: part id -> {type, solution, correct | accepted |
- * hints | markscheme | gaps | options | pairs | items}. Editors type ordering
+ * answer map holds the type and what a learner may see: mcq options,
+ * `multiple` (true while several are correct or the author's flag is set),
+ * `shuffle` and `locked` (option id -> true; Shuffle options, Epo
+ * 2026-11-15), a short answer's unit and matching left items. The keys document, which only
+ * editors with write access join, holds `keys`: part id -> {type, solution,
+ * correct | accepted | markscheme | gaps | options | pairs | items},
+ * and an mcq's author `multiple` flag (Multiple answer, Epo 2026-11-15). Editors type ordering
  * items and matching options there; readers get them outside Yjs, as the
  * shuffled lists the content room pushes (`quiz-items`, D3 as revised
  * 2026-10-10), so neither their typing order nor their ids reach a reader.
@@ -110,14 +115,8 @@ const unreadable = (
 function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
   const type = plain<string>(entry, 'type');
   switch (type) {
-    case 'text': {
-      const label = plain<string>(entry, 'label');
-      return {
-        text: text(entry, 'text'),
-        type,
-        ...(typeof label === 'string' ? { label } : {}),
-      };
-    }
+    case 'text':
+      return { text: text(entry, 'text'), type };
     case 'table': {
       const rows = orderedKeys(mapAt(entry, 'rows'));
       const columns = orderedKeys(mapAt(entry, 'columns'));
@@ -182,6 +181,40 @@ const readMarkscheme = (key: YMap | undefined): MarkItem[] =>
     text: text(entry, 'text'),
   }));
 
+/** An mcq's locked option indices, only while Shuffle options is on. */
+function lockedIndexes(answer: YMap | undefined, options: Entry[]): number[] {
+  const locked = mapAt(answer, 'locked');
+  if (plain<boolean>(answer, 'shuffle') !== true || !locked) return [];
+  return options.flatMap((option, i) =>
+    locked.get(option.id) === true ? [i] : []
+  );
+}
+
+/** The order a reader already sees each shuffled mcq part's options in, by
+ * part id: the stored view's, which the server seeds per viewer and quiz. */
+export type ShownOrders = ReadonlyMap<string, readonly number[]>;
+
+/** A learner's shown order of a part's options (Shuffle options, Epo
+ * 2026-11-15): the order already shown while it still fits (as many options,
+ * locked ones in place), so a sync or an edit elsewhere moves nothing; else
+ * one seeded by the quiz and part, the same on every read. */
+function readerOrder(
+  shown: readonly number[] | undefined,
+  count: number,
+  locked: number[],
+  seed: string
+): number[] {
+  if (
+    shown?.length === count &&
+    new Set(shown).size === count &&
+    shown.every((index) => index >= 0 && index < count) &&
+    locked.every((index) => shown[index] === index)
+  )
+    return [...shown];
+  const rng = new Rng(seed);
+  return shuffledOrder(count, locked, () => rng.next());
+}
+
 function readAnswer(
   answer: YMap | undefined,
   key: YMap | undefined
@@ -194,11 +227,16 @@ function readAnswer(
       const indexes = options.flatMap((option, i) =>
         correct instanceof Y.Map && correct.get(option.id) === true ? [i] : []
       );
+      const locked = lockedIndexes(answer, options);
       return {
         answer: {
           correct: indexes,
           options: options.map(({ entry }) => text(entry, 'text')),
           type,
+          ...(key?.get('multiple') === true ? { multiple: true as const } : {}),
+          ...(plain<boolean>(answer, 'shuffle') === true
+            ? { shuffle: true as const, ...(locked.length ? { locked } : {}) }
+            : {}),
         },
       };
     }
@@ -218,7 +256,6 @@ function readAnswer(
       return {
         answer: {
           accepted: texts(mapAt(key, 'accepted')),
-          hints: texts(mapAt(key, 'hints')),
           type,
         },
         markscheme: readMarkscheme(key),
@@ -288,6 +325,7 @@ function groupOf(part: YMap) {
 export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
   return ordered(questionsScope(content) as YMap).map(({ entry, id }) => {
     const level = plain<Question['level']>(entry, 'level');
+    const topicIds = plain<string[]>(entry, 'topicIds');
     return repairGroups({
       ...readGroups(entry),
       id,
@@ -312,6 +350,7 @@ export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
       ),
       stem: readBlocks(mapAt(entry, 'stem')),
       ...(level ? { level } : {}),
+      ...(topicIds?.length ? { topicIds } : {}),
     });
   });
 }
@@ -342,7 +381,8 @@ export function applyReaderMessage(
  * options and ordering items from the room's lists. */
 export function readLearnerQuestions(
   content: Y.Doc,
-  lists: ReaderLists = NO_LISTS
+  lists: ReaderLists = NO_LISTS,
+  { quizId = '', shown }: { quizId?: string; shown?: ShownOrders } = {}
 ): LearnerQuestion[] {
   const items = (partId: string, kind: ReaderList['kind']) => {
     const list = lists.get(partId);
@@ -362,15 +402,27 @@ export function readLearnerQuestions(
           const type = plain<string>(answer, 'type');
           let learner: LearnerAnswer;
           switch (type) {
-            case 'mcq':
+            case 'mcq': {
+              const options = ordered(mapAt(answer, 'options'));
               learner = {
-                options: texts(mapAt(answer, 'options')),
+                options: options.map(({ entry }) => text(entry, 'text')),
                 type,
                 ...(plain<boolean>(answer, 'multiple') === true
                   ? { multiple: true as const }
                   : {}),
+                ...(plain<boolean>(answer, 'shuffle') === true
+                  ? {
+                      order: readerOrder(
+                        shown?.get(partId),
+                        options.length,
+                        lockedIndexes(answer, options),
+                        `${quizId}/${partId}`
+                      ),
+                    }
+                  : {}),
               };
               break;
+            }
             case 'short': {
               const unit = plain<string>(answer, 'unit');
               learner = { type, ...(typeof unit === 'string' ? { unit } : {}) };
@@ -673,7 +725,6 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
   switch (block.type) {
     case 'text':
       setText(entry, 'text', block.text);
-      setPlain(entry, 'label', block.label);
       return;
     case 'table':
       setPlain(entry, 'header', block.header);
@@ -778,6 +829,14 @@ function writeBlocks(map: YMap, next: QuestionBlock[]) {
   });
 }
 
+/** A map of ticks by option id holding exactly `ids`' (undefined: none). */
+function setTicks(ticks: YMap, ids: (string | undefined)[]) {
+  const wanted = new Set(ids);
+  for (const id of [...ticks.keys()]) if (!wanted.has(id)) ticks.delete(id);
+  for (const id of wanted)
+    if (id && ticks.get(id) !== true) ticks.set(id, true);
+}
+
 /** What the keys write needs from the content write: entry ids by position. */
 type PartIds = { left: string[]; options: string[] };
 
@@ -797,7 +856,14 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
         answer.options.map((value) => ({ text: value })),
         'opt'
       );
-      setPlain(map, 'multiple', answer.correct.length > 1 ? true : undefined);
+      setPlain(map, 'multiple', multipleAnswers(answer) ? true : undefined);
+      setPlain(map, 'shuffle', answer.shuffle);
+      if (answer.shuffle && answer.locked?.length)
+        setTicks(
+          child(map, 'locked'),
+          answer.locked.map((i) => ids.options[i])
+        );
+      else if (map.has('locked')) map.delete('locked');
       break;
     case 'short':
       setPlain(map, 'unit', answer.unit);
@@ -824,12 +890,11 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
     );
   switch (answer.type) {
     case 'mcq': {
-      const correct = child(key, 'correct');
-      const wanted = new Set(answer.correct.map((i) => ids.options[i]));
-      for (const id of [...correct.keys()])
-        if (!wanted.has(id)) correct.delete(id);
-      for (const id of wanted)
-        if (id && correct.get(id) !== true) correct.set(id, true);
+      setPlain(key, 'multiple', answer.multiple);
+      setTicks(
+        child(key, 'correct'),
+        answer.correct.map((i) => ids.options[i])
+      );
       break;
     }
     case 'boolean':
@@ -842,7 +907,6 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
     case 'drawing':
       if (answer.type === 'open') {
         list('accepted', answer.accepted, 'acc');
-        list('hints', answer.hints, 'hint');
       } else {
         setPlain(key, 'sampleBoard', answer.sample?.board);
         setPlain(key, 'sampleImage', answer.sample?.image);
@@ -930,6 +994,11 @@ export function writeQuestion(
     setPlain(entry, 'layout', next.layout);
     setPlain(entry, 'labels', next.labels);
     setPlain(entry, 'level', next.level);
+    setPlain(
+      entry,
+      'topicIds',
+      next.topicIds?.length ? next.topicIds : undefined
+    );
     writeBlocks(child(entry, 'stem'), next.stem);
     writeGroups(entry, next.groups ?? []);
     const parts = child(entry, 'parts');
@@ -988,22 +1057,6 @@ export function removeQuestion(
   }, origin);
 }
 
-/** A question as its documents hold it, to tell later if anyone wrote in it. */
-export function questionState(content: Y.Doc, keys: Y.Doc, id: string) {
-  return JSON.stringify(readQuestions(content, keys).find((q) => q.id === id));
-}
-
-/** Removes a question added and left blank, only while it holds what it did
- * then (`questionState`): what a co-editor has written in it since stays. */
-export function removeUnchangedQuestion(
-  content: Y.Doc,
-  keys: Y.Doc,
-  { id, state }: { id: string; state: string }
-) {
-  if (questionState(content, keys, id) === state)
-    removeQuestion(content, keys, id);
-}
-
 /** Moves a question to `index` in the quiz's order. */
 export function moveQuestion(
   content: Y.Doc,
@@ -1019,6 +1072,21 @@ export function moveQuestion(
     current[target]?.order ?? null
   );
   content.transact(() => mapAt(questions, id)?.set('order', order), origin);
+}
+
+/** Writes new questions in after the one at `index` (-1: first), in the order
+ * given: the editor's From the bank. One undo step takes them all, as Yjs
+ * merges a burst of edits. */
+export function insertQuestions(
+  content: Y.Doc,
+  keys: Y.Doc,
+  questions: Question[],
+  index: number
+) {
+  questions.forEach((question, i) => {
+    writeQuestion(content, keys, question);
+    moveQuestion(content, question.id, index + 1 + i);
+  });
 }
 
 /* ------------------------------------------- what the server follows */
@@ -1080,7 +1148,7 @@ export function withEmptyKeys(question: LearnerQuestion): Question {
         case 'ordering':
           return full(answer);
         case 'open':
-          return full({ accepted: [], hints: [], type: answer.type });
+          return full({ accepted: [], type: answer.type });
         case 'drawing':
           return full(answer);
         case 'gaps':

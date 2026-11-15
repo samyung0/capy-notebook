@@ -59,6 +59,7 @@ pub const QUESTION_SVG_BYTES_MAX: usize = 262144;
 pub const QUESTION_TABLE_COLUMNS_MAX: usize = 10;
 pub const QUESTION_TABLE_ROWS_MAX: usize = 30;
 pub const QUESTION_TEXT_MAX: usize = 12000;
+pub const QUESTION_TOPICS_MAX: usize = 5;
 pub const QUESTION_UNIT_MAX: usize = 100;
 pub const QUIZ_MARKSCHEME_MAX: usize = 5;
 pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;

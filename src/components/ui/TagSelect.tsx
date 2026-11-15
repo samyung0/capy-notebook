@@ -1,5 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { useId, useMemo, useRef, useState } from 'react';
-import { useTags } from '@/api/hooks';
+import { tagsQuery } from '@/api/hooks';
 import type { Tag, TagInput } from '@/api/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -13,6 +14,9 @@ type Option =
   | { type: 'existing'; tag: Tag };
 
 export interface TagSelectProps {
+  /** Suggestions in place of the user's catalog of `kind` (an item bank's
+   * tags). */
+  catalog?: Tag[];
   invalid?: boolean;
   /** Tag catalog scope — 'workspace' | 'quiz' | 'card'. */
   kind?: string;
@@ -33,6 +37,7 @@ export interface TagSelectProps {
  * `{ value }` with no id.
  */
 export function TagSelect({
+  catalog: given,
   value,
   onChange,
   kind = 'workspace',
@@ -41,7 +46,12 @@ export function TagSelect({
   placeholder,
   invalid,
 }: TagSelectProps) {
-  const { data: catalog = [] } = useTags(kind, { errorBoundary: false });
+  const { data: owned = [] } = useQuery({
+    ...tagsQuery(kind),
+    enabled: !given,
+    meta: { errorBoundary: false },
+  });
+  const catalog = given ?? owned;
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);

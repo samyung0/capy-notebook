@@ -7,7 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
-import { Spinner } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputError } from '@/components/ui/Input';
 import { Separator } from '@/components/ui/Separator';
 import { canManageWorkspaceSettings } from '@/features/workspace/access';
@@ -188,6 +188,20 @@ export function MembersRoster({
             shares && !canManage ? 'mt-6' : 'mt-3.5'
           )}
         >
+          {/* Loading: rows shaped as members, avatar and name. */}
+          {!membersData &&
+            !membersError &&
+            Array.from({ length: 4 }, (_, i) => (
+              <li
+                aria-label={i === 0 ? m.a11y_loading() : undefined}
+                className="flex min-h-13 items-center gap-2 border-divider border-b py-1.5"
+                key={i}
+                role={i === 0 ? 'status' : undefined}
+              >
+                <Skeleton className="size-7.5 shrink-0 rounded-full" />
+                <Skeleton className="h-3.5 w-36 rounded-button" />
+              </li>
+            ))}
           {membersData?.map((member) => (
             <li
               className="flex min-h-13 items-center gap-2 border-divider border-b py-1.5"

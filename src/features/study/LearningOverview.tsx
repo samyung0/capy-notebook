@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import { useLearningOverview } from '@/api/hooks';
+import { useContinue, useLearningOverview } from '@/api/hooks';
 import type { LearningRow, LearningWorkspace } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
@@ -15,6 +15,7 @@ import { materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
+import { ContinueCards } from './ContinueCards';
 import { questionsLabel } from './practice/practiceText';
 import { groupName, itemCount, REVIEW_MODE, reviewReason } from './reviewText';
 import { LabelChip } from './topicLabels';
@@ -23,7 +24,14 @@ import { LabelChip } from './topicLabels';
  * workspaces, then how each stands. Every row comes from a rule on the server
  * (`LearningOverview`), and the workspace's own actions live on its Dashboard. */
 export function LearningOverviewTab() {
-  const { data, fetchStatus, isLoading } = useLearningOverview();
+  const {
+    data,
+    fetchStatus,
+    isLoading: overviewLoading,
+  } = useLearningOverview();
+  // Continue sits on top: the page draws once both are in, so nothing shifts.
+  const { data: continuing = [], isLoading: continueLoading } = useContinue();
+  const isLoading = overviewLoading || continueLoading;
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
@@ -31,7 +39,12 @@ export function LearningOverviewTab() {
   if (!data) return null;
   const openWorkspace = (workspaceId: string) =>
     navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
-  if (!data.next.length && !data.workspaces.length && !data.teaches.length)
+  if (
+    !continuing.length &&
+    !data.next.length &&
+    !data.workspaces.length &&
+    !data.teaches.length
+  )
     return (
       <div
         className="flex flex-col items-center gap-4 py-16 text-center"
@@ -46,6 +59,7 @@ export function LearningOverviewTab() {
     );
   return (
     <div className="flex flex-col gap-6" ref={revealRef}>
+      <ContinueCards />
       {data.next.length > 0 && (
         <section>
           <div className="mb-2 flex items-center justify-between gap-4">
@@ -89,7 +103,7 @@ export function LearningOverviewTab() {
       )}
       {data.teaches.length > 0 && (
         <section>
-          <h2 className="t-subtitle mb-1">{m.learning_you_teach()}</h2>
+          <h2 className="t-subtitle mb-1">{m.learning_your_classes()}</h2>
           {data.teaches.map((ws) => (
             <RowButton
               className="grid-cols-[32px_minmax(0,1fr)_auto] items-center"
@@ -97,7 +111,7 @@ export function LearningOverviewTab() {
               onClick={() =>
                 navigate({
                   params: { workspaceId: ws.workspaceId },
-                  search: { study: 'members' as const },
+                  search: { study: 'summary' as const },
                   to: '/workspaces/$workspaceId',
                 })
               }
@@ -120,7 +134,7 @@ export function LearningOverviewTab() {
 const rowKey = (r: LearningRow) =>
   [
     r.kind,
-    r.sessionId ?? r.materialId ?? r.workspaceId,
+    r.materialId ?? r.workspaceId,
     r.suggestion?.group,
     r.suggestion?.topicId,
   ].join('/');
@@ -171,7 +185,7 @@ function WorkspaceIcon({
 /** What the row is: a quiz or set by its file icon, a review by its
  * workspace's icon (Epo 2026-11-12). */
 function RowIcon({ row }: { row: LearningRow }) {
-  if (row.kind === 'quiz' || row.kind === 'start')
+  if (row.kind === 'start')
     return (
       <FileIcon
         className="mt-px size-5 shrink-0"
@@ -195,12 +209,6 @@ function NextRow({ row }: { row: LearningRow }) {
   const navigate = useNavigate();
   const { suggestion: s, workspaceName, workspaceId } = row;
   function open() {
-    if (row.kind === 'session')
-      return navigate({
-        params: { workspaceId },
-        search: { from: 'review' as const, session: row.sessionId },
-        to: '/learning/review/$workspaceId',
-      });
     // The start dialog over the workspace's Practice, as on its Dashboard.
     if (s)
       return navigate({
@@ -223,26 +231,19 @@ function NextRow({ row }: { row: LearningRow }) {
       to: '/quizzes/$quizId/attempt',
     });
   }
-  const group = groupName(
-    (s?.group ?? row.group ?? 'workspace') as 'topic' | 'others' | 'workspace',
-    s?.topicName ?? row.topicName
-  );
+  const group = groupName(s?.group ?? 'workspace', s?.topicName);
   // A review of the whole workspace is named after it: "Biology 101 review".
   const title =
     row.title ||
     group ||
     m.learning_workspace_review({ workspace: workspaceName });
   const ownReview = !(row.title || group);
-  const continues = row.kind === 'session' || row.kind === 'quiz';
-  const when = row.at ? relativeTime(row.at) : '';
   return (
     <RowButton className="grid-cols-[20px_minmax(0,1fr)]" onClick={open}>
       <RowIcon row={row} />
       <span className="min-w-0">
         <span className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
-          <span className="truncate font-semibold">
-            {continues ? m.learning_continue_title({ title }) : title}
-          </span>
+          <span className="truncate font-semibold">{title}</span>
           {!ownReview && (
             <span className="t-meta truncate text-fg-secondary">
               {workspaceName}
@@ -250,18 +251,6 @@ function NextRow({ row }: { row: LearningRow }) {
           )}
         </span>
         <span className="block text-fg-secondary text-sm">
-          {row.kind === 'session' &&
-            m.learning_continue_session({
-              answered: row.answered,
-              total: row.total,
-              when,
-            })}
-          {row.kind === 'quiz' &&
-            m.learning_continue_quiz({
-              answered: row.answered,
-              total: row.total,
-              when,
-            })}
           {row.kind === 'start' &&
             `${m.learning_not_done()} · ${
               row.materialKind === 'flashcards'

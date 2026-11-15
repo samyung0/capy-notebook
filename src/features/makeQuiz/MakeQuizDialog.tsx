@@ -289,6 +289,8 @@ function UploadInput({
  */
 export function MakeQuizDialog({
   file,
+  graded,
+  hiddenAtFirst,
   initial,
   onClose,
   onConfirmed,
@@ -306,6 +308,13 @@ export function MakeQuizDialog({
 }: {
   /** The file whose pages are on show. */
   file: string | undefined;
+  /** A graded quiz's questions (Epo 2026-11-14): always hidden, with no Hide
+   * the quiz switch, and the dialog stays open while its files upload and
+   * read, since the graded quiz's Settings step follows the run. */
+  graded?: boolean;
+  /** Hide the quiz starts on: off from Study's Add practice,
+   * whose quiz is for the members (Epo 2026-11-11). */
+  hiddenAtFirst: boolean;
   /** From the address, for a link or a reload. */
   initial: MakeQuizChoice;
   onClose: () => void;
@@ -322,13 +331,13 @@ export function MakeQuizDialog({
   runId?: string;
   /** Each step is an address, so the browser's Back walks them. */
   step: 'files' | 'pages' | 'run';
-  /** Add practice: the files step is one tab of a dialog under this title.
+  /** Add quiz: the files step is one tab of a dialog under this title.
    * `strip` is its tab row and `other` the tab on show when it isn't this one,
    * in place of the files and their footer. */
   tabs?: {
     other?: { body: React.ReactNode; footer: React.ReactNode };
     strip: React.ReactNode;
-    title: string;
+    title: React.ReactNode;
   };
   workspaceId: string;
   workspaceName: string;
@@ -349,10 +358,9 @@ export function MakeQuizDialog({
     fromFiles(initial.answers)
   );
   const onPages = stepName === 'pages';
-  // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11), but
-  // shown from Add practice, whose quiz is for the members. A reload on a
-  // later step starts from that again.
-  const [hidden, setHidden] = useState(!tabs);
+  // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11). A
+  // reload on a later step starts from the default again.
+  const [hidden, setHidden] = useState(graded || hiddenAtFirst);
   // A link opens before the files arrive.
   const seeded = useRef(!!files);
   useEffect(() => {
@@ -470,7 +478,8 @@ export function MakeQuizDialog({
     const rows = add(list.slice(0, EXTRACTION_PAPER_FILES_MAX - paper.length));
     if (rows.length === 0) return;
     setPaper((current) => [...current, ...rows]);
-    setUploading((current) => [...current, ...rows.map((row) => row.key)]);
+    if (!graded)
+      setUploading((current) => [...current, ...rows.map((row) => row.key)]);
   };
   const startUpload = (target: 'answers' | 'paper') => {
     setMenu(null);
@@ -491,6 +500,7 @@ export function MakeQuizDialog({
     active: onPages,
     answers: choice.answers,
     file,
+    graded,
     hidden,
     onCancel: onClose,
     onChangeFiles: () => onShowFiles(choice),
@@ -518,10 +528,11 @@ export function MakeQuizDialog({
           );
           if (rows.length === 0) return;
           setAnswers((current) => [...current, ...rows]);
-          setUploading((current) => [
-            ...current,
-            ...rows.map((row) => row.key),
-          ]);
+          if (!graded)
+            setUploading((current) => [
+              ...current,
+              ...rows.map((row) => row.key),
+            ]);
         }}
       />
       {/* 16px between sections, as Workspace settings. Each field keeps Choose a file above the files
@@ -621,7 +632,8 @@ export function MakeQuizDialog({
             // footer's end elsewhere.
             action: !tabs?.other && (
               <Button
-                disabled={!canContinue}
+                // A graded quiz's files read here, not in the upload panel.
+                disabled={!canContinue || (graded && !allRead)}
                 onClick={() => {
                   if (allRead) {
                     onShowPages(choice);
@@ -647,7 +659,7 @@ export function MakeQuizDialog({
             closable: !!tabs,
             footer: tabs?.other ? (
               tabs.other.footer
-            ) : (
+            ) : graded ? null : (
               <>
                 <label className="mr-auto flex min-w-0 items-center gap-2 self-center text-sm max-sm:w-full">
                   <Switch checked={hidden} onCheckedChange={setHidden} />

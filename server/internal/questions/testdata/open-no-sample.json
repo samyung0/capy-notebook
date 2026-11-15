@@ -21,8 +21,7 @@
         ],
         "answer": {
           "type": "open",
-          "accepted": [],
-          "hints": ["reason"]
+          "accepted": []
         },
         "marks": 1,
         "markscheme": [

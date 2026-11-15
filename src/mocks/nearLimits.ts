@@ -280,7 +280,6 @@ function nearLimitPart(id: string, index: number): QuestionPart {
       return {
         answer: {
           accepted: [filled('Model answer: ', limits.QUIZ_OPEN_ANSWER_MAX)],
-          hints: [],
           type: 'open',
         },
         blocks: text('Explain how the sodium-potassium pump keeps a gradient.'),

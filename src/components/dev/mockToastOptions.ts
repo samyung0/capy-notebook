@@ -151,15 +151,6 @@ export const mockToastOptions: {
   },
   {
     group: 'Warnings',
-    label: 'Computation check',
-    toast: () => ({
-      description: m.question_computation_warning_body(),
-      title: m.question_computation_warning_title(),
-      variant: 'warning',
-    }),
-  },
-  {
-    group: 'Warnings',
     label: 'Quiz block not added',
     toast: () => ({
       description: m.editor_quiz_fence_invalid(),

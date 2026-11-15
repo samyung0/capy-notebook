@@ -325,10 +325,12 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	// picked from the workspace keeps its setting, and one uploaded in the
 	// Make a quiz dialog was uploaded hidden (CreateSourceUploadReq.Hidden),
 	// so a mark scheme never reaches the students. The quiz starts hidden
-	// unless the dialog's switch said otherwise (Hidden).
+	// unless the dialog's switch said otherwise (Hidden); one made for a graded
+	// quiz waits for its assignment (GradedQuiz).
 	run, err := a.s.CreateExtraction(runCtx, store.ExtractionStart{
 		ID: runID, WorkspaceID: wsID, UserID: actor, Title: title, SpendSessionID: charge.id, UnreadAnswers: unread,
 		PaperName: paperNames, PaperPages: paperPages, AnswerFiles: len(answers), Hidden: in.Body.Hidden,
+		GradedQuiz: in.Body.GradedQuiz,
 	})
 	if err != nil {
 		stream.Close()
@@ -528,7 +530,7 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	draft := store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
 		Kind: store.MaterialQuiz, Title: title, Questions: complete, Assets: assets, Hidden: run.Hidden,
-		AllowNoQuestions: len(incomplete) > 0,
+		GradedPending: run.GradedQuiz, AllowNoQuestions: len(incomplete) > 0,
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, draft)
 	if err != nil {

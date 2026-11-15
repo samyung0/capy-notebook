@@ -122,7 +122,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	// Files in what the caller can open: the workspaces above (Sam
 	// 2026-10-19) and its own standalone files. Never rows it only pays for.
-	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, `+searchTypos("f.name")+`, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
+	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, `+searchTypos("f.name")+`, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind FROM files f
 		LEFT JOIN workspaces w ON w.id=f.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, f.user_id)
 		WHERE (f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`) OR (f.workspace_id IS NULL AND f.user_id=$2))
@@ -136,17 +136,16 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	for rows.Next() {
 		var typos int
-		var id, name, wsID, wsName, thumbKey string
+		var id, name, wsID, wsName string
 		var fileKind FileKind
-		var preview MaterialPreview
-		if err := rows.Scan(&id, &name, &typos, &wsID, &wsName, &fileKind, &thumbKey, &preview); err != nil {
+		if err := rows.Scan(&id, &name, &typos, &wsID, &wsName, &fileKind); err != nil {
 			return nil, err
 		}
 		href := "/workspaces/" + wsID + "?file=" + id
 		if wsID == "" {
 			href = "/files/" + id
 		}
-		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href, ThumbnailKey: thumbKey, Preview: preview})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href})
 	}
 	rows.Close()
 
@@ -169,13 +168,13 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	// Every material the caller can open by its title (Epo 2026-11-13), as
 	// the flashcard sets were: not an embedded one, which lives in its note.
 	// A canvas is its owner's alone, so it is read apart below.
-	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, `+searchTypos("m.title")+`, m.workspace_name, m.preview
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, `+searchTypos("m.title")+`, m.workspace_name
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR m.workspace_id IN (`+visibleWorkspacesSQL("$2")+`))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND m.kind <> 'canvas' AND m.parent_material_id IS NULL AND `+searchMatch("m.title")+`
+			AND m.kind <> 'canvas' AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND `+searchMatch("m.title")+`
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
 		ORDER BY `+searchRank("m.title")+`
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
@@ -185,15 +184,14 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	for rows.Next() {
 		var typos int
 		var id, kind, name, wsName string
-		var preview MaterialPreview
-		if err := rows.Scan(&id, &kind, &name, &typos, &wsName, &preview); err != nil {
+		if err := rows.Scan(&id, &kind, &name, &typos, &wsName); err != nil {
 			return nil, err
 		}
 		href := "/materials/" + id
 		if kind == string(MaterialFlashcards) {
 			href = "/flashcards/" + id
 		}
-		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(kind), Title: name, Subtitle: wsName, Href: href, Preview: preview})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(kind), Title: name, Subtitle: wsName, Href: href})
 	}
 	rows.Close()
 
@@ -216,7 +214,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		}
 		href := "/canvas?c=" + id
 		if wsID != "" {
-			href = "/workspaces/" + wsID + "?panel=canvas"
+			href = "/workspaces/" + wsID + "?view=canvas"
 		}
 		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(MaterialCanvas), Title: name, Subtitle: wsName, Href: href})
 	}
@@ -420,7 +418,7 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 	err := s.pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM topics WHERE workspace_id=$1),
 		(SELECT count(*) FROM files WHERE workspace_id=$1 AND trashed_at IS NULL),
-		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND trashed_at IS NULL),
+		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND assignment_id IS NULL AND trashed_at IS NULL),
 		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),
 		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),0)`,
 		id).Scan(&st.Topics, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
@@ -1201,7 +1199,7 @@ func (s *Store) SourceItems(ctx context.Context, wsID string) ([]SourceItem, err
 		SELECT m.id, m.title, m.topic_id, EXISTS(
 			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
 			WHERE mc.material_id=m.id), 1, m.position, m.created_at
-		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 	) items ORDER BY src, position, at`, wsID)
 	if err != nil {
 		return nil, err
@@ -1229,7 +1227,7 @@ func (s *Store) VisibleSourceItems(ctx context.Context, wsID, viewer string) ([]
 		SELECT m.id, m.title, m.topic_id, EXISTS(
 			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
 			WHERE mc.material_id=m.id), 1, m.position, m.created_at
-		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 	) items ORDER BY src, position, at`, wsID, viewer)
 	if err != nil {
@@ -1358,13 +1356,13 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id, COALESCE(canvas_workspace_id,'')`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id, COALESCE(m.canvas_workspace_id,'')`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id, COALESCE(canvas_workspace_id,''), COALESCE(assignment_id,'')`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id, COALESCE(m.canvas_workspace_id,''), COALESCE(m.assignment_id,'')`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
 	var provenance []byte
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID, &mt.CanvasWorkspaceID)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID, &mt.CanvasWorkspaceID, &mt.AssignmentID)
 	if mt.ScopeTopics == nil {
 		mt.ScopeTopics = []string{}
 	}
@@ -1416,6 +1414,9 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	}
 	if mt.ParentMaterialID != "" && (mt.Kind != "quiz" && mt.Kind != "flashcards" || mt.TopicID != nil) {
 		return "", fmt.Errorf("%w: only an unfiled quiz or flashcard set can be embedded", materialdoc.ErrInvalid)
+	}
+	if mt.GradedPending && (mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "") {
+		return "", fmt.Errorf("%w: only a workspace quiz is made for a graded quiz", materialdoc.ErrInvalid)
 	}
 	content, err := materialdoc.FromLegacyMarkdown(string(mt.Kind), mt.Content)
 	if err != nil {
@@ -1498,12 +1499,12 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 topic_id, scope_topics, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
-		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id, canvas_workspace_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id, canvas_workspace_id, graded_pending)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21 OR $25,$22,$23,$24,$25)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.TopicID, mt.ScopeTopics,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID))
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID), mt.GradedPending)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1568,6 +1569,8 @@ type MaterialDraft struct {
 	// Hidden from the workspace's members from the start (a quiz made from
 	// files, Epo 2026-11-03).
 	Hidden bool
+	// GradedPending: made for a graded quiz (Material.GradedPending).
+	GradedPending bool
 	// A reader's generated quiz: standalone, linked to this workspace and topic
 	// for its maker's study reads (Material.PracticeWorkspaceID).
 	PracticeWorkspaceID string
@@ -1589,6 +1592,7 @@ func (d MaterialDraft) material() (Material, error) {
 		Kind: d.Kind, Title: d.Title, ScopeTopics: d.ScopeTopics, ScopeFileNames: d.ScopeFileNames,
 		Privacy: "private", Color: d.Color, Provenance: d.Provenance, TopicID: d.TopicID,
 		Hidden: d.Hidden, PracticeWorkspaceID: d.PracticeWorkspaceID, PracticeTopicID: d.PracticeTopicID,
+		GradedPending: d.GradedPending,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -2119,13 +2123,13 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 // ListMaterialRefs returns the unified, workspace-scoped list of versioned
 // Plate materials, newest first.
 // ListMaterialRefs lists the workspace's top-level materials userID may see:
-// hidden ones only for its owners and editors, and a quiz assigned to them.
+// hidden ones only for its owners and editors.
 func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.topic_id, m.position, m.created_at, m.size_bytes, m.node_count, m.max_depth,
-			m.provenance, m.hidden, `+materialAssignedCols("$2")+`
-		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.trashed_at IS NULL
-			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
+			m.provenance, m.hidden
+		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND m.trashed_at IS NULL
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 		ORDER BY m.position, m.created_at DESC`, wsID, userID)
 	if err != nil {
 		return nil, err
@@ -2147,13 +2151,9 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 			&r.MaxDepth,
 			&provenance,
 			&r.Hidden,
-			&r.Assigned,
-			&r.AssignmentID,
 		); err != nil {
 			return nil, err
 		}
-		// An assignee isn't told it is hidden from others.
-		r.Hidden = r.Hidden && r.AssignmentID == ""
 		if r.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
@@ -2246,65 +2246,6 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 		return Quiz{}, err
 	}
 	return s.GetQuiz(ctx, id)
-}
-
-type AttemptParams struct {
-	Sort       string // date, score, quiz, workspace
-	Ascending  bool
-	Workspaces []string
-	Kinds      []string // quiz, flashcards; empty is both
-	Offset     int
-	Limit      int
-}
-
-// ListAttempts pages the user's quiz and flashcard attempts, sorted and
-// filtered by kind and by the item's current workspace. The second value is
-// whether more follow.
-func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams) ([]Attempt, bool, error) {
-	order := map[string]string{
-		"score":     "a.correct / NULLIF(a.total, 0)",
-		"quiz":      "lower(a.quiz_name)",
-		"workspace": "lower(a.workspace_name)",
-	}[p.Sort]
-	if order == "" {
-		order = "a.taken_at"
-	}
-	dir := "DESC"
-	if p.Ascending {
-		dir = "ASC"
-	}
-	var workspaces, kinds []string
-	if len(p.Workspaces) > 0 {
-		workspaces = p.Workspaces
-	}
-	if len(p.Kinds) > 0 {
-		kinds = p.Kinds
-	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT `+attemptCols+`
-		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND a.kind <> 'assignment' AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
-		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
-		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset, kinds)
-	if err != nil {
-		return nil, false, err
-	}
-	defer rows.Close()
-	out := []Attempt{}
-	for rows.Next() {
-		var a Attempt
-		if err := rows.Scan(attemptDest(&a)...); err != nil {
-			return nil, false, err
-		}
-		out = append(out, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false, err
-	}
-	more := len(out) > p.Limit
-	if more {
-		out = out[:p.Limit]
-	}
-	return out, more, nil
 }
 
 // attemptCols and attemptDest read one attempt row (a, m and w aliased).

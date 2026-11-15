@@ -1,29 +1,24 @@
 import {
   lazy,
   type ReactNode,
-  type RefObject,
   Suspense,
   useContext,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
+import { useTopics } from '@/api/hooks';
 import { QUIZ_OPEN_PARTS_MAX } from '@/api/limits.generated';
 import type { Question } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
-import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { userToast } from '@/components/ui/userToast';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import type { RoomCopy } from '@/features/collaboration/deviceCopy';
-import {
-  type ItemRoomStatus,
-  itemEditingStopped,
-} from '@/features/collaboration/itemRoom';
+import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
   UndoButtons,
@@ -32,28 +27,30 @@ import {
   type PresenceConnection,
   useReportPresence,
 } from '@/features/collaboration/presence';
-import type { UndoTarget } from '@/features/collaboration/undo';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
-import { issueMessages, questionIssues } from '@/features/questions/issues';
+import { duplicateQuestion } from '@/features/questions/questionEdits';
 import {
   blankQuestion,
   type LearnerQuestion,
   modelMarked,
   questionMarks,
 } from '@/features/questions/types';
+import { quizBounds } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { quizSampleUpload } from './drawing/DrawnSample';
 import {
+  insertQuestions,
   moveQuestion,
-  questionState,
+  readQuestions,
   removeQuestion,
-  removeUnchangedQuestion,
   seedQuiz,
   withEmptyKeys,
   writeQuestion,
 } from './liveQuiz';
 import { useQuizQuestions, useQuizRooms } from './liveQuizRooms';
+import type { QuestionTopics } from './QuestionPane';
+import { QuestionRail } from './QuestionRail';
 import { QuestionRunner } from './QuestionRunner';
 import { QuizRecovery, quizImageUpload } from './QuizForm';
 import { QuizSplit, useQuizPick } from './QuizSplit';
@@ -61,6 +58,11 @@ import { QuizSplit, useQuizPick } from './QuizSplit';
 const QuestionPane = lazy(() =>
   import('./QuestionPane').then((module) => ({
     default: module.QuestionPane,
+  }))
+);
+const BankQuestionsDialog = lazy(() =>
+  import('@/features/itemBanks/BankPicker').then((module) => ({
+    default: module.BankQuestionsDialog,
   }))
 );
 
@@ -72,16 +74,16 @@ export function aiMarkedCount(questions: Question[]): string {
   return m.quiz_ai_marked_count({ count: open, max: QUIZ_OPEN_PARTS_MAX });
 }
 
-/** The question added and not written to yet, and what it held when added. */
-type BlankQuestion = { id: string; state: string };
+/** From the bank, opened once: its questions go in after `after` (a
+ * question's id; null for the end). */
+type BankOpen = { after: string | null; open: boolean };
 
-/** The quiz as a page (Epo 2026-11-02, board X2): the plain question list on
- * the left, the open question's fields on the right, each change written to
- * the quiz's documents at once. Phones have room for one: the list, then the
- * question with a way back to it. A question added and left blank goes, when
- * another opens or the page goes (`QuizEditor`). */
+/** The quiz as a page (Epo 2026-11-15, board Main): the plain question list
+ * on the left, the questions as cards on the right, the open one editing in
+ * place and each change written to the quiz's documents at once. Phones show
+ * the cards alone. No card opens with the page (Epo 2026-11-15): what the
+ * keys add as they come shifts nothing open. */
 function QuizEditorBody({
-  blank,
   content,
   keys,
   keysPending,
@@ -90,11 +92,9 @@ function QuizEditorBody({
   questions,
   quizId,
   sources,
-  status,
-  title,
-  undo,
+  topics,
+  workspaceId,
 }: {
-  blank: RefObject<BlankQuestion | null>;
   content: Y.Doc;
   keys: Y.Doc;
   keysPending?: boolean;
@@ -105,103 +105,105 @@ function QuizEditorBody({
   questions: Question[];
   quizId: string;
   sources: ReactNode;
-  status: ItemRoomStatus;
-  title: string;
-  undo: UndoTarget | null;
+  topics?: QuestionTopics;
+  /** The quiz's workspace ('' for none), for From the bank's banks. */
+  workspaceId: string;
 }) {
-  const { onQuestion, picked, setOnQuestion, setPicked } = pick;
-  const index = Math.max(
-    0,
-    questions.findIndex((question) => question.id === picked)
-  );
-  const question = questions[index];
-  const open = (id: string) => {
-    if (blank.current && blank.current.id !== id) {
-      removeUnchangedQuestion(content, keys, blank.current);
-      blank.current = null;
-    }
-    pick.open(id);
+  const { picked, setPicked } = pick;
+  const [bank, setBank] = useState<BankOpen | null>(null);
+  const current = questions.find((question) => question.id === picked);
+  // A question just added, whose text opens in its editor.
+  const [fresh, setFresh] = useState<string>();
+  const open = (id: string) => pick.open(id);
+  // A new question goes right after `index`, as Google Forms adds one.
+  const place = (question: Question, index: number) => {
+    writeQuestion(content, keys, question);
+    moveQuestion(content, question.id, index + 1);
+    open(question.id);
   };
+  // The copies go in where the dialog opened, read again now: someone else
+  // may have changed the quiz meanwhile. Past the quiz's bounds, none goes.
+  // A new question after `index`, opened; it stays, as each + in Google Forms
+  // adds a card (Epo 2026-11-15).
+  const addQuestion = (index: number) => {
+    const added = blankQuestion();
+    setFresh(added.id);
+    place(added, index);
+  };
+  const addFromBank = (copies: Question[]) => {
+    const now = readQuestions(content, keys);
+    try {
+      quizBounds([...now, ...copies]);
+    } catch (error) {
+      userToast({ title: (error as Error).message, variant: 'error' });
+      return;
+    }
+    const at = now.findIndex((question) => question.id === bank?.after);
+    insertQuestions(content, keys, copies, at < 0 ? now.length - 1 : at);
+    setBank((current) => current && { ...current, open: false });
+    open(copies[0].id);
+  };
+  const foot = (
+    <>
+      {/* A whole past paper is seen to fit (Epo 2026-11-03). */}
+      <p className="t-meta text-fg-muted">{aiMarkedCount(questions)}</p>
+      {sources}
+    </>
+  );
   return (
-    <QuizSplit
-      action={
-        <ToolbarButton
-          disabled={opening}
-          label={m.quiz_add_question()}
-          onClick={() => {
-            const added = blankQuestion();
-            writeQuestion(content, keys, added);
-            open(added.id);
-            blank.current = {
-              id: added.id,
-              state: questionState(content, keys, added.id),
-            };
-          }}
-        >
-          <Icon name="plus" />
-        </ToolbarButton>
-      }
-      current={question?.id}
-      foot={
-        <>
-          {/* A whole past paper is seen to fit (Epo 2026-11-03). */}
-          <p className="t-meta text-fg-muted">{aiMarkedCount(questions)}</p>
-          {sources}
-        </>
-      }
-      onBack={() => setOnQuestion(false)}
-      onOpen={open}
-      onQuestion={onQuestion}
-      questions={questions}
-      rowEnd={(item) => (
-        <>
-          {!opening && issueMessages(questionIssues(item)).length > 0 && (
-            <span
-              aria-label={m.quiz_editor_has_issue()}
-              className="inline-flex text-tint-warning-fg"
-              role="img"
-            >
-              <Icon className="size-4" name="alert" />
-            </span>
-          )}
-          {questionMarks(item)}
-        </>
-      )}
-    >
-      {question && (
+    // The rail, not the list, while editing (Epo 2026-11-15, Canvas's Build
+    // page): the cards have the room beside the file tree.
+    <div className="flex min-h-0 flex-1">
+      <QuestionRail
+        current={current?.id}
+        onAdd={() => addQuestion(questions.length - 1)}
+        onOpen={open}
+        opening={opening}
+        questions={questions}
+      />
+      <div className="min-h-0 min-w-0 flex-1" data-quiz-pane="">
         <Suspense fallback={<Skeleton className="m-4 h-64" />}>
-          <div className="contents" inert={opening}>
-            <QuestionPane
-              canMoveDown={index < questions.length - 1}
-              canMoveUp={index > 0}
-              context={title}
-              key={question.id}
-              keysPending={keysPending}
-              number={index + 1}
-              onMove={(direction) =>
-                moveQuestion(content, question.id, index + direction)
-              }
-              onRemove={() => {
-                const next = questions[index + 1] ?? questions[index - 1];
-                removeQuestion(content, keys, question.id);
-                blank.current = null;
-                setPicked(next?.id ?? null);
-              }}
-              opening={opening}
-              question={question}
-              status={status}
-              undo={undo}
-              uploadAsset={quizImageUpload(quizId)}
-              uploadSample={quizSampleUpload(quizId)}
-              write={(next) => {
-                blank.current = null;
-                writeQuestion(content, keys, next);
-              }}
+          <QuestionPane
+            foot={foot}
+            fresh={fresh}
+            keysPending={keysPending}
+            onAdd={addQuestion}
+            onBank={(index) =>
+              setBank({ after: questions[index]?.id ?? null, open: true })
+            }
+            onDuplicate={(question, index) =>
+              place(duplicateQuestion(question), index)
+            }
+            onMove={(id, index) => moveQuestion(content, id, index)}
+            onOpen={open}
+            onRemove={(id) => {
+              const index = questions.findIndex((q) => q.id === id);
+              const next = questions[index + 1] ?? questions[index - 1];
+              removeQuestion(content, keys, id);
+              if (id === current?.id) setPicked(next?.id ?? null);
+            }}
+            opening={opening}
+            picked={current?.id}
+            questions={questions}
+            scrollTop={pick.scrollTop}
+            topics={topics}
+            uploadAsset={quizImageUpload(quizId)}
+            uploadSample={quizSampleUpload(quizId)}
+            write={(next) => writeQuestion(content, keys, next)}
+          />
+          {bank && (
+            <BankQuestionsDialog
+              existing={questions}
+              onAdd={addFromBank}
+              onClose={() => setBank({ ...bank, open: false })}
+              open={bank.open}
+              quizId={quizId}
+              workspaceId={workspaceId}
             />
-          </div>
+          )}
         </Suspense>
-      )}
-    </QuizSplit>
+      </div>
+    </div>
   );
 }
 
@@ -273,7 +275,7 @@ function QuizOpeningPaint({
   quizId,
   sources,
   stored,
-  title,
+  topics,
 }: {
   contentSeed: Y.Doc | null;
   keysSeed: Y.Doc | null;
@@ -281,7 +283,7 @@ function QuizOpeningPaint({
   quizId: string;
   sources: ReactNode;
   stored: LearnerQuestion[];
-  title: string;
+  topics?: QuestionTopics;
 }) {
   const [docs] = useState(() => {
     const content = contentSeed ?? new Y.Doc();
@@ -303,11 +305,9 @@ function QuizOpeningPaint({
     [contentSeed, docs, keysSeed]
   );
   const shown = useQuizQuestions(docs.content, docs.keys);
-  const blank = useRef<BlankQuestion | null>(null);
   return (
     <div className="flex h-full min-h-0 flex-col" data-quiz-opening="">
       <QuizEditorBody
-        blank={blank}
         content={docs.content}
         keys={docs.keys}
         keysPending={!keysSeed}
@@ -316,9 +316,8 @@ function QuizOpeningPaint({
         questions={shown}
         quizId={quizId}
         sources={sources}
-        status="syncing"
-        title={title}
-        undo={null}
+        topics={topics}
+        workspaceId=""
       />
     </div>
   );
@@ -343,7 +342,13 @@ export function QuizEditor({
   sources,
   stored,
   target,
+  topicId,
+  workspaceId,
 }: {
+  /** The quiz's workspace ('' for none) and its topic, for its questions'
+   * own topics (Epo 2026-11-15). */
+  workspaceId?: string;
+  topicId?: string | null;
   /** The device copy its rooms start from. */
   copy: RoomCopy;
   /** The questions as its read holds them, painted until the rooms sync. */
@@ -363,6 +368,14 @@ export function QuizEditor({
   const rooms = useQuizRooms(quizId, { copy, edit: true });
   const pick = useQuizPick(target);
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
+  // Optional: without topics (loading or failed) the Topic field hides.
+  const { data: workspaceTopics } = useTopics(workspaceId ?? '', {
+    errorBoundary: false,
+  });
+  const topics: QuestionTopics | undefined = workspaceTopics && {
+    quizTopic: workspaceTopics.find((topic) => topic.id === topicId),
+    topics: workspaceTopics,
+  };
   const headerActions = useContext(FileActionsTarget);
   useEffect(() => {
     const saveState = rooms.recovery
@@ -379,18 +392,6 @@ export function QuizEditor({
   ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, rooms.presence);
-  // Leaving the page takes a blank added question with it. A layout effect's
-  // cleanup, because the rooms' documents go in their passive cleanups; and only
-  // while this page can write, since a read-only room refuses the edit.
-  const blank = useRef<BlankQuestion | null>(null);
-  const leave = useRef(() => {});
-  leave.current = () => {
-    const { access, content, keys, ready, recovery } = rooms;
-    if (!(blank.current && content && keys && ready)) return;
-    if (access !== 'write' || recovery || itemEditingStopped(rooms)) return;
-    removeUnchangedQuestion(content.doc, keys.doc, blank.current);
-  };
-  useLayoutEffect(() => () => leave.current(), []);
   // Once its question shows in the paint, and again as the page replaces it:
   // the page opens that question, its list row may be out of view.
   const scrolledTo = useRef<string | null>(null);
@@ -460,16 +461,14 @@ export function QuizEditor({
           {rooms.offline && <SaveBanner state={rooms.offline} />}
           <CollaborationHold className="flex min-h-0 flex-1 flex-col">
             <QuizEditorBody
-              blank={blank}
               content={rooms.content.doc}
               keys={rooms.keys.doc}
               pick={pick}
               questions={questions}
               quizId={quizId}
               sources={sources}
-              status={rooms.status}
-              title={title}
-              undo={rooms.undo}
+              topics={topics}
+              workspaceId={workspaceId ?? ''}
             />
           </CollaborationHold>
         </div>
@@ -484,7 +483,7 @@ export function QuizEditor({
               quizId={quizId}
               sources={sources}
               stored={stored}
-              title={title}
+              topics={topics}
             />
           )}
         </div>

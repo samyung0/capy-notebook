@@ -19,7 +19,6 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
-	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
@@ -535,67 +534,6 @@ func gradeAnonymous(stored json.RawMessage, body apimodel.GradeAnonymousQuizReq)
 		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
 	}
 	return &gradedQuestionOutput{Body: apimodel.GradedQuestion{Correct: correct, Total: total, Question: graded[0]}}, nil
-}
-
-/* --------------------------------------------------------- authoring check */
-
-// ComputationCheckReq names one open part of a draft question.
-type ComputationCheckReq struct {
-	Question map[string]any `json:"question"`
-	PartID   string         `json:"partId"`
-}
-
-// ComputationCheckResp warns an author that Jev cannot reliably grade this
-// open part because grading it needs a calculation checked.
-type ComputationCheckResp struct {
-	Computational bool    `json:"computational"`
-	Probability   float64 `json:"probability"`
-}
-
-type computationCheckInput struct {
-	Body ComputationCheckReq
-}
-type computationCheckOutput struct {
-	Body ComputationCheckResp
-}
-
-func (a *api) registerComputationCheck(api huma.API) {
-	regWithMaxBody(api, http.MethodPost, "/api/questions/computation-check", "checkQuestionComputation", "Quizzes",
-		"Check whether an open part needs computation to grade", http.StatusOK, materialRequestMaxBytes, a.checkQuestionComputation)
-}
-
-func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheckInput) (*computationCheckOutput, error) {
-	if err := questions.Validate(in.Body.Question, questions.Policy{}); err != nil {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
-	}
-	parts, _ := in.Body.Question["parts"].([]any)
-	for i, raw := range parts {
-		p, _ := raw.(map[string]any)
-		answer, _ := p["answer"].(map[string]any)
-		if p["id"] != in.Body.PartID || answer["type"] != "open" {
-			continue
-		}
-		items, _ := questions.MarkItems(p)
-		if err := a.reserveGrading(ctx, 1); err != nil {
-			return nil, err
-		}
-		probability, usage, err := a.jev.RequiresComputation(ctx, questions.GradingText(in.Body.Question, i), items)
-		if err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-			return nil, huma.Error503ServiceUnavailable("the check is unavailable, try again")
-		}
-		if err := a.s.RecordUsage(ctx, store.UsageEvent{
-			ActorUserID: userID(ctx), Kind: store.KindLLM, Surface: store.SurfaceQuiz,
-			Provider: "typesafe", Model: usage.Model, InputTokens: usage.InputTokens, Units: 1, Unit: "checks",
-			Metadata: map[string]any{"costMicroUsd": jev.CostMicroUSD(usage.InputTokens)},
-		}); err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		}
-		return &computationCheckOutput{Body: ComputationCheckResp{
-			Computational: probability >= jev.ComputationThreshold, Probability: probability,
-		}}, nil
-	}
-	return nil, huma.Error422UnprocessableEntity("partId must name an open part of the question")
 }
 
 // sampleImage reads a drawn sample answer's image asset as a data URL. It must be

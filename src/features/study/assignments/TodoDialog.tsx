@@ -13,16 +13,22 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import { assignmentPage, fileLink } from './assignmentPage';
-import { dateLabel, dateTimeLabel, minutesText } from './assignmentText';
+import {
+  dateLabel,
+  dateTimeLabel,
+  isGraded,
+  minutesText,
+} from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { assignmentFileIcon, useOpenAssignment } from './todoParts';
 import { isPlainTask, isTicked, type TodoRow } from './todoRows';
 
-/** A handed-in quiz's or hand-in's line: its mark when it shows, else that it
- * waits for marks, else that it is handed in. */
+/** A handed-in quiz's or hand-in's line: its mark (a graded Assignment's
+ * grade) when it shows, else that it waits for marks, else that it is handed
+ * in. */
 export function handedInText(a: Assignment) {
   const mine = a.mine;
-  if (a.kind !== 'marked' || !mine || a.gradesHidden) return m.todo_handed_in();
+  if (!isGraded(a) || !mine || a.gradesHidden) return m.todo_handed_in();
   if (mine.waitingMarks > 0) return m.todo_waiting_marks();
   if (mine.mark === undefined) return m.todo_handed_in();
   return `${formatPoints(mine.mark)}/${formatPoints(mine.total ?? a.marks)}`;

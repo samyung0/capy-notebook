@@ -514,12 +514,12 @@ func questionIndexPieces(q map[string]any) []string {
 	return out
 }
 
-// questionBlockText is one question block: a text's label and text, a
-// figure's rendering, a table's rows or an image's description.
+// questionBlockText is one question block: a text, a figure's rendering, a
+// table's rows or an image's description.
 func questionBlockText(b map[string]any) string {
 	switch b["type"] {
 	case "text":
-		return labelledLines(field(b, "label"), field(b, "text"))
+		return field(b, "text")
 	case "chart", "plot", "graph":
 		return figureIndexText(b)
 	case "table":
@@ -535,14 +535,4 @@ func questionBlockText(b map[string]any) string {
 		return field(b, "description")
 	}
 	return ""
-}
-
-func labelledLines(first, second string) string {
-	switch {
-	case first == "":
-		return second
-	case second == "":
-		return first
-	}
-	return first + "\n" + second
 }

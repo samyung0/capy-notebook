@@ -32,7 +32,7 @@ test('a member adds their work and hands it in', async ({ page }) => {
 test('staff open what a member handed in', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_lab');
   await expect(
-    page.getByText(m.assignment_handed_in_of({ done: 4, total: 6 }))
+    page.getByText(m.assignment_stat_of({ done: 4, total: 6 }))
   ).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Lab write-up.pdf' }).click();
   await expect(

@@ -7,8 +7,6 @@ import (
 	"math"
 	"slices"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -207,24 +205,21 @@ type reviewGroup struct {
 func (g reviewGroup) has(it ranked) bool {
 	switch g.kind {
 	case GroupTopic:
-		return it.topicID != nil && g.topicID != nil && *it.topicID == *g.topicID
+		return g.topicID != nil && slices.Contains(it.topicIDs, *g.topicID)
 	case GroupOthers:
-		return it.topicID == nil
+		return len(it.topicIDs) == 0
 	}
 	return true
 }
 
-// groupSuggestions forms a workspace's suggestions from its scored items:
-// each topic (and the items outside topics) passing the threshold, or the
-// whole workspace when none does but all of it together does. A workspace
-// without topics is one group. history feeds the evidence.
+// groupSuggestions forms a workspace's suggestions from its scored items: each
+// topic passing the threshold. Items outside topics, and a workspace without
+// topics, suggest nothing. history feeds the evidence.
 func groupSuggestions(items []scored, history map[string][]review.Rating, weight float64) []ReviewSuggestion {
 	var due []scored
-	hasTopic := false
 	for _, it := range items {
 		if it.r <= suggestedRecall {
 			due = append(due, it)
-			hasTopic = hasTopic || it.topicID != nil
 		}
 	}
 	build := func(g reviewGroup) (ReviewSuggestion, bool) {
@@ -265,33 +260,21 @@ func groupSuggestions(items []scored, history map[string][]review.Rating, weight
 		out.score = (parts[0] + parts[1] + parts[2]) * weight
 		return out, out.Items > 0 && out.score >= suggestionThreshold
 	}
-	if !hasTopic {
-		if s, ok := build(reviewGroup{kind: GroupWorkspace}); ok {
-			return []ReviewSuggestion{s}
-		}
-		return nil
-	}
+	// Only a real topic is suggested (Epo 2026-11-13): never Other files or
+	// the whole workspace as if they were one.
 	var groups []reviewGroup
 	seen := map[string]bool{}
 	for _, it := range due {
-		if it.topicID == nil {
-			if !seen[""] {
-				groups = append(groups, reviewGroup{kind: GroupOthers})
+		for _, id := range it.topicIDs {
+			if !seen[id] {
+				seen[id] = true
+				groups = append(groups, reviewGroup{kind: GroupTopic, topicID: &id})
 			}
-			seen[""] = true
-		} else if !seen[*it.topicID] {
-			seen[*it.topicID] = true
-			groups = append(groups, reviewGroup{kind: GroupTopic, topicID: it.topicID})
 		}
 	}
 	var out []ReviewSuggestion
 	for _, g := range groups {
 		if s, ok := build(g); ok {
-			out = append(out, s)
-		}
-	}
-	if len(out) == 0 {
-		if s, ok := build(reviewGroup{kind: GroupWorkspace}); ok {
 			out = append(out, s)
 		}
 	}
@@ -592,7 +575,7 @@ func (s *Store) MixInQuestions(ctx context.Context, userID, wsID string, topics 
 		if len(out) == n {
 			break
 		}
-		if len(topics) > 0 && (it.topicID == nil || !slices.Contains(topics, *it.topicID)) {
+		if len(topics) > 0 && !slices.ContainsFunc(it.topicIDs, func(id string) bool { return slices.Contains(topics, id) }) {
 			continue
 		}
 		if it.Question != nil {
@@ -1009,113 +992,41 @@ type PastReview struct {
 	Cards        *SessionScore `json:"cards,omitempty"`
 }
 
-type PastReviewParams struct {
-	Sort       string // date, quiz, cards, time, workspace, topic, status
-	Ascending  bool
-	Workspaces []string
-	Has        []string // quiz, flashcards
-	// ID reads one session, finished or not, for its result page.
-	ID     string
-	Offset int
-	Limit  int
-}
-
-// PastReviews lists the user's finished sessions. The second value is whether
-// more follow.
-func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewParams) ([]PastReview, bool, error) {
-	order := map[string]string{
-		"date":      "s.started_at",
-		"quiz":      "s.qc / NULLIF(s.qt, 0)",
-		"cards":     "s.kc::float / NULLIF(s.kt, 0)",
-		"time":      "s.last_answer_at - s.started_at",
-		"workspace": "lower(s.name)",
-		// Topic sessions by name; Others and whole-workspace ones last.
-		"topic": "CASE WHEN s.group_kind = 'topic' THEN lower(s.topic) END",
-		// Completed (every served item answered) before stopped, ascending.
-		"status": "s.answered < s.served",
-	}[p.Sort]
-	if order == "" {
-		order = "s.started_at"
-	}
-	dir := " DESC NULLS LAST"
-	if p.Ascending {
-		dir = " ASC NULLS LAST"
-	}
-	where := []string{"rs.user_id=$1"}
-	args := []any{userID}
-	if p.ID != "" {
-		args = append(args, p.ID)
-		where = append(where, "rs.id = $2")
-	} else {
-		where = append(where, "rs.finished_at IS NOT NULL")
-	}
-	if len(p.Workspaces) > 0 {
-		args = append(args, p.Workspaces)
-		where = append(where, "rs.workspace_id = ANY($"+strconv.Itoa(len(args))+")")
-	}
+// pastReview reads one of the user's sessions, finished or not, for its
+// result page.
+func (s *Store) pastReview(ctx context.Context, userID, id string) (PastReview, error) {
+	var r PastReview
+	var qc, qt *float64
+	var kc, kt *int64
 	// The caller's history stays, but names it can no longer reach are blank
 	// (Sam 2026-10-19), as on the Files page.
 	lost := lostAccessSQL("rs.workspace_id", "$1")
-	q := `WITH s AS (SELECT rs.id, rs.workspace_id,
-			CASE WHEN ` + lost + ` THEN '' ELSE w.name END AS name,
-			CASE WHEN ` + lost + ` THEN '' ELSE w.icon_id END AS icon_id,
-			rs.group_kind, CASE WHEN ` + lost + ` THEN '' ELSE COALESCE(c.name, '') END AS topic,
-			rs.mode, rs.topic_id, rs.started_at, rs.finished_at, rs.last_answer_at, jsonb_array_length(rs.items) AS served,
-			(SELECT count(*) FROM review_answers WHERE session_id=rs.id) AS answered,
-			(SELECT sum(correct) FROM review_answers WHERE session_id=rs.id AND kind='question') AS qc,
-			(SELECT sum(total) FROM review_answers WHERE session_id=rs.id AND kind='question') AS qt,
-			(SELECT count(*) FILTER (WHERE rating >= 3) FROM review_answers WHERE session_id=rs.id AND kind='card') AS kc,
-			(SELECT count(*) FROM review_answers WHERE session_id=rs.id AND kind='card') AS kt
+	err := s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id,
+			CASE WHEN `+lost+` THEN '' ELSE w.name END,
+			CASE WHEN `+lost+` THEN '' ELSE w.icon_id END,
+			rs.group_kind, rs.topic_id, CASE WHEN `+lost+` THEN '' ELSE COALESCE(c.name, '') END,
+			rs.mode, rs.started_at, rs.finished_at, rs.last_answer_at,
+			(SELECT count(*) FROM review_answers WHERE session_id=rs.id), jsonb_array_length(rs.items),
+			(SELECT sum(correct) FROM review_answers WHERE session_id=rs.id AND kind='question'),
+			(SELECT sum(total) FROM review_answers WHERE session_id=rs.id AND kind='question'),
+			(SELECT count(*) FILTER (WHERE rating >= 3) FROM review_answers WHERE session_id=rs.id AND kind='card'),
+			(SELECT count(*) FROM review_answers WHERE session_id=rs.id AND kind='card')
 		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id LEFT JOIN topics c ON c.id=rs.topic_id
-		WHERE ` + strings.Join(where, " AND ") + `)
-		SELECT s.id, s.workspace_id, s.name, s.icon_id, s.group_kind, s.topic_id, s.topic, s.mode, s.started_at, s.finished_at,
-			s.last_answer_at, s.answered, s.served, s.qc, s.qt, s.kc, s.kt
-		FROM s`
-	var filters []string
-	for _, h := range p.Has {
-		switch h {
-		case "quiz":
-			filters = append(filters, "s.qt > 0")
-		case "flashcards":
-			filters = append(filters, "s.kt > 0")
-		}
+		WHERE rs.user_id=$1 AND rs.id=$2`, userID, id).Scan(&r.ID, &r.WorkspaceID, &r.WorkspaceName, &r.IconID, &r.Group,
+		&r.TopicID, &r.TopicName, &r.Mode, &r.StartedAt, &r.FinishedAt, &r.LastAnswerAt, &r.Answered, &r.Total, &qc, &qt, &kc, &kt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r, ErrNotFound
 	}
-	if len(filters) > 0 {
-		q += " WHERE " + strings.Join(filters, " OR ")
-	}
-	q += " ORDER BY " + order + dir + ", s.started_at DESC, s.id"
-	args = append(args, p.Limit+1, p.Offset)
-	q += " LIMIT $" + strconv.Itoa(len(args)-1) + " OFFSET $" + strconv.Itoa(len(args))
-	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, false, err
+		return r, err
 	}
-	defer rows.Close()
-	out := []PastReview{}
-	for rows.Next() {
-		var r PastReview
-		var qc, qt *float64
-		var kc, kt *int64
-		if err := rows.Scan(&r.ID, &r.WorkspaceID, &r.WorkspaceName, &r.IconID, &r.Group, &r.TopicID, &r.TopicName, &r.Mode,
-			&r.StartedAt, &r.FinishedAt, &r.LastAnswerAt, &r.Answered, &r.Total, &qc, &qt, &kc, &kt); err != nil {
-			return nil, false, err
-		}
-		if qt != nil && *qt > 0 {
-			r.Quiz = &SessionScore{Correct: orZero(qc), Total: *qt}
-		}
-		if kt != nil && *kt > 0 {
-			r.Cards = &SessionScore{Correct: float64(orZero(kc)), Total: float64(*kt)}
-		}
-		out = append(out, r)
+	if qt != nil && *qt > 0 {
+		r.Quiz = &SessionScore{Correct: orZero(qc), Total: *qt}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, false, err
+	if kt != nil && *kt > 0 {
+		r.Cards = &SessionScore{Correct: float64(orZero(kc)), Total: float64(*kt)}
 	}
-	more := len(out) > p.Limit
-	if more {
-		out = out[:p.Limit]
-	}
-	return out, more, nil
+	return r, nil
 }
 
 func orZero[T any](v *T) T {
@@ -1137,14 +1048,11 @@ type ReviewResult struct {
 
 func (s *Store) ReviewSessionResult(ctx context.Context, userID, id string) (ReviewResult, error) {
 	out := ReviewResult{Items: []ReviewAnswer{}}
-	rows, _, err := s.PastReviews(ctx, userID, PastReviewParams{ID: id, Limit: 1})
+	past, err := s.pastReview(ctx, userID, id)
 	if err != nil {
 		return out, err
 	}
-	if len(rows) == 0 {
-		return out, ErrNotFound
-	}
-	out.Session = rows[0]
+	out.Session = past
 	session, err := s.ResumeReviewSession(ctx, userID, id)
 	if err != nil {
 		return out, err

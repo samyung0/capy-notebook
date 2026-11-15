@@ -42,17 +42,16 @@ import {
   DropdownMenuAnchor,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/DropdownMenu';
-import type { IconName } from '@/components/ui/Icon';
 import { MATERIAL_REF_TYPE } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { BLOCK_MENU_CONTENT, BlockMenuItem, MENU_ROW } from './blockMenu';
 import { useEditorScrollArea } from './editorScrollArea';
 import { toggleEditorBlock } from './editorTransforms';
 import { markGutterSlash } from './gutterSlash';
@@ -704,30 +703,6 @@ function useIsTouchDevice() {
       window.matchMedia('(pointer: coarse)').matches
   );
   return isTouch;
-}
-
-// The block menu takes the editor popovers' look (ToolbarPopoverContent and
-// ToolbarPopoverItem: the All blocks menu), not the app's menus.
-export const BLOCK_MENU_CONTENT =
-  'w-auto min-w-48 rounded-lg px-1 py-1.5 font-medium leading-(--body-line-height)';
-const MENU_ROW =
-  'h-7.5 gap-2 rounded-lg px-2 py-0 font-medium [&_svg]:-translate-y-px';
-
-export function BlockMenuItem({
-  icon,
-  label,
-  onSelect,
-}: {
-  icon?: IconName;
-  label: string;
-  onSelect: () => void;
-}) {
-  return (
-    <DropdownMenuItem className={MENU_ROW} onSelect={onSelect}>
-      {icon && <EditorIcon name={icon} />}
-      {label}
-    </DropdownMenuItem>
-  );
 }
 
 export function BlockContextMenu({ children }: { children: React.ReactNode }) {

@@ -11,6 +11,7 @@ import {
   isLonePart,
   questionItems,
 } from '@/features/questions/groups';
+import { parseMarkedText } from '@/features/questions/parseMarkedText';
 import { parseMathText } from '@/features/questions/parseMathText';
 
 export interface ExportLabels {
@@ -23,11 +24,12 @@ export interface ExportLabels {
   column: string;
   false: string;
   front: string;
-  hints: string;
   interactive: string;
   marks: string;
   markscheme: string;
   question: string;
+  /** The heading of a long answer's sample answer, after the scheme. */
+  sample: string;
   solution: string;
   true: string;
   video: string;
@@ -42,24 +44,28 @@ export const element = (
   children: MaterialNode[],
   props: Record<string, unknown> = {}
 ): MaterialElement => ({ children, type, ...props });
-export const textNodes = (text: string): MaterialNode[] =>
-  parseMathText(text).map((token) =>
-    token.type === 'text'
-      ? { text: token.value }
-      : element('inline_equation', [{ text: '' }], {
-          displayMode: token.type === 'display',
-          texExpression: token.value,
-        })
+/** A question string's text and formulas; `marks` also reads the bold,
+ * italic and underline markers of text blocks and table cells. */
+export const textNodes = (text: string, marks = false): MaterialNode[] =>
+  (marks ? parseMarkedText(text) : parseMathText(text)).map(
+    ({ type, value, ...rest }) =>
+      type === 'text'
+        ? { text: value, ...rest }
+        : element('inline_equation', [{ text: '' }], {
+            displayMode: type === 'display',
+            texExpression: value,
+          })
   );
 export const paragraph = (text: string, props: Record<string, unknown> = {}) =>
   element('p', textNodes(text), props);
+const markedParagraph = (text: string) => element('p', textNodes(text, true));
 const heading = (text: string) => element('h3', [{ text }]);
 
 export function questionBlocks(blocks: QuestionBlock[]): MaterialValue {
   return blocks.flatMap((block): MaterialValue => {
     switch (block.type) {
       case 'text':
-        return [paragraph((block.label ? `${block.label} ` : '') + block.text)];
+        return [markedParagraph(block.text)];
       case 'chart':
       case 'plot':
       case 'graph':
@@ -83,7 +89,7 @@ export function questionBlocks(blocks: QuestionBlock[]): MaterialValue {
                 'tr',
                 row.map((cell) =>
                   element(block.header && i === 0 ? 'th' : 'td', [
-                    paragraph(cell),
+                    markedParagraph(cell),
                   ])
                 )
               )
@@ -106,8 +112,9 @@ function answerLines(part: QuestionPart, labels: ExportLabels): string[] {
       return [a.correct ? labels.true : labels.false];
     case 'short':
       return a.accepted.map((answer) => answer + (a.unit ? ` ${a.unit}` : ''));
+    // Its sample answer has its own section (Epo 2026-11-15).
     case 'open':
-      return a.accepted;
+      return [];
     case 'drawing':
       return [];
     case 'matching':
@@ -204,16 +211,17 @@ export function flattenStudyBlocks(
                 ),
               ]
             : []),
+          // A drawn sample has no text to export.
+          ...(part.answer.type === 'open' && part.answer.accepted[0]
+            ? [
+                paragraph(labels.sample, { exportBold: true }),
+                markedParagraph(part.answer.accepted[0]),
+              ]
+            : []),
           ...(part.solution.length
             ? [
                 paragraph(labels.solution, { exportBold: true }),
                 ...questionBlocks(part.solution),
-              ]
-            : []),
-          ...(part.answer.type === 'open' && part.answer.hints.length
-            ? [
-                paragraph(labels.hints),
-                ...part.answer.hints.map((text) => paragraph(text)),
               ]
             : []),
         ])

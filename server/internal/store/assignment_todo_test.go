@@ -231,7 +231,7 @@ func TestOwnTasks(t *testing.T) {
 	if err != nil || len(todo.Workspaces) != 1 || len(todo.Workspaces[0].Items) != 2 {
 		t.Fatalf("a viewer's To do = %+v, err %v", todo, err)
 	}
-	staff, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now)
+	staff, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, everyAssignment)
 	if err != nil || len(staff.Items) != 1 || staff.Items[0].ID != given.ID {
 		t.Fatalf("staff's list = %+v, err %v", staff, err)
 	}
@@ -376,6 +376,7 @@ func TestOwnMarkedTask(t *testing.T) {
 	}
 	form := AssignmentForm{Kind: AssignmentMarked, Title: "Mock paper", QuizID: quiz.ID, Questions: qs, DueAt: &due, Attempts: 2,
 		Assignees: []string{f.viewer}, Marking: MarkingManual, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic}
+	gradedPending(t, f.s, quiz.ID)
 
 	// A quiz the class gave them and still holds back is not theirs to freeze.
 	given, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, due), now)
@@ -392,8 +393,9 @@ func TestOwnMarkedTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// In the class, from their own quiz: the class's staff do not reach it.
-	task, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, form, now)
+	// From their own quiz, which sits where the task does (no workspace,
+	// migration 0174): the class's staff do not reach it.
+	task, err := f.s.CreateAssignment(ctx, f.viewer, "", form, now)
 	if err != nil || !task.Own || task.Manage == nil || task.Mine == nil || task.Questions != 3 || task.Marks != 6 {
 		t.Fatalf("a marked task = %+v, err %v", task, err)
 	}
@@ -477,144 +479,5 @@ func TestOwnMarkedTask(t *testing.T) {
 	var left int
 	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE id=$1`, frozen.ID).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("deleting the task left %d frozen images, err %v", left, err)
-	}
-}
-
-// TestOwnTaskFromClassQuiz (Epo 2026-11-11): a member's task on a quiz of their
-// class is refused while the class has that quiz out, holds the quiz back from
-// nobody, logs its answers under the class, and is no assignment of the class's
-// in Practice. What they can no longer open leaves their tasks when they leave,
-// and a workspace that is deleted leaves its members their tasks.
-func TestOwnTaskFromClassQuiz(t *testing.T) {
-	f := newAssignmentFixture(t, "own-class-quiz")
-	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	due := now.Add(24 * time.Hour)
-	form := AssignmentForm{Kind: AssignmentMarked, Title: "Mock paper", QuizID: f.quiz.ID, Questions: frozenFixture(t), DueAt: &due,
-		Attempts: 1, Assignees: []string{f.viewer}, Marking: MarkingManual, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic}
-	answers := map[string]any{"p1": []any{float64(1)}, "p2": "osmosis", "p3": "Water moves in"}
-	take := func(taskID string) string {
-		t.Helper()
-		run, err := f.s.StartAssignment(ctx, f.viewer, taskID, false, now)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, answers, now.Add(time.Minute)); err != nil {
-			t.Fatal(err)
-		}
-		return run.ID
-	}
-	logged := func(attemptID string) (count int) {
-		t.Helper()
-		if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM answer_events WHERE attempt_id=$1 AND workspace_id=$2`, attemptID, f.ws.ID).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		return count
-	}
-
-	// While the class has the quiz out, even to someone else, it is held from a
-	// viewer member, so it cannot be their task's quiz.
-	named := f.form(t, due)
-	named.AssignAll, named.Assignees = false, []string{f.other}
-	given, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, named, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var refused *AssignmentInputError
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, "", form, now); !errors.As(err, &refused) {
-		t.Fatalf("a task from a quiz the class has out: %v", err)
-	}
-	if err := f.s.DeleteAssignment(ctx, f.user, given.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	// In the class and with no workspace, the quiz stays its maker's to open and
-	// the answers count where the quiz sits.
-	task, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loose, err := f.s.CreateAssignment(ctx, f.viewer, "", form, now)
-	if err != nil || loose.Manage == nil || loose.Manage.QuizWorkspaceID == nil || *loose.Manage.QuizWorkspaceID != f.ws.ID {
-		t.Fatalf("a loose task on a class quiz = %+v, err %v", loose, err)
-	}
-	if !f.keepsQuiz(t, f.viewer) || !f.inPractice(t, f.viewer, now) {
-		t.Fatal("their own task took the quiz from its maker")
-	}
-	// The open part waits for its mark, so two answers are logged so far.
-	if got := logged(take(task.ID)); got != 2 {
-		t.Fatalf("the class task logged %d answers under the class", got)
-	}
-	if got := logged(take(loose.ID)); got != 2 {
-		t.Fatalf("the loose task logged %d answers under the class", got)
-	}
-
-	// Once the class gives them the quiz, it is not theirs to freeze again.
-	given, err = f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, due), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.RepublishAssignment(ctx, f.viewer, task.ID, frozenFixture(t), now); !errors.As(err, &refused) {
-		t.Fatalf("republishing a task whose quiz the class gave out: %v", err)
-	}
-	if err := f.s.DeleteAssignment(ctx, f.user, given.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	// Closed and released, it is no closed assignment of the class's.
-	if _, err := f.s.SetAssignmentClosed(ctx, f.viewer, task.ID, true, now.Add(2*time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	if _, released, err := f.s.SweepAssignments(ctx, 100, now.Add(3*time.Minute)); err != nil || released < 1 {
-		t.Fatalf("released = %d, err %v", released, err)
-	}
-	practice, err := f.s.WorkspacePractice(ctx, f.user, f.ws.ID, true, now.Add(4*time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, q := range practice.Quizzes {
-		if q.ID == f.quiz.ID && q.AssignmentClosedAt != nil {
-			t.Fatalf("a member's task closed the class's quiz at %v", q.AssignmentClosedAt)
-		}
-	}
-
-	// A quiz they pay for in the class is not theirs to open once they leave.
-	note, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "My class quiz", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
-		Questions: json.RawMessage(assignmentQuestions), Privacy: PrivacyPrivate})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET owner_user_id=$2 WHERE id=$1`, note.ID, f.viewer); err != nil {
-		t.Fatal(err)
-	}
-	plain := AssignmentForm{Kind: AssignmentUnmarked, Title: "Revise", Attempts: 1, Assignees: []string{f.viewer},
-		Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{{MaterialID: note.ID}}}
-	revise, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, plain, now)
-	if err != nil || len(revise.Files) != 1 {
-		t.Fatalf("a task with their class quiz = %+v, err %v", revise, err)
-	}
-	if _, _, err := f.s.RemoveWorkspaceMemberWithResult(ctx, f.viewer, f.ws.ID, f.viewer); err != nil {
-		t.Fatal(err)
-	}
-	revise, err = f.s.GetAssignment(ctx, f.viewer, revise.ID, now)
-	if err != nil || revise.WorkspaceID != "" || len(revise.Files) != 0 {
-		t.Fatalf("after leaving = %+v, err %v", revise, err)
-	}
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, "", plain, now); !errors.As(err, &refused) {
-		t.Fatalf("a task with a file in a class they left: %v", err)
-	}
-
-	// A workspace that is deleted leaves its members the tasks they set themselves.
-	plain.Assignees, plain.Files = []string{f.other}, nil
-	kept, err := f.s.CreateAssignment(ctx, f.other, f.ws.ID, plain, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.DeleteWorkspace(ctx, f.user, f.ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	kept, err = f.s.GetAssignment(ctx, f.other, kept.ID, now)
-	if err != nil || kept.WorkspaceID != "" || kept.Mine == nil {
-		t.Fatalf("after its workspace was deleted = %+v, err %v", kept, err)
 	}
 }

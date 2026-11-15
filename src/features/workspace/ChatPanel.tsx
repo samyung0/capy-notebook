@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -306,16 +307,25 @@ function AssistantBubble({
   );
 }
 
-/** Below lg chat has no panel: a dock on the file page and a chat page over
- * the viewer, which the dock grows into on send. */
+/** The workspace's one chat (Epo 2026-11-14): a dock on the Files page and,
+ * over the viewer, the chat it grows into on send, which is also the Chat
+ * page. */
 export interface ChatDockOptions {
+  /** The overlay's back as a labelled link to its list ("← Chats" on a
+   * phone's Chat page); without it a bare arrow back to the file. */
+  backLabel?: string;
+  /** How the open chat sits over the viewer: the Chat page beside its list
+   * (`page`, from lg), a window over the open file (`window`, from lg), or the
+   * whole viewer with a back arrow (`overlay`, below lg). */
+  layout: 'overlay' | 'page' | 'window';
   /** Workspace actions after New chat in the chat page's ⋮. */
   menuItems: MenuItem[];
-  /** No dock at all, only the chat page: while the workspace rail shows, its
-   * Agent opens the chat (Epo 2026-11-12). Phones keep the dock's button. */
+  /** No dock button: only the Files page has it (Epo 2026-11-14). */
   off?: boolean;
   /** An Office file is open: the dock stays a button above its bottom chrome. */
   office: boolean;
+  /** The window's expand button: the same chat on the Chat page. */
+  onExpand?: () => void;
   /** The chat page's state lives in the URL, so the back gesture leaves it. */
   onPageOpen: (open: boolean) => void;
   pageOpen: boolean;
@@ -415,6 +425,8 @@ export function ChatPanel({
   } = useChatStream(workspaceId);
   const { data: me } = useMe({ errorBoundary: false });
   const mode: ChatSteps = me?.chatSteps ?? 'verbose';
+  // The account chat and the workspace's Chat page keep a readable column.
+  const centred = fill || dock?.layout === 'page';
   const sendKey = me?.chatSendKey ?? 'enter';
   // Dock only: the chat page is open, or a chip leads back to it after a
   // citation or a created file took the learner to the file.
@@ -438,7 +450,9 @@ export function ChatPanel({
     else setBackShown(hasMessages);
   }, [hasMessages, urlPageOpen]);
   function toFile() {
-    if (!dock) return;
+    // From lg the file opens under the chat's window, which stays (the URL
+    // keeps the chat open).
+    if (dock?.layout !== 'overlay') return;
     // Opening the file drops the URL's flag.
     setPageShown(false);
     setBackShown(true);
@@ -723,7 +737,7 @@ export function ChatPanel({
         className={cn(
           'scroll-fade-y flex flex-1 flex-col gap-4 self-stretch overflow-auto py-4 [--scroll-fade-bottom-padding:--spacing(4)]',
           // Filling the page, the column stays 48rem wide in the middle.
-          fill ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
+          centred ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
         )}
         onScroll={
           proseLanded
@@ -796,7 +810,7 @@ export function ChatPanel({
         className={cn(
           'grow-0 p-3',
           // In line with the thread's 48rem column, past the 12px padding.
-          fill && 'mx-auto w-full max-w-[49.5rem]'
+          centred && 'mx-auto w-full max-w-[49.5rem]'
         )}
       >
         {questions.length > 0 && last ? (
@@ -971,6 +985,11 @@ export function ChatPanel({
         {thread}
       </div>
     );
+  const closePage = () =>
+    withViewTransition(() => {
+      setPageOpen(false);
+      setBackShown(messages.length > 0);
+    });
   // Over the viewer: the chat page when open, else the dock on the file.
   return (
     <div
@@ -981,47 +1000,104 @@ export function ChatPanel({
       <div
         className={cn(
           // The keyboard covers the page; the composer stays just above it.
-          'pointer-events-auto absolute inset-0 flex flex-col overflow-hidden rounded-card-xl bg-surface pb-(--keyboard-inset,0px) shadow-card',
+          'pointer-events-auto absolute flex flex-col overflow-hidden bg-surface pb-(--keyboard-inset,0px)',
+          dock.layout === 'window'
+            ? 'right-5 bottom-5 h-[min(620px,calc(100%-2.5rem))] w-105 max-w-[calc(100%-2.5rem)] rounded-[18px] border border-divider shadow-pop'
+            : 'inset-0 rounded-card-xl shadow-card',
           CHAT_DOCK_TRANSITION
         )}
         data-keyboard-overlay
-        data-workspace-chat-page
+        data-workspace-chat-page={dock.layout}
         hidden={!pageOpen}
       >
-        <div className="flex h-12 shrink-0 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:pr-2 sm:pl-4">
-          <ToolbarButton
-            label={m.action_back()}
-            onClick={() =>
-              withViewTransition(() => {
-                setPageOpen(false);
-                setBackShown(messages.length > 0);
-              })
-            }
-          >
-            <Icon name="navigationBack" />
-          </ToolbarButton>
-          <Icon
-            className="size-4 shrink-0 -translate-y-px text-solid-accent-1 md:size-5"
-            name="ai"
-          />
-          <h2 className="t-body min-w-0 flex-1 truncate font-semibold">
-            {title}
-          </h2>
-          <ToolbarButton
-            label={historyAction.label}
-            onClick={historyAction.onClick}
-          >
-            <Icon name="clock" />
-          </ToolbarButton>
-          <Menu
-            items={[newAction, ...dock.menuItems]}
-            trigger={
-              <ToolbarButton label={m.a11y_open_menu()}>
-                <Icon name="moreVertical" />
-              </ToolbarButton>
-            }
-          />
+        <div
+          className={cn(
+            'flex shrink-0 items-center border-divider border-b',
+            // The window's buttons sit close together (Epo 2026-11-14).
+            dock.layout === 'window'
+              ? 'h-12 gap-0 pr-2 pl-4 [--toolbar-button:28px]'
+              : 'h-12 gap-1 pr-1 pl-2 sm:h-14 sm:gap-2 sm:pr-2 sm:pl-4'
+          )}
+        >
+          {dock.backLabel ? (
+            <>
+              <UnderlineLink
+                className="text-fg"
+                iconLeft="navigationBack"
+                noArrow
+                onClick={closePage}
+              >
+                {dock.backLabel}
+              </UnderlineLink>
+              <span className="flex-1" />
+            </>
+          ) : (
+            <>
+              {dock.layout === 'overlay' && (
+                <ToolbarButton label={m.action_back()} onClick={closePage}>
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
+              )}
+              <Icon
+                className={cn(
+                  'size-4 shrink-0 -translate-y-px text-solid-accent-1 md:size-5',
+                  dock.layout !== 'overlay' && 'ml-1'
+                )}
+                name="ai"
+              />
+              <h2
+                className={cn(
+                  't-body min-w-0 flex-1 truncate font-semibold',
+                  dock.layout === 'window' && 'ml-2'
+                )}
+              >
+                {title}
+              </h2>
+            </>
+          )}
+          {/* The window's New chat leads its buttons; no workspace menu. */}
+          {dock.layout === 'window' && (
+            <ToolbarButton
+              disabled={newAction.disabled}
+              label={newAction.label}
+              onClick={newAction.onClick}
+            >
+              <Icon name="plus" />
+            </ToolbarButton>
+          )}
+          {/* The Chat page has its list beside it. */}
+          {dock.layout !== 'page' && !dock.backLabel && (
+            <ToolbarButton
+              label={historyAction.label}
+              onClick={historyAction.onClick}
+            >
+              <Icon name="clock" />
+            </ToolbarButton>
+          )}
+          {dock.onExpand && dock.layout === 'window' && (
+            <ToolbarButton label={m.chat_open_page()} onClick={dock.onExpand}>
+              <Icon name="maximize" />
+            </ToolbarButton>
+          )}
+          {dock.layout !== 'window' && (
+            <Menu
+              items={[newAction, ...dock.menuItems]}
+              trigger={
+                <ToolbarButton label={m.a11y_open_menu()}>
+                  <Icon name="moreVertical" />
+                </ToolbarButton>
+              }
+            />
+          )}
+          {dock.layout === 'window' && (
+            <ToolbarButton label={m.action_close()} onClick={closePage}>
+              <Icon name="x" />
+            </ToolbarButton>
+          )}
         </div>
+        {dock.backLabel && shown && (
+          <h2 className="t-body truncate px-4 pt-4 font-semibold">{title}</h2>
+        )}
         {thread}
       </div>
       {!(pageOpen || hidden || dock.off) && (
@@ -1041,6 +1117,16 @@ export function ChatPanel({
           }
           fieldRef={dockFieldRef}
           office={dock.office}
+          // From lg the button opens the chat's window over the file.
+          onButton={
+            dock.layout === 'window'
+              ? () =>
+                  withViewTransition(() => {
+                    setPageOpen(true);
+                    setBackShown(false);
+                  })
+              : undefined
+          }
           onOpenHistory={() => {
             withViewTransition(() => {
               setPageOpen(true);

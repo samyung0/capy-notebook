@@ -140,7 +140,7 @@ func paperAssignment(t *testing.T, h http.Handler, marking string, timeLimit int
 			"id": "q2", "stem": []any{}, "layout": "paper", "labels": "letters",
 			"parts": []map[string]any{{
 				"id": "q2:part:1", "blocks": []map[string]any{{"type": "text", "text": "Explain."}},
-				"answer": map[string]any{"type": "open", "accepted": []string{}, "hints": []string{}}, "marks": 2,
+				"answer": map[string]any{"type": "open", "accepted": []string{}}, "marks": 2,
 				"markscheme": []map[string]any{{"text": "Point one", "marks": 2}}, "solution": []any{},
 			}},
 		}},
@@ -150,6 +150,7 @@ func paperAssignment(t *testing.T, h http.Handler, marking string, timeLimit int
 	}
 	var made struct{ ID string }
 	_ = json.Unmarshal(quiz.Body.Bytes(), &made)
+	gradedPending(t, made.ID)
 	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil) })
 	body := map[string]any{
 		"kind": "marked", "title": "On paper", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),

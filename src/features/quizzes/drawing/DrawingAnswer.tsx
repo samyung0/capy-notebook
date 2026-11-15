@@ -1,5 +1,6 @@
 import { lazy, type ReactNode, Suspense, useContext, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { stripMarks } from '@/features/questions/parseMarkedText';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import type { QuestionBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -163,7 +164,7 @@ export function ReviewedDrawing({
         ),
         marks,
         short: title,
-        summary: first?.type === 'text' ? first.text : '',
+        summary: first?.type === 'text' ? stripMarks(first.text) : '',
         title,
       }}
       review

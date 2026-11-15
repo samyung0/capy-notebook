@@ -6,9 +6,9 @@ import { useSearch } from '@/api/hooks';
 import type { MaterialRefType, SearchKind, SearchResult } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/Dialog';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -21,7 +21,6 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { waitsForConnection } from '@/lib/online';
 import { useDebounced } from '@/lib/useDebounced';
-import { userColorPair } from '@/lib/userColor';
 
 /** A material hit's kind is its material kind; these draw a plain icon. */
 const KIND_ICON = {
@@ -113,11 +112,11 @@ export function SearchDialog({
               />
             </DialogClose>
           </div>
-          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2.5 max-sm:pb-[calc(--spacing(2.5)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]">
+          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2 max-sm:pb-[calc(--spacing(2)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]">
             {waitsForConnection(fetchStatus, data) ? (
               <QueryPausedState />
             ) : isFetching ? (
-              <SkeletonList className="px-1" count={5} rowHeight={44} />
+              <SkeletonList className="px-1" count={6} rowHeight={40} />
             ) : query && !data && isError ? (
               <CenteredState>
                 <InlineErrorState
@@ -135,7 +134,7 @@ export function SearchDialog({
                     className="not-first:mt-2 border-divider not-first:border-t not-first:pt-2"
                     key={kind}
                   >
-                    <h3 className="t-meta px-2 pb-1 font-semibold text-fg-muted">
+                    <h3 className="t-meta px-2 py-1 font-semibold text-fg-muted">
                       {GROUP_LABEL[kind]()}
                     </h3>
                     {rows.map((r) => (
@@ -192,6 +191,7 @@ function CenteredState({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** One line per hit: the kind's icon, the name, then where it lives. */
 function ResultRow({
   onOpen,
   result: r,
@@ -199,65 +199,47 @@ function ResultRow({
   onOpen: () => void;
   result: SearchResult;
 }) {
-  const workspaceIcon = r.kind === 'workspace' && r.iconId;
-  const fileIcon =
-    r.kind === 'file' && r.fileKind
-      ? fileIconName({ kind: r.fileKind, name: r.title })
-      : isMaterial(r.kind)
-        ? materialIconName(r.kind)
-        : undefined;
-  const c = r.color ? userColorPair(r.color) : null;
   return (
     <button
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex w-full items-center gap-3 px-2 py-1 text-left hover:bg-surface-hover-bg'
+        'flex h-10 w-full items-center justify-start gap-3 px-2 text-left hover:bg-surface-hover-bg'
       )}
       onClick={onOpen}
       type="button"
     >
-      {fileIcon ? (
-        <ThumbnailPanel
-          fileKind={r.fileKind}
-          icon={fileIcon}
-          preview={r.preview}
-          small
-          thumbnailUrl={r.thumbnailUrl}
-        />
-      ) : (
-        <span
-          className={cn(
-            'flex size-10 shrink-0 items-center justify-center rounded-button',
-            !workspaceIcon && 'bg-surface-hover-bg text-fg-secondary'
-          )}
-          style={
-            !workspaceIcon && c ? { background: c.bg, color: c.fg } : undefined
-          }
-        >
-          {/* 32px in the thumbnails' 40px column, so it doesn't loom over them. */}
-          {workspaceIcon ? (
-            <img
-              alt=""
-              className="size-8 rounded-[7px]"
-              height={32}
-              src={iconUrl(workspaceIcon)}
-              width={32}
-            />
-          ) : (
-            !isMaterial(r.kind) && <Icon name={KIND_ICON[r.kind]} size={16} />
-          )}
-        </span>
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-fg text-sm">
-          {r.title}
-        </span>
-        {r.subtitle && (
-          <span className="block truncate text-fg-muted text-xs">
-            {r.subtitle}
-          </span>
+      <span className="flex size-5 shrink-0 items-center justify-center">
+        {r.kind === 'workspace' && r.iconId ? (
+          <img
+            alt=""
+            className="size-5 rounded-[4px]"
+            height={20}
+            src={iconUrl(r.iconId)}
+            width={20}
+          />
+        ) : r.kind === 'file' && r.fileKind ? (
+          <FileIcon
+            className="size-5"
+            name={fileIconName({ kind: r.fileKind, name: r.title })}
+          />
+        ) : isMaterial(r.kind) ? (
+          <FileIcon className="size-5" name={materialIconName(r.kind)} />
+        ) : (
+          <Icon
+            className="text-fg-secondary"
+            name={KIND_ICON[r.kind]}
+            size={18}
+          />
         )}
       </span>
+      <span className="min-w-0 truncate font-medium text-fg text-sm">
+        {r.title}
+      </span>
+      {r.subtitle && (
+        <span className="ml-auto min-w-0 max-w-[45%] shrink-0 truncate pl-2 text-fg-muted text-xs">
+          {r.subtitle}
+        </span>
+      )}
     </button>
   );
 }

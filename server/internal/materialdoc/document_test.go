@@ -147,7 +147,7 @@ func TestBlockIndentStopsAtTheCatalogMax(t *testing.T) {
 }
 
 func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
-	questions := json.RawMessage(`[{"id": "q0", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p0", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q1", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p1", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0, 1]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q2", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p2", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "boolean", "correct": false}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q3", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p3", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "short", "accepted": ["alpha"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q4", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p4", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "matching", "options": ["unused", "X", "Y"], "pairs": [{"left": "A", "right": 1}, {"left": "B", "right": 1}]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q5", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p5", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "ordering", "items": ["A", "B"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q6", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p6", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "open", "accepted": ["explanation"], "hints": ["reason"]}, "marks": 1, "markscheme": [{"text": "Correct answer", "marks": 1}], "solution": []}], "layout": "paper", "labels": "letters"}]`)
+	questions := json.RawMessage(`[{"id": "q0", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p0", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q1", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p1", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0, 1]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q2", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p2", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "boolean", "correct": false}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q3", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p3", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "short", "accepted": ["alpha"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q4", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p4", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "matching", "options": ["unused", "X", "Y"], "pairs": [{"left": "A", "right": 1}, {"left": "B", "right": 1}]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q5", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p5", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "ordering", "items": ["A", "B"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q6", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p6", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "open", "accepted": ["explanation"]}, "marks": 1, "markscheme": [{"text": "Correct answer", "marks": 1}], "solution": []}], "layout": "paper", "labels": "letters"}]`)
 	raw, err := QuizDocument(questions, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1315,5 +1315,33 @@ func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
 	// Beyond the kept states a note write is still checked.
 	if err := ValidateKind(figure(chart("radar", values(1, 2))), "note"); !errors.Is(err, ErrInvalid) {
 		t.Errorf("an unknown chart kind is taken: %v", err)
+	}
+}
+
+// A workspace clone renames questions' own topics to the copies' ids; one the
+// clone has no copy of goes, and a question left with none follows its quiz's
+// topic.
+func TestRewriteQuestionTopics(t *testing.T) {
+	question := func(id, topics string) string {
+		return `{"id":"` + id + `","stem":[],"topicIds":` + topics + `,"parts":[{"id":"` + id + `p","blocks":[{"type":"text","text":"Why?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}`
+	}
+	raw, err := QuizDocument(json.RawMessage(`[`+question("q1", `["tp_gone","tp_old"]`)+`,`+question("q2", `["tp_gone"]`)+`]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RewriteQuestionTopics(raw, map[string]string{"tp_old": "tp_new"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiz, _, err := ExtractQuiz(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var qs []map[string]any
+	if err := json.Unmarshal(quiz, &qs); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := qs[1]["topicIds"]; fmt.Sprint(qs[0]["topicIds"]) != "[tp_new]" || has {
+		t.Fatalf("topics = %v, %v", qs[0]["topicIds"], qs[1]["topicIds"])
 	}
 }

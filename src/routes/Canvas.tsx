@@ -53,7 +53,7 @@ export default function CanvasPage() {
       openOther: (canvas) =>
         void navigate({
           params: { workspaceId: canvas.workspaceId ?? '' },
-          search: { c: canvas.id, panel: 'canvas' },
+          search: { c: canvas.id, view: 'canvas' },
           to: '/workspaces/$workspaceId',
         }),
       show: (id, replace = false) =>

@@ -6,23 +6,11 @@ const railSection = (page: Page, name: string) =>
     .getByRole('navigation', { name: m.workspace_rail_label() })
     .getByRole('button', { exact: true, name });
 
-/** Agent's panel, on whichever it shows: a chat or the history. Pressing the
- * section that already shows would close its panel. */
-async function showAgent(page: Page) {
-  const agent = railSection(page, m.workspace_section_agent());
-  await agent.waitFor();
-  const shown = page.locator('[data-workspace-left-panel]');
-  if (
-    (await agent.getAttribute('aria-current')) !== 'page' ||
-    !(await shown.isVisible())
-  )
-    await agent.click();
-}
-
-/** Shows Files or Chat in an lg viewport, both in the panel beside the rail.
- * Files is the rail's Files section (already shown while a file is open). Chat
- * is the rail's Agent section on a chat: the one it shows, else a new one. The
- * centre keeps what it showed. */
+/** Shows Files or the chat in an lg viewport. Files is the tree beside the
+ * rail (the Files page's side panel, already shown while a file is open).
+ * The chat opens as a window over an open file from its chat button, else on
+ * the Chat page; on the chat it shows, else a new one. Pressing the page that
+ * already shows would fold its side panel. */
 export async function showPanelView(page: Page, name: string) {
   if (name === m.workspace_tab_files()) {
     const files = railSection(page, name);
@@ -32,26 +20,35 @@ export async function showPanelView(page: Page, name: string) {
     await tree.first().waitFor();
     return;
   }
-  await showAgent(page);
-  const field = page.getByRole('textbox', { name: m.chat_placeholder() });
-  const newChat = page.getByRole('button', {
-    exact: true,
-    name: m.chat_new(),
-  });
-  await field.or(newChat).first().waitFor();
-  if (!(await field.isVisible())) await newChat.click();
+  const chat = page.locator('[data-workspace-chat-page]');
+  if (!(await chat.isVisible())) {
+    const button = page.locator('[data-workspace-chat-button]');
+    if (await button.isVisible()) await button.click();
+    else await railSection(page, m.workspace_section_agent()).click();
+  }
+  const field = chat.getByRole('textbox', { name: m.chat_placeholder() });
   await field.waitFor();
 }
 
-/** Shows Agent's chat history in an lg viewport, for a row to be opened. */
+/** Shows past chats in an lg viewport, for a row to be opened: over an open
+ * file the chat window's history dialog (the file stays), else the Chat
+ * page's list. */
 export async function showChatHistory(page: Page) {
-  await showAgent(page);
-  const back = page.getByRole('button', { name: m.chat_history() });
-  const newChat = page.getByRole('button', {
-    exact: true,
-    name: m.chat_new(),
-  });
-  await back.or(newChat).first().waitFor();
-  if (await back.isVisible()) await back.click();
-  await newChat.waitFor();
+  const button = page.locator('[data-workspace-chat-button]');
+  if (await button.isVisible()) {
+    await button.click();
+    await page
+      .locator('[data-workspace-chat-page]')
+      .getByRole('button', { name: m.chat_history() })
+      .click();
+    await page.getByRole('dialog', { name: m.chat_history() }).waitFor();
+    return;
+  }
+  const agent = railSection(page, m.workspace_section_agent());
+  await agent.waitFor();
+  if ((await agent.getAttribute('aria-current')) !== 'page')
+    await agent.click();
+  const list = page.locator('[data-workspace-left-panel]');
+  if (!(await list.isVisible())) await agent.click();
+  await list.getByText(m.chat_group_pinned()).waitFor();
 }

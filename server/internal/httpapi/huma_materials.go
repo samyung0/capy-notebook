@@ -232,8 +232,10 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		return nil, hErr(err)
 	}
 	kind := in.Body.Kind
+	// Mind maps are no longer made, only opened (Epo 2026-11-13); a diagram
+	// holds Mermaid's mindmap syntax.
 	switch kind {
-	case "note", "quiz", "flashcards", "mindmap", "diagram":
+	case "note", "quiz", "flashcards", "diagram":
 	default:
 		return nil, huma.Error400BadRequest("unsupported material kind")
 	}
@@ -266,6 +268,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		Privacy:        "private",
+		GradedPending:  in.Body.GradedQuiz,
 	})
 	if err != nil {
 		return nil, hErr(err)

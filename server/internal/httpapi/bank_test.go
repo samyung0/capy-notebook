@@ -79,7 +79,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	bankDSN, pool := openTestBank(t, st, dsn)
-	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"open","accepted":["secret-answer"],"hints":[]},"marks":1,"markscheme":[{"text":"secret-scheme","marks":1}],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
+	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"open","accepted":["secret-answer"]},"marks":1,"markscheme":[{"text":"secret-scheme","marks":1}],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
 	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q','t',1,$1,'test')`, q); err != nil {
 		t.Fatal(err)
 	}

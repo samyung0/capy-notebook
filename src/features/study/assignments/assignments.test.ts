@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
 import type { AssignmentGradedQuestion } from '@/api/types';
-import { materialCanClone } from '@/features/files/fileUtils';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import {
@@ -73,6 +72,14 @@ it('keeps each report link in the URL', () => {
     })
   ).toMatchObject({ member: 'u1', question: 'q3', tab: 'approve' });
   expect(
+    parse({
+      assignment: 'as1',
+      by: 'question',
+      study: 'assignments',
+      tab: 'responses',
+    })
+  ).toMatchObject({ by: 'question', tab: 'responses' });
+  expect(
     parse({ assignment: 'as1', attempt: 'at1', study: 'assignments' })
   ).toMatchObject({ assignment: 'as1', attempt: 'at1' });
   // An unknown tab clears, and a question only belongs to Approve AI marks.
@@ -127,15 +134,6 @@ it('tells late work open from closed by its own due date', () => {
 it('names the penalty on late work', () => {
   expect(lateLabel(20)).toBe(m.assignment_late_penalty({ percent: 20 }));
   expect(lateLabel(0)).toBe(m.assignment_late());
-});
-
-it('offers an assigned quiz to clone to staff alone', () => {
-  const linkEditor = { canClone: true, role: undefined };
-  expect(materialCanClone(linkEditor)).toBe(true);
-  expect(materialCanClone(linkEditor, true)).toBe(false);
-  expect(materialCanClone({ canClone: true, role: 'editor' }, true)).toBe(true);
-  expect(materialCanClone({ canClone: true, role: 'owner' }, true)).toBe(true);
-  expect(materialCanClone({ canClone: false, role: 'viewer' })).toBe(false);
 });
 
 it('opens Advanced only for what a saved assignment holds there', () => {

@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useFiles, useGenerate, useMaterials, useTopics } from '@/api/hooks';
+import { GENERATE_FILES_MAX } from '@/api/limits.generated';
 import type { MaterialRef, QuestionType, SourceFile, Topic } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
@@ -10,8 +11,9 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/Dialog';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { InputTitle } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
 import {
@@ -22,12 +24,22 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
+import {
+  ChooseFileButton,
+  FileMenuNote,
+  FileMenuRow,
+  FileSearchMenu,
+  RemoveFileButton,
+} from '@/features/files/FileSearchMenu';
+import { matchesSearch } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import {
   deferStorageRefusal,
   describeError,
   unexpectedErrorId,
 } from '@/lib/errors';
+import { fileIconName, materialIconName } from '@/lib/fileIcons';
 
 const COUNTS = [5, 10, 15, 20] as const;
 
@@ -54,10 +66,14 @@ export function practiceSources(
   const inTopic = (topicId: string | null) => [
     ...files
       .filter((f) => f.indexed && (f.topicId ?? null) === topicId)
-      .map((f) => ({ id: f.id, name: f.name })),
+      .map((f) => ({ icon: fileIconName(f), id: f.id, name: f.name })),
     ...materials
       .filter((mt) => mt.type === 'note' && (mt.topicId ?? null) === topicId)
-      .map((mt) => ({ id: mt.id, name: mt.title })),
+      .map((mt) => ({
+        icon: materialIconName('note'),
+        id: mt.id,
+        name: mt.title,
+      })),
   ];
   const offered = [...topics]
     .sort((a, b) => a.order - b.order)
@@ -123,6 +139,94 @@ function Picks({
   );
 }
 
+type PracticeItem = ReturnType<typeof practiceSources>['items'][number];
+
+/** Files' field as Make a quiz's question paper has it (Epo 2026-11-14): Choose
+ * a file over the files chosen, its menu searching the workspace's readable
+ * files and notes and ticking the chosen, at most GENERATE_FILES_MAX. */
+function FilesField({
+  onChange,
+  options,
+  picked,
+}: {
+  onChange: (ids: string[]) => void;
+  options: PracticeItem[];
+  picked: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const full = picked.length >= GENERATE_FILES_MAX;
+  const chosen = picked.flatMap((id) => options.find((o) => o.id === id) ?? []);
+  const toggle = (id: string) =>
+    onChange(
+      picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id]
+    );
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <InputTitle>
+        {m.practice_from_files()}{' '}
+        <span className="t-meta font-normal text-fg-muted">
+          · {m.make_quiz_up_to({ count: GENERATE_FILES_MAX })}
+        </span>
+      </InputTitle>
+      <FileSearchMenu
+        label={m.practice_from_files()}
+        onOpenChange={setOpen}
+        open={open}
+        searchLabel={m.make_quiz_search_files()}
+        trigger={<ChooseFileButton />}
+      >
+        {(query) => {
+          const shown = options.filter((o) => matchesSearch(o.name, query));
+          return (
+            <>
+              {shown.map((o) => {
+                const selected = picked.includes(o.id);
+                // Full, only a ticked row can be pressed.
+                const off = full && !selected;
+                return (
+                  <FileMenuRow
+                    aria-disabled={off}
+                    className={cn(off && 'disabled:cursor-default')}
+                    disabled={off}
+                    key={o.id}
+                    onClick={() => toggle(o.id)}
+                    role="option"
+                    selected={selected}
+                  >
+                    <FileIcon className="size-4 shrink-0" name={o.icon} />
+                    <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  </FileMenuRow>
+                );
+              })}
+              {shown.length === 0 && (
+                <FileMenuNote>{m.common_no_matches()}</FileMenuNote>
+              )}
+            </>
+          );
+        }}
+      </FileSearchMenu>
+      {chosen.length > 0 && (
+        <div>
+          {chosen.map((o) => (
+            <div
+              className="flex min-h-8 min-w-0 items-center gap-2 pl-2"
+              key={o.id}
+            >
+              <FileIcon className="size-4 shrink-0" name={o.icon} />
+              <span className="min-w-0 truncate font-semibold">{o.name}</span>
+              <RemoveFileButton
+                className="ml-auto shrink-0"
+                label={m.make_quiz_remove_file({ name: o.name })}
+                onClick={() => toggle(o.id)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Field({
   label,
   onChange,
@@ -131,7 +235,7 @@ function Field({
 }: {
   label: string;
   onChange: (value: string) => void;
-  options: { label: string; value: string }[];
+  options: { icon?: IconName; label: string; value: string }[];
   value: string;
 }) {
   return (
@@ -143,7 +247,11 @@ function Field({
         </SelectTrigger>
         <SelectContent>
           {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
+            <SelectItem
+              iconAndValue={o.icon && { icon: o.icon, label: o.label }}
+              key={o.value}
+              value={o.value}
+            >
               {o.label}
             </SelectItem>
           ))}
@@ -156,20 +264,24 @@ function Field({
 /** The generate form and its Start, for a dialog to lay out: Make my own
  * practice's, and Add practice's Generate quiz tab. */
 export function useMakePractice({
+  gradedQuiz,
   initialTopicId,
   mixable = true,
   onMade,
   onlyYou,
   workspaceId,
 }: {
+  /** Made for a graded quiz: it starts hidden from members and waits for the
+   * graded quiz to take it. */
+  gradedQuiz?: boolean;
   /** The topic it starts on: Summary's weakest. */
   initialTopicId?: string;
   /** Off where the quiz is for the members, who have answered nothing of the
    * maker's (Add practice). */
   mixable?: boolean;
   /** Stays on the page once the quiz is made, rather than opening it to answer:
-   * a teacher making one for an assignment. */
-  onMade?: () => void;
+   * a teacher making one for Add quiz or a graded quiz. */
+  onMade?: (quizId: string) => void;
   onlyYou: boolean;
   workspaceId: string;
 }) {
@@ -220,6 +332,7 @@ export function useMakePractice({
       const made = (await generate({
         count,
         fileIds: from === 'files' ? picked : [],
+        gradedQuiz,
         mix: mixable && mix,
         title: m.practice_own_title({
           name: nameOf(picked[0])?.slice(0, 80) ?? '',
@@ -227,8 +340,9 @@ export function useMakePractice({
         topics: from === 'topics' ? picked : [],
         types: TYPES.find((t) => t.value === types)?.types ?? [],
       })) as { quiz?: { id: string } };
-      if (onMade) onMade();
-      else if (made.quiz?.id)
+      if (onMade) {
+        if (made.quiz?.id) onMade(made.quiz.id);
+      } else if (made.quiz?.id)
         navigate({
           params: { quizId: made.quiz.id },
           to: '/quizzes/$quizId/attempt',
@@ -262,8 +376,8 @@ export function useMakePractice({
           label={m.practice_from()}
           onChange={(v) => setFrom(v as 'topics' | 'files')}
           options={[
-            { label: m.practice_from_topics(), value: 'topics' },
-            { label: m.practice_from_files(), value: 'files' },
+            { icon: 'topic', label: m.practice_from_topics(), value: 'topics' },
+            { icon: 'folder', label: m.practice_from_files(), value: 'files' },
           ]}
           value={from}
         />
@@ -276,9 +390,7 @@ export function useMakePractice({
             picked={chosenTopics}
           />
         ) : (
-          <Picks
-            add={m.practice_add_file()}
-            label={m.practice_from_files()}
+          <FilesField
             onChange={setPickedFiles}
             options={sources.items}
             picked={pickedFiles}

@@ -1,12 +1,7 @@
 import { type ReactNode, type RefObject, useState } from 'react';
 import { createAssignmentBodyFilesMax } from '@/api/gen/validators';
 import { useItems } from '@/api/hooks';
-import type {
-  Assignment,
-  AssignmentFileRef,
-  Item,
-  ItemKind,
-} from '@/api/types';
+import type { Assignment, AssignmentFileRef, Item } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
@@ -170,15 +165,12 @@ export function ChooseFileRow({
 
 /** Choose a file's menu (Epo 2026-11-12: Make a quiz's search menu, not a
  * Search dialog): a field over the Files page's All files, newest first until
- * something is typed. The files already on the task are ticked. With
- * `onUnpick` (Files) it stays open for more and a ticked row takes its file off
- * (Epo 2026-11-12); a task's Quiz field opens it over quizzes alone (`kinds`),
- * closing on its one pick. */
+ * something is typed. The files already on the task are ticked; it stays open
+ * for more and a ticked row takes its file off (Epo 2026-11-12). */
 export function TaskFileMenu({
   empty,
   full = false,
   held,
-  kinds,
   label,
   onPick,
   onUnpick,
@@ -189,11 +181,10 @@ export function TaskFileMenu({
   /** At the files cap: only a ticked row can be pressed. */
   full?: boolean;
   held: string[];
-  kinds?: ItemKind[];
   /** The search field's label and placeholder. */
   label: string;
   onPick: (file: TaskFile) => void;
-  onUnpick?: (id: string) => void;
+  onUnpick: (id: string) => void;
   trigger: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -210,13 +201,10 @@ export function TaskFileMenu({
           empty={empty}
           full={full}
           held={held}
-          kinds={kinds}
           list={list}
-          onPick={(file) => {
-            if (held.includes(file.id)) onUnpick?.(file.id);
-            else onPick(file);
-            if (!onUnpick) setOpen(false);
-          }}
+          onPick={(file) =>
+            held.includes(file.id) ? onUnpick(file.id) : onPick(file)
+          }
           query={query}
         />
       )}
@@ -229,7 +217,6 @@ function TaskFileRows({
   empty,
   full,
   held,
-  kinds,
   list,
   onPick,
   query,
@@ -237,7 +224,6 @@ function TaskFileRows({
   empty: string;
   full: boolean;
   held: string[];
-  kinds?: ItemKind[];
   list: RefObject<HTMLDivElement | null>;
   onPick: (file: TaskFile) => void;
   query: string;
@@ -254,7 +240,7 @@ function TaskFileRows({
     isPending,
     isPlaceholderData,
     refetch,
-  } = useItems({ kinds, q: q || undefined, scope: 'all' });
+  } = useItems({ q: q || undefined, scope: 'all' });
   if (isPending || isPlaceholderData)
     return <SkeletonList className="px-1" count={4} rowHeight={36} />;
   if (!data && isError)

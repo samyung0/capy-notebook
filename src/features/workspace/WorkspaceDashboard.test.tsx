@@ -5,7 +5,6 @@ import { expect, it, vi } from 'vitest';
 import type {
   Assignment,
   WorkspaceDashboard as Dashboard,
-  ReviewSuggestion,
   Workspace,
 } from '@/api/types';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
@@ -17,8 +16,6 @@ const page = vi.hoisted(() => ({
   assignments: [] as Assignment[],
   data: undefined as Dashboard | undefined,
   kind: 'personal' as 'class' | 'personal',
-  quizzes: [] as { id: string }[],
-  suggestions: [] as ReviewSuggestion[],
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -33,15 +30,14 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/api/hooks', () => ({
-  useAssignments: () => ({ data: { items: page.assignments } }),
+  useContinue: () => ({ data: [] }),
   useHideTodoDone: () => ({ mutateAsync: vi.fn() }),
   useMe: () => ({ data: { account: page.account } }),
-  usePractice: (_id: string, { enabled }: { enabled: boolean }) => ({
-    data: enabled
-      ? { quizzes: page.quizzes, suggestions: page.suggestions }
-      : undefined,
-  }),
   useStartAssignment: () => ({ mutate: vi.fn() }),
+  // The Dashboard's To do reads To do's own list.
+  useTodo: () => ({
+    data: { workspaces: [{ items: page.assignments, workspaceId: 'ws' }] },
+  }),
   useTodoTick: () => ({ mutateAsync: vi.fn() }),
   useWorkspaceDashboard: () => ({ data: page.data }),
   useWorkspaceRecent: () => ({ data: { files: [], materials: [] } }),
@@ -143,45 +139,12 @@ it('shows an empty workspace its To do, then its art, a short title and one butt
   expect(render(false)).not.toContain(m.action_add_file());
 });
 
-it('shows What to practise next to whoever practises, not to a class owner', () => {
-  page.data = { activity: [], members: 1, ownerName: 'Ms Wong' };
-  page.suggestions = [
-    {
-      evidence: {
-        forgotten: 2,
-        lastPractisedAt: '2026-11-01T10:00:00Z',
-        missed: 3,
-        repeated: 0,
-        young: 3,
-      },
-      group: 'topic',
-      iconId: '',
-      items: 3,
-      mode: 'tricky',
-      topicId: 't1',
-      topicName: 'Osmosis',
-      workspaceId: 'ws',
-      workspaceName: 'Biology 101',
-    },
-  ];
-  page.kind = 'personal';
-  expect(render()).toContain(m.dashboard_practise_next());
-  expect(render()).not.toContain(m.dashboard_workspace_review());
-  page.quizzes = [{ id: 'q_1' }];
-  expect(render()).toContain(m.dashboard_workspace_review());
-  page.kind = 'class';
-  expect(render()).not.toContain(m.dashboard_practise_next());
-  page.quizzes = [];
-  page.suggestions = [];
-  page.kind = 'personal';
-});
-
 it("lists a class's To do: answers to approve for its owner, Nothing to do when empty", () => {
   page.data = { activity: [], members: 7, ownerName: 'Ms Wong' };
   page.kind = 'class';
   page.assignments = [];
   expect(render()).toContain(m.todo_empty());
-  expect(render()).toContain(m.assignment_new());
+  expect(render()).toContain('aria-haspopup="menu"');
   page.assignments = [
     {
       allowUploads: false,
@@ -223,12 +186,13 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
   expect(html).toContain('Past paper');
   // The To do page's table: the row opens its details, with Approve marks.
   expect(html).toContain(m.todo_answers_waiting({ count: 5 }));
-  expect(html).toContain(m.assignment_new());
+  // Staff's New is the menu of Assignment and Graded quiz.
+  expect(html).toContain('aria-haspopup="menu"');
   page.assignments = [];
   page.kind = 'personal';
 });
 
-it("lists a personal workspace's To do: the tasks its viewer set themself, under New task", () => {
+it("lists a personal workspace's To do: the tasks its viewer set themself, under the New menu", () => {
   page.data = { activity: [], members: 1, ownerName: 'Kate' };
   page.assignments = [
     {
@@ -265,13 +229,14 @@ it("lists a personal workspace's To do: the tasks its viewer set themself, under
   ];
   const html = render();
   expect(html).toContain('Read chapter 4');
-  expect(html).toContain(m.todo_new_task());
-  expect(html).not.toContain(m.assignment_new());
+  // Task or Graded quiz, from the New menu.
+  expect(html).toContain('aria-haspopup="menu"');
+  expect(html).not.toContain(m.todo_new_task());
   page.assignments = [];
 });
 
 it('keeps an empty To do, with the button of whoever may add', () => {
-  const section = (manages: boolean, role: string) =>
+  const section = (manages: boolean, role: string, kind = 'class') =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <TodoSection
@@ -279,6 +244,7 @@ it('keeps an empty To do, with the button of whoever may add', () => {
           workspace={{
             iconId: 'i',
             id: 'ws',
+            kind: kind as Workspace['kind'],
             name: 'Notes',
             role: role as Workspace['role'],
           }}
@@ -287,7 +253,10 @@ it('keeps an empty To do, with the button of whoever may add', () => {
     );
   expect(section(false, 'viewer')).toContain(m.todo_empty());
   expect(section(false, 'viewer')).toContain(m.todo_new_task());
-  expect(section(true, 'owner')).toContain(m.assignment_new());
+  // Staff and a personal workspace get the New menu (Assignment or Task,
+  // and Graded quiz).
+  expect(section(true, 'owner')).toContain('aria-haspopup="menu"');
+  expect(section(false, 'owner', 'personal')).toContain('aria-haspopup="menu"');
   // A visitor who is no member has nothing to add.
   expect(section(false, '')).toContain(m.todo_empty());
   expect(section(false, '')).not.toContain(m.todo_new_task());

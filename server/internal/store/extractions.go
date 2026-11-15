@@ -34,6 +34,9 @@ type Extraction struct {
 	SpendSessionID string `json:"-"`
 	// Hidden is the starter's choice for the quiz the run saves.
 	Hidden bool `json:"-"`
+	// GradedQuiz: started in the New graded quiz dialog, so its quiz waits for
+	// the assignment (Material.GradedPending).
+	GradedQuiz bool `json:"-"`
 }
 
 // ExtractionFoundQuestion is one line of the map: a printed question, the pages it
@@ -103,7 +106,7 @@ const KindExtractionQuestion = "extraction_question"
 
 const extractionCols = `id, workspace_id, title, status, copied, answered, confirmed,
 	found, COALESCE(found_credit_micros, 0), unread_answers, paper_name, paper_pages, answer_files,
-	report, quiz_id, error_code, error, created_at, finished_at, COALESCE(spend_session_id, ''), hidden`
+	report, quiz_id, error_code, error, created_at, finished_at, COALESCE(spend_session_id, ''), hidden, graded_quiz`
 
 func scanExtraction(row pgx.Row) (Extraction, error) {
 	var e Extraction
@@ -113,7 +116,7 @@ func scanExtraction(row pgx.Row) (Extraction, error) {
 	var paperPages, answerFiles int
 	err := row.Scan(&e.ID, &e.WorkspaceID, &e.Title, &e.Status, &e.Recorded, &e.Answered, &e.Confirmed,
 		&found, &foundMicros, &unread, &paperName, &paperPages, &answerFiles,
-		&report, &e.QuizID, &e.ErrorCode, &e.Error, &e.CreatedAt, &e.FinishedAt, &e.SpendSessionID, &e.Hidden)
+		&report, &e.QuizID, &e.ErrorCode, &e.Error, &e.CreatedAt, &e.FinishedAt, &e.SpendSessionID, &e.Hidden, &e.GradedQuiz)
 	if err != nil {
 		return e, err
 	}
@@ -153,6 +156,8 @@ type ExtractionStart struct {
 	AnswerFiles    int
 	// Hidden starts the run's quiz hidden from members.
 	Hidden bool
+	// GradedQuiz: the run's quiz is made for a graded quiz (Extraction.GradedQuiz).
+	GradedQuiz bool
 }
 
 // CreateExtraction records a run as running.
@@ -163,10 +168,10 @@ func (s *Store) CreateExtraction(ctx context.Context, run ExtractionStart) (Extr
 	}
 	return scanExtraction(s.pool.QueryRow(ctx, `
 		INSERT INTO question_extractions (id, workspace_id, user_id, title, spend_session_id, unread_answers,
-			paper_name, paper_pages, answer_files, hidden)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			paper_name, paper_pages, answer_files, hidden, graded_quiz)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+extractionCols, run.ID, run.WorkspaceID, run.UserID, run.Title, nullString(run.SpendSessionID), unread,
-		run.PaperName, run.PaperPages, run.AnswerFiles, run.Hidden))
+		run.PaperName, run.PaperPages, run.AnswerFiles, run.Hidden, run.GradedQuiz))
 }
 
 // GetExtraction reads a run its starter may see; one waiting on them says what they

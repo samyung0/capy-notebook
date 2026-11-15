@@ -427,7 +427,7 @@ const graphSchema = z
   });
 
 export const questionBlockSchema = z.discriminatedUnion('type', [
-  z.strictObject({ label: meta.optional(), text, type: z.literal('text') }),
+  z.strictObject({ text, type: z.literal('text') }),
   z
     .strictObject({
       header: z.boolean(),
@@ -481,7 +481,12 @@ const answerSchema = z.discriminatedUnion('type', [
   z
     .strictObject({
       correct: z.array(index).min(1).max(limits.QUESTION_ANSWERS_MAX),
+      // Shuffle options keeps these options in place (Epo 2026-11-15).
+      locked: z.array(index).min(1).max(limits.QUESTION_ANSWERS_MAX).optional(),
+      // Multiple answer (Epo 2026-11-15): checkboxes even with one correct.
+      multiple: z.literal(true).optional(),
       options: list.min(2),
+      shuffle: z.literal(true).optional(),
       type: z.literal('mcq'),
     })
     .superRefine((v, ctx) => {
@@ -492,6 +497,19 @@ const answerSchema = z.discriminatedUnion('type', [
         ctx.addIssue({
           code: 'custom',
           message: m.question_validation_correct_options(),
+        });
+      // Sorted, distinct option indices, only with shuffle.
+      const { locked } = v;
+      if (
+        locked &&
+        (!v.shuffle ||
+          locked.some(
+            (n, i) => n >= v.options.length || (i > 0 && n <= locked[i - 1])
+          ))
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: m.question_validation_locked_options(),
         });
     }),
   z.strictObject({ correct: z.boolean(), type: z.literal('boolean') }),
@@ -532,7 +550,6 @@ const answerSchema = z.discriminatedUnion('type', [
   // At most one sample answer, and it is optional (Epo 2026-10-15).
   z.strictObject({
     accepted: z.array(text).max(1),
-    hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
     type: z.literal('open'),
   }),
   z.strictObject({
@@ -595,6 +612,11 @@ export const questionSchema = z.strictObject({
     .min(1)
     .max(limits.QUESTION_PARTS_MAX),
   stem: z.array(questionBlockSchema).max(limits.QUESTION_BLOCKS_MAX),
+  topicIds: z
+    .array(identifier)
+    .max(limits.QUESTION_TOPICS_MAX)
+    .refine((ids) => new Set(ids).size === ids.length)
+    .optional(),
 });
 
 function hostedAsset(value: string, base?: string): boolean {

@@ -36,7 +36,6 @@ import {
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
   isImageFile,
-  materialCanClone,
   officeFormatOf,
 } from '@/features/files/fileUtils';
 import {
@@ -44,7 +43,6 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
-import { studyView } from '@/features/study/practice/studyView';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import {
   toFileActionTarget,
@@ -61,7 +59,6 @@ import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { usePointerDownPress } from '@/lib/usePointerDownPress';
 import { MaterialShareDialog } from './MaterialShareDialog';
 import type { OpenItem } from './openItem';
 import { RoomPresence } from './RoomPresence';
@@ -112,13 +109,11 @@ function measureHeader(header: HTMLDivElement | null) {
   return () => observer.disconnect();
 }
 
-/** The workspace below lg has no side panels: the title opens Files from the
- * top, and ⋮ carries the workspace actions the panels held. */
+/** The workspace below lg has no side panels: ⋮ carries the workspace actions
+ * the panels held; Files is its own page (Epo 2026-11-14). */
 export interface OneColumnChrome {
   /** Add file and Add topic, first in ⋮. */
   addItems: MenuItem[];
-  filesOpen: boolean;
-  onOpenFiles: () => void;
   /** Workspace settings, before Delete in ⋮. */
   settingsItems: MenuItem[];
   /** The title when no file is open, after the workspace's icon. */
@@ -126,34 +121,13 @@ export interface OneColumnChrome {
   workspaceName: string;
 }
 
-/** The title as the button that opens the Files dropdown, chevron after it.
- * Opens on press, like the menus. Icon, name and chevron ink sit 10px apart;
- * the chevron's -ml takes back its glyph's side bearing. */
-export function FilesTitleButton({
-  chrome,
-  children,
-}: {
-  chrome: OneColumnChrome;
-  children: ReactNode;
-}) {
-  const press = usePointerDownPress();
+/** The one-column title: an icon and a name 10px apart, padded as the menu
+ * buttons beside it. */
+export function OneColumnTitle({ children }: { children: ReactNode }) {
   return (
-    <button
-      aria-expanded={chrome.filesOpen}
-      className="flex min-w-0 max-w-full items-center gap-2.5 rounded-button px-1 py-1 text-left transition-colors hover:bg-surface-hover-bg/80"
-      type="button"
-      {...press(chrome.onOpenFiles)}
-    >
+    <span className="flex min-w-0 max-w-full items-center gap-2.5 px-1 py-1">
       {children}
-      <Icon
-        className={cn(
-          '-ml-1 shrink-0 text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out)',
-          chrome.filesOpen && 'rotate-180'
-        )}
-        name="chevronDown"
-        size={16}
-      />
-    </button>
+    </span>
   );
 }
 
@@ -357,8 +331,8 @@ function useHeader(
       !materialData?.trash &&
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
-        : materialCanClone(workspace, listed?.assigned)),
-    icon: materialIconName(kind, listed?.assigned),
+        : !!workspace?.canClone),
+    icon: materialIconName(kind),
     material: mt,
     materialCapabilities: capabilities,
     showImageZoom: false,
@@ -424,9 +398,6 @@ export function Header({
     showImageZoom,
   } = useHeader(item, workspaceId, standalone);
   const navigate = useNavigate();
-  const { data: studyWorkspace } = useWorkspace(standalone ? '' : workspaceId, {
-    errorBoundary: false,
-  });
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const office = !!file && !!officeFormatOf(file);
@@ -453,7 +424,11 @@ export function Header({
   const itemReadOnly =
     readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
   const toggleHidden = useToggleHidden(workspaceId);
-  const canHide = !itemReadOnly && !!workspaceId;
+  // A graded quiz's own quiz is its assignment's: held from members always,
+  // never moved, cloned or trashed on its own.
+  const owned =
+    !!material && 'assignmentId' in material && !!material.assignmentId;
+  const canHide = !itemReadOnly && !!workspaceId && !owned;
   const hiddenChip =
     file?.hidden || material?.hidden ? (
       <HiddenChip
@@ -471,10 +446,10 @@ export function Header({
   const name = oneColumn ? (
     <>
       <h2 className="min-w-0">
-        <FilesTitleButton chrome={oneColumn}>
+        <OneColumnTitle>
           {fileIcon}
           <span className={nameClassName}>{title ?? '--'}</span>
-        </FilesTitleButton>
+        </OneColumnTitle>
       </h2>
       {hiddenChip}
     </>
@@ -517,7 +492,7 @@ export function Header({
   );
   // The file's ⋮ follows its name, the status icons after it; phones keep
   // ⋮ at the row's end.
-  const menu = (
+  const menu = owned ? null : (
     <div className="flex items-center gap-0">
       <ContentActions
         beforeDeleteItems={oneColumn?.settingsItems}
@@ -535,25 +510,6 @@ export function Header({
         key={`${item.kind}:${item.id}`}
         leadingItems={[
           ...(oneColumn?.addItems ?? []),
-          // A quiz opens New assignment with itself set (board A1).
-          ...(item.kind === 'material' &&
-          (icon === materialIconName('quiz') || icon === 'assignment') &&
-          studyView(studyWorkspace).manages
-            ? [
-                {
-                  icon: 'clipboard',
-                  label: m.assignment_new(),
-                  onClick: () =>
-                    void navigate({
-                      search: {
-                        newFromQuiz: item.id,
-                        study: 'assignments' as const,
-                      },
-                      to: '.',
-                    }),
-                } satisfies MenuItem,
-              ]
-            : []),
           ...(sm
             ? [
                 {

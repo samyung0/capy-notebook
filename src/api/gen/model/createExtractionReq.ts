@@ -10,6 +10,8 @@ export interface CreateExtractionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answers?: ExtractionFile[];
+  /** Started in the New graded quiz dialog: its quiz starts hidden and waits for the graded quiz to take it; one never taken goes to the trash after a day */
+  gradedQuiz?: boolean;
   hidden: boolean;
   /** @minItems 1 */
   paper: ExtractionFile[];

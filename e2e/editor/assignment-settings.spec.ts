@@ -5,8 +5,9 @@ const LAST_PUBLISHED = new RegExp(
   m.assignment_last_published({ date: '' }).trim()
 );
 
-// Epo 2026-11-05: an assignment's actions sit on its Settings tab, with no ⋮.
-test('Settings holds the actions: Republish moves the last published time, Edit quiz opens it', async ({
+// Epo 2026-11-05: an assignment's actions sit on its Settings tab, with no ⋮;
+// a graded quiz's quiz edits on its Questions tab (Epo 2026-11-15).
+test('Settings holds the actions: Republish moves the last published time', async ({
   page,
 }) => {
   await page.goto(
@@ -30,15 +31,9 @@ test('Settings holds the actions: Republish moves the last published time, Edit 
     .getByRole('button', { exact: true, name: m.assignment_republish() })
     .click();
   await expect(hint).not.toHaveText(before);
-
-  await page.getByRole('link', { name: m.assignment_edit_quiz() }).click();
-  await expect(page).toHaveURL(/material=/);
-  await expect(
-    page.getByTestId('content-header').getByText('Genetics check-in')
-  ).toBeVisible({ timeout: 30_000 });
 });
 
-test('a draft has its Publish row first, and publishing brings the tabs', async ({
+test('a draft publishes from its header, and publishing brings Responses', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_draft');
@@ -46,20 +41,20 @@ test('a draft has its Publish row first, and publishing brings the tabs', async 
     .getByRole('button', { exact: true, name: m.assignment_publish() })
     .click({ timeout: 60_000 });
   await expect(
-    page.getByRole('tab', { name: m.assignment_tab_settings() })
+    page.getByRole('tab', { name: m.assignment_tab_responses() })
   ).toBeVisible();
 });
 
-test('a closed assignment keeps Edit quiz and has no Republish', async ({
-  page,
-}) => {
+test('a closed assignment has no Republish', async ({ page }) => {
   await page.goto(
     '/workspaces/ws_bio?study=assignments&assignment=as_cells&tab=settings'
   );
   await expect(
-    page.getByRole('link', { name: m.assignment_edit_quiz() })
+    page.getByRole('tab', { name: m.assignment_tab_settings() })
   ).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText(LAST_PUBLISHED)).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { exact: true, name: m.assignment_republish() })
+  ).toHaveCount(0);
 });
 
 test.describe('as a member', () => {

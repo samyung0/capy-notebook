@@ -1,5 +1,5 @@
 {
-  "version": 48,
+  "version": 49,
   "operations": [
     "source.read",
     "material.read",
@@ -734,14 +734,6 @@
                 "explanation": {
                   "description": "Optional: why the answer is right or the worked solution, shown after checking.",
                   "type": "string"
-                },
-                "hints": {
-                  "description": "Open, optional: nudges the learner may open.",
-                  "items": {
-                    "type": "string"
-                  },
-                  "minItems": 0,
-                  "type": "array"
                 },
                 "marks": {
                   "description": "Open: its marks.",

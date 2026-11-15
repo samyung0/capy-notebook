@@ -446,6 +446,7 @@ export function usePageStep({
   active,
   answers,
   file,
+  graded,
   hidden,
   onCancel,
   onChangeFiles,
@@ -456,6 +457,8 @@ export function usePageStep({
 }: {
   active: boolean;
   answers: string[];
+  /** Made for a graded quiz: its quiz waits for the graded quiz to take it. */
+  graded?: boolean;
   /** The files step's switch: the quiz starts hidden from members. */
   hidden: boolean;
   /** The file on show, from the address; a phone's list when there is none. */
@@ -789,17 +792,20 @@ export function usePageStep({
                 onClick={() => {
                   if (!first) return;
                   start(
-                    extractionRequest(
-                      quizTitleFrom(
-                        first.name,
-                        (materials ?? []).map((row) => row.title)
+                    {
+                      ...extractionRequest(
+                        quizTitleFrom(
+                          first.name,
+                          (materials ?? []).map((row) => row.title)
+                        ),
+                        paperFiles.map((row) => row.id),
+                        answerFiles.map((row) => row.id),
+                        selected,
+                        hidden,
+                        drawn
                       ),
-                      paperFiles.map((row) => row.id),
-                      answerFiles.map((row) => row.id),
-                      selected,
-                      hidden,
-                      drawn
-                    ),
+                      ...(graded && { gradedQuiz: true }),
+                    },
                     { onSuccess: (run) => onStarted(run.id) }
                   );
                 }}

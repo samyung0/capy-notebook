@@ -1,4 +1,10 @@
 import {
+  BoldPlugin,
+  ItalicPlugin,
+  UnderlinePlugin,
+} from '@platejs/basic-nodes/react';
+import { KEYS } from 'platejs';
+import {
   createPlatePlugin,
   ParagraphPlugin,
   Plate,
@@ -21,7 +27,11 @@ import {
   InlineEquationPlugin,
 } from '@/features/notes/equationPlugins';
 import { FormulaButton } from '@/features/notes/FormulaButton';
-import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
+import {
+  EDITOR_SHORTCUTS,
+  MarkToolbarButton,
+  ToolbarButton,
+} from '@/features/notes/toolbar/ToolbarButton';
 import { ToolbarMathMenu } from '@/features/notes/toolbar/ToolbarMathMenu';
 import { VoidBlockBreakPlugin } from '@/features/notes/voidBlockBreak';
 import { m } from '@/i18n';
@@ -140,6 +150,17 @@ export function IdleFormulaTools() {
   return (
     <>
       <ToolbarGroup>
+        <ToolbarButton disabled label={m.editor_bold()}>
+          <EditorIcon name="bold" />
+        </ToolbarButton>
+        <ToolbarButton disabled label={m.editor_italic()}>
+          <EditorIcon name="italic" />
+        </ToolbarButton>
+        <ToolbarButton disabled label={m.editor_underline()}>
+          <EditorIcon name="underline" />
+        </ToolbarButton>
+      </ToolbarGroup>
+      <ToolbarGroup>
         <ToolbarButton disabled label={m.question_ui_formula()}>
           <EditorIcon name="sigma" />
         </ToolbarButton>
@@ -154,6 +175,23 @@ export function IdleFormulaTools() {
       </ToolbarGroup>
     </>
   );
+}
+
+/** A click's place in `anchor`, an element that stays while the text opens
+ * in its editor, read back as a viewport point when the editor places its
+ * caret: whatever moved meanwhile (a text above closing its tools, a scroll)
+ * moves the point with it. */
+export function clickPoint(
+  event: React.MouseEvent,
+  anchor: HTMLElement
+): () => { x: number; y: number } {
+  const at = anchor.getBoundingClientRect();
+  const dx = event.clientX - at.left;
+  const dy = event.clientY - at.top;
+  return () => {
+    const now = anchor.getBoundingClientRect();
+    return { x: now.left + dx, y: now.top + dy };
+  };
 }
 
 /** The DOM caret at a viewport point, where the browser offers one. */
@@ -179,9 +217,9 @@ export function TextEditor({
   /** The text, and in a gaps part its blanks' ids in order. */
   onChange: (value: string, gaps: string[]) => void;
   compact?: boolean;
-  /** Where the click that opened a compact editor landed: its caret starts
-   * there, else at the end. */
-  caretAt?: { x: number; y: number } | null;
+  /** Where the click that opened a compact editor landed (`clickPoint`): its
+   * caret starts there, else at the end. */
+  caretAt?: (() => { x: number; y: number }) | null;
   /** Characters the text holds at most: an edit past it is taken back. */
   maxLength?: number;
   placeholder?: string;
@@ -196,6 +234,9 @@ export function TextEditor({
   const editor = usePlateEditor({
     plugins: [
       ParagraphPlugin,
+      BoldPlugin,
+      ItalicPlugin,
+      UnderlinePlugin,
       InlineEquationPlugin.withComponent(Equation),
       EquationPlugin.withComponent(Equation),
       VoidBlockBreakPlugin,
@@ -208,7 +249,8 @@ export function TextEditor({
   // landed, so typing starts at once. Once, on open.
   useEffect(() => {
     if (!compact) return;
-    const native = caretAt && caretAtPoint(caretAt.x, caretAt.y);
+    const point = caretAt?.();
+    const native = point && caretAtPoint(point.x, point.y);
     const at =
       native && editor.api.hasTarget(native.startContainer)
         ? editor.api.toSlateRange(native, {
@@ -236,10 +278,33 @@ export function TextEditor({
     // The caret goes past the blank, so typing carries on after it.
     editor.tf.move({ unit: 'offset' });
   };
-  // The note toolbar's groups: what inserts formulas, then the controls of
-  // the formula being edited.
+  // The note toolbar's groups: bold, italic and underline, what inserts
+  // formulas, then the controls of the formula being edited.
   const tools = (
     <>
+      <ToolbarGroup>
+        <MarkToolbarButton
+          label={m.editor_bold()}
+          markKey={KEYS.bold}
+          shortcut={EDITOR_SHORTCUTS.bold}
+        >
+          <EditorIcon name="bold" />
+        </MarkToolbarButton>
+        <MarkToolbarButton
+          label={m.editor_italic()}
+          markKey={KEYS.italic}
+          shortcut={EDITOR_SHORTCUTS.italic}
+        >
+          <EditorIcon name="italic" />
+        </MarkToolbarButton>
+        <MarkToolbarButton
+          label={m.editor_underline()}
+          markKey={KEYS.underline}
+          shortcut={EDITOR_SHORTCUTS.underline}
+        >
+          <EditorIcon name="underline" />
+        </MarkToolbarButton>
+      </ToolbarGroup>
       {gaps && (
         <ToolbarGroup>
           {/* Shows the blank it adds, with the next number. */}

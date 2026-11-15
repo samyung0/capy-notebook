@@ -32,8 +32,9 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); a
 /// void element holding anything but one empty text leaf (Epo 2026-10-18);
 /// a column width the editor never writes (2026-10-25); an indent that is
-/// not a number (2026-10-26); and a style value holding `;` or a control
-/// character (Epo Q380).
+/// not a number (2026-10-26); a style value holding `;` or a control
+/// character (Epo Q380); and a text block's `label` and an open answer's
+/// `hints`, removed (Epo 2026-11-15).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -71,6 +72,8 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.starts_with("column width must be")
         || message == "indent must be a number"
         || message.ends_with("may hold no semicolon or control character")
+        || message.ends_with("block: unrecognized key label")
+        || message.ends_with("answer: unrecognized key hints")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()

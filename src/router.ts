@@ -8,9 +8,9 @@ import {
 } from '@tanstack/react-router';
 import {
   attemptQuery,
-  attemptsQuery,
   billingQuery,
   cardsQuery,
+  continueQuery,
   conversationsQuery,
   eventsQuery,
   exploreFlashcardSetsQuery,
@@ -19,6 +19,7 @@ import {
   fileQuery,
   filesQuery,
   flashcardSetQuery,
+  historyQuery,
   itemsQuery,
   labelsQuery,
   learningOverviewQuery,
@@ -50,13 +51,10 @@ import {
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import {
-  PAST_REVIEW_SORT_DEFAULT,
-  PAST_REVIEW_SORTS,
-  parsePastReviewsSearch,
-  parseResultsSearch,
+  HISTORY_SORT_DEFAULT,
+  HISTORY_SORTS,
+  parseHistorySearch,
   parseReviewSearch,
-  RESULT_SORT_DEFAULT,
-  RESULT_SORTS,
 } from '@/features/study/reviewSearch';
 import { checkReleaseOnFocus, loadUpdateOnPathChange } from '@/lib/appRelease';
 import { OfflineError } from '@/lib/errors';
@@ -306,6 +304,8 @@ const appRoutes = [
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchInfiniteQuery(conversationsQuery(id));
+      // The Dashboard's Continue, beside its other sections.
+      qc.prefetchQuery(continueQuery(id));
       // The open file rides the first wave instead of waiting for the page to
       // render. An open material is left out on purpose: its body is the
       // document itself, and the heavy-document gate must see the list first.
@@ -374,16 +374,9 @@ const appRoutes = [
     beforeLoad: ({ search }) => {
       if (!features.learning) throw redirect({ replace: true, to: '/' });
       const saved =
-        search.tab === 'results'
-          ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'past'
-            ? savedSort(
-                'pastReviews',
-                PAST_REVIEW_SORTS,
-                PAST_REVIEW_SORT_DEFAULT,
-                search
-              )
-            : null;
+        search.tab === 'history'
+          ? savedSort('history', HISTORY_SORTS, HISTORY_SORT_DEFAULT, search)
+          : null;
       if (saved)
         throw redirect({
           replace: true,
@@ -394,19 +387,17 @@ const appRoutes = [
     component: lazyPage(() => import('@/routes/Learning')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      void qc.prefetchInfiniteQuery(attemptsQuery());
+      void qc.prefetchInfiniteQuery(historyQuery());
       void qc.prefetchQuery(learningOverviewQuery());
+      // Continue tops the Overview: fetched beside it, not once it draws.
+      void qc.prefetchQuery(continueQuery());
     },
     path: '/learning',
     validateSearch: (search: Record<string, unknown>) => {
       const tab = parseLearningSearch(search);
       return {
         ...tab,
-        ...(tab.tab === 'results'
-          ? parseResultsSearch(search)
-          : tab.tab === 'past'
-            ? parsePastReviewsSearch(search)
-            : {}),
+        ...(tab.tab === 'history' ? parseHistorySearch(search) : {}),
       };
     },
   }),

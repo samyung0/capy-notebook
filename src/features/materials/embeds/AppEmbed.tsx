@@ -329,8 +329,8 @@ function LiveQuizStudy({
 }
 
 /** A note's quiz in Edit: its live rooms while the block is near the screen
- * (and while edits wait for the server); removing the last question removes
- * the block. Undo and Redo are in the question dialog. */
+ * (and while edits wait for the server), its questions editing in place as
+ * on the quiz page; removing the last question removes the block. */
 function EmbedQuizEditor({
   quizId,
   onEmpty,
@@ -376,7 +376,6 @@ function EmbedQuizEditor({
             <QuizForm
               content={rooms.content.doc}
               keys={rooms.keys.doc}
-              name=""
               onEmpty={onEmpty}
               questions={questions}
               quizId={quizId}

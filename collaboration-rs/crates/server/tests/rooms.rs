@@ -3021,14 +3021,12 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
     assert_eq!(reason, "permission-denied");
 }
 
-/// A quiz under an open assignment refuses its read room to a viewer it went to,
-/// who would read its stems before their clock starts, and to a viewer it did not
-/// go to, who could pass them on; the owner keeps it; a draft changes nothing and
-/// closing gives it back, under answers Do not show once it is turned to practice
-/// (security regression, study landing item 11). Fails without the assigned rule
-/// in `live_access`.
+/// A graded quiz's own quiz (`assignment_id`, migration 0174) refuses its read
+/// room to every viewer member, open or closed, who take its frozen copy
+/// instead; the owner keeps it (Go's materialHiddenSQL). Fails without the
+/// `assignment_id` rule in `live_access`.
 #[tokio::test]
-async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
+async fn a_graded_quiz_refuses_viewers_its_room() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let client = db(&env).await;
@@ -3059,12 +3057,12 @@ async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
     let assignment = format!("as_it_{}", uuid_like());
     client
         .execute(
-            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft)
-             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',false,true)",
+            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft,questions)
+             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',false,false,'[]')",
             &[&assignment, &workspace, &owner, &quiz],
         )
         .await
-        .expect("draft");
+        .expect("graded quiz");
     client
         .execute(
             "INSERT INTO assignment_assignees (assignment_id,user_id) VALUES ($1,$2)",
@@ -3072,31 +3070,25 @@ async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
         )
         .await
         .expect("assignee");
-    let room = format!("material:{quiz}:schema:1");
-    let read = |user: &str| token(&room, user, "read");
-    let joins = |user: &str| {
-        let token = read(user);
-        let room = room.clone();
-        let port = server.port;
-        async move { Client::open(port).await.joined(&room, &token).await }
-    };
-    assert_eq!(joins(&assignee).await, 0, "under a draft");
     client
         .execute(
-            "UPDATE assignments SET draft=false, questions='[]' WHERE id=$1",
-            &[&assignment],
+            "UPDATE materials SET assignment_id=$2 WHERE id=$1",
+            &[&quiz, &assignment],
         )
         .await
-        .expect("publish");
-    let mut refused = Client::open(server.port).await;
-    refused.join(&room, &read(&assignee)).await;
-    let reason = text_payload(&refused.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-forbidden");
-    // Open, it is held from a viewer it did not go to as well (Epo 2026-11-11).
-    let mut held = Client::open(server.port).await;
-    held.join(&room, &read(&other)).await;
-    let reason = text_payload(&held.until(2).await.expect("held"));
-    assert_eq!(reason, "collaboration-forbidden");
+        .expect("owned");
+    let room = format!("material:{quiz}:schema:1");
+    let refused = |user: String, why: &'static str| {
+        let (room, port) = (room.clone(), server.port);
+        async move {
+            let mut peer = Client::open(port).await;
+            peer.join(&room, &token(&room, &user, "read")).await;
+            let reason = text_payload(&peer.until(2).await.expect(why));
+            assert_eq!(reason, "collaboration-forbidden", "{why}");
+        }
+    };
+    refused(assignee.clone(), "the assignee").await;
+    refused(other.clone(), "a viewer it did not go to").await;
     let mut staff = Client::open(server.port).await;
     assert_eq!(
         staff.joined(&room, &token(&room, &owner, "write")).await,
@@ -3110,137 +3102,7 @@ async fn a_quiz_assigned_to_a_viewer_refuses_them_its_room() {
         )
         .await
         .expect("close");
-    assert_eq!(joins(&assignee).await, 0, "after closing");
-    assert_eq!(joins(&other).await, 0, "a viewer it did not go to");
-    // Closed under Do not show it stays held from both until turned to practice.
-    client
-        .execute(
-            "UPDATE assignments SET answers_shown='never' WHERE id=$1",
-            &[&assignment],
-        )
-        .await
-        .expect("answers never shown");
-    let mut held = Client::open(server.port).await;
-    held.join(&room, &read(&other)).await;
-    let reason = text_payload(&held.until(2).await.expect("held past the close"));
-    assert_eq!(reason, "collaboration-forbidden");
-    client
-        .execute(
-            "UPDATE assignments SET practice_at=now() WHERE id=$1",
-            &[&assignment],
-        )
-        .await
-        .expect("turned to practice");
-    assert_eq!(joins(&other).await, 0, "turned to practice");
-    // A task a member set themself on the quiz (`own`) hides nothing from them.
-    let task = format!("as_it_{}", uuid_like());
-    client
-        .execute(
-            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft,own,questions)
-             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',false,false,true,'[]')",
-            &[&task, &workspace, &other, &quiz],
-        )
-        .await
-        .expect("own task");
-    client
-        .execute(
-            "INSERT INTO assignment_assignees (assignment_id,user_id) VALUES ($1,$2)",
-            &[&task, &other],
-        )
-        .await
-        .expect("its maker");
-    assert_eq!(joins(&other).await, 0, "the maker of their own task");
-}
-
-/// A closed marked assignment still holding its keys keeps refusing its quiz's
-/// room to a viewer it went to: while its grades are Manual and unreleased,
-/// and while its answers are Do not show until staff turn it to practice
-/// (`practice_at`, Epo 2026-11-11; security regression, finding 5,
-/// Go's assignmentKeysHeldSQL). Fails if `live_access` ends the refusal at the
-/// close.
-#[tokio::test]
-async fn a_closed_quiz_holding_its_keys_refuses_its_assignee_its_room() {
-    let Some(env) = env() else { return };
-    let server = start(&env).await;
-    let client = db(&env).await;
-    let (owner, assignee) = (user(&env).await, user(&env).await);
-    let workspace = format!("ws_it_{}", uuid_like());
-    client
-        .execute(
-            "INSERT INTO workspaces (id,user_id,name,kind) VALUES ($1,$2,'IT','class')",
-            &[&workspace, &owner],
-        )
-        .await
-        .expect("workspace");
-    client
-        .execute(
-            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'viewer')",
-            &[&workspace, &assignee],
-        )
-        .await
-        .expect("member");
-    let quiz = quiz_material(&env, &owner, "private").await;
-    client
-        .execute(
-            "UPDATE materials SET workspace_id=$2, workspace_name='IT' WHERE id=$1",
-            &[&quiz, &workspace],
-        )
-        .await
-        .expect("quiz in the class");
-    let assignment = format!("as_it_{}", uuid_like());
-    client
-        .execute(
-            "INSERT INTO assignments (id,workspace_id,created_by,kind,title,source_quiz_id,due_at,assign_all,draft,
-               questions,closed_at,grades_shown)
-             VALUES ($1,$2,$3,'marked','IT',$4,now()+interval '1 hour',true,false,'[]',now(),'manual')",
-            &[&assignment, &workspace, &owner, &quiz],
-        )
-        .await
-        .expect("closed, grades unreleased");
-    let room = format!("material:{quiz}:schema:1");
-    let read = token(&room, &assignee, "read");
-    let refused = |why: &'static str| {
-        let (room, read, port) = (room.clone(), read.clone(), server.port);
-        async move {
-            let mut peer = Client::open(port).await;
-            peer.join(&room, &read).await;
-            let reason = text_payload(&peer.until(2).await.expect(why));
-            assert_eq!(reason, "collaboration-forbidden", "{why}");
-        }
-    };
-    refused("closed with its grades unreleased").await;
-    client
-        .execute(
-            "UPDATE assignments SET grades_released_at=now() WHERE id=$1",
-            &[&assignment],
-        )
-        .await
-        .expect("release");
-    assert_eq!(
-        Client::open(server.port).await.joined(&room, &read).await,
-        0,
-        "grades released"
-    );
-    client
-        .execute(
-            "UPDATE assignments SET answers_shown='never' WHERE id=$1",
-            &[&assignment],
-        )
-        .await
-        .expect("answers never shown");
-    refused("closed with its answers never shown").await;
-    client
-        .execute(
-            "UPDATE assignments SET practice_at=now() WHERE id=$1",
-            &[&assignment],
-        )
-        .await
-        .expect("turned to practice");
-    assert_eq!(
-        Client::open(server.port).await.joined(&room, &read).await,
-        0,
-        "turned to practice"
-    );
+    refused(assignee, "the assignee after the close").await;
 }
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab

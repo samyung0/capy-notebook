@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Separator } from '@/components/ui/Separator';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
@@ -315,27 +314,35 @@ export function ShareDialog({
               value={absoluteLink}
               wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto min-w-0 flex-1"
             />
-            <Button
-              aria-label={copied ? m.action_copied() : m.action_copy()}
-              className="aspect-square px-0"
-              onClick={copy}
-              variant="ghost-hover"
-            >
-              <ContentSwap contentKey={String(copied)} kind="icon">
-                <Icon name={copied ? 'check' : 'copy'} />
-              </ContentSwap>
-            </Button>
-            {workspaceId && (
-              <UnderlineLink accent asChild noArrow>
-                <a
-                  href={absoluteLink}
-                  rel="noopener noreferrer"
-                  target="_blank"
+            {/* Copy and Open in a new tab, touching. */}
+            <div className="flex">
+              <Button
+                aria-label={copied ? m.action_copied() : m.action_copy()}
+                className="aspect-square px-0"
+                onClick={copy}
+                variant="ghost-hover"
+              >
+                <ContentSwap contentKey={String(copied)} kind="icon">
+                  <Icon name={copied ? 'check' : 'copy'} />
+                </ContentSwap>
+              </Button>
+              {workspaceId && (
+                <Button
+                  asChild
+                  className="aspect-square px-0"
+                  variant="ghost-hover"
                 >
-                  {m.summary_preview()}
-                </a>
-              </UnderlineLink>
-            )}
+                  <a
+                    aria-label={m.summary_preview()}
+                    href={absoluteLink}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <Icon name="externalLink" />
+                  </a>
+                </Button>
+              )}
+            </div>
           </div>
         )}
         {workspaceId && members && (

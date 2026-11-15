@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAssignments } from '@/api/hooks';
+import { useTodo } from '@/api/hooks';
 import type { TodoWorkspace, Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
@@ -8,6 +8,7 @@ import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
+import { NewAssignmentMenu } from './NewAssignmentMenu';
 import { TodoTable, useTodoTicks } from './TodoTable';
 import { type TodoTableSection, todoRows, todoSections } from './todoRows';
 
@@ -15,9 +16,10 @@ import { type TodoTableSection, todoRows, todoSections } from './todoRows';
  * page's table (Epo 2026-11-12): one class's rows, a box on each, the row
  * opening its details. A member's holds what is assigned to them and the tasks
  * they set themself; staff's holds answers to approve and anything they
- * assigned themselves. At its top right a class's staff have New assignment
- * and everyone else New task (Epo 2026-11-10: only staff give out
- * assignments), which is all a personal workspace has; with rows selected it
+ * assigned themselves. At its top right a class's staff and a personal
+ * workspace's people have the New menu (Epo 2026-11-14: Assignment or Task,
+ * and Graded quiz) and a class's members New task (Epo 2026-11-10: only staff
+ * give out assignments); with rows selected it
  * turns to Mark as done (or Mark as not done for done rows). Done rows leave
  * until Show done brings them back, muted. With nothing in it the section
  * stays and says Nothing to do (Epo 2026-11-10: nothing is hidden that he did
@@ -28,17 +30,18 @@ export function TodoSection({
   workspace,
 }: {
   manages: boolean;
-  workspace: Pick<Workspace, 'iconId' | 'id' | 'name' | 'role'>;
+  workspace: Pick<Workspace, 'iconId' | 'id' | 'kind' | 'name' | 'role'>;
 }) {
-  const { data, error, isPending, refetch } = useAssignments(workspace.id, {
-    errorBoundary: false,
-  });
+  // To do's own list (the nav's): what this class holds for the viewer, as
+  // the To do page shows it, not the paged assignments list.
+  const { data, error, isPending, refetch } = useTodo({ errorBoundary: false });
   const revealRef = useLoadingReveal(isPending);
   const [showDone, setShowDone] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sort, setSort] = useState<'due' | 'title'>('due');
   const [ascending, setAscending] = useState(true);
-  const items = data?.items ?? [];
+  const items =
+    data?.workspaces.find((w) => w.workspaceId === workspace.id)?.items ?? [];
   const todoWorkspace: TodoWorkspace = {
     iconId: workspace.iconId,
     items,
@@ -106,7 +109,14 @@ export function TodoSection({
               )}
             </>
           ) : (
-            adds && (
+            adds &&
+            (manages || workspace.kind !== 'class' ? (
+              <NewAssignmentMenu
+                own={!manages}
+                small
+                workspaceId={workspace.id}
+              />
+            ) : (
               <Button
                 className="px-2.5"
                 iconLeft="plus"
@@ -114,9 +124,9 @@ export function TodoSection({
                 size="sm"
                 variant="outline"
               >
-                {manages ? m.assignment_new() : m.todo_new_task()}
+                {m.todo_new_task()}
               </Button>
-            )
+            ))
           )}
         </div>
       </div>
@@ -155,9 +165,9 @@ export function TodoSection({
         <NewAssignmentDialog
           onClose={() => setCreating(false)}
           onDone={() => setCreating(false)}
-          // Only a class's staff give out assignments (Epo 2026-11-10).
-          own={!manages}
-          title={manages ? undefined : m.todo_new_task()}
+          // A class member's task for themself (Epo 2026-11-10).
+          own
+          title={m.todo_new_task()}
           workspaceId={workspace.id}
         />
       )}

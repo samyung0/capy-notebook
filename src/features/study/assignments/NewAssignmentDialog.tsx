@@ -1,32 +1,14 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate } from '@tanstack/react-router';
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
-import { type Control, Controller, useForm } from 'react-hook-form';
-import {
-  CreateAssignmentBody,
-  createAssignmentBodyFilesMax,
-} from '@/api/gen/validators';
+import { type ReactNode, useEffect, useId, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import {
   useCreateAssignment,
-  useFiles,
-  useMaterials,
   useMe,
-  usePractice,
+  useQuiz,
   useUpdateAssignment,
-  useWorkspace,
   useWorkspaceMembers,
 } from '@/api/hooks';
-import type {
-  Assignment,
-  AssignmentFileRef,
-  AssignmentFormReq,
-  Workspace,
-  WorkspaceMember,
-} from '@/api/types';
-import { InlineErrorState } from '@/components/app/ErrorState';
-import { Avatar } from '@/components/ui/Avatar';
+import type { Assignment, AssignmentFormReq, Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Checkbox } from '@/components/ui/Checkbox';
 import {
   Dialog,
   DialogCancel,
@@ -35,15 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Skeleton } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
 import {
   Select,
   SelectContent,
@@ -51,81 +25,69 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
-import { Switch } from '@/components/ui/Switch';
-import {
-  ChooseFileButton,
-  FileMenuNote,
-  FileMenuRow,
-  FileSearchMenu,
-  RemoveFileButton,
-} from '@/features/files/FileSearchMenu';
-import { isWorkspaceReadOnly } from '@/features/workspace/access';
-import {
-  matchesSearch,
-  PanelSearchField,
-} from '@/features/workspace/PanelSearch';
+import { questionMarks } from '@/features/questions/types';
+import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
-import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
-import { MakePractice } from '../practice/MakePractice';
 import { questionsLabel } from '../practice/practiceText';
 import { studyView } from '../practice/studyView';
 import { AdvancedSection } from './AdvancedSection';
 import {
-  advancedStartsOpen,
-  dayLabel,
-  dayTimeLabel,
-  latePolicy,
-  localInputValue,
-  minutesText,
-} from './assignmentText';
+  AnswersSelect,
+  AssignToField,
+  AttemptsSelect,
+  assignmentBody,
+  assignmentDefaults,
+  assignmentResolver,
+  DateField,
+  Field,
+  FilesField,
+  GradesSelect,
+  LatePenaltySelect,
+  MarkingSelect,
+  PointsField,
+  SwitchRow,
+  TimeLimitSelect,
+} from './assignmentFields';
+import { advancedStartsOpen } from './assignmentText';
 import { NoAnswersWarning } from './NoAnswersWarning';
-import {
-  ChooseFileRow,
-  type TaskFile,
-  TaskFileMenu,
-  TaskFilesField,
-} from './TaskFiles';
-
-const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
-const ATTEMPTS = [1, 2, 3, 5];
-const LATE_PENALTIES = [0, 20, 50];
+import { type TaskFile, TaskFilesField } from './TaskFiles';
 
 /** The Workspace field's value for a task with no workspace. */
 const NO_WORKSPACE = 'none';
 
-const FIELD_TRIGGER =
-  'flex h-(--control-h) w-full items-center gap-2 rounded-input border border-line bg-field px-3.25 text-left text-fg outline-none hover:border-line-strong focus-visible:border-line-strong data-[state=open]:border-line-strong';
-
-/** New assignment and its edit (boards A1, A1b, A1c, A1d): Kind first, then a
- * quiz with its marks rules, or a title with optional files. Editing keeps the
- * kind and the quiz. The Quiz field's last rows make a quiz on the spot, through the
- * dialogs that already do: Add file's Create tab, Make a quiz and generate.
+/** New assignment and its edit (boards A1, A1b, A1d; Task, Epo 2026-11-14): a
+ * new one is an Assignment (a task in a personal workspace), a title with
+ * optional files; New's Graded quiz opens New graded quiz, whose Settings step
+ * this is (`graded`, board Graded quiz 2 Settings). Editing keeps the kind and
+ * the quiz.
  *
  * It is also the form of a task one sets oneself (`own`, Epo 2026-11-10: New
  * task for anyone in a personal workspace and a class's viewer members), one
  * dialog showing the fields that apply (Epo 2026-11-11): everything an
  * assignment has but Assign to, as it is for its maker alone
- * (`checkOwnTask`), with its quiz and its files from any workspace or none. It
- * starts as a plain task. To do's Add task passes `workspaces`: Workspace is
- * then the first field, starting on none, and the fields follow the workspace
- * picked without the dialog reopening.
+ * (`checkOwnTask`), with its files from any workspace or none. To do's Add task
+ * passes `workspaces`: Workspace is then the first field, starting on none, and
+ * the fields follow the workspace picked without the dialog reopening.
  */
 export function NewAssignmentDialog({
   existing,
+  graded,
   onClose,
   onDone,
   own,
   presetAssignee,
-  presetQuizId,
-  presetTopicId,
   title,
   workspaceId,
   workspaces,
 }: {
   existing?: Assignment;
+  /** New graded quiz's Settings step: the quiz its Questions step made, and
+   * the way back to that step. */
+  graded?: { onBack: () => void; quizId: string; title: ReactNode };
   onClose: () => void;
   onDone: (assignment: Assignment) => void;
   /** A new task for oneself, where the page knows the viewer gives out no
@@ -133,10 +95,6 @@ export function NewAssignmentDialog({
   own?: boolean;
   /** Opened from a member's profile (Q721): them as the only assignee. */
   presetAssignee?: string;
-  /** Opened from a quiz (A1): its quiz is set and Kind doesn't show. */
-  presetQuizId?: string;
-  /** The topic Generate questions starts on: the profile card's (Q721). */
-  presetTopicId?: string;
   /** A new one's heading where the page has its own word for it (New task, To
    * do's Add task); New assignment without. */
   title?: string;
@@ -151,26 +109,14 @@ export function NewAssignmentDialog({
     !!studyView(workspaces?.find((ws) => ws.id === id)).manages;
   // A task for oneself: only a class's staff give out assignments.
   const isOwn = existing ? existing.own : workspaces ? !runs(wsId) : !!own;
-  // A task's quiz comes from anywhere: the row picked, for its name.
-  const [taskQuiz, setTaskQuiz] = useState<TaskFile | null>(null);
   const [pickedFiles, setPickedFiles] = useState<TaskFile[]>([]);
   const { data: me } = useMe();
   const manage = existing?.manage;
   const formId = useId();
-  const navigate = useNavigate();
-  const { data: ws } = useWorkspace(wsId, { errorBoundary: false });
-  const [generating, setGenerating] = useState(false);
-  const {
-    data: practice,
-    isError: quizzesFailed,
-    isPending: quizzesPending,
-    refetch: refetchQuizzes,
-  } = usePractice(wsId, {
-    enabled: !isOwn,
+  const { data: members } = useWorkspaceMembers(wsId, !isOwn);
+  const { data: quiz } = useQuiz(graded?.quizId ?? '', {
     errorBoundary: false,
   });
-  const { data: members } = useWorkspaceMembers(wsId, !isOwn);
-  const quizzes = practice?.quizzes ?? [];
   const {
     clearErrors,
     control,
@@ -180,71 +126,34 @@ export function NewAssignmentDialog({
     setValue,
     watch,
   } = useForm<AssignmentFormReq>({
-    defaultValues: {
-      allowUploads: existing?.allowUploads ?? false,
-      assignAll: manage?.assignAll ?? !presetAssignee,
-      assignees: manage?.assignees ?? (presetAssignee ? [presetAssignee] : []),
-      attempts: existing?.attempts ?? 1,
-      draft: existing?.draft ?? false,
-      dueAt: existing?.dueAt,
-      files: (existing?.files ?? []).map(({ fileId, materialId }) => ({
-        fileId,
-        materialId,
-      })),
-      // A task one sets oneself starts plain; an assignment with a quiz.
-      kind: existing?.kind ?? (isOwn ? 'unmarked' : 'marked'),
-      latePenaltyPct: existing?.latePenaltyPct ?? 0,
-      marking: manage?.marking ?? 'ai_approve',
-      noLate: existing?.noLate ?? false,
-      quizId: manage?.quizId ?? presetQuizId,
-      showAnswers: manage?.showAnswers ?? 'closed',
-      showGrades: manage?.showGrades ?? 'automatic',
-      shuffle: manage?.shuffle ?? false,
-      timeLimitMin: existing?.timeLimitMin,
-      title:
-        existing?.title ??
-        quizzes.find((q) => q.id === presetQuizId)?.title ??
-        '',
-    },
-    mode: 'onSubmit',
-    resolver: zodResolver(
-      CreateAssignmentBody.superRefine((v, ctx) => {
-        if (!v.title.trim())
-          ctx.addIssue({
-            code: 'custom',
-            message: m.assignment_title_required(),
-            path: ['title'],
-          });
-        if (v.kind !== 'marked') return;
-        if (!v.quizId)
-          ctx.addIssue({
-            code: 'custom',
-            message: m.assignment_quiz_required(),
-            path: ['quizId'],
-          });
-        if (!v.draft && !v.dueAt)
-          ctx.addIssue({
-            code: 'custom',
-            message: m.assignment_due_required(),
-            path: ['dueAt'],
-          });
-      })
+    defaultValues: assignmentDefaults(
+      existing,
+      existing
+        ? {}
+        : {
+            assignAll: !presetAssignee,
+            assignees: presetAssignee ? [presetAssignee] : [],
+            kind: graded ? 'marked' : 'unmarked',
+            quizId: graded?.quizId,
+          }
     ),
+    mode: 'onSubmit',
+    resolver: assignmentResolver,
   });
   const kind = watch('kind');
-  const quizId = watch('quizId');
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
   const attempts = watch('attempts');
   const draft = watch('draft');
+  // A class's Assignment may be graded on points (Epo 2026-11-14), which
+  // brings Show grades and the late penalty; a task never is.
+  const takesPoints = !isOwn && kind === 'unmarked';
+  const gradedAssignment = takesPoints && watch('points') !== undefined;
   const [advancedOpen, setAdvancedOpen] = useState(
     () =>
       advancedStartsOpen(existing) ||
       !!manage?.shuffle ||
-      // Grades and answers sit there too: a choice other than the default
-      // shows.
-      (!!manage &&
-        (manage.showGrades !== 'automatic' || manage.showAnswers !== 'closed'))
+      (existing?.kind === 'unmarked' && manage?.showGrades === 'manual')
   );
   // No late submissions goes with a due date on either kind (Epo 2026-11-09),
   // the penalty with a marked one's marks; a published one is past being a
@@ -259,14 +168,10 @@ export function NewAssignmentDialog({
     existing?.id ?? ''
   );
   // The Workspace field: what is typed stays, and what belongs to the
-  // workspace left behind goes (its people, an assignment's quiz and files; a
-  // task's come from anywhere, so they stay from task to task).
+  // workspace left behind goes (its people, an assignment's files; a task's
+  // come from anywhere, so they stay from task to task).
   const pickWorkspace = (next: string) => {
-    if (!(isOwn && !runs(next))) {
-      setValue('files', []);
-      setValue('quizId', undefined);
-      setTaskQuiz(null);
-    }
+    if (!(isOwn && !runs(next))) setValue('files', []);
     setValue('assignAll', true);
     setValue('assignees', []);
     if (!runs(next)) setValue('draft', false);
@@ -274,29 +179,21 @@ export function NewAssignmentDialog({
     setPicked(next);
   };
   const saving = creating || updating;
-  // Opened from a quiz before the list arrived: its name becomes the title.
-  const presetTitle = quizzes.find((q) => q.id === presetQuizId)?.title;
+  // A graded quiz is named after its quiz until a title is typed.
+  const quizTitle = quiz?.name;
   useEffect(() => {
-    if (presetTitle && !titleEdited) setValue('title', presetTitle);
-  }, [presetTitle, setValue, titleEdited]);
+    if (quizTitle && !titleEdited) setValue('title', quizTitle);
+  }, [quizTitle, setValue, titleEdited]);
   const submit = handleSubmit((values) => {
     if (isOwn && !me) return;
     const body: AssignmentFormReq = {
-      ...values,
-      ...latePolicy(values),
-      // A task is for its maker alone. Someone who left after an assignment
-      // was read can't be assigned.
-      ...(isOwn
-        ? { assignAll: false, assignees: me ? [me.id] : [] }
-        : {
-            assignees: values.assignees?.filter(
-              (id) => !members || members.some((member) => member.userId === id)
-            ),
-          }),
-      files: kind === 'marked' ? [] : values.files,
-      quizId: kind === 'marked' ? values.quizId : undefined,
-      timeLimitMin: kind === 'marked' ? values.timeLimitMin : undefined,
-      title: values.title.trim(),
+      ...assignmentBody(values, members),
+      // A task is for its maker alone, and has no points.
+      ...(isOwn && {
+        assignAll: false,
+        assignees: me ? [me.id] : [],
+        points: undefined,
+      }),
     };
     const options = {
       onError: (error: unknown) =>
@@ -308,8 +205,6 @@ export function NewAssignmentDialog({
     if (existing) update(body, options);
     else create(body, options);
   });
-  const locked = !!existing || !!presetQuizId;
-  const quiz = quizzes.find((q) => q.id === quizId);
   // In the phone header and the form's footer: either one, or Enter in a field,
   // submits the form once.
   const createButton = (
@@ -322,32 +217,28 @@ export function NewAssignmentDialog({
       {existing ? m.action_save() : m.assignment_create()}
     </Button>
   );
+  const marks = (quiz?.questions ?? []).reduce(
+    (total, question) => total + questionMarks(question),
+    0
+  );
 
-  if (generating)
-    return (
-      <MakePractice
-        initialTopicId={presetTopicId}
-        onClose={onClose}
-        onlyYou={false}
-        onMade={onClose}
-        title={m.assignment_generate_questions()}
-        workspaceId={wsId}
-      />
-    );
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent
         aria-describedby={undefined}
         cardScrollContainerClassName="sm:px-6.25"
         className="sm:max-w-150"
-        showCloseButton={false}
+        // New graded quiz's steps both have the corner close.
+        showCloseButton={!!graded}
       >
-        <DialogTitle action={createButton}>
-          {existing
-            ? isOwn
-              ? m.todo_edit_task()
-              : m.assignment_edit()
-            : (title ?? m.assignment_new())}
+        <DialogTitle action={createButton} onBack={graded?.onBack}>
+          {graded
+            ? graded.title
+            : existing
+              ? isOwn
+                ? m.todo_edit_task()
+                : m.assignment_edit()
+              : (title ?? m.assignment_new())}
         </DialogTitle>
         <form
           className="flex flex-col gap-4 pt-1"
@@ -393,40 +284,35 @@ export function NewAssignmentDialog({
               </Select>
             </Field>
           )}
-          {!locked && (
-            <Field label={m.assignment_field_kind()}>
-              <Controller
-                control={control}
-                name="kind"
-                render={({ field }) => (
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <SelectTrigger aria-label={m.assignment_field_kind()}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem
-                        iconAndValue={{
-                          icon: 'checkSquare',
-                          label: m.assignment_kind_marked(),
-                        }}
-                        value="marked"
-                      />
-                      <SelectItem
-                        iconAndValue={{
-                          // Graded's box without its tick (Epo 2026-11-12).
-                          icon: 'rectangle',
-                          label: m.assignment_kind_unmarked(),
-                        }}
-                        value="unmarked"
-                      />
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </Field>
-          )}
-          {kind === 'marked' &&
-            (locked ? (
+          {graded ? (
+            // What the Questions step made, and the way back to it.
+            <div className="flex flex-col gap-1.5">
+              <div className="flex min-h-11 items-center gap-2.5 border-divider border-y py-2">
+                <FileIcon
+                  className="size-4.5 shrink-0"
+                  name={materialIconName('quiz')}
+                />
+                <span className="truncate font-bold">
+                  {questionsLabel(quiz?.questions.length ?? 0)}
+                </span>
+                <span className="shrink-0 text-fg-secondary">
+                  ·{' '}
+                  {marks === 1
+                    ? m.question_ui_one_mark()
+                    : m.question_ui_marks({ count: formatPoints(marks) })}
+                </span>
+                <button
+                  className="ml-auto shrink-0 font-semibold underline underline-offset-2 hover:text-fg-secondary"
+                  onClick={graded.onBack}
+                  type="button"
+                >
+                  {m.assignment_change_questions()}
+                </button>
+              </div>
+              <NoAnswersWarning quizId={graded.quizId} />
+            </div>
+          ) : (
+            kind === 'marked' && (
               <Field label={m.assignment_field_quiz()}>
                 <div className="flex min-h-7 items-center gap-2">
                   <FileIcon
@@ -434,126 +320,17 @@ export function NewAssignmentDialog({
                     name={materialIconName('quiz')}
                   />
                   <span className="truncate font-semibold">
-                    {quiz?.title ?? manage?.quizTitle}
+                    {manage?.quizTitle}
                   </span>
-                  {quiz && (
+                  {existing && (
                     <span className="t-meta shrink-0 text-fg-muted">
-                      {questionsLabel(quiz.questions)}
+                      {questionsLabel(existing.questions)}
                     </span>
                   )}
                 </div>
               </Field>
-            ) : isOwn ? (
-              <Field
-                error={errors.quizId?.message}
-                label={m.assignment_field_quiz()}
-                required
-              >
-                {/* The quiz field's own trigger, over every quiz its maker
-                    can open: Add a file's menu, on quizzes alone. */}
-                <TaskFileMenu
-                  empty={m.common_no_matches()}
-                  held={quizId ? [quizId] : []}
-                  kinds={['quiz']}
-                  label={m.assignment_search_quizzes()}
-                  onPick={(picked) => {
-                    setTaskQuiz(picked);
-                    setValue('quizId', picked.id, { shouldValidate: true });
-                    if (!titleEdited) setValue('title', picked.name);
-                  }}
-                  trigger={
-                    <button
-                      aria-label={m.assignment_field_quiz()}
-                      className={FIELD_TRIGGER}
-                      type="button"
-                    >
-                      {taskQuiz && (
-                        <FileIcon
-                          className="size-4 shrink-0"
-                          name={materialIconName('quiz')}
-                        />
-                      )}
-                      <span
-                        className={cn(
-                          'min-w-0 flex-1 truncate',
-                          !taskQuiz && 'text-placeholder'
-                        )}
-                      >
-                        {taskQuiz?.name ?? m.assignment_choose_quiz()}
-                      </span>
-                      {taskQuiz?.workspaceName && (
-                        <span className="t-meta max-w-[40%] shrink-0 truncate text-fg-muted">
-                          {taskQuiz.workspaceName}
-                        </span>
-                      )}
-                      <Icon
-                        className="shrink-0 text-fg-muted"
-                        name="chevronDown"
-                        size={16}
-                      />
-                    </button>
-                  }
-                />
-                {quizId && <NoAnswersWarning quizId={quizId} />}
-              </Field>
-            ) : (
-              <Field
-                error={errors.quizId?.message}
-                label={m.assignment_field_quiz()}
-                required
-              >
-                <QuizPicker
-                  canMake={!isWorkspaceReadOnly(ws?.capabilities)}
-                  failed={quizzesFailed}
-                  onMake={(how) => {
-                    if (how === 'generate') {
-                      setGenerating(true);
-                      return;
-                    }
-                    onClose();
-                    // From To do the class's own page holds these dialogs.
-                    if (workspaces) {
-                      void navigate({
-                        params: { workspaceId: wsId },
-                        search:
-                          how === 'file'
-                            ? { make: 'files' as const }
-                            : { add: 'create' as const },
-                        to: '/workspaces/$workspaceId',
-                      });
-                      return;
-                    }
-                    void navigate({
-                      search:
-                        how === 'file'
-                          ? (previous) => ({
-                              make: 'files' as const,
-                              // Cancelling comes back here (Epo 2026-11-06).
-                              makeFrom:
-                                previous.study === 'assignments'
-                                  ? ('assignments' as const)
-                                  : undefined,
-                            })
-                          : (previous) => ({
-                              ...previous,
-                              add: 'create' as const,
-                              newFromQuiz: undefined,
-                            }),
-                      to: '.',
-                    });
-                  }}
-                  onPick={(id, title) => {
-                    setValue('quizId', id, { shouldValidate: true });
-                    if (!titleEdited) setValue('title', title);
-                  }}
-                  onRetry={() => void refetchQuizzes()}
-                  pending={quizzesPending}
-                  quizzes={quizzes}
-                  value={quizId}
-                />
-                {quizId && <NoAnswersWarning quizId={quizId} />}
-              </Field>
-            ))}
+            )
+          )}
           <Field
             error={errors.title?.message}
             label={m.assignment_field_title()}
@@ -604,36 +381,7 @@ export function NewAssignmentDialog({
             </Field>
             {kind === 'marked' ? (
               <Field label={m.assignment_field_time_limit()}>
-                <Controller
-                  control={control}
-                  name="timeLimitMin"
-                  render={({ field }) => (
-                    <Select
-                      onValueChange={(value) =>
-                        field.onChange(
-                          value === 'none' ? undefined : Number(value)
-                        )
-                      }
-                      value={field.value ? String(field.value) : 'none'}
-                    >
-                      <SelectTrigger
-                        aria-label={m.assignment_field_time_limit()}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">
-                          {m.assignment_no_limit()}
-                        </SelectItem>
-                        {TIME_LIMITS.map((min) => (
-                          <SelectItem key={min} value={String(min)}>
-                            {minutesText(min)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
+                <TimeLimitSelect control={control} />
               </Field>
             ) : (
               // A task for oneself is for nobody else.
@@ -642,29 +390,7 @@ export function NewAssignmentDialog({
             {kind === 'marked' && (
               <>
                 <Field label={m.assignment_field_attempts()}>
-                  <Controller
-                    control={control}
-                    name="attempts"
-                    render={({ field }) => (
-                      <Select
-                        onValueChange={(value) => field.onChange(Number(value))}
-                        value={String(field.value)}
-                      >
-                        <SelectTrigger
-                          aria-label={m.assignment_field_attempts()}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ATTEMPTS.map((count) => (
-                            <SelectItem key={count} value={String(count)}>
-                              {count}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+                  <AttemptsSelect control={control} />
                   {attempts > 1 && (
                     <span className="t-meta text-fg-muted">
                       {m.assignment_highest_counts()}
@@ -677,6 +403,13 @@ export function NewAssignmentDialog({
               </>
             )}
           </div>
+          {/* Points in a row of their own under Due and Assign to (board
+              Task, Epo 2026-11-14). */}
+          {takesPoints && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <PointsField control={control} error={errors.points?.message} />
+            </div>
+          )}
           {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
               members hand in files with Hand in. */}
           {kind === 'unmarked' && (
@@ -717,38 +450,20 @@ export function NewAssignmentDialog({
           )}
           {kind === 'marked' && (
             <div className="flex flex-col gap-2 pt-0.5">
-              {/* Marking (A4, Epo 2026-11-06) on its own row; when members
-                  see grades and keys (C4, C3, Epo 2026-11-08) sit in
-                  Advanced (Epo 2026-11-12). */}
-              <div className="mb-1 grid gap-4">
-                <Field label={m.assignment_field_marking()}>
-                  <Controller
-                    control={control}
-                    name="marking"
-                    render={({ field }) => (
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <SelectTrigger
-                          aria-label={m.assignment_field_marking()}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ai_approve">
-                            {m.assignment_marking_ai_approve()}
-                          </SelectItem>
-                          <SelectItem value="ai">
-                            {m.assignment_marking_ai()}
-                          </SelectItem>
-                          <SelectItem value="manual">
-                            {m.assignment_marking_manual()}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+              {/* Marking (A4, Epo 2026-11-06) on its own row, then when
+                  members see grades and keys (C4, C3; board Graded quiz 2
+                  Settings, Epo 2026-11-14). */}
+              <div className="mb-1 grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <Field label={m.assignment_field_marking()}>
+                    <MarkingSelect control={control} />
+                  </Field>
+                </div>
+                <Field label={m.assignment_field_grades()}>
+                  <GradesSelect control={control} />
+                </Field>
+                <Field label={m.assignment_field_answers()}>
+                  <AnswersSelect control={control} />
                 </Field>
               </div>
               {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
@@ -759,70 +474,11 @@ export function NewAssignmentDialog({
               />
             </div>
           )}
-          {(kind === 'marked' || hasDraft || hasPolicy) && (
+          {(kind === 'marked' || hasDraft || hasPolicy || gradedAssignment) && (
             <AdvancedSection
               onToggle={() => setAdvancedOpen(!advancedOpen)}
               open={advancedOpen}
             >
-              {kind === 'marked' && (
-                <div className="grid gap-4 pb-2 sm:grid-cols-2">
-                  <Field label={m.assignment_field_grades()}>
-                    <Controller
-                      control={control}
-                      name="showGrades"
-                      render={({ field }) => (
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <SelectTrigger
-                            aria-label={m.assignment_field_grades()}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="automatic">
-                              {m.assignment_grades_automatic()}
-                            </SelectItem>
-                            <SelectItem value="manual">
-                              {m.assignment_grades_manual()}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </Field>
-                  <Field label={m.assignment_field_answers()}>
-                    <Controller
-                      control={control}
-                      name="showAnswers"
-                      render={({ field }) => (
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <SelectTrigger
-                            aria-label={m.assignment_field_answers()}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="closed">
-                              {m.assignment_answers_closed()}
-                            </SelectItem>
-                            <SelectItem value="submitted">
-                              {m.assignment_answers_submitted()}
-                            </SelectItem>
-                            <SelectItem value="never">
-                              {m.assignment_answers_never()}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </Field>
-                </div>
-              )}
               {kind === 'marked' && (
                 <SwitchRow
                   control={control}
@@ -837,37 +493,20 @@ export function NewAssignmentDialog({
                   name="noLate"
                 />
               )}
-              {hasPolicy && kind === 'marked' && !noLate && (
+              {gradedAssignment && (
                 <div className="flex min-h-8 items-center justify-between gap-4">
-                  <InputTitle>{m.assignment_field_late_penalty()}</InputTitle>
-                  <Controller
-                    control={control}
-                    name="latePenaltyPct"
-                    render={({ field }) => (
-                      <Select
-                        onValueChange={(value) => field.onChange(Number(value))}
-                        value={String(field.value)}
-                      >
-                        <SelectTrigger
-                          aria-label={m.assignment_field_late_penalty()}
-                          className="w-37.5"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LATE_PENALTIES.map((pct) => (
-                            <SelectItem key={pct} value={String(pct)}>
-                              {pct === 0
-                                ? m.assignment_penalty_none()
-                                : m.assignment_penalty_value({ percent: pct })}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+                  <InputTitle>{m.assignment_field_grades()}</InputTitle>
+                  <GradesSelect className="w-37.5" control={control} />
                 </div>
               )}
+              {hasPolicy &&
+                (kind === 'marked' || gradedAssignment) &&
+                !noLate && (
+                  <div className="flex min-h-8 items-center justify-between gap-4">
+                    <InputTitle>{m.assignment_field_late_penalty()}</InputTitle>
+                    <LatePenaltySelect className="w-37.5" control={control} />
+                  </div>
+                )}
               {hasDraft && (
                 <SwitchRow
                   control={control}
@@ -881,535 +520,22 @@ export function NewAssignmentDialog({
             <InputError>{errors.root.message}</InputError>
           )}
           <DialogFooter className="max-sm:hidden sm:pt-2.5">
+            {graded && (
+              <Button
+                className="mr-auto"
+                onClick={graded.onBack}
+                size="md"
+                type="button"
+                variant="outline"
+              >
+                {m.action_back()}
+              </Button>
+            )}
             <DialogCancel disabled={saving} size="md" />
             {createButton}
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** A field under its name; one that must be filled has the red asterisk, as
- * the workspace settings' Name does (Epo 2026-11-12). */
-function Field({
-  children,
-  error,
-  label,
-  required,
-}: {
-  children: ReactNode;
-  error?: string;
-  label: string;
-  required?: boolean;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <InputTitle required={required}>{label}</InputTitle>
-      {children}
-      {error && <InputError>{error}</InputError>}
-    </div>
-  );
-}
-
-function SwitchRow({
-  control,
-  label,
-  name,
-}: {
-  control: Control<AssignmentFormReq>;
-  label: string;
-  name: 'allowUploads' | 'draft' | 'noLate' | 'shuffle';
-}) {
-  return (
-    <Controller
-      control={control}
-      name={name}
-      render={({ field }) => (
-        <div className="flex min-h-8 items-center justify-between gap-4">
-          <InputTitle>{label}</InputTitle>
-          <Switch
-            aria-label={label}
-            checked={!!field.value}
-            className="data-checked:bg-solid-accent-1"
-            onCheckedChange={field.onChange}
-          />
-        </div>
-      )}
-    />
-  );
-}
-
-/** A due date: the board's field, opening the browser's own picker. */
-function DateField({
-  clearable,
-  dateOnly,
-  onChange,
-  value,
-}: {
-  clearable: boolean;
-  dateOnly: boolean;
-  onChange: (value: string | undefined) => void;
-  value?: string;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  return (
-    <div className="relative">
-      <button
-        className={FIELD_TRIGGER}
-        onClick={() => {
-          const el = input.current;
-          if (!el) return;
-          if (el.showPicker) el.showPicker();
-          else el.focus();
-        }}
-        type="button"
-      >
-        <Icon className="shrink-0 text-fg-muted" name="schedule" size={16} />
-        <span className={cn('truncate', !value && 'text-placeholder')}>
-          {value
-            ? dateOnly
-              ? dayLabel(value)
-              : dayTimeLabel(value)
-            : m.assignment_choose_date()}
-        </span>
-      </button>
-      {clearable && value && (
-        <IconButton
-          className="absolute top-1/2 right-1.5 size-7 -translate-y-1/2"
-          icon="x"
-          label={m.assignment_clear_due()}
-          onClick={() => onChange(undefined)}
-          type="button"
-        />
-      )}
-      <input
-        aria-label={m.assignment_field_due()}
-        className="pointer-events-none absolute inset-0 opacity-0"
-        data-due-input
-        onChange={(event) => {
-          const raw = event.target.value;
-          if (!raw) return onChange(undefined);
-          // A date alone means the end of that day.
-          onChange(new Date(dateOnly ? `${raw}T23:59` : raw).toISOString());
-        }}
-        ref={input}
-        tabIndex={-1}
-        type={dateOnly ? 'date' : 'datetime-local'}
-        value={value ? localInputValue(value, dateOnly) : ''}
-      />
-    </div>
-  );
-}
-
-/** The quiz field (A1c): the workspace's quizzes, then the ways to make one. */
-function QuizPicker({
-  canMake,
-  failed,
-  onMake,
-  onPick,
-  onRetry,
-  pending,
-  quizzes,
-  value,
-}: {
-  /** Off in a frozen workspace, where making one would be refused. */
-  canMake: boolean;
-  /** The list couldn't be read, so "no quizzes" would be untrue. */
-  failed: boolean;
-  onMake: (how: 'blank' | 'file' | 'generate') => void;
-  onPick: (id: string, title: string) => void;
-  onRetry: () => void;
-  pending: boolean;
-  quizzes: { id: string; title: string; questions: number }[];
-  value?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const picked = quizzes.find((q) => q.id === value);
-  const shown = quizzes.filter((q) =>
-    q.title.toLowerCase().includes(query.trim().toLowerCase())
-  );
-  const makers: {
-    how: 'blank' | 'file' | 'generate';
-    icon: 'plus' | 'upload' | 'ai';
-    label: string;
-  }[] = [
-    { how: 'blank', icon: 'plus', label: m.assignment_new_quiz() },
-    { how: 'file', icon: 'upload', label: m.dashboard_make_quiz() },
-    { how: 'generate', icon: 'ai', label: m.assignment_generate_questions() },
-  ];
-  return (
-    <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger asChild>
-        <button
-          aria-label={m.assignment_field_quiz()}
-          className={FIELD_TRIGGER}
-          type="button"
-        >
-          {picked && (
-            <FileIcon
-              className="size-4 shrink-0"
-              name={materialIconName('quiz')}
-            />
-          )}
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate',
-              !picked && 'text-placeholder'
-            )}
-          >
-            {picked?.title ?? m.assignment_choose_quiz()}
-          </span>
-          <Icon
-            className="shrink-0 text-fg-muted"
-            name="chevronDown"
-            size={16}
-          />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-(--radix-popover-trigger-width) p-1.5"
-      >
-        {pending ? (
-          <Skeleton className="h-9 w-full" />
-        ) : quizzes.length === 0 && failed ? (
-          <InlineErrorState
-            className="py-2"
-            message={m.assignment_quizzes_failed()}
-            onRetry={onRetry}
-          />
-        ) : quizzes.length === 0 ? (
-          <p className="px-2.5 py-2 text-fg-secondary text-sm">
-            {canMake
-              ? m.assignment_make_quiz_to_begin()
-              : m.common_nothing_yet()}
-          </p>
-        ) : (
-          <>
-            <PanelSearchField
-              label={m.assignment_search_quizzes()}
-              onChange={setQuery}
-              value={query}
-            />
-            <ul className="mt-1.5 max-h-60 overflow-auto">
-              {shown.map((q) => (
-                <li key={q.id}>
-                  <button
-                    className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
-                    onClick={() => {
-                      onPick(q.id, q.title);
-                      setOpen(false);
-                    }}
-                    type="button"
-                  >
-                    <FileIcon
-                      className="size-4 shrink-0"
-                      name={materialIconName('quiz')}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{q.title}</span>
-                    <span className="t-meta shrink-0 font-medium text-fg-muted">
-                      {questionsLabel(q.questions)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {shown.length === 0 && (
-              <p className="px-2.5 py-2 text-fg-secondary text-sm">
-                {m.common_no_matches()}
-              </p>
-            )}
-          </>
-        )}
-        {canMake && (
-          <div className="mt-1.5 border-divider border-t pt-1.5">
-            {makers.map(({ how, icon, label }) => (
-              <button
-                className="flex min-h-9 w-full items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-overlay-hover focus-visible:bg-overlay-hover"
-                key={how}
-                onClick={() => onMake(how)}
-                type="button"
-              >
-                <Icon className="shrink-0" name={icon} size={16} />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** Assign to (A1b): All members, or picked names; "You" sits apart. */
-function AssignToField({
-  control,
-  workspaceId,
-}: {
-  control: Control<AssignmentFormReq>;
-  workspaceId: string;
-}) {
-  const { data: members } = useWorkspaceMembers(workspaceId);
-  const { data: user } = useMe();
-  const viewers = (members ?? []).filter(
-    (member) => member.role === 'viewer' && member.userId !== user?.id
-  );
-  const me = (members ?? []).find((member) => member.userId === user?.id);
-  return (
-    <Field label={m.assignment_field_assign_to()}>
-      <Controller
-        control={control}
-        name="assignAll"
-        render={({ field: all }) => (
-          <Controller
-            control={control}
-            name="assignees"
-            render={({ field: named }) => {
-              const picked: string[] = named.value ?? [];
-              const pickedViewers = viewers.filter((v) =>
-                picked.includes(v.userId)
-              ).length;
-              const toggle = (id: string) => {
-                if (all.value) {
-                  // Unticking one of everyone leaves the rest named.
-                  all.onChange(false);
-                  named.onChange([
-                    ...picked,
-                    ...viewers
-                      .map((v) => v.userId)
-                      .filter((v) => v !== id && !picked.includes(v)),
-                  ]);
-                  return;
-                }
-                named.onChange(
-                  picked.includes(id)
-                    ? picked.filter((v) => v !== id)
-                    : [...picked, id]
-                );
-              };
-              const toggleAll = () => {
-                all.onChange(!all.value);
-                named.onChange(picked.filter((id) => id === user?.id));
-              };
-              return (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      aria-label={m.assignment_field_assign_to()}
-                      className={FIELD_TRIGGER}
-                      type="button"
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {all.value
-                          ? m.assignment_all_members()
-                          : pickedViewers === 1
-                            ? m.workspace_members_one()
-                            : m.workspace_members_count({
-                                count: pickedViewers,
-                              })}
-                      </span>
-                      <Icon
-                        className="shrink-0 text-fg-muted"
-                        name="chevronDown"
-                        size={16}
-                      />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="end"
-                    className="w-85 max-w-[calc(100vw-2rem)] p-1.5"
-                  >
-                    <PersonRow
-                      checked={!!all.value}
-                      label={m.assignment_all_members()}
-                      onToggle={toggleAll}
-                      trailing={m.assignment_all_members_hint({
-                        count: viewers.length,
-                      })}
-                    />
-                    {/* One line with nobody to list: a second would sit right under it. */}
-                    <div
-                      className={cn(
-                        'my-1 max-h-60 overflow-auto border-divider border-t',
-                        viewers.length > 0 && 'border-b py-1'
-                      )}
-                    >
-                      {viewers.map((viewer) => (
-                        <PersonRow
-                          checked={
-                            !!all.value || picked.includes(viewer.userId)
-                          }
-                          key={viewer.userId}
-                          label={viewer.name}
-                          member={viewer}
-                          onToggle={() => toggle(viewer.userId)}
-                        />
-                      ))}
-                    </div>
-                    {me && (
-                      <PersonRow
-                        checked={picked.includes(me.userId)}
-                        label={m.assignment_you()}
-                        member={me}
-                        onToggle={() =>
-                          named.onChange(
-                            picked.includes(me.userId)
-                              ? picked.filter((v) => v !== me.userId)
-                              : [...picked, me.userId]
-                          )
-                        }
-                        trailing={
-                          me.role === 'owner'
-                            ? m.assignment_role_owner()
-                            : m.assignment_role_ta()
-                        }
-                      />
-                    )}
-                  </PopoverContent>
-                </Popover>
-              );
-            }}
-          />
-        )}
-      />
-    </Field>
-  );
-}
-
-function PersonRow({
-  checked,
-  label,
-  member,
-  onToggle,
-  trailing,
-}: {
-  checked: boolean;
-  label: string;
-  member?: Pick<WorkspaceMember, 'name' | 'avatarUrl'>;
-  onToggle: () => void;
-  trailing?: string;
-}) {
-  return (
-    <div className="flex min-h-9 items-center gap-2.5 px-1.5 font-semibold">
-      <Checkbox
-        aria-label={label}
-        checked={checked}
-        onChange={onToggle}
-        size={18}
-        tone="purple"
-      />
-      {member && (
-        <Avatar
-          aria-hidden
-          className="size-6 text-[10px]"
-          name={member.name}
-          src={member.avatarUrl || undefined}
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {trailing && (
-        <span className="t-meta shrink-0 font-medium text-fg-muted">
-          {trailing}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** Files · optional (A1d): Choose a file picking from the workspace's Files,
- * kept above the rows chosen, each with × (Epo 2026-11-12: Make a quiz's
- * menu, the chosen ones ticked there; a ticked row takes its file off, and the
- * menu stays open for more). */
-function FilesField({
-  onChange,
-  value,
-  workspaceId,
-}: {
-  onChange: (files: AssignmentFileRef[]) => void;
-  value: AssignmentFileRef[];
-  workspaceId: string;
-}) {
-  const { data: files } = useFiles(workspaceId);
-  const { data: materials } = useMaterials(workspaceId);
-  const [open, setOpen] = useState(false);
-  const options = [
-    ...(files ?? []).map((f) => ({
-      icon: fileIconName(f),
-      id: f.id,
-      name: f.name,
-      ref: { fileId: f.id } as AssignmentFileRef,
-    })),
-    ...(materials ?? []).map((mt) => ({
-      icon: materialIconName(mt.type),
-      id: mt.id,
-      name: mt.title,
-      ref: { materialId: mt.id } as AssignmentFileRef,
-    })),
-  ];
-  const held = (id: string) =>
-    value.some((f) => f.fileId === id || f.materialId === id);
-  const remove = (id: string) =>
-    onChange(value.filter((f) => f.fileId !== id && f.materialId !== id));
-  const full = value.length >= createAssignmentBodyFilesMax;
-  const picked = value.flatMap((f) => {
-    const option = options.find((o) => o.id === (f.fileId ?? f.materialId));
-    return option ? [option] : [];
-  });
-  return (
-    <div className="flex flex-col gap-2">
-      <ChooseFileRow count={value.length}>
-        <FileSearchMenu
-          label={m.assignment_search_files()}
-          onOpenChange={setOpen}
-          open={open}
-          searchLabel={m.assignment_search_files()}
-          trigger={<ChooseFileButton />}
-        >
-          {(query) => {
-            const shown = options.filter((o) => matchesSearch(o.name, query));
-            return (
-              <>
-                {shown.map((o) => (
-                  <FileMenuRow
-                    className="disabled:cursor-default"
-                    disabled={full && !held(o.id)}
-                    key={o.id}
-                    onClick={() =>
-                      held(o.id) ? remove(o.id) : onChange([...value, o.ref])
-                    }
-                    role="option"
-                    selected={held(o.id)}
-                  >
-                    <FileIcon className="size-4 shrink-0" name={o.icon} />
-                    <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                  </FileMenuRow>
-                ))}
-                {shown.length === 0 && (
-                  <FileMenuNote>{m.common_no_matches()}</FileMenuNote>
-                )}
-              </>
-            );
-          }}
-        </FileSearchMenu>
-      </ChooseFileRow>
-      {picked.length > 0 && (
-        <ul className="w-full">
-          {picked.map((o) => (
-            <li className="flex min-h-8 items-center gap-2.5 pl-2" key={o.id}>
-              <FileIcon className="size-4 shrink-0" name={o.icon} />
-              <span className="min-w-0 flex-1 truncate font-semibold">
-                {o.name}
-              </span>
-              <RemoveFileButton
-                label={m.action_remove()}
-                onClick={() => remove(o.id)}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

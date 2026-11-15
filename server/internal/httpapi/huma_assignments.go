@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -75,6 +76,14 @@ type assignmentAnswersInput struct {
 		Answers map[string]any `json:"answers"`
 	}
 }
+type assignmentGradeInput struct {
+	ID     string `path:"id"`
+	UserID string `path:"userId"`
+	Body   struct {
+		// Points is the grade; absent clears it.
+		Points *apimodel.AssignmentGrade `json:"points,omitempty"`
+	}
+}
 type assignmentMarkInput struct {
 	ID   string `path:"id"`
 	Body store.AssignmentMark
@@ -85,7 +94,7 @@ type sharingNoticeOutput struct {
 
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
-	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an assignment, freezing its quiz", http.StatusCreated, a.createAssignment)
 	reg(api, http.MethodGet, "/api/assignments/{id}", "getAssignment", tag, "An assignment", http.StatusOK, a.getAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}", "updateAssignment", tag, "Change an assignment's settings", http.StatusOK, a.updateAssignment)
@@ -94,7 +103,6 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
-	reg(api, http.MethodPost, "/api/assignments/{id}/practice", "turnAssignmentToPractice", tag, "Make a closed assignment's quiz practice for members when its answers are not shown", http.StatusOK, a.turnAssignmentToPractice)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPut, "/api/assignments/{id}/todo-check", "setAssignmentTodoCheck", tag, "Tick an assignment, or the answers waiting on it, off the caller's To do without doing it", http.StatusNoContent, a.setAssignmentTodoCheck)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
@@ -107,6 +115,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sharing-notice", "getSharingNotice", tag, "Whether a class member is yet to be told what they share", http.StatusOK, a.getSharingNotice)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/sharing-notice", "markSharingNoticeSeen", tag, "Record that a class member was told what they share", http.StatusNoContent, a.markSharingNoticeSeen)
 	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/marks", "markAssignmentAnswer", tag, "Set or change a question's marks and comment in a member's answers", http.StatusOK, a.markAssignmentAnswer)
+	reg(api, http.MethodPut, "/api/assignments/{id}/grades/{userId}", "setAssignmentGrade", tag, "Set or clear a member's grade on an assignment graded on points", http.StatusNoContent, a.setAssignmentGrade)
 }
 
 // assignmentError answers a refused assignment with copy the browser shows.
@@ -127,8 +136,32 @@ func assignmentError(err error) error {
 	return hErr(err)
 }
 
-func (a *api) listAssignments(ctx context.Context, in *workspaceIDInput) (*assignmentListOutput, error) {
-	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now())
+// assignmentPage is Study → Assignments' and a member's To do's page size.
+const assignmentPage = 50
+
+type assignmentListInput struct {
+	ID     string `path:"id"`
+	Closed bool   `query:"closed" doc:"Keep the closed ones"`
+	Done   bool   `query:"done" doc:"Keep the ones the caller has done"`
+	Topic  string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
+	Sort   string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
+	Dir    string `query:"dir" enum:"asc,desc" default:"asc"`
+	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+}
+
+func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*assignmentListOutput, error) {
+	offset := 0
+	if in.Cursor != "" {
+		n, err := strconv.Atoi(in.Cursor)
+		if err != nil || n < 0 {
+			return nil, hErr(store.ErrInvalidCursor)
+		}
+		offset = n
+	}
+	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now(), store.AssignmentListParams{
+		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic),
+		Sort: in.Sort, Ascending: in.Dir == "asc", Offset: offset, Limit: assignmentPage,
+	})
 	if err != nil {
 		return nil, assignmentError(err)
 	}
@@ -155,6 +188,7 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
 		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, Files: b.Files,
+		Points: (*int)(b.Points),
 	}
 }
 
@@ -316,17 +350,6 @@ func (a *api) releaseAssignmentGrades(ctx context.Context, in *assignmentIDInput
 	}
 	for i := range sent {
 		a.publishNotificationEvent(ctx, sent[i].UserID, notificationEvent{Type: "created", Notification: &sent[i]})
-	}
-	return &assignmentOutput{Body: res}, nil
-}
-
-func (a *api) turnAssignmentToPractice(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
-		return nil, err
-	}
-	res, err := a.s.TurnAssignmentToPractice(ctx, userID(ctx), in.ID, time.Now())
-	if err != nil {
-		return nil, assignmentError(err)
 	}
 	return &assignmentOutput{Body: res}, nil
 }
@@ -505,6 +528,19 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 	}
 	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), res.UserID)...)
 	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
+}
+
+// setAssignmentGrade is staff entering a member's grade on a graded Assignment
+// (Epo 2026-11-14); the member's To do and staff's lists refresh.
+func (a *api) setAssignmentGrade(ctx context.Context, in *assignmentGradeInput) (*Empty, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	if err := a.s.SetAssignmentGrade(ctx, userID(ctx), in.ID, in.UserID, (*float64)(in.Body.Points), time.Now()); err != nil {
+		return nil, assignmentError(err)
+	}
+	a.publishTodo(ctx, append(a.todoAudience(ctx, in.ID, true), in.UserID)...)
+	return &Empty{}, nil
 }
 
 // getSharingNotice reads the caller's own flag, so it needs no access check.

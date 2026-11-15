@@ -155,9 +155,6 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    host's env file and passes it to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
    `secrets.required`. Changing it invalidates every shared link, including
    quiz and flashcard links.
-   `JEV_TYPESAFE_API_KEY` (manifest secret, target `app`) is the typesafe.ai
-   key behind the quiz editor's needs-a-calculation check; without it that
-   check answers 503.
    `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
    (variable) also reach the app target for chat voice input, which the API
    calls itself (the same Singapore workspace and key as uploaded audio,

@@ -67,7 +67,7 @@ The application assigns UUID ids to questions and parts; omit their ids.
         "have an empty stem.\n"
     )
     + """Block forms:
-- {"type":"text", "text":"plain text with $inline math$ or $$display math$$", "label":"optional paragraph label"}.
+- {"type":"text", "text":"plain text with $inline math$ or $$display math$$"}.
 - {"type":"table", "header":true, "rows":[["cell", "cell"]]}.
 - {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "xTitle", "yTitle", "gridlines":"normal|fine"}.
 Do not invent image URLs or SVGs. Use text, tables or charts for generated app quizzes.
@@ -77,7 +77,7 @@ Answer is one of:
 - {"type":"short", "accepted":["value"], optional "unit":"authored fixed unit"}.
 - {"type":"matching", "options":["complete choice pool including unused distractors"], "pairs":[{"left":"prompt", "right":0}]} with zero-based option indices; reusable choices only when question instructions permit them.
 - {"type":"ordering", "items":["first", "second"]} stored in correct order.
-- {"type":"open", "accepted":["model answer"], "hints":["hint"]}.
+- {"type":"open", "accepted":["model answer"]}.
 Strings are plain strings, never {value:...} wrappers. Put explanations in the
 part's solution blocks, not on options. Do not emit points, rubrics, prompt,
 difficulty, explanation or top-level type.

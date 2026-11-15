@@ -779,16 +779,15 @@ and B are Epo's word for word (2026-11-08).
 
 A shared page marks no open answer, so a visitor's check there calls no model and
 costs nothing, signed in or out (Epo 2026-11-05, Q640 B;
-[question-bank.md](question-bank.md)). The author's
-`POST /api/questions/computation-check` stays on typesafe.ai's Jev
-(`server/internal/jev`, model pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`),
-writing one `usage_events` row per check (surface `quiz`, provider `typesafe`,
-`credit_micros` 0). Attempt points stay on the quiz snapshot
+[question-bank.md](question-bank.md)). Nothing calls typesafe.ai's Jev any
+more: the editor's computation check, its last use, was removed with its
+`JEV_TYPESAFE_API_KEY` (Epo 2026-11-15); older `usage_events` rows with
+provider `typesafe` are that check's. Attempt points stay on the quiz snapshot
 for the taker and are not a trusted score.
 
 A signed-in user's open parts are capped at 2,000 per UTC day
 (`grading_usage`, `store.SignedInGradingPartsPerDay`), shared by quiz
-attempts, review checks, bank checks and computation checks (one part each).
+attempts, review checks and bank checks (one part each).
 Parts are reserved before any model call and stay counted when grading fails;
 past the cap the API answers 429 `grading_limit` and closed-only attempts are
 still graded.
@@ -1724,8 +1723,7 @@ turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
 (`/chat/stream`, `/generate`, Make a quiz's start (`/extractions`), question checks (`/check`: a
 quiz's, a review session's, the bank's, one question each; Epo 2026-10-25
-keeps them here, since a learner does not check 15 questions a minute) and
-`/computation-check`) are 200/hour with burst 15, plus
+keeps them here, since a learner does not check 15 questions a minute)) are 200/hour with burst 15, plus
 a 15/minute short-window guard so a scripted loop trips immediately. Ghost
 text (`/ai/copilot`) has its own 120/minute
 class so typing in the note does not consume the chat allowance. Upload
@@ -1809,8 +1807,8 @@ within 10 s:
   any stream; a wait that runs out (another request took the slot) ends the
   turn with an in-stream `ai_rate_limited` error. A stop ends the wait. The
   base bucket never waits.
-- An answer check (a quiz attempt, the review and bank checks, the
-  computation check, a shared page's check) waits for every bucket it spends
+- An answer check (a quiz attempt, the review and bank checks, a shared
+  page's check) waits for every bucket it spends
   behind its normal spinner, then is graded or answers 429.
 
 Every other limited route answers 429 at once, and nothing retries a 429

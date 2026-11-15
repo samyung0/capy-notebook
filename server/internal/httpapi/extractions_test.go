@@ -83,7 +83,7 @@ func TestInternalCheckQuestionAnswersWithTheRefusal(t *testing.T) {
 	if problem := check(valid); problem != "" {
 		t.Fatalf("valid question refused: %s", problem)
 	}
-	open := `{"id":"q","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Show"}],"answer":{"type":"open","accepted":[],"hints":[]},"marks":3,"markscheme":[{"text":"1M","marks":1}],"solution":[]}]}`
+	open := `{"id":"q","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Show"}],"answer":{"type":"open","accepted":[]},"marks":3,"markscheme":[{"text":"1M","marks":1}],"solution":[]}]}`
 	if problem := check(open); !strings.Contains(problem, "marking items must add up") {
 		t.Fatalf("problem = %q", problem)
 	}

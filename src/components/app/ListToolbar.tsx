@@ -181,9 +181,12 @@ export function SortMenu<V extends string>({
  * of toggle badges per section. */
 export function FilterPopover({
   filters,
+  label,
   onResetFilters,
 }: {
   filters: FilterSection[];
+  /** The button's text while nothing is picked; Filter by default. */
+  label?: string;
   onResetFilters: () => void;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
@@ -205,7 +208,7 @@ export function FilterPopover({
     ? selectedLabels.length <= 2
       ? selectedLabels.join(' · ')
       : `${selectedLabels.slice(0, 2).join(' · ')} +${selectedLabels.length - 2}`
-    : m.workspaces_filter();
+    : (label ?? m.workspaces_filter());
   return (
     <Popover onOpenChange={setFilterOpen} open={filterOpen}>
       <PopoverTrigger asChild>

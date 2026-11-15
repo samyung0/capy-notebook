@@ -7,7 +7,7 @@ const part = (type: 'mcq' | 'open') =>
   ({
     answer:
       type === 'open'
-        ? { accepted: [], hints: [], type }
+        ? { accepted: [], type }
         : { correct: [0], options: ['a', 'b'], type },
     blocks: [{ text: 'Q', type: 'text' }],
     id: `p_${type}`,

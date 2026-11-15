@@ -62,7 +62,7 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 ## Workspace rail
 
 From md (768px, so iPads keep it, Epo 2026-11-06) every workspace page leads with a labelled icon rail
-(`WorkspaceRail.tsx`): 60px wide, straight on the shell with no panel of its own
+(`WorkspaceRail.tsx`): 68px wide, as wide as its items (Epo 2026-11-13), straight on the shell with no panel of its own
 (Epo 2026-11-04), so it has the app sidebar's page colour and a frame shows
 through behind it, with
 ← Workspaces (to `/`), the workspace's icon as a 34px badge that only
@@ -79,63 +79,64 @@ Canvas (the drawing board, `frontend/plate-editor.md`), each icon
 over its 11px label in a 48px-high item, 8px apart, that takes the sidebar's dark
 fill while current. Labels sit on the frame plainly, with no halo (Epo 2026-11-08). The app sidebar's rows are 32px high and 2px apart from `sm` (the
 phone drawer keeps 36px and 4px for touch).
-Your avatar (44px, no ring) sits at its foot and opens the profile menu upwards, headed by
-the workspace's part: Invite member (owners and editors; it opens Members, on
-a class's Manage tab), Workspace settings, and Clone for readers who may.
+At its foot, Settings (a gear, for whoever has Workspace settings, Epo
+2026-11-13) opens the Workspace settings dialog, and under it your avatar (44px,
+no ring) opens the profile menu upwards, headed by
+the workspace's part: Invite member (owners and editors; it opens Members), Workspace settings, and Clone for readers who may.
 
-There is no right panel (Epo 2026-11-04). One panel sits beside the rail for
-Files and Agent, the other sections being pages: 340px by default, resizable from 220px up to
-half the group, so the viewer never drops under its 400px least width. A drag
-past its least width closes it on release. It keeps its width between
-sections and between Agent's history and a chat, and comes back at the width it
-closed at until the page is left:
+There is no right panel (Epo 2026-11-04). Files and Chat are pages (Epo
+2026-11-14), each a side panel beside the rail from lg and a centre; the other
+sections are pages without one. The side panel is 340px by default, resizable
+from 220px up to half the group, so the viewer never drops under its 400px
+least width. A drag past its least width folds it on release. It keeps its
+width between Files and Chat and comes back at the width it closed at until the
+page is left:
 
 - **Files:** the topic tree under its search and the New file or topic row,
-  with Collapse all topics on the title row.
-- **Agent:** the chat history, with voice and Archived chats on the title row
-  and New chat over the list. A chat row or New chat shows that chat in this
-  panel in place of the history, with a back arrow to the history and New chat
-  on its title row. **The centre keeps what it showed**: a file stays open
-  beside the chat, and a citation or resource link opens in the centre with the
-  section still on Agent.
+  with Collapse all topics on the title row. The centre is the open file, or
+  with none the Recent files grid (`FilesHome`: up to four cards, 2×2 in a
+  400px column, the Dashboard's `RecentCard`; the blank Add file state when
+  the workspace has none). The chat button floats at its bottom right at every
+  width; from lg it opens the chat as a 420×620 window over the file or the
+  recent files (New chat as a plus, history, Open on the Chat page, close: 28px
+  buttons, no workspace menu), below lg it morphs into the dock's field.
+- **Chat:** the chats, with voice and Archived chats on the title row and New
+  chat over the list; the centre is the chat, its thread and composer in a
+  768px column. No chat button.
 
-Which panel shows is `panel` in the URL (`files`, `agent` or `none`, Epo
-2026-11-05): `section` and `panelOpen` draw it, an effect keeps the URL and
-them, a rail press adds a back step, and back or a link moves the panel. With no
-`panel` in the URL a workspace opens on its Dashboard (Epo 2026-11-05). The pages
-are `study` in the URL (`assignments` for To do, `practice`, `members`, and
-`summary` for Study), which the rail's section follows. Below lg `panel=agent` is
-the chat page. Between md and lg the rail
-sits beside the one-column layout and opens what its menus do: Files the file name's
-dropdown, Agent the chat page, each page itself, Dashboard the landing. Dev builds also take
-`panel=canvas`, the drawing board in the centre at every width: it has no panel, and
-below md, with no rail, a back button leads to the Dashboard.
+The page is in the URL: an open file or material is the Files page, `study`
+names a section's page (`assignments` for To do, `practice`, `members`,
+`summary` for Study), and otherwise `view` (`files`, `files-chat`, `chat`,
+`chats`, or `canvas` in dev builds); none is the Dashboard (Epo 2026-11-05).
+`view=chat` beside a file is the chat over it (the window from lg, the sheet
+below), `files-chat` the same over the Files page with nothing open, and
+`chat` on its own the Chat page; a rail press adds a back step. From lg a citation or
+a file the chat made opens under the window, the chat kept. Pressing the
+shown Files or Chat folds or unfolds its side panel; the others open their
+page. `view=canvas` is the drawing board in the centre at every width: it has
+no side panel, and below md, with no rail, a back button leads to the
+Dashboard.
 
-The chat stays mounted from lg whichever section shows, the panel closed too,
-so it keeps its thread, draft and stream (below lg the dock's chat stays mounted
-too, hidden while Make a quiz's dialog is open); a thread that moves on while hidden
-shows its end on return. Every way into a chat goes to Agent (`openChat`):
-`?chat=new` from Get started, the history's rows and New chat, and voice. A chat
-on screen comes back after a reload or a closed tab (`capy.workspace.chatShown.<id>`,
-kept with the thread in `capy.chat.open.<id>`, T19); leaving the page forgets it.
+Below lg there is one column, with the rail from md. Files is the tree as a
+page (`view=files`) under the workspace header, and a file leads back to it
+with "← Files" on phones in place of the workspace's back; Chat is the list as
+a page (`view=chats`), and a conversation over it leads back with "← Chats".
+The header's ⋮ carries Dashboard, the pages this person has (To do or
+Assignments, Practice, Members, Study) and Workspace settings.
 
-The section starts from that chat or the URL (a page shows its own section, an
-open item Files, else the Dashboard). From the Dashboard or a page an item moves
-it to Files; a page moves it to that page's section unless Agent shows; leaving a
-page for the landing shows the Dashboard. Pressing the current Files or Agent
-closes or reopens its panel; the others open their page. With the rail the
-centre header has no back arrow or panel toggle; the pages fill the centre
-without a header. Below lg the one-column layout stays as before: the header's
-title opens the Files dropdown, its ⋮ (and the dropdown's foot) carry Dashboard,
-the pages this person has (To do or Assignments, Practice, Members, Study)
-and Workspace settings, and chat is the dock and its chat page.
+The one chat stays mounted at every width whichever page shows, so it keeps its
+thread, draft and stream (hidden while Make a quiz's dialog or the canvas
+shows); a thread that moves on while hidden shows its end on return. Every way
+into a chat goes to the Chat page (`openChat`): `?chat=new` from Get started,
+the list's rows and New chat, and voice. The thread on screen comes back after
+a reload or a closed tab (`capy.chat.open.<id>`, T19).
 
 A page has one `h1`: the Dashboard, these pages, a quiz and a flashcards set
 head themselves; with anything else open it is an `sr-only` workspace name.
 
 The AI icon (`ai` in `Icon.tsx`, a curved four-point star stroked like the
 rest; Epo picks the final shape from a mock) marks the agent: the rail's
-Agent, the sidebar's Chat, the chat panel's title and empty state, and Generate in the AI generate form.
+Agent, the sidebar's Agent, the chat panel's title and empty state, and Generate in the AI generate form.
 
 ## Styles
 
@@ -164,7 +165,7 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   Components read them and never set a height per style; one that needs a
   control's height uses `h-(--control-h)`.
   A page header's action (New workspace, Add task, the workspace
-  Dashboard's Upload and Make a quiz from a file, New assignment, Add
+  Dashboard's Upload and Make a quiz, New assignment, Add
   practice) is `PageButton`: md, 4px shorter than `--control-h`.
 
 | | Capy | Fisheye |
@@ -320,8 +321,8 @@ How it is drawn:
   slide strip, notes box). The frost shows around pages and slides; pages,
   cells, slides, menus and the DOCX editor's popups and dialogs keep their
   fills. A PDF view stays opaque.
-- The chat dock below lg (phones only in a workspace, where the rail's Agent
-  opens the chat from 768px, Epo 2026-11-12) floats over the centre panel, outside its card: it
+- The chat dock below lg (phones only in a workspace and only on an open file,
+  where the rail's Agent opens the chat from 768px, Epo 2026-11-12, 2026-11-14) floats over the centre panel, outside its card: it
   marks itself `data-frost` when the centre frosts, and its open field is
   frosted glass (`motion-chat-dock`: translucent fill, 16px backdrop blur).
 - With None, everything returns to the page colour and the opaque cards.

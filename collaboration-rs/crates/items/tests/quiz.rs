@@ -323,11 +323,7 @@ fn a_server_insert_holds_questions_with_no_answers() {
             json!({ "type": "mcq", "options": ["a", "b"], "correct": [] }),
         ),
         insert("q3", Some("q2"), json!({ "type": "short", "accepted": [] })),
-        insert(
-            "q4",
-            Some("q3"),
-            json!({ "type": "open", "accepted": [], "hints": [] }),
-        ),
+        insert("q4", Some("q3"), json!({ "type": "open", "accepted": [] })),
     ];
     quiz::apply_commands(
         &mut content.transact_mut(),
@@ -363,7 +359,7 @@ fn blanks_are_dropped_from_the_projection() {
     part["solution"].as_array_mut().unwrap().push(empty.clone());
     // A part holding only blank text has no body: the question is incomplete.
     questions[1]["parts"][0]["blocks"] = json!([empty]);
-    // A blank unit means no unit, and a blank hint or accepted answer none.
+    // A blank unit means no unit, and a blank accepted answer none.
     let of_type = |questions: &[Value], kind: &str| {
         (2..questions.len())
             .find(|&i| questions[i]["parts"][0]["answer"]["type"] == kind)
@@ -377,7 +373,6 @@ fn blanks_are_dropped_from_the_projection() {
         .as_array_mut()
         .unwrap()
         .push(json!(" "));
-    questions[open]["parts"][0]["answer"]["hints"] = json!(["", "Think of the area.", " "]);
     // A blank gap answer and a blank marking item go; the part's marks are
     // then the rest's (Epo 2026-10-15).
     let gaps = of_type(&questions, "gaps");
@@ -424,7 +419,6 @@ fn blanks_are_dropped_from_the_projection() {
     );
     assert!(block.get("description").is_none());
     let open_part = &find(&questions[open]["id"])["parts"][0];
-    assert_eq!(open_part["answer"]["hints"], json!(["Think of the area."]));
     assert_eq!(open_part["markscheme"], scheme);
     assert_eq!(open_part["marks"], marks);
     assert_eq!(
@@ -681,6 +675,31 @@ fn shapes_no_editor_writes_are_refused() {
     );
 }
 
+/// A question's own topics are at most five distinct ids (Epo 2026-11-15).
+#[test]
+fn question_topics_past_their_bounds_are_refused() {
+    let questions = fixtures();
+    let (question, _) = part_of(&questions, "mcq");
+    let lists: [Vec<String>; 2] = [
+        (1..=6).map(|i| format!("tp_{i}")).collect(),
+        vec!["tp_1".into(), "tp_1".into()],
+    ];
+    for topics in lists {
+        refused(
+            Kind::Quiz,
+            |doc| {
+                let topics: Vec<Any> = topics.iter().map(|id| Any::from(id.as_str())).collect();
+                map_in(doc, &["questions", &question]).insert(
+                    &mut doc.transact_mut(),
+                    "topicIds",
+                    Any::from(topics),
+                );
+            },
+            "topics that are not distinct ids",
+        );
+    }
+}
+
 /// REVIEW1 M4: every value the store's caps refuse is refused at admission,
 /// so the store never meets one (and never discards a room for it).
 #[test]
@@ -721,7 +740,17 @@ fn values_past_their_caps_are_refused_at_admission() {
         |doc| {
             let stem = map_in(doc, &["questions", &question, "stem"]);
             let block = stem.insert(&mut doc.transact_mut(), "b9", MapPrelim::default());
-            block.insert(&mut doc.transact_mut(), "label", "l".repeat(1_001));
+            block.insert(&mut doc.transact_mut(), "attribution", "l".repeat(1_001));
+        },
+        "outside its shape",
+    );
+    // A text block has no label (Epo 2026-11-15).
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let stem = map_in(doc, &["questions", &question, "stem"]);
+            let block = stem.insert(&mut doc.transact_mut(), "b9", MapPrelim::default());
+            block.insert(&mut doc.transact_mut(), "label", "Reasoning");
         },
         "outside its shape",
     );
@@ -750,16 +779,17 @@ fn values_past_their_caps_are_refused_at_admission() {
     let stem = map_in(&client, &["questions", &question, "stem"]);
     let block = stem.insert(&mut client.transact_mut(), "b9", MapPrelim::default());
     block.insert(&mut client.transact_mut(), "order", "a5");
-    block.insert(&mut client.transact_mut(), "type", "text");
-    block.insert(&mut client.transact_mut(), "label", "l".repeat(1_000));
+    block.insert(&mut client.transact_mut(), "type", "image");
+    block.insert(&mut client.transact_mut(), "attribution", "l".repeat(1_000));
     let mut check = validator(Kind::Quiz, &content);
     accepted(&mut check, &content, &client);
     assert!(items::quiz::check_content_caps(&content.transact()).is_ok());
     let _ = open_question;
 }
 
-/// An mcq's content answer says `multiple` only while several options are
-/// correct, so readers know to pick more than one; an editor's flag is admitted.
+/// An mcq's content answer says `multiple` while several options are correct
+/// or the author's Multiple answer flag is set (Epo 2026-11-15), so readers
+/// know to answer with checkboxes; an editor's flag is admitted.
 #[test]
 fn several_correct_options_show_as_multiple() {
     let questions = fixtures();
@@ -777,9 +807,15 @@ fn several_correct_options_show_as_multiple() {
         .filter(|q| q["parts"][0]["answer"]["type"] == json!("mcq"))
         .collect();
     let several = |q: &Value| q["parts"][0]["answer"]["correct"].as_array().unwrap().len() > 1;
-    let single = mcqs.iter().find(|q| !several(q)).unwrap();
+    let flagged = |q: &Value| q["parts"][0]["answer"]["multiple"] == json!(true);
+    let single = mcqs.iter().find(|q| !several(q) && !flagged(q)).unwrap();
     let both = mcqs.iter().find(|q| several(q)).unwrap();
+    let one_flagged = mcqs.iter().find(|q| !several(q) && flagged(q)).unwrap();
     assert_eq!(multiple(&content, both), Some(Out::Any(Any::Bool(true))));
+    assert_eq!(
+        multiple(&content, one_flagged),
+        Some(Out::Any(Any::Bool(true)))
+    );
     assert_eq!(multiple(&content, single), None);
     let (q, part) = (
         single["id"].as_str().unwrap(),
@@ -790,6 +826,40 @@ fn several_correct_options_show_as_multiple() {
         "multiple",
         true,
     );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+}
+
+/// Shuffle options (Epo 2026-11-15) sits in the content answer with its locks
+/// by option id, which readers need to keep those options in place; an
+/// editor turning it on and locking an option is admitted.
+#[test]
+fn shuffle_options_and_locks_are_admitted() {
+    let questions = fixtures();
+    let (content, _, client, _) = rooms(&questions);
+    let mcq = questions
+        .iter()
+        .find(|q| {
+            let answer = &q["parts"][0]["answer"];
+            answer["type"] == json!("mcq") && answer.get("shuffle").is_none()
+        })
+        .unwrap();
+    let (q, part) = (
+        mcq["id"].as_str().unwrap(),
+        mcq["parts"][0]["id"].as_str().unwrap(),
+    );
+    let answer = map_in(&client, &["questions", q, "parts", part, "answer"]);
+    let first = map_in(
+        &client,
+        &["questions", q, "parts", part, "answer", "options"],
+    )
+    .keys(&client.transact())
+    .next()
+    .unwrap()
+    .to_owned();
+    answer.insert(&mut client.transact_mut(), "shuffle", true);
+    let locks = answer.insert(&mut client.transact_mut(), "locked", MapPrelim::default());
+    locks.insert(&mut client.transact_mut(), first, true);
     let mut check = validator(Kind::Quiz, &content);
     accepted(&mut check, &content, &client);
 }

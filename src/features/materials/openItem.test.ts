@@ -26,10 +26,12 @@ describe('parseWorkspaceOpenSearch', () => {
     }
   );
 
-  it('keeps the open panel from the URL', () => {
-    expect(parseWorkspaceOpenSearch({ panel: 'agent' }).panel).toBe('agent');
-    expect(parseWorkspaceOpenSearch({ panel: 'canvas' }).panel).toBe('canvas');
-    expect(parseWorkspaceOpenSearch({ panel: 'x' }).panel).toBeUndefined();
+  it('keeps the page from the URL', () => {
+    expect(parseWorkspaceOpenSearch({ view: 'chat' }).view).toBe('chat');
+    expect(parseWorkspaceOpenSearch({ view: 'canvas' }).view).toBe('canvas');
+    expect(parseWorkspaceOpenSearch({ view: 'files-chat' }).view).toBe(
+      'files-chat'
+    );
   });
 
   it("keeps Make a quiz's dialog steps, with what was chosen", () => {
@@ -172,13 +174,13 @@ describe('document mode cache', () => {
     });
   });
 
-  it("opens Members with its view and a member's profile", () => {
+  it("opens a class staff's Study on Topics and a member's profile", () => {
     expect(
       parseWorkspaceOpenSearch({
         member: 'u1',
         show: 'topics',
-        study: 'members',
+        study: 'summary',
       })
-    ).toMatchObject({ member: 'u1', show: 'topics', study: 'members' });
+    ).toMatchObject({ member: 'u1', show: 'topics', study: 'summary' });
   });
 });

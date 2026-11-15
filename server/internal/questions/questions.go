@@ -160,6 +160,21 @@ func array(v any, min, max int) ([]any, bool) {
 	a, ok := v.([]any)
 	return a, ok && len(a) >= min && len(a) <= max
 }
+
+// topicIDs is a question's own topics: at most QuestionTopics distinct ids.
+func topicIDs(v any) bool {
+	if !stringsArray(v, 0, fieldlimits.QuestionTopics, fieldlimits.QuestionID) {
+		return false
+	}
+	seen := map[any]bool{}
+	for _, id := range v.([]any) {
+		if seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
+}
 func stringsArray(v any, min, max, length int) bool {
 	a, ok := array(v, min, max)
 	if !ok {
@@ -214,11 +229,16 @@ func tuple(v any, count int) ([]float64, bool) {
 
 // Validate accepts decoded JSON maps; it never repairs or fills authored fields.
 func Validate(q map[string]any, policy Policy) error {
-	if err := keys(q, "id stem parts layout labels", "level groups"); err != nil {
+	if err := keys(q, "id stem parts layout labels", "level groups topicIds"); err != nil {
 		return err
 	}
 	if !str(q["id"], fieldlimits.QuestionID, true) || !enum(q["layout"], "paper split") || !enum(q["labels"], "letters numbers") {
 		return fail("invalid identity or layout")
+	}
+	// A question's own topics (Epo 2026-11-15): absent or empty follows its
+	// quiz's; one its quiz's workspace does not hold is ignored where it counts.
+	if topics, ok := q["topicIds"]; ok && !topicIDs(topics) {
+		return fail(fmt.Sprintf("topics must be at most %d distinct ids", fieldlimits.QuestionTopics))
 	}
 	if level, ok := q["level"]; ok && !enum(level, "recall application analysis") {
 		return fail("invalid level")
@@ -539,10 +559,10 @@ func validatePlot(b map[string]any, policy Policy) error {
 func ValidateBlock(b map[string]any, policy Policy) error {
 	switch b["type"] {
 	case "text":
-		if err := keys(b, "type text", "label"); err != nil {
+		if err := keys(b, "type text", ""); err != nil {
 			return err
 		}
-		if !str(b["text"], fieldlimits.QuestionText, true) || !optionalString(b, "label", fieldlimits.QuestionMetadata) {
+		if !str(b["text"], fieldlimits.QuestionText, true) {
 			return fail("invalid text block")
 		}
 	case "table":
@@ -982,7 +1002,7 @@ func MarkItems(p map[string]any) ([]string, []float64) {
 	return texts, marks
 }
 
-// itemAwards are an open part's Jev marks: none, half or all of each marking
+// itemAwards are an open part's model marks: none, half or all of each marking
 // item's marks, summing to the part's awarded marks.
 func itemAwards(p map[string]any, itemMarks []float64) error {
 	raw, exists := p["itemAwards"]
@@ -1040,6 +1060,9 @@ func answer(value any, policy Policy) error {
 	switch a["type"] {
 	case "mcq":
 		required += " options correct"
+		// Multiple answer (Epo 2026-11-15): checkboxes even with one correct;
+		// Shuffle options with the options locked in place (Epo 2026-11-15).
+		optional = "multiple shuffle locked"
 	case "boolean":
 		required += " correct"
 	case "short":
@@ -1050,7 +1073,7 @@ func answer(value any, policy Policy) error {
 	case "ordering":
 		required += " items"
 	case "open":
-		required += " accepted hints"
+		required += " accepted"
 	case "drawing":
 		// Answered on the drawing board, which every drawing part opens plain
 		// (Epo 2026-11-06); an optional drawn sample answer (Q3).
@@ -1110,6 +1133,28 @@ func answer(value any, policy Policy) error {
 				}
 				seen[n] = true
 			}
+			if multiple, ok := a["multiple"]; ok && multiple != true {
+				return fail("invalid multiple")
+			}
+			if shuffle, ok := a["shuffle"]; ok && shuffle != true {
+				return fail("invalid shuffle")
+			}
+			// Locked options keep their places among shuffled ones: sorted,
+			// distinct option indices, only with shuffle.
+			if raw, ok := a["locked"]; ok {
+				locked, ok := array(raw, 1, count)
+				if !ok || a["shuffle"] != true {
+					return fail("invalid locked options")
+				}
+				last := -1.0
+				for _, v := range locked {
+					n, _ := num(v)
+					if !index(v, count) || n <= last {
+						return fail("invalid locked options")
+					}
+					last = n
+				}
+			}
 		}
 	case "boolean":
 		if _, ok := a["correct"].(bool); !ok {
@@ -1136,9 +1181,6 @@ func answer(value any, policy Policy) error {
 		}
 		if !stringsArray(a["accepted"], least, most, length) {
 			return fail("invalid accepted answers")
-		}
-		if a["type"] == "open" && !stringsArray(a["hints"], 0, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
-			return fail("invalid hints")
 		}
 		if unit, exists := a["unit"]; exists {
 			if !str(unit, fieldlimits.QuestionUnit, true) {
@@ -1236,16 +1278,18 @@ func Authored(q map[string]any) map[string]any {
 
 // LearnerView is a question as readers who are not editing see it: no answer
 // keys, accepted answers, marking schemes or worked solutions, with matching
-// options and ordering items shuffled; an mcq with several correct options
-// says only `multiple: true`. An allowlist keeps new author-only
+// options and ordering items shuffled; an mcq with several correct options or
+// the author's Multiple answer flag says only `multiple: true`, and one with
+// Shuffle options carries `order`, the authored index of each option as shown
+// (locked ones in their places), so answers stay authored indices. An allowlist keeps new author-only
 // fields out. Stored content is read with checked assertions, so a malformed
 // question loses fields instead of panicking.
 func LearnerView(q map[string]any) map[string]any {
 	return learnerView(q, func(values []any, _ string) []any { return shuffled(values, rand.Shuffle) })
 }
 
-// LearnerViewsSeeded is LearnerViews with each part's matching options and
-// ordering items in an order fixed by seed and the part: an attempt answered on
+// LearnerViewsSeeded is LearnerViews with each part's matching options,
+// ordering items and shuffled mcq options in an order fixed by seed and the part: an attempt answered on
 // paper reads the same letters on every load as the read call gets.
 func LearnerViewsSeeded(qs []map[string]any, seed string) []map[string]any {
 	out := make([]map[string]any, len(qs))
@@ -1276,10 +1320,16 @@ func learnerView(q map[string]any, shuffle func(values []any, partID string) []a
 		switch a["type"] {
 		case "mcq":
 			learner["options"] = a["options"]
-			// Only whether several options are correct, so a learner knows to
-			// pick more than one (Epo 2026-11-08); the key itself stays out.
-			if correct, _ := a["correct"].([]any); len(correct) > 1 {
+			// Only whether to answer with checkboxes: several correct options
+			// (Epo 2026-11-08) or Multiple answer (Epo 2026-11-15); the key
+			// itself stays out.
+			if correct, _ := a["correct"].([]any); len(correct) > 1 || a["multiple"] == true {
 				learner["multiple"] = true
+			}
+			if a["shuffle"] == true {
+				options, _ := a["options"].([]any)
+				locked, _ := a["locked"].([]any)
+				learner["order"] = shownOrder(len(options), locked, func(free []any) []any { return shuffle(free, partID) })
 			}
 		case "short":
 			if unit, ok := a["unit"]; ok {
@@ -1319,6 +1369,52 @@ func LearnerViews(qs []map[string]any) []map[string]any {
 		out[i] = LearnerView(q)
 	}
 	return out
+}
+
+// shownOrder is an mcq's option indices as Shuffle options shows them: the
+// locked ones in their own places, the others shuffled into the rest.
+func shownOrder(count int, locked []any, shuffle func(free []any) []any) []any {
+	keep := map[int]bool{}
+	for _, v := range locked {
+		if n, ok := num(v); ok {
+			keep[int(n)] = true
+		}
+	}
+	free := []any{}
+	for i := range count {
+		if !keep[i] {
+			free = append(free, i)
+		}
+	}
+	free = shuffle(free)
+	out := make([]any, count)
+	for i := range count {
+		if keep[i] {
+			out[i] = i
+			continue
+		}
+		out[i], free = free[0], free[1:]
+	}
+	return out
+}
+
+// ShownChoices is an mcq learner view's options in the order shown, with each
+// one's authored index (what an answer stores).
+func ShownChoices(view map[string]any) ([]any, []int) {
+	options, _ := view["options"].([]any)
+	order, _ := view["order"].([]any)
+	texts := make([]any, len(options))
+	indexes := make([]int, len(options))
+	for i := range options {
+		indexes[i] = i
+		if i < len(order) {
+			if n, ok := num(order[i]); ok && int(n) >= 0 && int(n) < len(options) {
+				indexes[i] = int(n)
+			}
+		}
+		texts[i] = options[indexes[i]]
+	}
+	return texts, indexes
 }
 
 func shuffled(values []any, shuffle func(n int, swap func(i, j int))) []any {
@@ -1527,13 +1623,7 @@ func blocksText(blocks []any) string {
 		str := func(key string) string { s, _ := b[key].(string); return s }
 		switch b["type"] {
 		case "text":
-			lines := []string{}
-			for _, s := range []string{str("label"), str("text")} {
-				if s != "" {
-					lines = append(lines, s)
-				}
-			}
-			out = append(out, strings.Join(lines, "\n"))
+			out = append(out, str("text"))
 		case "image", "graph":
 			if description := str("description"); description != "" {
 				out = append(out, "[Figure: "+description+"]")
@@ -1715,10 +1805,11 @@ func RepairFigure(block map[string]any) map[string]any {
 }
 
 // PromptText is a question's words for a one-line listing: its stem, or its
-// first part's text when the stem is empty, figures as their descriptions.
+// first part's text when the stem is empty, figures as their descriptions,
+// without bold, italic or underline markers.
 func PromptText(q map[string]any) string {
 	stem, _ := q["stem"].([]any)
-	if text := strings.TrimSpace(blocksText(stem)); text != "" {
+	if text := strings.TrimSpace(StripMarks(blocksText(stem))); text != "" {
 		return text
 	}
 	parts, _ := q["parts"].([]any)
@@ -1727,5 +1818,5 @@ func PromptText(q map[string]any) string {
 	}
 	p, _ := parts[0].(map[string]any)
 	blocks, _ := p["blocks"].([]any)
-	return strings.TrimSpace(blocksText(blocks))
+	return strings.TrimSpace(StripMarks(blocksText(blocks)))
 }

@@ -75,15 +75,21 @@ func logAnswerPartsTx(ctx context.Context, tx pgx.Tx, userID string, mt Material
 		return nil
 	}
 	questionID, _ := graded["id"].(string)
+	// topic_ids are the topics at answer time (itemTopics): the question's own
+	// that are the workspace's topics, else the quiz's when that is one.
 	_, err := tx.Exec(ctx, `INSERT INTO answer_events (user_id, workspace_id, material_id, question_id, item_hash,
-			source, attempt_id, key_seen, created_at, part_id, answer_type, awarded, marks, grader)
+			source, attempt_id, key_seen, created_at, part_id, answer_type, awarded, marks, grader, topic_ids)
 		SELECT $1::text, NULLIF($2::text, ''), NULLIF($3::text, ''), $4::text, $5::text, $6::text, NULLIF($7::text, ''),
 			EXISTS (SELECT 1 FROM review_log WHERE user_id=$1 AND material_id=$3 AND item_id=$4)
 				OR EXISTS (SELECT 1 FROM attempts WHERE user_id=$1 AND material_id=$3 AND kind='quiz' AND id <> $7
 					AND questions @> jsonb_build_array(jsonb_build_object('id', $4::text))),
-			$8::timestamptz, p.id, p.type, p.awarded, p.marks, p.grader
+			$8::timestamptz, p.id, p.type, p.awarded, p.marks, p.grader,
+			COALESCE(NULLIF(ARRAY(SELECT t.id FROM topics t WHERE t.id = ANY($14::text[]) AND t.workspace_id=NULLIF($2::text, '')
+					ORDER BY array_position($14::text[], t.id)), '{}'),
+				ARRAY(SELECT t.id FROM materials m JOIN topics t ON t.id=COALESCE(m.topic_id, m.practice_topic_id)
+					WHERE m.id=NULLIF($3::text, '') AND t.workspace_id=NULLIF($2::text, '')))
 		FROM unnest($9::text[], $10::text[], $11::float8[], $12::float8[], $13::text[]) AS p(id, type, awarded, marks, grader)`,
 		userID, mt.StudyWorkspaceID(), mt.ID, questionID, review.QuestionHash(graded), source, attemptID, now,
-		ids, types, awarded, marks, graders)
+		ids, types, awarded, marks, graders, ownTopics(graded))
 	return err
 }

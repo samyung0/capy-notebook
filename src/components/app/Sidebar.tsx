@@ -64,7 +64,7 @@ function general(): NavItem[] {
       ? [
           {
             icon: 'knowledge' as IconName,
-            label: m.nav_learning(),
+            label: m.nav_study(),
             to: '/learning',
           },
         ]
@@ -93,7 +93,7 @@ function general(): NavItem[] {
 function tools(): NavItem[] {
   return [
     // Chat across all the user's files (Epo 2026-10-27).
-    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
+    { icon: 'ai', label: m.nav_agent(), to: '/chat' },
     // Canvases of one's own, and every workspace's (Epo 2026-11-10).
     { icon: 'shape', label: m.workspace_section_canvas(), to: '/canvas' },
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },

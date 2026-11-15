@@ -1,10 +1,6 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { Fragment, type ReactNode } from 'react';
-import {
-  usePractice,
-  useWorkspaceDashboard,
-  useWorkspaceRecent,
-} from '@/api/hooks';
+import { useWorkspaceDashboard, useWorkspaceRecent } from '@/api/hooks';
 import type { Workspace, WorkspaceActivity } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
 import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
@@ -19,7 +15,7 @@ import {
 } from '@/features/home/RecentItemsCard';
 import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
-import { SuggestedList } from '@/features/study/practice/SuggestedList';
+import { ContinueCards } from '@/features/study/ContinueCards';
 import { studyView } from '@/features/study/practice/studyView';
 import { getLocale, m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -34,8 +30,8 @@ const RECENT = 4;
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
  * its icon, name, owner and member count, Upload and Make a quiz from a
- * file for those who may add, To do, What to practise next for whoever
- * practises here (board U3), then Recent files and Activity. To do stays with
+ * file for those who may add, Continue for whoever practises here, To do,
+ * then Recent files and Activity. To do stays with
  * nothing in it and says Nothing to do, and with no files the workspace's empty
  * state (its art and Add file) stands where Recent files would (Epo
  * 2026-11-10). The other sections are not shown empty (Epo 2026-11-02). */
@@ -62,11 +58,6 @@ export function WorkspaceDashboard({
   const activityRef = useLoadingReveal<HTMLUListElement>(dashboardPending);
   const { manages } = studyView(workspace);
   const practises = !manages;
-  const { data: practice } = usePractice(workspace.id, {
-    enabled: practises,
-    errorBoundary: false,
-  });
-  const navigate = useNavigate();
   const items = mergeRecentItems(
     recent?.files ?? [],
     recent?.materials ?? [],
@@ -122,40 +113,9 @@ export function WorkspaceDashboard({
         )}
       </header>
       <AccountStatusBanner />
+      {practises && <ContinueCards workspaceId={workspace.id} />}
       {/* A class's, and anywhere the tasks its viewer set themself. */}
       <TodoSection manages={manages} workspace={workspace} />
-      {practises &&
-        (!!practice?.suggestions.length || !!practice?.quizzes.length) && (
-          <section className="flex flex-col">
-            <h2 className="t-subtitle">{m.dashboard_practise_next()}</h2>
-            <SuggestedList
-              list={practice.suggestions}
-              onReviewAll={
-                practice.quizzes.length
-                  ? () =>
-                      navigate({
-                        search: {
-                          group: 'workspace' as const,
-                          study: 'practice' as const,
-                        },
-                        to: '.',
-                      })
-                  : undefined
-              }
-              onStart={(s) =>
-                navigate({
-                  search: {
-                    group: s.group,
-                    reviewMode: s.mode,
-                    study: 'practice' as const,
-                    topicId: s.topicId,
-                  },
-                  to: '.',
-                })
-              }
-            />
-          </section>
-        )}
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
       {/* Recent files load as their cards' shapes (Epo 2026-11-12). */}
       {!recent && (
@@ -211,7 +171,7 @@ export function WorkspaceDashboard({
 }
 
 /** A Recent files card: the bordered preview with the name under it. */
-function RecentCard({
+export function RecentCard({
   item,
   workspaceId,
 }: {

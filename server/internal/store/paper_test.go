@@ -237,3 +237,19 @@ func submissionsOf(t *testing.T, s *Store, user string) []SubmittedPaper {
 	}
 	return out
 }
+
+// TestPaperLettersNameShuffledOptions: a paper's letters name an mcq's options
+// as the member's view shows them (Shuffle options), and the answer stored is
+// each option's authored index, which the key grades.
+func TestPaperLettersNameShuffledOptions(t *testing.T) {
+	a := map[string]any{"type": "mcq", "options": []any{"Osmosis", "Diffusion", "None"}, "correct": []any{1.0}}
+	shown := map[string]any{"type": "mcq", "options": a["options"], "order": []any{1, 0, 2}}
+	value, ok := paperAnswer("mcq", a, shown, []any{"A"})
+	if !ok || value.([]any)[0] != 1.0 {
+		t.Fatalf("A read as %v, want authored option 1", value)
+	}
+	part := map[string]any{"answer": a, "marks": 1.0}
+	if marks, _ := questions.ScorePart(part, value); marks != 1 {
+		t.Fatalf("scored %v", marks)
+	}
+}

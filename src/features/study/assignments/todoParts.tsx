@@ -9,13 +9,16 @@ import { assignmentPage } from './assignmentPage';
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03). */
 export function WorkChip({ title }: { title: string }) {
   return (
-    <span className="inline-flex h-5.5 min-w-0 items-center gap-1 rounded-md bg-tint-accent-1 px-1.75 font-semibold text-[13px] text-tint-accent-1-fg">
+    // At most 288px, a long name cut short (Epo 2026-11-13).
+    <span className="inline-flex h-5.5 min-w-0 max-w-72 items-center gap-1 rounded-md bg-tint-accent-1 px-1.75 font-semibold text-[13px] text-tint-accent-1-fg">
       <Icon
         className="shrink-0 text-(--ctp-teal)"
         name="quillWrite"
         size={14}
       />
-      <span className="truncate">{title}</span>
+      <span className="truncate" title={title}>
+        {title}
+      </span>
     </span>
   );
 }

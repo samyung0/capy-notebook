@@ -195,7 +195,7 @@ const openPart = (
   solution: string,
   firstMarks = 1
 ): Question['parts'][number] => ({
-  answer: { accepted: [], hints: [], type: 'open' },
+  answer: { accepted: [], type: 'open' },
   blocks: [{ text: blocks, type: 'text' }],
   id: crypto.randomUUID(),
   marks: markscheme.length + firstMarks - 1,

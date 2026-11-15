@@ -1,5 +1,5 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useMembersProgress, useWorkspace } from '@/api/hooks';
 import type {
   MemberProgress,
@@ -8,11 +8,15 @@ import type {
   Workspace,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { SortMenu, type SortOption } from '@/components/app/ListToolbar';
+import { FilterPopover } from '@/components/app/ListToolbar';
+import {
+  ariaSort,
+  type ColumnSort,
+  SortHeader,
+  sortDirection,
+} from '@/components/app/SortHeader';
 import { Avatar } from '@/components/ui/Avatar';
 import { SkeletonList } from '@/components/ui/feedback';
-import { PendingDot } from '@/components/ui/PendingDot';
-import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -28,61 +32,77 @@ import {
   focusOf,
   type MembersSort,
   type MembersTab,
+  needsAttention,
   sortMembers,
   standingIn,
   topicCount,
+  topicKey,
   topicName,
 } from './membersRows';
 
-/** Members' URL, under `study=members`: `member` opens one's profile, `show`
- * the Topics tab, `manage` the Manage tab. */
-export type MembersSearch = {
-  manage?: true;
-  member?: string;
-  show?: 'topics';
-};
-
-/** Members (its own page on the rail since Epo 2026-11-11). A class's owner and
- * teaching assistants get three tabs: Overview, every member's marks (boards
- * Main, G2), Topics, members × topics (board G4), and Manage, the people with
- * sharing and invitations (`MembersRoster`). Every other member gets that list alone,
- * without marks. A visitor who is no member is sent to Practice. */
-export function MembersPage({
-  search,
-  workspaceId,
-}: {
-  search: MembersSearch;
-  workspaceId: string;
-}) {
+/** Members (its own page on the rail since Epo 2026-11-11): the people, with
+ * sharing and invitations (`MembersRoster`). A class's owner and teaching
+ * assistants manage them there; their marks are on Study (Epo 2026-11-13).
+ * Every other member gets the list without marks. A visitor who is no member
+ * is sent to Practice. */
+export function MembersPage({ workspaceId }: { workspaceId: string }) {
   const { data: ws } = useWorkspace(workspaceId);
   if (!ws) return null;
-  if (!studyView(ws).manages)
-    return ws.role ? (
-      <MembersRoster workspace={ws} />
-    ) : (
-      <Navigate replace search={{ study: 'practice' }} to="." />
-    );
-  if (search.member)
-    return (
-      <MemberProfilePage
-        key={search.member}
-        memberId={search.member}
-        show={search.show}
-        workspaceId={workspaceId}
-      />
-    );
+  if (!ws.role)
+    return <Navigate replace search={{ study: 'practice' }} to="." />;
+  return studyView(ws).manages ? (
+    <StaffRoster workspace={ws} />
+  ) : (
+    <MembersRoster workspace={ws} />
+  );
+}
+
+/** A class's staff: the people under the page's title, a member whose
+ * storage is full flagged (the rail's dot). */
+function StaffRoster({ workspace }: { workspace: Workspace }) {
+  const { data } = useMembersProgress(workspace.id, { errorBoundary: false });
   return (
-    <MembersList
-      tab={search.manage ? 'manage' : search.show ? 'topics' : 'overview'}
-      workspace={ws}
+    <MembersRoster
+      header={<h1 className="t-page-title">{m.study_panel_members()}</h1>}
+      storageFull={storageFullOf(data)}
+      workspace={workspace}
     />
   );
 }
 
-function MembersList({
+/** Study for a class's owner and teaching assistants (Epo 2026-11-13; Members'
+ * Overview and Topics until then): Overview, every member's marks (boards
+ * Main, G2), and Topics, members × topics (board G4), under `header`; a
+ * member's line opens their profile, `member`. */
+export function MembersMarks({
+  header,
+  member,
   tab,
   workspace,
 }: {
+  header: ReactNode;
+  member?: string;
+  tab: MembersTab;
+  workspace: Workspace;
+}) {
+  if (member)
+    return (
+      <MemberProfilePage
+        key={member}
+        memberId={member}
+        show={tab === 'topics' ? 'topics' : undefined}
+        workspaceId={workspace.id}
+      />
+    );
+  return <MembersList header={header} tab={tab} workspace={workspace} />;
+}
+
+function MembersList({
+  header,
+  tab,
+  workspace,
+}: {
+  header: ReactNode;
   tab: MembersTab;
   workspace: Workspace;
 }) {
@@ -93,98 +113,62 @@ function MembersList({
     { errorBoundary: false }
   );
   const revealRef = useLoadingReveal(isPending);
-  const needsAction = storageFullOf(data);
-  // Name A to Z first; Needs attention starts with the most to look at.
-  const [sorting, setSorting] = useState<{
+  // Name A to Z first; a column header sorts by it (Epo 2026-11-13), and
+  // Needs attention is a filter.
+  const [order, setOrder] = useState<{
     ascending: boolean;
     sort: MembersSort;
   }>({ ascending: true, sort: 'name' });
-  const sorts: SortOption<MembersSort>[] = [
-    { icon: 'pencil', label: m.members_sort_name(), value: 'name' },
-    { icon: 'alert', label: m.members_sort_attention(), value: 'attention' },
-  ];
+  const [attention, setAttention] = useState(false);
+  const sorting: ColumnSort<MembersSort> = {
+    ascending: order.ascending,
+    ascendingFirst: ['name'],
+    onSortChange: (sort, ascending) => setOrder({ ascending, sort }),
+    sort: order.sort,
+  };
   const sorted = (members: MemberProgress[]) =>
-    sortMembers(members, sorting.sort, sorting.ascending);
-  const setTab = (next: string) =>
-    navigate({
-      replace: true,
-      search: {
-        manage: next === 'manage' ? (true as const) : undefined,
-        show: next === 'topics' ? ('topics' as const) : undefined,
-        study: 'members' as const,
-      },
-      to: '.',
-    });
+    sortMembers(
+      attention ? members.filter(needsAttention) : members,
+      order.sort,
+      order.ascending
+    );
   const open = (member: MemberProgress) =>
     navigate({
       search: {
         member: member.userId,
         show: tab === 'topics' ? ('topics' as const) : undefined,
-        study: 'members' as const,
+        study: 'summary' as const,
       },
       to: '.',
     });
-  const header = (
-    <>
-      {/* No New assignment here: Assignments has it (Epo 2026-11-11). */}
-      <h1 className="t-page-title">{m.study_panel_members()}</h1>
-      <Tabs
-        className="page-bleed page-tabs-px mt-2 w-auto"
-        onChange={(next) => void setTab(next)}
-        tabs={[
-          { label: m.members_tab_overview(), value: 'overview' },
-          { label: m.members_tab_topics(), value: 'topics' },
-          {
-            // Something waits on the staff there, a member's full storage.
-            label: (
-              <span className="relative">
-                {m.members_tab_manage()}
-                {needsAction.size > 0 && (
-                  <PendingDot className="-top-0.5 -right-2.5" />
-                )}
-              </span>
-            ),
-            value: 'manage',
-          },
-        ]}
-        value={tab}
-      />
-    </>
-  );
-  if (tab === 'manage')
-    return (
-      <MembersRoster
-        header={header}
-        storageFull={needsAction}
-        workspace={workspace}
-      />
-    );
   const topics = tab === 'topics';
   return (
     <PracticeFrame className="@container">
       {header}
-      {/* The list pages' sort (Files, Workspaces); Topics lists by name. */}
-      <div className="mt-4 mb-1.5 flex min-h-10 flex-wrap items-center gap-2 sm:min-h-11.5">
-        {topics ? (
+      {/* The list pages' Filter (Epo 2026-11-13); columns sort from their
+          headers. */}
+      <div className="mt-4 mb-1.5 flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 sm:min-h-11.5">
+        {/* -ml-1 with the button's -mx-1 puts its icon on the gutter, as ListToolbar does. */}
+        <div className="-ml-1 flex">
+          <FilterPopover
+            filters={[
+              {
+                key: 'attention',
+                label: m.members_col_member(),
+                onToggle: () => setAttention(!attention),
+                options: [
+                  { label: m.members_filter_attention(), value: 'attention' },
+                ],
+                selected: attention ? ['attention'] : [],
+              },
+            ]}
+            onResetFilters={() => setAttention(false)}
+          />
+        </div>
+        {topics && (
           <span className="t-meta text-fg-muted">
             {m.members_labels_need()}
           </span>
-        ) : (
-          // -ml-1 with the button's -mx-1 puts its icon on the gutter, as ListToolbar does.
-          <div className="-ml-1 flex">
-            <SortMenu
-              ascending={sorting.ascending}
-              onSortChange={(sort, ascending) =>
-                setSorting({
-                  ascending:
-                    sort === sorting.sort ? ascending : sort === 'name',
-                  sort,
-                })
-              }
-              sort={sorting.sort}
-              sorts={sorts}
-            />
-          </div>
         )}
       </div>
       {isPending ? (
@@ -202,7 +186,12 @@ function MembersList({
       ) : (
         <div ref={revealRef}>
           {topics ? (
-            <TopicsGrid data={data} onOpen={(mp) => void open(mp)} />
+            <TopicsGrid
+              members={sorted(data.members)}
+              onOpen={(mp) => void open(mp)}
+              sorting={sorting}
+              topics={data.topics}
+            />
           ) : (
             <>
               {/* Where the table fits: the boards' Summary. */}
@@ -210,6 +199,7 @@ function MembersList({
                 <SummaryList
                   members={sorted(data.members)}
                   onOpen={(mp) => void open(mp)}
+                  sorting={sorting}
                 />
               </div>
               {/* Phones and narrow panes: a plain list; labels wait for the
@@ -235,23 +225,34 @@ const GRID =
 function SummaryList({
   members,
   onOpen,
+  sorting,
 }: {
   members: MemberProgress[];
   onOpen: (member: MemberProgress) => void;
+  sorting: ColumnSort<MembersSort>;
 }) {
+  const column = (label: string, value: MembersSort) => (
+    <span
+      aria-sort={ariaSort(sortDirection(sorting, value))}
+      className="min-w-0"
+      role="columnheader"
+    >
+      <SortHeader label={label} sorting={sorting} value={value} />
+    </span>
+  );
   return (
     <>
       <div
-        aria-hidden
         className={cn(
           'h-9 border-divider border-b font-semibold text-[13px] text-fg-muted',
           GRID
         )}
+        role="row"
       >
-        <span>{m.members_col_member()}</span>
-        <span>{m.study_panel_assignments()}</span>
-        <span>{m.members_col_practice()}</span>
-        <span>{m.topic_label_needs_practice()}</span>
+        {column(m.members_col_member(), 'name')}
+        {column(m.study_panel_assignments(), 'assignments')}
+        {column(m.members_col_practice(), 'practice')}
+        {column(m.topic_label_needs_practice(), 'needs')}
       </div>
       <ul>
         {members.map((member) => (
@@ -259,13 +260,14 @@ function SummaryList({
           // to it, and the storage chip is a control of its own.
           <li
             className={cn(
-              'min-h-13 cursor-pointer border-divider border-b py-1.5 hover:bg-surface-hover-bg',
+              // 36px, as the Study tables' rows (Epo 2026-11-13).
+              'min-h-9 cursor-pointer border-divider border-b py-1 hover:bg-surface-hover-bg',
               GRID
             )}
             key={member.userId}
             onClick={() => onOpen(member)}
           >
-            <MemberName member={member} onOpen={() => onOpen(member)} />
+            <MemberName member={member} onOpen={() => onOpen(member)} small />
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <AssignmentsCell member={member} />
             </div>
@@ -355,15 +357,23 @@ const questionsText = (count: number) =>
 function MemberName({
   member,
   onOpen,
+  small,
 }: {
   member: MemberProgress;
   onOpen?: () => void;
+  /** A 24px avatar, for the Overview's 36px rows. */
+  small?: boolean;
 }) {
   return (
-    <span className="flex min-w-0 items-center gap-2.5">
+    <span
+      className={cn('flex min-w-0 items-center', small ? 'gap-2' : 'gap-2.5')}
+    >
       <Avatar
         aria-hidden
-        className="size-7.5 shrink-0 text-xs"
+        className={cn(
+          'shrink-0 text-xs',
+          small ? 'size-6 text-[10px]' : 'size-7.5'
+        )}
         name={member.name}
         src={member.avatarUrl || undefined}
       />
@@ -457,13 +467,17 @@ const COUNT: Record<SummaryTopic['label'], (count: number) => string> = {
 /** Topics (board G4): members × topics, under an All members row of counts. A
  * member's row opens their profile. */
 function TopicsGrid({
-  data,
+  members,
   onOpen,
+  sorting,
+  topics,
 }: {
-  data: MembersProgress;
+  /** Filtered and sorted. */
+  members: MemberProgress[];
   onOpen: (member: MemberProgress) => void;
+  sorting: ColumnSort<MembersSort>;
+  topics: MembersProgress['topics'];
 }) {
-  const { members, topics } = data;
   return (
     // Sideways only: the page scrolls down (Epo 2026-11-12). The box bleeds
     // into the gutter so the cells' 12px start lines up with the page text, as
@@ -477,15 +491,30 @@ function TopicsGrid({
             frosted page frame. */}
         <thead>
           <tr>
-            <th className="t-meta w-47.5 border-divider border-b py-3 pr-2 pl-3 text-left align-bottom font-semibold">
-              {m.members_col_member()}
+            <th
+              aria-sort={ariaSort(sortDirection(sorting, 'name'))}
+              className="t-meta w-47.5 border-divider border-b py-3 pr-2 pl-3 text-left align-bottom font-semibold"
+            >
+              <SortHeader
+                label={m.members_col_member()}
+                sorting={sorting}
+                value="name"
+              />
             </th>
             {topics.map((topic) => (
               <th
+                aria-sort={ariaSort(
+                  sortDirection(sorting, `topic:${topicKey(topic)}`)
+                )}
                 className="t-meta border-divider border-b px-2 py-3 text-center align-bottom font-semibold"
                 key={topic.topicId ?? topic.group}
               >
-                <div className="line-clamp-2">{topicName(topic)}</div>
+                {/* Sorts the members by their standing in it. */}
+                <SortHeader
+                  label={topicName(topic)}
+                  sorting={sorting}
+                  value={`topic:${topicKey(topic)}`}
+                />
                 <div className="font-medium text-fg-muted">
                   {questionsText(topic.questions)}
                 </div>

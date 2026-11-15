@@ -160,6 +160,20 @@ included, which then read as removed. For a workspace material, `owner_user_id` 
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
+An item bank question's images and drawn samples (question-bank.md, Item banks)
+are `editor_assets` rows with a `bank_question_id` and no workspace or material,
+charged to whoever added or copied them in and checked by `gateStorageTx` as a
+clone's are; deleting the question, the class workspace or the owner's account
+releases them, and the payer deletes one from their Files page (Epo 2026-11-14,
+listed with the bank's name even after they leave the class). The question
+JSON itself is not charged: a bank holds at most 2,000 questions, each within
+the quiz bounds.
+
+A graded quiz's own quiz (study-progress.md, The owned quiz) is charged to
+whoever made it, as any material is, and goes with their account purge (Epo
+2026-11-14); a quiz made for one that no graded quiz took goes to its maker's
+trash after a day.
+
 An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
 not whoever drafted it. Its images are new `editor_assets` rows of the workspace
 with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's

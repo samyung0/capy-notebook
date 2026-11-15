@@ -37,7 +37,7 @@ function quizValue(prompt: string) {
           marks: 1,
         }),
         question('q_2', {
-          answer: { accepted: [], hints: [], type: 'open' },
+          answer: { accepted: [], type: 'open' },
           blocks: [{ text: 'Explain how water enters a cell.', type: 'text' }],
           marks: 2,
           markscheme: [{ marks: 2, text: 'Names osmosis' }],

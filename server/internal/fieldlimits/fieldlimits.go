@@ -26,6 +26,9 @@ const (
 	FileName         = 120
 	MaterialTitle    = FileName
 	AssignmentTitle  = 120
+	// AssignmentPoints is the most a graded Assignment is out of (Epo
+	// 2026-11-14), a number rather than characters; a grade is 0 to its points.
+	AssignmentPoints = 1_000
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20
@@ -37,12 +40,15 @@ const (
 	// under ChatMessage.
 	VoiceInputSeconds = 120
 	// Comment bounds the plain text of one note comment.
-	Comment           = 3_000
-	EventTitle        = 60
-	EventLocation     = 100
-	TaskTitle         = 80
-	LabelName         = 35
-	TagValue          = 35
+	Comment       = 3_000
+	EventTitle    = 60
+	EventLocation = 100
+	TaskTitle     = 80
+	LabelName     = 35
+	TagValue      = 35
+	// BankQuestionTags is an item bank question's tag count (its request's
+	// maxItems), a count rather than characters.
+	BankQuestionTags  = 10
 	Email             = 254
 	UserName          = 60
 	PDFAnnotationText = 2_000
@@ -103,6 +109,9 @@ const (
 	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
+	// QuestionTopics is how many topics of its own a question carries, a
+	// count (Epo 2026-11-15, todo-question-topics.md).
+	QuestionTopics = 5
 	// A Make a quiz run reads at most ExtractionPaperFiles question files and
 	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
 	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
@@ -110,6 +119,10 @@ const (
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
+	// A generated quiz reads at most GenerateFiles picked files, as many as a
+	// Make a quiz question paper (Epo 2026-11-14). apimodel.GenerateReq's
+	// maxItems repeats it.
+	GenerateFiles = 5
 	// A drawing answer's saved board (undo history stripped) and its marking
 	// image, each at most this many bytes (Epo 2026-11-06: 250 KB and 300 KB),
 	// the image at most DrawingImageSide px on its longer side, as the browser
@@ -177,6 +190,7 @@ var QuestionBounds = map[string]int{
 	"QUIZ_OPEN_PARTS_MAX":            QuizOpenParts,
 	"QUIZ_MARKSCHEME_MAX":            QuizMarkscheme,
 	"QUIZ_OPEN_ANSWER_MAX":           QuizOpenAnswer,
+	"QUESTION_TOPICS_MAX":            QuestionTopics,
 }
 
 // QuestionBoundNames lists QuestionBounds' names in order, for generated files.

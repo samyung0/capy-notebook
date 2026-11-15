@@ -78,8 +78,6 @@ function render(menuShown: boolean, standalone = false) {
         onDeleted={() => undefined}
         oneColumn={{
           addItems: [],
-          filesOpen: false,
-          onOpenFiles: () => undefined,
           settingsItems: [],
           workspaceIconId: 'flask',
           workspaceName: 'Biology',

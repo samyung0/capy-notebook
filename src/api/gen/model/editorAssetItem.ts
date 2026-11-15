@@ -9,6 +9,7 @@ import type { MaterialRefType } from './materialRefType.ts';
 
 export interface EditorAssetItem {
   assetId: string;
+  bank?: boolean;
   createdAt: string;
   lostAccess: boolean;
   materialId?: string;

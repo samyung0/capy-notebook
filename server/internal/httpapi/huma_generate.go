@@ -162,6 +162,8 @@ type generateOpts struct {
 	Title   string
 	// Mix adds the caller's answered questions to the new ones.
 	Mix bool
+	// GradedQuiz makes an editor's quiz for a graded quiz (Material.GradedPending).
+	GradedQuiz bool
 	// CanEdit makes the quiz a file of the workspace.
 	CanEdit bool
 }
@@ -176,13 +178,14 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 		levels[i] = string(lvl)
 	}
 	return generateOpts{
-		Count:   req.Count,
-		Types:   types,
-		Levels:  levels,
-		Topics:  req.Topics,
-		FileIds: req.FileIds,
-		Title:   title,
-		Mix:     req.Mix,
+		Count:      req.Count,
+		Types:      types,
+		Levels:     levels,
+		Topics:     req.Topics,
+		FileIds:    req.FileIds,
+		Title:      title,
+		Mix:        req.Mix,
+		GradedQuiz: req.GradedQuiz,
 	}
 }
 
@@ -349,7 +352,7 @@ func (a *api) generateViaPipe(
 		ScopeTopics: topicNames, ScopeFileNames: fileNames,
 	}
 	if opts.CanEdit {
-		draft.WorkspaceID, draft.WorkspaceName = wsID, wsName
+		draft.WorkspaceID, draft.WorkspaceName, draft.GradedPending = wsID, wsName, opts.GradedQuiz
 		if len(opts.Topics) == 1 {
 			draft.TopicID = &opts.Topics[0]
 		}

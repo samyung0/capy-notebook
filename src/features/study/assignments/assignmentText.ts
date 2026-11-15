@@ -82,8 +82,14 @@ export function dueText(
   return dateLabel(dueAt);
 }
 
-export const kindLabel = (kind: Assignment['kind']) =>
-  kind === 'marked' ? m.assignment_kind_marked() : m.assignment_kind_unmarked();
+/** A graded quiz, else an Assignment in a class and a Task one set oneself
+ * (Epo 2026-11-14). */
+export const kindLabel = ({ kind, own }: Pick<Assignment, 'kind' | 'own'>) =>
+  kind === 'marked'
+    ? m.assignment_kind_marked()
+    : own
+      ? m.assignment_kind_task()
+      : m.assignment_kind_assignment();
 
 export const minutesText = (count: number) =>
   count === 1 ? m.assignment_minutes_one() : m.assignment_minutes({ count });
@@ -98,19 +104,36 @@ export const lateLabel = (penaltyPct: number) =>
     ? m.assignment_late_penalty({ percent: penaltyPct })
     : m.assignment_late();
 
-/** The due date's policy as sent: it goes with a marked assignment's due date,
- * and No late submissions takes no penalty. */
+/** The due date's policy as sent: it goes with a due date, and No late
+ * submissions takes no penalty. */
 export function latePolicy({
   dueAt,
   kind,
   latePenaltyPct,
   noLate,
-}: Pick<AssignmentFormReq, 'dueAt' | 'kind' | 'latePenaltyPct' | 'noLate'>) {
+  points,
+}: Pick<
+  AssignmentFormReq,
+  'dueAt' | 'kind' | 'latePenaltyPct' | 'noLate' | 'points'
+>) {
   if (!dueAt) return { latePenaltyPct: 0, noLate: false };
   if (noLate) return { latePenaltyPct: 0, noLate: true };
-  // Only marks take a penalty.
-  return { latePenaltyPct: kind === 'marked' ? latePenaltyPct : 0, noLate };
+  // Only marks or a grade take a penalty.
+  return {
+    latePenaltyPct: isGraded({ kind, points }) ? latePenaltyPct : 0,
+    noLate,
+  };
 }
+
+/** A graded quiz, or an Assignment graded on points (Epo 2026-11-14): what
+ * has marks, Show grades and a late penalty. */
+export const isGraded = ({
+  kind,
+  points,
+}: {
+  kind: Assignment['kind'];
+  points?: number;
+}) => kind === 'marked' || points !== undefined;
 
 /** Advanced starts closed, unless a saved assignment holds something other than
  * its defaults there, so nothing is hidden by surprise. */
@@ -128,18 +151,6 @@ export const closedItself = (
   { dueAt, noLate }: Pick<Assignment, 'dueAt' | 'noLate'>,
   now = Date.now()
 ) => noLate && pastDue(dueAt, now);
-
-/** A class's assignment under Show answers Do not show that staff have not
- * turned to practice: its quiz stays held from members past the close. */
-export const holdsQuizPastClose = ({
-  kind,
-  manage,
-  own,
-}: Pick<Assignment, 'kind' | 'manage' | 'own'>) =>
-  !own &&
-  kind === 'marked' &&
-  manage?.showAnswers === 'never' &&
-  !manage.practiceAt;
 
 /** Past its due date with late work open until an owner or TA closes it. */
 export const takesLateWork = (
@@ -191,4 +202,43 @@ export function localInputValue(iso: string, dateOnly: boolean) {
   return dateOnly
     ? date
     : `${date}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** What closing a marked assignment does, one line each, for its confirm:
+ * the due date it cuts short (`early`, drawn as a warning), who can no longer
+ * submit, answers it releases and grades held. A graded quiz's quiz stays
+ * held either way (Epo 2026-11-14). */
+export function closeOutcomes(
+  assignment: Pick<Assignment, 'dueAt' | 'manage'>,
+  now = Date.now()
+): { early?: true; text: string }[] {
+  const { dueAt, manage } = assignment;
+  const gradesHeld =
+    manage?.showGrades === 'manual' && !manage.gradesReleasedAt;
+  const left = (manage?.assigned ?? 0) - (manage?.done ?? 0);
+  const answers =
+    manage &&
+    {
+      closed: gradesHeld
+        ? m.assignment_close_answers_after_release()
+        : m.assignment_close_answers_shown(),
+      never: m.assignment_close_answers_hidden(),
+      // Shown at submit already: closing changes nothing there.
+      submitted: null,
+    }[manage.showAnswers];
+  const early = !!dueAt && !pastDue(dueAt, now);
+  return [
+    dueAt &&
+      (early
+        ? m.assignment_close_early({ date: dayTimeLabel(dueAt) })
+        : m.assignment_close_late_ends()),
+    left > 0 &&
+      m.assignment_close_unsubmitted({ count: left, total: manage?.assigned }),
+    answers,
+    gradesHeld && m.assignment_close_grades_held(),
+  ]
+    .filter((text): text is string => !!text)
+    .map((text, index) =>
+      index === 0 && early ? { early: true, text } : { text }
+    );
 }

@@ -635,6 +635,16 @@ math-field {
     }
   }
 
+  /* Approve AI grades on a phone (P1, Epo 2026-11-14): past the question list
+     its own back link leads out, so the workspace header and the report's
+     head (back link, title, tabs) step aside. */
+  @media (width < 768px) {
+    [data-viewer]:has([data-approve-drill]) [data-center-header],
+    [data-viewer]:has([data-approve-drill]) [data-report-head] {
+      display: none !important;
+    }
+  }
+
   /* Paint-contained chunks must include the drag-handle gutter on the left
      (from `sm` the + button beside the grip too) and the comment trigger in
      the editor's right padding (note-column's gutters). */

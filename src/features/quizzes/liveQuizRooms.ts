@@ -203,14 +203,29 @@ function useDocs<T>(
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
-/** Every question with its keys, as editors see it. */
+/** Every question with its keys, as editors see it. A question that did not
+ * change keeps its object, so a card memoized on it skips the re-render when
+ * another question is typed in. */
 export function useQuizQuestions(
   content: Y.Doc | null | undefined,
   keys: Y.Doc | null | undefined
 ): Question[] {
+  const held = useRef(new Map<string, { json: string; question: Question }>());
   return useDocs(
     [content, keys],
-    () => (content ? readQuestions(content, keys ?? null) : NO_QUESTIONS),
+    () => {
+      if (!content) return NO_QUESTIONS;
+      const next = new Map<string, { json: string; question: Question }>();
+      const questions = readQuestions(content, keys ?? null).map((read) => {
+        const json = JSON.stringify(read);
+        const before = held.current.get(read.id);
+        const question = before?.json === json ? before.question : read;
+        next.set(read.id, { json, question });
+        return question;
+      });
+      held.current = next;
+      return questions;
+    },
     NO_QUESTIONS
   );
 }

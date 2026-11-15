@@ -2,7 +2,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { pastReviewsQuery, useMaterials } from '@/api/hooks';
+import { historyQuery, useMaterials } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import {
   Popover,
@@ -56,8 +56,8 @@ const pagePanel = () => find('main [data-slot="card"]');
 const centrePanel = () => find('#viewer [data-slot="card"]');
 const leftPanel = () =>
   find('[data-workspace-left-panel]')?.closest('[data-slot="card"]');
-const questionDialog = () =>
-  find('[role="dialog"] [data-save-state]')?.closest('[role="dialog"]');
+// The welcome note's quiz, its questions editing in place.
+const noteQuiz = '#viewer [data-note-quiz]';
 
 const box = (element: Element): Box => {
   const r = element.getBoundingClientRect();
@@ -90,7 +90,7 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     errorBoundary: false,
   });
   const { data: reviews } = useInfiniteQuery({
-    ...pastReviewsQuery({ workspaceIds: [workspaceId] }),
+    ...historyQuery({ kinds: ['revision'], workspaceIds: [workspaceId] }),
     meta: { errorBoundary: false },
   });
   const note = materials?.find((item) => item.type === 'note')?.id;
@@ -157,46 +157,65 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
       go: () => inWorkspace({ material: note }),
       loading: !materials,
       missing: !!materials && !note,
-      // Back from the note's own quiz: its question dialog closes first.
-      prepare: () => {
-        const close = questionDialog()?.querySelector(
-          '[data-slot="dialog-close"]'
-        );
-        if (close instanceof HTMLElement && once('close')) close.click();
-        return !questionDialog();
-      },
       // The room opens under the card; the cloud is outlined once it shows.
       rings: () => [find('#viewer [data-save-state]')],
       spot: centrePanel,
       title: m.tour_editor_title,
     },
-    {
-      at: inWorkspacePage,
-      body: m.tour_quiz_body,
-      // A quiz of its own, else the welcome note's embedded one: both edit a
-      // question in the same dialog.
-      go: () => inWorkspace({ material: quiz ?? note }),
-      loading: !materials,
-      missing: !!materials && !quiz && !note,
-      // The quiz loads under the card, lit in the centre panel, then its first
-      // question opens for editing.
-      open: () => {
-        if (questionDialog()) return true;
-        const edit = find('#viewer [data-question-edit]');
-        if (edit instanceof HTMLElement && once('edit')) edit.click();
-        return false;
-      },
-      rings: () => [
-        find('[role="dialog"] [data-undo-buttons]'),
-        find('[role="dialog"] [data-save-state]'),
-      ],
-      spot: () => questionDialog() ?? centrePanel(),
-      tip: {
-        target: () => find('[role="dialog"] [data-undo-buttons]'),
-        text: m.tour_undo_redo,
-      },
-      title: m.tour_quiz_title,
-    },
+    quiz
+      ? {
+          at: inWorkspacePage,
+          body: m.tour_quiz_body,
+          // A quiz of its own edits its open card in place, Undo and Redo in
+          // the page's header; no card opens with the page, so the tour opens
+          // the first.
+          go: () => inWorkspace({ material: quiz }),
+          open: () => {
+            if (find('#viewer [data-question-open]')) return true;
+            const card = find('#viewer section[data-question-id] > button');
+            if (card instanceof HTMLElement && once('edit')) card.click();
+            return false;
+          },
+          rings: () => [
+            find('#viewer [data-undo-buttons]'),
+            find('#viewer [data-save-state]'),
+            find('#viewer [data-question-open]'),
+          ],
+          spot: centrePanel,
+          tip: {
+            target: () => find('#viewer [data-undo-buttons]'),
+            text: m.tour_undo_redo,
+          },
+          title: m.tour_quiz_title,
+        }
+      : {
+          at: inWorkspacePage,
+          body: m.tour_quiz_body,
+          // Else the welcome note's embedded quiz, whose first question opens
+          // in place as on a quiz's page, Undo and Redo above the cards.
+          go: () => inWorkspace({ material: note }),
+          loading: !materials,
+          missing: !!materials && !note,
+          // The quiz loads under the card, lit in the centre panel, then its
+          // first question opens for editing.
+          open: () => {
+            if (find(`${noteQuiz} [data-question-open]`)) return true;
+            const card = find(`${noteQuiz} section[data-question-id] > button`);
+            if (card instanceof HTMLElement && once('edit')) card.click();
+            return false;
+          },
+          rings: () => [
+            find(`${noteQuiz} [data-undo-buttons]`),
+            find(`${noteQuiz} [data-save-state]`),
+            find(`${noteQuiz} [data-question-open]`),
+          ],
+          spot: centrePanel,
+          tip: {
+            target: () => find(`${noteQuiz} [data-undo-buttons]`),
+            text: m.tour_undo_redo,
+          },
+          title: m.tour_quiz_title,
+        },
     {
       at: inWorkspacePage,
       body: m.tour_study_body,

@@ -175,7 +175,7 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
 }
 /** Closed parts earn each right item's share of the marks, rounded down to a
  * half mark; a single-item answer is all or nothing. `items` says whether
- * each scored item is right; open parts have none (Jev grades them). */
+ * each scored item is right; open parts have none (a model grades them). */
 export function scorePart(
   part: QuestionPart,
   answer: Answer | undefined

@@ -59,9 +59,10 @@ function Details({ doneTab, row }: { doneTab: boolean; row: TodoRow }) {
   if (row.approval) {
     text = waitingText(a.manage?.toApprove ?? 0);
     tone = 'warn';
-  } else if (!isPlainTask(a) && done) {
+  } else if (done && (!isPlainTask(a) || a.mine?.mark !== undefined)) {
+    // A graded Assignment ticked off reads its grade too (Epo 2026-11-14).
     text = handedInText(a);
-    tone = a.kind === 'marked' && a.mine?.mark !== undefined ? 'ok' : undefined;
+    tone = a.mine?.mark === undefined ? undefined : 'ok';
   } else if (doneTab && !done) {
     text =
       a.kind === 'marked' ? m.todo_not_handed_in() : m.assignment_not_done();
@@ -494,8 +495,9 @@ export function TodoTable({
                       <div
                         className={cn(
                           'flex min-w-0 flex-1 flex-col gap-1',
-                          // Done: muted.
-                          (doneTab || tickedOf(row)) && 'opacity-55'
+                          // Done or closed: muted.
+                          (doneTab || tickedOf(row) || row.a.closed) &&
+                            'opacity-55'
                         )}
                       >
                         {title(row)}
@@ -509,6 +511,17 @@ export function TodoTable({
               </Fragment>
             ))}
         </ul>
+        {dialogs}
+      </div>
+    );
+
+  // Nothing to list: the words alone, no header over nothing (Epo 2026-11-13).
+  if (empty)
+    return (
+      <div ref={box}>
+        <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
+          {emptyText}
+        </p>
         {dialogs}
       </div>
     );
@@ -561,16 +574,6 @@ export function TodoTable({
             </tr>
           </thead>
           <tbody>
-            {empty && (
-              <tr>
-                <td
-                  className="t-subtitle py-20 text-center font-normal text-fg-muted"
-                  colSpan={columns}
-                >
-                  {emptyText}
-                </td>
-              </tr>
-            )}
             {sections
               .filter((s) => visible(s).length > 0)
               .map((section) => (
@@ -594,7 +597,8 @@ export function TodoTable({
                           'cursor-pointer border-divider border-b hover:bg-surface-hover-bg',
                           // Done reads as finished: the row is muted past its
                           // box (Epo 2026-11-10: no strike line).
-                          (doneTab || tickedOf(row)) &&
+                          // Closed reads apart too (Epo 2026-11-13).
+                          (doneTab || tickedOf(row) || row.a.closed) &&
                             '[&>td:not(:first-child)]:opacity-55'
                         )}
                         key={keyOf(row)}

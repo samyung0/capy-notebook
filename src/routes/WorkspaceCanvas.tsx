@@ -42,7 +42,7 @@ export default function WorkspaceCanvas({
       show: (id, replace = false) =>
         navigate({
           replace,
-          search: (previous) => ({ ...previous, c: id, panel: 'canvas' }),
+          search: (previous) => ({ ...previous, c: id, view: 'canvas' }),
           to: '.',
         }),
       workspaceId: props.workspaceId,

@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { PracticeFrame } from '../practice/studyPage';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import { fileLink } from './assignmentPage';
-import { dayLabel, kindLabel } from './assignmentText';
+import { dayLabel, kindLabel, markText } from './assignmentText';
 import { YourWork } from './HandIns';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 import { useAssignmentStart } from './useAssignmentStart';
@@ -82,6 +83,26 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
 }
 
 function Unmarked({ assignment }: { assignment: Assignment }) {
+  return (
+    <PracticeFrame>
+      <BackToAssignments />
+      <UnmarkedView assignment={assignment} className="mt-3" />
+    </PracticeFrame>
+  );
+}
+
+/** An unmarked assignment as its members see it: its title, Mark as done or
+ * Hand in, its files and Your work. `preview` is staff's Preview tab (Epo
+ * 2026-11-13): the same page with its buttons off. */
+export function UnmarkedView({
+  assignment,
+  className,
+  preview = false,
+}: {
+  assignment: Assignment;
+  className?: string;
+  preview?: boolean;
+}) {
   const { mutate, isPending } = useSetAssignmentDone(assignment.workspaceId);
   const done = !!assignment.mine?.done;
   const handIn = assignment.allowUploads;
@@ -91,7 +112,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
   const uploads = useAddSubmissionFiles({ handInId: assignment.id });
   const uploading = uploads.uploading.length > 0;
   const meta = [
-    kindLabel(assignment.kind),
+    kindLabel(assignment),
     assignment.postedBy
       ? m.assignment_posted_by({
           date: dayLabel(assignment.postedAt),
@@ -102,13 +123,28 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
       ? m.assignment_due({ date: dayLabel(assignment.dueAt) })
       : null,
     handedIn ? m.assignment_handed_in_on({ date: dayLabel(handedIn) }) : null,
+    // Graded on points (Epo 2026-11-14): the grade once shown, else what of.
+    assignment.points === undefined
+      ? null
+      : assignment.mine?.mark === undefined
+        ? m.assignment_out_of({ points: assignment.points })
+        : m.assignment_grade_line({
+            grade: markText(
+              assignment.mine.mark,
+              assignment.mine.total ?? assignment.points
+            ),
+          }),
   ]
     .filter(Boolean)
     .join(' · ');
   return (
-    <PracticeFrame>
-      <BackToAssignments />
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+    <>
+      <div
+        className={cn(
+          'flex flex-wrap items-start justify-between gap-x-4 gap-y-3',
+          className
+        )}
+      >
         <div className="min-w-0">
           <h1 className="t-page-title">{assignment.title}</h1>
           <p className="t-meta mt-0.5 text-fg-muted">{meta}</p>
@@ -123,6 +159,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           >
             <Button
               disabled={
+                preview ||
                 isPending ||
                 closed ||
                 (!done && (uploading || !assignment.mine?.handIn?.length))
@@ -135,7 +172,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
           </span>
         ) : (
           <Button
-            disabled={isPending || closed}
+            disabled={preview || isPending || closed}
             onClick={() => mutate({ done: !done, id: assignment.id })}
             variant={done ? 'outline' : undefined}
           >
@@ -177,10 +214,11 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
       {handIn && (
         <YourWork
           assignment={assignment}
-          open={!(done || closed)}
+          open={!(preview || done || closed)}
+          preview={preview}
           uploads={uploads}
         />
       )}
-    </PracticeFrame>
+    </>
   );
 }

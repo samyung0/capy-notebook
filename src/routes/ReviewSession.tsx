@@ -296,7 +296,7 @@ function Session({
             trail={[
               features.learning && search.from === 'review'
                 ? {
-                    label: m.nav_learning(),
+                    label: m.nav_study(),
                     link: linkOptions({
                       search: { tab: 'overview' },
                       to: '/learning',

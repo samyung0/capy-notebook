@@ -3,14 +3,29 @@ export type MathTextToken = {
   value: string;
 };
 
-/** Only paired, unescaped delimiters become math. Incomplete input stays readable. */
+/** Only paired, unescaped delimiters become math. Incomplete input stays
+ * readable. Backslashes right before a `$` pair up: `\\` is a backslash and
+ * an odd one escapes the dollar. */
 export function parseMathText(source: string): MathTextToken[] {
   const tokens: MathTextToken[] = [];
   let text = '';
   for (let i = 0; i < source.length; ) {
-    if (source[i] === '\\' && source[i + 1] === '$') {
-      text += '$';
-      i += 2;
+    if (source[i] === '\\') {
+      let end = i;
+      while (source[end] === '\\') end++;
+      if (source[end] !== '$') {
+        text += source.slice(i, end);
+        i = end;
+        continue;
+      }
+      const count = end - i;
+      text += '\\'.repeat(count >> 1);
+      // An even run leaves the `$` to open or close a formula.
+      if (count % 2) {
+        text += '$';
+        end++;
+      }
+      i = end;
       continue;
     }
     if (source[i] !== '$') {

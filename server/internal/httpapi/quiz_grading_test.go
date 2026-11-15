@@ -17,7 +17,6 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
-	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
@@ -30,8 +29,7 @@ import (
 var gradedImages, gradedSamples atomic.Int32
 
 // openGradingAPI serves the API with a stub grading model that gives every item
-// the same choice ("zero", "partial" or "full") and a stub Jev for the author's
-// computation check. The count covers both: every model call.
+// the same choice ("zero", "partial" or "full"), counting every model call.
 func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32) {
 	t.Helper()
 	h, st, calls, _ := openGradingAPIWithBlob(t, choice)
@@ -42,19 +40,6 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 func openGradingAPIWithBlob(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32, *blob.Memory) {
 	t.Helper()
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		var body struct {
-			Questions map[string]any `json:"questions"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		answers := map[string]any{}
-		for key := range body.Questions {
-			answers[key] = map[string]any{"choice": choice, "noul": 0.01}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"model": jev.Model, "answers": answers, "usage": map[string]any{"input_tokens": 1000}})
-	}))
-	t.Cleanup(srv.Close)
 	// The grading slot's model, behind the pipeline: each item's share.
 	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -101,7 +86,7 @@ func openGradingAPIWithBlob(t *testing.T, choice string) (http.Handler, *store.S
 	st.SetModelRegistry(reg)
 	cfg := httpapi.Config{
 		E2EAuth: true, E2ESecret: "e2e-test-secret", E2EUserIDs: []string{"u_owner", "u_editor", "u_viewer", "u_other"},
-		ModelRegistry: reg, Jev: jev.NewForTest("key", srv.URL),
+		ModelRegistry: reg,
 	}
 	client := pipeline.New(pipe.URL, "secret")
 	if choice == "no-pipeline" {
@@ -120,7 +105,7 @@ func gradingQuiz(t *testing.T, h http.Handler, privacy string) string {
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
 			"parts": []any{
 				map[string]any{"id": "open-a", "blocks": []any{map[string]any{"type": "text", "text": "Explain."}},
-					"answer": map[string]any{"type": "open", "accepted": []any{"Because."}, "hints": []any{}}, "marks": 3,
+					"answer": map[string]any{"type": "open", "accepted": []any{"Because."}}, "marks": 3,
 					"markscheme": []any{map[string]any{"text": "Point one", "marks": 2}, map[string]any{"text": "Point two", "marks": 1}}, "solution": []any{}},
 				map[string]any{"id": "closed-b", "blocks": []any{map[string]any{"type": "text", "text": "True?"}},
 					"answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}},
@@ -521,7 +506,7 @@ func TestSharedNoteQuizCheckLeavesOpenAnswersNotMarked(t *testing.T) {
 	questions, err := json.Marshal([]any{map[string]any{
 		"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
 		"parts": []any{map[string]any{"id": "open-a", "blocks": []any{map[string]any{"type": "text", "text": "Explain."}},
-			"answer": map[string]any{"type": "open", "accepted": []any{"Because."}, "hints": []any{}}, "marks": 1,
+			"answer": map[string]any{"type": "open", "accepted": []any{"Because."}}, "marks": 1,
 			"markscheme": []any{map[string]any{"text": "Point one", "marks": 1}}, "solution": []any{}}},
 	}})
 	if err != nil {

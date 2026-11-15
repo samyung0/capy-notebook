@@ -46,23 +46,22 @@ import { Icon } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/components/ui/Popover';
-import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/Resizable';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { followMoves } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import {
   registerTourPanels,
   type TourPanels,
 } from '@/features/guide/tourStore';
-import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
+import type {
+  MakeQuizChoice,
+  MakeQuizDialog,
+} from '@/features/makeQuiz/MakeQuizDialog';
 import { addQuizRun, useQuizDialogKey } from '@/features/makeQuiz/quizRuns';
 import { CenterContent } from '@/features/materials/CenterContent';
 import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
@@ -72,7 +71,6 @@ import {
   openItemFromSearch,
   searchFromOpenItem,
   type WorkspaceOpenSearch,
-  type WorkspacePanel,
 } from '@/features/materials/openItem';
 import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
@@ -89,6 +87,7 @@ import { ArchivedChatsDialog } from '@/features/workspace/chat/ArchivedChatsDial
 import { preloadProseWhenIdle } from '@/features/workspace/chat/blocks/text';
 import { ConversationList } from '@/features/workspace/chat/ConversationList';
 import { resumedConnect } from '@/features/workspace/connectResume';
+import { FilesHome } from '@/features/workspace/FilesHome';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
 import { AddSourceDialog } from '@/features/workspace/LazyAddSourceDialog';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
@@ -106,26 +105,23 @@ import {
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { iconUrl } from '@/lib/icon-catalog';
-import {
-  isBoolean,
-  PREF_KEYS,
-  readPref,
-  removePref,
-  writePref,
-} from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 const WorkspaceCanvas = lazy(() => import('@/routes/WorkspaceCanvas'));
+const HistoryPage = lazy(() =>
+  import('@/features/study/practice/HistoryPage').then((mod) => ({
+    default: mod.HistoryPage,
+  }))
+);
+const WorkspaceBankPage = lazy(() =>
+  import('@/features/itemBanks/WorkspaceBankPage').then((mod) => ({
+    default: mod.WorkspaceBankPage,
+  }))
+);
 const SummaryPage = lazy(() =>
   import('@/features/study/practice/SummaryPage').then((mod) => ({
     default: mod.SummaryPage,
-  }))
-);
-const MakeQuizDialog = lazy(() =>
-  import('@/features/makeQuiz/MakeQuizDialog').then((mod) => ({
-    default: mod.MakeQuizDialog,
   }))
 );
 const AddPracticeDialog = lazy(() =>
@@ -316,43 +312,6 @@ function FollowOpenFile() {
   return null;
 }
 
-type PanelCenter = {
-  openKey: string | null;
-  /** The page in the centre, if one of To do, Practice, Members or Study is. */
-  studyPage: StudyPage | null;
-};
-
-/** The rail's section after the centre moves: Agent stays, a page shows its own
- * section, an open item Files, and leaving a page for the landing (Back) shows
- * the Dashboard. */
-function sectionForCenter(
-  was: WorkspaceSection,
-  { openKey, studyPage }: PanelCenter
-): WorkspaceSection {
-  if (was === 'agent') return was;
-  if (studyPage) return PAGE_SECTION[studyPage];
-  if (openKey) return 'files';
-  return was in SECTION_PAGE ? 'dashboard' : was;
-}
-
-/** The panel the URL names; with none a workspace opens on its Dashboard (Epo
- * 2026-11-05). */
-const firstPanelOf = (urlPanel: WorkspacePanel | undefined, lg: boolean) =>
-  lg ? (urlPanel ?? null) : null;
-
-function firstSectionOf(
-  panel: WorkspacePanel | null,
-  center: PanelCenter
-): WorkspaceSection {
-  return sectionForCenter(
-    panel && panel !== 'none' ? panel : 'dashboard',
-    center
-  );
-}
-
-const firstPanelOpenOf = (panel: WorkspacePanel | null, center: PanelCenter) =>
-  panel !== 'none' || (!center.openKey && !center.studyPage);
-
 export default function WorkspaceOpenPage() {
   return (
     <>
@@ -404,116 +363,58 @@ function WorkspaceOpen() {
   const [cloneOpen, setCloneOpen] = useState(false);
 
   // Breakpoints: one column below 1260px, with the rail from 768px so iPads keep it
-  // (Epo 2026-11-06); from 1260px the rail with one panel beside it, whichever
-  // section shows.
+  // (Epo 2026-11-06); from 1260px the Files and Chat pages have their side
+  // panel beside the rail.
   const lg = useMediaQuery('(min-width: 1260px)');
   const railShown = useMediaQuery('(min-width: 768px)');
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
   // A link to a page this person doesn't have opens Practice.
+  // Make a quiz's dialog opened from a page (Add practice, a new assignment)
+  // keeps that page behind it; from a link it opens over the Dashboard.
+  const shownStudy =
+    search.study ?? (search.make ? search.makeFrom : undefined);
   const studyPage: StudyPage | null =
-    searchedOpenItem || !search.study
+    searchedOpenItem || !shownStudy
       ? null
-      : studyView(ws).pages.includes(search.study)
-        ? search.study
+      : studyView(ws).pages.includes(shownStudy)
+        ? shownStudy
         : 'practice';
   // Make a quiz from a link: its dialog opens over the Dashboard, on its pages or run
   // (Epo 2026-11-05).
   const quizDialogKey = useQuizDialogKey((state) => state.key);
   const makeLink =
     !readOnly && !searchedOpenItem && !search.study && !!search.make;
-  // Agent shows its chat rather than the history (Epo 2026-11-04, option A). A
-  // chat on screen comes back on the next visit, with the thread the chat panel
-  // keeps.
-  const [chatShown, setChatShown] = useState(() =>
-    readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean)
-  );
   const openKey = searchedOpenItem
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
-  const center: PanelCenter = { openKey, studyPage };
-  // These two states draw the panel; the effect below keeps the URL on them.
-  const [section, setSection] = useState<WorkspaceSection>(() =>
-    firstSectionOf(firstPanelOf(search.panel, lg), center)
-  );
-  const [panelOpen, setPanelOpen] = useState(() =>
-    firstPanelOpenOf(firstPanelOf(search.panel, lg), center)
-  );
-  // Panels are each workspace's own. The page stays mounted when a Move takes
-  // the open file to another: the file follows at once (Q467).
+  const view = search.view;
+  // A chat is open (Epo 2026-11-14): with nothing open the Chat page, else
+  // over the Files page its window (from lg) or sheet, `files-chat` when no
+  // file is open. Wider than a phone the chat list is the Chat page too.
+  const chatOver = view === 'chat' || view === 'files-chat';
+  const chatOpen = chatOver || (lg && view === 'chats');
+  // The page the URL shows. Files and Chat are pages, each with its side
+  // panel from lg; the other sections have none.
+  const page: WorkspaceSection =
+    view === 'canvas' && !openKey && !studyPage
+      ? 'canvas'
+      : studyPage
+        ? PAGE_SECTION[studyPage]
+        : openKey || view === 'files' || view === 'files-chat'
+          ? 'files'
+          : view === 'chat' || view === 'chats'
+            ? 'agent'
+            : 'dashboard';
+  // Pressing the shown Files or Agent again folds its side panel away.
+  const [sideOpen, setSideOpen] = useState(true);
   const [seenWorkspace, setSeenWorkspace] = useState(workspaceId);
   if (workspaceId !== seenWorkspace) {
     setSeenWorkspace(workspaceId);
-    const panel = firstPanelOf(search.panel, lg);
-    setChatShown(readPref(PREF_KEYS.chatShown(workspaceId), false, isBoolean));
-    setSection(firstSectionOf(panel, center));
-    setPanelOpen(firstPanelOpenOf(panel, center));
+    setSideOpen(true);
   }
-  // The centre moves on while Agent keeps its chat: a citation opens its file
-  // beside the chat, and so does anything else opened there.
-  const centerKey = `${openKey}|${studyPage}`;
-  const [seenCenter, setSeenCenter] = useState(centerKey);
-  if (centerKey !== seenCenter) {
-    setSeenCenter(centerKey);
-    setSection((was) => sectionForCenter(was, center));
-  }
-  // One column keeps no panel state, so the URL alone says the canvas shows.
-  const urlCanvas = search.panel === 'canvas' && !openKey && !studyPage;
-  if (!lg && urlCanvas !== (section === 'canvas'))
-    setSection(urlCanvas ? 'canvas' : sectionForCenter('dashboard', center));
-  // Only Files and Agent have a panel.
-  const leftOpen = (section === 'files' || section === 'agent') && panelOpen;
+  const leftOpen = (page === 'files' || page === 'agent') && sideOpen;
   const leftShown = lg && leftOpen;
-  const chatOnScreen = leftShown && section === 'agent' && chatShown;
-  useEffect(() => {
-    if (!lg) return;
-    const key = PREF_KEYS.chatShown(workspaceId);
-    if (chatOnScreen) writePref(key, true);
-    else removePref(key);
-  }, [chatOnScreen, lg, workspaceId]);
-  // The tour's panels aren't the learner's to remember.
-  const beforeTour = useRef<{
-    chatShown: boolean;
-    panelOpen: boolean;
-    section: WorkspaceSection;
-  } | null>(null);
-  const panelNow: WorkspacePanel | null = lg
-    ? section === 'canvas'
-      ? 'canvas'
-      : (section === 'files' || section === 'agent') && panelOpen
-        ? section
-        : 'none'
-    : null;
-  const panelPressed = useRef(false);
-  const seenUrlPanel = useRef(search.panel);
-  useEffect(() => {
-    if (!panelNow) return;
-    const urlPanel = search.panel;
-    const moved = urlPanel && urlPanel !== seenUrlPanel.current;
-    seenUrlPanel.current = urlPanel;
-    // Back, forward or a link moved the URL: the panel follows.
-    if (moved && urlPanel !== panelNow) {
-      if (urlPanel !== 'none') {
-        setSection(urlPanel);
-        setPanelOpen(true);
-      } else if (openKey || studyPage) setPanelOpen(false);
-      else {
-        setSection('dashboard');
-        setPanelOpen(true);
-      }
-      return;
-    }
-    if (urlPanel === panelNow) return;
-    // A press adds a step for back; anything else only labels the entry, such
-    // as a navigation that left the panel out.
-    const pressed = panelPressed.current && !!urlPanel;
-    panelPressed.current = false;
-    navigate({
-      replace: !pressed,
-      search: (previous) => ({ ...previous, panel: panelNow }),
-      to: '.',
-    });
-  }, [navigate, openKey, panelNow, search.panel, studyPage]);
   const panelGroupRef = useGroupRef();
   const [panelGroup, setPanelGroup] = useState<HTMLDivElement | null>(null);
   usePanelLayout({
@@ -523,7 +424,7 @@ function WorkspaceOpen() {
     open: leftShown,
   });
   const [archivedOpen, setArchivedOpen] = useState(false);
-  // Agent's list drives the chat, which reports back the thread it shows.
+  // The chat list drives the chat, which reports back the thread it shows.
   const [chatRequest, setChatRequest] = useState<ChatRequest>();
   const [activeChat, setActiveChat] = useState<string | null>(null);
   /** The chat opens that thread, or with a null id a new chat. */
@@ -534,19 +435,21 @@ function WorkspaceOpen() {
       seq: (previous?.seq ?? 0) + 1,
     }));
   }
-  /** Every way into a chat: Agent's panel, showing that chat. */
+  /** Whether this page's own press opened the chat, so closing it steps back
+   * (the back gesture's step) rather than adding one. */
+  const chatPagePushed = useRef(false);
+  useEffect(() => {
+    if (!chatOver) chatPagePushed.current = false;
+  }, [view]);
+  /** Every way into a chat: the Chat page, showing that chat. */
   function openChat(id: string | null, prompt?: string) {
-    panelPressed.current = true;
-    setSection('agent');
-    setPanelOpen(true);
-    setChatShown(true);
     requestChat(id, prompt);
+    const latest = router.latestLocation.search as WorkspaceOpenSearch;
+    if (latest.view === 'chat' && !openItemFromSearch(latest)) return;
+    chatPagePushed.current = true;
+    navigate({ search: { view: 'chat' }, to: '.' });
   }
 
-  // One column: Files drops from the top, under the header it was opened from.
-  const [filesOpen, setFilesOpen] = useState(false);
-  // The Files dropdown hangs from the header, which lives in CenterContent.
-  const filesAnchor = useRef<HTMLElement | null>(null);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
@@ -568,9 +471,10 @@ function WorkspaceOpen() {
         }
       : searchedOpenItem;
 
+  // From lg a chat stays open over what it opens (citations, files it made).
+  const keepChat = lg && chatOver ? { view: 'chat' as const } : {};
   function setOpenItem(item: OpenItem | null) {
     setCitationTarget(null);
-    setFilesOpen(false);
     navigate({
       replace: true,
       search: searchFromOpenItem(item),
@@ -578,17 +482,25 @@ function WorkspaceOpen() {
     });
   }
 
-  /** The chat page below the panels: `agent` in the URL. Opening adds a history
-   * entry for the back gesture to leave, and the page's back arrow takes that
-   * same step. */
-  const chatPagePushed = useRef(false);
+  /** The chat over the viewer: `view=chat` in the URL. Opening adds a history
+   * entry for the back gesture to leave, and the chat's back arrow takes that
+   * same step; closed without one, a phone's Chat page shows its list. */
   function setChatPageOpen(open: boolean) {
     const latest = router.latestLocation.search as WorkspaceOpenSearch;
-    if (open === (latest.panel === 'agent')) return;
+    const over = latest.view === 'chat' || latest.view === 'files-chat';
+    if (open === over) return;
+    const item = openItemFromSearch(latest);
     if (open) {
       chatPagePushed.current = true;
       navigate({
-        search: (previous) => ({ ...previous, panel: 'agent' as const }),
+        search: (previous) => ({
+          ...previous,
+          // Over the Files page with nothing open the page stays Files.
+          view:
+            item || latest.view !== 'files'
+              ? ('chat' as const)
+              : ('files-chat' as const),
+        }),
         to: '.',
       });
     } else if (chatPagePushed.current) {
@@ -597,7 +509,14 @@ function WorkspaceOpen() {
     } else {
       navigate({
         replace: true,
-        search: (previous) => ({ ...previous, panel: undefined }),
+        search: (previous) => ({
+          ...previous,
+          view: item
+            ? undefined
+            : latest.view === 'files-chat'
+              ? ('files' as const)
+              : ('chats' as const),
+        }),
         to: '.',
       });
     }
@@ -640,45 +559,41 @@ function WorkspaceOpen() {
   /** To do, Practice, Members or Study takes the centre pane; Back returns here. */
   function openStudy(page: StudyPage) {
     setCitationTarget(null);
-    setFilesOpen(false);
     navigate({ search: { study: page }, to: '.' });
   }
 
   /** The landing: the workspace's Dashboard. */
   function openDashboard() {
     setCitationTarget(null);
-    setFilesOpen(false);
-    setSection((was) => (was === 'agent' ? was : 'dashboard'));
     navigate({ search: {}, to: '.' });
   }
 
-  /** A rail section: the Dashboard, To do, Practice, Members and Study have no
-   * panel and open their page. Pressing the shown Files or Agent closes or
-   * reopens its panel. */
+  /** A rail section opens its page; pressing the shown Files or Agent again
+   * folds its side panel away or back. */
   function selectSection(next: WorkspaceSection) {
-    panelPressed.current = true;
-    if (next in SECTION_PAGE) {
-      setSection(next);
+    if (lg && next === page && (next === 'files' || next === 'agent')) {
+      setSideOpen(!sideOpen);
+      return;
+    }
+    setSideOpen(true);
+    setCitationTarget(null);
+    if (next in SECTION_PAGE)
       openStudy(SECTION_PAGE[next as keyof typeof SECTION_PAGE]);
-      return;
-    }
-    if (next === 'dashboard') {
-      setSection('dashboard');
-      if (searchedOpenItem || search.study || search.make) openDashboard();
-      return;
-    }
-    if (next === 'canvas') {
-      setSection('canvas');
-      if (searchedOpenItem || search.study || search.make)
-        navigate({ search: { panel: 'canvas' }, to: '.' });
-      return;
-    }
-    if (next === section) {
-      setPanelOpen(!panelOpen);
-      return;
-    }
-    setSection(next);
-    setPanelOpen(true);
+    else if (next === 'dashboard') openDashboard();
+    else
+      navigate({
+        search: {
+          view:
+            next === 'canvas'
+              ? 'canvas'
+              : next === 'files'
+                ? 'files'
+                : lg
+                  ? 'chat'
+                  : 'chats',
+        },
+        to: '.',
+      });
   }
 
   function openCitation(citation: Citation) {
@@ -697,7 +612,7 @@ function WorkspaceOpen() {
       navigate({
         replace: true,
         resetScroll: false,
-        search: { material: citation.materialId },
+        search: { material: citation.materialId, ...keepChat },
         to: '.',
       });
       return;
@@ -719,6 +634,7 @@ function WorkspaceOpen() {
         page: regionPage ?? citation.pageStart ?? undefined,
       }),
       mode: 'view' as const,
+      ...keepChat,
     };
     // A repeated citation leaves the URL as it is, so it doesn't navigate:
     // the route's loader would refetch the open file and re-render the
@@ -760,38 +676,26 @@ function WorkspaceOpen() {
       to: '.',
     });
   }, [add, chat, loaded, navigate, readOnly]);
-  // The tour (features/guide/Tour.tsx) opens panels through these while this
-  // page is open; when it stops, the panel goes back as it was before it, with
-  // the section fitting what the tour left in the centre.
+  // The tour (features/guide/Tour.tsx) opens Files and the chats through these
+  // while this page is open; when it stops, the page goes back as it was.
   const tourPanels = useRef<TourPanels | null>(null);
+  const beforeTour = useRef<WorkspaceOpenSearch | null>(null);
   useEffect(() => {
-    const show = (next: WorkspaceSection) => {
-      beforeTour.current ??= { chatShown, panelOpen, section };
-      setSection(next);
-      setPanelOpen(true);
+    const show = (to: WorkspaceOpenSearch) => {
+      beforeTour.current ??= router.latestLocation
+        .search as WorkspaceOpenSearch;
+      setSideOpen(true);
+      navigate({ replace: true, search: to, to: '.' });
     };
     tourPanels.current = {
       restore: () => {
         const before = beforeTour.current;
         if (!before) return;
         beforeTour.current = null;
-        setChatShown(before.chatShown);
-        setPanelOpen(before.panelOpen);
-        setSection(
-          before.section === 'dashboard'
-            ? studyPage
-              ? PAGE_SECTION[studyPage]
-              : openKey
-                ? 'files'
-                : 'dashboard'
-            : before.section
-        );
+        navigate({ replace: true, search: before, to: '.' });
       },
-      showChats: () => {
-        show('agent');
-        setChatShown(false);
-      },
-      showFiles: () => show('files'),
+      showChats: () => show({ view: lg ? 'chat' : 'chats' }),
+      showFiles: () => show({ view: 'files' }),
     };
   });
   useEffect(() => registerTourPanels(tourPanels), []);
@@ -839,8 +743,8 @@ function WorkspaceOpen() {
         ? materials?.find((mt) => mt.id === openItem.id)?.topicId
         : null) ?? null;
 
-  // One column has no panels: the header title opens Files, and ⋮ carries
-  // the workspace actions their tab rows held.
+  // One column has no side panels: the header's ⋮ carries the workspace
+  // actions their title rows hold.
   const addItems: MenuItem[] = readOnly
     ? []
     : [
@@ -889,59 +793,11 @@ function WorkspaceOpen() {
       : []),
     ...settingsEntry,
   ];
-  const centerHeader = () =>
-    viewerBox.current?.querySelector<HTMLElement>(
-      '[data-testid=content-header],[data-slot=center-header]'
-    ) ?? null;
-  function openFiles() {
-    filesAnchor.current = centerHeader();
-    setFilesOpen(true);
-  }
-
-  /** The rail in one column: its sections are the dropdown, the chat page and the
-   * centre's pages, as the header's menus have them. */
-  const railActive: WorkspaceSection = lg
-    ? section
-    : section === 'canvas'
-      ? 'canvas'
-      : search.panel === 'agent'
-        ? 'agent'
-        : studyPage
-          ? PAGE_SECTION[studyPage]
-          : filesOpen || openKey
-            ? 'files'
-            : 'dashboard';
-  function selectOneColumn(next: WorkspaceSection) {
-    if (next === 'dashboard') openDashboard();
-    else if (next in SECTION_PAGE)
-      openStudy(SECTION_PAGE[next as keyof typeof SECTION_PAGE]);
-    else if (next === 'agent') setChatPageOpen(true);
-    else if (next === 'canvas')
-      navigate({ search: { panel: 'canvas' }, to: '.' });
-    else {
-      // The dropdown hangs under the centre's header, which the canvas and the
-      // chat page cover.
-      if (section === 'canvas') openDashboard();
-      else if (search.panel === 'agent')
-        navigate({
-          replace: true,
-          search: (previous) => ({ ...previous, panel: undefined }),
-          to: '.',
-        });
-      openFiles();
-    }
-  }
-  /** Where the workspace is shared and people are invited: Members, on a
-   * class's Manage tab. */
+  /** Where the workspace is shared and people are invited: Members. */
   function openInvite() {
     setCitationTarget(null);
-    setFilesOpen(false);
-    setSection('members');
     navigate({
-      search: {
-        study: 'members',
-        ...(studyView(ws).manages ? { manage: true as const } : {}),
-      },
+      search: { study: 'members' },
       to: '.',
     });
   }
@@ -972,8 +828,6 @@ function WorkspaceOpen() {
   const oneColumn: OneColumnChrome | undefined = oneColumnLayout
     ? {
         addItems,
-        filesOpen,
-        onOpenFiles: openFiles,
         settingsItems,
         workspaceIconId: ws.iconId,
         workspaceName: ws.name,
@@ -986,69 +840,58 @@ function WorkspaceOpen() {
         ? { id: ref.id, kind: 'material' }
         : { id: ref.id, kind: 'file' }
     );
-  // The Files dropdown's tree: the workspace as a plain row the size of a file
-  // row (no switcher; Back leaves the workspace), Add file, Workspace settings
-  // and Study pinned under it; Add topic stays in the header's ⋮.
-  const filesDropdown = (
+  // Files' tree with its add menu: the Files page's side panel from lg, the
+  // page itself below.
+  const filesTree = (
     <FilesPanel
-      className="h-auto flex-1"
-      footer={
-        <div className="flex shrink-0 flex-col gap-1 border-divider border-t px-2.5 pt-1.5 pb-2">
-          {[
-            ...addItems.slice(0, 1),
-            ...settingsItems,
-            ...(readOnly && canClone
-              ? [
-                  {
-                    icon: 'clone' as const,
-                    label: m.action_clone_workspace(),
-                    onClick: () => setCloneOpen(true),
-                  },
-                ]
-              : []),
-          ].map((action) => (
-            <button
-              className="flex h-7.5 items-center gap-1.75 rounded-button px-2 text-left hover:bg-surface-hover-bg"
-              key={action.label}
-              onClick={() => {
-                setFilesOpen(false);
-                action.onClick?.();
-              }}
-              type="button"
-            >
-              {action.icon && <Icon name={action.icon} size={15} />}
-              <span className="translate-y-px">{action.label}</span>
-            </button>
-          ))}
-        </div>
-      }
-      header={
-        <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1.5">
-          <img
-            alt=""
-            className="size-3.75 shrink-0 rounded-[4px]"
-            src={iconUrl(ws.iconId)}
-          />
-          <span className="min-w-0 translate-y-px truncate font-semibold">
-            {ws.name}
-          </span>
-        </div>
-      }
-      onNavigate={() => {
-        setCitationTarget(null);
-        setFilesOpen(false);
-      }}
+      onAddSource={readOnly ? undefined : setAddSource}
+      onAddTopic={readOnly ? undefined : () => setTopicForm({ mode: 'add' })}
+      onNavigate={() => setCitationTarget(null)}
       onOpenItem={setOpenItem}
       onRenameTopic={(ch) =>
         setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
       }
       openItem={openItem}
       readOnly={readOnly}
-      renderTabRow={() => null}
-      rowMenus={false}
+      renderTabRow={(actions) => (
+        <SectionTitle
+          actions={tabButtons(actions)}
+          title={m.workspace_tab_files()}
+        />
+      )}
+      searchable
       uploadTopic={addSource ? openTopicId : undefined}
       workspaceId={workspaceId}
     />
+  );
+  // The chats: the Chat page's side panel from lg, a phone's Chat page.
+  const chatList = (
+    <div className="flex h-full min-h-0 flex-col">
+      <SectionTitle
+        actions={
+          <>
+            <VoiceFooterButton
+              onSend={(prompt) => openChat(null, prompt)}
+              workspaceId={workspaceId}
+            />
+            <ToolbarButton
+              label={m.chat_archived_title()}
+              onClick={() => setArchivedOpen(true)}
+            >
+              <Icon name="archive" />
+            </ToolbarButton>
+          </>
+        }
+        title={m.chat_chats()}
+      />
+      <ConversationList
+        activeId={activeChat}
+        onNew={() => openChat(null)}
+        onOpen={openChat}
+        onRemoved={(id) => id === activeChat && requestChat(null)}
+        workspaceId={workspaceId}
+      />
+    </div>
   );
   // These pages fill the centre without a file header from lg (boards P1,
   // P2); one column keeps its header for the Files dropdown and ⋮.
@@ -1056,18 +899,22 @@ function WorkspaceOpen() {
     studyPage &&
     (studyPage === 'summary' ? (
       <Suspense fallback={null}>
-        <SummaryPage workspaceId={workspaceId} />
+        <SummaryPage
+          search={{ member: search.member, show: search.show }}
+          workspaceId={workspaceId}
+        />
+      </Suspense>
+    ) : studyPage === 'history' ? (
+      <Suspense fallback={null}>
+        <HistoryPage workspaceId={workspaceId} />
+      </Suspense>
+    ) : studyPage === 'bank' ? (
+      <Suspense fallback={null}>
+        <WorkspaceBankPage workspaceId={workspaceId} />
       </Suspense>
     ) : studyPage === 'members' ? (
       <Suspense fallback={null}>
-        <MembersPage
-          search={{
-            manage: search.manage,
-            member: search.member,
-            show: search.show,
-          }}
-          workspaceId={workspaceId}
-        />
+        <MembersPage workspaceId={workspaceId} />
       </Suspense>
     ) : studyPage === 'assignments' ? (
       <Suspense fallback={null}>
@@ -1075,8 +922,8 @@ function WorkspaceOpen() {
           search={{
             assignment: search.assignment,
             attempt: search.attempt,
+            by: search.by,
             member: search.member,
-            newFromQuiz: search.newFromQuiz,
             own: search.own,
             question: search.question,
             tab: search.tab,
@@ -1108,6 +955,8 @@ function WorkspaceOpen() {
     step: NonNullable<typeof search.make>
   ): ComponentProps<typeof MakeQuizDialog> => ({
     file: search.quizFile,
+    // Study's quiz is for the members; elsewhere it starts hidden.
+    hiddenAtFirst: search.makeFrom !== 'practice',
     initial: {
       answers: splitIds(search.answers),
       paper: splitIds(search.paper),
@@ -1172,16 +1021,29 @@ function WorkspaceOpen() {
     workspaceId,
     workspaceName: ws.name,
   });
-  // The landing is the workspace's Dashboard (boards H1, H2).
+  // The landing is the workspace's Dashboard (boards H1, H2). The Files page
+  // with nothing open shows the recent files from lg, its tree below; a
+  // phone's Chat page is its list (the chat covers the centre from lg).
   const pageContent =
     studyContent ||
-    (!openItem && (
+    (page === 'dashboard' && (
       <WorkspaceDashboard
         onMakeQuiz={() => void navigate({ search: { make: 'files' }, to: '.' })}
         onUpload={() => setAddSource('upload')}
         workspace={ws}
       />
-    ));
+    )) ||
+    (page === 'files' &&
+      !openItem &&
+      (lg ? (
+        <FilesHome
+          onUpload={() => setAddSource('upload')}
+          workspaceId={workspaceId}
+        />
+      ) : (
+        filesTree
+      ))) ||
+    (page === 'agent' && (lg ? <div /> : chatList));
   // The page's one h1: the Dashboard, Study's pages, a quiz and a flashcards set
   // head themselves with theirs.
   const openMaterialType =
@@ -1189,7 +1051,8 @@ function WorkspaceOpen() {
       ? materials?.find((mt) => mt.id === openItem.id)?.type
       : undefined;
   const headsItself =
-    !!pageContent ||
+    !!studyContent ||
+    page === 'dashboard' ||
     openMaterialType === 'quiz' ||
     openMaterialType === 'flashcards';
   const viewer = (
@@ -1197,7 +1060,7 @@ function WorkspaceOpen() {
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}
       <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-        {section === 'canvas' ? (
+        {page === 'canvas' ? (
           <div className="relative h-full" data-workspace-canvas>
             <Suspense fallback={null}>
               <WorkspaceCanvas
@@ -1230,9 +1093,21 @@ function WorkspaceOpen() {
           <CenterContent
             color="purple"
             item={openItem}
-            // From 768px the rail carries Home.
+            // From 768px the rail carries Home and Files. A phone's file leads
+            // back to the tree; its list pages leave the workspace.
             leading={
-              railShown ? null : (
+              railShown ? null : openItem ? (
+                <UnderlineLink
+                  className="text-fg"
+                  iconLeft="navigationBack"
+                  noArrow
+                  onClick={() =>
+                    void navigate({ search: { view: 'files' }, to: '.' })
+                  }
+                >
+                  {m.workspace_tab_files()}
+                </UnderlineLink>
+              ) : (
                 <ToolbarButton
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/' })}
@@ -1263,91 +1138,15 @@ function WorkspaceOpen() {
     </Panel>
   );
 
-  // The one panel beside the rail (boards T3, P1, P2): Files' tree with its add
-  // menu, or Agent's chats or a chat. The other sections have none. The
-  // chat stays mounted through all of them, closed too, so it keeps its thread,
-  // draft and stream.
+  // The side panel beside the rail from lg (boards T3, P1, P2): the Files
+  // page's tree or the Chat page's chats. The other pages have none.
   const sectionPanel = (
     <Panel className="w-full" frost="left" sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
-        {leftOpen && section === 'files' && (
-          <FilesPanel
-            onAddSource={readOnly ? undefined : setAddSource}
-            onAddTopic={
-              readOnly ? undefined : () => setTopicForm({ mode: 'add' })
-            }
-            onNavigate={() => setCitationTarget(null)}
-            onOpenItem={setOpenItem}
-            onRenameTopic={(ch) =>
-              setTopicForm({ id: ch.id, mode: 'rename', name: ch.name })
-            }
-            openItem={openItem}
-            readOnly={readOnly}
-            renderTabRow={(actions) => (
-              <SectionTitle
-                actions={tabButtons(actions)}
-                title={m.workspace_tab_files()}
-              />
-            )}
-            searchable
-            uploadTopic={addSource ? openTopicId : undefined}
-            workspaceId={workspaceId}
-          />
-        )}
-        {leftOpen && section === 'agent' && !chatShown && (
-          <>
-            <SectionTitle
-              actions={
-                <>
-                  <VoiceFooterButton
-                    onSend={(prompt) => openChat(null, prompt)}
-                    workspaceId={workspaceId}
-                  />
-                  <ToolbarButton
-                    label={m.chat_archived_title()}
-                    onClick={() => setArchivedOpen(true)}
-                  >
-                    <Icon name="archive" />
-                  </ToolbarButton>
-                </>
-              }
-              title={m.workspace_section_agent()}
-            />
-            <ConversationList
-              activeId={activeChat}
-              onNew={() => openChat(null)}
-              onOpen={openChat}
-              onRemoved={(id) => id === activeChat && requestChat(null)}
-              workspaceId={workspaceId}
-            />
-          </>
-        )}
-        <div className="min-h-0 flex-1" hidden={!chatOnScreen}>
-          <AppErrorBoundary resetKeys={[workspaceId]}>
-            <ChatPanel
-              canReprocess={ws.isOwner}
-              color="purple"
-              hidden={!chatOnScreen}
-              onActiveChange={setActiveChat}
-              onOpenCitation={openCitation}
-              onOpenResource={openChatResource}
-              openResource={openItem}
-              renderTabRow={(actions, title) => (
-                <SectionTitle
-                  actions={tabButtons(actions)}
-                  onBack={() => setChatShown(false)}
-                  title={title}
-                />
-              )}
-              request={chatRequest}
-              workspaceId={workspaceId}
-            />
-          </AppErrorBoundary>
-        </div>
+        {leftOpen && (page === 'files' ? filesTree : chatList)}
       </div>
     </Panel>
   );
-
   // The viewer keeps one parent chain at every width: moving an Office iframe
   // to another parent reloads its runtime and refetches the document.
   // The gaps between panels are padding inside them and the separators stay
@@ -1362,8 +1161,9 @@ function WorkspaceOpen() {
         {railShown && (
           <WorkspaceRail
             accountItems={accountItems}
-            active={railActive}
-            onSelect={lg ? selectSection : selectOneColumn}
+            active={page}
+            onSelect={selectSection}
+            onSettings={hasWorkspaceSettings(ws) ? openSettings : undefined}
             workspace={ws}
           />
         )}
@@ -1384,7 +1184,7 @@ function WorkspaceOpen() {
           }}
           onLayoutChanged={(layout, { isUserInteraction }) => {
             if (isUserInteraction && leftOpen && layout.left === 0)
-              setPanelOpen(false);
+              setSideOpen(false);
           }}
           orientation="horizontal"
         >
@@ -1429,60 +1229,45 @@ function WorkspaceOpen() {
                   {viewer}
                 </OfficeInsetContext.Provider>
               </FloatingBarContext.Provider>
-              {oneColumnLayout && (
-                <AppErrorBoundary resetKeys={[workspaceId]}>
-                  <ChatPanel
-                    canReprocess={ws.isOwner}
-                    color="purple"
-                    dock={{
-                      // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
-                      menuItems: settingsEntry,
-                      off: railShown,
-                      office: officeOpen,
-                      onPageOpen: setChatPageOpen,
-                      pageOpen: search.panel === 'agent',
-                    }}
-                    // The dialog and the canvas take the screen on phones; hidden,
-                    // the chat keeps its draft and stream.
-                    hidden={makeLink || section === 'canvas'}
-                    onOpenCitation={openCitation}
-                    onOpenResource={openChatResource}
-                    openResource={openItem}
-                    workspaceId={workspaceId}
-                  />
-                </AppErrorBoundary>
-              )}
+              {/* The workspace's one chat at every width (Epo 2026-11-14): the
+                  button on the Files page, which opens it as a window over the
+                  file from lg (a sheet below), and the Chat page. Hidden, it
+                  keeps its thread, draft and stream. */}
+              <AppErrorBoundary resetKeys={[workspaceId]}>
+                <ChatPanel
+                  canReprocess={ws.isOwner}
+                  color="purple"
+                  dock={{
+                    backLabel:
+                      !lg && page === 'agent' ? m.chat_chats() : undefined,
+                    layout: lg
+                      ? page === 'agent'
+                        ? 'page'
+                        : 'window'
+                      : 'overlay',
+                    // The chat page's ⋮: back leads to the rest (Epo 2026-11-05).
+                    menuItems: settingsEntry,
+                    off: page !== 'files',
+                    office: officeOpen,
+                    onExpand: () =>
+                      void navigate({ search: { view: 'chat' }, to: '.' }),
+                    onPageOpen: setChatPageOpen,
+                    pageOpen: chatOpen,
+                  }}
+                  // The dialog and the canvas take the screen; hidden, the chat
+                  // keeps its draft and stream.
+                  hidden={makeLink || page === 'canvas'}
+                  onActiveChange={setActiveChat}
+                  onOpenCitation={openCitation}
+                  onOpenResource={openChatResource}
+                  openResource={openItem}
+                  request={chatRequest}
+                  workspaceId={workspaceId}
+                />
+              </AppErrorBoundary>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
-        {oneColumnLayout && (
-          <Popover modal onOpenChange={setFilesOpen} open={filesOpen}>
-            <PopoverAnchor
-              virtualRef={{
-                current: {
-                  // Opened from the rail before the header showed: found now.
-                  getBoundingClientRect: () =>
-                    (filesAnchor.current?.isConnected
-                      ? filesAnchor.current
-                      : centerHeader()
-                    )?.getBoundingClientRect() ?? new DOMRect(),
-                },
-              }}
-            />
-            {/* A plain dropdown under the header, its workspace row in line
-                with the header title; full width on phones, a 400px column from sm. */}
-            <PopoverContent
-              align="start"
-              alignOffset={16}
-              aria-label={m.workspace_tab_files()}
-              className="max-h-[min(70dvh,var(--radix-popover-content-available-height))] w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:w-100"
-              collisionPadding={8}
-              sideOffset={4}
-            >
-              {filesDropdown}
-            </PopoverContent>
-          </Popover>
-        )}
       </div>
       <ArchivedChatsDialog
         onClose={() => setArchivedOpen(false)}
@@ -1530,20 +1315,15 @@ function WorkspaceOpen() {
       )}
       {makeLink && search.make && (
         <Suspense fallback={null}>
-          {search.makeFrom === 'practice' ? (
-            <AddPracticeDialog
-              key={quizDialogKey}
-              make={makeQuizProps(search.make)}
-              onOpenQuiz={(quizId) =>
-                void navigate({ search: { material: quizId }, to: '.' })
-              }
-            />
-          ) : (
-            <MakeQuizDialog
-              key={quizDialogKey}
-              {...makeQuizProps(search.make)}
-            />
-          )}
+          {/* Add quiz from Study's Add practice and the Dashboard's Make a quiz
+              (Epo 2026-11-14). */}
+          <AddPracticeDialog
+            key={quizDialogKey}
+            make={makeQuizProps(search.make)}
+            onOpenQuiz={(quizId) =>
+              void navigate({ search: { material: quizId }, to: '.' })
+            }
+          />
         </Suspense>
       )}
       {addSource && (

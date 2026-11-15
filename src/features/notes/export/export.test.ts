@@ -119,7 +119,29 @@ describe('readable note exports', () => {
     expect(content).toContain(`1 (a). ${labels.answer}`);
   });
 
-  it('retains all seven answer types, multiple parts, distractors, units, hints and rich solutions', async () => {
+  it('keeps question text bold, italic and underline markers as marks', async () => {
+    const base = exampleQuestion('marked');
+    const { content } = await render([
+      quizNode({
+        questions: [
+          {
+            ...base,
+            stem: [
+              {
+                text: 'Name the **largest** *human* __organ__, 2 * 3 * 4.',
+                type: 'text',
+              },
+            ],
+          },
+        ],
+      }),
+    ]);
+    expect(content).toContain(
+      'Name the **largest** *human* <u>organ</u>, 2 \\* 3 \\* 4.'
+    );
+  });
+
+  it('retains all seven answer types, multiple parts, distractors, units, sample answers and rich solutions', async () => {
     const questions = exampleAnswers.map((answer, i) =>
       exampleQuestion(String(i), answer)
     );
@@ -142,7 +164,6 @@ describe('readable note exports', () => {
     });
     questions[6].parts[0].answer = {
       accepted: ['Surface area'],
-      hints: ['Look at the folds'],
       type: 'open',
     };
     const { content } = await render([
@@ -157,7 +178,7 @@ describe('readable note exports', () => {
       'Ribosome',
       '12 m/s',
       '12.0 m/s',
-      'Look at the folds',
+      'Surface area',
       '| Time | Speed |',
       '$x^2$',
       'The square of x.',

@@ -464,6 +464,14 @@ type Material struct {
 	// CanvasWorkspaceID is the workspace a member's personal canvas belongs
 	// to (kind canvas, standalone otherwise; Epo 2026-11-09).
 	CanvasWorkspaceID string `json:"canvasWorkspaceId,omitempty"`
+	// AssignmentID is the graded quiz that owns this quiz (migration 0174):
+	// it lists nowhere, only that assignment's staff open it, and it goes
+	// with the assignment.
+	AssignmentID string `json:"assignmentId,omitempty"`
+	// GradedPending is set at creation on a quiz made in the New graded quiz
+	// dialog: it starts hidden, only its maker's CreateAssignment takes it,
+	// and one never taken goes to the trash (SweepPendingGradedQuizzes).
+	GradedPending bool `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -637,12 +645,6 @@ type MaterialRef struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// Hidden from members (Material.Hidden).
 	Hidden bool `json:"hidden,omitempty"`
-	// Assigned: a quiz under an open assignment, for whoever it went to and
-	// whoever edits it; it shows the assignment icon (Epo 2026-11-04).
-	Assigned bool `json:"assigned,omitempty"`
-	// AssignmentID is the assignment a viewer takes this quiz through; the row
-	// opens it, and the quiz itself is refused until it closes.
-	AssignmentID string `json:"assignmentId,omitempty"`
 }
 
 type ContentOrderItem struct {
@@ -707,12 +709,6 @@ type SearchResult struct {
 	Title    string     `json:"title"`
 	Subtitle string     `json:"subtitle,omitempty"`
 	Href     string     `json:"href"`
-	// ThumbnailKey is a file's page-1 WebP; the handler signs it into
-	// ThumbnailURL.
-	ThumbnailKey string  `json:"-"`
-	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a file's page-1 thumbnail"`
-	// Preview is a flashcard set's list-card preview, or {text} for a text file.
-	Preview MaterialPreview `json:"preview,omitempty" doc:"A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md"`
 	// Typos is how many edits the title needed (0 when it holds the query),
 	// for Search to look further only when closer hits are few.
 	Typos int `json:"-"`

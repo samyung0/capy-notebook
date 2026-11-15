@@ -3718,7 +3718,7 @@ place, in their order. Admission holds structure and caps only, as for the rest
 of the document, and the next write settles the order keys and takes a group no
 part names. The limits still measure such a group and its images stay in use
 (`held_question_json`) until then. The keys document holds `keys`: part id to `{type,
-solution, correct | accepted | hints | markscheme | gaps | options | pairs |
+solution, correct | accepted | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
 `accepted` holds at most one sample answer, which the room refuses past. Editors type ordering items and matching options in the keys
@@ -3776,13 +3776,14 @@ and an image's or a graph's `{url}` is blank or one a stored question keeps
 (`figure_url`, `Policy::hosted`: under `BANK_ASSETS_URL`, a copied bank
 figure).
 
-`QuestionDialog` edits a live question (`live` prop): its outline, part and
-block editors write through `writeQuestion`
+A quiz's question (its page's open card, or a note's quiz block in Edit, which
+edits the same cards in place, Epo 2026-11-15) writes through `writeQuestion`
 (`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
-head and tail, a move as a new order key), a chart or graph stays staged until
-the block's Back (one value per block, D8), and the footer holds Undo, Redo and
-the live state; there is no Save or Cancel and the dialog closes with its X or
-Esc. Undo spans both documents (`pairedUndo` in
+head and tail, a move as a new order key), a table, chart or graph stays staged until
+its `BlockDialog`'s Save (one value per block, D8), with Undo, Redo and the
+live state in the page's header or above the note's quiz; there is no Save or
+Cancel. The question card's editors are nested Plate editors inside the note
+block, so their input never reaches the note's. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
 both made together, such as an answer type change, as one). Inputs stop at
 their caps (`maxLength`; a text editor takes back an edit past its cap). A
@@ -3794,8 +3795,8 @@ holds the question list and the open question (see
 Edit (ghost-hover) and Remove (danger-light) on a row under each question
 at the right, and an
 incomplete question shows a line under it saying what it lacks
-(`incomplete.ts`); empty text blocks, a blank short-answer unit and blank
-open-answer hints never count against it, but a part needs one block with
+(`incomplete.ts`); empty text blocks and a blank short-answer unit never
+count against it, but a part needs one block with
 content. The bank dialog's Save drops them too (`withoutBlanks`). Readers
 (the attempt page, the workspace quiz View, note embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
@@ -5072,7 +5073,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     drawing icon, never shared or cloned, and deleted with their membership when they
     leave. The Canvas tab (`WorkspaceCanvas.tsx`) has the Canvas page's picker
     (`useCanvasPicker`, below) over the workspace's canvases (`GET
-    /api/canvases?workspaceId=`), `?c=` beside `panel=canvas` naming the one shown; the
+    /api/canvases?workspaceId=`), `?c=` beside `view=canvas` naming the one shown; the
     first is made with the workspace's name. Its document is one
     `canvas_board` block (embed catalog) naming the board asset, the save's version and
     the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
@@ -5127,7 +5128,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     or deletes the one shown, as a standalone
     material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
     the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
-    workspace's canvas opens in its workspace (`?c=` with `panel=canvas`), where its quiz
+    workspace's canvas opens in its workspace (`?c=` with `view=canvas`), where its quiz
     and flashcard cards work; there the picker lists that workspace's canvases alone.
     The account chat's file listing leaves canvases out: a canvas is a board, not a
     document the agent reads. On a phone the navigation drawer's button sits beside the

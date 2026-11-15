@@ -306,9 +306,7 @@ def _answer(raw: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         return answer, []
     if kind == "open":
         sample = [a[: limits.QUIZ_OPEN_ANSWER_MAX] for a in accepted[:1]]
-        return {"type": "open", "accepted": sample, "hints": []}, _items(
-            _points(raw.get("points"))
-        )
+        return {"type": "open", "accepted": sample}, _items(_points(raw.get("points")))
     return {"type": kind}, []
 
 
@@ -831,7 +829,7 @@ def _tidy_text_in(question: dict[str, Any]) -> None:
         in_blocks(part["blocks"])
         in_blocks(part.get("solution") or [])
         answer = part["answer"]
-        for name in ("options", "accepted", "hints"):
+        for name in ("options", "accepted"):
             if isinstance(answer.get(name), list):
                 answer[name] = [tidy(str(value)) for value in answer[name]]
         for item in part.get("markscheme") or []:

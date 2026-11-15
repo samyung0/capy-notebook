@@ -80,8 +80,7 @@ export const biologyQuizQuestions: Question[] = [
         marks: 1,
         solution: [
           {
-            label: 'Reasoning',
-            text: 'The electron transport chain and ATP synthase are in the inner mitochondrial membrane. Glycolysis also makes ATP, but its net yield is much smaller.',
+            text: '**Reasoning** The electron transport chain and ATP synthase are in the inner mitochondrial membrane. Glycolysis also makes ATP, but its net yield is much smaller.',
             type: 'text',
           },
           {
@@ -115,6 +114,9 @@ export const biologyQuizQuestions: Question[] = [
         type: 'text',
       },
     ],
+    // Its own topics, Cell structure and Genetics, beside the quiz's
+    // Membranes & transport.
+    topicIds: ['ch_1', 'ch_3'],
   },
   {
     id: 'q2',
@@ -133,8 +135,7 @@ export const biologyQuizQuestions: Question[] = [
         marks: 1,
         solution: [
           {
-            label: 'Verdict',
-            text: 'True. Phospholipids form the bilayer. Proteins are embedded in it or attached to its surfaces; their larger mass fraction does not replace that structure.',
+            text: '**Verdict** True. Phospholipids form the bilayer. Proteins are embedded in it or attached to its surfaces; their larger mass fraction does not replace that structure.',
             type: 'text',
           },
           {
@@ -193,8 +194,7 @@ export const biologyQuizQuestions: Question[] = [
             type: 'table',
           },
           {
-            label: 'Common mistake',
-            text: 'A structure can be essential for cell function without being a membrane-bound organelle. Ribosomes are an example.',
+            text: '**Common mistake** A structure can be essential for cell function without being a membrane-bound organelle. Ribosomes are an example.',
             type: 'text',
           },
         ],
@@ -219,18 +219,15 @@ export const biologyQuizQuestions: Question[] = [
         marks: 1,
         solution: [
           {
-            label: 'Definition',
-            text: 'Osmosis is the net movement of water through a partially permeable membrane from higher water potential to lower water potential.',
+            text: '**Definition** Osmosis is the net movement of water through a partially permeable membrane from higher water potential to lower water potential.',
             type: 'text',
           },
           {
-            label: 'Apply it',
-            text: 'Distilled water has a higher water potential than the cell contents. Water enters the cells, increasing the cylinder’s mass.',
+            text: '**Apply it** Distilled water has a higher water potential than the cell contents. Water enters the cells, increasing the cylinder’s mass.',
             type: 'text',
           },
           {
-            label: 'Check the evidence',
-            text: '$$\\%\\text{ mass change}=\\frac{2.20-2.00}{2.00}\\times100=10\\%$$',
+            text: '**Check the evidence**\n\n$$\\%\\text{ mass change}=\\frac{2.20-2.00}{2.00}\\times100=10\\%$$',
             type: 'text',
           },
         ],
@@ -269,18 +266,15 @@ export const biologyQuizQuestions: Question[] = [
         marks: 3,
         solution: [
           {
-            label: '1. Synthesize',
-            text: 'A ribosome on the rough ER translates the mRNA. The growing protein enters the ER, where it folds.',
+            text: '**1. Synthesize** A ribosome on the rough ER translates the mRNA. The growing protein enters the ER, where it folds.',
             type: 'text',
           },
           {
-            label: '2. Process',
-            text: 'Transport vesicles carry the protein to the Golgi apparatus for further modification and sorting.',
+            text: '**2. Process** Transport vesicles carry the protein to the Golgi apparatus for further modification and sorting.',
             type: 'text',
           },
           {
-            label: '3. Release',
-            text: 'A secretory vesicle buds from the Golgi and fuses with the cell membrane, releasing the protein by exocytosis.',
+            text: '**3. Release** A secretory vesicle buds from the Golgi and fuses with the cell membrane, releasing the protein by exocytosis.',
             type: 'text',
           },
         ],
@@ -372,18 +366,15 @@ export const biologyQuizQuestions: Question[] = [
         marks: 1,
         solution: [
           {
-            label: 'Read the graph',
-            text: 'A has coordinates $(1,6)$ and B has coordinates $(2,3)$. The side length doubles while the ratio falls from $6$ to $3\\,\\mathrm{µm}^{-1}$.',
+            text: '**Read the graph** A has coordinates $(1,6)$ and B has coordinates $(2,3)$. The side length doubles while the ratio falls from $6$ to $3\\,\\mathrm{µm}^{-1}$.',
             type: 'text',
           },
           {
-            label: 'Algebraic check',
-            text: '$$\\frac{6}{2L}=\\frac{1}{2}\\times\\frac{6}{L}$$',
+            text: '**Algebraic check**\n\n$$\\frac{6}{2L}=\\frac{1}{2}\\times\\frac{6}{L}$$',
             type: 'text',
           },
           {
-            label: 'Biological meaning',
-            text: 'A larger cell has less exchange surface per unit volume, so it is harder to supply its contents by diffusion alone.',
+            text: '**Biological meaning** A larger cell has less exchange surface per unit volume, so it is harder to supply its contents by diffusion alone.',
             type: 'text',
           },
         ],
@@ -411,8 +402,7 @@ export const biologyQuizQuestions: Question[] = [
         marks: 1,
         solution: [
           {
-            label: 'Correct the statement',
-            text: 'False. Ribosomes are complexes of ribosomal RNA and proteins with no surrounding membrane. Both bacteria and animal cells need them to synthesize proteins.',
+            text: '**Correct the statement** False. Ribosomes are complexes of ribosomal RNA and proteins with no surrounding membrane. Both bacteria and animal cells need them to synthesize proteins.',
             type: 'text',
           },
         ],
@@ -453,19 +443,16 @@ export const biologyQuizQuestions: Question[] = [
         marks: 3,
         solution: [
           {
-            label: 'Method 1: calculate separately',
-            text: '$$A=6(2)^2=24\\,\\mathrm{µm}^2\\qquad V=2^3=8\\,\\mathrm{µm}^3$$\n$$\\frac{A}{V}=\\frac{24}{8}=3\\,\\mathrm{µm}^{-1}$$',
+            text: '**Method 1: calculate separately**\n\n$$A=6(2)^2=24\\,\\mathrm{µm}^2\\qquad V=2^3=8\\,\\mathrm{µm}^3$$\n$$\\frac{A}{V}=\\frac{24}{8}=3\\,\\mathrm{µm}^{-1}$$',
             type: 'text',
           },
           {
-            label: 'Method 2: simplify first',
-            text: '$$\\frac{A}{V}=\\frac{6L^2}{L^3}=\\frac{6}{L}=\\frac{6}{2}=3\\,\\mathrm{µm}^{-1}$$',
+            text: '**Method 2: simplify first**\n\n$$\\frac{A}{V}=\\frac{6L^2}{L^3}=\\frac{6}{L}=\\frac{6}{2}=3\\,\\mathrm{µm}^{-1}$$',
             type: 'text',
           },
           surfaceAreaGraph,
           {
-            label: 'Graph check',
-            text: 'Point B is at $(2,3)$, agreeing with both calculations. The ratio is not an area or a volume, so its unit is inverse length.',
+            text: '**Graph check** Point B is at $(2,3)$, agreeing with both calculations. The ratio is not an area or a volume, so its unit is inverse length.',
             type: 'text',
           },
         ],
@@ -487,10 +474,6 @@ export const biologyQuizQuestions: Question[] = [
         answer: {
           accepted: [
             'At low CO₂, increasing light above 200 no longer raises oxygen production. Light is no longer the limiting factor. Increasing CO₂ at the same light intensity raises the rate, supporting the conclusion that CO₂ supply limits photosynthesis under the low-CO₂ condition.',
-          ],
-          hints: [
-            'Compare the two CO₂ conditions at the same light intensity.',
-            'Distinguish a limiting factor from a variable held constant.',
           ],
           type: 'open',
         },
@@ -518,8 +501,7 @@ export const biologyQuizQuestions: Question[] = [
         ],
         solution: [
           {
-            label: 'Claim',
-            text: 'CO₂ supply limits the rate in the low-CO₂ treatment once light intensity reaches 200.',
+            text: '**Claim** CO₂ supply limits the rate in the low-CO₂ treatment once light intensity reaches 200.',
             type: 'text',
           },
           {
@@ -530,13 +512,11 @@ export const biologyQuizQuestions: Question[] = [
             type: 'chart',
           },
           {
-            label: 'Evidence',
-            text: 'At the same light intensity of 300, increasing CO₂ raises oxygen production from $6$ to $10\\,\\mathrm{µmol/min}$.',
+            text: '**Evidence** At the same light intensity of 300, increasing CO₂ raises oxygen production from $6$ to $10\\,\\mathrm{µmol/min}$.',
             type: 'text',
           },
           {
-            label: 'Reasoning',
-            text: 'More light alone does not lift the low-CO₂ plateau, but more CO₂ does. This supports CO₂ supply as a limiting factor in that treatment. The graph alone does not establish what causes the high-CO₂ plateau.',
+            text: '**Reasoning** More light alone does not lift the low-CO₂ plateau, but more CO₂ does. This supports CO₂ supply as a limiting factor in that treatment. The graph alone does not establish what causes the high-CO₂ plateau.',
             type: 'text',
           },
         ],
@@ -680,7 +660,7 @@ export const biologyQuizQuestions: Question[] = [
         ],
       },
       {
-        answer: { accepted: [], hints: [], type: 'open' },
+        answer: { accepted: [], type: 'open' },
         blocks: [
           { text: 'Explain why the wound stops bleeding.', type: 'text' },
         ],

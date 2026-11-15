@@ -8,7 +8,6 @@ import {
   updateFileBodyNameMax,
 } from '@/api/gen/validators';
 import type {
-  Attempt,
   CloneFileReq,
   CloneMaterialReq,
   CreateBlankFileReq,
@@ -74,7 +73,6 @@ import {
   addPaperFile,
   assignmentActivity,
   assignmentHandlers,
-  quizAssignmentFields,
   recentFor,
   submittedPapers,
   workspaceMaterialRefs,
@@ -96,6 +94,7 @@ import * as db from './db';
 import { uid } from './db';
 import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
+import { itemBankHandlers } from './itemBanks';
 import { membersHandlers } from './members';
 import { convertMockLegacyFile, mockConvertedEvent } from './officeFixtures';
 import { mockPage } from './paging';
@@ -177,10 +176,7 @@ const fileListRow = (f: SourceFile) => ({
 const listedMaterial = (mt: Material, kinds: string[]) =>
   kinds.includes(mt.kind) && !mt.parentMaterialId;
 
-const materialListRow = (mt: Material) => ({
-  ...db.materialListItem(mt),
-  ...quizAssignmentFields(mt.id, 'owner'),
-});
+const materialListRow = (mt: Material) => db.materialListItem(mt);
 
 import { dialogFiles } from './dialogFiles';
 import { errorMaterials } from './errorMaterials';
@@ -830,6 +826,37 @@ export const handlers = [
   ...questionBankHandlers,
   ...editorAssetHandlers,
   ...canvasHandlers((id) => db.workspaces.find((ws) => ws.id === id)),
+  ...itemBankHandlers(
+    (id) => db.workspaces.find((ws) => ws.id === id),
+    (id) =>
+      db.topics.filter((topic) => topic.workspaceId === id).map((t) => t.id),
+    ({ hidden, questions, title, workspaceId }) => {
+      const mt = db.makeMaterial({
+        ...ownerMaterialAccess,
+        content: quizDocument(questions),
+        createdAt: new Date().toISOString(),
+        hidden: hidden || undefined,
+        id: uid('mat'),
+        kind: 'quiz',
+        privacy: 'private',
+        scopeFileNames: [],
+        scopeTopics: [],
+        title,
+        topicId: null,
+        workspaceId,
+        workspaceName:
+          db.workspaces.find((ws) => ws.id === workspaceId)?.name ?? '',
+      });
+      db.materials.unshift(mt);
+      return mt;
+    },
+    (quizId) => {
+      const quiz = db.materials.find(
+        (mt) => mt.id === quizId && mt.kind === 'quiz'
+      );
+      return quiz && (quiz.workspaceId ?? '');
+    }
+  ),
   ...voiceInputHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
@@ -1114,17 +1141,6 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.post('/api/questions/computation-check', async ({ request }) => {
-    const { question } = (await request.json()) as { question: Question };
-    const text = JSON.stringify(question.parts).toLowerCase();
-    const computational = /calculat|convert|solve|\d+\s*[+*/=-]\s*\d+/.test(
-      text
-    );
-    return HttpResponse.json({
-      computational,
-      probability: computational ? 0.9 : 0.05,
-    });
-  }),
   // The share reads the site Worker renders from; MSW skips the signature check.
   http.get('/api/public/quizzes/:token', ({ params }) => {
     const mt = anonymousMaterial(String(params.token), 'quiz');
@@ -1240,16 +1256,13 @@ export const handlers = [
           href: `/workspaces/${f.workspaceId}?file=${f.id}`,
           id: f.id,
           kind: 'file',
-          preview: f.preview,
           subtitle: ws?.name,
-          thumbnailUrl: f.thumbnailUrl,
           title: f.name,
         });
       }
     for (const e of db.events)
       if (e.title.toLowerCase().includes(q))
         results.push({
-          color: db.labels.find((l) => l.id === e.labelIds[0])?.color,
           href: '/schedule',
           id: e.id,
           kind: 'event',
@@ -1261,7 +1274,6 @@ export const handlers = [
     for (const mt of db.materials)
       if (!mt.parentMaterialId && mt.title.toLowerCase().includes(q))
         results.push({
-          color: mt.color,
           href:
             mt.kind === 'flashcards'
               ? `/flashcards/${mt.id}`
@@ -1274,7 +1286,7 @@ export const handlers = [
     for (const c of searchCanvases(q))
       results.push({
         href: c.workspaceId
-          ? `/workspaces/${c.workspaceId}?panel=canvas`
+          ? `/workspaces/${c.workspaceId}?view=canvas`
           : `/canvas?c=${c.id}`,
         id: c.id,
         kind: 'canvas',
@@ -2251,7 +2263,7 @@ export const handlers = [
     });
   }),
   http.get('/api/recent', async ({ request }) =>
-    HttpResponse.json(recentFor(request.url, 'owner'))
+    HttpResponse.json(recentFor(request.url))
   ),
   http.post('/api/files/:id/open', ({ params }) => {
     db.itemOpens.set(`file:${params.id}`, new Date().toISOString());
@@ -3387,40 +3399,6 @@ export const handlers = [
     db.materials.unshift(material);
     for (const card of cards) db.flashcardCards[card.id] = { materialId: id };
     return HttpResponse.json(material, { status: 201 });
-  }),
-  http.get('/api/attempts', ({ request }) => {
-    const params = new URL(request.url).searchParams;
-    const workspaces = params.get('workspaceId')?.split(',') ?? [];
-    const kinds = params.get('kind')?.split(',') ?? [];
-    const sort = params.get('sort');
-    const list = db.attempts
-      .filter(
-        (a) =>
-          (!workspaces.length ||
-            (a.workspaceId !== null && workspaces.includes(a.workspaceId))) &&
-          (!kinds.length || kinds.includes(a.kind))
-      )
-      .sort(
-        sortBy(
-          (a: Attempt) =>
-            sort === 'score'
-              ? a.total
-                ? a.correct / a.total
-                : 0
-              : sort === 'quiz'
-                ? a.quizName.toLowerCase()
-                : sort === 'workspace'
-                  ? a.workspaceName.toLowerCase()
-                  : a.takenAt,
-          params.get('dir') === 'asc'
-        )
-      );
-    const offset = Number(params.get('offset') ?? 0);
-    const limit = Number(params.get('limit') ?? 30);
-    return HttpResponse.json({
-      items: list.slice(offset, offset + limit).map(db.attemptSummary),
-      more: list.length > offset + limit,
-    });
   }),
   http.get('/api/attempts/:id', async ({ params }) => {
     const at = db.attempts.find((a) => a.id === params.id);

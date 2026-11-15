@@ -4796,7 +4796,6 @@ ARGUMENT_ORDER = (
     "markscheme",
     "model_answer",
     "unit",
-    "hints",
     "explanation",
     "replaces",
     "questions",

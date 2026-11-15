@@ -287,7 +287,7 @@ func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
 			listing := label + " (" + paperTypes[kind] + "): " + questions.PartText(q, i)
 			switch kind {
 			case "mcq":
-				options, _ := shown["options"].([]any)
+				options, _ := questions.ShownChoices(shown)
 				listing += "\n" + lettered(options)
 			case "ordering":
 				items, _ := shown["items"].([]any)
@@ -338,15 +338,16 @@ func paperAnswer(kind string, a, shown map[string]any, raw any) (any, bool) {
 	}
 	switch kind {
 	case "mcq":
+		// Letters name options as shown; answers are authored indices.
 		list, _ := raw.([]any)
-		options, _ := shown["options"].([]any)
-		picked, ok := letters(list, len(options))
+		_, authored := questions.ShownChoices(shown)
+		picked, ok := letters(list, len(authored))
 		if !ok || len(picked) == 0 {
 			return nil, false
 		}
 		out := make([]any, len(picked))
 		for i, n := range picked {
-			out[i] = float64(n)
+			out[i] = float64(authored[n])
 		}
 		return out, true
 	case "boolean":

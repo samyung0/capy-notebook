@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func TestWorkspacePractice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Quizzes) != 1 || got.Quizzes[0].ID != quiz.ID || got.Quizzes[0].Questions != 2 || got.Quizzes[0].Best != nil || got.Members != nil {
+	if len(got.Items) != 1 || got.Items[0].ID != quiz.ID || got.Items[0].Kind != "quiz" || got.Items[0].Size != 2 || got.Items[0].Best != nil || got.Members != nil {
 		t.Fatalf("practice before an attempt = %+v", got)
 	}
 	session, err := f.s.WorkspaceReview(ctx, f.user, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, ReviewOptions{}, time.Now())
@@ -123,7 +124,7 @@ func TestWorkspacePractice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Members != nil || got.Quizzes[0].TriedBy != nil || got.Quizzes[0].Average != nil {
+	if got.Members != nil || got.Items[0].TriedBy != nil || got.Items[0].Average != nil {
 		t.Fatalf("personal practice shows members: %+v", got)
 	}
 	class := WorkspaceClass
@@ -134,7 +135,7 @@ func TestWorkspacePractice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q := got.Quizzes[0]
+	q := got.Items[0]
 	if q.Best == nil || q.Best.Correct != 1 || q.Best.Total != 2 {
 		t.Fatalf("best = %+v", q.Best)
 	}
@@ -167,15 +168,42 @@ func TestMemberPracticeQuiz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mine.Quizzes) != 1 || mine.Quizzes[0].ID != made.ID || !mine.Quizzes[0].OnlyYou {
-		t.Fatalf("the member's practice = %+v", mine.Quizzes)
+	if len(mine.Items) != 1 || mine.Items[0].ID != made.ID || !mine.Items[0].OnlyYou {
+		t.Fatalf("the member's practice = %+v", mine.Items)
 	}
 	theirs, err := f.s.WorkspacePractice(ctx, f.user, f.ws.ID, true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(theirs.Quizzes) != 0 {
-		t.Fatalf("the owner's practice = %+v", theirs.Quizzes)
+	if len(theirs.Items) != 0 {
+		t.Fatalf("the owner's practice = %+v", theirs.Items)
+	}
+}
+
+// A flashcard set is practice too (Epo 2026-11-13): its cards are its size,
+// and its best is a run through every card, never a short one.
+func TestPracticeListsSets(t *testing.T) {
+	f := newStudyFixture(t, "u_practice_sets")
+	ctx := context.Background()
+	cards := f.set(t, [2]string{"a", "1"}, [2]string{"b", "2"}, [2]string{"c", "3"})
+	set := cards[0].MaterialID
+	addRun := func(good, rated int) {
+		if _, err := f.s.pool.Exec(ctx, `INSERT INTO attempts (id, user_id, material_id, kind, correct, total, pct)
+			VALUES ($1,$2,$3,'flashcards',$4,$5,0)`, uuid.NewString(), f.user, set, good, rated); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addRun(2, 3)
+	addRun(1, 1) // partway: one card rated, Good
+	got, err := f.s.WorkspacePractice(ctx, f.user, f.ws.ID, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 1 || got.Items[0].Kind != "flashcards" || got.Items[0].Size != 3 {
+		t.Fatalf("practice = %+v", got.Items)
+	}
+	if b := got.Items[0].Best; b == nil || b.Correct != 2 || b.Total != 3 {
+		t.Fatalf("best = %+v", b)
 	}
 }
 
@@ -293,5 +321,100 @@ func TestDashboardNamesActorsToMembers(t *testing.T) {
 				t.Fatalf("%s reads no actor on %+v (quiz %s, file %s)", reader, it, quiz.ID, file.ID)
 			}
 		}
+	}
+}
+
+// What a quiz covers (Epo 2026-11-15): its topic, then the workspace's other
+// topics its questions name as their own, in topic order; an id the workspace
+// does not hold follows the quiz's topic. A marked assignment's topics read the
+// same from its posted questions.
+func TestQuizCoversItsQuestionsTopics(t *testing.T) {
+	f := newAssignmentFixture(t, "u_practice_covers")
+	ctx := context.Background()
+	topic := func(name string, position int) string {
+		id := uid("tp")
+		if _, err := f.s.pool.Exec(ctx, `INSERT INTO topics (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,
+			id, f.ws.ID, name, position); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	cells, membranes, genetics := topic("Cells", 0), topic("Membranes", 1), topic("Genetics", 2)
+	var qs []map[string]any
+	if err := json.Unmarshal([]byte(studyQuestions), &qs); err != nil {
+		t.Fatal(err)
+	}
+	qs[0]["topicIds"], qs[1]["topicIds"] = []any{genetics, cells}, []any{"tp_elsewhere"}
+	raw, err := json.Marshal(qs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Covers", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Questions: raw, Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET topic_id=$2 WHERE id=$1`, quiz.ID, membranes); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.WorkspacePractice(ctx, f.viewer, f.ws.ID, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(got.Items, func(it PracticeItem) bool { return it.ID == quiz.ID })
+	if i < 0 || !slices.Equal(got.Items[i].Covers, []string{membranes, cells, genetics}) {
+		t.Fatalf("items = %+v, want %s covering %v", got.Items, quiz.ID, []string{membranes, cells, genetics})
+	}
+
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(24*time.Hour))
+	form.Questions[0]["topicIds"] = []any{cells}
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.TopicIDs) != 1 || created.TopicIDs[0] != cells {
+		t.Fatalf("assignment topics = %v, want [%s]", created.TopicIDs, cells)
+	}
+
+	// A draft reads its quiz as it stands. The Topic filter matches any topic
+	// a row shows, and sorting by Topic takes the first shown.
+	form = f.form(t, now.Add(24*time.Hour))
+	form.Draft = true
+	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET content=jsonb_set(content, '{value,0,children,0,question,topicIds}', to_jsonb(ARRAY[$2::text]))
+		WHERE id=$1`, form.QuizID, genetics); err != nil {
+		t.Fatal(err)
+	}
+	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(draft.TopicIDs, []string{genetics}) {
+		t.Fatalf("draft topics = %v, want [%s]", draft.TopicIDs, genetics)
+	}
+	ids := func(p AssignmentListParams) []string {
+		t.Helper()
+		p.Closed, p.Done, p.Limit = true, true, 10
+		l, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, a := range l.Items {
+			out = append(out, a.ID)
+		}
+		return out
+	}
+	if got := ids(AssignmentListParams{TopicIDs: []string{cells}}); !slices.Equal(got, []string{created.ID}) {
+		t.Fatalf("filtered by Cells = %v, want [%s]", got, created.ID)
+	}
+	if got := ids(AssignmentListParams{TopicIDs: []string{genetics}}); !slices.Equal(got, []string{draft.ID}) {
+		t.Fatalf("filtered by Genetics = %v, want [%s]", got, draft.ID)
+	}
+	if got := ids(AssignmentListParams{Sort: "topic", Ascending: true}); !slices.Equal(got, []string{created.ID, draft.ID}) {
+		t.Fatalf("by topic = %v, want Cells before Genetics", got)
+	}
+	if got := ids(AssignmentListParams{Sort: "topic"}); !slices.Equal(got, []string{draft.ID, created.ID}) {
+		t.Fatalf("by topic descending = %v, want Genetics before Cells", got)
 	}
 }

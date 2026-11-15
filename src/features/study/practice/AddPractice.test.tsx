@@ -4,9 +4,9 @@ import { expect, it, vi } from 'vitest';
 import type { MakeQuizDialog } from '@/features/makeQuiz/MakeQuizDialog';
 import { m } from '@/i18n';
 import { AddPracticeDialog } from './AddPractice';
-import { QUIZ_TEMPLATES, templateLabel } from './quizTemplates';
 
 vi.mock('@/api/hooks', () => ({
+  useCreateBankQuiz: () => ({ isPending: false, mutate: vi.fn() }),
   useCreateMaterial: () => ({ isPending: false, mutate: vi.fn() }),
   useMaterials: () => ({ data: [] }),
 }));
@@ -40,12 +40,12 @@ vi.mock('./MakePractice', () => ({
   }),
 }));
 
-const render = (paper: string[] = []) =>
+const render = () =>
   renderToStaticMarkup(
     <AddPracticeDialog
       make={
         {
-          initial: { answers: [], paper },
+          initial: { answers: [], paper: [] },
           onClose: () => undefined,
           step: 'files',
           workspaceId: 'ws',
@@ -56,21 +56,18 @@ const render = (paper: string[] = []) =>
     />
   );
 
-// Epo 2026-11-11: one dialog, three ways to make a quiz.
-it('opens on Create quiz with a template for each kind of question', () => {
+// Epo 2026-11-14: Add quiz opens on Convert to quiz, its first tab; From the
+// bank comes last.
+it('opens Add quiz on Convert to quiz, the first of its four tabs', () => {
   const html = render();
-  expect(html).toContain(m.practice_add());
-  for (const tab of [
+  expect(html).toContain(m.practice_add_quiz());
+  const at = [
+    m.practice_tab_convert(),
     m.practice_tab_create(),
     m.practice_tab_generate(),
-    m.practice_tab_convert(),
-  ])
-    expect(html).toContain(tab);
-  for (const id of QUIZ_TEMPLATES) expect(html).toContain(templateLabel(id));
-  expect(html).toContain(m.action_create());
-  expect(html).toContain('data-files-tab="false"');
-});
-
-it('opens on Convert to quiz when files are already picked', () => {
-  expect(render(['f_1'])).toContain('data-files-tab="true"');
+    m.practice_tab_bank(),
+  ].map((tab) => html.indexOf(tab));
+  expect(at.every((index) => index >= 0)).toBe(true);
+  expect(at).toEqual([...at].sort((a, b) => a - b));
+  expect(html).toContain('data-files-tab="true"');
 });

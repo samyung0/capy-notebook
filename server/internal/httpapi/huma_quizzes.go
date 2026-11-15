@@ -42,20 +42,6 @@ type checkQuizQuestionInput struct {
 	ID   string `path:"id"`
 	Body apimodel.CheckQuizQuestionReq
 }
-type attemptsInput struct {
-	Sort        string `query:"sort" enum:"date,score,quiz,workspace" default:"date"`
-	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
-	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; the quiz's or set's current workspace"`
-	Kind        string `query:"kind" doc:"Comma-separated kinds: quiz, flashcards; empty is both"`
-	Offset      int    `query:"offset" minimum:"0"`
-	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
-}
-type attemptsOutput struct {
-	Body struct {
-		Items []apimodel.Attempt `json:"items" nullable:"false"`
-		More  bool               `json:"more"`
-	}
-}
 type attemptIDInput struct {
 	ID string `path:"id"`
 }
@@ -72,9 +58,7 @@ func (a *api) registerQuizzes(api huma.API) {
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
 	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/check", "checkQuizQuestion", tag, "Grade one question of a quiz attempt and record it", http.StatusOK, checkMaxBytes, a.checkQuizQuestion, drawingBodyDeadline)
-	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
-	a.registerComputationCheck(api)
 }
 
 // getQuiz is the read for viewing and studying: owners, editors and
@@ -92,7 +76,9 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 	if err != nil {
 		return nil, err
 	}
-	out.Body.Questions = questions.LearnerViews(out.Body.Questions)
+	// Seeded per viewer and quiz, so a reload keeps each shuffled part's
+	// order; the live room's reads keep the order shown.
+	out.Body.Questions = questions.LearnerViewsSeeded(out.Body.Questions, userID(ctx)+"/"+in.ID)
 	author, err := a.s.MaterialAuthorOf(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
@@ -219,19 +205,6 @@ func (a *api) deleteQuiz(ctx context.Context, in *quizDeleteInput) (*Empty, erro
 		return nil, trashError(err)
 	}
 	return &Empty{}, nil
-}
-
-func (a *api) listAttempts(ctx context.Context, in *attemptsInput) (*attemptsOutput, error) {
-	list, more, err := a.s.ListAttempts(ctx, userID(ctx), store.AttemptParams{
-		Sort: in.Sort, Ascending: in.Dir == "asc", Workspaces: commaValues(in.WorkspaceID), Kinds: commaValues(in.Kind),
-		Offset: in.Offset, Limit: in.Limit,
-	})
-	if err != nil {
-		return nil, hErr(err)
-	}
-	out := &attemptsOutput{}
-	out.Body.Items, out.Body.More = list, more
-	return out, nil
 }
 
 // checkQuizQuestion grades one question and adds it to the learner's attempt,

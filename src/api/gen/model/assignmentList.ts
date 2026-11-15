@@ -11,4 +11,5 @@ export interface AssignmentList {
   readonly $schema?: string;
   items: Assignment[];
   members?: number;
+  nextCursor?: string;
 }

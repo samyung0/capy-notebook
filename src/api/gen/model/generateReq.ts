@@ -15,7 +15,10 @@ export interface GenerateReq {
      * @maximum 50
      */
   count: number;
+  /** @maxItems 5 */
   fileIds?: string[];
+  /** Made in the New graded quiz dialog (CreateMaterialReq.gradedQuiz); only an editor's quiz is a workspace file */
+  gradedQuiz?: boolean;
   levels?: CognitiveLevel[];
   /** Add the caller's answered questions to the new ones */
   mix?: boolean;

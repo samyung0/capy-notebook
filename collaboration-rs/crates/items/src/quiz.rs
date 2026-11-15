@@ -4,15 +4,18 @@
 //! editors with write access join, so answer keys never reach a reader.
 //!
 //! Content: `questions`, question id to `{order, layout, labels, level?,
-//! stem, groups?, parts}`; group id to `{blocks}`; part id to `{order, marks,
-//! blocks, answer, group?}`; the answer map holds the type and what a learner
-//! may see: mcq `options` and `multiple` (true while several are correct),
-//! a short answer's `unit` and matching `left` items.
+//! topicIds?, stem, groups?, parts}` (`topicIds` a plain list, never empty);
+//! group id to `{blocks}`; part id to `{order, marks, blocks, answer, group?}`; the answer map holds the type and what a learner
+//! may see: mcq `options`, `multiple` (true while several are correct or
+//! the author's flag is set), `shuffle` and `locked` (ticks by option id;
+//! Shuffle options, Epo 2026-11-15), a short answer's `unit` and matching
+//! `left` items.
 //! A group has no order of its own: it sits where its first part sits, and a
 //! merge's leftovers read repaired (`q::repair_groups`, Epo 2026-11-04).
 //!
-//! Keys: `keys`, part id to `{type, solution, correct | accepted | hints |
-//! markscheme | gaps | options | pairs | items}`. Editors type ordering items
+//! Keys: `keys`, part id to `{type, solution, correct | accepted |
+//! markscheme | gaps | options | pairs | items}`, and an mcq's author
+//! `multiple` flag (Multiple answer, Epo 2026-11-15). Editors type ordering items
 //! and matching options here, where their Yjs ids record typing order (for
 //! ordering, usually the answer). Readers get those items outside Yjs, as a
 //! plain shuffled list per part the content room pushes ([ReaderLists];
@@ -66,6 +69,18 @@ pub fn valid_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// A question's own topics: 1 to QUESTION_TOPICS_MAX distinct ids, each as
+/// `q::identifier` holds it.
+fn topic_ids(topics: &[Any]) -> bool {
+    let mut seen = HashSet::new();
+    !topics.is_empty()
+        && topics.len() <= q::QUESTION_TOPICS_MAX
+        && topics.iter().all(|topic| {
+            matches!(topic, Any::String(id)
+                if !id.trim().is_empty() && id.chars().count() <= MAX_ID && seen.insert(id.clone()))
+        })
 }
 
 /// A stored question's id, held to what the validators hold it to, as a part's
@@ -221,13 +236,7 @@ fn number(value: f64) -> Value {
 fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
     let kind = str_at(txn, map, "type")?;
     match kind.as_str() {
-        "text" => {
-            let mut block = json!({ "type": "text", "text": text_at(txn, map, "text") });
-            if let Some(label) = str_at(txn, map, "label") {
-                block["label"] = json!(label);
-            }
-            Some(block)
-        }
+        "text" => Some(json!({ "type": "text", "text": text_at(txn, map, "text") })),
         "table" => {
             let rows = ordered_keys(txn, map_at(txn, map, "rows").as_ref());
             let columns = ordered_keys(txn, map_at(txn, map, "columns").as_ref());
@@ -370,14 +379,37 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
                 },
                 None => Vec::new(),
             };
-            (
-                json!({
-                    "type": kind,
-                    "options": options.iter().map(|o| text_at(content, &o.map, "text")).collect::<Vec<_>>(),
-                    "correct": correct,
-                }),
-                None,
-            )
+            let mut value = json!({
+                "type": kind,
+                "options": options.iter().map(|o| text_at(content, &o.map, "text")).collect::<Vec<_>>(),
+                "correct": correct,
+            });
+            if keys.is_some_and(|(txn, key)| {
+                matches!(any_at(txn, key, "multiple"), Some(Any::Bool(true)))
+            }) {
+                value["multiple"] = json!(true);
+            }
+            // Locked options count only while Shuffle options is on.
+            if let Some(answer) = answer
+                && matches!(any_at(content, answer, "shuffle"), Some(Any::Bool(true)))
+            {
+                value["shuffle"] = json!(true);
+                let locked: Vec<usize> = match map_at(content, answer, "locked") {
+                    Some(ticks) => options
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| {
+                            matches!(ticks.get(content, &o.id), Some(Out::Any(Any::Bool(true))))
+                        })
+                        .map(|(i, _)| i)
+                        .collect(),
+                    None => Vec::new(),
+                };
+                if !locked.is_empty() {
+                    value["locked"] = json!(locked);
+                }
+            }
+            (value, None)
         }
         "boolean" => {
             let correct = keys.is_some_and(|(txn, key)| {
@@ -406,7 +438,7 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
                 None => Vec::new(),
             };
             let value = if kind == "open" {
-                json!({ "type": "open", "accepted": key_texts("accepted"), "hints": key_texts("hints") })
+                json!({ "type": "open", "accepted": key_texts("accepted") })
             } else {
                 // A drawn sample answer is a key: its board and image asset ids.
                 let sample = keys.and_then(|(txn, key)| {
@@ -587,6 +619,11 @@ fn held_question_json<C: ReadTxn, K: ReadTxn>(
     if let Some(level) = str_at(content, map, "level") {
         value["level"] = json!(level);
     }
+    if let Some(Any::Array(topics)) = any_at(content, map, "topicIds")
+        && !topics.is_empty()
+    {
+        value["topicIds"] = Value::Array(topics.iter().map(any_json).collect());
+    }
     value
 }
 
@@ -621,9 +658,9 @@ fn quiz_block(children: Vec<Value>) -> Vec<Value> {
 }
 
 /// The question without blanks, as `withoutBlanks` in the browser: empty text
-/// blocks, a blank short-answer unit, blank accepted answers (a gap's too) and
-/// blank open-answer hints never leave it incomplete (no accepted answer left
-/// does), and the projection drops them; a blank figure description goes, and
+/// blocks, a blank short-answer unit and blank accepted answers (a gap's too)
+/// never leave it incomplete (no accepted answer left does), and the
+/// projection drops them; a blank figure description goes, and
 /// a chart series short of its labels takes nulls, an empty value being null
 /// (Epo 2026-10-14). Blank marking items go too, and then the part's marks are
 /// the rest's total capped at QUESTION_MARKS_MAX (Epo 2026-10-15). A room's
@@ -679,14 +716,12 @@ fn without_blanks(mut question: Value) -> Value {
                 if answer.get("unit").is_some_and(blank) {
                     answer.remove("unit");
                 }
-                // Short and open answers' lists of texts; a gaps answer's
+                // Short and open answers' accepted texts; a gaps answer's
                 // accepted lists hold one list per gap.
-                for key in ["accepted", "hints"] {
-                    if let Some(list) = answer.get_mut(key).and_then(Value::as_array_mut) {
-                        list.retain(|item| !blank(item));
-                        for gap in list.iter_mut().filter_map(Value::as_array_mut) {
-                            gap.retain(|item| !blank(item));
-                        }
+                if let Some(list) = answer.get_mut("accepted").and_then(Value::as_array_mut) {
+                    list.retain(|item| !blank(item));
+                    for gap in list.iter_mut().filter_map(Value::as_array_mut) {
+                        gap.retain(|item| !blank(item));
                     }
                 }
             }
@@ -1003,7 +1038,6 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
     match kind {
         "text" => {
             sync_text(txn, map, "text", str_of(block, "text"));
-            sync_plain(txn, map, "label", plain_str("label"));
         }
         "table" => {
             let header = block.get("header").and_then(Value::as_bool) == Some(true);
@@ -1119,8 +1153,31 @@ fn sync_answer(
         "mcq" => {
             let options = strings(&answer, "options");
             let ids = sync_entries(content, &answer_map, "options", "o", &options, text_fill);
-            let multiple = (indexes.len() > 1).then_some(Any::Bool(true));
+            let flag = answer.get("multiple") == Some(&Value::Bool(true));
+            let multiple = (flag || indexes.len() > 1).then_some(Any::Bool(true));
             sync_plain(content, &answer_map, "multiple", multiple);
+            sync_plain(keys, &key, "multiple", flag.then_some(Any::Bool(true)));
+            let shuffle = answer.get("shuffle") == Some(&Value::Bool(true));
+            sync_plain(
+                content,
+                &answer_map,
+                "shuffle",
+                shuffle.then_some(Any::Bool(true)),
+            );
+            let locked: HashSet<&str> = array_of(&answer, "locked")
+                .iter()
+                .filter_map(|i| ids.get(i.as_u64()? as usize))
+                .map(String::as_str)
+                .collect();
+            if shuffle && !locked.is_empty() {
+                let pins = child_map(content, &answer_map, "locked");
+                remove_keys(content, &pins, |id| locked.contains(id));
+                for id in locked {
+                    sync_plain(content, &pins, id, Some(Any::Bool(true)));
+                }
+            } else if answer_map.get(content, "locked").is_some() {
+                answer_map.remove(content, "locked");
+            }
             let ticks = child_map(keys, &key, "correct");
             let wanted: HashSet<&str> = indexes
                 .iter()
@@ -1167,14 +1224,6 @@ fn sync_answer(
                     "accepted",
                     "a",
                     &strings(&answer, "accepted"),
-                    text_fill,
-                );
-                sync_entries(
-                    keys,
-                    &key,
-                    "hints",
-                    "h",
-                    &strings(&answer, "hints"),
                     text_fill,
                 );
             }
@@ -1264,6 +1313,13 @@ fn sync_question(
         let value = question.get(field).and_then(Value::as_str).map(string_any);
         sync_plain(content, &map, field, value);
     }
+    let topics = array_of(question, "topicIds");
+    sync_plain(
+        content,
+        &map,
+        "topicIds",
+        (!topics.is_empty()).then(|| json_any(&question["topicIds"])),
+    );
     sync_blocks(content, &map, "stem", array_of(question, "stem"));
     sync_groups(content, &map, array_of(question, "groups"));
     let parts_map = child_map(content, &map, "parts");
@@ -1601,7 +1657,7 @@ fn a_string(content: &ItemContent, cap: usize) -> bool {
     matches!(one_any(content), Some(Any::String(value)) if value.chars().count() <= cap)
 }
 
-/// A label or an attribution: metadata, measured in UTF-16 units as the
+/// An image's attribution: metadata, measured in UTF-16 units as the
 /// question schema measures it.
 fn a_meta(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::String(value)) if value.encode_utf16().count() <= q::QUESTION_METADATA_MAX)
@@ -1684,7 +1740,7 @@ fn block_shape(
             }
             tally.value(content);
         }
-        ([], Some("label" | "attribution")) if a_meta(content) => tally.value(content),
+        ([], Some("attribution")) if a_meta(content) => tally.value(content),
         ([], Some("header")) if a_bool(content) => tally.value(content),
         ([], Some("width" | "height")) if image_size(content) => tally.value(content),
         // An image waiting for its upload is structure, not a refused value
@@ -1814,6 +1870,16 @@ fn content_shape(
             tally.value(content);
             Ok(())
         }
+        // A question's own topics (Epo 2026-11-15), distinct ids as the
+        // validators check them; whether each is one of the workspace's is read
+        // where it counts.
+        ([R, _], Some("topicIds")) => match one_any(content) {
+            Some(Any::Array(topics)) if topic_ids(topics) => {
+                tally.value(content);
+                Ok(())
+            }
+            _ => refuse("topics that are not distinct ids"),
+        },
         ([R, _], Some("stem" | "groups" | "parts")) if is_map(content) => {
             tally.structure(16);
             Ok(())
@@ -1865,9 +1931,24 @@ fn content_shape(
             tally.value(content);
             Ok(())
         }
-        ([R, _, "parts", _, "answer"], Some("multiple")) if a_bool(content) => {
+        ([R, _, "parts", _, "answer"], Some("multiple" | "shuffle")) if a_bool(content) => {
             tally.value(content);
             Ok(())
+        }
+        // Shuffle options' locked options: a map of ticks by option id.
+        ([R, _, "parts", _, "answer"], Some("locked")) if is_map(content) => {
+            tally.structure(16);
+            Ok(())
+        }
+        ([R, _, "parts", _, "answer", "locked"], Some(option)) if valid_id(option) => {
+            match one_any(content) {
+                Some(Any::Bool(true)) => {
+                    tally.value(content);
+                    tally.count(full);
+                    Ok(())
+                }
+                _ => refuse("a lock that is not true"),
+            }
         }
         ([R, _, "parts", _, "answer"], Some("unit")) if a_string(content, q::QUESTION_UNIT_MAX) => {
             tally.value(content);
@@ -1896,7 +1977,7 @@ fn keys_shape(
     tally: &mut Tally,
 ) -> Result<(), String> {
     const K: &str = KEYS_ROOT;
-    const LISTS: &[&str] = &["accepted", "hints", "markscheme", "options", "items"];
+    const LISTS: &[&str] = &["accepted", "markscheme", "options", "items"];
     match (path, key) {
         ([K], Some(id)) => new_entry(content, id, full, tally),
         ([K, _], Some("type")) if one_of(content, ANSWER_TYPES) => {
@@ -1911,6 +1992,11 @@ fn keys_shape(
         // boolean: true or false; mcq: a map of ticks by option id.
         ([K, _], Some("correct")) if a_bool(content) || is_map(content) => {
             tally.structure(16);
+            Ok(())
+        }
+        // An mcq's Multiple answer flag (Epo 2026-11-15).
+        ([K, _], Some("multiple")) if a_bool(content) => {
+            tally.value(content);
             Ok(())
         }
         ([K, _], Some("sampleBoard" | "sampleImage")) if a_string(content, q::QUESTION_ID_MAX) => {
@@ -2002,11 +2088,7 @@ fn list_cap(path: &[&str]) -> Option<usize> {
         [R, _, "parts"] | [R, _, "groups"] => q::QUIZ_QUESTION_PARTS_MAX,
         [R, _, "parts", _, "answer", "options" | "left"] => q::QUESTION_ANSWERS_MAX,
         [K] => q::QUIZ_PARTS_MAX * 2,
-        [
-            K,
-            _,
-            "accepted" | "hints" | "options" | "items" | "correct" | "pairs",
-        ] => q::QUESTION_ANSWERS_MAX,
+        [K, _, "accepted" | "options" | "items" | "correct" | "pairs"] => q::QUESTION_ANSWERS_MAX,
         [K, _, "markscheme"] => q::QUIZ_MARKSCHEME_MAX,
         [K, _, "gaps"] | [K, _, "gaps", _] => q::QUESTION_ANSWERS_MAX,
         _ => return None,
@@ -2238,15 +2320,13 @@ fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String>
             q::QUESTION_DESCRIPTION_MAX,
             "a description",
         )?;
-        for field in ["label", "attribution"] {
-            if let Some(meta) = str_at(txn, &block.map, field)
-                && meta.encode_utf16().count() > q::QUESTION_METADATA_MAX
-            {
-                return Err(format!(
-                    "a {field} holds at most {} characters",
-                    q::QUESTION_METADATA_MAX
-                ));
-            }
+        if let Some(meta) = str_at(txn, &block.map, "attribution")
+            && meta.encode_utf16().count() > q::QUESTION_METADATA_MAX
+        {
+            return Err(format!(
+                "an attribution holds at most {} characters",
+                q::QUESTION_METADATA_MAX
+            ));
         }
         for field in ["width", "height"] {
             if let Some(size) = num_at(txn, &block.map, field)
@@ -2382,7 +2462,7 @@ pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
                 )?;
             }
         }
-        for list in ["hints", "options", "items"] {
+        for list in ["options", "items"] {
             check_list(
                 txn,
                 map_at(txn, &key, list).as_ref(),

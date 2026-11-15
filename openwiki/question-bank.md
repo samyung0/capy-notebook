@@ -129,25 +129,144 @@ correct options (multiple answers, `multi`, merged into it on every layer,
 Epo 2026-10-15). With one correct option it is answered as a single choice,
 picking an option replacing the last; with several the options toggle like
 checkboxes under a muted "Multiple answers can be selected" hint, shown in the
-question editor beside the options as well (Epo 2026-11-08). A learner has no
-key, so the learner view carries `multiple: true` on such a part and nothing
-else about its key; a live quiz's content document holds the same flag,
-written with the options by the browser and the server. Only open parts carry a marking scheme: items of
+question editor beside the options as well (Epo 2026-11-08). Multiple answer
+is its own type (Epo 2026-11-15, as Canvas and Google Forms): the answer's
+optional `multiple: true` (only `true`, only on `mcq`; the TS, Go and Rust
+validators refuse anything else) answers it with checkboxes even with one
+correct option. Several correct options without the flag are still
+checkboxes, so model output reads as before and no prompt writes the flag;
+grading is unchanged (the exact set of correct options). A learner has no
+key, so the learner view carries `multiple: true` on a part with the flag or
+several correct options and nothing else about its key; a live quiz's content
+document holds the same derived flag, written with the options by the browser
+and the server, and its keys document holds the author's flag, so editors
+read it back as written. The agent's quiz fence form (`authored` in
+`pipeline/pipeline/retrieval/questions.py`) cannot write the flag, so a
+Multiple answer part keeps its stored block. An mcq (single or Multiple
+answer) may also carry Shuffle options (Epo 2026-11-15, as Canvas's Shuffle
+Choices): `shuffle: true` and optional `locked`, the option indices kept in
+place (sorted, distinct, in range, at least one, only with `shuffle`; the TS,
+Go and Rust validators refuse anything else). Neither is secret, so a live
+quiz holds both in the content document's answer map, `locked` as ticks by
+option id (as the keys document's `correct`), so a lock follows its option
+when options move; a room read drops locks without `shuffle`. Answers stay
+option indices in the authored order, so grading, attempts, results and
+statistics are unchanged: the learner view keeps `options` as written and
+adds `order`, each shown option's authored index, the locked ones at their
+own positions and the rest shuffled (`shownOrder` in `questions.go`;
+`LearnerViewsSeeded` uses the per-part seed matching and ordering use, so a
+paper attempt reads the same letters, and its read maps a letter through
+`order` back to the authored index, `ShownChoices`). Every view a learner gets
+is seeded, so one person keeps one order: `GET /api/quizzes/{id}` by the
+viewer and quiz (`userID/quizID`), an assignment attempt by its attempt id
+while running, with grades hidden and in its review (the same seed a paper
+attempt reads letters by). A review with the answers gets the graded question
+plus that `order` (`withShownOrders` in `assignments.go`), so it reads the
+options and letters as answered; without the answers it is the seeded learner
+view (`gradedWithoutKeys`). The anonymous share page has no viewer, so its
+order is drawn per request. The runner and question view show options in
+`order` with letters by shown position and store the authored index
+(`shownOptions` in `types.ts`). A live quiz's readers keep the order showing
+(the stored view's, then each read's) while it still fits, as many options
+with the locked ones in place, so a sync or an edit to another part moves
+nothing; one that no longer fits is drawn by `shuffledOrder` seeded with the
+quiz and part (`readerOrder` in `liveQuiz.ts`, the seeded `Rng` of
+`src/lib/rng.ts` the progress maps also use). The quiz fence form cannot write either
+field, so `authored` leaves a shuffled mcq as its stored block. The card's ⋮
+(the part's ⋮ in a question of parts) has Shuffle options, checked while on;
+on, each option row gets a lock button (`aria-pressed`, "Keep in place" /
+"Locked"); turning it off drops `locked` (`withShuffle` in
+`editorFields.tsx`). Model prompts do not mention it. Only open parts carry a marking scheme: items of
 text and whole marks that add up to the part's marks, because the model grades against
 them. An open part takes at most one sample answer (`accepted`, 0 or 1 items),
-and it is optional: the editor shows one Sample answer input, and grading never
-reads it. A closed part's answer is its own key and its solution explains it, so it
-has none; the editor sets a closed part's marks from a dropdown and an open
+and it is optional, and grading never reads it (a drawing part's drawn sample
+goes to the marker as an image). Every screen shows a sample answer (written or
+drawn) in its own Sample answer section after the marking scheme, before the
+Solution (Epo 2026-11-15, superseding the 2026-11-13 Solution's first block
+behind a green Answer tag). The question card (the quiz editor's open card and
+the question dialog) edits it there: a written one in the question's text
+editor with its formatting row (B, I, U and formulas; no Insert, `textOnly` on
+`BlocksColumn`), a drawn one with `DrawnSampleField`, a trash beside its
+heading removing it. For a long answer or drawing without one, the footer has
+Sample answer (Draw sample answer) beside Solution; on
+phones the card's ⋮ holds Solution and Sample answer. A closed part's answer is its own key and its solution explains it, so it
+has none; the editor sets a closed part's marks, and each marking point's, in a
+small typed box (`MarksInput`: whole marks 1 to the cap, arrows step, anything
+else reverts on leaving; Epo 2026-11-15, as Google Forms' points) and an open
 part's from its items. Authored parts are told from learner parts by their
 worked solution (`isAuthoredPart`). A matching
 answer stores the full choice pool independently from its correct pairings, so
 unused and reused options survive generation, editing and rendering. The
 editor keeps the pool in the author's order, which readers and index text see
-too: each option row has move up and down buttons (off at the ends), and
-Alt+ArrowUp or Alt+ArrowDown moves the focused option with focus following it;
-a move swaps the two options and every pair's `right` with them, so each
-prompt keeps its answer, as removing an option does (Epo 2026-10-18,
-`StringList`'s `onMove` in `editorFields.tsx`).
+too: the card's Rows and Columns lists (board Matching) reorder by whole-row
+drag with an accent drop line and no handles, as the ordering items do
+(Epo 2026-11-15, as Google Forms' grid rows and columns; `useRowDrag`), and
+Alt+ArrowUp or Alt+ArrowDown moves the focused row with focus following it. A
+row carries its pair, its `right` with it (`moveRow`); a column move remaps
+every pair's `right` to its column's new place, so each prompt keeps its
+answer, as removing a column does (`moveColumn`, `MatchingFields` in
+`editorFields.tsx`). Under the Rows and Columns lists the
+Correct answers grid (`MatchingGrid.tsx`) sets each row's match: one radio
+group per row, read-only in a closed card with the correct cells green, banded
+rows, and on phones a sideways scroll with the row names sticky. Read-only, its
+cells are `aria-disabled` rather than disabled, so a screen reader can walk
+them, and a shown key or a checked answer names each cell's state ("Nucleus:
+Makes ATP, your answer, incorrect", "…, correct answer") with a ✓ or × beside
+a right, wrong or missed cell, not colour alone. Members
+answer on the same grid (see the runner below).
+
+A text block's `text` (stem, group, part and Solution text) and a table
+block's cells are plain strings: `$…$` and `$$…$$` formulas (`parseMathText`,
+only paired, unescaped delimiters) and, outside them, Discord-style marks
+(Epo 2026-11-15): `**bold**`, `*italic*`, `__underline__`, nesting freely
+(`***both***`, `__**x**__`, a formula inside a pair). Only tight pairs mark
+(`parseMarkedText`): a run of one to three `*` or exactly two `_` whose content
+is non-empty and has no space just inside it, paired by CommonMark's delimiter
+rules (its rule of three, so `**ab*cd*ef**` marks `cd`). A longer run stays
+text, so `2 * 3 * 4`, `a*b`, a `______` blank and anything inside `$…$` read
+as written; a backslash escapes a marker character (`\*`, `\_`) as `\$` does a
+dollar, and backslashes right before a marker character or `$` pair up, `\\`
+reading as one backslash (`C:\\**word**` is `C:\` and a bold word; other
+backslashes stay as written). Neither marker has CommonMark's intraword rule
+for `_` (Epo 2026-11-15): `the__key__word` underlines `key`, Chinese text marks
+without spaces, and `2*3*4`, `a*b*c` or a model's `__init__` outside a formula
+mark too. The stored format, the live quiz room (a Y.Text of the
+plain string) and the TS, Go and Rust validators are unchanged; markers count
+toward the text's length; model prompts do not mention them and model-facing
+text keeps them. `TextView` reads marks only where it is given `marks` (text
+blocks, table cells and the question lines taken from them), so options,
+matching rows, ordering items, accepted and sample answers and marking points
+show `*` and `_` as written. The question text editor (`TextEditor`) has B, I
+and U before its formula tools (Cmd/Ctrl+B, I, U; no Markdown input rules) and
+writes marks back as tight markers (`valueToMathText`): spaces at a mark's
+ends go outside it, the longer of two runs opens outside, a formula sits in
+the marks of the text on both its sides, a blank breaks marks, a typed
+backslash right before a marker, formula or escape is doubled, and typed `*`
+or `_` stay bare unless the string would read back differently, in which case
+only the runs that could pair (one to three `*`, two `_`) or that touch a
+marker of their character are escaped, never a longer `______` blank or a
+formula's text. Exports turn markers into bold, italic and
+underline; plain-text readers strip them (`stripMarks`, Go
+`questions.StripMarks`): bank search text, `PromptText` (a member's missed
+questions), list-card previews, the question list's rows, the drawing board's
+pinned summary and the report's part labels.
+
+A text block is `{type: 'text', text}` and nothing more. Its optional run-in
+`label` ("Reasoning", "Source A") was removed (Epo 2026-11-15): the editor
+could not show it while typing, so the layout shifted between editing and
+reading. Writers bold the first words (`**Reasoning** …`) instead. The TS, Go
+and Rust validators and the live quiz room's update gate refuse a `label` key on
+a text block as an unknown key (`text-label-rejected.json`), and the generate
+prompt's text block form no longer offers one.
+
+A long answer is `{type: 'open', accepted}`: at most one sample answer and
+nothing else. Its `hints` list was removed (Epo 2026-11-15): learners never saw
+hints, only the document export printed them (Moodle has hints; Canvas and
+Google Forms do not). The editor has no Add hint, the closed card and the export
+no Hints list, the chat agent's `add_questions` items no `hints` (agent contract
+v49), and generation and extraction write none. The TS, Go and Rust validators
+and the live quiz room refuse a `hints` key on an open answer as an unknown key
+(`open-hints-rejected.json`).
 
 ### Drawing parts
 
@@ -224,9 +343,8 @@ A quiz's drawing part may hold a drawn sample answer (Q3): `answer.sample:
 Embeds) and the image an ordinary quiz image. The bank refuses it. The live
 quiz keeps it with the keys (`sampleBoard`, `sampleImage`), and it counts,
 copies and freezes with the quiz's other assets; a copy missing either asset
-drops it whole. Authors draw it from "Sample answer (optional)" under the
-marking scheme in the quiz editor and the question dialog (`DrawnSampleField`,
-A1–A3); results show it drawn from its board, and marking sends its image
+drops it whole. Authors draw it as the first block of the part's Solution in
+the quiz editor and the question dialog (`DrawnSampleField`, A1–A3); results show it drawn from its board, and marking sends its image
 before the student's drawing. Its board takes no pictures (Epo 2026-11-10):
 the sample names only its board and image, so a picture's file would have no
 reference to keep it.
@@ -238,9 +356,9 @@ signed-in account: `claimAccountData` deletes another account's drafts, and
 everyone's on sign-out.
 
 A checked model-marked part (open or drawing) shows its marking scheme in the
-open, each point with a tick, a dash or a cross and its marks, then its sample
-answer, with the worked solution folded below (R1, Epo 2026-11-06,
-`QuestionReview`).
+open, each point with a tick, a dash or a cross and its marks, with the
+sample answer under it and the Solution folded below (R1, Epo 2026-11-06;
+sample section 2026-11-15, `QuestionReview`).
 
 ### Grouped parts
 
@@ -278,15 +396,18 @@ stays where it is, as wide as the widest label with its step. A multi-part
 question's part shows its marks in words ("2 marks"), as the board does, not
 `[2]`, and once checked the header totals them ("6 / 8 marks", `QuestionReview`).
 
-In the question dialog the outline's Add part button at the end of the list is a
-dropdown of Part and Group; the outline's + adds blocks only. Both add at the
-end, and a group starts with an empty text and its first part. A group's outline
-row reads as its first text with the label, its other blocks follow, its parts
-sit at the same place as the top-level items (the outline has no room for the
-preview's step, Epo 2026-11-04), and its ⋮ holds Move up, Move down, Add
-sub-part, Ungroup and Remove. A group moves as a whole among the top-level items, past a part or
-another group, and a sub-part only among its group's parts; dragging follows the
-same lists, so nothing moves in or out of a group by dragging. Ungroup turns its
+In the question card (board Parts, Epo 2026-11-15) the footer's Add part is a
+dropdown of Part and Group (in the card's ⋮ on phones, and in a one-part quiz
+card's ⋮). Both add at the end, and a group starts with an empty text and its
+first part. The shared text and figures sit at the card's top, then each part
+as one line (label, first words, answer type, marks) until clicked, with no
+dividers between them; the open part, unoutlined, keeps its label and text
+where its line had them and adds its own type menu, answer, Solution button, marks and ⋮
+(Move up, Move down, Shuffle options, Remove part). A group shows
+its label and text with its parts under it, and its ⋮ holds Move up, Move down,
+Add sub-part, Ungroup and Remove. A group moves as a whole among the top-level
+items, past a part or another group, and a sub-part only among its group's
+parts, so nothing moves in or out of a group. Ungroup turns its
 parts into top-level parts where they are, its filled blocks joining its first
 part's top (off when they would not fit there), and Remove takes the group and
 its parts (off when they are all the question has). A group's last part cannot be
@@ -305,6 +426,47 @@ service share its JSON fixtures. Bounds originate in
 `server/internal/fieldlimits` and are generated for TypeScript and Python by
 `pnpm gen:openapi`. Bank parts require worked solutions; user quiz solutions
 are optional. Levels are optional metadata and the unenforced timer was removed.
+
+A question may carry topics of its own (Epo 2026-11-15,
+`todo-question-topics.md`, several since the same day: "let a question have
+multiple topics"): an optional `topicIds`, at most `QUESTION_TOPICS_MAX` (5)
+distinct non-blank ids of at most 128 characters each on every validator
+(fixtures `topic`, `topic-blank-rejected`, `topic-duplicate-rejected`,
+`topic-too-many-rejected`). Absent or empty means the quiz's topic; a question
+with topics of its own counts fully under each of them, not the quiz's. The
+format does not know the workspace, so nothing refuses an id on save; readers
+keep an id only when it is one of the quiz's workspace's topics, so a deleted
+topic, or a quiz moved to another workspace, drops out (all of them gone reads
+as the quiz's topic again) and no other workspace's topic name is ever shown.
+Nothing wipes the ids (Epo 2026-11-15): deleting a topic, moving or copying a
+quiz and a single-item clone leave them in the content and the live document,
+so a quiz moved back counts its questions' topics again. The live quiz keeps
+the list as one plain value in the content document beside `level` (it is no
+key; never written empty, and the room refuses anything but 1 to 5 distinct
+ids), and it stays out of the review hash, so changing it resets no review
+state. The learner view leaves it out,
+but learners may still receive the ids (Epo 2026-11-15): in check results and
+stored attempt questions (`questions.Graded` keeps every key), in the live
+content document they join, and as the question topics in an assignment's
+`topicIds`; nothing on their screens shows them. A workspace clone renames
+them to the copied topics' ids, dropping one with no copy
+(`materialdoc.RewriteQuestionTopics`); other copies carry them as they are,
+the read rule ignoring those that are not the target's topics. Generated,
+converted and chat agent questions carry none (Q3): the generate boundary
+refuses the field, and the agent's `authored` declines a question with any so
+an edit keeps it as stored. The quiz editor's open card shows a Topics field
+in a workspace quiz with topics, in its footer before Marks (its own row above
+the footer on phones): a multi-select (board "Several topics per question" on
+the question editor mock) of the workspace's topics with checkboxes. A
+question with none of its own shows its quiz's topic ticked, which it counts
+toward (Epo 2026-11-15: no "Quiz's topic" item), and unticking the last one
+leaves it following the quiz again; a bank question's menu starts with "No
+topic" instead. The trigger joins the names in the workspace's order with ", ",
+cut with an ellipsis; with five ticked the rest are disabled. The
+menu stays open while ticking (`TopicField` in
+`src/features/questions/TopicField.tsx`, placed by
+`src/features/quizzes/QuestionPane.tsx`); its topics query stays out of the
+error boundary, so while they load or fail the field is simply absent.
 
 The chat agent does not write this format (Epo 2026-10-13). It writes a
 multiple-choice question with one correct option, a short answer with an
@@ -331,13 +493,16 @@ names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
 
 ### Make a quiz screens
 
-`src/features/makeQuiz`, from the Dashboard's Make a quiz from a file, for those
-who may edit the workspace (a viewer's `?make=` link shows the Dashboard). Practice's
-Add practice shows the same dialog's files step as its Convert to quiz tab, beside
-Create quiz and Generate quiz (`tabs`, [study progress](study-progress.md)). The files
-step's footer holds a switch, Hide the quiz from members (Epo 2026-11-11), on by
-default and off when the dialog is Add practice's: `CreateExtractionReq.hidden` goes with the run, `question_extractions.hidden`
-(migration 0169) keeps it and the saved quiz takes it. The dialog holds the choice,
+`src/features/makeQuiz`, for those who may edit the workspace (a viewer's `?make=`
+link shows the Dashboard). The Dashboard's Make a quiz and Study's Add practice open
+it as Add quiz (Epo 2026-11-14): its files step is the Convert to quiz tab, first and
+open by default, beside Create quiz and Generate quiz (`tabs`, [study
+progress](study-progress.md)); a new assignment's Make a quiz from a file opens it
+alone. The files step's footer holds a switch, Hide the quiz (Epo
+2026-11-11), on by default and off from Study's Add practice (`hiddenAtFirst`): `CreateExtractionReq.hidden` goes with the run, `question_extractions.hidden`
+(migration 0169) keeps it and the saved quiz takes it. From a graded quiz's
+dialog the run also sends `gradedQuiz` (`question_extractions.graded_quiz`), so
+its quiz is saved waiting for the graded quiz. The dialog holds the choice,
 so a reload on a later step starts from its default again. Files uploaded in the dialog stay
 hidden either way, as its first line says.
 
@@ -435,54 +600,88 @@ switch. Files' Edit and New quiz open
 `/materials/{id}`; there is no standalone quiz edit page, and
 renaming goes through the item's Rename.
 
-The editor is a page (board X2, Epo 2026-11-02): the question list on the left
-(number, first words, an issue's warning, marks; the AI-marked count and Sources
-under it) and the open question on the right (`QuestionPane`), with each text
-block edited where it stands, an image's Choose image, and each part's Answer
-type, correct answer, Marks, marking scheme and worked solution. It sits under
+The editor is a page (board X2, Epo 2026-11-02; cards, Epo 2026-11-15, boards
+Main and Phone; rail, Epo 2026-11-15, boards ListA and ListA2): a 60px rail of
+question numbers on the left as Canvas's Build page has it (`QuestionRail`: the
+open one dark, one with an issue dotted; its ≡ opens the outline of number, type
+icon, first words, an issue's warning and marks, as Canvas's Question
+Navigator; the numbers scroll between ≡ and a + that adds a question at the
+end, faded at an edge with more and no scrollbar), and the questions as Google Forms cards on the right
+(`QuestionPane`), the AI-marked count and Sources under them. Answering and
+studying keep the full question list. No card opens with the page (Epo
+2026-11-15): the keys arriving after the opening paint shift nothing open,
+and closed cards draw what the content already holds while they come
+(`PartKey`'s `pending`): choice and True / False rows unmarked, a short
+answer's empty pills and unit, a gaps part's blanks from its text, each part
+line's answer row (a choice part's options, else blank). Matching, ordering
+and marking schemes live in the keys alone and still grow on connect.
+Before the rooms sync the cards wait (`inert`) while the pane still scrolls,
+and the page keeps that scroll as the live cards replace the paint
+(`useQuizPick`'s `scrollTop`). The open card has a 2px accent
+border and edits in place (`QuestionCard` in `src/features/questions/`): issues
+at its top, its number row (number; a lone question's Add image and answer
+type at its right, so the text keeps its width), the text (each text block
+edited where it stands, with the formula
+tools and an Insert + of Text, Table, Chart, Graph and Image while editing), the
+answer type menu (`AnswerTypeSelect`: Multiple choice, Multiple answer,
+True / False; Short answer, Long answer, Fill in the blanks; Matching,
+Ordering, Drawing), the answer, marking points and Solution, then a footer of
+Solution, Topic, Marks, Duplicate, Delete and ⋮ (Add to bank, Move up, Move
+down, Shuffle options for a choice part, Layout, Part labels). Tables, charts, graphs and
+plots show as figures with hover Move up, Move down and Remove; a click edits
+one in `BlockDialog`, staged until its Save. A table there is drawn as a
+note's table (Epo 2026-11-15, `TableBlockEditor` in `BlockEditor.tsx`, the
+pills shared through `src/features/notes/blockMenu.tsx`): a row's pill drags the
+row and opens Insert above, Insert below and Delete; a column's pill over its
+first cell opens Insert left, Insert right and Delete; + bars along the right
+edge and under the last row add one at the end; Header row toggles beside the
+cell's formula tools in the dialog's heading row. The other cards are drawn in the
+open card's own layout (`QuestionCardView`, Epo 2026-11-15, as Google Forms'
+closed cards are): the number row with marks, the text at the open card's
+width, each answer type as its editor draws it with the controls' room kept
+(`PartKey`): choice rows with "Correct", ordering's numbered rows, short
+answer's Accepted answers pills and Unit, the blanks' pills, matching's Rows
+and Columns lists (their Add rows' room kept) above the Correct answers grid,
+a long answer's or drawing's marking points with their marks, a
+group's ⋮ room; images centred at their size in both (Replace is in the open
+card's hover tools); a question of parts in a line a part, one column
+whatever the question's Layout (members' paper or split layout shows in
+Preview), so opening one only adds its controls. A click opens it and keeps
+it where it was clicked; on a question of parts the part clicked opens with
+it (none from the rail), its label and text staying where its line had them. Closed cards are memoized on their question object, which
+`useQuizQuestions` keeps while its JSON is unchanged, so typing in the open
+card re-renders it alone. Add question floats beside the open card where there
+is room, else in a bar at the bottom, and adds after it; a quiz with no
+questions shows it in the cards' column at every width. Picking Multiple choice
+on a part with several correct options keeps the first and drops the
+`multiple` flag (`answerOfKind`); turning Fill in the blanks into another type
+keeps the text, each numbered blank becoming a plain line, and drops only the
+untouched sample sentence (`withAnswer`). A text block open in its editor
+closes when its column's figures move or go, or when anyone else adds or
+removes a block in that column, since rows are keyed by place. A figure's Save
+writes into the question as it stands when its graph image resolves. It sits under
 the normal header, beside the workspace's left panel: the quiz with its chip, ⋮
 and save state, then Undo, Redo and Study. Until its rooms sync the same page shows
-with a working list and a question that takes no input: drawn from the device's copy
+with a working rail and a question that takes no input: drawn from the device's copy
 with its keys, else from the read, with answers waiting rather than a key it doesn't
-know. Phones show the list, then one question with All questions to go back, under the
-normal header. What the page doesn't lay out (charts, graphs, tables, blanks,
-layout and part labels, adding blocks, parts and groups, a unit or hints) is in
-the question's ⋮, Edit all details: the question dialog on the same question. A
-question added and left blank goes when another opens or the page is left, before
-its rooms close, while the page can still write; anything anyone wrote in it since,
-a co-editor included, keeps it (`removeUnchangedQuestion`). A note's quiz embed
-keeps the list of questions with Edit and Remove (`QuizForm`); a question added
-there and left blank goes when its dialog closes, under the same check.
+know. Phones show the cards alone, the closed ones
+as one line each (number, first words, an issue's warning, marks), with the
+type menu full width, the footer wrapping and Solution, Sample answer and Add
+part in the card's ⋮; below md the rail hides. A full closed card carries an
+issue's warning at its top right. A
+question added stays as it was added, opened or not (Epo 2026-11-15, as
+Google Forms keeps each card; a new question starts filled in). A note's quiz embed
+in Edit is the same cards (Epo 2026-11-15, `QuizForm` with `QuestionPane`'s
+`embedded`): in the note's flow and scrolled by it, no card outline, no rail
+or floating add bar but Add question under the cards, Undo, Redo and the live
+state above them.
 
-`QuestionDialog` is shared by the bank and the quiz editor. Its outline
-column (min 15rem, nudged 4px left to line up with the dialog title) keeps
-part rows in a narrow label column, leaves stem rows flush, clamps labels to
-two lines and overlays each row's ⋮ on hover over the file panel's faded
-backing instead of reserving width. Rows are not highlighted: a click brings
-the block or part answer into view in the body with `scrollIntoViewWithMotion`,
-the bank and editor TOC's motion, and focuses it. Body blocks and part answers
-(`QuestionRunner`'s `frameAnswer`) select on click and show the note editor's
-portaled `FloatingBlockToolbar` (Edit, move, duplicate or remove), which never
-shifts layout and flips above a block cut off at the bottom; a double click
-or Enter edits, and a double click on an outline row edits its block or
-answer. The answer key below the waves (an open part's sample answer and marking
-scheme) selects its part's answer. From `md`
-the dialog is a fixed
-88dvh and each column scrolls on its own; phones show sticky Outline and Body
-tabs, and a row click switches to Body first.
-Each part's worked solution is always listed in the outline (its Worked
-solution row is a 36px header, not a toggle), at the outline's normal row
-spacing with no wavy lines (Epo 2026-11-04), its first row 2px under the title
-as a row's meta sits under its title, and shown in the body under the
-part's answer, below a `wavy-rule` line reading "Hidden until checked", since
-learners only get the solution after checking.
-Its title names the question ("Edit question 10").
-Outline rows drag by one rule (`canDrag`, `canDrop`, `canMove`): blocks always,
-parts only when there are several; a block lands beside a block, before a
-part's Answer and marks (the end of its text) or after a Worked solution title
-(its start), a part beside another part, and the drop line shows only there.
-Move up and down, in the row menu and the floating toolbar, stay within the
-block's section or among parts and are disabled at its ends.
+`QuestionDialog` (board Dialog, Epo 2026-11-15) is the same `QuestionCard` in
+a dialog, used by the bank (`ItemBankList`, `/qb`): Edit question with its
+close, the card (Add part in its footer), the Topic row under it when the
+class has topics, then Save. A quiz's questions never open it: they edit in
+place on the quiz's page and in a note. There is no outline or "Edit all details" any
+more. Its title names the question ("Edit question 10").
 What keeps the question from being marked comes from `questionIssues`
 (`src/features/questions/issues.ts`, Epo 2026-10-15): it validates
 `withoutBlanks(question)` with the schema and the hand-written rules
@@ -500,23 +699,19 @@ block added but not uploaded yet (an empty link) reads "Image: choose an
 image file" on its row, and the asset-host rule skips it. The dialog
 shows one issue box at the top of the body with the first issue and
 "(+n more)" (`IssueSummary` in `IssueViews.tsx`, also at the top of the quiz
-page's question and under each question in `QuizForm`); an open answer or block editor shows
-the same box for its own row's issues under its inputs, so it never moves
-them (a graph lists its own), a warning icon right of each affected
-title (`IssueIcon`, through `QuestionView`'s `titleAside`: the question's for
-question-level and generic issues and for a lone part, each part's for its
-own) whose tooltip lists that title's issues, and only a warning icon on each
-affected outline row. User-facing wording says blanks ("Fill in the blanks",
-"Blank 1"); the stored type stays `gaps`. Rows the app names take
-an accent of their own (Answer rows `tint-accent-1`, Worked solution
-`tint-accent-2`), and the row ⋮ has no tooltip (`ToolbarButton tooltip={false}`),
-since its label repeats the row's text. Menus (add block, question
-settings, row and graph element actions) are the note toolbar's popovers
+page's open card and under each question in `QuizForm`); a block editor shows
+the same box for its own issues under its inputs, so it never moves
+them (a graph lists its own), and a warning icon right of each affected
+title in a read question (`IssueIcon`, through `QuestionView`'s `titleAside`:
+the question's for question-level and generic issues and for a lone part,
+each part's for its own) whose tooltip lists that title's issues. User-facing wording says blanks ("Fill in the blanks",
+"Blank 1"); the stored type stays `gaps`. Menus (Insert, the card's,
+a part's and a group's ⋮, graph element actions) are the note toolbar's popovers
 (`ToolbarPopoverContent`, `ToolbarPopoverGroup`, `MenuItem` over
 `ToolbarPopoverItem`), and block editors use `FieldInput` and `SelectField`,
 the compact underline style of the answer options. It reuses
-`ToolbarGroup`, `ToolbarButton` and `SimpleDialog`; block editors replace the
-dialog body and keep Remove beside Save. English and Chinese labels use
+`ToolbarGroup`, `ToolbarButton` and `SimpleDialog`; `BlockDialog` keeps
+Remove block beside Save. English and Chinese labels use
 Paraglide. MathLive renders formulas in both viewing and editing, including
 question-editing previews. Read-only previews use the shared `MathPreview`
 component with matching fonts/layout and no keyboard or menu controls. `BlockToolbar`
@@ -550,7 +745,7 @@ export table and the grading text. Blanks are dropped or filled before a questio
 validated and stored (`withoutBlanks` in `types.ts` on every save and the
 dialog's issues, `blockWithoutBlanks` for a note's chart or graph, Rust
 `without_blanks` in the live quiz projection): empty text blocks, a blank
-unit, blank hints and blank accepted answers, a blank's included (no accepted
+unit and blank accepted answers, a blank's included (no accepted
 answer left leaves the part or blank incomplete), blank marking items (the
 part's marks become the rest's, `schemeMarks`; none left leaves it
 incomplete, Epo 2026-10-15), and a blank figure description go; a table's shorter
@@ -674,6 +869,135 @@ first (`uploadBankAsset`, `src/lib/fitImage.ts`).
 it does not restrict uploads to one developer machine. Credentials stay on the
 server or publisher. Existing private workspace editor assets are separate.
 
+## Item banks
+
+Item banks (Epo 2026-11-14, `todo-graded-quizzes.md`) are not the `/qb` bank
+above: they keep a teacher's or learner's own questions for reuse, in the
+shared question format as a quiz holds it (validated with the quiz policy,
+`questions.Policy{}`), each with up to 10 free-text tags (35 characters, no
+comma). There are two kinds, both rows of `item_bank_questions` (migration
+`0175_item_banks.sql`):
+
+- **My bank**, one per account (`user_id`), seen only by its owner. It is the
+  third tab of the sidebar's Study page (`/learning?tab=bank`), with New
+  question in the page header.
+- **A class's bank**, one per class workspace (`workspace_id`), seen and
+  edited by its owner and editor members (`assignmentStaff`); a viewer member,
+  link or public visitor, and a personal workspace get 404. It is the fourth
+  tab of the staff's Study (Overview, Topics, Practice, Question bank;
+  `?study=bank`). A personal workspace has no staff, so it has none: its
+  people use My bank.
+
+Every route names the bank the same way, `me` or the workspace id
+(`/api/item-banks/{bank}/…`); `GET /api/item-banks?workspaceId=` lists the
+banks the caller may use there, the class's first, then My bank, with counts.
+A bank's list (`GET …/questions?q=&tags=&cursor=`) pages newest first and
+returns `total`, the filtered count. Search matches `search_text`, the
+lowercased stem, group, part and solution text plus answer options, accepted
+answers, ordering items and matching prompts (`questions.SearchText`, text
+blocks without their bold, italic and underline markers), with
+typos tolerated as global search does (`search_typos`, migration 0172: per
+word 0 edits under five letters, 1 from five, 2 from nine). A search lists
+questions holding the query as typed first, then by fewest typos, then
+newest; a question with typos shows only while fewer than three hits are
+closer (`listBankSearch`), and its pages carry an offset rather than a
+keyset, the hits being re-ranked each page. On a full bank of long questions
+a search holding the query takes ~10 ms and a typo search ~0.3 s; Tags
+keeps questions holding any picked tag; `GET …/tags` lists a bank's tags for
+the filter and the tag input's suggestions. No folders, random draws or item
+statistics; at most 2,000 questions a bank (`bank_question_limit`).
+
+**Topics** (Epo 2026-11-15, `todo-question-topics.md`). A class bank's
+question may carry topics of its own, the shared format's `topicIds`, of the
+workspace's topics; tags stay free text and never count toward mastery. As
+read (`bankQuestionRead`), an id the workspace no longer holds, or any id in
+My bank, is left out (the list too once empty), as a quiz question's is
+ignored. The list shows a coloured badge per topic, in the class's topic
+order, before the plain tags (column Topic and tags, `TopicAndTags`), and
+`topics=` (comma-separated ids) keeps questions carrying any of them. The bank page
+(class bank and My bank) and From the bank have one Filter button at every
+width, as Practice's (Epo 2026-11-15, `BankFilter` in `TopicAndTags.tsx`): a
+Topic group in a class bank whose class has topics, then a Tags group, still
+sent as `topics=` and `tags=`. The bank dialog
+shows the Topics field under its card (`TopicField`, "No topic" first).
+Add to bank sends the topics the quiz question counts toward (its own, else
+the quiz's) into its class's own bank; any other bank, My bank or another
+class's bank, gets each topic's name as a plain tag instead, commas turned to
+spaces and cut to 35 characters by whole characters (`bankCopy`, `topicTag`).
+The dialog's Topics field shows only when the class has topics. A copy out
+(`CreateQuizFromBank`, `CopyBankQuestionsToQuiz`) keeps the topics only in a
+quiz of the bank's own workspace; elsewhere it follows the new quiz's topic.
+
+Questions come in only by hand: New question opens `QuestionDialog` staged
+(`onSave`, quiz policy) on a blank question, and a quiz question's ⋮ in the
+editor offers Add to bank with a submenu of the caller's banks
+(`AddToBankItem`), sending a copy (`withoutBlanks`), off while the keys load or
+the question has an issue. A row opens the same dialog to edit; its ⋮ edits
+or deletes it. On the bank page (class bank and My bank) the dialog, for an
+edit or a New question, has Tags under Topic (Epo 2026-11-15, as Canvas's
+item editor "Tags and Metadata"): the tag input (`BankTagsField`, `TagSelect`
+offering the bank's tags from `GET …/tags`, the generated tag validators),
+saved with the question in one create or `PUT /api/item-banks/{bank}/questions/{id}`.
+Other callers (/qb, Make a quiz's list) show no Tags.
+
+Questions go out through Add quiz's **From the bank** tab (`BankPicker.tsx`,
+for Study's Add practice and a graded quiz's Questions step): a switch between
+the banks the caller may use there (`GET /api/item-banks?workspaceId=`; My bank
+alone shows no switch), Search, Filter, Select all N (loads every page of the
+filter first) and a box per question with its text, types, marks and tags. Picks
+belong to the bank shown: switching banks starts them over; they keep the order
+picked across searches. The footer counts "N questions · M marks", or says why
+the picks exceed a quiz's bounds (`quizBounds`). The primary button calls
+`POST /api/item-banks/{bank}/quizzes` (`workspaceId`, `questionIds` in order,
+at most 150, `title`, `gradedQuiz` from a graded quiz's dialog, which makes it
+hidden and waiting for the graded quiz, study-progress.md The owned quiz): the
+caller must edit the workspace and read the
+bank (else 404). `CreateQuizFromBank` copies each question with fresh question
+and part ids (one question may sit in a bank twice), checks `QuizBounds` (422),
+and makes the quiz as Create quiz does, in one transaction with its images:
+each image or drawn sample becomes a new `editor_assets` row of the quiz
+(`material_id`) sharing the stored object, charged to the caller after the
+storage gate (uploader pays). An image no longer there or not ready (its payer's
+account was purged, or they deleted it from their Files page, where a bank
+question's images are listed) is dropped as a re-save drops it (Epo
+2026-11-14), and only a part left with nothing in it, or an image over the
+caller's plan cap, fails the copy (422). So a bank edit never reaches a quiz.
+
+The quiz editor's add bar (`QuestionPane`: beside the open card, at the bottom
+on narrow panes, spread across a phone, and the empty quiz's bar) has
+**From the bank** after Add question (Epo 2026-11-15, boards Main and Phone).
+It opens the same picker in a dialog (`BankQuestionsDialog` in
+`BankPicker.tsx`) with the quiz's workspace's banks, whose footer counts the
+picks against the quiz's bounds together with the questions it holds and whose
+"Add N questions" calls `POST /api/quizzes/{id}/bank-questions` (`bank`,
+`questionIds` in order, at most 150; operation `copyBankQuestionsToQuiz`). The
+caller must have account edit, edit the quiz (`assertMaterialOwner`, as
+`getQuizForEdit`), and read the bank (else 404); a trashed quiz or another kind
+is 404. `CopyBankQuestionsToQuiz` shares `CreateQuizFromBank`'s copy
+(`readBankCopies`: fresh ids, the topic kept only when the quiz sits in the
+bank's own class, `QuizBounds` 422; `copyBankAssetsTx`: the images become the
+quiz's own `editor_assets` under its upload locks, charged to the caller) but
+writes no content: it answers `{questions}` and the editor inserts them through
+its live rooms after the open card, else at the end (`insertQuestions`, one
+undo step), refusing with an error toast when they would pass the quiz's bounds
+as the quiz stands then, and opens the first. An image copy the editor never
+inserts is trashed by the quiz's next save that does not name it (the editor
+asset lifecycle). The graded quiz page's Questions tab has it too (it is
+`QuizEditor`).
+
+The page (`ItemBankList`) is the
+mock's table (Question, Type, Marks, Topic and tags, Added) from 740px of pane, one row
+with its facts under it below.
+
+Images and drawn samples are editor assets. A write keeps the question's own
+(`editor_assets.bank_question_id`), copies any other asset the caller may read
+(the resolve rule) into a new row sharing the stored object and charged to the
+caller after the storage gate (uploader pays), drops the rest
+(`RewriteAssetIDs`), and deletes the question's images it no longer names.
+Deleting the question deletes its images; they resolve for the bank's readers
+only. The bank dialog has no image upload of its own yet (`uploadAsset` is not
+passed), so new images come from a quiz.
+
 ## Revisions and grading
 
 Quiz and flashcard content writes carry no revision (D7, 2026-10-10): editors
@@ -723,10 +1047,9 @@ and chart data. A group's text and figures come once, as `Shared context: …`
 before the group's first part (Epo 2026-11-04); a group with no blocks adds
 nothing, and a question with no group reads byte for byte as before. Requests carry
 only part ids and answers; the server loads the scheme, so the endpoints cannot
-grade arbitrary text (see Answer keys and server grading below). Saving an open part in the quiz editor
-asks Jev whether grading it needs a calculation checked and warns the author
-at a probability of 0.3 or more; the save is never blocked. Usage is in
-[observability-metering.md](observability-metering.md).
+grade arbitrary text (see Answer keys and server grading below). The editor
+no longer warns about open parts that need a calculation checked: that check
+asked Jev, which no longer grades (Epo 2026-11-15).
 
 User quizzes (not the bank) are bounded so a whole quiz stays within one
 grading budget: at most 150 parts per quiz (Epo 2026-11-08, from 100), 7 per question, 5 marking items per part
@@ -734,7 +1057,7 @@ and 100 open parts per quiz, and a sample answer of at most 5,000 characters;
 learners' open answers have the same 5,000-character cap. Open parts are called
 "AI-marked parts" in the UI and in errors; the cap was 20 until Epo raised it
 for every quiz on 2026-11-03 (a full HKDSE Paper 1 has about 45), and the
-quiz editor shows the count under its question list ("34 of 100 AI-marked parts").
+quiz editor shows the count under its cards ("34 of 100 AI-marked parts").
 The Go, browser and collaboration validators share these bounds
 (`fieldlimits.Quiz*`), the generation prompt states them, and the grading
 routes take a body of up to 4 MiB so a quiz's hundred longest open answers
@@ -743,8 +1066,8 @@ fit one submission.
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
 question dialog preview) use `QuestionRunner`. In the app a quiz has one layout in
-view, edit, study and an assignment (`QuizSplit`, Epo 2026-11-06): the question list on
-the left, one question on the right; a phone shows the list, then the question with a way
+view, study and an assignment (`QuizSplit`, Epo 2026-11-06): the question list on
+the left, one question on the right (editing has the rail and cards instead); a phone shows the list, then the question with a way
 back. Taking an assignment on a phone has a strip of numbers instead, with answered,
 flagged and left on each, no header or chat button, a way out beside the strip, and the
 clock and Submit along the bottom. Study has Previous, Check (the review session's dark 36px Check, Epo 2026-10-25,
@@ -821,7 +1144,7 @@ an answer or submitting an attempt returns the key for what was just checked.
 Grading happens only on the server, and retakes and Try again are unlimited.
 Answer-free questions are `questions.LearnerView` (`server/internal/questions/questions.go`):
 part ids, blocks and marks, mcq options in stored order (with `multiple: true`
-when several are correct), a short answer's
+when several are correct or the part is Multiple answer), a short answer's
 unit, matching `left` items with shuffled `options`, shuffled ordering `items`
 and the number of `gaps`. It reads stored content with checked assertions, so a
 malformed question loses fields instead of failing the read.
@@ -908,7 +1231,7 @@ part renders, and an untouched order counts as answered. Nothing in the app scor
 answer types and a scorer only the MSW mocks use (`src/mocks/answerKeys.ts`
 also mirrors `LearnerView` and stands in for the model), and `grade.test.ts` runs it
 over the shared scoring fixtures. A pre-2026-10-06 attempt still shows its
-score and awards, but its matching letters and ordering rows show as
+score and awards, but its matching picks and ordering rows show as
 unanswered and its gaps as wrong.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
@@ -938,21 +1261,25 @@ and False take a row each, text at the left in every state (B2). Text
 answers are underlined `Input`s, written answers sit on ruled lines
 (`ruled-lines`), and each gap is a blank in the sentence that grows with what is
 typed up to the line (a hidden copy of the value in `data-value` sizes it),
-punctuation after it kept on its line. Matching picks with an underlined
-`Select` letter in a wide answer area and with a row of letter buttons under
-each item below 28rem, the options listed above. After checking, a short answer
-lists every accepted answer with its unit; a gaps part with a miss lists the
-key under the learner's own answer ("Correct answers"), noting what the
-learner wrote; matching shows the chosen letter and the correct
-one. A checked open answer opens with a verdict counted over its marking points
+punctuation after it kept on its line. Matching is answered on the same
+`MatchingGrid` the editor's Correct answers use (Epo 2026-11-15, Google Forms'
+multiple choice grid): the left items as rows, the options as columns, one
+pick per row filled dark. Each row is a native radio group (arrow keys move
+its pick), each cell named "row: column" (`question_ui_grid_cell`); on phones
+the grid scrolls sideways inside the answer area with the row names sticky.
+After checking, a short answer lists every accepted answer with its unit; a
+gaps part with a miss lists the key under the learner's own answer ("Correct
+answers"), noting what the learner wrote; a matching grid fills a right pick
+green and a wrong one red, and rings the key's cell green in a row that
+missed it (an unanswered row only gets the ring). A checked open answer opens with a verdict counted over its marking points
 ("Partially correct: 1 of 3 points answered correctly", "Skipped: Question not
 answered").
-Matching dropdowns letter the options in the order the read sent them (shuffled
-for learners) and store the chosen option's text. Ordering lists the items in
-that order and commits their texts as the answer as soon as it renders; editors'
-previews show the stored order. Reviews letter the stored options.
-The static view numbers matching items above the lettered options on phones and
-beside them from md.
+Matching grid columns follow the order the read sent the options (shuffled
+for learners), and a pick stores the chosen option's text. Ordering lists the
+items in that order and commits their texts as the answer as soon as it
+renders; editors' previews show the stored order. Reviews lay out the stored
+options. The static view (`QuestionView` without answer controls, e.g. quiz
+questions inside notes) shows the same grid read-only with no picks.
 Review batches respect the existing 200-question and 2 MiB bounds, namespace
 their part IDs without changing stored source IDs, and remove only questions
 answered correctly in that batch. Unattempted mistakes remain.

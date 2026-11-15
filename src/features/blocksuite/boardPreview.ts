@@ -38,7 +38,10 @@ import {
 export function drawBoardPreview(
   saved: string,
   size: { height: number; width: number },
-  board: BoardKind
+  board: BoardKind,
+  /** Cropped to the drawing, at most `size`, instead of centred in it: an
+   * inline preview then starts at its column's edge. */
+  fit = false
 ) {
   let update: Uint8Array;
   try {
@@ -101,9 +104,9 @@ export function drawBoardPreview(
         : 1
   );
 
-  const { height, width } = size;
-  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/>`;
-  if (!items.length) return `${head}</svg>`;
+  const head = (width: number, height: number) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/>`;
+  if (!items.length) return `${head(size.width, size.height)}</svg>`;
 
   const boxes = items.map((item) => item.box);
   const whole = unite(boxes);
@@ -119,7 +122,9 @@ export function drawBoardPreview(
     }))
   );
   const frame = { h: all.h + 16, w: all.w + 16, x: all.x - 8, y: all.y - 8 };
-  const scale = Math.min(width / frame.w, height / frame.h);
+  const scale = Math.min(size.width / frame.w, size.height / frame.h);
+  const width = fit ? Math.round(frame.w * scale) : size.width;
+  const height = fit ? Math.round(frame.h * scale) : size.height;
   const tx = (width - frame.w * scale) / 2 - frame.x * scale;
   const ty = (height - frame.h * scale) / 2 - frame.y * scale;
   const pen: Pen = { pixel: 1 / scale };
@@ -140,7 +145,7 @@ export function drawBoardPreview(
       .join(' ');
     body += moves ? `<g transform="${moves}">${drawn}</g>` : drawn;
   }
-  return `${head}<g transform="matrix(${num(scale)} 0 0 ${num(scale)} ${num(tx)} ${num(ty)})" fill="none" stroke-linecap="round" stroke-linejoin="round" font-family="Inter, Arial, sans-serif">${body}</g></svg>`;
+  return `${head(width, height)}<g transform="matrix(${num(scale)} 0 0 ${num(scale)} ${num(tx)} ${num(ty)})" fill="none" stroke-linecap="round" stroke-linejoin="round" font-family="Inter, Arial, sans-serif">${body}</g></svg>`;
 }
 
 type Item = {

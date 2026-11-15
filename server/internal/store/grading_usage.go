@@ -6,7 +6,7 @@ import (
 )
 
 // SignedInGradingPartsPerDay caps the open parts one signed-in user has a model
-// grade a UTC day: quiz attempts, review and bank checks, computation checks.
+// grade a UTC day: quiz attempts, review and bank checks.
 const SignedInGradingPartsPerDay = 2_000
 
 var ErrGradingLimit = errors.New("daily grading limit reached")

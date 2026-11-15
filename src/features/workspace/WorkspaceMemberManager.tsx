@@ -22,7 +22,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
-import { Spinner } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import {
@@ -284,6 +284,17 @@ export function WorkspaceMemberManager({
         />
       )}
       <div className="mt-4 flex flex-col gap-1.5">
+        {/* Loading: rows shaped as members, avatar and name. */}
+        {!membersData && !membersError && (
+          <div aria-label={m.a11y_loading()} className="contents" role="status">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div className="flex items-center gap-2 py-1" key={i}>
+                <Skeleton className="size-7.5 rounded-full" />
+                <Skeleton className="h-3.5 w-32 rounded-button" />
+              </div>
+            ))}
+          </div>
+        )}
         {membersData?.map((member) => (
           <div className="flex items-center gap-2 py-1" key={member.userId}>
             <Avatar

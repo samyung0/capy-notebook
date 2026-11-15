@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { InNote, NoteSeat } from '@/features/collaboration/noteSeat';
 import { whileVisible } from '@/features/collaboration/whileVisible';
 import type { LearnerQuestion } from '@/features/questions/types';
+import type { ShownOrders } from './liveQuiz';
 
 /**
  * A quiz's questions as a learner sees them, following its live content
@@ -19,6 +20,9 @@ export function useLiveQuizQuestions(
   { inside, wake }: InNote = {}
 ): LearnerQuestion[] {
   const [live, setLive] = useState<LearnerQuestion[] | null>(null);
+  // What shows now: a read keeps its options' shuffled order.
+  const shown = useRef(stored);
+  shown.current = live ?? stored;
   // A room that ended here (it moved to a new lineage) is joined afresh.
   const [generation, setGeneration] = useState(0);
   const joined = useRef<{ wake: () => void } | null>(null);
@@ -32,6 +36,7 @@ export function useLiveQuizQuestions(
       readLive(quizId, setLive, () => setGeneration((value) => value + 1), {
         inside,
         joined,
+        shown: () => shownOrders(shown.current),
       })
     );
   }, [quizId, enabled, inside, generation]);
@@ -49,9 +54,12 @@ export function readLive(
   {
     inside,
     joined,
+    shown,
   }: {
     inside?: NoteSeat | null;
     joined?: { current: { wake: () => void } | null };
+    /** The shuffled options' order showing now, kept by each read. */
+    shown?: () => ShownOrders;
   } = {}
 ) {
   let cancelled = false;
@@ -70,7 +78,12 @@ export function readLive(
     if (joined) joined.current = room;
     const update = () => {
       if (room.getSnapshot().synced)
-        onQuestions(readLearnerQuestions(room.doc, room.lists));
+        onQuestions(
+          readLearnerQuestions(room.doc, room.lists, {
+            quizId,
+            shown: shown?.(),
+          })
+        );
     };
     const unsubscribe = room.subscribe(update);
     room.doc.on('update', update);
@@ -86,4 +99,14 @@ export function readLive(
     cancelled = true;
     close?.();
   };
+}
+
+/** Each shuffled mcq part's shown order in learner questions. */
+function shownOrders(questions: LearnerQuestion[]): ShownOrders {
+  const orders = new Map<string, readonly number[]>();
+  for (const question of questions)
+    for (const part of question.parts)
+      if (part.answer.type === 'mcq' && part.answer.order)
+        orders.set(part.id, part.answer.order);
+  return orders;
 }

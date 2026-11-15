@@ -53,7 +53,7 @@ vi.mock('./MembersRoster', () => ({
   ),
 }));
 vi.mock('../assignments/LazyNewAssignmentDialog', () => ({
-  NewAssignmentDialog: (props: object) => {
+  GradedQuizDialog: (props: object) => {
     dialog(props);
     return <div data-new-assignment />;
   },
@@ -80,7 +80,7 @@ vi.mock('@/components/ui/Tooltip', () => ({
 }));
 
 const { createRoot } = await import('react-dom/client');
-const { MembersPage } = await import('./MembersPage');
+const { MembersMarks, MembersPage } = await import('./MembersPage');
 
 const topic = (
   label: SummaryTopic['label'],
@@ -117,10 +117,24 @@ const member = (
 
 const host = document.createElement('div');
 document.body.append(host);
-const show = async (search: { manage?: true; member?: string } = {}) => {
+const workspace = {
+  id: 'ws',
+  kind: 'class',
+  name: 'Biology 101',
+  role: 'owner',
+} as never;
+/** Study's marks for a class's staff (Epo 2026-11-13). */
+const show = async ({ member }: { member?: string } = {}) => {
   const root = createRoot(host);
   await act(async () =>
-    root.render(<MembersPage search={search} workspaceId="ws" />)
+    root.render(
+      <MembersMarks
+        header={<h1>Study</h1>}
+        member={member}
+        tab="overview"
+        workspace={workspace}
+      />
+    )
   );
   return root;
 };
@@ -164,47 +178,14 @@ it('lays out a table where it fits and a plain list on phones', async () => {
   await act(async () => root.unmount());
 });
 
-// Epo 2026-11-11: the marks are Overview; sharing, invitations and roles are
-// Manage, under the same heading.
-it("gives a class's staff Overview, Topics and Manage", async () => {
-  const root = await show();
-  const tabs = [...host.querySelectorAll('[role="tab"]')];
-  expect(tabs.map((tab) => tab.textContent)).toEqual([
-    m.members_tab_overview(),
-    m.members_tab_topics(),
-    m.members_tab_manage(),
-  ]);
-  expect(tabs[0].getAttribute('aria-selected')).toBe('true');
-  await press(tabs[1]);
-  expect(navigate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      search: { manage: undefined, show: 'topics', study: 'members' },
-    })
-  );
-  await press(tabs[2]);
-  expect(navigate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      search: { manage: true, show: undefined, study: 'members' },
-    })
-  );
-  act(() => root.unmount());
-
-  const managing = await show({ manage: true });
+// Epo 2026-11-13: the marks moved to Study; Members is the people alone.
+it("gives a class's staff the people alone on Members", async () => {
+  const root = createRoot(host);
+  await act(async () => root.render(<MembersPage workspaceId="ws" />));
   const roster = host.querySelector('[data-roster]');
-  expect(roster?.textContent).toContain(m.study_panel_members());
-  expect(roster?.querySelector('[aria-selected="true"]')?.textContent).toBe(
-    m.members_tab_manage()
-  );
-  act(() => managing.unmount());
-});
-
-it('dots Manage while a member needs something done', async () => {
-  const root = await show();
-  const manage = [...host.querySelectorAll('[role="tab"]')][2];
-  expect(manage.querySelector('[aria-hidden]')).not.toBeNull();
-  // The chip itself is Manage's alone.
-  expect(host.textContent).not.toContain(m.members_storage_full());
-  await act(async () => root.unmount());
+  expect(roster?.textContent).toBe(m.study_panel_members());
+  expect(host.querySelector('[role="tab"]')).toBeNull();
+  act(() => root.unmount());
 });
 
 it("opens a member's profile from their row", async () => {
@@ -212,7 +193,7 @@ it("opens a member's profile from their row", async () => {
   const ann = host.querySelector('ul li');
   await press(ann);
   expect(navigate).toHaveBeenLastCalledWith({
-    search: { member: 'ann', show: undefined, study: 'members' },
+    search: { member: 'ann', show: undefined, study: 'summary' },
     to: '.',
   });
   await act(async () => root.unmount());

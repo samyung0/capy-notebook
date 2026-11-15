@@ -113,7 +113,7 @@ export default function AttemptResult() {
           metaClassName="text-fg-secondary text-sm"
           onBack={() =>
             features.learning
-              ? void navigate({ search: { tab: 'results' }, to: '/learning' })
+              ? void navigate({ search: { tab: 'history' }, to: '/learning' })
               : void navigate(home)
           }
           title={attempt.quizName}
@@ -121,13 +121,13 @@ export default function AttemptResult() {
             features.learning
               ? [
                   {
-                    label: m.nav_learning(),
+                    label: m.nav_study(),
                     link: linkOptions({ to: '/learning' }),
                   },
                   {
-                    label: m.learning_tab_results(),
+                    label: m.learning_tab_history(),
                     link: linkOptions({
-                      search: { tab: 'results' },
+                      search: { tab: 'history' },
                       to: '/learning',
                     }),
                   },

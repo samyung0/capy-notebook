@@ -1527,6 +1527,42 @@ func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, e
 	return Marshal(doc)
 }
 
+// RewriteQuestionTopics renames each quiz question's own topics (`topicIds`)
+// through idMap, for a workspace clone whose topics get new ids; one idMap
+// lacks is ignored where it counts, so it goes, and the list with it once
+// empty.
+func RewriteQuestionTopics(raw string, idMap map[string]string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var rewrite func(map[string]any)
+	rewrite = func(node map[string]any) {
+		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" {
+			if old, has := q["topicIds"].([]any); has {
+				ids := []any{}
+				for _, v := range old {
+					if id, _ := v.(string); idMap[id] != "" {
+						ids = append(ids, idMap[id])
+					}
+				}
+				if len(ids) > 0 {
+					q["topicIds"] = ids
+				} else {
+					delete(q, "topicIds")
+				}
+			}
+		}
+		for _, child := range children(node) {
+			rewrite(child)
+		}
+	}
+	for _, node := range doc.Value {
+		rewrite(node)
+	}
+	return Marshal(doc)
+}
+
 func find(nodes []map[string]any, typ string) map[string]any {
 	for _, node := range nodes {
 		if node["type"] == typ {

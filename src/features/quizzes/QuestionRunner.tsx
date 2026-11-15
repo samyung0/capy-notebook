@@ -4,22 +4,14 @@ import type { Question, QuestionPart } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount, Input, InputError } from '@/components/ui/Input';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/TextArea';
 import { AiWarning } from '@/features/questions/AiWarning';
+import { MatchingGrid } from '@/features/questions/MatchingGrid';
 import {
   AnswerView,
   answerBoxClass,
   answerBoxesClass,
   answerLetterClass,
-  MatchingLayout,
   OptionKey,
   optionColumns,
   optionLetter,
@@ -36,6 +28,7 @@ import {
   type LearnerPart,
   type LearnerQuestion,
   multipleAnswers,
+  shownOptions,
   type TextBlock,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -194,11 +187,10 @@ function GapText({
   const pieces = block.text.split(new RegExp(GAP_MARKER.source));
   return (
     <div className="leading-[2.1]">
-      {block.label && <strong className="mr-3">{block.label}</strong>}
       {pieces.map((piece, i) => {
         if (i % 2 === 0) {
           const text = i > 0 ? piece.replace(LEADING_PUNCTUATION, '') : piece;
-          return text && <TextView key={i} text={text} />;
+          return text && <TextView key={i} marks text={text} />;
         }
         const gap = Number(piece) - 1;
         const tail = pieces[i + 1]?.match(LEADING_PUNCTUATION)?.[0] ?? '';
@@ -562,7 +554,7 @@ function PartRunner({
     const apart =
       review &&
       key?.type === 'mcq' &&
-      key.correct.length > 1 &&
+      multipleAnswers(key) &&
       isAuthoredPart(part) &&
       (part.awarded ?? 0) < part.marks;
     const right = chosen.filter(correct).length;
@@ -584,14 +576,15 @@ function PartRunner({
         )}
         {apart && <h4 className={SUBHEAD}>{m.question_ui_your_answer()}</h4>}
         <div className={answerBoxesClass(twoColumns)}>
-          {answer.options.map((option, i) => {
+          {/* Shown in the learner's order; a pick stores its authored index. */}
+          {shownOptions(answer).map(({ index: i, text: option }, shown) => {
             const selected = chosen.includes(i);
             return (
               <ChoiceBox
                 correct={correct(i)}
                 disabled={disabled}
                 key={i}
-                label={optionLetter(i)}
+                label={optionLetter(shown)}
                 onClick={() =>
                   onChange(
                     multiple
@@ -615,8 +608,8 @@ function PartRunner({
               {m.question_ui_correct_answer()}
             </h4>
             <PlainList
-              rows={answer.options.flatMap((option, i) =>
-                correct(i) ? [{ label: optionLetter(i), text: option }] : []
+              rows={shownOptions(answer).flatMap(({ index, text }, shown) =>
+                correct(index) ? [{ label: optionLetter(shown), text }] : []
               )}
             />
           </>
@@ -787,148 +780,40 @@ function PartRunner({
       </div>
     );
   }
+  // One pick per row on a grid (Epo 2026-11-15); the stored answer is still
+  // each row's chosen option text. A check marks every row's pick right or
+  // wrong and rings the correct cell a row missed.
   if (answer.type === 'matching') {
     const choices =
       value !== null && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
-    const choose = (i: number, index: number) =>
-      onChange({ ...choices, [String(i)]: answer.options[index] });
-    // Side by side, the padding pulls the letter menus away from the options.
-    const rows = (
-      <ol className="grid content-start @min-[50rem]:pr-6">
-        {('left' in answer
-          ? answer.left
-          : answer.pairs.map((pair) => pair.left)
-        ).map((left, i) => {
-          const chosen = choices[String(i)];
-          const letter =
-            chosen === undefined ? -1 : answer.options.indexOf(chosen);
-          const right =
-            key?.type === 'matching' ? key.pairs[i]?.right : undefined;
-          // The server's verdict per pair.
-          const correct =
-            isAuthoredPart(part) && part.itemResults?.[i] === true;
-          return (
-            <li
-              className="grid @md:min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 @md:py-0 py-1.5"
-              key={i}
-            >
-              <OptionKey>{i + 1}</OptionKey>
-              <TextView className="min-w-0 text-fg" text={left} />
-              {/* Wider screens: an underlined letter that opens the options. */}
-              {review ? (
-                <span className="@md:flex hidden items-center gap-3">
-                  {!correct && right !== undefined && (
-                    <span className="whitespace-nowrap font-bold text-tint-success-fg text-xs">
-                      {m.question_ui_correct_letter({
-                        letter: optionLetter(right),
-                      })}
-                    </span>
-                  )}
-                  <span
-                    className={cn(
-                      'w-16 border-b-2 px-1.5 py-1.5 font-bold',
-                      correct
-                        ? 'border-solid-success text-tint-success-fg'
-                        : 'border-solid-error text-tint-error-fg'
-                    )}
-                  >
-                    {letter < 0 ? '–' : optionLetter(letter)}
-                  </span>
-                </span>
-              ) : (
-                <div className="@md:block hidden w-16">
-                  <Select
-                    disabled={disabled}
-                    onValueChange={(next) => choose(i, Number(next))}
-                    value={letter < 0 ? '' : String(letter)}
-                  >
-                    <SelectTrigger
-                      aria-label={left}
-                      className={cn(
-                        'h-auto border-line-strong bg-transparent px-1.5 py-1.5 font-bold disabled:cursor-default disabled:bg-transparent data-[state=open]:border-solid-accent-1 data-[state=open]:border-b-2',
-                        letter >= 0 && 'text-tint-accent-1-fg'
-                      )}
-                      variant="underline"
-                    >
-                      <SelectValue placeholder="–" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {answer.options.map((option, index) => (
-                          <SelectItem
-                            hint={
-                              <TextView className="text-fg" text={option} />
-                            }
-                            key={index}
-                            size="sm"
-                            value={String(index)}
-                          >
-                            {optionLetter(index)}.
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {/* Phones: the letters themselves under the item, with the
-                  options listed above; no menu to open. */}
-              <div
-                aria-label={left}
-                className="col-span-3 flex @md:hidden flex-wrap gap-1.5 pl-8.5"
-                role="group"
-              >
-                {answer.options.map((_, index) => {
-                  const here = index === letter;
-                  const state: RowState | undefined = review
-                    ? here
-                      ? correct
-                        ? 'right'
-                        : 'wrong'
-                      : !correct && index === right
-                        ? 'missed'
-                        : undefined
-                    : here
-                      ? 'selected'
-                      : undefined;
-                  return (
-                    <button
-                      aria-pressed={here}
-                      className={cn(
-                        'grid size-10 place-items-center border-b font-bold disabled:cursor-default',
-                        state
-                          ? 'border-b-2'
-                          : 'border-line-strong text-fg-muted',
-                        state === 'selected' &&
-                          'border-solid-accent-1 text-tint-accent-1-fg',
-                        state === 'right' &&
-                          'border-solid-success text-tint-success-fg',
-                        state === 'wrong' &&
-                          'border-solid-error text-tint-error-fg',
-                        state === 'missed' &&
-                          'border-solid-success text-tint-success-fg',
-                        review && !state && 'opacity-45',
-                        !(review || disabled || state) && 'hover:text-fg'
-                      )}
-                      disabled={review || disabled}
-                      key={index}
-                      onClick={() => choose(i, index)}
-                      type="button"
-                    >
-                      {optionLetter(index)}
-                    </button>
-                  );
-                })}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+    const rows =
+      'left' in answer ? answer.left : answer.pairs.map((pair) => pair.left);
+    const picks = rows.map((_, i) => {
+      const chosen = choices[String(i)];
+      const index = chosen === undefined ? -1 : answer.options.indexOf(chosen);
+      return index < 0 ? undefined : index;
+    });
+    return (
+      <MatchingGrid
+        columns={answer.options}
+        correct={
+          review && key?.type === 'matching'
+            ? key.pairs.map((pair) => pair.right)
+            : undefined
+        }
+        label={m.question_ui_your_answer()}
+        onPick={
+          taking
+            ? (row, column) =>
+                onChange({ ...choices, [String(row)]: answer.options[column] })
+            : undefined
+        }
+        rows={rows}
+        value={picks}
+      />
     );
-    // The option list stays after checking so result letters keep their text.
-    return <MatchingLayout items={rows} options={answer.options} />;
   }
   if (answer.type === 'ordering') {
     const ordered = Array.isArray(value)

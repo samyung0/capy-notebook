@@ -1,6 +1,10 @@
 import type { Region, ReviewMode } from '@/api/types';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import {
+  type HistorySearch,
+  parseHistorySearch,
+} from '@/features/study/reviewSearch';
+import {
   isSettingsView,
   type SettingsView,
 } from '@/features/workspace/settingsTabs';
@@ -35,16 +39,26 @@ export type OpenItem =
 /** A note citation: the blocks it came from, and its text for one without. */
 export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
 
-/** The panel beside the rail, or `none` for no panel. `canvas` is the member's
- * board, which has no panel and fills the centre at every width. */
-export type WorkspacePanel = 'files' | 'agent' | 'canvas' | 'none';
+/** The page a URL can't name otherwise (Epo 2026-11-14: Files and Chat are
+ * pages, no panel state in the URL): Files with nothing open, the chat list
+ * (phones; wider it is the Chat page), a chat (the Chat page, or over the open
+ * file its window or sheet), the chat over Files with nothing open
+ * (`files-chat`), and the member's board. An open file or material is the
+ * Files page; `study` names the others; none is the Dashboard. */
+export type WorkspaceView =
+  | 'files'
+  | 'files-chat'
+  | 'chats'
+  | 'chat'
+  | 'canvas';
 
-export function isWorkspacePanel(value: unknown): value is WorkspacePanel {
+function isWorkspaceView(value: unknown): value is WorkspaceView {
   return (
     value === 'files' ||
-    value === 'agent' ||
-    value === 'canvas' ||
-    value === 'none'
+    value === 'files-chat' ||
+    value === 'chats' ||
+    value === 'chat' ||
+    value === 'canvas'
   );
 }
 
@@ -60,14 +74,18 @@ export type WorkspaceOpenSearch = {
   /** The open item fills the page, header and side panels hidden. In the URL
    * so the back gesture leaves it. */
   fullscreen?: true;
-  /** Which panel shows, in the URL so the back gesture steps through them (Epo
-   * 2026-11-05). Below the panels, `agent` is the chat page over the viewer. */
-  panel?: WorkspacePanel;
+  view?: WorkspaceView;
   /** The Canvas tab's canvas shown (Epo 2026-11-12: a member has several). */
   c?: string;
   /** One of the pages that came out of Study (To do or Assignments,
    * Practice, Members, Study's own summary) in the centre while nothing is open. */
-  study?: 'practice' | 'summary' | 'assignments' | 'members';
+  study?:
+    | 'practice'
+    | 'summary'
+    | 'history'
+    | 'bank'
+    | 'assignments'
+    | 'members';
   /** Assignments' open assignment, and a try at it: running, or results. */
   assignment?: string;
   attempt?: string;
@@ -75,16 +93,25 @@ export type WorkspaceOpenSearch = {
    * not its report. */
   own?: true;
   /** An assignment's report: its tab, and on Approve AI marks a question or
-   * member to open at. On Members, `member` is the profile open. */
-  tab?: 'questions' | 'members' | 'approve' | 'settings';
+   * member to open at. On a class staff's Study, `member` is the profile open. */
+  tab?:
+    | 'questions'
+    | 'responses'
+    | 'approve'
+    | 'members'
+    | 'settings'
+    | 'preview';
+  /** A graded quiz's Responses By question (By member without it). */
+  by?: 'question';
   question?: string;
   member?: string;
-  /** Members' By topic view (board G4), kept while a profile is open. */
+  /** A class staff's Study on Topics (board G4), kept while a profile is open. */
   show?: 'topics';
-  /** A class's Members on its Manage tab: sharing, invitations and roles. */
-  manage?: true;
-  /** Assignments' New assignment, opened with this quiz (board A1). */
-  newFromQuiz?: string;
+  /** Study's History tab: its sort and filters, as the account's History. */
+  sort?: HistorySearch['sort'];
+  dir?: HistorySearch['dir'];
+  kind?: string;
+  status?: string;
   /** Practice's topic session to start: its group, topic and, from a
    * suggestion, its mode. */
   group?: 'topic' | 'others' | 'workspace';
@@ -96,7 +123,7 @@ export type WorkspaceOpenSearch = {
   make?: 'files' | 'pages' | 'run';
   /** The page Make a quiz opened from, which cancelling returns to; the Dashboard
    * when there's none. */
-  makeFrom?: 'assignments' | 'practice';
+  makeFrom?: 'practice';
   /** The file whose pages it shows. */
   quizFile?: string;
   /** The question paper's files and the mark scheme or answer files, comma
@@ -172,13 +199,13 @@ export function parseWorkspaceOpenSearch(
     answers: undefined,
     assignment: undefined,
     attempt: undefined,
+    dir: undefined,
     file: undefined,
     group: undefined,
+    kind: undefined,
     make: undefined,
     makeFrom: undefined,
-    manage: undefined,
     member: undefined,
-    newFromQuiz: undefined,
     own: undefined,
     paper: undefined,
     question: undefined,
@@ -187,6 +214,8 @@ export function parseWorkspaceOpenSearch(
     reviewMode: undefined,
     run: undefined,
     show: undefined,
+    sort: undefined,
+    status: undefined,
     study: undefined,
     tab: undefined,
     topicId: undefined,
@@ -195,13 +224,13 @@ export function parseWorkspaceOpenSearch(
       search.add === 'upload' || search.add === 'create'
         ? search.add
         : undefined,
-    c: search.panel === 'canvas' ? text(search.c) : undefined,
+    c: search.view === 'canvas' ? text(search.c) : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
-    panel: isWorkspacePanel(search.panel) ? search.panel : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,
     settingsQuery: isSettingsView(search.settings)
       ? text(search.settingsQuery)
       : undefined,
+    view: isWorkspaceView(search.view) ? search.view : undefined,
   };
 }
 
@@ -230,8 +259,11 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
     };
   }
   if (search.study === 'assignments') return parseAssignments(search);
-  if (search.study === 'summary') return { study: 'summary' };
-  if (search.study === 'members') return parseMembers(search);
+  if (search.study === 'summary') return parseSummary(search);
+  if (search.study === 'history')
+    return { study: 'history', ...parseHistorySearch(search) };
+  if (search.study === 'members') return { study: 'members' };
+  if (search.study === 'bank') return { study: 'bank' };
   if (search.study === 'practice') return parsePractice(search);
   return parseMakeQuiz(search);
 }
@@ -241,10 +273,7 @@ function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
   const paper = text(search.paper);
   const answers = text(search.answers);
   const run = text(search.run);
-  const makeFrom =
-    search.makeFrom === 'assignments' || search.makeFrom === 'practice'
-      ? search.makeFrom
-      : undefined;
+  const makeFrom = search.makeFrom === 'practice' ? search.makeFrom : undefined;
   if (search.make === 'files')
     return { answers, make: 'files', makeFrom, paper };
   if (search.make === 'pages' && paper)
@@ -265,7 +294,14 @@ const text = (value: unknown) =>
 const GROUPS = ['topic', 'others', 'workspace'] as const;
 const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
 
-const TABS = ['questions', 'members', 'approve', 'settings'] as const;
+const TABS = [
+  'questions',
+  'responses',
+  'approve',
+  'members',
+  'settings',
+  'preview',
+] as const;
 
 /** Assignments, one assignment (its report's view), or a try at one. Unknown
  * tabs clear; ids are the page's to answer. */
@@ -273,18 +309,16 @@ function parseAssignments(
   search: Record<string, unknown>
 ): WorkspaceOpenSearch {
   const assignment = text(search.assignment);
-  if (!assignment) {
-    const newFromQuiz = text(search.newFromQuiz);
-    return {
-      study: 'assignments',
-      ...(newFromQuiz ? { newFromQuiz } : {}),
-    };
-  }
+  if (!assignment) return { study: 'assignments' };
   const attempt = text(search.attempt);
   if (attempt) return { assignment, attempt, study: 'assignments' };
   const tab = TABS.find((t) => t === search.tab);
   const question = tab === 'approve' ? text(search.question) : undefined;
   const member = tab === 'approve' ? text(search.member) : undefined;
+  const by =
+    tab === 'responses' && search.by === 'question'
+      ? ('question' as const)
+      : undefined;
   return {
     assignment,
     study: 'assignments',
@@ -292,6 +326,7 @@ function parseAssignments(
       ? { own: true as const }
       : {}),
     ...(tab ? { tab } : {}),
+    ...(by ? { by } : {}),
     ...(question ? { question } : {}),
     ...(member ? { member } : {}),
   };
@@ -301,16 +336,13 @@ function parseAssignments(
 export const parseTaskSearch = (search: Record<string, unknown>) =>
   parseAssignments(search);
 
-/** Members, its By topic view, or a member's profile. */
-function parseMembers(search: Record<string, unknown>): WorkspaceOpenSearch {
+/** Study, for a class's staff its Topics tab or a member's profile. */
+function parseSummary(search: Record<string, unknown>): WorkspaceOpenSearch {
   const member = text(search.member);
   return {
-    study: 'members',
+    study: 'summary',
     ...(member ? { member } : {}),
     ...(search.show === 'topics' ? { show: 'topics' as const } : {}),
-    ...(search.manage === true || search.manage === 'true'
-      ? { manage: true as const }
-      : {}),
   };
 }
 

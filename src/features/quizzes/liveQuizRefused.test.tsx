@@ -36,7 +36,7 @@ vi.mock('@/features/collaboration/itemRoom', () => ({
   },
 }));
 vi.mock('./liveQuiz', () => ({
-  readLearnerQuestions: () => [{ id: 'live' }],
+  readLearnerQuestions: () => [{ id: 'live', parts: [] }],
 }));
 
 const { createRoot } = await import('react-dom/client');
@@ -45,7 +45,7 @@ const { useLiveQuizQuestions } = await import('./liveQuizReads');
 const shown = { current: [] as LearnerQuestion[] };
 function Reader() {
   shown.current = useLiveQuizQuestions('qz_1', [
-    { id: 'stored' },
+    { id: 'stored', parts: [] },
   ] as unknown as LearnerQuestion[]);
   return null;
 }

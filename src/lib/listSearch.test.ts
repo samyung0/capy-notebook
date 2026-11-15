@@ -80,12 +80,12 @@ describe('remembered sort', () => {
 
   it('comes back only when the URL names no sort', () => {
     stubStorage();
-    sortSearch('results', 'score', true, 'date');
-    expect(savedSort('results', SORTS, 'date', {})).toEqual({
+    sortSearch('history', 'score', true, 'date');
+    expect(savedSort('history', SORTS, 'date', {})).toEqual({
       dir: 'asc',
       sort: 'score',
     });
-    expect(savedSort('results', SORTS, 'date', { sort: 'date' })).toBe(
+    expect(savedSort('history', SORTS, 'date', { sort: 'date' })).toBe(
       undefined
     );
   });
@@ -95,8 +95,8 @@ describe('remembered sort', () => {
   it('never returns a default or unknown sort', () => {
     const store = stubStorage();
     store.set('capy.sort.results', JSON.stringify({ sort: 'date' }));
-    expect(savedSort('results', SORTS, 'date', {})).toBe(undefined);
+    expect(savedSort('history', SORTS, 'date', {})).toBe(undefined);
     store.set('capy.sort.results', JSON.stringify({ sort: 'bogus' }));
-    expect(savedSort('results', SORTS, 'date', {})).toBe(undefined);
+    expect(savedSort('history', SORTS, 'date', {})).toBe(undefined);
   });
 });

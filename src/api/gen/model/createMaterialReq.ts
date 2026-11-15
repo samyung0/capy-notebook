@@ -12,6 +12,8 @@ export interface CreateMaterialReq {
   readonly $schema?: string;
   /** Versioned Plate document */
   content?: Envelope;
+  /** Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day */
+  gradedQuiz?: boolean;
   /** Material kind */
   kind: MaterialKind;
   /** @nullable */

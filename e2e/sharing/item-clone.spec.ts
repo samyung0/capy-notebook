@@ -64,7 +64,7 @@ test('a file clones into another workspace under a new name', async ({
   expect(copy.workspaceId).toBe(target.id);
   expect(copy.name).toBe('copied-notes.md');
   await expect(ownerPage).toHaveURL(
-    new RegExp(`/workspaces/${target.id}\\?file=${copy.id}(&panel=\\w+)?$`)
+    new RegExp(`/workspaces/${target.id}\\?file=${copy.id}(&view=\\w+)?$`)
   );
 });
 

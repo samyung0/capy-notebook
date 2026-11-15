@@ -26,9 +26,9 @@ pub use crate::catalog::{
     QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
     QUESTION_PLOT_LABEL_MAX, QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX,
     QUESTION_PLOT_SERIES_MAX, QUESTION_PLOT_TITLE_MAX, QUESTION_SVG_BYTES_MAX,
-    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_UNIT_MAX,
-    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
-    QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX,
+    QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX,
+    QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -635,8 +635,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
     match kind {
         "text" => {
-            strict(map, what, &["text", "type"], &["label"])?;
-            optional(map, "label", |v| meta(v, what))?;
+            strict(map, what, &["text", "type"], &[])?;
             let text = text(&map["text"], what)?;
             Ok(Block {
                 kind: "text".into(),
@@ -1235,7 +1234,21 @@ fn answer(value: &Value) -> Result<Answer, String> {
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
     match kind {
         "mcq" => {
-            strict(map, what, &["correct", "options", "type"], &[])?;
+            // Multiple answer (Epo 2026-11-15): checkboxes even with one correct;
+            // Shuffle options with the options locked in place (Epo 2026-11-15).
+            strict(
+                map,
+                what,
+                &["correct", "options", "type"],
+                &["locked", "multiple", "shuffle"],
+            )?;
+            if present(map, "multiple").is_some_and(|v| v != &Value::Bool(true)) {
+                return fail(format!("{what}: multiple must be true"));
+            }
+            let shuffle = present(map, "shuffle");
+            if shuffle.is_some_and(|v| v != &Value::Bool(true)) {
+                return fail(format!("{what}: shuffle must be true"));
+            }
             let correct: Vec<f64> = array(&map["correct"], what, 1, QUESTION_ANSWERS_MAX)?
                 .iter()
                 .map(|v| index(v, what))
@@ -1246,6 +1259,19 @@ fn answer(value: &Value) -> Result<Answer, String> {
             if distinct.len() != correct.len() || correct.iter().any(|n| *n >= options.len() as f64)
             {
                 return fail("Choose valid, distinct correct options.");
+            }
+            // Sorted, distinct option indices, only with shuffle.
+            if let Some(locked) = present(map, "locked") {
+                let locked: Vec<f64> = array(locked, what, 1, QUESTION_ANSWERS_MAX)?
+                    .iter()
+                    .map(|v| index(v, what))
+                    .collect::<Result<_, _>>()?;
+                if shuffle.is_none()
+                    || locked.windows(2).any(|w| w[0] >= w[1])
+                    || locked.iter().any(|n| *n >= options.len() as f64)
+                {
+                    return fail("Locked options must be distinct options of a shuffled question.");
+                }
             }
             Ok(Answer::of(kind))
         }
@@ -1308,15 +1334,12 @@ fn answer(value: &Value) -> Result<Answer, String> {
             })
         }
         "open" => {
-            strict(map, what, &["accepted", "hints", "type"], &[])?;
+            strict(map, what, &["accepted", "type"], &[])?;
             // At most one sample answer, and it is optional (Epo 2026-10-15).
             let accepted = array(&map["accepted"], what, 0, 1)?
                 .iter()
                 .map(|item| text(item, what))
                 .collect::<Result<Vec<_>, _>>()?;
-            for hint in array(&map["hints"], what, 0, QUESTION_ANSWERS_MAX)? {
-                text(hint, what)?;
-            }
             Ok(Answer {
                 open_accepted: accepted,
                 ..Answer::of(kind)
@@ -1579,9 +1602,19 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         map,
         what,
         &["id", "labels", "layout", "parts", "stem"],
-        &["groups", "level"],
+        &["groups", "level", "topicIds"],
     )?;
     let id = identifier(&map["id"], what)?;
+    // Its own topics (Epo 2026-11-15); absent or empty follows the quiz's.
+    optional(map, "topicIds", |v| {
+        let mut seen = HashSet::new();
+        for topic in array(v, what, 0, QUESTION_TOPICS_MAX)? {
+            if !seen.insert(identifier(topic, what)?) {
+                return fail(format!("{what}: a topic is listed twice"));
+            }
+        }
+        Ok(())
+    })?;
     one_of(&map["labels"], what, &["letters", "numbers"])?;
     one_of(&map["layout"], what, &["paper", "split"])?;
     optional(map, "level", |v| {

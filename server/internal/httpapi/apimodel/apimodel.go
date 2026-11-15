@@ -196,6 +196,8 @@ type Material struct {
 	// Hidden from members: only the workspace's owners and editors list,
 	// open or search it (Epo 2026-11-03).
 	Hidden bool `json:"hidden,omitempty"`
+	// AssignmentID is the graded quiz owning this quiz (migration 0174).
+	AssignmentID string `json:"assignmentId,omitempty"`
 	// SharePath is a standalone material's signed share link, for its Share
 	// dialog; absent in a workspace or embedded in a note.
 	SharePath string `json:"sharePath,omitempty"`
@@ -254,7 +256,7 @@ func FromMaterial(m store.Material) (Material, error) {
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
 		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID, Hidden: m.Hidden,
-		Trash: m.Trash,
+		AssignmentID: m.AssignmentID, Trash: m.Trash,
 	}, nil
 }
 
@@ -494,10 +496,13 @@ type AssignmentFormReq struct {
 	// AllowUploads lets members hand in a paper instead (Epo 2026-11-08).
 	AllowUploads bool                      `json:"allowUploads,omitempty"`
 	Files        []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
+	// Points grades a class's Assignment out of this many (Epo 2026-11-14);
+	// absent, it is not graded. A graded quiz and a task have none.
+	Points *AssignmentPoints `json:"points,omitempty"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the
-// awarded marks (open parts also itemAwards, Jev's marks per marking item;
+// awarded marks (open parts also itemAwards, the model's marks per marking item;
 // matching and gaps parts also itemResults, right or wrong per pair or gap).
 // Correct is the awarded marks over Total, the question's marks.
 type GradedQuestion struct {

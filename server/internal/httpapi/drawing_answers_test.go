@@ -63,6 +63,7 @@ func drawingAssignment(t *testing.T, h http.Handler, marking string) string {
 	}
 	var made struct{ ID string }
 	_ = json.Unmarshal(quiz.Body.Bytes(), &made)
+	gradedPending(t, made.ID)
 	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil) })
 	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
 		"kind": "marked", "title": "Drawn", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),

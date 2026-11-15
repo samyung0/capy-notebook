@@ -1,10 +1,8 @@
 import type {
-  AttemptKind,
-  AttemptParams,
-  AttemptSort,
-  PastReviewHas,
-  PastReviewParams,
-  PastReviewSort,
+  HistoryKind,
+  HistoryParams,
+  HistorySort,
+  HistoryStatus,
   ReviewMode,
   ReviewStart,
 } from '@/api/types';
@@ -41,89 +39,65 @@ export function parseReviewSearch(
   return out;
 }
 
-/* Learning → Past reviews keeps its sort and filters in the URL like the
- * list pages: sort, dir (asc only), workspace and has as comma lists. */
-export const PAST_REVIEW_SORTS: readonly PastReviewSort[] = [
+/* Learning → History keeps its sort and filters in the URL like the list
+ * pages: sort, dir (asc only), kind, status and workspace as comma lists; the server
+ * sorts, filters and pages. */
+export const HISTORY_SORTS: readonly HistorySort[] = [
   'date',
-  'quiz',
-  'cards',
-  'time',
   'workspace',
+  'name',
   'topic',
-  'status',
-];
-export const PAST_REVIEW_SORT_DEFAULT: PastReviewSort = 'date';
-const HAS: readonly PastReviewHas[] = ['quiz', 'flashcards'];
-export type PastReviewsSearch = {
-  sort?: PastReviewSort;
-  dir?: 'asc';
-  workspace?: string;
-  has?: string;
-};
-
-export function parsePastReviewsSearch(
-  search: Record<string, unknown>
-): PastReviewsSearch {
-  const out: PastReviewsSearch = {};
-  const sort = PAST_REVIEW_SORTS.find((s) => s === search.sort);
-  if (sort && sort !== PAST_REVIEW_SORT_DEFAULT) out.sort = sort;
-  if (search.dir === 'asc') out.dir = 'asc';
-  const workspace = commaList(text(search.workspace));
-  if (workspace.length) out.workspace = workspace.join(',');
-  const has = commaList(text(search.has)).filter((h) =>
-    HAS.includes(h as PastReviewHas)
-  );
-  if (has.length) out.has = has.join(',');
-  return out;
-}
-
-export function pastReviewParams(search: PastReviewsSearch): PastReviewParams {
-  return {
-    dir: search.dir,
-    has: commaList(search.has) as PastReviewHas[],
-    sort: search.sort,
-    workspaceIds: commaList(search.workspace),
-  };
-}
-
-/* Learning → All results keeps the same keys, the server sorting, filtering
- * and paging. */
-export const RESULT_SORTS: readonly AttemptSort[] = [
-  'date',
   'score',
-  'quiz',
-  'workspace',
 ];
-export const RESULT_SORT_DEFAULT: AttemptSort = 'date';
-export type ResultsSearch = {
-  sort?: AttemptSort;
+export const HISTORY_SORT_DEFAULT: HistorySort = 'date';
+export const HISTORY_KINDS: readonly HistoryKind[] = [
+  'revision',
+  'quiz',
+  'flashcards',
+];
+export const HISTORY_STATUSES: readonly HistoryStatus[] = [
+  'open',
+  'partial',
+  'done',
+];
+export type HistorySearch = {
+  sort?: HistorySort;
   dir?: 'asc';
   kind?: string;
+  status?: string;
   workspace?: string;
 };
 
-export function parseResultsSearch(
+export function parseHistorySearch(
   search: Record<string, unknown>
-): ResultsSearch {
-  const out: ResultsSearch = {};
-  const sort = RESULT_SORTS.find((s) => s === search.sort);
-  if (sort && sort !== RESULT_SORT_DEFAULT) out.sort = sort;
+): HistorySearch {
+  const out: HistorySearch = {};
+  const sort = HISTORY_SORTS.find((s) => s === search.sort);
+  if (sort && sort !== HISTORY_SORT_DEFAULT) out.sort = sort;
   if (search.dir === 'asc') out.dir = 'asc';
   const workspace = commaList(text(search.workspace));
   if (workspace.length) out.workspace = workspace.join(',');
-  const kind = attemptKinds(text(search.kind));
+  const kind = historyKinds(text(search.kind));
   if (kind.length) out.kind = kind.join(',');
+  const status = historyStatuses(text(search.status));
+  if (status.length) out.status = status.join(',');
   return out;
 }
 
-const attemptKinds = (value?: string): AttemptKind[] =>
-  commaList(value).filter(
-    (k): k is AttemptKind => k === 'quiz' || k === 'flashcards'
+const historyStatuses = (value?: string): HistoryStatus[] =>
+  commaList(value).filter((s): s is HistoryStatus =>
+    HISTORY_STATUSES.includes(s as HistoryStatus)
   );
 
-export const resultParams = (search: ResultsSearch): AttemptParams => ({
+const historyKinds = (value?: string): HistoryKind[] =>
+  commaList(value).filter((k): k is HistoryKind =>
+    HISTORY_KINDS.includes(k as HistoryKind)
+  );
+
+export const historyParams = (search: HistorySearch): HistoryParams => ({
   dir: search.dir,
-  kinds: attemptKinds(search.kind),
+  kinds: historyKinds(search.kind),
   sort: search.sort,
+  statuses: historyStatuses(search.status),
   workspaceIds: commaList(search.workspace),
 });

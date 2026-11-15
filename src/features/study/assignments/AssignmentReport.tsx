@@ -1,10 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
-import {
-  useAssignmentReport,
-  useReleaseAssignmentGrades,
-  useTurnAssignmentToPractice,
-} from '@/api/hooks';
+import { type MouseEvent, useState } from 'react';
+import { useAssignmentReport, useReleaseAssignmentGrades } from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -12,58 +8,101 @@ import type {
   AssignmentQuestionReport,
   FileKind,
   MaterialRefType,
+  AssignmentReport as ReportData,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
+import { FileActionsTarget } from '@/features/files/fileModeContext';
+import {
+  createEditorStatusStore,
+  EditorSaveStatus,
+} from '@/features/materials/CenterContentHeader';
 import { answerLabels } from '@/features/questions/editorFields';
-import { optionLetter, TextView } from '@/features/questions/QuestionView';
+import { fullPartLabel } from '@/features/questions/groups';
+import { stripMarks } from '@/features/questions/parseMarkedText';
+import {
+  AnswerView,
+  optionLetter,
+  QuestionBlockView,
+  TextView,
+} from '@/features/questions/QuestionView';
+import { hasSample, SampleView } from '@/features/questions/SampleBlock';
 import {
   modelMarked,
   type Question,
   questionMarks,
 } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
+import { QuizReadSplit } from '@/features/quizzes/QuizEditor';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
-import { questionLine } from '../practice/practiceText';
+import { blockText, questionLine } from '../practice/practiceText';
 import { PracticeFrame, Td, Th } from '../practice/studyPage';
 import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
-import { AssignmentSettingsTab } from './AssignmentSettingsTab';
+import {
+  AssignmentPreview,
+  PreviewDialog,
+  QuizFilePreview,
+} from './AssignmentPreview';
+import { AssignmentSettingsTab, PublishButton } from './AssignmentSettingsTab';
 import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
-import { fileLink } from './assignmentPage';
+import { fileLink, reportView } from './assignmentPage';
 import {
   dayLabel,
-  holdsQuizPastClose,
+  isGraded,
   markText,
   percentText,
   takesLateWork,
 } from './assignmentText';
+import { GradedQuizQuestions } from './GradedQuizQuestions';
+import { GradeField } from './GradeField';
 import { HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
 import { MarkingNow } from './MarkingNow';
+import { UnmarkedView } from './MemberAssignment';
+import { PreviewButton } from './PreviewButton';
 
-/** Questions the report opens with, as the board draws them. */
+/** Rows the report opens with, as the board draws them. */
 const OPEN_FIRST = 3;
-/** A marking point most members missed gets the flag. */
-const OFTEN_MISSED = 0.5;
+
+const TRAILING_DOT = /\.$/;
 
 const CHIP =
   'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
 
+const TAB_LABELS: Record<ReportTab, () => string> = {
+  approve: m.assignment_tab_responses,
+  members: m.assignment_tab_members,
+  preview: m.assignment_preview,
+  questions: m.assignment_tab_questions,
+  responses: m.assignment_tab_responses,
+  settings: m.assignment_tab_settings,
+};
+
 /** An assignment's report (boards G3, G3m, A3): the facts as chips, then its
- * Questions, Members, Approve AI marks and Settings tabs, each with its own
- * link. An unmarked one lists who has ticked it; a draft has its settings alone,
- * Publish first. */
+ * tabs, each with its own link. A graded quiz (Epo 2026-11-15, boards Main and
+ * Responses) has Questions, its quiz edited in place, Responses and Settings,
+ * Preview and a draft's Publish in its header; a task lists who has ticked it,
+ * with Settings and Preview tabs. */
 export function AssignmentReport({
   assignment,
   search,
@@ -77,8 +116,10 @@ export function AssignmentReport({
     { errorBoundary: false }
   );
   const marked = assignment.kind === 'marked';
-  const firstTab: ReportTab = marked ? 'questions' : 'members';
-  const tab: ReportTab = search.tab ?? firstTab;
+  // A graded quiz, or an Assignment graded on points (Epo 2026-11-14).
+  const graded = isGraded(assignment);
+  const draft = !!assignment.draft;
+  const { approving, byQuestion, tab, tabs } = reportView(assignment, search);
   const go = (next: AssignmentsSearch) =>
     navigate({
       search: {
@@ -89,15 +130,22 @@ export function AssignmentReport({
       to: '.',
     });
   const pickTab = (value: string) =>
-    void go(value === firstTab ? {} : { tab: value as ReportTab });
+    void go(value === tabs[0] ? {} : { tab: value as ReportTab });
+  // Questions open or folded by hand, kept here so they stay that way across
+  // tabs (Epo 2026-11-14); null until one is toggled, the first few open.
+  const [opened, setOpened] = useState<string[] | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  // The quiz editor's Undo and Redo portal into the header, beside its save
+  // status, as on the quiz's own page.
+  const [editorActions, setEditorActions] = useState<HTMLElement | null>(null);
+  const [editorStatus] = useState(createEditorStatusStore);
   const manage = assignment.manage;
+  const quizId = manage?.quizId;
+  const editing = marked && tab === 'questions';
+  // No kind, submissions or average here: Responses' numbers hold those (Epo
+  // 2026-11-13).
   const chips = [
     assignment.draft ? m.assignment_draft() : null,
-    assignment.timeLimitMin
-      ? m.assignment_chip_timed({ minutes: assignment.timeLimitMin })
-      : marked
-        ? m.assignment_chip()
-        : m.assignment_kind_unmarked(),
     assignment.dueAt
       ? m.assignment_due({ date: dayLabel(assignment.dueAt) })
       : null,
@@ -109,26 +157,7 @@ export function AssignmentReport({
     assignment.closedAt
       ? m.assignment_closed_on({ date: dayLabel(assignment.closedAt) })
       : null,
-    assignment.draft
-      ? null
-      : marked
-        ? m.assignment_submitted_of({
-            done: manage?.done ?? 0,
-            total: manage?.assigned ?? 0,
-          })
-        : assignment.allowUploads
-          ? m.assignment_handed_in_of({
-              done: manage?.done ?? 0,
-              total: manage?.assigned ?? 0,
-            })
-          : m.assignment_done_of({
-              done: manage?.done ?? 0,
-              total: manage?.assigned ?? 0,
-            }),
-    manage?.average === undefined
-      ? null
-      : m.assignment_chip_average({ percent: percentText(manage.average) }),
-    !marked || assignment.draft || manage?.showGrades !== 'manual'
+    !graded || assignment.draft || manage?.showGrades !== 'manual'
       ? null
       : manage.gradesReleasedAt
         ? m.assignment_grades_released_on({
@@ -143,17 +172,33 @@ export function AssignmentReport({
       : 0;
   // Show grades Manual (T5): the button stays until they are released.
   const releasable =
-    marked &&
+    graded &&
     !assignment.draft &&
     manage?.showGrades === 'manual' &&
     !manage.gradesReleasedAt;
 
   return (
-    <PracticeFrame>
-      <BackToAssignments />
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+    <PracticeFrame
+      // The quiz editor fills the page under the tabs, as the quiz page does.
+      className={cn(editing && 'flex flex-col overflow-hidden pb-0 lg:pb-0')}
+    >
+      {/* Stepped aside past a phone's first Approve screen (tailwind.css). */}
+      <div data-report-head>
+        <BackToAssignments />
+      </div>
+      <div
+        className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5"
+        data-report-head
+      >
         <h1 className="t-page-title min-w-0">{assignment.title}</h1>
         <div className="flex flex-wrap items-center gap-1.5">
+          {/* The time limit alone, with no kind before it. */}
+          {assignment.timeLimitMin ? (
+            <span className={cn(CHIP, 'gap-1')}>
+              <Icon className="shrink-0" name="clock" size={14} />
+              {minutesShort(assignment.timeLimitMin)}
+            </span>
+          ) : null}
           {chips.map((chip) => (
             <span className={CHIP} key={chip}>
               {chip}
@@ -161,108 +206,237 @@ export function AssignmentReport({
           ))}
           {/* Waiting answers: AI-marked to approve, and not graded (T3). */}
           {toApprove > 0 && (
-            <span className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}>
+            <span
+              className={cn(CHIP, 'bg-tint-accent-1 text-tint-accent-1-fg')}
+            >
               {m.assignment_to_approve({ count: toApprove })}
             </span>
           )}
           {notGraded > 0 && (
-            <span className={cn(CHIP, 'bg-tint-error text-tint-error-fg')}>
+            <span className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}>
               {m.assignment_not_graded({ count: notGraded })}
             </span>
           )}
         </div>
-        {releasable && (
-          <ReleaseGrades
-            assignment={assignment}
-            className="max-sm:basis-full sm:ml-auto"
-          />
-        )}
-        {/* Closed under Do not show, its quiz stays held until this. */}
-        {manage?.toPractice && (
-          <TurnToPractice
-            assignment={assignment}
-            className="max-sm:basis-full sm:ml-auto"
-          />
+        {(marked || releasable) && (
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {editing && quizId && (
+              <>
+                <EditorSaveStatus labelled store={editorStatus} />
+                <span className="flex items-center" ref={setEditorActions} />
+              </>
+            )}
+            {/* A published one previews its frozen questions, so it waits
+                for the report. */}
+            {marked && (
+              <PreviewButton
+                disabled={!(draft || data)}
+                onClick={() => setPreviewing(true)}
+              />
+            )}
+            {marked && draft && <PublishButton assignment={assignment} />}
+            {releasable && <ReleaseGrades assignment={assignment} />}
+          </div>
         )}
       </div>
-      {assignment.draft ? (
-        <AssignmentSettingsTab assignment={assignment} className="mt-6" />
+      <div data-report-head>
+        <Tabs
+          className="page-bleed page-tabs-px mt-3.5 w-auto"
+          onChange={pickTab}
+          tabs={tabs.map((value) => ({ label: TAB_LABELS[value](), value }))}
+          value={tab}
+        />
+      </div>
+      {tab === 'settings' ? (
+        <AssignmentSettingsTab
+          assignment={assignment}
+          className="tab-body-mt"
+        />
+      ) : editing ? (
+        <div className="page-bleed flex min-h-0 flex-1 flex-col">
+          {quizId ? (
+            <FileActionsTarget.Provider value={editorActions}>
+              <GradedQuizQuestions
+                onStatusChange={editorStatus.getState().report}
+                quizId={quizId}
+              />
+            </FileActionsTarget.Provider>
+          ) : (
+            // Its quiz is gone: the questions members were given, to read.
+            data && (
+              <QuizReadSplit
+                questions={data.questions.map((item) => item.question)}
+              />
+            )
+          )}
+        </div>
       ) : marked ? (
-        <>
-          <Tabs
-            className="page-bleed page-tabs-px mt-3.5 w-auto"
-            onChange={pickTab}
-            tabs={[
-              { label: m.assignment_tab_questions(), value: 'questions' },
-              { label: m.assignment_tab_members(), value: 'members' },
-              {
-                label:
-                  assignment.manage?.marking === 'manual'
-                    ? m.assignment_tab_mark()
-                    : m.assignment_tab_approve(),
-                value: 'approve',
-              },
-              { label: m.assignment_tab_settings(), value: 'settings' },
-            ]}
-            value={tab}
+        isPending ? (
+          <SkeletonList className="mt-5" count={6} rowHeight={44} />
+        ) : isError ? (
+          <ErrorState
+            className="h-auto py-20"
+            errorId={unexpectedErrorId(error)}
+            onRetry={() => void refetch()}
+            title={m.assignment_load_failed()}
+            variant="panel"
           />
-          {tab === 'settings' ? (
-            <AssignmentSettingsTab
-              assignment={assignment}
-              className="tab-body-mt"
-            />
-          ) : isPending ? (
-            <SkeletonList className="mt-5" count={6} rowHeight={44} />
-          ) : isError ? (
-            <ErrorState
-              className="h-auto py-20"
-              errorId={unexpectedErrorId(error)}
-              onRetry={() => void refetch()}
-              title={m.assignment_load_failed()}
-              variant="panel"
-            />
-          ) : tab === 'members' ? (
-            <MembersTab
-              assignment={assignment}
-              go={go}
-              members={data.members}
-            />
-          ) : tab === 'approve' ? (
+        ) : approving ? (
+          <>
+            <div className="mt-4" data-report-head>
+              <BackToAssignments
+                label={m.assignment_tab_responses()}
+                search={{
+                  assignment: assignment.id,
+                  study: 'assignments' as const,
+                  tab: 'responses' as const,
+                }}
+              />
+            </div>
             <ApproveTab assignment={assignment} report={data} search={search} />
-          ) : (
-            <QuestionsTab
-              go={go}
-              questions={data.questions}
-              submitted={manage?.done ?? 0}
-            />
-          )}
-        </>
-      ) : (
-        <>
-          <Tabs
-            className="page-bleed page-tabs-px mt-3.5 w-auto"
-            onChange={pickTab}
-            tabs={[
-              { label: m.assignment_tab_members(), value: 'members' },
-              { label: m.assignment_tab_settings(), value: 'settings' },
-            ]}
-            value={tab === 'settings' ? tab : 'members'}
+          </>
+        ) : (
+          <ResponsesTab
+            assignment={assignment}
+            byQuestion={byQuestion}
+            go={go}
+            onOpened={setOpened}
+            opened={opened}
+            report={data}
+            waiting={
+              manage?.marking === 'manual' ? (manage.toApprove ?? 0) : toApprove
+            }
           />
-          {tab === 'settings' ? (
-            <AssignmentSettingsTab
-              assignment={assignment}
-              className="tab-body-mt"
-            />
-          ) : (
-            <UnmarkedBody
-              assignment={assignment}
-              loading={isPending}
-              members={data?.members ?? []}
-            />
-          )}
-        </>
+        )
+      ) : tab === 'preview' ? (
+        <UnmarkedView assignment={assignment} className="tab-body-mt" preview />
+      ) : (
+        <UnmarkedBody
+          assignment={assignment}
+          loading={isPending}
+          members={data?.members ?? []}
+        />
+      )}
+      {previewing && (
+        <PreviewDialog onClose={() => setPreviewing(false)}>
+          {/* What members see (Epo 2026-11-13): a published one's frozen
+              questions, a draft's quiz file as Publish would freeze it. */}
+          {draft
+            ? quizId && <QuizFilePreview quizId={quizId} />
+            : data && (
+                <AssignmentPreview
+                  questions={data.questions.map((item) => item.question)}
+                />
+              )}
+        </PreviewDialog>
       )}
     </PracticeFrame>
+  );
+}
+
+/** Responses (Epo 2026-11-15, board Responses): a View of By member (the
+ * members and their marks) or By question (the numbers, then each question's),
+ * how many handed in and their average, and at the right Approve AI grades
+ * (Mark answers under manual marking), which opens that view. */
+function ResponsesTab({
+  assignment,
+  byQuestion,
+  go,
+  onOpened,
+  opened,
+  report,
+  waiting,
+}: {
+  assignment: Assignment;
+  byQuestion: boolean;
+  go: (next: AssignmentsSearch) => unknown;
+  onOpened: (ids: string[]) => void;
+  opened: string[] | null;
+  report: ReportData;
+  /** Answers waiting for the button's view. */
+  waiting: number;
+}) {
+  const manage = assignment.manage;
+  const manual = manage?.marking === 'manual';
+  // The average of the marks the members' rows show, over theirs out of.
+  const marks = report.members.flatMap((member) =>
+    member.mark === undefined
+      ? []
+      : [{ mark: member.mark, total: member.total ?? 0 }]
+  );
+  const mean = (values: number[]) =>
+    formatPoints(
+      Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1))
+    );
+  const summary = [
+    m.assignment_handed_in_of({
+      done: manage?.done ?? 0,
+      total: manage?.assigned ?? 0,
+    }),
+    marks.length
+      ? m.assignment_average_of({
+          mark: mean(marks.map(({ mark }) => mark)),
+          total: mean(marks.map(({ total }) => total)),
+        })
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const view = m.assignment_view();
+  return (
+    <>
+      <div className="mt-4.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="font-semibold text-fg-secondary text-sm">{view}</span>
+        <Select
+          onValueChange={(value) =>
+            void go(
+              value === 'question'
+                ? { by: 'question', tab: 'responses' }
+                : { tab: 'responses' }
+            )
+          }
+          value={byQuestion ? 'question' : 'member'}
+        >
+          <SelectTrigger aria-label={view} className="w-42.5">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="member">{m.assignment_by_member()}</SelectItem>
+              <SelectItem value="question">
+                {m.assignment_by_question()}
+              </SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <span className="t-meta text-fg-muted max-sm:order-last max-sm:basis-full">
+          {summary}
+        </span>
+        <Button
+          className="ml-auto shrink-0"
+          onClick={() => void go({ tab: 'approve' })}
+        >
+          {manual
+            ? m.assignment_mark_answers()
+            : m.assignment_approve_ai_grades()}
+          {waiting > 0 && <span className="opacity-75">{`· ${waiting}`}</span>}
+        </Button>
+      </div>
+      {byQuestion ? (
+        <>
+          <AssignmentStats assignment={assignment} members={report.members} />
+          <QuestionsTab
+            aiMarks={!manual}
+            go={go}
+            onOpened={onOpened}
+            opened={opened}
+            questions={report.questions}
+          />
+        </>
+      ) : (
+        <MembersTab assignment={assignment} go={go} members={report.members} />
+      )}
+    </>
   );
 }
 
@@ -278,6 +452,9 @@ function UnmarkedBody({
 }) {
   return (
     <>
+      {!loading && (
+        <AssignmentStats assignment={assignment} members={members} />
+      )}
       {assignment.files.length > 0 && (
         <section className="mt-6.5 max-w-180">
           <h2 className="t-subtitle">{m.assignment_field_files()}</h2>
@@ -314,7 +491,7 @@ function UnmarkedBody({
         {loading ? (
           <SkeletonList className="mt-3" count={5} rowHeight={40} />
         ) : assignment.allowUploads ? (
-          <HandInMembers assignmentId={assignment.id} members={members} />
+          <HandInMembers assignment={assignment} members={members} />
         ) : (
           <ul className="mt-2">
             {members.map((member) => (
@@ -329,8 +506,18 @@ function UnmarkedBody({
                         date: dayLabel(member.submittedAt),
                       })
                     : m.assignment_not_done()}
-                  {member.late && <LateBadge penaltyPct={0} />}
+                  {member.late && (
+                    <LateBadge penaltyPct={member.latePenaltyPct} />
+                  )}
                 </span>
+                {/* Staff grade each member here (Epo 2026-11-14). */}
+                {assignment.points !== undefined && (
+                  <GradeField
+                    assignment={{ ...assignment, points: assignment.points }}
+                    className="shrink-0 py-1"
+                    member={member}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -389,7 +576,7 @@ function MembersTab({
     ) : (
       member.waitingAnswers > 0 && (
         <button
-          className="t-meta font-semibold text-tint-warning-fg underline decoration-[1.5px] underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
+          className="t-meta font-semibold text-tint-accent-1-fg underline decoration-[1.5px] underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
           onClick={(event) => {
             event.stopPropagation();
             void go({ member: member.userId, tab: 'approve' });
@@ -476,11 +663,7 @@ function MembersTab({
         ))}
       </ul>
       {takesLateWork(assignment) && (
-        <p className="t-meta mt-3 text-fg-muted">
-          {holdsQuizPastClose(assignment)
-            ? m.assignment_late_note_held()
-            : m.assignment_late_note()}
-        </p>
+        <p className="t-meta mt-3 text-fg-muted">{m.assignment_late_note()}</p>
       )}
     </>
   );
@@ -488,98 +671,217 @@ function MembersTab({
 
 const minutesShort = (count: number) => m.assignment_minutes_short({ count });
 
-/** Questions (G3): percent correct and answer frequencies, marking points and
- * how often each was awarded. The first few start open. */
-function QuestionsTab({
-  go,
-  questions,
-  submitted,
+/** An assignment's numbers over its Questions, or an unmarked one's Members
+ * (Epo 2026-11-13): submissions, then a marked one's average mark and time and
+ * the attempts and uploads a member is allowed. */
+function AssignmentStats({
+  assignment,
+  members,
 }: {
-  go: (next: AssignmentsSearch) => unknown;
-  questions: AssignmentQuestionReport[];
-  submitted: number;
+  assignment: Assignment;
+  members: AssignmentMemberRow[];
 }) {
-  const [opened, setOpened] = useState(() =>
-    questions.slice(0, OPEN_FIRST).map((q) => q.question.id)
+  const manage = assignment.manage;
+  const times = members.flatMap((member) =>
+    member.minutes ? [member.minutes] : []
   );
+  const marked = assignment.kind === 'marked';
+  const stats = [
+    {
+      label: marked
+        ? m.assignment_col_submitted()
+        : assignment.allowUploads
+          ? m.assignment_col_handed_in()
+          : m.assignment_done(),
+      value: m.assignment_stat_of({
+        done: manage?.done ?? 0,
+        total: manage?.assigned ?? 0,
+      }),
+    },
+    isGraded(assignment) && {
+      label: m.assignment_average(),
+      value: manage?.average === undefined ? '–' : percentText(manage.average),
+    },
+    marked && {
+      label: m.assignment_stat_time(),
+      value: times.length
+        ? minutesShort(
+            Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+          )
+        : '–',
+    },
+    marked && assignment.attempts > 1
+      ? {
+          label: m.assignment_field_attempts(),
+          value: String(assignment.attempts),
+        }
+      : null,
+    marked && assignment.allowUploads
+      ? {
+          label: m.assignment_stat_uploads(),
+          value: m.assignment_stat_allowed(),
+        }
+      : null,
+  ].filter((stat) => !!stat);
+  return (
+    <dl className="tab-body-mt mb-2 flex flex-wrap gap-x-10 gap-y-3">
+      {stats.map((stat) => (
+        <div key={stat.label}>
+          <dt className="t-meta text-fg-muted">{stat.label}</dt>
+          <dd className="mt-0.5 font-bold text-xl">{stat.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Questions (G3): percent correct and answer frequencies, marking points and
+ * how often each was awarded. A question of several parts lists each part on a
+ * row of its own (Epo 2026-11-14, board C), so nothing nests. The first few
+ * rows start open; `opened` is the report's once one is toggled. */
+function QuestionsTab({
+  aiMarks,
+  go,
+  onOpened,
+  opened: toggled,
+  questions,
+}: {
+  aiMarks: boolean;
+  go: (next: AssignmentsSearch) => unknown;
+  onOpened: (ids: string[]) => void;
+  opened: string[] | null;
+  questions: AssignmentQuestionReport[];
+}) {
+  type Row = {
+    id: string;
+    number: number;
+    part?: AssignmentPartReport;
+    row: AssignmentQuestionReport;
+  };
+  const rows = questions.flatMap((row, i): Row[] =>
+    row.parts.length > 1
+      ? row.parts.map((part) => ({ id: part.partId, number: i + 1, part, row }))
+      : [{ id: row.question.id, number: i + 1, row }]
+  );
+  const opened = toggled ?? rows.slice(0, OPEN_FIRST).map(({ id }) => id);
   return (
     <ol className="flex flex-col">
-      {questions.map((row, i) => (
+      {rows.map(({ id, number, part, row }) => (
         <QuestionReportRow
+          aiMarks={aiMarks}
           go={go}
-          key={row.question.id}
-          number={i + 1}
+          key={id}
+          number={number}
           onToggle={() =>
-            setOpened((list) =>
-              list.includes(row.question.id)
-                ? list.filter((id) => id !== row.question.id)
-                : [...list, row.question.id]
+            onOpened(
+              opened.includes(id)
+                ? opened.filter((other) => other !== id)
+                : [...opened, id]
             )
           }
-          open={opened.includes(row.question.id)}
+          open={opened.includes(id)}
+          part={part}
           row={row}
-          submitted={submitted}
         />
       ))}
     </ol>
   );
 }
 
+/** One row: a whole question, or one part of a question of several, named
+ * "Q18 (a)(i)" with its own numbers and, open, what it needs from its
+ * question (the stem and its group) above them. */
 function QuestionReportRow({
+  aiMarks,
   go,
   number,
   onToggle,
   open,
+  part,
   row,
-  submitted,
 }: {
+  /** The AI marks its open and drawn answers (Marking isn't Manual). */
+  aiMarks: boolean;
   go: (next: AssignmentsSearch) => unknown;
   number: number;
   onToggle: () => void;
   open: boolean;
+  part?: AssignmentPartReport;
   row: AssignmentQuestionReport;
-  submitted: number;
 }) {
   const { question } = row;
-  const marks = questionMarks(question);
-  const type = question.parts[0]?.answer.type;
-  const meta = `Q${number} · ${type ? answerLabels[type]() : ''} · ${
+  const source = part
+    ? question.parts.find((p) => p.id === part.partId)
+    : question.parts[0];
+  const marks = part ? (source?.marks ?? 0) : questionMarks(question);
+  const type = source?.answer.type;
+  const label = part ? fullPartLabel(question, part.partId) : '';
+  const name = label
+    ? label.startsWith('(')
+      ? `Q${number} ${label}`
+      : `Q${number}.${label.replace(TRAILING_DOT, '')}`
+    : `Q${number}`;
+  const meta = `${name} · ${type ? answerLabels[type]() : ''} · ${
     marks === 1
       ? m.question_ui_one_mark()
       : m.question_ui_marks({ count: marks })
   }`;
-  const line = <TextView text={questionLine(question)} />;
-  const score =
-    row.percent === undefined ? (
-      row.average === undefined ? (
-        <span className="t-meta text-fg-muted">
-          {m.assignment_too_few({ count: submitted })}
-        </span>
-      ) : (
-        <>
-          <span className="text-fg-muted">{m.assignment_average()}</span>{' '}
-          <b className={cn('font-bold', open && 'text-xl')}>
-            {formatPoints(Number(row.average.toFixed(1)))}
-          </b>{' '}
-          <span className="text-fg-muted">
-            {m.assignment_of_marks({ marks })}
-          </span>
-        </>
-      )
-    ) : (
-      <>
-        <b className={cn('font-bold', open && 'text-xl')}>
-          {percentText(row.percent)}
-        </b>{' '}
-        <span className="text-fg-muted">{m.assignment_correct()}</span>
-      </>
-    );
+  const line = (
+    <TextView
+      marks
+      text={(part && blockText(source?.blocks)) || questionLine(question)}
+    />
+  );
+  // A part's own row repeats its question's stem; any row its group's text
+  // and figures, which the parts' answers lean on.
+  const group = source?.group
+    ? question.groups?.find((g) => g.id === source.group)
+    : undefined;
+  const context = [...(part ? question.stem : []), ...(group?.blocks ?? [])];
+  // One wording (Epo 2026-11-13): "Average 80%" for closed answers, the
+  // average share of their marks, and "Average 2.8 of 4" for open and drawn
+  // ones; only "Average" is muted. "–" until one is marked.
+  const open_ = part
+    ? !!type && modelMarked(type)
+    : question.parts.some((p) => modelMarked(p.answer.type));
+  const { average, percent } = part ?? row;
+  const value = open_
+    ? average === undefined
+      ? undefined
+      : m.assignment_stat_of({
+          done: formatPoints(Number(average.toFixed(1))),
+          total: marks,
+        })
+    : percent === undefined
+      ? undefined
+      : percentText(percent);
+  // AI graded before the score, easy to spot down the list (Epo 2026-11-14).
+  const score = (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      {aiMarks && open_ && (
+        <Badge size="sm" tone="accent-1">
+          {m.assignment_ai_graded()}
+        </Badge>
+      )}
+      <span>
+        <span className="text-fg-muted">{m.assignment_average()}</span>{' '}
+        <b className={cn('font-bold', open && 'text-xl')}>{value ?? '–'}</b>
+      </span>
+    </span>
+  );
+  // Open, a click anywhere on it folds it again, but not one on a control
+  // inside or one that ends selecting text (Epo 2026-11-13).
+  const fold = (event: MouseEvent) => {
+    if ((event.target as Element).closest('a, button, summary')) return;
+    if (window.getSelection()?.toString()) return;
+    onToggle();
+  };
   if (!open)
     return (
       <li className="border-divider border-b">
         <button
           aria-expanded={false}
-          className="grid min-h-15 w-full grid-cols-[minmax(0,1fr)_20px] items-center gap-x-3 gap-y-1 py-3 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset md:grid-cols-[200px_minmax(0,1fr)_auto_20px]"
+          className="grid min-h-15 w-full grid-cols-[minmax(0,1fr)_20px] items-center gap-x-3 gap-y-1 py-3 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset md:grid-cols-[240px_minmax(0,1fr)_auto_20px]"
           onClick={onToggle}
           type="button"
         >
@@ -599,7 +901,11 @@ function QuestionReportRow({
       </li>
     );
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_20px] gap-x-3 border-divider border-b py-5 md:grid-cols-[320px_minmax(0,1fr)_20px] md:gap-x-10">
+    // The click is a shortcut; its fold button is the keyboard's way.
+    <li
+      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-x-3 border-divider border-b py-5 md:grid-cols-[320px_minmax(0,1fr)_20px] md:gap-x-10"
+      onClick={fold}
+    >
       <div className="min-w-0">
         <p className="t-meta text-fg-secondary">{meta}</p>
         <p className="mt-2 text-[1.0625rem] leading-snug">{line}</p>
@@ -615,13 +921,25 @@ function QuestionReportRow({
         <Icon className="rotate-180" name="chevronDown" size={16} />
       </button>
       <div className="col-span-2 mt-4 min-w-0 md:col-span-1 md:col-start-2 md:row-start-1 md:mt-0">
-        {row.parts.map((part) => (
+        {context.length > 0 && (
+          <div className="mb-5 grid gap-3">
+            {part && (
+              <p className="t-meta text-fg-secondary">
+                {m.assignment_from_question({ number })}
+              </p>
+            )}
+            {context.map((block, i) => (
+              <QuestionBlockView block={block} key={i} />
+            ))}
+          </div>
+        )}
+        {(part ? [part] : row.parts).map((stats) => (
           <PartStats
             go={go}
-            key={part.partId}
-            part={part}
+            key={stats.partId}
+            part={stats}
             question={question}
-            showLabel={row.parts.length > 1}
+            showLabel={!part && row.parts.length > 1}
           />
         ))}
       </div>
@@ -643,7 +961,9 @@ function PartStats({
   const source = question.parts.find((p) => p.id === part.partId);
   if (!source) return null;
   const label =
-    showLabel && source.blocks[0]?.type === 'text' ? source.blocks[0].text : '';
+    showLabel && source.blocks[0]?.type === 'text'
+      ? stripMarks(source.blocks[0].text)
+      : '';
   const answer = source.answer;
   return (
     <div className="mb-3 last:mb-0">
@@ -710,11 +1030,6 @@ function PartStats({
                       })}
                     </span>
                   </div>
-                  {item.marked > 0 && share < OFTEN_MISSED && (
-                    <span className="col-span-2 -mt-1 mb-1 inline-flex h-5.5 w-fit items-center justify-self-end rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs">
-                      {m.assignment_often_missed()}
-                    </span>
-                  )}
                 </div>
               );
             })}
@@ -726,6 +1041,54 @@ function PartStats({
             {m.assignment_check_marks()}
           </UnderlineLink>
         </>
+      )}
+      <PartKey part={source} />
+    </div>
+  );
+}
+
+/** A part's answer, sample answer and solution under its numbers (Epo
+ * 2026-11-13): the accepted answers or key where the bars do not already mark
+ * it, a long or drawing part's sample answer (Epo 2026-11-15), the Solution. */
+function PartKey({ part }: { part: Question['parts'][number] }) {
+  const { answer } = part;
+  const key =
+    answer.type === 'mcq' ||
+    answer.type === 'boolean' ||
+    modelMarked(answer.type) ? null : (
+      <AnswerView part={part} />
+    );
+  const sample = hasSample(part);
+  if (!key && !sample && part.solution.length === 0) return null;
+  return (
+    <div className="mt-4 grid gap-3">
+      {key && (
+        <div>
+          <p className="t-meta mb-1 text-fg-secondary">
+            {m.question_ui_answer()}
+          </p>
+          {key}
+        </div>
+      )}
+      {sample && (
+        <div>
+          <p className="t-meta mb-1 text-fg-secondary">
+            {m.question_ui_sample_answer_heading()}
+          </p>
+          <SampleView part={part} />
+        </div>
+      )}
+      {part.solution.length > 0 && (
+        <div>
+          <p className="t-meta mb-1 text-fg-secondary">
+            {m.question_ui_worked_solution()}
+          </p>
+          <div className="grid gap-3">
+            {part.solution.map((block, i) => (
+              <QuestionBlockView block={block} key={i} />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -753,17 +1116,23 @@ function OptionBars({
         const right = correct.includes(i);
         return (
           <li
-            className="grid min-h-7 grid-cols-[20px_minmax(0,1fr)_72px_16px] items-center gap-2 sm:grid-cols-[20px_minmax(0,230px)_minmax(80px,1fr)_20px]"
+            className={cn(
+              'grid min-h-7 items-center gap-2',
+              // True and False have no letter column, so they start at the
+              // column's edge.
+              letters
+                ? 'grid-cols-[20px_minmax(0,1fr)_72px_16px] sm:grid-cols-[20px_minmax(0,230px)_minmax(80px,1fr)_20px]'
+                : 'grid-cols-[minmax(0,1fr)_72px_16px] sm:grid-cols-[minmax(0,258px)_minmax(80px,1fr)_20px]'
+            )}
             key={label}
           >
-            {letters ? (
+            {letters && (
               <span className="font-semibold text-fg-muted">
                 {optionLetter(i)}
               </span>
-            ) : (
-              <span />
             )}
-            <span className="flex min-w-0 items-center gap-2 font-medium">
+            {/* Correct at the column's right edge, lined up down the list. */}
+            <span className="flex min-w-0 items-center justify-between gap-2 font-medium">
               <TextView className="truncate" text={label} />
               {right && (
                 <span className="t-meta inline-flex shrink-0 items-center gap-1 text-tint-success-fg">
@@ -791,40 +1160,6 @@ function OptionBars({
         );
       })}
     </ul>
-  );
-}
-
-/** Turn to practice (Epo 2026-11-11): ends the hold on a closed assignment's
- * quiz whose answers are Do not show, after a confirm. */
-function TurnToPractice({
-  assignment,
-  className,
-}: {
-  assignment: Assignment;
-  className?: string;
-}) {
-  const [asking, setAsking] = useState(false);
-  const { mutate, isPending } = useTurnAssignmentToPractice(
-    assignment.workspaceId,
-    assignment.id
-  );
-  return (
-    <div className={className}>
-      <Button disabled={isPending} onClick={() => setAsking(true)}>
-        {m.assignment_turn_to_practice()}
-      </Button>
-      {asking && (
-        <ConfirmDialog
-          body={m.assignment_turn_to_practice_body()}
-          confirmLabel={m.assignment_turn_to_practice()}
-          danger={false}
-          onClose={() => setAsking(false)}
-          onConfirm={() => mutate()}
-          open
-          title={m.assignment_turn_to_practice_title()}
-        />
-      )}
-    </div>
   );
 }
 

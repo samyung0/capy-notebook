@@ -361,7 +361,7 @@ describe('static study-block renderers', () => {
     ]);
     expect(html).toContain('Mitochondria');
     expect(html).toContain('Marking scheme');
-    expect(html).toContain('Worked solution');
+    expect(html).toContain('>Solution<');
     expect(html).toContain('Unused choice');
     expect(html).not.toContain('contenteditable="true"');
   });

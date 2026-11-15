@@ -13,7 +13,6 @@ export const PREF_KEYS = {
   /** Agent's panel shows a chat rather than the history: kept while it is on
    * screen, so coming back to the workspace finds it (Epo 2026-10-27, T19),
    * and gone when Agent moves off it. */
-  chatShown: (workspaceId: string) => `capy.workspace.chatShown.${workspaceId}`,
   filesView: 'capy.files.view',
   /** The flashcard run this browser continues: its attempt and each card's
    * ratings (flashcardRun.ts), per signed-in user on the app page (another
@@ -56,7 +55,7 @@ export const PREF_KEYS = {
 } as const;
 
 /** The lists whose sort menu pick is remembered. */
-export type SortedList = 'workspaces' | 'files' | 'pastReviews' | 'results';
+export type SortedList = 'workspaces' | 'files' | 'history';
 
 export function readPref<T>(
   key: string,

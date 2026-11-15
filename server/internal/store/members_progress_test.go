@@ -160,7 +160,11 @@ func TestMembersStandingsMatchSummary(t *testing.T) {
 
 	at := now.Add(time.Hour)
 	members := []string{f.viewer, f.other}
-	got, err := f.s.membersStandings(ctx, f.ws.ID, members, at)
+	topics, err := f.s.topicsOf(ctx, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.s.membersStandings(ctx, f.ws.ID, members, topics, at)
 	if err != nil {
 		t.Fatal(err)
 	}

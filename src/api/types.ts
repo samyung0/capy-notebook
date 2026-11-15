@@ -70,7 +70,6 @@ import type {
   UndoRefStatus,
   UserChatSendKey,
   UserChatSteps,
-  UserColor,
   WorkspaceRole,
 } from './gen/model';
 
@@ -112,6 +111,7 @@ export type {
   Flashcard,
   FlashcardSet,
   HiddenBody,
+  HistoryRow,
   ImportSourcesAccepted as SourceImportAcceptedResponse,
   InspectedSourceImport,
   InspectSourceImportRejected,
@@ -315,12 +315,7 @@ export type TrashItem = Omit<GenTrashItem, 'preview'> & {
  * bytes; `previewUrl` is a presence marker for PDF sources. */
 export type ViewableFile = SourceFile & { url: string };
 
-/** `color` is a client-side tint derived from the owning workspace/label/flashcardSet.
- * File rows carry the File thumbnail fields, flashcard rows a MaterialPreview. */
-export type SearchResult = Omit<GenSearchResult, 'preview'> & {
-  color?: UserColor;
-  preview?: FileTextPreview | MaterialPreview;
-};
+export type SearchResult = GenSearchResult;
 
 /** GET /quizzes/{id}: the quiz to view or take, answer-free (the wire keeps
  * questions opaque). */
@@ -349,7 +344,6 @@ export type {
   AnonymousFlashcards,
   CheckBankQuestionReq,
   CheckReviewItemReq,
-  ComputationCheckResp,
   GradeAnonymousQuizReq,
 } from './gen/model';
 /** A card or question in a review session; questions are answer-free and
@@ -383,6 +377,7 @@ export type {
   AssignmentFile,
   AssignmentFileRef,
   AssignmentFormReq,
+  AssignmentGradeInputBody as AssignmentGradeReq,
   AssignmentItemReport,
   AssignmentList,
   AssignmentManage,
@@ -409,7 +404,7 @@ export type {
   MissedQuestion,
   PastReview,
   Practice,
-  PracticeQuiz,
+  PracticeItem,
   PracticeReview,
   RateReviewItemReq,
   ReviewEvidence,
@@ -481,26 +476,21 @@ export interface ReviewStart {
   order?: 'recommended' | 'unattempted' | 'incorrect';
   topicId?: string;
 }
-export type AttemptSort = ListAttemptsSort;
 export type AttemptKind = import('./gen/model').Attempt['kind'];
-export interface AttemptParams {
+export type HistorySort = ListStudyHistorySort;
+export type HistoryKind = HistoryRow['kind'];
+export type HistoryStatus = HistoryRow['status'];
+export interface HistoryParams {
   dir?: 'asc';
-  kinds?: AttemptKind[];
-  sort?: AttemptSort;
+  kinds?: HistoryKind[];
+  sort?: HistorySort;
+  statuses?: HistoryStatus[];
   workspaceIds?: string[];
 }
 export type UsageEventSort = ListUsageEventsSort;
 export interface UsageEventParams {
   dir?: 'asc';
   sort?: UsageEventSort;
-}
-export type PastReviewSort = ListPastReviewsSort;
-export type PastReviewHas = 'quiz' | 'flashcards';
-export interface PastReviewParams {
-  dir?: 'asc';
-  has?: PastReviewHas[];
-  sort?: PastReviewSort;
-  workspaceIds?: string[];
 }
 
 /* ---------------- overridden request bodies ----------------
@@ -688,12 +678,12 @@ import type {
 } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import type {
-  ListAttemptsSort,
+  HistoryRow,
   ListItemsScope,
   ListItemsSort,
   ListOwnedFilesScope,
   ListOwnedFilesSort,
-  ListPastReviewsSort,
+  ListStudyHistorySort,
   ListUsageEventsSort,
 } from './gen/model';
 
@@ -717,6 +707,8 @@ export type GenerateKind = Exclude<MaterialKind, 'note' | 'canvas'>;
 export interface GenerateOptions {
   count: number;
   fileIds: string[];
+  /** Made for a graded quiz (GenerateReq.gradedQuiz). */
+  gradedQuiz?: boolean;
   mix?: boolean;
   title: string;
   topics: string[]; // topic ids
@@ -823,3 +815,20 @@ export type PDFAnnotation = Omit<
   import('./gen/model').PDFAnnotation,
   'rects'
 > & { rects: import('./gen/model').PDFRect[] };
+
+/* Item banks (todo-graded-quizzes.md): the caller's own (`me`) and a class
+   workspace's; a question carries its keys, since only its editors read it. */
+export type {
+  BankQuestionsCopyReq,
+  BankQuizReq,
+  ItemBank,
+  ItemBankQuestionReq,
+  ListItemBankQuestionsParams,
+} from './gen/model';
+export type ItemBankQuestion = Omit<
+  import('./gen/model').ItemBankQuestion,
+  'question'
+> & { question: Question };
+export type ItemBankPage = Omit<import('./gen/model').ItemBankPage, 'items'> & {
+  items: ItemBankQuestion[];
+};

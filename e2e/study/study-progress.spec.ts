@@ -49,7 +49,7 @@ async function createMaterial(
   return (await res.json()) as { id: string; title: string };
 }
 
-/** True/false questions: closed parts the server grades without Jev. */
+/** True/false questions: closed parts the server grades without a model. */
 function quizValue(questions: Array<{ prompt: string; correct: boolean }>) {
   return [
     {
@@ -415,15 +415,17 @@ test.describe('study progress', () => {
       new RegExp(`/workspaces/${ws.id}[?]study=practice$`)
     );
 
-    // The finished session is in Past reviews with one card and one question.
-    const past = await ownerApi.get('/api/review/sessions');
+    // The finished session is in History with one card and one question.
+    const past = await ownerApi.get('/api/learning/history?kind=revision');
     expect(past.status()).toBe(200);
     const [recorded] = (await past.json()).items;
     expect(recorded).toMatchObject({
       answered: 2,
-      cards: { correct: 1, total: 1 },
+      correct: 2,
       id: checkBody.session.id,
-      quiz: { correct: 1, total: 1 },
+      items: 2,
+      kind: 'revision',
+      status: 'done',
       total: 2,
       workspaceId: ws.id,
     });

@@ -486,8 +486,8 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 		got.TopicID != nil || got.TopicName != "" || got.UpdatedAt != got.CreatedAt || got.Preview != nil {
 		t.Fatalf("lost block = %+v, want name and size only", got)
 	}
-	reviews, _, err := s.PastReviews(ctx, member, PastReviewParams{Limit: 10})
-	if err != nil || len(reviews) != 1 || reviews[0].WorkspaceName != "" || reviews[0].TopicName != "" || reviews[0].IconID != "" {
+	reviews, _, err := s.StudyHistory(ctx, member, HistoryParams{Kinds: []string{"revision"}, Limit: 10})
+	if err != nil || len(reviews) != 1 || reviews[0].WorkspaceName != "" || len(reviews[0].Topics) != 0 || reviews[0].IconID != "" {
 		t.Fatalf("removed member's past review = %+v, %v; want the names blank", reviews, err)
 	}
 	notices, err := s.ListNotifications(ctx, member, 10, "")

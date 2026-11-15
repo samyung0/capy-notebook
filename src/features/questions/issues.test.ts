@@ -55,7 +55,7 @@ it('ignores empty text blocks but needs a body', () => {
   ]);
 });
 
-it('drops blank answers, hints and marking items', () => {
+it('drops blank answers and marking items', () => {
   const short = exampleQuestion('short', {
     accepted: ['osmosis', ' '],
     type: 'short',
@@ -77,18 +77,14 @@ it('drops blank answers, hints and marking items', () => {
     type: 'gaps',
   });
   // Blank marking items go and the part's marks are the rest's (Epo
-  // 2026-10-15); a sample answer is optional.
+  // 2026-10-15); a sample answer is optional, and a blank one goes.
   const base = open();
   const scheme: Question = {
     ...base,
     parts: [
       {
         ...base.parts[0],
-        answer: {
-          accepted: [],
-          hints: ['', 'Think about surface area.'],
-          type: 'open',
-        },
+        answer: { accepted: [' '], type: 'open' },
         marks: 4,
         markscheme: [
           { marks: 3, text: 'Names the organelle.' },
@@ -99,7 +95,7 @@ it('drops blank answers, hints and marking items', () => {
   };
   expect(messages(scheme)).toEqual([]);
   expect(withoutBlanks(scheme).parts[0]).toMatchObject({
-    answer: { accepted: [], hints: ['Think about surface area.'] },
+    answer: { accepted: [] },
     marks: 3,
     markscheme: [{ marks: 3, text: 'Names the organelle.' }],
   });
@@ -293,7 +289,7 @@ it('words each issue, names parts and points at rows and titles', () => {
   ]);
   // More than one sample answer is an agent-only shape.
   const samples = structuredClone(open());
-  samples.parts[0].answer = { accepted: ['a', 'b'], hints: [], type: 'open' };
+  samples.parts[0].answer = { accepted: ['a', 'b'], type: 'open' };
   expect(messages(samples)).toEqual([m.question_issue_generic()]);
 });
 

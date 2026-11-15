@@ -3,12 +3,7 @@ import {
   type QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
-import {
-  Navigate,
-  useNavigate,
-  useRouter,
-  useSearch,
-} from '@tanstack/react-router';
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import {
   type ComponentProps,
   lazy,
@@ -91,6 +86,7 @@ import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizEditor, QuizReadSplit } from '@/features/quizzes/QuizEditor';
+import { QuizPreviewButton } from '@/features/study/assignments/PreviewButton';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -105,9 +101,9 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
   EditorStatusStoreContext,
-  FilesTitleButton,
   Header,
   type OneColumnChrome,
+  OneColumnTitle,
 } from './CenterContentHeader';
 import type { MaterialDocument } from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
@@ -457,7 +453,6 @@ function MaterialBody({
   const { data: materials, isPending } = useMaterials(workspaceId);
   const queryClient = useQueryClient();
   const [choice, setChoice] = useState<HeavyMaterialChoice | null>(null);
-  const alreadyOpen = useRef(false);
 
   // Wait for the list before deciding. Rendering first and gating afterwards
   // would download the very document the gate exists to avoid, then throw the
@@ -465,22 +460,6 @@ function MaterialBody({
   if (workspaceId && isPending) return <MaterialLoading />;
 
   const reference = materials?.find((entry) => entry.id === materialId);
-  // A direct link to a quiz assigned to the reader opens the assignment. One
-  // already open when it was assigned stays until they leave (Epo 2026-11-05).
-  if (reference?.assignmentId && !alreadyOpen.current) {
-    return (
-      <Navigate
-        params={{ workspaceId }}
-        replace
-        search={{
-          assignment: reference.assignmentId,
-          study: 'assignments' as const,
-        }}
-        to="/workspaces/$workspaceId"
-      />
-    );
-  }
-  if (reference) alreadyOpen.current = true;
   const heavy = heavyMaterial(reference);
   if (heavy && !choice) {
     return (
@@ -761,7 +740,13 @@ function MaterialContentBody({
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
       <QuizEditor
-        action={<StudyButton kind="quiz" materialId={materialId} />}
+        action={
+          // Preview beside Study: the quiz as members get it (Epo 2026-11-15).
+          <span className="inline-flex items-center gap-2">
+            <QuizPreviewButton quizId={materialId} />
+            <StudyButton kind="quiz" materialId={materialId} />
+          </span>
+        }
         copy={roomCopy}
         key={materialId}
         onPresenceChange={onPresenceChange}
@@ -776,6 +761,8 @@ function MaterialContentBody({
         stored={storedQuestions(material.content)}
         target={target}
         title={material.title}
+        topicId={material.topicId}
+        workspaceId={material.workspaceId}
       />
     );
   }
@@ -1035,7 +1022,7 @@ function EmptyCenter({
           <h2
             className={cn('t-body min-w-0 font-semibold', leading && '-ml-2')}
           >
-            <FilesTitleButton chrome={oneColumn}>
+            <OneColumnTitle>
               {/* Sized as an open file's icon in the same spot. */}
               <img
                 alt=""
@@ -1045,7 +1032,7 @@ function EmptyCenter({
               <span className="min-w-0 truncate">
                 {oneColumn.workspaceName}
               </span>
-            </FilesTitleButton>
+            </OneColumnTitle>
           </h2>
         )}
         {!(oneColumn && !sm) && (

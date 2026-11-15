@@ -19,37 +19,26 @@ const (
 	// rows in it; suggestions fill what is left.
 	learningRows     = 4
 	learningPractice = 3
-	// learningContinueWindow is how long something left partway stays offered.
-	learningContinueWindow = 14 * 24 * time.Hour
 	// learningStartWindow is how recently a workspace must have been opened or
 	// practised for its next new quiz or set to be offered.
 	learningStartWindow = 30 * 24 * time.Hour
 
-	LearningSession = "session"
-	LearningQuiz    = "quiz"
-	LearningStart   = "start"
-	LearningReview  = "review"
+	LearningStart  = "start"
+	LearningReview = "review"
 )
 
-// LearningRow is one row of What to do next. A session row continues SessionID
-// (Group, TopicName); a quiz row continues MaterialID's try; a start row opens
-// MaterialID; a review row starts Suggestion.
+// LearningRow is one row of What to do next: a start row opens MaterialID; a
+// review row starts Suggestion.
 type LearningRow struct {
-	Kind          string  `json:"kind" enum:"session,quiz,start,review"`
+	Kind          string  `json:"kind" enum:"start,review"`
 	WorkspaceID   string  `json:"workspaceId"`
 	WorkspaceName string  `json:"workspaceName"`
 	IconID        string  `json:"iconId"`
-	SessionID     *string `json:"sessionId,omitempty"`
-	Group         string  `json:"group,omitempty" enum:"topic,others,workspace,"`
-	TopicName     string  `json:"topicName,omitempty"`
 	MaterialID    *string `json:"materialId,omitempty"`
 	MaterialKind  string  `json:"materialKind,omitempty" enum:"quiz,flashcards,"`
 	Title         string  `json:"title,omitempty"`
-	// Answered of Total: items answered in a session, questions checked in a
-	// quiz. A start row's Total is its size.
-	Answered   int               `json:"answered"`
+	// Total is a start row's size.
 	Total      int               `json:"total"`
-	At         *time.Time        `json:"at,omitempty"`
 	Suggestion *ReviewSuggestion `json:"suggestion,omitempty"`
 }
 
@@ -185,10 +174,18 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 	prefs := reviewPrefsOf(prefsRaw)
 	prefs.Items = "quiz"
 	var suggestions []ReviewSuggestion
-	ids := make([]string, 0, len(scope))
 	byID := make(map[string]*learningWorkspace, len(scope))
+	ids := make([]string, 0, len(scope))
 	for _, ws := range scope {
 		ids = append(ids, ws.id)
+	}
+	// Every workspace's topics in one query, for its pool and its labels.
+	topicsByWs, err := s.topicsIn(ctx, ids)
+	if err != nil {
+		return out, err
+	}
+	for _, ws := range scope {
+		topics := topicsByWs[ws.id]
 		byID[ws.id] = ws
 		counts, err := s.itemCounts(ctx, userID, ws.id)
 		if err != nil {
@@ -200,12 +197,12 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 			ws.sizes[c.MaterialID] = c.Size
 			items += c.Size
 		}
-		pool, err := s.reviewPool(ctx, userID, ws.id, now)
+		pool, err := s.reviewPoolIn(ctx, userID, ws.id, &topics, now)
 		if err != nil {
 			return out, err
 		}
 		if items > 0 {
-			row, err := s.learningWorkspaceRow(ctx, userID, ws, len(pool), items, now)
+			row, err := s.learningWorkspaceRow(ctx, userID, ws, topics, len(pool), items, now)
 			if err != nil {
 				return out, err
 			}
@@ -227,22 +224,20 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 		a, b := out.Workspaces[i].LastPractisedAt, out.Workspaces[j].LastPractisedAt
 		return b == nil && a != nil || a != nil && b != nil && a.After(*b)
 	})
-	practice, err := s.learningContinue(ctx, userID, ids, byID, now)
+	// What was left partway is Continue's, above (Epo 2026-11-13).
+	practice, err := s.learningStart(ctx, userID, scope, now)
 	if err != nil {
 		return out, err
-	}
-	if len(practice) < learningPractice {
-		fresh, err := s.learningStart(ctx, userID, scope, now)
-		if err != nil {
-			return out, err
-		}
-		practice = append(practice, fresh...)
 	}
 	if len(practice) > learningPractice {
 		practice = practice[:learningPractice]
 	}
 	out.Next = append(out.Next, practice...)
-	if err := s.learningSuggestions(ctx, &out, suggestions); err != nil {
+	continuing, err := s.ContinueRows(ctx, userID, "", now)
+	if err != nil {
+		return out, err
+	}
+	if err := s.learningSuggestions(ctx, &out, suggestions, continuing); err != nil {
 		return out, err
 	}
 	for i := range out.Next {
@@ -251,13 +246,14 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 	return out, nil
 }
 
-func (s *Store) learningWorkspaceRow(ctx context.Context, userID string, ws *learningWorkspace, tried, items int, now time.Time) (LearningWorkspace, error) {
+func (s *Store) learningWorkspaceRow(ctx context.Context, userID string, ws *learningWorkspace, wsTopics workspaceTopics, tried, items int, now time.Time) (LearningWorkspace, error) {
 	row := LearningWorkspace{WorkspaceID: ws.id, Name: ws.name, IconID: ws.iconID, Labels: []LearningLabelCount{},
 		Tried: tried, Items: items, LastPractisedAt: ws.lastPractised}
-	topics, err := s.topicStandings(ctx, userID, ws.id, now)
+	standings, err := s.membersStandings(ctx, ws.id, []string{userID}, wsTopics, now)
 	if err != nil {
 		return row, err
 	}
+	topics := standings[userID]
 	// Weakest first, so a row reads what needs attention before what is fine.
 	for _, label := range []string{review.LabelNeedsPractice, review.LabelAttempted, review.LabelFamiliar, review.LabelProficient, review.LabelMastered, review.LabelNotStarted} {
 		n := 0
@@ -271,66 +267,6 @@ func (s *Store) learningWorkspaceRow(ctx context.Context, userID string, ws *lea
 		}
 	}
 	return row, nil
-}
-
-// learningContinue is what the user left partway, newest first: unfinished
-// sessions and quizzes with fewer questions checked than they hold.
-func (s *Store) learningContinue(ctx context.Context, userID string, ids []string, byID map[string]*learningWorkspace, now time.Time) ([]LearningRow, error) {
-	since := now.Add(-learningContinueWindow)
-	out := []LearningRow{}
-	rows, err := s.pool.Query(ctx, `SELECT rs.id, rs.workspace_id, rs.group_kind, COALESCE(t.name, ''),
-			(SELECT count(*) FROM review_answers ra WHERE ra.session_id=rs.id), jsonb_array_length(rs.items), rs.last_answer_at
-		FROM review_sessions rs LEFT JOIN topics t ON t.id=rs.topic_id
-		WHERE rs.user_id=$1 AND rs.finished_at IS NULL AND rs.workspace_id = ANY($2) AND rs.last_answer_at >= $3`, userID, ids, since)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var r LearningRow
-		var id string
-		var at time.Time
-		if err := rows.Scan(&id, &r.WorkspaceID, &r.Group, &r.TopicName, &r.Answered, &r.Total, &at); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		r.Kind, r.SessionID, r.At = LearningSession, &id, &at
-		r.WorkspaceName = byID[r.WorkspaceID].name
-		out = append(out, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	rows, err = s.pool.Query(ctx, `SELECT DISTINCT ON (a.material_id) a.material_id, COALESCE(m.workspace_id, m.practice_workspace_id), m.title,
-			jsonb_array_length(a.questions), a.taken_at
-		FROM attempts a JOIN materials m ON m.id=a.material_id
-		WHERE a.user_id=$1 AND a.kind='quiz' AND COALESCE(m.workspace_id, m.practice_workspace_id) = ANY($2) AND a.taken_at >= $3
-			AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
-		ORDER BY a.material_id, a.taken_at DESC`, userID, ids, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var r LearningRow
-		var id string
-		var at time.Time
-		if err := rows.Scan(&id, &r.WorkspaceID, &r.Title, &r.Answered, &at); err != nil {
-			return nil, err
-		}
-		ws := byID[r.WorkspaceID]
-		if r.Total = ws.sizes[id]; r.Answered >= r.Total {
-			continue
-		}
-		r.Kind, r.MaterialID, r.MaterialKind, r.At, r.WorkspaceName = LearningQuiz, &id, "quiz", &at, ws.name
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(*out[j].At) })
-	return out, nil
 }
 
 // learningStart is each recently used workspace's first quiz or set the user
@@ -365,7 +301,7 @@ func (s *Store) learningStart(ctx context.Context, userID string, scope []*learn
 		LEFT JOIN topics t ON t.id=m.topic_id
 		LEFT JOIN study_progress sp ON sp.material_id=m.id AND sp.user_id=$1
 		WHERE m.workspace_id = ANY($2) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL AND sp.material_id IS NULL
+			AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND sp.material_id IS NULL
 			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)
 		ORDER BY m.topic_id IS NULL, t.position, m.position, m.created_at DESC, m.id`, userID, ids)
 	if err != nil {
@@ -405,7 +341,7 @@ func (s *Store) learningStart(ctx context.Context, userID string, scope []*learn
 // learningSuggestions fills What to do next with the highest scored
 // suggestions, at most suggestionsPerWS per workspace, past any topic already
 // being continued.
-func (s *Store) learningSuggestions(ctx context.Context, out *LearningOverview, list []ReviewSuggestion) error {
+func (s *Store) learningSuggestions(ctx context.Context, out *LearningOverview, list []ReviewSuggestion, continuing []HistoryRow) error {
 	sort.SliceStable(list, func(i, j int) bool { return list[i].score > list[j].score })
 	if err := s.nameTopics(ctx, list); err != nil {
 		return err
@@ -416,7 +352,7 @@ func (s *Store) learningSuggestions(ctx context.Context, out *LearningOverview, 
 			break
 		}
 		sg := &list[i]
-		if perWS[sg.WorkspaceID] == suggestionsPerWS || continuing(out.Next, sg) {
+		if perWS[sg.WorkspaceID] == suggestionsPerWS || continues(continuing, sg) {
 			continue
 		}
 		perWS[sg.WorkspaceID]++
@@ -425,10 +361,12 @@ func (s *Store) learningSuggestions(ctx context.Context, out *LearningOverview, 
 	return nil
 }
 
-func continuing(rows []LearningRow, sg *ReviewSuggestion) bool {
-	return slices.ContainsFunc(rows, func(r LearningRow) bool {
-		return r.Kind == LearningSession && r.WorkspaceID == sg.WorkspaceID && r.Group == sg.Group &&
-			(sg.TopicName == "" || r.TopicName == sg.TopicName)
+// continues is whether Continue already holds a revision of the suggestion's
+// group.
+func continues(rows []HistoryRow, sg *ReviewSuggestion) bool {
+	return slices.ContainsFunc(rows, func(r HistoryRow) bool {
+		return r.Kind == HistoryRevision && r.WorkspaceID != nil && *r.WorkspaceID == sg.WorkspaceID &&
+			r.Group != nil && *r.Group == sg.Group && (sg.TopicName == "" || slices.Contains(r.Topics, sg.TopicName))
 	})
 }
 
@@ -479,13 +417,18 @@ func (s *Store) WorkspaceStudyTopics(ctx context.Context, userID, wsID string, c
 const gradesHeldSQL = `EXISTS (SELECT 1 FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 	WHERE t.id=ae.attempt_id AND a.grades_shown='manual' AND a.grades_released_at IS NULL)`
 
-// topicStandings is every topic holding a quiz the caller can see, in reading
-// order with Other files last, each with its label. An answer counts toward its
-// quiz's topic: questions carry no topic of their own yet, and flashcards stay
-// out of mastery. Trashed and deleted quizzes leave their answers out. It is
-// membersStandings read for one member.
+// topicStandings is every topic holding a quiz the caller can see, a question
+// of one, or an answer, in reading order with Other files last, each with its
+// label. An answer counts toward each of its question's topics (itemTopics);
+// flashcards stay out of mastery. A trashed quiz's answers still count, a
+// deleted quiz's toward the topics they were given in. It is membersStandings read for one
+// member.
 func (s *Store) topicStandings(ctx context.Context, userID, wsID string, now time.Time) ([]SummaryTopic, error) {
-	standings, err := s.membersStandings(ctx, wsID, []string{userID}, now)
+	topics, err := s.topicsOf(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	standings, err := s.membersStandings(ctx, wsID, []string{userID}, topics, now)
 	if err != nil {
 		return nil, err
 	}

@@ -128,9 +128,6 @@ it('shows a part left Not marked in the result as not marked, its marks in the t
   expect(html).toContain(m.result_not_marked({ count: 1 }));
   expect(html).not.toContain(m.result_wrong({ count: 1 }));
   expect(host.textContent).toContain('— / 4');
-  expect(host.textContent).toContain(
-    m.result_type_marks({ awarded: '—', max: '4' })
-  );
   // Its marks stay in the score's total.
   expect(host.textContent).toContain('0 / 4');
   act(() => root.unmount());

@@ -65,18 +65,10 @@ export function MaterialListItem({
         onClick={onOpen}
         params={{ workspaceId }}
         replace
-        // An assignee's row opens the assignment; the quiz is refused until it closes.
-        search={
-          matRef.assignmentId
-            ? { assignment: matRef.assignmentId, study: 'assignments' as const }
-            : { material: matRef.id }
-        }
+        search={{ material: matRef.id }}
         to="/workspaces/$workspaceId"
       >
-        <FileIcon
-          className="size-4"
-          name={materialIconName(matRef.type, matRef.assigned)}
-        />
+        <FileIcon className="size-4" name={materialIconName(matRef.type)} />
         <span className="min-w-0 flex-1 translate-y-px truncate">
           {matRef.type === 'quiz'
             ? m.files_quiz_row({ title: matRef.title })

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { Assignment } from '@/api/types';
-import { assignmentPage, fileLink } from './assignmentPage';
+import { assignmentPage, fileLink, reportView } from './assignmentPage';
 
 it("opens a task's pages in its workspace, or on To do's page with none", () => {
   expect(
@@ -32,4 +32,34 @@ it('opens a file where it sits, whatever workspace its task is in', () => {
     params: { materialId: 'm1' },
     to: '/materials/$materialId',
   });
+});
+
+// Epo 2026-11-15: a graded quiz's tabs are Questions | Responses | Settings.
+it("gives each report its tabs, a graded quiz's draft no Responses", () => {
+  const tabs = (kind: Assignment['kind'], draft: boolean) =>
+    reportView({ draft, kind }, {}).tabs;
+  expect(tabs('marked', false)).toEqual(['questions', 'responses', 'settings']);
+  expect(tabs('marked', true)).toEqual(['questions', 'settings']);
+  expect(tabs('unmarked', false)).toEqual(['members', 'settings', 'preview']);
+  expect(tabs('unmarked', true)).toEqual(['settings', 'preview']);
+});
+
+it("opens a graded quiz's older links on Responses", () => {
+  const quiz = { draft: false, kind: 'marked' as const };
+  expect(reportView(quiz, { tab: 'members' })).toMatchObject({
+    approving: false,
+    tab: 'responses',
+  });
+  expect(reportView(quiz, { tab: 'approve' })).toMatchObject({
+    approving: true,
+    tab: 'responses',
+  });
+  expect(reportView(quiz, { tab: 'preview' }).tab).toBe('questions');
+  expect(
+    reportView(quiz, { by: 'question', tab: 'responses' }).byQuestion
+  ).toBe(true);
+  // A task keeps Members as its own tab.
+  expect(
+    reportView({ draft: false, kind: 'unmarked' }, { tab: 'members' }).tab
+  ).toBe('members');
 });

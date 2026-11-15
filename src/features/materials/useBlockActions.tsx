@@ -17,15 +17,8 @@ import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
-/** A block opens itself; an assignee's quiz opens its assignment, as in
- * Recent, since the quiz itself is refused to them while it is open. */
+/** A block opens itself. */
 export function blockLink(item: MaterialListItem) {
-  if (item.assignmentId && !item.isOwner)
-    return linkOptions({
-      params: { workspaceId: item.workspaceId },
-      search: { assignment: item.assignmentId, study: 'assignments' },
-      to: '/workspaces/$workspaceId',
-    });
   return linkOptions({
     params: { materialId: item.id },
     to: '/materials/$materialId',
@@ -66,15 +59,6 @@ export function useBlockActions() {
       // In a workspace the viewer left it can only be deleted (it still pays).
       if (item.lostAccess) return [remove];
       const owner = !!item.isOwner;
-      // An assignee's quiz only opens its assignment.
-      if (item.assignmentId && !owner)
-        return [
-          {
-            icon: 'navigationForward',
-            label: m.assignment_open(),
-            onClick: () => navigate(blockLink(item)),
-          },
-        ];
       const items: MenuItem[] = [];
       if (item.kind === 'quiz') {
         items.push({

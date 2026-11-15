@@ -1,0 +1,39 @@
+{
+  "name": "text-label-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": false
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "label": "Reasoning",
+            "text": "The statement is false."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

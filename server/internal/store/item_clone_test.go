@@ -934,8 +934,8 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 	}
 	check("public editor", stranger, true)
 
-	// A class: its viewer member no longer clones, and while the quiz is under an
-	// open assignment neither does a public editor, only the owner.
+	// A class: its viewer member no longer clones, and once a graded quiz owns
+	// the quiz nobody does.
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET kind='class', share_role='viewer' WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -947,12 +947,14 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 	check("class public editor", stranger, true)
 	now := time.Now().UTC()
 	due := now.Add(time.Hour)
+	gradedPending(t, s, inWorkspace.ID)
 	if _, err := s.CreateAssignment(ctx, owner, ws.ID, AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: inWorkspace.ID,
 		Questions: frozenFixture(t), DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now); err != nil {
 		t.Fatal(err)
 	}
+	// A graded quiz's own quiz leaves Explore for everyone (migration 0174).
 	check("assigned, class public editor", stranger, false)
-	check("assigned, owner", owner, true)
+	check("assigned, owner", owner, false)
 }
 
 // A file copy keeps its made-from names (scope_file_names), as a material

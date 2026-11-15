@@ -58,7 +58,7 @@ function question(): Json {
       };
     else if (type === 'ordering') part.answer = { items: [0, 1, 2, 3].map(() => words(30)), type };
     else if (type === 'open') {
-      part.answer = { accepted: [words(200)], hints: [words(60)], type };
+      part.answer = { accepted: [words(200)], type };
       part.markscheme = [0, 1, 2].map(() => ({ marks: 1, text: words(60) }));
     } else part.answer = { accepted: [[words(8)], [words(9), words(7)]], type };
     return part;
@@ -156,7 +156,6 @@ function partMaps(part: Json): [YT.Map<unknown>, YT.Map<unknown>] {
   else if (type === 'short' || type === 'open') {
     keys.set('accepted', textEntries(answer.accepted as string[]));
     if (type === 'open') {
-      keys.set('hints', textEntries(answer.hints as string[]));
       keys.set(
         'markscheme',
         collection(part.markscheme as Json[], (item) => map({ marks: item.marks, text: text(item.text as string) }))

@@ -343,7 +343,7 @@ function QuestionRow({ item, n }: { item: ReviewAnswer; n: number }) {
         </span>
         <span className="min-w-0">
           <span className="line-clamp-2 font-semibold sm:line-clamp-1">
-            {n}. <TextView text={questionText(item)} />
+            {n}. <TextView marks text={questionText(item)} />
           </span>
           <span className="block text-fg-muted text-xs">
             {item.materialTitle}

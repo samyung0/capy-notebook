@@ -5,9 +5,13 @@ import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Button } from '@/components/ui/Button';
+import { DropdownMenuSeparator } from '@/components/ui/DropdownMenu';
 import { Icon } from '@/components/ui/Icon';
 import { Input, type InputProps } from '@/components/ui/Input';
+import { ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { BlockMenuItem, TableHandle } from '@/features/notes/blockMenu';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -18,7 +22,7 @@ import { GraphEditor } from './GraphEditor';
 import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
 import { repairFigureBlock } from './repair';
-import { IdleFormulaTools, TextEditor } from './TextEditor';
+import { clickPoint, IdleFormulaTools, TextEditor } from './TextEditor';
 import {
   CHART_KINDS,
   type ChartBlock,
@@ -1017,15 +1021,11 @@ export function BlockEditor({
     onChange: (text: string, lists: string[][]) => void;
   };
 }) {
-  const [cell, setCell] = useState<string | null>(null);
   // The text's blanks by id, in order, as the editor read them in; each
   // change carries every list along with its blank.
   const blankIds = useRef<string[] | null>(null);
   if (gaps && block.type === 'text')
     blankIds.current ??= gapNumbers([block]).map((_, i) => `g${i}`);
-  // Where the click that opened the cell landed (none from the keyboard).
-  const cellClick = useRef<{ x: number; y: number } | null>(null);
-  const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   // Closing the editor cancels a picked image still waiting to upload.
@@ -1078,36 +1078,6 @@ export function BlockEditor({
           </p>
           <QuestionBlockView block={block} />
         </div>
-        <Collapsible.Root>
-          <Collapsible.Trigger asChild>
-            <Button
-              className="-ml-4"
-              iconLeft="chevronDown"
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {m.question_ui_advanced()}
-            </Button>
-          </Collapsible.Trigger>
-          <Collapsible.Content className="max-w-sm pt-3">
-            <Field
-              count={{
-                max: limits.QUESTION_METADATA_MAX,
-                value: textLength(block.label),
-              }}
-              label={m.question_ui_paragraph_label()}
-            >
-              <FieldInput
-                maxLength={limits.QUESTION_METADATA_MAX}
-                onChange={(event) =>
-                  onChange({ ...block, label: event.target.value || undefined })
-                }
-                value={block.label ?? ''}
-              />
-            </Field>
-          </Collapsible.Content>
-        </Collapsible.Root>
       </div>
     );
   if (block.type === 'chart')
@@ -1222,7 +1192,52 @@ export function BlockEditor({
         </Field>
       </div>
     );
+  return (
+    <TableBlockEditor
+      block={block}
+      onChange={onChange}
+      toolbarTarget={toolbarTarget}
+    />
+  );
+}
+
+/**
+ * A question's table block drawn as a note's table (Epo 2026-11-15, the Plate
+ * table, mock T2): a row's pill at its left drags the row and opens Insert
+ * above, Insert below and Delete; a column's pill over its first cell opens
+ * Insert left, Insert right and Delete; + bars along the right edge and under
+ * the last row add one at the end. Header row sits with the cell's formula
+ * tools in the block's heading row (else a row of their own), as in the note's
+ * table bar; the tools show disabled until a cell opens, so opening one shifts
+ * nothing.
+ */
+function TableBlockEditor({
+  block,
+  onChange,
+  toolbarTarget,
+}: {
+  block: Extract<QuestionBlock, { type: 'table' }>;
+  onChange: (block: QuestionBlock) => void;
+  toolbarTarget?: HTMLElement | null;
+}) {
+  const [cell, setCell] = useState<string | null>(null);
+  // Where the click that opened the cell landed (none from the keyboard).
+  const cellClick = useRef<(() => { x: number; y: number }) | null>(null);
+  const [ownTools, setOwnTools] = useState<HTMLDivElement | null>(null);
+  const [formulaTools, setFormulaTools] = useState<HTMLSpanElement | null>(
+    null
+  );
+  // The column under the pointer, whose pill shows over its first cell.
+  const [hoveredColumn, setHoveredColumn] = useState<number | null>(null);
+  // A row being dragged by its pill, and where it would go.
+  const [drag, setDrag] = useState<{
+    from: number;
+    over: number;
+    side: 'bottom' | 'top';
+  } | null>(null);
   const columns = block.rows[0]?.length ?? 1;
+  const rowsFull = block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX;
+  const columnsFull = columns >= limits.QUESTION_TABLE_COLUMNS_MAX;
   const updateCell = (row: number, column: number, text: string) =>
     onChange({
       ...block,
@@ -1232,173 +1247,269 @@ export function BlockEditor({
           : cells
       ),
     });
-  // The chart's data table: a trash per row, Add row and column below, the
-  // header row under Advanced. A cell's formula tools go to the block's
-  // heading row, else a row of their own; they show disabled until a cell
-  // opens, so opening one shifts nothing.
-  const tools = toolbarTarget ?? cellTools;
+  // Rows and columns move under an open cell: it closes first.
+  const change = (rows: string[][]) => {
+    setCell(null);
+    onChange({ ...block, rows });
+  };
+  const insertRow = (at: number) =>
+    change([
+      ...block.rows.slice(0, at),
+      Array.from({ length: columns }, () => ''),
+      ...block.rows.slice(at),
+    ]);
+  const insertColumn = (at: number) =>
+    change(
+      block.rows.map((row) => [...row.slice(0, at), '', ...row.slice(at)])
+    );
+  const moveRow = (from: number, to: number) => {
+    const rows = [...block.rows];
+    const [row] = rows.splice(from, 1);
+    rows.splice(to > from ? to - 1 : to, 0, row);
+    change(rows);
+  };
+  const tools = toolbarTarget ?? ownTools;
+  const plusBar =
+    'absolute flex items-center justify-center rounded-(--radius-toolbar-button) bg-surface-hover-bg text-fg-muted opacity-0 outline-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action disabled:hidden group-focus-within/table:opacity-100 group-hover/table:opacity-100';
   return (
-    <div className="space-y-3">
+    <div>
       {!toolbarTarget && (
-        <div className="flex items-center" ref={setCellTools} />
+        <div className="flex items-center" ref={setOwnTools} />
       )}
-      {cell === null && tools && createPortal(<IdleFormulaTools />, tools)}
-      <div className="overflow-x-auto">
-        <table className="border-collapse text-sm">
-          <tbody>
-            {block.rows.map((row, i) => (
-              <tr key={i}>
-                <td className="w-0 whitespace-nowrap pr-1">
-                  <ToolbarButton
-                    disabled={block.rows.length <= 1}
-                    label={m.question_ui_remove_row_number({ number: i + 1 })}
-                    onClick={() => {
-                      setCell(null);
-                      onChange({
-                        ...block,
-                        rows: block.rows.filter((_, j) => i !== j),
-                      });
-                    }}
-                  >
-                    <Icon name="trash" />
-                  </ToolbarButton>
-                </td>
-                {row.map((text, j) => {
-                  const id = `${i}:${j}`;
-                  // What an empty cell is for, until it holds text.
-                  const placeholder =
-                    block.header && i === 0
+      {tools &&
+        createPortal(
+          <>
+            <span className="contents" ref={setFormulaTools} />
+            {cell === null &&
+              formulaTools &&
+              createPortal(<IdleFormulaTools />, formulaTools)}
+            <ToolbarGroup>
+              <ToolbarButton
+                active={!!block.header}
+                className="w-auto gap-1.5 px-1.5"
+                label={m.question_ui_header_row()}
+                onClick={() => onChange({ ...block, header: !block.header })}
+              >
+                <EditorIcon name="table" />
+                {m.question_ui_header_row()}
+              </ToolbarButton>
+            </ToolbarGroup>
+          </>,
+          tools
+        )}
+      {/* Room for the column pills above, the + bars right and below. */}
+      <div className="overflow-x-auto pt-2 pr-5 pb-5">
+        <div
+          className="group/table relative w-fit"
+          onMouseLeave={() => setHoveredColumn(null)}
+          onMouseOver={(event) => {
+            const column = (event.target as Element)
+              .closest?.('[data-table-column]')
+              ?.getAttribute('data-table-column');
+            if (column != null) setHoveredColumn(Number(column));
+          }}
+        >
+          <table className="border-collapse text-sm">
+            <tbody>
+              {block.rows.map((row, i) => (
+                <tr
+                  className={cn(
+                    'group/row',
+                    drag?.from === i && 'opacity-45',
+                    drag?.over === i &&
+                      drag.from !== i &&
+                      (drag.side === 'top'
+                        ? '[&>td]:border-t-2! [&>td]:border-t-action-accent!'
+                        : '[&>td]:border-b-2! [&>td]:border-b-action-accent!')
+                  )}
+                  key={i}
+                  onDragOver={(event) => {
+                    if (!drag) return;
+                    event.preventDefault();
+                    const box = event.currentTarget.getBoundingClientRect();
+                    const side =
+                      event.clientY < box.top + box.height / 2
+                        ? 'top'
+                        : 'bottom';
+                    if (drag.over !== i || drag.side !== side)
+                      setDrag({ ...drag, over: i, side });
+                  }}
+                  onDrop={(event) => {
+                    if (!drag) return;
+                    event.preventDefault();
+                    const to = drag.side === 'top' ? i : i + 1;
+                    if (to !== drag.from && to !== drag.from + 1)
+                      moveRow(drag.from, to);
+                    setDrag(null);
+                  }}
+                >
+                  <td className="relative w-2 min-w-2 max-w-2 select-none p-0">
+                    {/* The row's pill: a drag moves the row, a press opens
+                        its menu. */}
+                    <TableHandle
+                      className="top-1/2 left-0 h-7 w-4 -translate-y-1/2 cursor-grab active:cursor-grabbing group-focus-within/row:opacity-100 group-hover/row:opacity-100"
+                      handleProps={{
+                        draggable: true,
+                        onDragEnd: () => setDrag(null),
+                        onDragStart: (event) => {
+                          event.dataTransfer.effectAllowed = 'move';
+                          setDrag({ from: i, over: i, side: 'top' });
+                        },
+                      }}
+                      icon="moreVertical"
+                      label={m.editor_row()}
+                      side="right"
+                    >
+                      <BlockMenuItem
+                        disabled={rowsFull}
+                        icon="arrowUp"
+                        label={m.editor_insert_row_before()}
+                        onSelect={() => insertRow(i)}
+                      />
+                      <BlockMenuItem
+                        disabled={rowsFull}
+                        icon="arrowDown"
+                        label={m.editor_insert_row_after()}
+                        onSelect={() => insertRow(i + 1)}
+                      />
+                      <DropdownMenuSeparator />
+                      <BlockMenuItem
+                        disabled={block.rows.length <= 1}
+                        icon="trash"
+                        label={m.editor_delete_row()}
+                        onSelect={() =>
+                          change(block.rows.filter((_, j) => j !== i))
+                        }
+                      />
+                    </TableHandle>
+                  </td>
+                  {row.map((text, j) => {
+                    const id = `${i}:${j}`;
+                    const header = block.header && i === 0;
+                    // What an empty cell is for, until it holds text.
+                    const placeholder = header
                       ? m.question_ui_table_heading_placeholder()
                       : m.question_ui_table_cell_placeholder();
-                  return (
-                    <td
-                      className={cn(
-                        'border border-divider p-0 align-top',
-                        block.header &&
-                          i === 0 &&
-                          'bg-surface-hover-bg font-semibold'
-                      )}
-                      key={j}
-                    >
-                      {/* Columns grow with their text between these widths,
-                          then wrap. */}
-                      <div className="min-w-28 max-w-80 px-2 py-1.5">
-                        {cell === id ? (
-                          <TextEditor
-                            caretAt={cellClick.current}
-                            compact
-                            maxLength={limits.QUESTION_TEXT_MAX}
-                            onChange={(value) => updateCell(i, j, value)}
-                            placeholder={placeholder}
-                            toolbarTarget={tools}
-                            value={text}
-                          />
-                        ) : (
-                          <button
-                            aria-label={m.question_ui_edit_cell({
-                              column: j + 1,
-                              row: i + 1,
-                            })}
-                            className="min-h-8 w-full cursor-text text-left"
-                            onClick={(event) => {
-                              cellClick.current = event.detail
-                                ? { x: event.clientX, y: event.clientY }
-                                : null;
-                              setCell(id);
-                            }}
-                            type="button"
-                          >
-                            {text.trim() ? (
-                              <QuestionBlockView
-                                block={{ text, type: 'text' }}
-                              />
-                            ) : (
-                              <p className="font-normal text-placeholder leading-relaxed">
-                                {placeholder}
-                              </p>
-                            )}
-                          </button>
+                    return (
+                      <td
+                        className={cn(
+                          'relative border border-line p-0 align-top',
+                          header && 'bg-surface-hover-bg font-semibold'
                         )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="-ml-4 flex flex-wrap gap-2">
-        <Button
-          disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
-          iconLeft="plus"
-          onClick={() =>
-            onChange({
-              ...block,
-              rows: [...block.rows, Array.from({ length: columns }, () => '')],
-            })
-          }
-          size="sm"
-          type="button"
-          variant="ghost-hover"
-        >
-          {m.question_ui_add_row()}
-        </Button>
-        <Button
-          disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
-          iconLeft="plus"
-          onClick={() =>
-            onChange({ ...block, rows: block.rows.map((row) => [...row, '']) })
-          }
-          size="sm"
-          type="button"
-          variant="ghost-hover"
-        >
-          {m.question_ui_add_column()}
-        </Button>
-        <Button
-          disabled={columns <= 1}
-          onClick={() => {
-            setCell(null);
-            onChange({
-              ...block,
-              rows: block.rows.map((row) => row.slice(0, -1)),
-            });
-          }}
-          size="sm"
-          type="button"
-          variant="danger-light"
-        >
-          {m.question_ui_remove_last_column()}
-        </Button>
-      </div>
-      <Collapsible.Root>
-        <Collapsible.Trigger asChild>
-          <Button
-            className="-ml-4"
-            iconLeft="chevronDown"
-            size="sm"
+                        data-table-column={j}
+                        key={j}
+                      >
+                        {/* Columns grow with their text between these
+                            widths, then wrap. */}
+                        <div className="min-h-12 min-w-28 max-w-80 px-2 py-1.5 sm:px-3 sm:py-2">
+                          {cell === id ? (
+                            <TextEditor
+                              caretAt={cellClick.current}
+                              compact
+                              maxLength={limits.QUESTION_TEXT_MAX}
+                              onChange={(value) => updateCell(i, j, value)}
+                              placeholder={placeholder}
+                              toolbarTarget={formulaTools}
+                              value={text}
+                            />
+                          ) : (
+                            <button
+                              aria-label={m.question_ui_edit_cell({
+                                column: j + 1,
+                                row: i + 1,
+                              })}
+                              className="min-h-8 w-full cursor-text text-left"
+                              onClick={(event) => {
+                                cellClick.current =
+                                  event.detail &&
+                                  event.currentTarget.parentElement
+                                    ? clickPoint(
+                                        event,
+                                        event.currentTarget.parentElement
+                                      )
+                                    : null;
+                                setCell(id);
+                              }}
+                              type="button"
+                            >
+                              {text.trim() ? (
+                                <QuestionBlockView
+                                  block={{ text, type: 'text' }}
+                                />
+                              ) : (
+                                <p className="font-normal text-placeholder leading-relaxed">
+                                  {placeholder}
+                                </p>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {i === 0 && (
+                          <TableHandle
+                            className={cn(
+                              '-top-2 left-1/2 h-4 w-7 -translate-x-1/2 group-focus-within/table:opacity-100',
+                              hoveredColumn === j && 'opacity-100'
+                            )}
+                            icon="moreHorizontal"
+                            label={m.editor_column()}
+                            side="bottom"
+                          >
+                            <BlockMenuItem
+                              disabled={columnsFull}
+                              icon="arrowLeft"
+                              label={m.editor_insert_col_before()}
+                              onSelect={() => insertColumn(j)}
+                            />
+                            <BlockMenuItem
+                              disabled={columnsFull}
+                              icon="arrowRight"
+                              label={m.editor_insert_col_after()}
+                              onSelect={() => insertColumn(j + 1)}
+                            />
+                            <DropdownMenuSeparator />
+                            <BlockMenuItem
+                              disabled={columns <= 1}
+                              icon="trash"
+                              label={m.editor_delete_col()}
+                              onSelect={() =>
+                                change(
+                                  block.rows.map((cells) =>
+                                    cells.filter((_, k) => k !== j)
+                                  )
+                                )
+                              }
+                            />
+                          </TableHandle>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            aria-label={m.editor_insert_col_after()}
+            className={cn(plusBar, 'top-0 bottom-0 left-full ml-1 w-4')}
+            disabled={columnsFull}
+            onClick={() => insertColumn(columns)}
+            title={m.editor_insert_col_after()}
             type="button"
-            variant="ghost"
           >
-            {m.question_ui_advanced()}
-          </Button>
-        </Collapsible.Trigger>
-        <Collapsible.Content className="translate-x-0.5 pt-3">
-          <SelectField
-            className="w-44"
-            label={m.question_ui_header_row()}
-            onChange={(value) =>
-              onChange({ ...block, header: value === 'shown' })
-            }
-            options={[
-              { label: m.question_ui_graph_shown(), value: 'shown' },
-              { label: m.question_ui_graph_hidden(), value: 'hidden' },
-            ]}
-            value={block.header ? 'shown' : 'hidden'}
-          />
-        </Collapsible.Content>
-      </Collapsible.Root>
+            <EditorIcon className="size-3.5" name="plus" />
+          </button>
+          <button
+            aria-label={m.editor_insert_row_after()}
+            className={cn(plusBar, 'top-full right-0 left-2 mt-0.5 h-4')}
+            disabled={rowsFull}
+            onClick={() => insertRow(block.rows.length)}
+            title={m.editor_insert_row_after()}
+            type="button"
+          >
+            <EditorIcon className="size-3.5" name="plus" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

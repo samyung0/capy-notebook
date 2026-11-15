@@ -1,10 +1,11 @@
-import { type ComponentProps, useState } from 'react';
+import { type ComponentProps, type ReactNode, useState } from 'react';
 import { useCreateMaterial, useMaterials } from '@/api/hooks';
 import { PreviewCard } from '@/components/app/PreviewCard';
 import { Button } from '@/components/ui/Button';
 import { DialogCancel } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
+import { useBankPicker } from '@/features/itemBanks/BankPicker';
 import { MakeQuizDialog } from '@/features/makeQuiz/MakeQuizDialog';
 import {
   createMaterialDocument,
@@ -22,25 +23,34 @@ import {
   templateQuestions,
 } from './quizTemplates';
 
-type Tab = 'create' | 'generate' | 'convert';
+type Tab = 'create' | 'generate' | 'convert' | 'bank';
 
-/** Add practice (Epo 2026-11-11): one dialog with three ways to make a quiz for
- * the workspace. Create quiz picks a template, as Add file's Create tab does;
- * Generate quiz is the generate form; Convert to quiz is Make a quiz from a
- * file, whose dialog this is, so Continue goes on to its pages. */
+/** Add quiz (Epo 2026-11-11, renamed 2026-11-14): one dialog with four ways to
+ * make a quiz for the workspace, from Study's Add practice and the Dashboard's
+ * Make a quiz. Convert to quiz comes first and opens by default (Epo
+ * 2026-11-14): Make a quiz from a file, whose dialog this is, so Continue goes
+ * on to its pages. Create quiz picks a template, as Add file's Create tab
+ * does; Generate quiz is the generate form; From the bank copies picked item
+ * bank questions. */
 export function AddPracticeDialog({
+  graded,
   make,
   onOpenQuiz,
 }: {
+  /** New graded quiz's Questions step (Epo 2026-11-14): its title, and what
+   * takes the quiz made, which starts hidden. Convert has no Hide the quiz
+   * switch, and its upload and run stay in the dialog. */
+  graded?: {
+    initialTopicId?: string;
+    onMade: (quizId: string) => void;
+    title: ReactNode;
+  };
   /** Make a quiz from a file, as the workspace opens it. */
   make: ComponentProps<typeof MakeQuizDialog>;
-  onOpenQuiz: (id: string) => void;
+  onOpenQuiz?: (id: string) => void;
 }) {
   const { onClose, workspaceId, workspaceName } = make;
-  // A link or a reload with files picked is on its way to their pages.
-  const [tab, setTab] = useState<Tab>(
-    make.initial.paper.length > 0 ? 'convert' : 'create'
-  );
+  const [tab, setTab] = useState<Tab>('convert');
   const [template, setTemplate] = useState<QuizTemplateId>('blank');
   const { data: materials } = useMaterials(workspaceId, {
     errorBoundary: false,
@@ -48,27 +58,41 @@ export function AddPracticeDialog({
   const { isPending: creating, mutate: createMaterial } =
     useCreateMaterial(workspaceId);
   const generate = useMakePractice({
+    gradedQuiz: !!graded,
+    initialTopicId: graded?.initialTopicId,
     mixable: false,
     onlyYou: false,
-    onMade: onClose,
+    onMade: graded ? graded.onMade : onClose,
     workspaceId,
   });
 
+  // Generate's "{workspace} quiz {n}" names keep titles unique.
+  const title = () =>
+    nextGenerateTitle(
+      'quiz',
+      workspaceName,
+      (materials ?? []).map((material) => material.title)
+    );
+  const made = (id: string) => (graded?.onMade ?? onOpenQuiz)?.(id);
+  const bank = useBankPicker({
+    active: tab === 'bank',
+    gradedQuiz: !!graded,
+    label: graded ? m.action_continue() : m.action_create(),
+    onMade: made,
+    title,
+    workspaceId,
+  });
   const create = () =>
     createMaterial(
       {
         content: createMaterialDocument([
           quizNode({ questions: templateQuestions(template) }),
         ]),
+        gradedQuiz: !!graded,
         kind: 'quiz',
-        // Generate's "{workspace} quiz {n}" names keep titles unique.
-        title: nextGenerateTitle(
-          'quiz',
-          workspaceName,
-          (materials ?? []).map((material) => material.title)
-        ),
+        title: title(),
       },
-      { onSuccess: (material) => onOpenQuiz(material.id) }
+      { onSuccess: (material) => made(material.id) }
     );
 
   // Cancel sits beside the action from sm, as on Convert's step.
@@ -117,6 +141,7 @@ export function AddPracticeDialog({
                 })}
               </div>
               <div hidden={tab !== 'generate'}>{generate.body}</div>
+              <div hidden={tab !== 'bank'}>{bank.body}</div>
             </>
           ),
           footer:
@@ -127,11 +152,14 @@ export function AddPracticeDialog({
                     {creating ? <Spinner /> : m.action_create()}
                   </Button>
                 )
-              : footer(generate.credits, generate.startButton),
+              : tab === 'bank'
+                ? footer(bank.note, bank.action)
+                : footer(generate.credits, generate.startButton),
         };
   return (
     <MakeQuizDialog
       {...make}
+      graded={!!graded}
       tabs={{
         other,
         strip: (
@@ -139,14 +167,15 @@ export function AddPracticeDialog({
             className="dialog-tabs-bleed mb-4 w-auto"
             onChange={(next) => setTab(next as Tab)}
             tabs={[
+              { label: m.practice_tab_convert(), value: 'convert' },
               { label: m.practice_tab_create(), value: 'create' },
               { label: m.practice_tab_generate(), value: 'generate' },
-              { label: m.practice_tab_convert(), value: 'convert' },
+              { label: m.practice_tab_bank(), value: 'bank' },
             ]}
             value={tab}
           />
         ),
-        title: m.practice_add(),
+        title: graded?.title ?? m.practice_add_quiz(),
       }}
     />
   );

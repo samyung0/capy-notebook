@@ -4,23 +4,17 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { LearningRowGroup } from './learningRowGroup.ts';
 import type { LearningRowKind } from './learningRowKind.ts';
 import type { LearningRowMaterialKind } from './learningRowMaterialKind.ts';
 import type { ReviewSuggestion } from './reviewSuggestion.ts';
 
 export interface LearningRow {
-  answered: number;
-  at?: string;
-  group?: LearningRowGroup;
   iconId: string;
   kind: LearningRowKind;
   materialId?: string;
   materialKind?: LearningRowMaterialKind;
-  sessionId?: string;
   suggestion?: ReviewSuggestion;
   title?: string;
-  topicName?: string;
   total: number;
   workspaceId: string;
   workspaceName: string;

@@ -9,8 +9,8 @@ import (
 
 // The Files page's one list (Epo 2026-11-09): to the user a file is any of
 // them, so uploaded files, handed-in submissions, blocks (notes, quizzes,
-// flashcard sets) and embedded images and audio page, sort and filter
-// together. A narrow UNION ALL picks the page by a shared sort key; each row
+// flashcard sets) and embedded images and audio (an item bank question's too,
+// Epo 2026-11-14) page, sort and filter together. A narrow UNION ALL picks the page by a shared sort key; each row
 // is then read whole by its own listing (by IDs), as Recent reads its opens.
 // Drawn answers keep their own list.
 
@@ -49,8 +49,7 @@ type ItemListFilter struct {
 	// Query keeps rows whose shown name holds it, any case.
 	Query string
 	// All adds the files and blocks of the caller's own and member workspaces
-	// it does not pay for, and a hidden quiz assigned to it while that
-	// assignment is open, as Recent lists it; submissions and embeds are
+	// it does not pay for, as Recent lists them; submissions and embeds are
 	// always its own.
 	All       bool
 	Sort      string
@@ -93,7 +92,7 @@ func itemUnionSQL(all bool) string {
 		return `SELECT 'material', m.id, 'material:' || m.id, m.created_at, lower(m.title),
 			m.size_bytes, m.kind::text, lower(` + materialWorkspaceNameSQL + `), NULLIF(m.workspace_id, '')
 		FROM materials m
-		WHERE ` + scope + ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		WHERE ` + scope + ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 			AND m.kind IN ('note','quiz','flashcards')`
 	}
 	files := fileBranch(`f.user_id=$1`)
@@ -106,7 +105,7 @@ func itemUnionSQL(all bool) string {
 		materials = materialBranch(`m.owner_user_id=$1 AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)`) + `
 	UNION ALL
 	` + materialBranch(`m.workspace_id IN (`+memberWorkspacesSQL("$1")+`) AND m.owner_user_id<>$1
-			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1) OR `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)`)
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)`)
 	}
 	return files + `
 	UNION ALL
@@ -131,7 +130,13 @@ func itemUnionSQL(all bool) string {
 			FROM materials m JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
 			WHERE m.id=a.material_id OFFSET 0) top
 		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND a.purpose IN ('image','audio')
-			AND (` + lostAccessSQL("top.workspace_id", "$1") + ` OR (top.asset_trashed_at IS NULL AND top.trashed_at IS NULL))`
+			AND (` + lostAccessSQL("top.workspace_id", "$1") + ` OR (top.asset_trashed_at IS NULL AND top.trashed_at IS NULL))
+	UNION ALL
+	SELECT 'embed', a.id, 'embed:' || a.id, a.created_at, '', a.size_bytes, a.purpose::text,
+			lower(COALESCE(` + workspaceNameSQL("q.workspace_id", "bw.name") + `, '')), q.workspace_id
+		FROM editor_assets a JOIN item_bank_questions q ON q.id=a.bank_question_id
+			LEFT JOIN workspaces bw ON bw.id=q.workspace_id
+		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND a.purpose IN ('image','audio')`
 }
 
 // ListItems pages through the Files page's list: what the caller pays for,

@@ -30,7 +30,7 @@ func item(id, topic string, r float64, misses ...bool) (scored, []review.Rating)
 	}
 	it := ranked{studyItem: studyItem{ReviewItem: ReviewItem{MaterialID: "m", ItemID: id, Kind: "card"}}, r: r, reps: len(history)}
 	if topic != "" {
-		it.topicID = &topic
+		it.topicIDs = []string{topic}
 	}
 	return scoreItems([]ranked{it}, map[string][]review.Rating{"m/" + id: history}, ReviewPrefs{Items: "both", Focus: "balanced"})[0], history
 }
@@ -70,17 +70,12 @@ func TestGroupSuggestions(t *testing.T) {
 		t.Fatalf("an old workspace suggested %+v", got)
 	}
 
-	// No topic passes alone, the workspace does: one whole-workspace group.
-	spread, history := pool(mk("a1", "A", 0.3, false, false), mk("b1", "B", 0.3, false, false),
-		mk("c1", "C", 0.3, false, false), mk("o1", "", 0.3, false, false))
-	if got := groupSuggestions(spread, history, 1); len(got) != 1 || got[0].Group != GroupWorkspace || got[0].Mode != ModeFading {
-		t.Fatalf("spread suggestions = %+v", got)
-	}
-
-	// A workspace without topics is always one group.
-	flat, history := pool(mk("1", "", 0.6, false), mk("2", "", 0.6, true), mk("3", "", 0.6, false), mk("4", "", 0.6, false), mk("5", "", 0.6, true))
-	if got := groupSuggestions(flat, history, 1); len(got) != 1 || got[0].Group != GroupWorkspace || got[0].Mode != ModeFading {
-		t.Fatalf("flat suggestions = %+v", got)
+	// Only real topics are suggested (Epo 2026-11-13): missed items outside
+	// topics suggest nothing, nor does the whole workspace.
+	others, history := pool(mk("o1", "", 0.4, true), mk("o2", "", 0.4, true), mk("o3", "", 0.4, true),
+		mk("o4", "", 0.4, true), mk("a1", "A", 0.4, true), mk("a2", "A", 0.4, true), mk("a3", "A", 0.4, true), mk("a4", "A", 0.4, true))
+	if got := groupSuggestions(others, history, 1); len(got) != 1 || got[0].Group != GroupTopic {
+		t.Fatalf("suggestions with items outside topics = %+v", got)
 	}
 }
 
@@ -198,12 +193,24 @@ func TestReviewSessionRecords(t *testing.T) {
 	if len(resumed.Done) != 1 || resumed.Done[0].ItemID != cards[0].ID || resumed.Done[0].Rating != 1 || resumed.Done[0].Front != "Golgi" {
 		t.Fatalf("resumed done = %+v", resumed.Done)
 	}
-	overview, err := f.s.LearningOverview(ctx, f.user, time.Now())
-	if err != nil {
+	// Continue offers it, here and in its workspace, within the week.
+	for _, ws := range []string{"", f.ws.ID} {
+		if cont, err := f.s.ContinueRows(ctx, f.user, ws, time.Now()); err != nil || len(cont) != 1 || cont[0].ID != first.ID || cont[0].Answered != 1 || cont[0].Items != 3 {
+			t.Fatalf("continue in %q = %+v, %v", ws, cont, err)
+		}
+	}
+	if cont, err := f.s.ContinueRows(ctx, f.user, "", time.Now().Add(8*24*time.Hour)); err != nil || len(cont) != 0 {
+		t.Fatalf("continue a week on = %+v, %v", cont, err)
+	}
+	// Removed from Continue, History still offers it to go on.
+	if err := f.s.HideContinue(ctx, f.user, HistoryRevision, first.ID); err != nil {
 		t.Fatal(err)
 	}
-	if len(overview.Next) == 0 || overview.Next[0].Kind != LearningSession || overview.Next[0].Answered != 1 || overview.Workspaces[0].LastPractisedAt == nil {
-		t.Fatalf("overview = %+v", overview)
+	if cont, err := f.s.ContinueRows(ctx, f.user, "", time.Now()); err != nil || len(cont) != 0 {
+		t.Fatalf("continue after removing = %+v, %v", cont, err)
+	}
+	if open, _, err := f.s.StudyHistory(ctx, f.user, HistoryParams{Limit: 10}); err != nil || len(open) != 1 || open[0].Status != HistoryOpen || open[0].Answered != 1 || open[0].Items != 3 {
+		t.Fatalf("history of an unfinished revision = %+v, %v", open, err)
 	}
 	// The Study tab continues the same whole-workspace session.
 	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now()); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != first.ID || summary.Unfinished.Total != 3 {
@@ -227,12 +234,12 @@ func TestReviewSessionRecords(t *testing.T) {
 	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now()); err != nil || summary.Unfinished != nil {
 		t.Fatalf("study summary after the last answer = %+v, %v", summary.Unfinished, err)
 	}
-	past, more, err := f.s.PastReviews(ctx, f.user, PastReviewParams{Sort: "date", Limit: 10})
+	past, more, err := f.s.StudyHistory(ctx, f.user, HistoryParams{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if more || len(past) != 1 || past[0].Cards == nil || past[0].Cards.Correct != 2 || past[0].Cards.Total != 3 || past[0].Quiz != nil {
-		t.Fatalf("past = %+v", past)
+	if more || len(past) != 1 || past[0].Kind != HistoryRevision || past[0].Correct != 2 || past[0].Total != 3 || past[0].Status != HistoryDone {
+		t.Fatalf("history = %+v", past)
 	}
 
 	// A second session, ended early with Done, lists first.
@@ -243,12 +250,12 @@ func TestReviewSessionRecords(t *testing.T) {
 	if err := f.s.FinishReviewSession(ctx, f.user, second.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	past, _, err = f.s.PastReviews(ctx, f.user, PastReviewParams{Sort: "date", Limit: 10})
+	past, _, err = f.s.StudyHistory(ctx, f.user, HistoryParams{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(past) != 2 || past[0].ID != second.ID || past[0].Answered != 1 || past[0].Total != 3 {
-		t.Fatalf("past after a second session = %+v", past)
+	if len(past) != 2 || past[0].ID != second.ID || past[0].Answered != 1 || past[0].Items != 3 || past[0].Status != HistoryPartial {
+		t.Fatalf("history after a second session = %+v", past)
 	}
 	// Its result: the answered card, which rose from Again in the first session.
 	result, err := f.s.ReviewSessionResult(ctx, f.user, second.ID)
@@ -261,8 +268,8 @@ func TestReviewSessionRecords(t *testing.T) {
 	if _, err := f.s.ReviewSessionResult(ctx, other, second.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another user's result: %v", err)
 	}
-	if past, _, _ := f.s.PastReviews(ctx, f.user, PastReviewParams{Sort: "date", Has: []string{"quiz"}, Limit: 10}); len(past) != 0 {
-		t.Fatalf("quiz filter kept card sessions: %+v", past)
+	if past, _, _ := f.s.StudyHistory(ctx, f.user, HistoryParams{Kinds: []string{"quiz"}, Limit: 10}); len(past) != 0 {
+		t.Fatalf("quiz filter kept revisions: %+v", past)
 	}
 	if err := f.s.FinishReviewSession(ctx, other, second.ID, time.Now()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another user finished it: %v", err)
@@ -447,6 +454,7 @@ func TestResumeFollowsTheReadRule(t *testing.T) {
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.QuizID = assignedLater
+	gradedPending(t, f.s, assignedLater)
 	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now); err != nil {
 		t.Fatal(err)
 	}

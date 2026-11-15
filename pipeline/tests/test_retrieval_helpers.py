@@ -795,7 +795,7 @@ def test_normalize_questions_canonical_ids_and_optional_level():
             "parts": [
                 {
                     "blocks": [{"type": "text", "text": "Explain"}],
-                    "answer": {"type": "open", "accepted": ["Because"], "hints": []},
+                    "answer": {"type": "open", "accepted": ["Because"]},
                     "marks": 3,
                     "markscheme": [
                         {"text": "States the cause", "marks": 1},
@@ -829,7 +829,7 @@ def test_normalize_questions_rejects_legacy_or_partial_output():
     for data in ([{"type": "short", "prompt": "?"}], ["nope", None], []):
         with pytest.raises(workflows.GenerateEmpty):
             workflows.normalize_questions(data)
-    open_answer = {"type": "open", "accepted": ["Because"], "hints": []}
+    open_answer = {"type": "open", "accepted": ["Because"]}
     closed_answer = {"type": "boolean", "correct": True}
     item = {"text": "States the cause", "marks": 1}
     # Old string items, boolean marks, mismatched sums and closed schemes.

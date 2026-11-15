@@ -36,46 +36,6 @@ it('reviews the graded snapshot with marks, the answer before a collapsed soluti
   expect(html).toContain('<details class="col-start-2 min-w-0 text-sm">');
 });
 
-it('answers matching by option text and reviews it against the stored letters', () => {
-  const question = exampleQuestion('match', {
-    options: ['Stores DNA', 'Makes ATP', 'Unused choice'],
-    pairs: [{ left: 'Mitochondria', right: 1 }],
-    type: 'matching',
-  });
-  question.parts[0].awarded = 0;
-  // The learner read the options shuffled, so the answer is the text.
-  const answers = { 'match-part': { '0': 'Unused choice' } };
-  const taking = renderToStaticMarkup(
-    <QuestionRunner
-      answers={answers}
-      question={{
-        ...question,
-        parts: [
-          {
-            answer: {
-              left: ['Mitochondria'],
-              options: ['Unused choice', 'Stores DNA', 'Makes ATP'],
-              type: 'matching',
-            },
-            blocks: question.parts[0].blocks,
-            id: 'match-part',
-            marks: 1,
-          },
-        ],
-      }}
-    />
-  );
-  expect(taking).toContain('aria-label="Mitochondria"');
-  // Phones pick from the letters themselves, the chosen one pressed.
-  expect(taking).toContain('aria-pressed="true"');
-  for (const letter of ['>A<', '>B<', '>C<']) expect(taking).toContain(letter);
-  const reviewed = renderToStaticMarkup(
-    <QuestionRunner answers={answers} question={question} review />
-  );
-  expect(reviewed).toContain('>C<');
-  expect(reviewed).toContain('Correct: B');
-});
-
 it('reviews an ordering answered by item text against the stored order', () => {
   const question = exampleQuestion('order', {
     items: ['First event', 'Second event', 'Third event'],
@@ -105,7 +65,6 @@ it('shows an open part with its marks and a verdict over its marking points', ()
   const graded = (awards: number[], answer: string) => {
     const question = exampleQuestion('open', {
       accepted: ['Supporting evidence'],
-      hints: [],
       type: 'open',
     });
     question.parts[0].marks = 2;
@@ -213,7 +172,6 @@ it('lists a wrong multi-answer part as your answer, then the correct answer apar
 it('reads a part left Not marked as unmarked, with its marking points, not as 0', () => {
   const question = exampleQuestion('open', {
     accepted: [],
-    hints: [],
     type: 'open',
   });
   question.parts[0].marks = 4;

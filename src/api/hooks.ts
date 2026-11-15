@@ -58,11 +58,11 @@ import type {
   AssignmentList,
   AssignmentMark,
   AssignmentReport,
-  Attempt,
   AttemptDetail,
-  AttemptParams,
   AutoReloadReq,
   AutoReloadResp,
+  BankQuestionsCopyReq,
+  BankQuizReq,
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
@@ -98,6 +98,8 @@ import type {
   FlashcardSet,
   GenerateOptions,
   HiddenBody,
+  HistoryParams,
+  HistoryRow,
   IngestSlots,
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
@@ -127,14 +129,13 @@ import type {
   NotificationPage,
   NotificationPrefs,
   OperationReceipt,
-  PastReview,
-  PastReviewParams,
   PendingWorkspaceInvite,
   Practice,
   Privacy,
   PublicFlashcardSetPage,
   PublicQuizPage,
   PublicWorkspacePage,
+  Question,
   Quiz,
   RateReviewItemReq,
   RecentPage,
@@ -2653,12 +2654,46 @@ export function useCreateMaterial(wsId: string) {
     onSuccess: (mt) => {
       if (mt.kind === 'note') track('note_created', { workspaceId: wsId });
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
-      // New assignment's Quiz field lists the workspace's quizzes from here.
+      // Practice lists the workspace's quizzes from here.
       if (mt.kind === 'quiz')
         qc.invalidateQueries({ queryKey: qk.practice(wsId) });
       invalidateOwnedMaterials(qc);
       qc.setQueryData(qk.material(mt.id), mt);
     },
+  });
+}
+
+/** A quiz in the workspace copied from picked bank questions, images and all
+ * (Add quiz's From the bank). */
+export function useCreateBankQuiz(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      bank,
+      ...body
+    }: { bank: string } & Omit<BankQuizReq, 'workspaceId'>) =>
+      api.post<Material>(`/item-banks/${encodeURIComponent(bank)}/quizzes`, {
+        ...body,
+        workspaceId: wsId,
+      }),
+    onSuccess: (mt) => {
+      qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+      qc.invalidateQueries({ queryKey: qk.practice(wsId) });
+      invalidateOwnedMaterials(qc);
+      qc.setQueryData(qk.material(mt.id), mt);
+    },
+  });
+}
+
+/** The quiz editor's From the bank: copies of the picked bank questions,
+ * images made the quiz's own, for the editor to insert through its rooms. */
+export function useCopyBankQuestions(quizId: string) {
+  return useMutation({
+    mutationFn: (body: BankQuestionsCopyReq) =>
+      api.post<{ questions: Question[] }>(
+        `/quizzes/${encodeURIComponent(quizId)}/bank-questions`,
+        body
+      ),
   });
 }
 
@@ -3035,36 +3070,6 @@ export const quizEditQuery = (id: string) =>
     queryKey: [...qk.quiz(id), 'edit'] as const,
   });
 
-const ATTEMPTS_PAGE = 30;
-/** Learning → All results: quiz and flashcard attempts, newest first by default. */
-export const attemptsQuery = (params: AttemptParams = {}) => ({
-  getNextPageParam: (
-    last: { items: Attempt[]; more: boolean },
-    pages: unknown[]
-  ) => (last.more ? pages.length * ATTEMPTS_PAGE : undefined),
-  initialPageParam: 0,
-  queryFn: ({ pageParam }: { pageParam: number }) =>
-    api.get<{ items: Attempt[]; more: boolean }>(
-      `/attempts${listSearch(
-        {
-          dir: params.dir,
-          kind: params.kinds,
-          limit: String(ATTEMPTS_PAGE),
-          offset: pageParam ? String(pageParam) : undefined,
-          sort: params.sort,
-          workspaceId: params.workspaceIds,
-        },
-        ''
-      )}`
-    ),
-  queryKey: qk.attempts(params),
-});
-export const useAttempts = (params: AttemptParams = {}) =>
-  useInfiniteQuery({
-    ...attemptsQuery(params),
-    placeholderData: keepPreviousData,
-  });
-
 // Persisted: the quiz page resumes its open attempt from it.
 export const attemptQuery = (id: string) =>
   queryOptions({
@@ -3154,7 +3159,7 @@ export function useCheckQuizQuestion(options?: MutationUiOptions) {
       // An embedded quiz records nothing: its attempt comes back without an id.
       if (!attempt.id) return;
       qc.setQueryData(qk.attempt(attempt.id), attempt);
-      qc.invalidateQueries({ queryKey: qk.attemptsRoot });
+      qc.invalidateQueries({ queryKey: qk.historyRoot });
       void invalidateStudy(qc);
     },
   });
@@ -3223,18 +3228,45 @@ export const usePractice = (
     meta: queryMeta(options),
   });
 
-/** A class's assignments: all of them for its owner and teaching assistants,
- * a member's own otherwise. */
+/** The columns the assignments list sorts by on the server. */
+export type AssignmentSort = 'title' | 'kind' | 'topic' | 'posted' | 'due';
+export interface AssignmentListParams {
+  /** Keep the closed ones. */
+  closed: boolean;
+  /** Keep the ones the caller has done. */
+  done: boolean;
+  /** A column's order, open ones still first; none is the page's own. */
+  sort?: { ascending: boolean; by: AssignmentSort };
+  /** Only those on one of these topics; none keeps all. */
+  topics: string[];
+}
+/** A class's assignments, a page at a time (Epo 2026-11-13): all of them for
+ * its owner and teaching assistants, a member's own otherwise; filtered and
+ * ordered by the server. */
 export const useAssignments = (
   workspaceId: string,
-  options?: QueryUiOptions & { enabled?: boolean }
+  params: AssignmentListParams,
+  options?: QueryUiOptions
 ) =>
-  useQuery({
-    enabled: options?.enabled,
+  useInfiniteQuery({
+    getNextPageParam: (last: AssignmentList) => last.nextCursor || undefined,
+    initialPageParam: '',
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<AssignmentList>(`/workspaces/${workspaceId}/assignments`),
-    queryKey: qk.assignments(workspaceId),
+    placeholderData: keepPreviousData,
+    queryFn: ({ pageParam }) =>
+      api.get<AssignmentList>(
+        `/workspaces/${workspaceId}/assignments${listSearch(
+          {
+            closed: String(params.closed),
+            dir: params.sort ? (params.sort.ascending ? 'asc' : 'desc') : '',
+            done: String(params.done),
+            sort: params.sort?.by,
+            topic: params.topics,
+          },
+          pageParam
+        )}`
+      ),
+    queryKey: [...qk.assignments(workspaceId), params],
   });
 
 /** Whether this class member is yet to be told what they share (board V1). */
@@ -3309,8 +3341,9 @@ function refreshAssignment(
           qc.invalidateQueries({
             queryKey: qk.workspaceDashboard(workspaceId),
           }),
-          // A quiz's row shows its assignment's icon while it is open.
+          // A graded quiz's quiz leaves the lists once its assignment owns it.
           qc.invalidateQueries({ queryKey: qk.materials(workspaceId) }),
+          qc.invalidateQueries({ queryKey: qk.practice(workspaceId) }),
           qc.invalidateQueries({ queryKey: qk.recent }),
         ]
       : []),
@@ -3389,12 +3422,13 @@ export function useReleaseAssignmentGrades(workspaceId: string, id: string) {
   });
 }
 
-/** Make a closed assignment's quiz practice when its answers are Do not show. */
-export function useTurnAssignmentToPractice(workspaceId: string, id: string) {
+/** Staff's grade for a member on a graded Assignment; no points clears it. */
+export function useSetAssignmentGrade(workspaceId: string, id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<Assignment>(`/assignments/${id}/practice`, {}),
-    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+    mutationFn: ({ points, userId }: { points?: number; userId: string }) =>
+      api.put<void>(`/assignments/${id}/grades/${userId}`, { points }),
+    onSettled: () => refreshAssignment(qc, workspaceId, id),
   });
 }
 
@@ -3835,9 +3869,13 @@ export const useStudyQuestionCount = (
     queryKey: [...qk.study(workspaceId), 'question-count', group, topicId],
   });
 
-/** Study → Summary: the caller's own standing per topic. */
-export const useStudyTopics = (workspaceId: string, options?: QueryUiOptions) =>
+/** Study's Overview Topics: the caller's own standing per topic. */
+export const useStudyTopics = (
+  workspaceId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
   useQuery({
+    enabled: options?.enabled,
     meta: queryMeta(options),
     queryFn: () =>
       api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
@@ -3874,35 +3912,90 @@ export const useMemberProfile = (
     queryKey: qk.memberProfile(workspaceId, memberId),
   });
 
-const PAST_REVIEWS_PAGE = 30;
-/** Learning → Past reviews: finished sessions, newest first by default. */
-export const pastReviewsQuery = (params: PastReviewParams = {}) => ({
+const HISTORY_PAGE = 30;
+/** Learning → History: revisions and quiz and flashcard attempts together,
+ * newest first by default. */
+export const historyQuery = (params: HistoryParams = {}) => ({
   getNextPageParam: (
-    last: { items: PastReview[]; more: boolean },
+    last: { items: HistoryRow[]; more: boolean },
     pages: unknown[]
-  ) => (last.more ? pages.length * PAST_REVIEWS_PAGE : undefined),
+  ) => (last.more ? pages.length * HISTORY_PAGE : undefined),
   initialPageParam: 0,
   queryFn: ({ pageParam }: { pageParam: number }) =>
-    api.get<{ items: PastReview[]; more: boolean }>(
-      `/review/sessions${listSearch(
+    api.get<{ items: HistoryRow[]; more: boolean }>(
+      `/learning/history${listSearch(
         {
           dir: params.dir,
-          has: params.has,
-          limit: String(PAST_REVIEWS_PAGE),
+          kind: params.kinds,
+          limit: String(HISTORY_PAGE),
           offset: pageParam ? String(pageParam) : undefined,
           sort: params.sort,
+          status: params.statuses,
           workspaceId: params.workspaceIds,
         },
         ''
       )}`
     ),
-  queryKey: qk.pastReviews(params),
+  queryKey: qk.history(params),
 });
-export const usePastReviews = (params: PastReviewParams = {}) =>
+export const useStudyHistory = (params: HistoryParams = {}) =>
   useInfiniteQuery({
-    ...pastReviewsQuery(params),
+    ...historyQuery(params),
     placeholderData: keepPreviousData,
   });
+
+/** Study's Continue, or one workspace's: the newest revisions and tries that
+ * can go on, left within the week. */
+export const continueQuery = (workspaceId?: string) =>
+  queryOptions({
+    // Stored with the Overview it sits above, so a revisit draws both at once.
+    ...persisted,
+    queryFn: () =>
+      api
+        .get<{ items: HistoryRow[] }>(
+          `/learning/continue${listSearch({ workspaceId }, '')}`
+        )
+        .then((body) => body.items),
+    queryKey: qk.continue(workspaceId),
+  });
+export const useContinue = (workspaceId?: string) =>
+  useQuery(continueQuery(workspaceId));
+
+/** Removes a row from Continue at once, here and in its workspace, and puts
+ * it back if the server refuses. History keeps it. */
+export function useHideContinue() {
+  const qc = useQueryClient();
+  return useMutation<
+    void,
+    Error,
+    Pick<HistoryRow, 'id' | 'kind'>,
+    [QueryKey, HistoryRow[] | undefined][]
+  >({
+    mutationFn: (row) =>
+      api.del<void>(
+        `/learning/continue/${row.kind}/${encodeURIComponent(row.id)}`
+      ),
+    onError: (_err, _row, before) => {
+      for (const [key, data] of before ?? []) qc.setQueryData(key, data);
+    },
+    onMutate: async (row) => {
+      await qc.cancelQueries({ queryKey: qk.continueRoot });
+      const before = qc.getQueriesData<HistoryRow[]>({
+        queryKey: qk.continueRoot,
+      });
+      qc.setQueriesData<HistoryRow[]>({ queryKey: qk.continueRoot }, (rows) =>
+        rows?.filter((r) => !(r.id === row.id && r.kind === row.kind))
+      );
+      return before;
+    },
+    // A fourth row may move up, and What to do next may now offer the topic.
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.continueRoot }),
+        qc.invalidateQueries({ queryKey: qk.learningOverview }),
+      ]),
+  });
+}
 
 /** Records one rating; the study page toasts a failure once. Each rating
  * refreshes `workspaceId`'s progress, or every workspace's when omitted; a
@@ -3914,7 +4007,7 @@ export function useRateReviewItem(workspaceId?: string | null) {
     mutationFn: (body: RateReviewItemReq) =>
       api.post<void>('/review/ratings', body),
     onSuccess: (_d, body) => {
-      if (body.attempt) qc.invalidateQueries({ queryKey: qk.attemptsRoot });
+      if (body.attempt) qc.invalidateQueries({ queryKey: qk.historyRoot });
       if (workspaceId !== null) void invalidateStudy(qc, workspaceId);
     },
   });

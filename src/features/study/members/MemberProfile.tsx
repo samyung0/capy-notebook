@@ -25,7 +25,7 @@ import {
   percentText,
   weekdayLabel,
 } from '../assignments/assignmentText';
-import { NewAssignmentDialog } from '../assignments/LazyNewAssignmentDialog';
+import { GradedQuizDialog } from '../assignments/LazyNewAssignmentDialog';
 import { PracticeFrame } from '../practice/studyPage';
 import { LabelChip, TopicSquares } from '../topicLabels';
 import { topicName } from './membersRows';
@@ -83,12 +83,12 @@ export function MemberProfilePage({
     <button
       className="inline-flex items-center gap-1.5 font-semibold underline decoration-1 underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
       onClick={() =>
-        void navigate({ search: { show, study: 'members' as const }, to: '.' })
+        void navigate({ search: { show, study: 'summary' as const }, to: '.' })
       }
       type="button"
     >
       <Icon name="navigationBack" size={16} />
-      {m.study_panel_members()}
+      {m.workspace_tab_study()}
     </button>
   );
   if (isPending)
@@ -281,7 +281,7 @@ export function MemberProfilePage({
         </div>
       )}
       {assigning && (
-        <NewAssignmentDialog
+        <GradedQuizDialog
           onClose={() => setAssigning(false)}
           onDone={() => setAssigning(false)}
           presetAssignee={memberId}
@@ -318,7 +318,9 @@ function AssignmentRow({
     <span className="font-semibold text-fg-muted">–</span>
   );
   let meta = a.dueAt ? m.assignment_due({ date: dayLabel(a.dueAt) }) : '';
-  if (a.mark !== undefined && a.doneAt) {
+  // A graded quiz's counted mark, or a graded Assignment's grade, which staff
+  // may give without a tick (Epo 2026-11-14).
+  if (a.mark !== undefined && (a.doneAt || a.kind === 'unmarked')) {
     status = (
       <span>
         <span className="font-bold">{formatPoints(a.mark)}</span>
@@ -328,7 +330,11 @@ function AssignmentRow({
         </span>
       </span>
     );
-    meta = m.assignment_submitted_on({ date: dayMonth(a.doneAt) });
+    if (a.doneAt)
+      meta =
+        a.kind === 'marked'
+          ? m.assignment_submitted_on({ date: dayMonth(a.doneAt) })
+          : m.assignment_done_on({ date: dayMonth(a.doneAt) });
     if (a.waitingMarks > 0)
       meta += ` · ${m.member_marks_waiting({ marks: a.waitingMarks })}`;
   } else if (a.doneAt) {

@@ -1,9 +1,9 @@
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 
-// Below lg the workspace has no panels: Files drops from the title, ⋮ holds
-// the workspace actions, and chat docks on the file until a send grows it
-// into its own page.
+// On phones Files and Chat are list pages: a file leads back with "← Files",
+// a conversation with "← Chats"; ⋮ holds the workspace actions, and chat docks
+// on the Files page until a send grows it into its own page.
 test.use({
   hasTouch: true,
   isMobile: true,
@@ -11,7 +11,6 @@ test.use({
 });
 
 const NOTE = '/workspaces/ws_bio?material=mat_note_1';
-const TITLE = 'Lecture notes — the cell';
 
 // The MSW User scenarios panel floats over the dock at phone width.
 async function open(page: Page) {
@@ -21,13 +20,14 @@ async function open(page: Page) {
   });
 }
 
-test('the title opens Files from the top and ⋮ carries the workspace actions', async ({
+test('Files is a page: a file leads back to it, and ⋮ carries the workspace actions', async ({
   page,
 }) => {
-  await open(page);
+  await page.goto('/workspaces/ws_bio?view=files');
+  const tree = page.locator('[data-workspace-file-tree]');
+  await tree.getByText('Osmosis notes.txt').click({ timeout: 60_000 });
   const header = page.getByTestId('content-header');
-  const title = header.getByRole('button', { name: TITLE });
-  await expect(title).toBeVisible({ timeout: 60_000 });
+  await expect(header.getByRole('heading', { name: /Osmosis/ })).toBeVisible();
   await header.getByRole('button', { name: m.a11y_open_menu() }).click();
   for (const item of [
     m.action_add_file(),
@@ -37,24 +37,30 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
     await expect(page.getByRole('menuitem', { name: item })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  await title.click();
-  // The open dropdown is modal: the page behind it leaves the accessibility tree.
-  await expect(header.locator('h2 button')).toHaveAttribute(
-    'aria-expanded',
-    'true'
-  );
-  const files = page.getByRole('dialog');
-  // The workspace is a plain row: no switcher, settings pinned under the tree.
-  await expect(files.getByText('Biology 101')).toBeVisible();
-  await expect(files.getByRole('button', { name: 'Biology 101' })).toHaveCount(
-    0
-  );
+  await header
+    .getByRole('button', { exact: true, name: m.workspace_tab_files() })
+    .click();
+  await expect(page).toHaveURL(/view=files/);
+  await expect(tree.getByText('Osmosis notes.txt')).toBeVisible();
+});
+
+test('Chats is a page with no chat button, and a conversation leads back to it', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?view=chats');
+  await page
+    .getByRole('button', { name: 'What is a cell?' })
+    .click({ timeout: 60_000 });
+  const chat = page.locator('[data-workspace-chat-page]');
+  await expect(chat.getByText('A cell is the basic')).toBeVisible();
+  await expect(page).toHaveURL(/view=chat\b/);
+  await expect(page.locator('[data-workspace-chat-button]')).toHaveCount(0);
+  await chat.getByRole('button', { exact: true, name: m.chat_chats() }).click();
+  await expect(chat).toBeHidden();
+  await expect(page).toHaveURL(/view=chats/);
   await expect(
-    files.getByRole('button', { name: m.workspace_settings() })
+    page.getByRole('button', { name: 'Exam plan for the cell unit' })
   ).toBeVisible();
-  await files.getByText('Osmosis notes.txt').click();
-  await expect(files).toBeHidden();
-  await expect(header.getByRole('button', { name: /Osmosis/ })).toBeVisible();
 });
 
 test('Workspace settings shows the tabs first, reached by the URL with its search', async ({
@@ -138,11 +144,11 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await page.keyboard.press('Escape');
 
   // The URL holds it open: the back gesture closes it and keeps the file.
-  await expect(page).toHaveURL(/panel=agent/);
+  await expect(page).toHaveURL(/view=chat/);
   await page.goBack();
   await expect(chat).toBeHidden();
   await expect(page).toHaveURL(/material=mat_note_1/);
-  await expect(page).not.toHaveURL(/panel=/);
+  await expect(page).not.toHaveURL(/view=/);
   await dock.getByRole('button').first().click();
   await expect(chat).toBeVisible();
 
@@ -157,49 +163,6 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await close.click();
   await expect(close).toHaveCount(0);
   await expect(button).toBeVisible();
-});
-
-test('Make a quiz hides the dock, and the chat comes back with its draft and thread', async ({
-  page,
-}) => {
-  await page.goto('/workspaces/ws_bio');
-  await page.addStyleTag({
-    content: '[data-testid=mock-scenario-panel] { display: none }',
-  });
-  const dock = page.locator('[data-workspace-chat-dock]');
-  const button = dock.getByRole('button', {
-    exact: true,
-    name: m.workspace_tab_chat(),
-  });
-  const field = dock.getByRole('textbox', { name: m.chat_placeholder() });
-  await button.click({ timeout: 60_000 });
-  await field.fill('What do mitochondria do?');
-  await dock.getByRole('button', { name: m.chat_send() }).click();
-  const chat = page.locator('[data-workspace-chat-page]');
-  await chat.getByRole('button', { name: m.action_back() }).click();
-  await button.click();
-  await field.fill('And ATP?');
-
-  await page.getByRole('button', { name: m.dashboard_make_quiz() }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.file_choose() }).first().click();
-  await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
-  // The menu stays open for more files (Epo 2026-11-12).
-  await page.keyboard.press('Escape');
-  await dialog.getByRole('button', { name: m.action_continue() }).click();
-  await expect(
-    page.getByRole('heading', { name: m.make_quiz_pages_title() })
-  ).toBeVisible();
-  await expect(dock).toHaveCount(0);
-
-  await page.getByRole('button', { name: m.action_back() }).click();
-  await dialog.getByRole('button', { name: m.action_close() }).click();
-  await button.click();
-  await expect(field).toHaveValue('And ATP?');
-  await dock.getByRole('button').first().click();
-  await expect(
-    chat.getByRole('heading', { name: 'What do mitochondria do?' })
-  ).toBeVisible();
 });
 
 // A personal workspace: a class's owner and editors have no Study.

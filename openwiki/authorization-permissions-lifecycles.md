@@ -98,14 +98,10 @@ at two levels:
   editor grant counts as an editor. `canClone`, Explore's `canClone`, a file row's
   `rights.clone` and `assertCloneSourceTx` agree with it. A personal workspace
   doesn't change, viewers included. A refusal answers the usual non-disclosing 404.
-- **Assignment.** A quiz under a published assignment that hasn't closed, or that
-  closed under Show answers Do not show and was not turned to practice, is cloned
-  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`,
-  `quizAssignmentHoldsSQL`),
-  which covers link and public editors too. Their workspace clone leaves that quiz
-  out and counts it in the toast, and Explore's row and their item menu drop Clone.
-  After closing the normal rules are back. On a quiz's own page Clone still shows
-  for them, and the dialog answers the server's refusal.
+- **Graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
+  (`materials.assignment_id`) is never cloned, by staff either (`CloneMaterial`
+  answers 404), a workspace clone leaves it and its images out, and Explore
+  never lists it. No other quiz is held by an assignment.
 
 The server applies Practice's row: `WorkspacePractice` gives member counts and
 averages to a class's owner and editor members only, and suggestions and own
@@ -125,6 +121,7 @@ first, since a task's only staff is its maker):
 | --- | --- | --- | --- | --- | --- |
 | Make, change, publish, close, reopen or delete one | Yes | Yes | No | No | No |
 | Read every assignment, the report, any member's results; change marks | Yes | Yes | No | No | No |
+| Set or clear a member's grade on a graded Assignment (`PUT /api/assignments/{id}/grades/{userId}`, Epo 2026-11-14; a frozen account cannot) | Yes | Yes | No | No | No |
 | See and take it, read own results, tick an unmarked one | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | Tick a quiz or a hand-in off their own To do without doing it (`PUT /api/assignments/{id}/todo-check`) | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | Tick the answers waiting off their own To do (`todo-check` with `approvals`) | Yes | Yes | No | No | No |
@@ -145,8 +142,9 @@ owner get 404 on every one and see none of them. In a workspace it needs its
 maker still a member; when they leave or are removed, or the workspace is
 deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
 /api/todo/tasks`), and its quiz and files are any its maker can open, from any
-workspace or none (`checkAssignmentQuizTx`, `ownTaskFileSQL`,
-`ownTaskMaterialSQL`): never one hidden from them (a class's quiz under an open
+workspace or none (`ownTaskFileSQL`, `ownTaskMaterialSQL`), while a marked
+task's quiz is one its maker owns and the task then owns (`checkAssignmentQuizTx`,
+above): never one hidden from them (a class's quiz under an open
 assignment is held from every viewer member, and one it went to stays refused
 past the close while its keys are held), and a file they later lose access to leaves
 the task, so a task shows its maker nothing they could not open themself;
@@ -328,7 +326,7 @@ Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
 (`src/lib/localDb.ts`) and are never imported into an account on sign-in. Every
 part is graded through that API route, by reference to the stored quiz; the
 anonymous caps in [observability-metering.md](observability-metering.md) count
-only the open parts Jev grades.
+only the open parts a model grades.
 
 Sources: [Worker routes](../workers/site/public.ts),
 [public handlers](../server/internal/httpapi/huma_anonymous.go) and
@@ -469,13 +467,19 @@ unchanged.
   annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
-- **Held by an assignment.** A class's quiz under an open assignment is read as
-  hidden by the same checks without the column being written
-  (`materialHiddenSQL`, Epo 2026-11-11): every viewer member loses it until the
-  assignment closes or is deleted, or under Show answers Do not show until
-  staff turn it to practice after the close, and the one it went to keeps the
-  row that opens the assignment. See
-  [study progress](study-progress.md#assignments), One row.
+- **Owned by a graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
+  (`materials.assignment_id`, migration 0174) is hidden for good: claiming it
+  sets `hidden`, and `materialHiddenSQL` and `live_access` read it as hidden
+  whatever the column says, so only the class's staff (and a Task's maker) open
+  it, before and after the close. It lists nowhere (every list, search, picker,
+  Practice, Study, Explore and the pipeline's scope, outline and summary queries
+  have `m.assignment_id IS NULL`), hiding it by hand and trashing it answer 404,
+  and it goes when its assignment is deleted (`ON DELETE CASCADE`). A graded
+  quiz or a marked task takes only a quiz its maker made for it in the New
+  graded quiz dialog (`graded_pending`, `checkAssignmentQuizTx`); one never
+  taken goes to its maker's trash after a day. It is charged to its maker, so
+  their account purge deletes it and the assignment keeps its frozen copy. See
+  [study progress](study-progress.md#assignments), The owned quiz.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
   file" / "Unhide file") or its header: a Hide file button on a visible item (from
@@ -516,7 +520,7 @@ unchanged.
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
 - **Make a quiz.** A converted quiz starts hidden unless its maker turns off
-  the files step's switch, Hide the quiz from members (Epo 2026-11-11; on by
+  the files step's switch, Hide the quiz (Epo 2026-11-11; on by
   default and off from Practice's Add practice, sent as `hidden` with the run
   and kept on its row). Files uploaded in the
   Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
@@ -552,7 +556,7 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   behind mention autocomplete, which carries only user id, display name, and
   avatar. A user whose display name is empty is shown by user id.
 - **People with access** on the workspace's Members page (Epo 2026-11-11; a
-  class's owner and teaching assistants find it on Members' Manage tab, and
+  class's owner and teaching assistants find the same page, and
   Workspace settings has no Sharing tab): link sharing first, for the owner
   and editors. The owner's row reads Owner; for the owner each other row has
   its role dropdown, applied at once, and a Remove button that asks first
@@ -1069,10 +1073,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
     one, because a link or public visitor has no row to name; signed-out pages
     are static and join no room, so every connection has a user id and is found
     alike. A note's embedded items and a quiz's keys room go with the event as
-    in every room event (`evict_children`, `evict_material_epochs`). Frozen, the
-    storage limit and an assigned quiz are not revoked: the writer's recheck
-    answers the first two with the read-only strip, and a reader keeps an
-    assigned quiz until they leave. Delivery is idempotent: a repeat closes
+    in every room event (`evict_children`, `evict_material_epochs`). Frozen and
+    the storage limit are not revoked: the writer's recheck answers both with
+    the read-only strip. Delivery is idempotent: a repeat closes
     nobody new, so a revoke is not deduplicated; a check that fails answers
     negatively and the outbox retries it; a room on no instance acknowledges,
     having no one to close, and every tab on every instance closes.
@@ -1351,6 +1354,29 @@ Details live in [study-progress.md](study-progress.md).
 
 Sources: [study routes](../server/internal/httpapi/huma_study.go) and
 [study store](../server/internal/store/study.go).
+
+### Item banks
+
+Details live in [question-bank.md](question-bank.md#item-banks).
+
+- My bank (`/api/item-banks/me/…`) is its owner's alone. A class's bank (the
+  workspace id in place of `me`) is read and written by the class's owner and
+  editor members by persisted membership (`assignmentStaff`); viewer members,
+  share-role editors, link and public visitors, and any personal workspace get
+  404 (`itemBankScope`).
+- Writes need an editable account (`requireAccountEdit`; delete takes
+  `requireAccountMutate`), and a class bank write takes the workspace's editor
+  lock first (`lockItemBankTx`).
+- Its images are charged to whoever added them (Who pays, below), listed in
+  their Files page (`bank` rows, unreachable once they are no longer the
+  class's staff), and resolve for the bank's readers only (`bankAssetReadable`).
+  A class's bank and its images go with the workspace; `PurgeUser` deletes My
+  bank and clears `created_by` on class questions the account added, whose
+  images go with everything else it pays for; a quiz copied from such a
+  question afterwards drops the missing image (`CreateQuizFromBank`).
+
+Sources: [item bank routes](../server/internal/httpapi/huma_item_banks.go) and
+[item bank store](../server/internal/store/item_banks.go).
 
 ### Drawing answers
 
@@ -1841,15 +1867,17 @@ step.
 
 Start tour runs the guided tour app-wide (`Tour`, mounted by `AppShell` while
 one runs): ten steps across the workspace (Files panel, Chats panel with its
-view menu open, the editor, a question's edit dialog, Study), a review, its
+view menu open, the editor, editing a question, Study), a review, its
 result, Settings → Customizations and the mic, on the dashboard. Each step opens its
 page, waits for it, lights a panel, a dialog or the whole page and outlines the
-buttons it names; the question dialog's Undo and Redo also get a held
+buttons it names; the question step's Undo and Redo also get a held
 "Undo · Redo" label. The card sits beside the lit part or, without room, in
 its bottom-right corner; a part under 96px tall goes above or below it
-instead, so the phone mic is not covered. The question step edits the workspace's first quiz,
-else the welcome note's embedded one: its quiz block's Edit opens the same
-dialog. The last step lights the mic that opens the
+instead, so the phone mic is not covered. The question step opens the workspace's first quiz,
+lighting the centre panel and outlining the header's Undo, Redo and save state
+and the open card (the tour opens the first); without a quiz it opens the
+welcome note's embedded one, whose first question opens in place, the
+block's Undo, Redo, live state and open card lit instead. The last step lights the mic that opens the
 account voice overlay: the voice card on the rail or the full sidebar. A step
 whose part this width lacks (side panels on phones, and this mic, since the
 phone top row has none since Epo 2026-11-11) or whose note is missing is
@@ -1917,7 +1945,8 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
   quiz or set row is the exception: it is charged to its note's payer.
 - A member who leaves or is removed keeps paying for those images and audio
   and deletes them from its Files page, where they are listed under a note it
-  can no longer open; deleting its account deletes them. The
+  can no longer open, or under a class's item bank it no longer reads (Epo
+  2026-11-14); deleting its account deletes them. The
   note, and study screens, then show each as removed by its uploader.
 - Nobody adds bytes to another user's bill, except the embedded quiz or set
   row itself, charged to its note's payer; the images in it are the account's
@@ -2234,9 +2263,8 @@ keeps the access rules below. It filters by owner and location (Epo
 2026-10-28): My files (the default, the paid-for list above) or All files
 (`scope=all`: that plus every file and block in workspaces the caller owns or
 is a member of, `memberWorkspacesSQL`, never a link or public workspace it
-only opened, and a hidden quiz assigned to the caller while that assignment is
-open, which opens the assignment as in Recent (`quizAssignedToSQL`; Epo
-2026-11-09); embeds and submissions are always its own), and everywhere (the
+only opened, nor a quiz a graded quiz owns (2026-11-14); embeds, an item bank
+question's images included, and submissions are always its own), and everywhere (the
 default) or Workspace only (`location=workspace`; a submission sits in its
 assignment's workspace). The Kind filter takes file kinds and note, quiz,
 flashcards; image and audio also take embedded images and audio. Every file
@@ -2290,7 +2318,7 @@ Forget or privacy change handled elsewhere never swallows the reopen. Opens of
 embedded materials or of someone else's standalone material are acknowledged
 and not stored, since Recent never lists them. In the browser every
 successful mutation marks Recent stale (`src/api/queryClient.ts`), as do chat
-agent changes and finished uploads, so it refetches wherever it shows. Past reviews and notifications keep the caller's
+agent changes and finished uploads, so it refetches wherever it shows. History's revisions and notifications keep the caller's
 history but blank the live workspace (and topic) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.

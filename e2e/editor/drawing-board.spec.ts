@@ -1440,7 +1440,7 @@ test("the Canvas page is a board of the person's own, and its panel lists and ma
   await page.getByRole('button', { exact: true, name: 'Exam plan' }).click();
   await menu.getByRole('button', { name: /Biology 101/ }).click();
   await expect(page).toHaveURL(
-    /\/workspaces\/ws_bio\?c=cv_ws_bio_1&panel=canvas/
+    /\/workspaces\/ws_bio\?c=cv_ws_bio_1&view=canvas/
   );
   // There the picker lists the workspace's canvases alone and makes more
   // (Epo 2026-11-12), each named in the URL.
@@ -1451,12 +1451,12 @@ test("the Canvas page is a board of the person's own, and its panel lists and ma
   await picker.click();
   await expect(menu.getByRole('button', { name: /Exam plan/ })).toHaveCount(0);
   await menu.getByRole('button', { name: 'New canvas' }).click();
-  await expect(page).toHaveURL(/c=cv_ws_bio_\d+&panel=canvas/);
+  await expect(page).toHaveURL(/c=cv_ws_bio_\d+&view=canvas/);
   await expect(page).not.toHaveURL(/c=cv_ws_bio_1&/);
   await expect(picker).toHaveText('Untitled canvas');
   await picker.click();
   await menu.getByRole('button', { name: /Biology 101/ }).click();
-  await expect(page).toHaveURL(/c=cv_ws_bio_1&panel=canvas/);
+  await expect(page).toHaveURL(/c=cv_ws_bio_1&view=canvas/);
   await expect(page.locator('.capy-board')).toHaveCount(1);
 });
 
@@ -1525,7 +1525,7 @@ test('the workspace canvas stays in the URL at every width', async ({
   // Pressed with a page open in the centre, it takes that page's place in the URL.
   await page.goto('/workspaces/ws_bio?study=practice');
   await page.getByRole('button', { name: 'Canvas' }).click();
-  await expect(page).toHaveURL(/panel=canvas/);
+  await expect(page).toHaveURL(/view=canvas/);
   await expect(page).not.toHaveURL(/study=/);
   const board = page.locator('.capy-board');
   await board.waitFor();
@@ -1542,26 +1542,26 @@ test('the workspace canvas stays in the URL at every width', async ({
   // Below the rail the board stays, and only the back button leaves it.
   await page.setViewportSize({ height: 800, width: 700 });
   await expect(rail).toHaveCount(0);
-  await expect(page).toHaveURL(/panel=canvas/);
+  await expect(page).toHaveURL(/view=canvas/);
   await expect(board).toBeVisible();
   await page.reload();
   // A reload loads the board's chunk again, which is slow on the dev server.
   await expect(board).toBeVisible({ timeout: 90_000 });
   await page.getByRole('button', { name: 'Dashboard' }).first().click();
   await expect(board).toHaveCount(0);
-  await expect(page).not.toHaveURL(/panel=canvas/);
+  await expect(page).not.toHaveURL(/view=canvas/);
 
   // The browser's back returns to it, and a wide window keeps it.
   await page.goBack();
   await expect(board).toBeVisible({ timeout: 30_000 });
   await page.setViewportSize({ height: 800, width: 1400 });
   await expect(board).toBeVisible();
-  await expect(page).toHaveURL(/panel=canvas/);
+  await expect(page).toHaveURL(/view=canvas/);
 
   // Another section leaves it, and Back returns.
   await page.getByRole('button', { name: 'Files' }).first().click();
   await expect(board).toHaveCount(0);
-  await expect(page).toHaveURL(/panel=files/);
+  await expect(page).toHaveURL(/view=files/);
   await page.goBack();
   await expect(board).toBeVisible({ timeout: 30_000 });
 });

@@ -548,18 +548,11 @@ fn question(q: &Value) -> Vec<String> {
     out
 }
 
-/// One question block: a text's label and text, a figure's rendering, a
-/// table's rows or an image's description.
+/// One question block: a text, a figure's rendering, a table's rows or an
+/// image's description.
 fn question_block(b: &Value) -> String {
     match b["type"].as_str() {
-        Some("text") => {
-            let (label, text) = (field(b, "label"), field(b, "text"));
-            match (label.is_empty(), text.is_empty()) {
-                (true, _) => text.to_owned(),
-                (_, true) => label.to_owned(),
-                _ => format!("{label}\n{text}"),
-            }
-        }
+        Some("text") => field(b, "text").to_owned(),
         Some("chart" | "plot" | "graph") => figure(b),
         Some("table") => b["rows"]
             .as_array()

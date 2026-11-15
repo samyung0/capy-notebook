@@ -1,8 +1,17 @@
 import type { MemberProgress, MembersTopic, SummaryTopic } from '@/api/types';
 import { m } from '@/i18n';
 
-export type MembersSort = 'attention' | 'name';
-export type MembersTab = 'overview' | 'topics' | 'manage';
+/** The columns Study's marks sort by (Epo 2026-11-13): a member's name, their
+ * assignments' overall, this week's practice, how many topics need practice,
+ * or their standing in one topic (`topic:` and its key). */
+export type MembersSort =
+  | 'name'
+  | 'assignments'
+  | 'practice'
+  | 'needs'
+  | `topic:${string}`;
+/** Study's marks for a class's staff: every member, or members × topics. */
+export type MembersTab = 'overview' | 'topics';
 type Label = SummaryTopic['label'];
 
 /** A topic's name, Other files for the group without one. */
@@ -18,28 +27,55 @@ export const standingIn = (member: MemberProgress, topic: MembersTopic) =>
 export const needsPractice = (member: MemberProgress) =>
   member.topics.filter((t) => t.label === 'needs_practice');
 
-/** Name is the server's order, A to Z. Needs attention (board Main): missing
- * work first, then the most topics that need practice, then the lowest
- * overall; no grade yet sorts after a grade, ties by name. `ascending` false
- * reverses either: Z to A, or the least to look at first. */
+/** A topic column's key, for its `topic:` sort. */
+export const topicKey = key;
+
+/** Needs attention (board Main), now a filter (Epo 2026-11-13): work missing,
+ * or a topic that needs practice. */
+export const needsAttention = (member: MemberProgress) =>
+  member.missing > 0 || needsPractice(member).length > 0;
+
+/** Weakest to strongest; Attempted (too few answers to label) sits between. */
+const LABEL_RANK: Record<Label, number> = {
+  attempted: 2,
+  familiar: 3,
+  mastered: 5,
+  needs_practice: 1,
+  not_started: 0,
+  proficient: 4,
+};
+
+/** A column's value for a member; none sorts last either way. */
+function columnValue(member: MemberProgress, sort: MembersSort) {
+  if (sort === 'assignments') return member.overall;
+  if (sort === 'practice') return member.practiceWeek;
+  if (sort === 'needs') return needsPractice(member).length;
+  if (sort.startsWith('topic:')) {
+    const standing = member.topics.find(
+      (t) => key(t) === sort.slice('topic:'.length)
+    );
+    return standing
+      ? LABEL_RANK[standing.label] +
+          (standing.asked ? standing.right / standing.asked / 10 : 0)
+      : undefined;
+  }
+}
+
+/** Name is the server's order, A to Z; the rest by their value, ties keeping
+ * that order. `ascending` false reverses. */
 export function sortMembers(
   members: MemberProgress[],
   sort: MembersSort,
   ascending: boolean
 ) {
-  const overall = (m: MemberProgress) => m.overall ?? Number.POSITIVE_INFINITY;
-  const sorted =
-    sort === 'name'
-      ? [...members]
-      : [...members].sort(
-          (a, b) =>
-            b.missing - a.missing ||
-            needsPractice(b).length - needsPractice(a).length ||
-            overall(a) - overall(b)
-        );
-  // Needs attention reads most-first as its first direction.
-  const forward = sort === 'name' ? ascending : !ascending;
-  return forward ? sorted : sorted.reverse();
+  if (sort === 'name') return ascending ? [...members] : [...members].reverse();
+  return [...members].sort((x, y) => {
+    const a = columnValue(x, sort);
+    const b = columnValue(y, sort);
+    if (a === undefined || b === undefined)
+      return a === b ? 0 : a === undefined ? 1 : -1;
+    return ascending ? a - b : b - a;
+  });
 }
 
 /** The Needs practice column: the topics that need it, else nothing flagged

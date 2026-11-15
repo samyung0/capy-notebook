@@ -594,6 +594,9 @@ func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
 	}
 	frozen[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": assignedAsset}, "width": 10, "height": 10, "description": "Figure"}}
 	due := time.Now().Add(time.Hour)
+	if _, err := st.Pool().Exec(ctx, `UPDATE materials SET graded_pending=true WHERE id=$1`, assigned.ID); err != nil {
+		t.Fatal(err)
+	}
 	made, err := st.CreateAssignment(ctx, "u_owner", ws.ID, store.AssignmentForm{
 		Kind: store.AssignmentMarked, Title: "Paper", QuizID: assigned.ID, Questions: frozen, DueAt: &due, Attempts: 1,
 		Assignees: []string{"u_viewer"}, Marking: store.MarkingAIApprove, ShowAnswers: store.AnswersAfterSubmit, ShowGrades: store.GradesAutomatic, Files: []store.AssignmentFileRef{},

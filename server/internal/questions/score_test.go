@@ -59,7 +59,7 @@ func TestLearnerViewToleratesMalformedContent(t *testing.T) {
 func TestGradedAwardsEveryPart(t *testing.T) {
 	q := map[string]any{"id": "q", "parts": []any{
 		map[string]any{"id": "a", "marks": 2.0, "answer": map[string]any{"type": "gaps", "accepted": []any{[]any{"x"}, []any{"y"}}}},
-		map[string]any{"id": "b", "marks": 3.0, "answer": map[string]any{"type": "open", "accepted": []any{"k"}, "hints": []any{}},
+		map[string]any{"id": "b", "marks": 3.0, "answer": map[string]any{"type": "open", "accepted": []any{"k"}},
 			"markscheme": []any{map[string]any{"text": "one", "marks": 2.0}, map[string]any{"text": "two", "marks": 1.0}}},
 		map[string]any{"id": "c", "marks": 1.0, "answer": map[string]any{"type": "boolean", "correct": true}},
 	}}
@@ -73,7 +73,7 @@ func TestGradedAwardsEveryPart(t *testing.T) {
 	}
 	graded, awarded, _ = Graded(q, map[string]any{}, map[string][]float64{"b": {2, 0.5}})
 	if awarded != 2.5 || graded["parts"].([]any)[1].(map[string]any)["awarded"] != 2.5 {
-		t.Fatalf("open part from Jev: %v", graded)
+		t.Fatalf("open part from the model: %v", graded)
 	}
 	if _, ok := q["parts"].([]any)[0].(map[string]any)["awarded"]; ok {
 		t.Fatal("the stored question was modified")

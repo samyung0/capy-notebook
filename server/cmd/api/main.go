@@ -21,7 +21,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
-	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/mail"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -531,7 +530,6 @@ func main() {
 		AuthorizedParties:      authorizedParties,
 		RateLimit:              rateLimitConfig(appEnv, shareLinkSecret),
 		ModelRegistry:          modelReg,
-		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),
 		Voice:                  voice,
 	}
 	if mailRecorder != nil {

@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useMarkAssignmentAnswer } from '@/api/hooks';
 import type {
@@ -21,7 +20,12 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { AiWarning } from '@/features/questions/AiWarning';
 import { QuestionBlockView, TextView } from '@/features/questions/QuestionView';
-import type { Question, QuestionBlock } from '@/features/questions/types';
+import { hasSample, SampleView } from '@/features/questions/SampleBlock';
+import type {
+  Question,
+  QuestionBlock,
+  QuestionPart,
+} from '@/features/questions/types';
 import { modelMarked, questionMarks } from '@/features/questions/types';
 import { ReviewedDrawing } from '@/features/quizzes/drawing/DrawingAnswer';
 import { type Answer, formatPoints } from '@/features/quizzes/grade';
@@ -127,6 +131,7 @@ function HiddenResults({
               <span className="truncate">
                 <TextView
                   className="whitespace-nowrap"
+                  marks
                   text={questionLine(question as Question)}
                 />
               </span>
@@ -170,7 +175,6 @@ function MarkedResults({
   for (const q of questions) counts[questionOutcome(q)]++;
   const decided = attempt.total - attempt.waitingMarks;
   const when = attempt.submittedAt ? dayLabel(attempt.submittedAt) : '';
-  const practice = assignment.practiceQuizId;
   const left =
     taker &&
     !assignment.closedAt &&
@@ -180,13 +184,13 @@ function MarkedResults({
     <PracticeFrame>
       <div className="flex w-full flex-col">
         <BackToAssignments
-          label={staff ? m.assignment_tab_members() : undefined}
+          label={staff ? m.assignment_tab_responses() : undefined}
           search={
             staff
               ? {
                   assignment: assignment.id,
                   study: 'assignments' as const,
-                  tab: 'members' as const,
+                  tab: 'responses' as const,
                 }
               : undefined
           }
@@ -250,16 +254,6 @@ function MarkedResults({
                 variant="outline"
               >
                 {m.assignment_attempt_again()}
-              </Button>
-            )}
-            {practice && taker && (
-              <Button asChild iconLeft="ai" variant="outline">
-                <Link
-                  params={{ quizId: practice }}
-                  to="/quizzes/$quizId/attempt"
-                >
-                  {m.practice_again()}
-                </Link>
               </Button>
             )}
           </div>
@@ -344,6 +338,7 @@ function ResultRow({
         <span className={cn('truncate', open && 'font-bold')}>
           <TextView
             className="whitespace-nowrap"
+            marks
             text={questionLine(question as Question)}
           />
         </span>
@@ -672,14 +667,23 @@ function OpenPart({
           </ul>
         </div>
       )}
-      {showKeys && part.solution.length > 0 && (
-        <WorkedSolution blocks={part.solution} />
+      {showKeys && hasSample(part) && (
+        <div>
+          <p className="t-label text-fg-muted uppercase">
+            {m.question_ui_sample_answer_heading()}
+          </p>
+          <div className="mt-1.5">
+            <SampleView part={part} />
+          </div>
+        </div>
       )}
+      {showKeys && part.solution.length > 0 && <WorkedSolution part={part} />}
     </>
   );
 }
 
-function WorkedSolution({ blocks }: { blocks: QuestionBlock[] }) {
+/** The part's Solution, folded. */
+function WorkedSolution({ part }: { part: QuestionPart }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border-divider border-t">
@@ -701,7 +705,7 @@ function WorkedSolution({ blocks }: { blocks: QuestionBlock[] }) {
       </button>
       {open && (
         <div className="grid gap-2 pb-1">
-          {blocks.map((block, i) => (
+          {part.solution.map((block, i) => (
             <QuestionBlockView block={block} key={i} />
           ))}
         </div>

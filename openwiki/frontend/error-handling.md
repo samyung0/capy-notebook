@@ -182,8 +182,7 @@ workspace page's loaded files rather than adding an observer with a different
 policy. The Files preview dialog handles its detail-query failure inline with
 `FileError` and a manual Retry action.
 
-Paged page lists (Files, Blocks, Trash, Learning's Past reviews and All
-results) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
+Paged page lists (Files, Blocks, Trash, Learning's History) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
 loads once the end is within 800px of the page panel's bottom. A list that
 scrolls by itself passes its own scroller as `root`: the chat list in a side
 panel, and the archived chats dialog's and the Canvas page's menu's lists, each

@@ -1,42 +1,81 @@
-import { Link, useNavigate } from '@tanstack/react-router';
-import { type ComponentProps, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import {
   useDeleteAssignment,
   usePublishAssignment,
   useRepublishAssignment,
   useSetAssignmentClosed,
+  useUpdateAssignment,
+  useWorkspaceMembers,
 } from '@/api/hooks';
-import type { Assignment } from '@/api/types';
-import { SettingRow } from '@/components/app/tabPanel';
+import type { Assignment, AssignmentFormReq } from '@/api/types';
+import {
+  DangerZone,
+  SectionTitle,
+  SettingRow,
+} from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import {
-  closedItself,
-  dayTimeLabel,
-  holdsQuizPastClose,
-} from './assignmentText';
-import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
+  AnswersSelect,
+  AssignToField,
+  AttemptsSelect,
+  assignmentBody,
+  assignmentDefaults,
+  assignmentResolver,
+  DateField,
+  Field,
+  FilesField,
+  GradesSelect,
+  LatePenaltySelect,
+  MarkingSelect,
+  PointsField,
+  SwitchRow,
+  TimeLimitSelect,
+} from './assignmentFields';
+import { closedItself, closeOutcomes, dayTimeLabel } from './assignmentText';
 import { NoAnswersWarning } from './NoAnswersWarning';
 
 type Asking = 'republish' | 'close' | 'delete';
 
-/** The rows' one width, so their buttons line up. */
-function RowButton(props: ComponentProps<typeof Button>) {
+/** Publish, dark, for a draft: a task's on its Settings, a graded quiz's in
+ * its header. */
+export function PublishButton({ assignment }: { assignment: Assignment }) {
+  const { mutate: publish, isPending } = usePublishAssignment(
+    assignment.workspaceId,
+    assignment.id
+  );
   return (
     <Button
-      className="w-32 justify-end border-none"
-      variant="ghost-hover"
-      {...props}
-    />
+      className="shrink-0"
+      disabled={isPending}
+      onClick={() =>
+        publish(undefined, {
+          onError: (error) =>
+            userToast({
+              title: errorCopy(error, m.assignment_save_failed()),
+              variant: 'error',
+            }),
+        })
+      }
+    >
+      {m.assignment_publish()}
+    </Button>
   );
 }
 
-/** An assignment's actions (Epo 2026-11-05, in place of its ⋮ menu), under
- * Publish while it is a draft. Its quiz opens in its room; what a room changes
- * reaches members on Republish. */
+/**
+ * An assignment's Settings (Epo 2026-11-13, B): its actions in one row on top
+ * (a task's Publish while a draft, Republish, Close or Reopen), then every
+ * field of its details in sections on the page, kept until Save, and Delete
+ * in the danger zone. As wide as account Settings' forms (max-w-5xl).
+ */
 export function AssignmentSettingsTab({
   assignment,
   className,
@@ -46,15 +85,8 @@ export function AssignmentSettingsTab({
 }) {
   const navigate = useNavigate();
   const { workspaceId, id, draft, closedAt, manage } = assignment;
-  // A quiz in the trash has nothing to open or republish.
-  const quizId = manage?.quizTrashed ? undefined : manage?.quizId;
-  const answersHeld = holdsQuizPastClose(assignment);
-  const [editing, setEditing] = useState(false);
+  const quizId = manage?.quizId;
   const [asking, setAsking] = useState<Asking | null>(null);
-  const { mutate: publish, isPending: publishing } = usePublishAssignment(
-    workspaceId,
-    id
-  );
   const { mutate: republish, isPending: republishing } = useRepublishAssignment(
     workspaceId,
     id
@@ -72,112 +104,77 @@ export function AssignmentSettingsTab({
     });
   // Closing a marked one shows its quiz as practice, with its keys.
   const close = () => setClosed(!closedAt, { onError: failed });
+  const marked = assignment.kind === 'marked';
+  // The quiz file's name stays out: members know the assignment, not its quiz.
+  const published = draft
+    ? null
+    : m.assignment_last_published({ date: dayTimeLabel(assignment.postedAt) });
 
   return (
-    <div className={className}>
-      <div className="flex max-w-180 flex-col gap-4">
-        {draft && (
-          <SettingRow
-            hint={m.assignment_draft_note()}
-            title={m.assignment_settings_publish()}
-          >
+    <div className={cn('flex max-w-5xl flex-col gap-8', className)}>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* A graded quiz's Publish sits in its header (Epo 2026-11-15). */}
+          {draft && !marked && <PublishButton assignment={assignment} />}
+          {quizId && !draft && !closedAt && (
             <Button
-              className="w-32"
-              disabled={publishing}
-              onClick={() => publish(undefined, { onError: failed })}
-            >
-              {m.assignment_publish()}
-            </Button>
-          </SettingRow>
-        )}
-        {draft && quizId && <NoAnswersWarning quizId={quizId} />}
-        {quizId && (
-          <SettingRow
-            hint={manage?.quizTitle}
-            title={m.assignment_settings_quiz()}
-          >
-            <RowButton asChild iconLeft="pencil">
-              {/* A task's quiz sits wherever its maker took it from. */}
-              {manage?.quizWorkspaceId ? (
-                <Link
-                  params={{ workspaceId: manage.quizWorkspaceId }}
-                  search={{ material: quizId }}
-                  to="/workspaces/$workspaceId"
-                >
-                  {m.assignment_edit_quiz()}
-                </Link>
-              ) : (
-                <Link
-                  params={{ materialId: quizId }}
-                  to="/materials/$materialId"
-                >
-                  {m.assignment_edit_quiz()}
-                </Link>
-              )}
-            </RowButton>
-          </SettingRow>
-        )}
-        {quizId && !draft && !closedAt && (
-          <SettingRow
-            hint={m.assignment_last_published({
-              date: dayTimeLabel(assignment.postedAt),
-            })}
-            title={m.assignment_settings_republish()}
-          >
-            <RowButton
               disabled={republishing}
               iconLeft="refresh"
               onClick={() => setAsking('republish')}
+              variant="outline"
             >
               {m.assignment_republish()}
-            </RowButton>
-          </SettingRow>
-        )}
-        <SettingRow title={m.assignment_settings_details()}>
-          <RowButton iconLeft="pencil" onClick={() => setEditing(true)}>
-            {m.action_edit()}
-          </RowButton>
-        </SettingRow>
-        {!draft && !closedItself(assignment) && (
-          <SettingRow
-            title={
-              closedAt
-                ? m.assignment_settings_reopen()
-                : m.assignment_settings_close()
-            }
-          >
-            <RowButton
+            </Button>
+          )}
+          {!draft && !closedItself(assignment) && (
+            <Button
               disabled={closing}
               iconLeft="lock"
               onClick={() =>
-                assignment.kind === 'marked' && !closedAt
-                  ? setAsking('close')
-                  : close()
+                marked && !closedAt ? setAsking('close') : close()
               }
+              variant="outline"
             >
-              {closedAt ? m.assignment_reopen() : m.assignment_close()}
-            </RowButton>
-          </SettingRow>
+              {closedAt
+                ? m.assignment_settings_reopen()
+                : m.assignment_settings_close()}
+            </Button>
+          )}
+        </div>
+        {published && (
+          <p className="t-meta text-fg-muted">
+            {/* Its quiz saved since: Republish would change what members take. */}
+            {manage?.quizChanged && (
+              <>
+                <span className="font-medium text-tint-warning-fg">
+                  {m.assignment_quiz_changed()}
+                </span>
+                {' · '}
+              </>
+            )}
+            {published}
+          </p>
         )}
+        {draft && (
+          <p className="t-meta text-fg-muted">{m.assignment_draft_note()}</p>
+        )}
+        {draft && quizId && <NoAnswersWarning quizId={quizId} />}
+      </div>
+      <DetailsForm assignment={assignment} />
+      <DangerZone>
         <SettingRow title={m.assignment_settings_delete()}>
-          <RowButton
+          <Button
+            className="shrink-0"
             disabled={deleting}
             iconLeft="trash"
             onClick={() => setAsking('delete')}
-            variant="danger-light"
+            rounded="large"
+            variant="danger"
           >
             {m.action_delete()}
-          </RowButton>
+          </Button>
         </SettingRow>
-      </div>
-      {editing && (
-        <NewAssignmentDialog
-          existing={assignment}
-          onClose={() => setEditing(false)}
-          onDone={() => setEditing(false)}
-          workspaceId={workspaceId}
-        />
-      )}
+      </DangerZone>
       {asking === 'republish' && quizId && (
         <ConfirmDialog
           body={m.assignment_republish_body()}
@@ -193,22 +190,29 @@ export function AssignmentSettingsTab({
       )}
       {asking === 'close' && (
         <ConfirmDialog
-          // A class's quiz under Do not show stays held past the close.
-          body={answersHeld ? m.assignment_close_held_body() : undefined}
           confirmLabel={m.assignment_close()}
           danger={false}
           onClose={() => setAsking(null)}
           onConfirm={close}
           open
-          title={
-            answersHeld
-              ? m.assignment_close_confirm_held()
-              : m.assignment_close_confirm()
-          }
-        />
+          title={m.assignment_close_title()}
+        >
+          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-[0.9375rem] sm:text-base">
+            {closeOutcomes(assignment).map(({ early, text }) => (
+              <li className={cn(early && 'text-solid-error')} key={text}>
+                {text}
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
       )}
       {asking === 'delete' && (
         <ConfirmDialog
+          body={
+            marked
+              ? m.assignment_delete_body_marked()
+              : m.assignment_delete_body_unmarked()
+          }
           confirmLabel={m.action_delete()}
           onClose={() => setAsking(null)}
           onConfirm={() =>
@@ -222,9 +226,224 @@ export function AssignmentSettingsTab({
             })
           }
           open
-          title={m.assignment_delete_confirm()}
+          title={m.assignment_settings_delete()}
         />
       )}
     </div>
+  );
+}
+
+/** The assignment's details on the page, as the dialog had them, in Details,
+ * Marking and results, and Submissions; kept until Save, Discard puts back
+ * what is saved. Its kind and quiz stay as made. */
+function DetailsForm({ assignment }: { assignment: Assignment }) {
+  const { workspaceId, id } = assignment;
+  const marked = assignment.kind === 'marked';
+  const { data: members } = useWorkspaceMembers(workspaceId, true);
+  const { mutate: update, isPending: saving } = useUpdateAssignment(
+    workspaceId,
+    id
+  );
+  const {
+    control,
+    formState: { dirtyFields, errors, isDirty },
+    handleSubmit,
+    reset,
+    setError,
+    watch,
+  } = useForm<AssignmentFormReq>({
+    defaultValues: assignmentDefaults(assignment),
+    mode: 'onSubmit',
+    resolver: assignmentResolver,
+  });
+  // Saved elsewhere (Publish, Close, a co-teacher): an untouched form follows.
+  useEffect(() => {
+    if (!isDirty) reset(assignmentDefaults(assignment));
+  }, [assignment, isDirty, reset]);
+  const dueAt = watch('dueAt');
+  const noLate = watch('noLate');
+  const attempts = watch('attempts');
+  // A class's Assignment may be graded on points (Epo 2026-11-14), a task not.
+  const takesPoints = !marked && !assignment.own;
+  const gradedAssignment = takesPoints && watch('points') !== undefined;
+  const changes = Object.keys(dirtyFields).length;
+  const save = handleSubmit((values) =>
+    update(
+      // Publish alone ends a draft.
+      { ...assignmentBody(values, members), draft: assignment.draft },
+      {
+        onError: (error) =>
+          setError('root', {
+            message: errorCopy(error, m.assignment_save_failed()),
+          }),
+        onSuccess: (saved) => reset(assignmentDefaults(saved)),
+      }
+    )
+  );
+  const grid = 'grid gap-x-4 gap-y-3.5 sm:grid-cols-2';
+  return (
+    <form
+      className="flex flex-col gap-8"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!saving) void save();
+      }}
+    >
+      <section className="flex flex-col gap-3.5">
+        <SectionTitle title={m.assignment_section_details()} />
+        <Field
+          error={errors.title?.message}
+          label={m.assignment_field_title()}
+          required
+        >
+          <Controller
+            control={control}
+            name="title"
+            render={({ field, fieldState }) => (
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                aria-label={m.assignment_field_title()}
+                autoComplete="off"
+                maxLength={120}
+              />
+            )}
+          />
+        </Field>
+        <div className={grid}>
+          <AssignToField control={control} workspaceId={workspaceId} />
+          <Field
+            error={errors.dueAt?.message}
+            label={m.assignment_field_due()}
+            required={marked && !assignment.draft}
+          >
+            <Controller
+              control={control}
+              name="dueAt"
+              render={({ field }) => (
+                <DateField
+                  clearable={!marked}
+                  dateOnly={!marked}
+                  onChange={field.onChange}
+                  value={field.value}
+                />
+              )}
+            />
+          </Field>
+          {takesPoints && (
+            <PointsField control={control} error={errors.points?.message} />
+          )}
+          {marked && (
+            <>
+              <Field label={m.assignment_field_time_limit()}>
+                <TimeLimitSelect control={control} />
+              </Field>
+              <Field label={m.assignment_field_attempts()}>
+                <AttemptsSelect control={control} />
+                {attempts > 1 && (
+                  <span className="t-meta text-fg-muted">
+                    {m.assignment_highest_counts()}
+                  </span>
+                )}
+              </Field>
+            </>
+          )}
+        </div>
+        {!marked && (
+          <Field label={m.assignment_field_files()}>
+            <Controller
+              control={control}
+              name="files"
+              render={({ field }) => (
+                <FilesField
+                  onChange={field.onChange}
+                  value={field.value}
+                  workspaceId={workspaceId}
+                />
+              )}
+            />
+          </Field>
+        )}
+      </section>
+      {(marked || gradedAssignment) && (
+        <section className="flex flex-col gap-3.5">
+          <SectionTitle title={m.assignment_section_marking()} />
+          <div className={grid}>
+            {marked && (
+              <Field label={m.assignment_field_marking()}>
+                <MarkingSelect control={control} />
+              </Field>
+            )}
+            <Field label={m.assignment_field_grades()}>
+              <GradesSelect control={control} />
+            </Field>
+            {marked && (
+              <Field label={m.assignment_field_answers()}>
+                <AnswersSelect control={control} />
+              </Field>
+            )}
+          </div>
+        </section>
+      )}
+      <section className="flex flex-col gap-3.5">
+        <SectionTitle title={m.assignment_section_submissions()} />
+        <div className={grid}>
+          <SwitchRow
+            control={control}
+            label={m.assignment_switch_uploads()}
+            name="allowUploads"
+          />
+          {marked && (
+            <SwitchRow
+              control={control}
+              label={m.assignment_switch_shuffle()}
+              name="shuffle"
+            />
+          )}
+          {/* No late submissions goes with a due date, the penalty with marks
+              or a grade. */}
+          {!!dueAt && (
+            <SwitchRow
+              control={control}
+              label={m.assignment_switch_no_late()}
+              name="noLate"
+            />
+          )}
+          {!!dueAt && (marked || gradedAssignment) && !noLate && (
+            <div className="flex min-h-8 items-center justify-between gap-4">
+              <InputTitle>{m.assignment_field_late_penalty()}</InputTitle>
+              <LatePenaltySelect className="w-37.5" control={control} />
+            </div>
+          )}
+        </div>
+      </section>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-divider border-t pt-4">
+        {errors.root?.message ? (
+          <InputError className="mr-auto">{errors.root.message}</InputError>
+        ) : (
+          isDirty && (
+            <span className="t-meta mr-auto text-fg-muted">
+              {changes === 1
+                ? m.assignment_changes_one()
+                : m.assignment_changes({ count: changes })}
+            </span>
+          )
+        )}
+        {isDirty && (
+          <Button
+            disabled={saving}
+            onClick={() => reset(assignmentDefaults(assignment))}
+            type="button"
+            variant="outline"
+          >
+            {m.action_discard()}
+          </Button>
+        )}
+        <Button disabled={saving || !isDirty} type="submit">
+          {m.action_save()}
+        </Button>
+      </div>
+    </form>
   );
 }

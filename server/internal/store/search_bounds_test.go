@@ -82,7 +82,7 @@ func TestSearchFindsMaterialsAndCanvases(t *testing.T) {
 	if len(sets) != 2 || sets[0] != "Cells overview" {
 		t.Fatalf("flashcard sets %v, want Cells overview first", sets)
 	}
-	if board == nil || board.ID != canvas.ID || board.Href != "/workspaces/"+f.ws.ID+"?panel=canvas" {
+	if board == nil || board.ID != canvas.ID || board.Href != "/workspaces/"+f.ws.ID+"?view=canvas" {
 		t.Fatalf("canvas hit %+v", board)
 	}
 }
