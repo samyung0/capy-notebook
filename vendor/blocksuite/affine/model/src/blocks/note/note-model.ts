@@ -1,4 +1,4 @@
-import { Bound } from '@blocksuite/global/gfx';
+import { Bound, type IVec, rotatePoints } from '@blocksuite/global/gfx';
 import type {
   GfxCompatibleProps,
   GfxElementGeometry,
@@ -56,6 +56,7 @@ export const NoteBlockSchema = defineBlockSchema({
   flavour: 'affine:note',
   props: (): NoteProps => ({
     xywh: `[0,0,${DEFAULT_NOTE_WIDTH},${DEFAULT_NOTE_HEIGHT}]`,
+    rotate: 0,
     background: DefaultTheme.noteBackgrounColor,
     index: 'a0',
     lockedBySelf: false,
@@ -89,6 +90,8 @@ export const NoteBlockSchema = defineBlockSchema({
 
 export const NoteBlockSchemaExtension = BlockSchemaExtension(NoteBlockSchema);
 export type NoteProps = {
+  /** Capy (local change 56): degrees about the note's middle, as text and images. */
+  rotate: number;
   background: Color;
   displayMode: NoteDisplayMode;
   edgeless: NoteEdgelessProps;
@@ -133,7 +136,13 @@ export class NoteBlockModel
     if (!this._isSelectable()) return false;
 
     const bound = Bound.deserialize(this.xywh);
-    return bound.isPointInBound([x, y], 0);
+    // Capy (local change 56): a turned note is hit where it is drawn.
+    const [local] = rotatePoints(
+      [[x, y] as IVec],
+      bound.center,
+      -this.rotate
+    );
+    return bound.isPointInBound(local, 0);
   }
 
   override intersectsBound(bound: Bound): boolean {

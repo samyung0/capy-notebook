@@ -95,6 +95,16 @@ export type RotateOption = {
   onRotateEnd?: (payload: { data: { model: GfxModel }[] }) => void;
 };
 
+/** Capy (local change 58; Epo 2026-11-13): without Shift, a turn within 4° of a
+ * multiple of 45° lands on it, so upright, sideways and diagonal are easy to hit.
+ * Shift still snaps to every 15°. */
+const SOFT_SNAP_STEP = 45;
+const SOFT_SNAP_RANGE = 4;
+function softSnap(angle: number) {
+  const nearest = Math.round(angle / SOFT_SNAP_STEP) * SOFT_SNAP_STEP;
+  return Math.abs(angle - nearest) <= SOFT_SNAP_RANGE ? nearest : angle;
+}
+
 export class ResizeController {
   private readonly gfx: GfxController;
 
@@ -524,7 +534,7 @@ export class ResizeController {
       snap
         ? Math.round((rotatedAngle % 15) / 15) * 15 +
             Math.floor(rotatedAngle / 15) * 15
-        : rotatedAngle
+        : softSnap(rotatedAngle)
     );
 
     // only used to provide the matrix information

@@ -1,4 +1,5 @@
 import { addImages } from '@blocksuite/affine/blocks/image';
+import { setNotesInline } from '@blocksuite/affine/blocks/note';
 import {
   DefaultTool,
   EdgelessCRUDIdentifier,
@@ -21,9 +22,11 @@ import {
   ConnectorMode,
   DEFAULT_CONNECTOR_MODE,
   DefaultTheme,
+  isInlineNote,
   isTransparent,
   MAX_IMAGE_WIDTH,
   MindmapStyle,
+  NoteBlockModel,
   PointStyle,
   type ShapeName,
   ShapeType,
@@ -56,8 +59,10 @@ import {
 import {
   ArrowLeft04Icon,
   Cancel01Icon,
+  Link04Icon,
   Pen01Icon,
   PlusSignIcon,
+  TextIcon,
 } from '@hugeicons/core-free-icons';
 import {
   css,
@@ -76,8 +81,13 @@ import { styleMap } from 'lit/directives/style-map.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
-import type { MaterialPreview, QuizPreviewQuestion } from '@/api/types';
+import type { MaterialPreview } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
+import {
+  cardEditable,
+  cardEditing,
+  setCardEditing,
+} from '@/features/canvas/materialCardHosts';
 import {
   cardCountLabel,
   questionCountLabel,
@@ -89,10 +99,12 @@ import {
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
+import { iconUrl } from '@/lib/icon-catalog';
 import {
   addCard,
   type CardMaterialKind,
   LINK_FLAVOUR,
+  type LinkBlockModel,
   MATERIAL_CARD_SIZE,
   MATERIAL_FLAVOUR,
   workspaceOf,
@@ -1039,9 +1051,15 @@ class CapyNoteButton extends EdgelessNoteSeniorButton {
       });
       keepEventsIn(menu.element);
       unlisten = closeOnPressOutside(this, menu.element);
+      // Link first, where the board takes link cards (Epo 2026-11-13, P1).
+      if (boardKinds.get(this.edgeless.std)?.board === 'workspace')
+        this.showLink(menu.element, false);
       Object.assign(menu.element, {
         childFlavour: this.childFlavour,
-        childType: this.childType,
+        // Marked only while a note of that kind is in hand: the last one picked
+        // isn't (Epo 2026-11-13).
+        childType:
+          this.edgelessTool?.toolType === NoteTool ? this.childType : null,
         edgeless: this.edgeless,
         onChange: (props: Partial<NoteToolOption>) => {
           Object.assign(this, props);
@@ -1054,6 +1072,34 @@ class CapyNoteButton extends EdgelessNoteSeniorButton {
         tip: this.tip,
       });
     });
+  }
+
+  /** The menu's Link button, lit while its field is open above the row. */
+  private showLink(
+    menu: HTMLElement & { above?: unknown; lead?: unknown },
+    open: boolean
+  ) {
+    const label = m.drawing_board_link();
+    menu.lead = html`<edgeless-tool-icon-button
+      .active=${open}
+      .activeMode=${'background'}
+      .tooltip=${label}
+      aria-label=${label}
+      @click=${() => this.showLink(menu, !open)}
+      >${hugeIcon(Link04Icon)}</edgeless-tool-icon-button
+    >`;
+    menu.above = open
+      ? html`<capy-link-add
+          .gfx=${this.edgeless.std.get(GfxControllerIdentifier)}
+          @placed=${() => {
+            closePopper(this);
+            this.requestUpdate();
+          }}
+        ></capy-link-add>`
+      : nothing;
+    // The popper's clip is 100 px, the row's height: room for the field.
+    if (menu.parentElement)
+      menu.parentElement.style.height = open ? '180px' : '100px';
   }
 }
 
@@ -1085,6 +1131,8 @@ const ICONS: Record<string, string> = {
   fill: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3a9 9 0 0 1 7.79 13.5Z" fill="currentColor"/>',
   formula:
     '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  function:
+    '<path d="M9 20c1.6 0 2.2-1.4 2.5-3.2L13.6 6.4C13.9 4.8 14.6 4 16 4M8.5 10h6.5M14.5 14l5 5M19.5 14l-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   label:
     '<path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   line: '<path d="M6 18 18 6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/>',
@@ -1151,6 +1199,294 @@ const connectAction = {
 };
 
 const onlyOne = (ctx: ToolbarContext) => ctx.getSurfaceModels().length === 1;
+
+/** What a typed link places: a YouTube address as its video, any other web address
+ * as itself; null when it is neither. */
+function readLink(value: string) {
+  const typed = value.trim();
+  let url: URL | null = null;
+  for (const candidate of [typed, `https://${typed}`])
+    try {
+      url = new URL(candidate);
+      break;
+    } catch {
+      // The next spelling.
+    }
+  // Only an address is a video: a bare 11-letter word is a typo, not an id.
+  const videoId = url && youtubeVideoId(url.href);
+  if (videoId) return { url: youtubeWatchUrl(videoId), videoId };
+  if (
+    !(url && isWebAddress(url.href) && url.hostname.includes('.')) ||
+    url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
+  )
+    return null;
+  return { url: url.href, videoId: '' };
+}
+
+/** A typed link's card in the view's middle, selected: a YouTube video 16:9, any
+ * other web address a web card. False when it isn't a web address. */
+function placeLink(gfx: GfxController, value: string) {
+  const link = readLink(value);
+  if (!link) return false;
+  addCard(gfx, LINK_FLAVOUR, link, link.videoId ? [320, 180] : [280, 76]);
+  return true;
+}
+
+/** The note menu's Link field (Epo 2026-11-13, P1): the address Misc's YouTube
+ * tile takes, above the menu's row; Add places its card. */
+class CapyLinkAdd extends LitElement {
+  static override styles = css`
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 320px;
+      max-width: calc(100vw - 32px);
+      padding: 6px;
+      box-sizing: border-box;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 10px;
+      background: var(--affine-background-overlay-panel-color);
+      box-shadow: var(--affine-overlay-shadow);
+    }
+    form {
+      display: flex;
+      gap: 6px;
+    }
+    input {
+      flex: 1;
+      min-width: 0;
+      height: 32px;
+      padding: 0 10px;
+      box-sizing: border-box;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--affine-text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus {
+      border-color: var(--affine-primary-color);
+    }
+    button {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--affine-text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .error {
+      margin: 0 2px;
+      color: var(--affine-error-color);
+      font-size: 12px;
+    }
+  `;
+
+  gfx!: GfxController;
+  private invalid = false;
+
+  override firstUpdated() {
+    this.renderRoot.querySelector('input')?.focus();
+  }
+
+  override render() {
+    return html`<div class="panel">
+      <form
+        @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          const input = this.renderRoot.querySelector('input');
+          if (input && placeLink(this.gfx, input.value)) {
+            this.dispatchEvent(new Event('placed'));
+            return;
+          }
+          this.invalid = true;
+          this.requestUpdate();
+        }}
+      >
+        <input
+          aria-label=${m.drawing_board_link_address()}
+          maxlength=${BOARD_CATALOG.limits.LINK_URL_MAX}
+          placeholder=${m.drawing_board_link_address()}
+          type="text"
+          @input=${() => {
+            if (!this.invalid) return;
+            this.invalid = false;
+            this.requestUpdate();
+          }}
+        />
+        <button type="submit">${m.drawing_board_link_add()}</button>
+      </form>
+      ${this.invalid ? html`<p class="error">${m.drawing_board_link_invalid()}</p>` : nothing}
+    </div>`;
+  }
+}
+
+/** A placed link's Edit link (Epo 2026-11-13, E1): a field under the toolbar with
+ * the address in it. Save points the card at the new one where it stands, as wide
+ * as it was; a video is 16:9 and a web link takes its card's height. */
+class CapyLinkEdit extends LitElement {
+  static override styles = css`
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 280px;
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+    }
+    input {
+      flex: 1;
+      min-width: 0;
+      height: 32px;
+      padding: 0 10px;
+      box-sizing: border-box;
+      border: 1px solid var(--affine-border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--affine-text-primary-color);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus {
+      border-color: var(--affine-primary-color);
+    }
+    button {
+      height: 32px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--affine-primary-color);
+      color: #fff;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .error {
+      margin: 0 2px;
+      color: var(--affine-error-color);
+      font-size: 12px;
+    }
+  `;
+
+  model!: LinkBlockModel;
+  store!: ToolbarContext['store'];
+  private invalid = false;
+
+  /** The address as it stands, selected to be typed over. */
+  open() {
+    this.invalid = false;
+    this.requestUpdate();
+    const input = this.renderRoot.querySelector('input');
+    if (!input) return;
+    input.value = this.model.props.url;
+    requestAnimationFrame(() => input.select());
+  }
+
+  private save(value: string) {
+    const link = readLink(value);
+    if (!link) {
+      this.invalid = true;
+      this.requestUpdate();
+      return;
+    }
+    const bound = Bound.deserialize(this.model.xywh);
+    const wasVideo = !!this.model.props.videoId;
+    if (link.videoId) bound.h = (bound.w * 9) / 16;
+    else if (wasVideo) bound.h = (bound.w * 76) / 280;
+    this.store.captureSync();
+    this.store.updateBlock(this.model, { ...link, xywh: bound.serialize() });
+    this.dispatchEvent(new Event('done'));
+  }
+
+  override render() {
+    // Keys, presses and the clipboard stay in the field, not the board's shortcuts.
+    const keep = (event: Event) => event.stopPropagation();
+    // BlockSuite's menu closes on any click outside its button, its own content
+    // too: a click in the field, or Enter's on Save, keeps it open.
+    return html`<form
+      @click=${keep}
+      @submit=${(event: SubmitEvent) => {
+        event.preventDefault();
+        const input = this.renderRoot.querySelector('input');
+        if (input) this.save(input.value);
+      }}
+    >
+      <div class="row">
+        <input
+          aria-label=${m.drawing_board_link_address()}
+          maxlength=${BOARD_CATALOG.limits.LINK_URL_MAX}
+          type="text"
+          @input=${() => {
+            if (!this.invalid) return;
+            this.invalid = false;
+            this.requestUpdate();
+          }}
+          @keydown=${keep}
+          @pointerdown=${keep}
+          @copy=${keep}
+          @cut=${keep}
+          @paste=${keep}
+        />
+        <button type="submit">${m.drawing_board_link_save()}</button>
+      </div>
+      ${this.invalid ? html`<p class="error">${m.drawing_board_link_invalid()}</p>` : nothing}
+    </form>`;
+  }
+}
+
+const editLinkAction = {
+  content: (ctx: ToolbarContext) => {
+    const model = ctx.getSurfaceModels()[0] as unknown as
+      | LinkBlockModel
+      | undefined;
+    if (!model) return null;
+    const label = m.drawing_board_edit_link();
+    return html`<editor-menu-button
+      .contentPadding=${'10px'}
+      .button=${html`<editor-icon-button aria-label=${label} .tooltip=${label}>
+        ${hugeIcon(Pen01Icon)}<span class="label">${label}</span>
+      </editor-icon-button>`}
+      @toggle=${(event: CustomEvent<boolean>) => {
+        if (!event.detail) return;
+        (event.currentTarget as HTMLElement)
+          .querySelector<CapyLinkEdit>('capy-link-edit')
+          ?.open();
+      }}
+    >
+      <capy-link-edit
+        .model=${model}
+        .store=${ctx.store}
+        @done=${(event: Event) =>
+          (
+            (event.currentTarget as HTMLElement).closest(
+              'editor-menu-button'
+            ) as (HTMLElement & { hide(): void }) | null
+          )?.hide()}
+      ></capy-link-edit>
+    </editor-menu-button>`;
+  },
+  id: 'a.edit-link',
+  when: onlyOne,
+};
+
+/** Whether a note is inline, read through its props' signals, so an undo
+ * redraws the toolbar. */
+const isInline = ({ props }: NoteBlockModel) =>
+  isInlineNote({
+    background: props.background$.value,
+    edgeless: props.edgeless$.value,
+  });
+const anyCard = (ctx: ToolbarContext) =>
+  ctx.getSurfaceModelsByType(NoteBlockModel).some((note) => !isInline(note));
 
 /** AFFiNE's selection toolbar reads the editor's mode, which the board has to report.
  * It goes without what makes no sense on an answer, or needs other documents or a page
@@ -1252,6 +1588,76 @@ export const boardToolbar = [
       ],
     },
     id: BlockFlavourIdentifier('affine:surface:chart'),
+  }),
+  ToolbarModuleExtension({
+    config: { actions: [editLinkAction] },
+    id: BlockFlavourIdentifier('affine:surface:embed-capy-link'),
+  }),
+  // A quiz or set card's Edit, and Done while it is edited, for whoever may edit
+  // its material (Epo 2026-11-13): the card itself has no button.
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        {
+          generate: (ctx: ToolbarContext) => {
+            const [model] = ctx.getSurfaceModels();
+            if (!(onlyOne(ctx) && model && cardEditable(model.id))) return null;
+            const card = model as unknown as {
+              id: string;
+              props: { materialId: string };
+            };
+            const editing = cardEditing()?.id === card.id;
+            const label = editing ? m.drawing_board_done() : m.action_edit();
+            return {
+              active: editing,
+              icon: html`${hugeIcon(Pen01Icon)}`,
+              label,
+              run: () =>
+                setCardEditing(
+                  editing
+                    ? null
+                    : { id: card.id, materialId: card.props.materialId }
+                ),
+              showLabel: true,
+              tooltip: label,
+            };
+          },
+          id: 'a.edit-card',
+        },
+      ],
+    },
+    id: BlockFlavourIdentifier('affine:surface:embed-capy-material'),
+  }),
+  // I2 (Epo 2026-11-13): Inline lights while the notes are inline; a press turns
+  // them into cards, or cards inline.
+  ToolbarModuleExtension({
+    config: {
+      actions: [
+        {
+          generate: (ctx: ToolbarContext) => {
+            const notes = ctx.getSurfaceModelsByType(NoteBlockModel);
+            if (!notes.length || notes.length !== ctx.getSurfaceModels().length)
+              return null;
+            const inline = notes.every(isInline);
+            return {
+              active: inline,
+              icon: html`${hugeIcon(TextIcon)}`,
+              label: m.drawing_board_note_inline(),
+              run: () => setNotesInline(ctx.std, notes, !inline),
+              showLabel: true,
+              tooltip: m.drawing_board_note_inline_tip(),
+            };
+          },
+          id: 'd.t-inline',
+        },
+        // Style is a card's (Epo 2026-11-13): an inline note has no fill,
+        // shadow, border or corner. Size switched to a custom height, which
+        // notes no longer have (local change 55): a note is its text's height.
+        { id: 'd.style', when: anyCard },
+        { id: 'f.auto-height', when: false },
+      ],
+    },
+    id: BlockFlavourIdentifier('custom:affine:surface:note'),
   }),
 ];
 
@@ -1708,7 +2114,12 @@ type MiscTile =
       label: () => string;
       view: Exclude<MiscView, 'klipy'>;
     };
-const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
+const MISC_GROUPS: {
+  label: () => string;
+  /** Its name on the account's Canvas page, if another. */
+  accountLabel?: () => string;
+  tiles: MiscTile[];
+}[] = [
   {
     label: m.drawing_board_diagrams,
     tiles: [...CHART_PIECES]
@@ -1731,13 +2142,17 @@ const MISC_GROUPS: { label: () => string; tiles: MiscTile[] }[] = [
         pick: 'image',
       },
       {
-        art: svg`<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#173654" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="stroke:var(--capy-navy, #173654)"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>`,
-        label: m.drawing_board_link,
+        // YouTube's play mark; a web address still lands as a link card (Epo
+        // 2026-11-13, Y2).
+        art: svg`<svg width="38" height="27" viewBox="0 0 38 27" aria-hidden="true"><rect width="38" height="27" rx="7" fill="#ff0033"/><path d="M15 7.5v12l10.5-6z" fill="#fff"/></svg>`,
+        label: m.drawing_board_youtube,
         view: 'link',
       },
     ],
   },
   {
+    // Every quiz and set the person can open (Epo 2026-11-13, N1).
+    accountLabel: m.drawing_board_quizzes_flashcards,
     label: m.drawing_board_from_workspace,
     tiles: [
       {
@@ -1797,28 +2212,6 @@ const FILTER_FROM = 6;
  * two tabs), Link, and the workspace's quizzes and sets as thumbnail grids with a
  * New tile first. One 360 × 440 frame: Back, the title, a close; the body scrolls.
  * While KLIPY loads, a shimmer grid of the final shape stands in. */
-/** A quiz tile's pill: its first question's answer type. */
-function questionTypeLabel(type: QuizPreviewQuestion['type']) {
-  switch (type) {
-    case 'mcq':
-      return m.question_ui_multiple_choice();
-    case 'boolean':
-      return m.question_ui_true_false();
-    case 'short':
-      return m.question_ui_short_answer();
-    case 'matching':
-      return m.question_ui_matching();
-    case 'ordering':
-      return m.question_ui_ordering();
-    case 'open':
-      return m.question_ui_open_answer();
-    case 'gaps':
-      return m.question_ui_fill_in_the_gaps();
-    case 'drawing':
-      return m.question_ui_drawing();
-  }
-}
-
 class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   static override styles = [
     POPPER_STYLES,
@@ -1850,8 +2243,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         min-height: 0;
         overflow-y: auto;
       }
+      /* Short tiles and groups close together: every group shows without
+         scrolling (Epo 2026-11-13, C1). */
       .group + .group {
-        margin-top: 12px;
+        margin-top: 8px;
       }
       .tiles {
         display: grid;
@@ -1865,11 +2260,11 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 6px;
+        gap: 3px;
         box-sizing: border-box;
         width: 100%;
-        height: 80px;
-        padding: 8px 4px;
+        height: 60px;
+        padding: 4px;
         border-radius: 8px;
         color: var(--affine-text-secondary-color);
         font-size: 11.5px;
@@ -1887,17 +2282,17 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         align-items: center;
         justify-content: center;
         width: 40px;
-        height: 36px;
+        height: 30px;
       }
       .tile[data-kind] .art {
         filter: ${unsafeCSS(PIECE_SHADOW)};
       }
-      /* The integral stands 60 px tall in its slot: a formula fits the art box. */
-      .tile.formula .art svg {
+      /* Every tile's art fits the box (the integral stands 60 px tall in its slot). */
+      .art svg {
         width: auto;
         height: auto;
         max-width: 40px;
-        max-height: 36px;
+        max-height: 30px;
       }
       .head {
         display: flex;
@@ -2014,7 +2409,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         gap: 8px;
         min-width: 0;
       }
-      .column > * {
+      /* Hovered too: the panel's button hover would paint over the preview
+         (Epo 2026-11-13). */
+      .column > *,
+      .column > :hover {
         width: 100%;
         height: auto;
         padding: 0;
@@ -2076,7 +2474,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         height: auto;
         min-height: 96px;
         padding: 8px 10px 9px;
-        border: 1px solid var(--affine-border-color);
+        /* No edge and no type pill (Epo 2026-11-13): the hover marks the tile. */
         border-radius: 8px;
         background: var(--affine-background-primary-color);
         color: var(--affine-text-primary-color);
@@ -2084,16 +2482,6 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       }
       .card:hover {
         background: var(--affine-hover-color);
-      }
-      .card .pill {
-        align-self: flex-start;
-        padding: 3px 6px;
-        border-radius: 4px;
-        background: var(--affine-hover-color);
-        color: var(--affine-primary-color);
-        font-size: 10px;
-        font-weight: 500;
-        line-height: 1;
       }
       .card .t {
         overflow: hidden;
@@ -2115,11 +2503,31 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         color: var(--affine-text-secondary-color);
         font-size: 11px;
       }
+      .card .ws {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        margin-top: -2px;
+        color: var(--affine-text-secondary-color);
+        font-size: 11px;
+      }
+      .card .ws img {
+        flex: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+      }
+      .card .ws span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .card.new {
         align-items: center;
         justify-content: center;
         gap: 6px;
-        border-style: dashed;
+        border: 1px dashed var(--affine-border-color);
         color: var(--affine-text-secondary-color);
         font-size: 12px;
       }
@@ -2297,6 +2705,8 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     input.addEventListener('change', () => {
       const files = [...(input.files ?? [])];
       if (!files.length) return;
+      // Select takes over from the pen, say, before the images land selected.
+      this.gfx.tool.setTool(DefaultTool);
       // A file the board can't read is said by BlockSuite's own notice.
       addImages(this.edgeless.std, files, { maxWidth: MAX_IMAGE_WIDTH }).catch(
         () => undefined
@@ -2725,35 +3135,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** A link card: a YouTube video shows its poster; any other address its host. */
   private addLink(value: string) {
-    const typed = value.trim();
-    let url: URL | null = null;
-    for (const candidate of [typed, `https://${typed}`])
-      try {
-        url = new URL(candidate);
-        break;
-      } catch {
-        // The next spelling.
-      }
-    // Only an address is a video: a bare 11-letter word is a typo, not an id.
-    const videoId = url && youtubeVideoId(url.href);
-    if (videoId) {
-      addCard(
-        this.gfx,
-        LINK_FLAVOUR,
-        { url: youtubeWatchUrl(videoId), videoId },
-        [320, 180]
-      );
-      this.placed();
-      return;
-    }
-    if (
-      !(url && isWebAddress(url.href) && url.hostname.includes('.')) ||
-      url.href.length > BOARD_CATALOG.limits.LINK_URL_MAX
-    ) {
+    if (!placeLink(this.gfx, value)) {
       this.linkError = true;
       return;
     }
-    addCard(this.gfx, LINK_FLAVOUR, { url: url.href, videoId: '' }, [280, 76]);
     this.placed();
   }
 
@@ -2830,12 +3215,18 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 
   private renderMaterials(kind: CardMaterialKind) {
-    // Unknown while the workspace's list loads: the New tile alone, no "none yet".
-    const loaded = workspaceOf(this.edgeless.std)?.materials();
+    // Unknown while the list loads: the New tile alone, no "none yet".
+    const links = workspaceOf(this.edgeless.std);
+    const loaded = links?.materials();
     const all = loaded?.filter((material) => material.kind === kind) ?? [];
     const needle = this.filter.trim().toLowerCase();
+    // On the account's page the filter also matches the workspace's name.
     const listed = needle
-      ? all.filter(({ title }) => title.toLowerCase().includes(needle))
+      ? all.filter(({ title, workspace }) =>
+          [title, workspace?.name ?? ''].some((text) =>
+            text.toLowerCase().includes(needle)
+          )
+        )
       : all;
     const newTile = html`<button
       class="card new"
@@ -2846,6 +3237,13 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       <span class="plus">${hugeIcon(PlusSignIcon)}</span>
       ${kind === 'quiz' ? m.drawing_board_new_quiz() : m.drawing_board_new_set()}
     </button>`;
+    const none = links?.account
+      ? kind === 'quiz'
+        ? m.drawing_board_no_own_quizzes()
+        : m.drawing_board_no_own_flashcards()
+      : kind === 'quiz'
+        ? m.drawing_board_no_quizzes()
+        : m.drawing_board_no_flashcards();
     return html`<div class="body">
       ${
         all.length >= FILTER_FROM
@@ -2864,7 +3262,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       <div class="cards">
         ${newTile}
         ${listed.map(
-          ({ id, preview, title }) =>
+          ({ id, preview, title, workspace }) =>
             html`<button
               class="card"
               title=${title}
@@ -2873,22 +3271,29 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
             >
               ${this.thumbnail(kind, title, preview)}
               <span class="n">${this.count(kind, preview)}</span>
+              ${
+                // Its workspace on the account's page; nothing when in none
+                // (Epo 2026-11-13, A).
+                workspace
+                  ? html`<span class="ws"
+                      >${
+                        workspace.iconId
+                          ? html`<img alt="" src=${iconUrl(workspace.iconId)} />`
+                          : nothing
+                      }<span>${workspace.name}</span></span
+                    >`
+                  : nothing
+              }
             </button>`
         )}
       </div>
-      ${
-        loaded && all.length === 0
-          ? html`<p class="note">
-              ${kind === 'quiz' ? m.drawing_board_no_quizzes() : m.drawing_board_no_flashcards()}
-            </p>`
-          : nothing
-      }
+      ${loaded && all.length === 0 ? html`<p class="note">${none}</p>` : nothing}
     </div>`;
   }
 
-  /** A quiz tile's top, as the mock orders it: the stored preview's first question
-   * type as a pill, the title, then the stem; a set's: the stacked pair with the
-   * first card's front, then the title. */
+  /** A quiz tile's top: the title, then the stored preview's first question's
+   * stem; a set's: the stacked pair with the first card's front, then the
+   * title. */
   private thumbnail(
     kind: CardMaterialKind,
     title: string,
@@ -2897,10 +3302,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     const name = html`<span class="t">${title}</span>`;
     if (kind === 'quiz') {
       const first = preview?.kind === 'quiz' ? preview.first : undefined;
-      return first
-        ? html`<span class="pill">${questionTypeLabel(first.type)}</span>${name}
-            <span class="q">${first.stem}</span>`
-        : name;
+      return first ? html`${name}<span class="q">${first.stem}</span>` : name;
     }
     const front =
       preview?.kind === 'flashcards' && preview.first
@@ -2927,7 +3329,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     if (this.view === 'klipy')
       return html`${this.head(m.drawing_board_gif_sticker, true)}${this.renderKlipy()}`;
     if (this.view === 'link')
-      return html`${this.head(m.drawing_board_link)}${this.renderLink()}`;
+      return html`${this.head(m.drawing_board_youtube)}${this.renderLink()}`;
     if (this.view === 'quiz' || this.view === 'flashcards')
       return html`${this.head(
         this.view === 'quiz' ? m.drawing_board_quiz : m.drawing_board_flashcards
@@ -2938,12 +3340,12 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
         ${this.closeButton()}
       </div>
       <div class="body">
-        ${MISC_GROUPS.map(({ label, tiles }) => ({
-          label,
+        ${MISC_GROUPS.map(({ accountLabel, label, tiles }) => ({
+          label: (workspace?.account && accountLabel) || label,
           tiles: tiles.filter(
             (tile) =>
               tileFits(tile, boardKinds.get(this.edgeless.std)) &&
-              // The workspace's quizzes and sets need a workspace lent.
+              // The quizzes and sets need a list lent.
               (workspace ||
                 !('view' in tile) ||
                 (tile.view !== 'quiz' && tile.view !== 'flashcards'))
@@ -3245,6 +3647,8 @@ export const markBoard = (
   board: BoardKind,
   images: boolean
 ) => boardKinds.set(std, { board, images });
+/** The board a std belongs to, as `markBoard` set it. */
+export const boardKindOf = (std: BlockStdScope) => boardKinds.get(std)?.board;
 
 /** Whether a Misc tile is for this board (board catalog): an answer board holds
  * the charts and images (its formulas have their slot); the mind map, the
@@ -3270,5 +3674,7 @@ for (const [tag, element] of [
   ['capy-misc-panel', CapyMiscPanel],
   ['capy-misc-button', CapyMiscButton],
   ['capy-gif-sticker-button', CapyGifStickerButton],
+  ['capy-link-edit', CapyLinkEdit],
+  ['capy-link-add', CapyLinkAdd],
 ] as const)
   if (!customElements.get(tag)) customElements.define(tag, element);

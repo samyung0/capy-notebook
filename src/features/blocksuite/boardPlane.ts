@@ -23,13 +23,19 @@ import { axisNumber } from '@/features/questions/graph';
 import { tickStep } from '@/features/questions/graphTicks';
 import {
   cardPaper,
+  curveSegments,
+  FORMULA_SIZE,
+  type FunctionMark,
+  functionRuns,
+  LABEL_SIZE,
   LATEX_MAX,
   type Mark,
   type Paper,
+  type PathMark,
   pointsOf,
 } from './boardData';
 import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
-import { curvePieces, minorStep, ticks, type Vec } from './boardGeometry';
+import { minorStep, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
  * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
@@ -72,6 +78,7 @@ export function drawPlane(
   const right = view.x0 + frame.w / view.ppu;
   const top = view.y0;
   const bottom = view.y0 - frame.h / view.ppu;
+  const span: Span = { height: frame.h, left, ppu: view.ppu, right };
   ctx.save();
   ctx.beginPath();
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
@@ -83,7 +90,7 @@ export function drawPlane(
   const minor = minorStep(step);
   if (view.polar) {
     drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
-    drawMarks(ctx, X, Y, marks, paper, shown, refresh);
+    drawMarks(ctx, X, Y, marks, paper, shown, refresh, span);
     ctx.restore();
     ctx.strokeStyle = paper.edge;
     ctx.lineWidth = 1;
@@ -128,7 +135,7 @@ export function drawPlane(
   for (const y of ticks(bottom, top, step))
     label(axisNumber(y, step), axisX - 7, Y(y), 'right');
 
-  drawMarks(ctx, X, Y, marks, paper, shown, refresh);
+  drawMarks(ctx, X, Y, marks, paper, shown, refresh, span);
   ctx.restore();
   ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
@@ -240,7 +247,7 @@ function drawPolarGrid(
  * it. */
 export function traceMark(
   ctx: CanvasRenderingContext2D,
-  mark: Extract<Mark, { points: Vec[] }>,
+  mark: PathMark,
   X: (x: number) => number,
   Y: (y: number) => number
 ) {
@@ -261,7 +268,7 @@ export function traceMark(
   const [first] = mark.points;
   ctx.moveTo(X(first[0]), Y(first[1]));
   if (mark.kind === 'curve')
-    for (const [, c1, c2, to] of curvePieces(mark.points))
+    for (const [, c1, c2, to] of curveSegments(mark))
       ctx.bezierCurveTo(
         X(c1[0]),
         Y(c1[1]),
@@ -270,7 +277,46 @@ export function traceMark(
         X(to[0]),
         Y(to[1])
       );
-  else for (const [x, y] of mark.points.slice(1)) ctx.lineTo(X(x), Y(y));
+  else {
+    const rest = mark.points.slice(1).map(([x, y]): Vec => [X(x), Y(y)]);
+    const tip = rest.at(-1);
+    if (mark.kind === 'vector' && tip) {
+      // The line stops halfway into the arrowhead, so its round end doesn't show
+      // past the point (Epo 2026-11-13).
+      const [px, py] = rest.at(-2) ?? [X(first[0]), Y(first[1])];
+      const length = Math.hypot(tip[0] - px, tip[1] - py);
+      const back = Math.min(
+        length,
+        (ARROW_LENGTH * Math.cos(ARROW_SPREAD)) / 2
+      );
+      if (length)
+        rest[rest.length - 1] = [
+          tip[0] - ((tip[0] - px) / length) * back,
+          tip[1] - ((tip[1] - py) / length) * back,
+        ];
+    }
+    for (const [x, y] of rest) ctx.lineTo(x, y);
+  }
+}
+
+/** What a canvas shows of the plane: x from `left` to `right`, `height` tall, at
+ * `ppu` pixels a unit. A function is drawn across it. */
+export type Span = { height: number; left: number; ppu: number; right: number };
+
+/** A function as a canvas path across what's shown, a step every 2 px; it breaks
+ * where it isn't defined or leaps past the canvas's height. */
+export function traceFunction(
+  ctx: CanvasRenderingContext2D,
+  mark: FunctionMark,
+  X: (x: number) => number,
+  Y: (y: number) => number,
+  { height, left, ppu, right }: Span
+) {
+  ctx.beginPath();
+  for (const run of functionRuns(mark, left, right, 2 / ppu, height / ppu)) {
+    ctx.moveTo(X(run[0][0]), Y(run[0][1]));
+    for (const [x, y] of run.slice(1)) ctx.lineTo(X(x), Y(y));
+  }
 }
 
 /** A vector's arrowhead, filled with the context's fill, at its second point. */
@@ -304,7 +350,8 @@ function drawMarks(
   marks: Mark[],
   paper: Paper,
   shown: ReadonlySet<string>,
-  refresh: () => void
+  refresh: () => void,
+  span: Span
 ) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -317,21 +364,26 @@ function drawMarks(
   for (const mark of marks) {
     if (mark.kind === 'dot') dot(mark.at);
     else if (mark.kind === 'label') {
-      ctx.font = '15px Arial, sans-serif';
+      ctx.font = labelFont(mark.size);
       ctx.fillStyle = paper.text;
       ctx.textBaseline = 'middle';
       haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
     } else if (mark.kind === 'formula') {
       const drawn = formulaAt(mark.latex, refresh);
       if (!drawn) continue;
-      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]));
+      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]), mark.size);
       ctx.save();
       // KaTeX's ink is black; dark paper turns it light, its colours about kept.
       if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
       ctx.translate(box.x, box.y);
-      ctx.scale(FORMULA_SCALE, FORMULA_SCALE);
+      ctx.scale(box.scale, box.scale);
       replay(ctx, drawn);
       ctx.restore();
+    } else if (mark.kind === 'function') {
+      ctx.strokeStyle = paper.ink;
+      ctx.lineWidth = 2;
+      traceFunction(ctx, mark, X, Y, span);
+      ctx.stroke();
     } else {
       // Set per mark: a label's halo before it leaves the paper's colour behind.
       ctx.strokeStyle = paper.ink;
@@ -353,9 +405,27 @@ const NONE: ReadonlySet<string> = new Set();
 const ARROW_LENGTH = 12;
 const ARROW_SPREAD = Math.PI / 7;
 
-/** A formula on a plane at 18 px, as KaTeX lays it out at 24, so it reads beside a
- * label's 15 px text; it keeps that size as the plane zooms. */
-export const FORMULA_SCALE = 0.75;
+/** KaTeX lays a formula out at 24 px; a plane draws it at its size (18 px unless set),
+ * so it reads beside a label's 15 px text. */
+const FORMULA_LAYOUT = 24;
+
+/** A plane label's font at its size. */
+export const labelFont = (size = LABEL_SIZE) => `${size}px Arial, sans-serif`;
+
+/** Where a label's text sits on screen, centred on (x, y): its width by a line. */
+export function labelBox(
+  ctx: CanvasRenderingContext2D,
+  { size = LABEL_SIZE, text }: { size?: number; text: string },
+  x: number,
+  y: number
+) {
+  ctx.save();
+  ctx.font = labelFont(size);
+  const w = ctx.measureText(text).width;
+  ctx.restore();
+  const h = size * 1.2;
+  return { h, w, x: x - w / 2, y: y - h / 2 };
+}
 
 /** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
  * KaTeX can't read stays undrawn. */
@@ -366,11 +436,17 @@ export function formulaAt(latex: string, refresh: () => void) {
   return drawn;
 }
 
-/** Where a formula's laid-out box sits on screen, centred on its point. */
-export function formulaBox(drawn: Drawn, x: number, y: number) {
-  const w = drawn.w * FORMULA_SCALE;
-  const h = drawn.h * FORMULA_SCALE;
-  return { h, w, x: x - w / 2, y: y - h / 2 };
+/** Where a formula's laid-out box sits on screen at its size, centred on its point. */
+export function formulaBox(
+  drawn: Drawn,
+  x: number,
+  y: number,
+  size = FORMULA_SIZE
+) {
+  const scale = size / FORMULA_LAYOUT;
+  const w = drawn.w * scale;
+  const h = drawn.h * scale;
+  return { h, scale, w, x: x - w / 2, y: y - h / 2 };
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
@@ -389,9 +465,10 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     return 'plane';
   }
 
+  /** A turned card (Epo 2026-11-13) answers by its turned corners, as a formula's. */
   override containsBound(bounds: Bound) {
-    return Bound.deserialize(this.xywh).points.some((point) =>
-      bounds.containsPoint(point as IVec)
+    return getPointsFromBoundWithRotation(this).some((point) =>
+      bounds.containsPoint(point)
     );
   }
 
@@ -412,13 +489,13 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
 
   override getNearestPoint(point: IVec) {
     return polygonNearestPoint(
-      Bound.deserialize(this.xywh).points,
+      getPointsFromBoundWithRotation(this),
       point
     ) as IVec;
   }
 
   override includesPoint(x: number, y: number) {
-    return pointInPolygon([x, y], Bound.deserialize(this.xywh).points);
+    return pointInPolygon([x, y], getPointsFromBoundWithRotation(this));
   }
 
   /** Fit to size: the card follows its marks each time the plane is left. */
@@ -457,7 +534,13 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
   renderer
 ) => {
   const [, , w, h] = model.deserializedXYWH;
-  ctx.setTransform(matrix);
+  // Turned round its middle, as a formula card is.
+  ctx.setTransform(
+    matrix
+      .translateSelf(w / 2, h / 2)
+      .rotateSelf(model.rotate)
+      .translateSelf(-w / 2, -h / 2)
+  );
   drawPlane(
     ctx,
     { h, w, x: 0, y: 0 },
@@ -478,47 +561,97 @@ export function setPlaneEditor(open: typeof openEditor) {
 export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
   openEditor(gfx, model);
 
-/** Every point a plane's marks reach, and its origin, so the axes stay in view. */
+/** Every point a plane's marks reach (a curve's handles too), and its origin, so the
+ * axes stay in view. A function reaches none: it runs across whatever is shown. */
 export function markPoints(marks: Mark[]) {
-  return [[0, 0] as Vec, ...marks.flatMap(pointsOf)];
+  return [
+    [0, 0] as Vec,
+    ...marks.flatMap((mark) => [
+      ...pointsOf(mark),
+      ...('handles' in mark && mark.handles ? mark.handles.flat() : []),
+    ]),
+  ];
+}
+
+/** A point `dx` along and `dy` down a card turned `rotate` degrees, from `from`. */
+const turned = (rotate: number, [x, y]: Vec, dx: number, dy: number): Vec => {
+  const turn = (rotate * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+  return [x + dx * cos - dy * sin, y + dx * sin + dy * cos];
+};
+const minus = ([ax, ay]: Vec, [bx, by]: Vec): Vec => [ax - bx, ay - by];
+
+/** A canvas only for measuring text, made once. */
+let measurer: CanvasRenderingContext2D | null = null;
+
+/** How far each label's and formula's text reaches past its point, in pixels: as
+ * much at any scale, so Fit to size keeps sized text on the card (Epo 2026-11-13). A
+ * formula not laid out yet counts as its point. */
+function textReach(marks: Mark[]) {
+  measurer ??= document.createElement('canvas').getContext('2d');
+  return marks.flatMap((mark) => {
+    if (mark.kind === 'label' && measurer) {
+      const { h, w } = labelBox(measurer, mark, 0, 0);
+      return [{ at: mark.at, x: w / 2, y: h / 2 }];
+    }
+    const drawn = mark.kind === 'formula' && laidOut(mark.latex);
+    if (!drawn || mark.kind !== 'formula') return [];
+    const { h, w } = formulaBox(drawn, 0, 0, mark.size);
+    return [{ at: mark.at, x: w / 2, y: h / 2 }];
+  });
 }
 
 /** Sizes a card to its marks at its scale, its top left staying put. Past the longest
  * side it zooms out instead. An empty card keeps its size. Not in the undo history,
  * like the view. */
 export function fitCard(model: PlaneElementModel) {
-  if (!model.marks.length) return;
   const seen = markPoints(model.marks);
+  // Nothing but the origin (no marks, or only functions): the card keeps its size.
+  if (seen.length < 2) return;
   const xs = seen.map(([x]) => x);
   const ys = seen.map(([, y]) => y);
-  const [left, right, bottom, top] = [
-    Math.min(...xs),
-    Math.max(...xs),
-    Math.min(...ys),
-    Math.max(...ys),
-  ];
   const room = FIT_SIDE_MAX - FIT_PAD * 2;
   const ppu = Math.min(
     model.ppu,
-    room / Math.max(right - left, 1e-6),
-    room / Math.max(top - bottom, 1e-6)
+    room / Math.max(Math.max(...xs) - Math.min(...xs), 1e-6),
+    room / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6)
   );
-  const w = clamp(
-    (right - left) * ppu + FIT_PAD * 2,
-    CARD_WIDTH_MIN,
-    FIT_SIDE_MAX
+  // The plane's pixels at that scale: the points, and the text round its own.
+  const texts = textReach(model.marks);
+  const [left, right, bottom, top] = [
+    Math.min(
+      ...xs.map((x) => x * ppu),
+      ...texts.map((t) => t.at[0] * ppu - t.x)
+    ),
+    Math.max(
+      ...xs.map((x) => x * ppu),
+      ...texts.map((t) => t.at[0] * ppu + t.x)
+    ),
+    Math.min(
+      ...ys.map((y) => y * ppu),
+      ...texts.map((t) => t.at[1] * ppu - t.y)
+    ),
+    Math.max(
+      ...ys.map((y) => y * ppu),
+      ...texts.map((t) => t.at[1] * ppu + t.y)
+    ),
+  ];
+  const w = clamp(right - left + FIT_PAD * 2, CARD_WIDTH_MIN, FIT_SIDE_MAX);
+  const h = clamp(top - bottom + FIT_PAD * 2, CARD_HEIGHT_MIN, FIT_SIDE_MAX);
+  // Its top left corner stays put on the page, the card turned or not.
+  const was = Bound.deserialize(model.xywh);
+  const corner = turned(
+    model.rotate,
+    was.center as Vec,
+    -was.w / 2,
+    -was.h / 2
   );
-  const h = clamp(
-    (top - bottom) * ppu + FIT_PAD * 2,
-    CARD_HEIGHT_MIN,
-    FIT_SIDE_MAX
-  );
-  const [x, y] = model.deserializedXYWH;
+  const [cx, cy] = turned(model.rotate, corner, w / 2, h / 2);
   model.surface.store.withoutTransact(() => {
     model.ppu = ppu;
-    model.x0 = (left + right) / 2 - w / 2 / ppu;
-    model.y0 = (top + bottom) / 2 + h / 2 / ppu;
-    model.xywh = new Bound(x, y, w, h).serialize();
+    model.x0 = ((left + right) / 2 - w / 2) / ppu;
+    model.y0 = ((top + bottom) / 2 + h / 2) / ppu;
+    model.xywh = new Bound(cx - w / 2, cy - h / 2, w, h).serialize();
   });
 }
 
@@ -532,12 +665,14 @@ class PlaneElementView extends GfxElementModelView<PlaneElementModel> {
 }
 
 /** Resizing shows more or less of the plane at the same scale: dragging the left or
- * top edge keeps what's on the plane where it is on the page. A card doesn't rotate. */
+ * top edge keeps what's on the plane where it is on the page. A card turns (Epo
+ * 2026-11-13); turned, the side across from the dragged handle stays put on the page. */
 const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
   'plane',
   {
     handleResize({ model }) {
       const { x0, y0 } = model;
+      const start = Bound.deserialize(model.xywh);
       return {
         onResizeEnd(context) {
           context.default(context);
@@ -545,25 +680,57 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           model.pop('y0');
         },
         onResizeMove(context) {
-          const { constraint, newBound, originalBound } = context;
+          const { constraint, handle, newBound } = context;
           const w = clamp(newBound.w, constraint.minWidth, constraint.maxWidth);
           const h = clamp(
             newBound.h,
             constraint.minHeight,
             constraint.maxHeight
           );
-          // At a limit, the edge that isn't being dragged stays put.
-          const x =
-            newBound.x === originalBound.x
-              ? newBound.x
-              : newBound.x + newBound.w - w;
-          const y =
-            newBound.y === originalBound.y
-              ? newBound.y
-              : newBound.y + newBound.h - h;
-          model.xywh = new Bound(x, y, w, h).serialize();
-          model.x0 = x0 + (x - originalBound.x) / model.ppu;
-          model.y0 = y0 - (y - originalBound.y) / model.ppu;
+          // BlockSuite's bound, for this card alone or as one of several (and with
+          // Shift); at a limit, the side across from the handle stays put.
+          const sx = handle.includes('left')
+            ? 1
+            : handle.includes('right')
+              ? -1
+              : 0;
+          const sy = handle.includes('top')
+            ? 1
+            : handle.includes('bottom')
+              ? -1
+              : 0;
+          const kept = turned(
+            model.rotate,
+            newBound.center as Vec,
+            (sx * newBound.w) / 2,
+            (sy * newBound.h) / 2
+          );
+          const centre = turned(
+            model.rotate,
+            kept,
+            (-sx * w) / 2,
+            (-sy * h) / 2
+          );
+          model.xywh = new Bound(
+            centre[0] - w / 2,
+            centre[1] - h / 2,
+            w,
+            h
+          ).serialize();
+          // What's on the plane stays on the page: the view follows the card's top
+          // left corner, measured along the card's own turned sides.
+          const [dx, dy] = minus(
+            turned(model.rotate, centre, -w / 2, -h / 2),
+            turned(
+              model.rotate,
+              start.center as Vec,
+              -start.w / 2,
+              -start.h / 2
+            )
+          );
+          const [along, down] = turned(-model.rotate, [0, 0], dx, dy);
+          model.x0 = x0 + along / model.ppu;
+          model.y0 = y0 - down / model.ppu;
         },
         onResizeStart(context) {
           context.default(context);
@@ -571,13 +738,6 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
           model.fit = false;
           model.stash('x0');
           model.stash('y0');
-        },
-      };
-    },
-    handleRotate() {
-      return {
-        beforeRotate(context) {
-          context.set({ rotatable: false });
         },
       };
     },

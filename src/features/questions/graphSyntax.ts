@@ -559,6 +559,56 @@ function commandRow(command: Command, args: Node[]): ParsedRow {
   return { command, kind: 'command', points };
 }
 
+/** A stored function term (`functionRow`'s) as a function of x, for the drawing
+ * board's plane, which draws it without JSXGraph. Throws `RowError` on a term
+ * that isn't one. */
+export function functionOf(term: string): (x: number) => number {
+  const node = parse(normalize(term));
+  for (const name of names(node))
+    if (name !== 'x' && !CONSTANTS.has(name))
+      throw new RowError(m.question_ui_graph_row_undefined({ name }));
+  const at = (node: Node): ((x: number) => number) => {
+    switch (node.t) {
+      case 'num': {
+        const { v } = node;
+        return () => v;
+      }
+      case 'name':
+        if (node.v === 'x') return (x) => x;
+        return node.v === 'pi' ? () => Math.PI : () => Math.E;
+      case 'neg': {
+        const a = at(node.a);
+        return (x) => -a(x);
+      }
+      case 'bin': {
+        const [a, b] = [at(node.a), at(node.b)];
+        if (node.op === '+') return (x) => a(x) + b(x);
+        if (node.op === '-') return (x) => a(x) - b(x);
+        if (node.op === '*') return (x) => a(x) * b(x);
+        if (node.op === '/') return (x) => a(x) / b(x);
+        return (x) => a(x) ** b(x);
+      }
+      case 'call': {
+        // A command such as line(x) reads as a call but isn't a function of x.
+        if (!FUNCTIONS.has(node.fn))
+          throw new RowError(m.question_ui_graph_row_unreadable());
+        checkArity(node);
+        const args = node.args.map(at);
+        if (node.fn === 'ln') return (x) => Math.log(args[0](x));
+        if (node.fn === 'log')
+          // As `evaluate` and the graph dialog's board read it.
+          return (x) =>
+            Math.log(args[0](x)) / (args[1] ? Math.log(args[1](x)) : 1);
+        const fn = Math[node.fn as 'sin'] as (...values: number[]) => number;
+        return (x) => fn(...args.map((arg) => arg(x)));
+      }
+      case 'tuple':
+        throw new RowError(m.question_ui_graph_row_unreadable());
+    }
+  };
+  return at(node);
+}
+
 /** The term as the board's JessieCode compiler reads it: explicit products and
  * JessieCode's own names for π and e (it leaves `pi` and `e` undefined). */
 export function runtimeTerm(term: string) {

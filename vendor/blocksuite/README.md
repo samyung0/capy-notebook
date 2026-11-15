@@ -479,7 +479,7 @@ Outside this directory, for BlockSuite:
     board, so a click on a panel's tile was read as a drag from the board's first move
     (no carry, and a scaled preview off the pointer).
 
-48. Note centred on the pointer (`affine/gfx/note` `note-tool.ts`, `overlay/overlay.ts`,
+48. Note centred on the pointer (replaced by 53: the preview is gone) (`affine/gfx/note` `note-tool.ts`, `overlay/overlay.ts`,
     `overlay/consts.ts` and `index.ts`, marked `Capy (local change 48)`; Epo 2026-11-12):
     the note tool's overlay is the empty note a click places, centred on the pointer:
     its width, its height, hairline (`--capy-note-edge`) and corner, and the
@@ -507,6 +507,108 @@ Outside this directory, for BlockSuite:
     pressure device, so the first stroke redrew at another width when it ended and
     every later one stored pressure, and it thinned a stroke without pressure by its
     speed.
+51. Tooltips over popover menus (`affine/components` `tooltip/tooltip.ts`, marked
+    `Capy (local change 51)`; Epo 2026-11-13): a tooltip whose element sits inside an
+    open popover (the selection toolbar's menus, shown in the top layer since
+    `topLayer: true`) is shown as a manual popover itself, placed `fixed`, so it lands
+    above the menu. It was drawn under it: the note style panel's Film shadow tooltip
+    showed as a black box peeking past the panel's edge.
+52. Inline notes (`affine/model` `consts/note.ts`, `affine/blocks/note`
+    `inline-note.ts`, `note-edgeless-block.ts`, `components/edgeless-note-background.ts`
+    and `components/edgeless-note-style-panel.ts`, `affine/gfx/note` `note-tool.ts` and
+    `overlay/`, marked `Capy (local change 52)`; Epo 2026-11-13): a note is inline (its
+    text on the canvas, no fill, padding or edge) when its fill is `transparent`, it has
+    no shadow and no border (`isInlineNote`; no new field). A placed note starts inline,
+    and its preview and centring leave out the card's padding (`NOTE_CARD_PADDING`). The
+    note container carries `data-inline`. The style panel opens with an Inline | Card
+    switch, Inline on the left, and shows Fill, Shadow, Border and Corner only for a
+    card; `setNotesInline` turns notes inline or into cards (the default fill, the Box
+    shadow, corner 8) as one undo step. A note's fill is drawn half see-through
+    (`color-mix`), its border and shadow solid.
+
+53. Inline notes fit their text (`affine/gfx/note` `note-tool.ts`, `index.ts`,
+    `affine/blocks/note` `note-edgeless-block.ts`, `inline-note.ts` and
+    `components/edgeless-note-mask.ts`, marked `Capy (local change 53)`; Epo
+    2026-11-13): the note tool draws nothing under the pointer (its plus cursor
+    alone); a click, or a drag at its start, places an inline note whose first line
+    starts at the pointer and is centred on it (`FIRST_LINE` per kind). The
+    `overlay/` folder (local change 48's preview, AFFiNE's dragged-out box) is gone.
+    An inline note renders `max-content` wide up to `DEFAULT_NOTE_WIDTH`, and a
+    `ResizeObserver` stores that width; it resizes by its corners only, which scale
+    it. Turning one into a card widens it by the card's 10 px padding each side, so
+    its lines stay. The note mask stored its height 40 taller while a note was edited
+    (it reaches 20 px past the note then); it stores the note's own height.
+
+54. A note's full height from its own padding (`affine/blocks/note`
+    `note-edgeless-block.ts`, marked `Capy (local change 54)`; Epo 2026-11-13): the
+    full height a custom height is compared with adds the note container's real top
+    and bottom padding (8 px on a board card, 0 inline), not AFFiNE's 24 each. It
+    read 32 too tall, so a card whose custom height fitted its text showed the fold
+    (a pale blue strip under it on hover) and the fold arrow. The arrow shows when
+    the two differ by a pixel or more. `setNotesInline` also clears a custom height
+    (`collapse`) when a note turns inline, whose height is its text's. Local change 55
+    removed the fold itself, so what remains of this is the board's padding.
+
+55. Notes have no fold (`affine/blocks/note` `note-edgeless-block.ts`, `inline-note.ts`,
+    `note-styles.ts`/`.css`, `components/edgeless-note-mask.ts`, marked
+    `Capy (local change 55)`; Epo 2026-11-13): a note is always as tall as its text.
+    The custom height (`edgeless.collapse`), the pale strip of the hidden part on
+    hover, the fold arrow (`components/more-indicator.ts`, deleted) and the hover and
+    resize tracking that fed them are gone; the mask always stores the text's height.
+    A card resizes by its sides, which set its width (the text rewraps and the height
+    follows; the opposite side stays put), or its corners, which scale it; it can be
+    as narrow as 40 (times its scale), where AFFiNE kept it 218 wide at least, so a
+    card scaled down while inline snapped wider on its first drag. Turning a note
+    inline or into a card clears and sets its selection again, so the frame's handles
+    follow the new kind.
+
+56. Excalidraw's selection frame, and notes turn (`affine/widgets/edgeless-selected-rect`
+    `edgeless-selected-rect.ts` and `resize-handles.ts`, `affine/widgets/toolbar`
+    `utils.ts`, `affine/model` `note-model.ts`, `affine/blocks/note`
+    `note-edgeless-block.ts`, marked `Capy (local change 56)`; Epo 2026-11-13, F1): the
+    frame is a 1px `--affine-primary-color` line drawn 6 px off the selection
+    (`::before`, dashed with `data-multi`, none with `data-connector`), with 9 px square
+    corners filled with `--capy-handle-fill`, a faint 3 by 16 px bar outside each side
+    that resizes, and a rotate knob 32 px above the middle (`aria-label="rotate"`) in
+    place of the hidden rotate ring past each corner. While turning, the angle shows
+    in one place, under the circle the selection turns in, or above it when the
+    board's bottom toolbar would hide it (`.capy-rotate-angle`); one item shows its
+    own, snapped turn. The selection's
+    toolbar stands 30 px further off, clear of the knob. A note has a `rotate` prop
+    (0 by default), is drawn turned about its middle, hit where it is drawn, and turns
+    (AFFiNE's notes did not); a side drag keeps the other side's middle where it is
+    along the turn.
+
+57. A lead button in the note menu (`affine/gfx/note` `toolbar/note-menu.ts`, marked
+    `Capy (local change 57)`; Epo 2026-11-13, P1): `lead` renders before the note kinds,
+    with a divider, and `above` above the row (the menu is a column). The board puts
+    its Link button and address field there; nothing is rendered when they are unset.
+
+58. A gentle snap when turning (`framework/std` `gfx/interactivity/resize/manager.ts`,
+    marked `Capy (local change 58)`; Epo 2026-11-13): without Shift, one item turned to
+    within 4° of a multiple of 45° lands on it (`softSnap`). Shift still snaps to every
+    15°; several items turn without either, as in AFFiNE.
+
+59. A double click places a note (`affine/shared` `feature-flag-service.ts`,
+    `affine/gfx/note` `note-tool.ts` and `view.ts`, `affine/gfx/text`
+    `dblclick-add-edgeless-text.ts`, marked `Capy (local change 59)`; Epo 2026-11-13):
+    with `enable_dblclick_note` (off by default), a double click on empty canvas places
+    an inline text note there and types in it (`DblClickAddNote`), and the canvas text
+    label's double click stands aside. The workspace canvas turns it on; an answer
+    board keeps the label.
+
+60. A note's side plus types in the new note (`affine/widgets/edgeless-selected-rect`
+    `edgeless-auto-complete.ts` and `utils.ts`, marked `Capy (local change 60)`; Epo
+    2026-11-13): the plus on either side of a selected note places the next note there
+    with the caret in its first line. AFFiNE aimed a caret at the middle of a
+    default-height note, below an inline note's one line, so nothing could be typed;
+    the stale fold flag the new note was given is gone too.
+
+61. The shape switcher offers every shape (`affine/gfx/shape`
+    `toolbar/shape-menu-config.ts`, marked `Capy (local change 61)`; Epo 2026-11-13):
+    `ShapeComponentConfig` lists the board shapes panel's ten shapes (local change 46's
+    polygons after AFFiNE's five), drawn with the panel's outlines, so a selected
+    shape's Switch shape type menu and a connector's next-shape panel reach them all.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

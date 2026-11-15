@@ -78,3 +78,20 @@ export const DEFAULT_NOTE_CORNER = NoteCorners.Small;
 export const NoteCornersSchema = z.nativeEnum(NoteCorners);
 
 export const DEFAULT_NOTE_BORDER_SIZE = 4;
+
+/** Capy (local change 52): a note is inline, its text on the canvas with no
+ * fill, padding or edge, when it has a clear fill, no shadow and no border. A new
+ * note starts inline; a card gets a fill, the Box shadow and its corner back. */
+export const INLINE_NOTE_FILL = 'transparent';
+
+export function isInlineNote(props: {
+  background: unknown;
+  edgeless: { style: { shadowType: string; borderStyle: string } };
+}) {
+  const { shadowType, borderStyle } = props.edgeless.style;
+  return (
+    props.background === INLINE_NOTE_FILL &&
+    !shadowType &&
+    borderStyle === StrokeStyle.None
+  );
+}

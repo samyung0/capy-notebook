@@ -1,9 +1,10 @@
-import { lazy, type ReactNode, Suspense, useContext, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useContext } from 'react';
 import { Button } from '@/components/ui/Button';
 import { stripMarks } from '@/features/questions/parseMarkedText';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import type { QuestionBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
+import { useOpenView } from '@/lib/openLink';
 import type { Answer } from '../grade';
 import { loadBoard, useBoardAhead } from './boardPrefetch';
 import type { PinnedQuestion } from './DrawingBoardScreen';
@@ -50,7 +51,8 @@ export function DrawingAnswer({
 }) {
   const scope = useContext(DrawingDraftScope);
   const upload = useContext(DrawingUploader);
-  const [open, setOpen] = useState(false);
+  // In the page's URL where it keeps one (a canvas card's), so Back closes it.
+  const [open, setOpen] = useOpenView(partId);
   // The device's board, or the stored one once the server keeps it.
   const fetched = useDrawingBoard(value);
   const deleted = fetched === DRAWING_DELETED;
@@ -74,18 +76,23 @@ export function DrawingAnswer({
           board && <DrawingPreview board={board} />
         )
       ) : review ? null : (
-        // A generic grid, the same for every drawing part.
-        <div className="drawing-grid relative aspect-[52/30] w-full max-w-[520px]">
-          {taking && (
-            <Button
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-              iconLeft="pencil"
-              onClick={() => setOpen(true)}
-              variant="outline"
-            >
-              {m.drawing_answer_draw()}
-            </Button>
-          )}
+        // A generic grid, the same for every drawing part: whole 52 px cells
+        // across and whole 13 px rows down, about 52:30, plus a pixel for the
+        // closing right and bottom lines, so it never stops mid-cell (Epo
+        // 2026-11-13).
+        <div className="@container w-full max-w-[521px]">
+          <div className="drawing-grid relative h-[calc(round(down,round(down,100cqw_-_1px,52px)_*_30_/_52,13px)+1px)] w-[calc(round(down,100cqw_-_1px,52px)+1px)]">
+            {taking && (
+              <Button
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                iconLeft="pencil"
+                onClick={() => setOpen(true)}
+                variant="outline"
+              >
+                {m.drawing_answer_draw()}
+              </Button>
+            )}
+          </div>
         </div>
       )}
       {answered && taking && (

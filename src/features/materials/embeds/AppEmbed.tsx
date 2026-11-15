@@ -6,6 +6,7 @@ import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import { NoteSeatContext } from '@/features/collaboration/noteSeat';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
+import { useLendUndo } from '@/features/collaboration/undo';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
@@ -29,6 +30,8 @@ import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { type QuizRunControl, useMemoryRun } from '@/features/quizzes/quizRun';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { OpenLinkContext } from '@/lib/openLink';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
@@ -70,7 +73,12 @@ export function AppEmbedView({
   refKind,
   ownerId,
   live = true,
-}: OwnedProps & { live?: boolean }) {
+  fill,
+}: OwnedProps & {
+  live?: boolean;
+  /** A canvas card: a set's card face takes the room the card has. */
+  fill?: boolean;
+}) {
   switch (refKind) {
     case 'quiz':
       return <QuizView live={live} materialId={materialId} ownerId={ownerId} />;
@@ -78,7 +86,12 @@ export function AppEmbedView({
       return (
         <SetGate materialId={materialId} ownerId={ownerId}>
           {(material, refresh) => (
-            <LiveSetStudy live={live} material={material} refresh={refresh} />
+            <LiveSetStudy
+              fill={fill}
+              live={live}
+              material={material}
+              refresh={refresh}
+            />
           )}
         </SetGate>
       );
@@ -90,10 +103,12 @@ export function AppEmbedView({
 /** A set in a note's View: its room joins while the block is near the
  * screen, as in Edit (REVIEW5 S5). */
 function LiveSetStudy({
+  fill,
   material,
   live = true,
   refresh,
 }: {
+  fill?: boolean;
   material: Material;
   live?: boolean;
   refresh?: () => unknown;
@@ -107,10 +122,11 @@ function LiveSetStudy({
   });
   useRefreshOnEnter(live, entered, refresh);
   return (
-    <div ref={box}>
+    <div className={cn(fill && 'h-full')} ref={box}>
       <StudyBody
         cards={cards}
         embedded
+        fill={fill}
         name=""
         onRate={() => undefined}
         provenance={material.provenance}
@@ -314,6 +330,17 @@ function LiveQuizStudy({
     { inside, wake: entered }
   );
   useRefreshOnEnter(live, entered, refresh);
+  // A canvas card's URL names a drawing answer this quiz no longer has.
+  const link = useContext(OpenLinkContext);
+  const opened = link?.opened;
+  const missing =
+    !!opened &&
+    !questions.some((question) =>
+      question.parts.some((part) => part.id === opened)
+    );
+  useEffect(() => {
+    if (missing) link?.gone();
+  }, [missing]);
   return (
     <div ref={box}>
       <AttemptBody
@@ -352,6 +379,7 @@ function EmbedQuizEditor({
     setHeld(rooms.status === 'syncing' || rooms.status === 'offline');
   }, [rooms.status]);
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
+  useLendUndo(rooms.undo);
   return (
     <div ref={box}>
       {rooms.status === 'unavailable' ? (

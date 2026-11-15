@@ -8,6 +8,7 @@ import type { LineDetailType } from '@blocksuite/affine-components/edgeless-line
 import type { SliderSelectEvent } from '@blocksuite/affine-components/slider';
 import {
   DefaultTheme,
+  isInlineNote,
   NoteBlockModel,
   type NoteProps,
   type NoteShadow,
@@ -26,6 +27,8 @@ import { BlockStdScope, PropTypes, requiredProperties } from '@blocksuite/std';
 import { css, html, LitElement } from 'lit';
 import { property, query, state } from 'lit/decorators.js';
 import { choose } from 'lit/directives/choose.js';
+
+import { setNotesInline } from '../inline-note';
 
 @requiredProperties({
   notes: PropTypes.arrayOf(model => model instanceof NoteBlockModel),
@@ -52,6 +55,36 @@ export class EdgelessNoteStylePanel extends SignalWatcher(
       flex-direction: column;
       align-items: stretch;
       gap: 8px;
+    }
+
+    /* Capy (local change 52): Inline | Card. */
+    .edgeless-note-look {
+      /* The panel's width while Inline hides the sections below. */
+      min-width: 240px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      padding: 2px;
+      border-radius: 8px;
+      background: ${unsafeCSSVarV2('layer/background/hoverOverlay')};
+    }
+
+    .edgeless-note-look button {
+      border: 0;
+      padding: 5px 0;
+      border-radius: 6px;
+      background: transparent;
+      color: ${unsafeCSSVarV2('text/secondary')};
+      font-family: var(--affine-font-family);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .edgeless-note-look button[aria-pressed='true'] {
+      background: ${unsafeCSSVarV2('layer/background/overlayPanel')};
+      color: ${unsafeCSSVarV2('text/primary')};
+      box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
     }
 
     .edgeless-note-style-section {
@@ -289,8 +322,47 @@ export class EdgelessNoteStylePanel extends SignalWatcher(
     });
   };
 
+  private readonly _setInline = (inline: boolean) => {
+    if (this._inline === inline) return;
+    setNotesInline(this.std, this.notes, inline);
+  };
+
+  // Read through the props' signals, so an undo redraws the switch.
+  private get _inline() {
+    const { background$, edgeless$ } = this.notes[0].props;
+    return isInlineNote({
+      background: background$.value,
+      edgeless: edgeless$.value,
+    });
+  }
+
+  // Capy (local change 52): Inline | Card on top, Inline on the left; an inline
+  // note has no fill, shadow, border or corner to set, so those hide.
   private _renderStylePanel() {
+    const inline = this._inline;
     return html`<div class="edgeless-note-style-panel">
+      <div class="edgeless-note-look" role="group" aria-label="Note look">
+        <button
+          type="button"
+          aria-pressed=${inline}
+          @click=${() => this._setInline(true)}
+        >
+          Inline
+        </button>
+        <button
+          type="button"
+          aria-pressed=${!inline}
+          @click=${() => this._setInline(false)}
+        >
+          Card
+        </button>
+      </div>
+      ${inline ? null : this._renderCardSections()}
+    </div>`;
+  }
+
+  private _renderCardSections() {
+    return html`
       <div class="edgeless-note-style-section">
         <div class="edgeless-note-style-section-title">Fill color</div>
         <edgeless-color-panel
@@ -360,7 +432,7 @@ export class EdgelessNoteStylePanel extends SignalWatcher(
           />
         </div>
       </div>
-    </div>`;
+    `;
   }
 
   private _renderCustomColorPanel() {

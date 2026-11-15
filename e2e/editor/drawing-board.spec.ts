@@ -216,7 +216,9 @@ test('draws over the card and reopens from what it saved', async ({ page }) => {
   await expect.poll(() => canvas(page)).toEqual(['plane', 'brush']);
 });
 
-test('a note card takes typing and leaves $$ as text', async ({ page }) => {
+test('a note takes typing, leaves $$ as text and turns from inline to a card and back', async ({
+  page,
+}) => {
   test.slow();
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -239,7 +241,7 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
     'see $$x^2$$ here'
   );
 
-  // Selected, it has its height button, and nothing about a page mode.
+  // Selected, it has nothing about a page mode.
   await page.keyboard.press('Escape');
   await page.evaluate(() => {
     const { gfx } = document.querySelector(
@@ -253,8 +255,34 @@ test('a note card takes typing and leaves $$ as text', async ({ page }) => {
     gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
   });
   const toolbar = page.locator('affine-toolbar-widget');
-  await expect(toolbar.getByLabel('Size', { exact: true })).toBeVisible();
   await expect(toolbar.getByText('Display in Page')).toHaveCount(0);
+
+  // It starts inline (Epo 2026-11-13); the toolbar's Inline makes it a card, and
+  // the style panel's Inline | Card switch makes it inline again.
+  const container = page.locator('.affine-note-container');
+  await expect(container).toHaveAttribute('data-inline', 'true');
+  // As wide and tall as its one line of text, not AFFiNE's 498 wide note.
+  const [width, height] = await page.evaluate(() => {
+    const note = document.querySelector('affine-edgeless-note') as unknown as {
+      model: { props: { xywh: string } };
+    };
+    return JSON.parse(note.model.props.xywh).slice(2) as number[];
+  });
+  expect(width).toBeLessThan(200);
+  expect(height).toBeLessThan(30);
+  // Style is a card's; no note has Size, as no note has a custom height.
+  await expect(toolbar.getByLabel('Note Style')).toHaveCount(0);
+  await expect(toolbar.getByLabel('Size', { exact: true })).toHaveCount(0);
+  await toolbar.getByLabel('Inline', { exact: true }).click();
+  await expect(container).toHaveAttribute('data-inline', 'false');
+  await expect(toolbar.getByLabel('Size', { exact: true })).toHaveCount(0);
+  await toolbar.getByLabel('Note Style').click();
+  const panel = page.locator('edgeless-note-style-panel');
+  await expect(panel.getByText('Fill color')).toBeVisible();
+  await panel.getByRole('button', { name: 'Inline' }).click();
+  await expect(container).toHaveAttribute('data-inline', 'true');
+  await expect(panel.getByText('Fill color')).toHaveCount(0);
+  await expect(toolbar.getByLabel('Note Style')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -289,6 +317,71 @@ test('the shapes panel draws an outline, a hexagon shape and a preset that reope
   const saved = await save(page);
   await page.evaluate(`window.__reopen(${JSON.stringify(saved)})`);
   await expect.poll(() => canvas(page)).toEqual(placed);
+});
+
+test("a shape's switcher offers every shape, and Clear all empties a plane and the board until Undo", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const at = await onCard(page);
+  await page.locator('capy-shape-button').first().click();
+  await page.getByRole('button', { name: 'Hexagon' }).click();
+  await page.mouse.click(...at(0.7, 0.3));
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'shape']);
+  // Epo 2026-11-13: the switcher lists the shapes panel's ten, polygons included.
+  await page.mouse.click(...at(0.7, 0.3));
+  await page.getByRole('button', { name: 'Switch shape type' }).click();
+  await page.getByRole('button', { name: 'Pentagon' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const root = document.querySelector(
+          'affine-edgeless-root'
+        ) as unknown as {
+          gfx: {
+            layer: { canvasElements: { shapeType?: string; type: string }[] };
+          };
+        };
+        return root.gfx.layer.canvasElements.find(
+          ({ type }) => type === 'shape'
+        )?.shapeType;
+      })
+    )
+    .toBe('pentagon');
+
+  // A plane's Clear all takes its marks; Undo in the same menu brings them back.
+  await page.mouse.dblclick(...at(0.3, 0.6));
+  const plane = await onPlane(page);
+  await page.getByRole('button', { exact: true, name: 'Point' }).click();
+  await page.mouse.click(...plane(0.6, 0.4));
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(1);
+  const menu = page.locator('.capy-plane-editor .capy-menu-button');
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Clear all' }).click();
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(0);
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(1);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // The board's Clear all takes everything, and greys out once it's empty.
+  const boardMenu = page.locator('.capy-board-menu .capy-menu-button');
+  await boardMenu.click();
+  await page.getByRole('menuitem', { name: 'Clear all' }).click();
+  await expect.poll(() => canvas(page)).toEqual([]);
+  await boardMenu.click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Clear all' })
+  ).toBeDisabled();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await expect.poll(() => canvas(page)).toEqual(['plane', 'shape']);
 });
 
 test('double click opens the plane: it plots, undoes each click, and Escape leaves', async ({
@@ -537,6 +630,177 @@ test('in a plane, selected points move together, and the eraser takes what its r
     (Math.atan2(dropped.at[1], dropped.at[0]) * 180) / Math.PI / 15;
   expect(rings).toBeCloseTo(Math.round(rings), 6);
   expect(spokes).toBeCloseTo(Math.round(spokes), 6);
+
+  // A label goes wherever it's dragged, off the rings and spokes (Epo 2026-11-13).
+  await page.getByRole('button', { name: 'Label' }).click();
+  await page.mouse.click(...polar(0.4, 0.6));
+  await page.keyboard.type('Here');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await planePoints(page, true)).points)
+    .toHaveLength(2);
+  const label = (await planePoints(page, true)).points[1];
+  await page.mouse.move(...label.px);
+  await page.mouse.down();
+  await page.mouse.move(label.px[0] + 37, label.px[1] - 23, { steps: 6 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await planePoints(page, true)).points[1].at[0])
+    .toBeCloseTo(label.at[0] + 37 / ppu, 6);
+  expect((await planePoints(page, true)).points[1].at[1]).toBeCloseTo(
+    label.at[1] + 23 / ppu,
+    6
+  );
+
+  // With Select, a double click on empty paper types a label there, with the canvas
+  // label's symbol row (Epo 2026-11-13).
+  await page.mouse.dblclick(...polar(0.3, 0.3));
+  await page.keyboard.type('a');
+  await page
+    .locator('.capy-plane-symbols')
+    .getByRole('button', { name: 'x²' })
+    .click();
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await planePoints(page, true)).points)
+    .toHaveLength(3);
+  await expect(
+    page.locator('.capy-plane-editor .capy-chart-label')
+  ).toHaveCount(0);
+});
+
+test("a label picked alone wears the board's frame, whose corner sizes it, and the plane card turns", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const at = await onPlane(page);
+  await page.getByRole('button', { name: 'Label' }).click();
+  await page.mouse.click(...at(0.5, 0.4));
+  await page.keyboard.type('Wide');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await planePoints(page)).points)
+    .toHaveLength(1);
+  const [label] = (await planePoints(page)).points;
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.click(...label.px);
+  const plane = () =>
+    page.evaluate(() => {
+      const { gfx } = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              id: string;
+              marks: { size?: number }[];
+              rotate: number;
+              type: string;
+            }[];
+          };
+        };
+      };
+      const card = gfx.layer.canvasElements.find(
+        ({ type }) => type === 'plane'
+      );
+      return {
+        id: card?.id ?? '',
+        rotate: card?.rotate ?? 0,
+        size: card?.marks[0]?.size,
+      };
+    });
+
+  // Epo 2026-11-13: the frame's bottom right corner, 6 px out from the 15 px text,
+  // dragged out makes the text bigger.
+  const width = await page.evaluate(() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return 0;
+    ctx.font = '15px Arial, sans-serif';
+    return ctx.measureText('Wide').width;
+  });
+  const corner = [label.px[0] + width / 2 + 6, label.px[1] + 9 + 6] as const;
+  await page.mouse.move(...corner);
+  await page.mouse.down();
+  await page.mouse.move(corner[0] + 40, corner[1] + 20, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await plane()).size ?? 15).toBeGreaterThan(15);
+
+  // The card turns by the frame's knob, as other cards do.
+  await page.getByRole('button', { name: 'Done' }).click();
+  const { id } = await plane();
+  await page.evaluate((card) => {
+    const { gfx } = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as { gfx: { selection: { set(selection: object): void } } };
+    gfx.selection.set({ editing: false, elements: [card] });
+  }, id);
+  const knob = await page
+    .locator('edgeless-selected-rect .handle[aria-label="rotate"]')
+    .boundingBox();
+  if (!knob) throw new Error('the plane card has no rotate knob');
+  await page.mouse.move(knob.x + knob.width / 2, knob.y + knob.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(knob.x + 80, knob.y + 40, { steps: 6 });
+  await page.mouse.up();
+  expect((await plane()).rotate).not.toBe(0);
+});
+
+test("a selected line's point still moves alone, and Fit shows ten units of an empty plane", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const card = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              marks: { points?: Vec[] }[];
+              ppu: number;
+              type: string;
+            }[];
+          };
+        };
+      };
+      const plane = root.gfx.layer.canvasElements.find(
+        ({ type }) => type === 'plane'
+      );
+      return { ends: plane?.marks[0]?.points ?? [], ppu: plane?.ppu ?? 0 };
+    });
+
+  // Epo 2026-11-13: Fit on nothing showed one unit across the screen.
+  await page.locator('.capy-plane-editor .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Fit to screen' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('no viewport');
+  await expect
+    .poll(async () => (await card()).ppu)
+    .toBeLessThanOrEqual((viewport.height - 160) / 10 + 1);
+
+  // A line, selected, then its first point dragged: the other end stays put.
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const at = await onPlane(page);
+  await page.getByRole('button', { name: 'Line through two points' }).click();
+  await page.mouse.click(...at(0.3, 0.6));
+  await page.mouse.click(...at(0.6, 0.4));
+  await expect.poll(async () => (await card()).ends).toHaveLength(2);
+  const [first, last] = (await card()).ends;
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.click(...at(0.45, 0.5));
+  const [start] = (await planePoints(page)).points;
+  await page.mouse.move(...start.px);
+  await page.mouse.down();
+  await page.mouse.move(start.px[0] - 60, start.px[1] + 60, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await card()).ends[0]).not.toEqual(first);
+  expect((await card()).ends[1]).toEqual(last);
 });
 
 test('in a chart, Select moves several bars, or several lines, together', async ({
@@ -822,7 +1086,7 @@ test('a note scrolled out of view still reaches the image', async ({
         ?.classList.contains('block-idle')
     )
   ).toBe(true);
-  // Note fills are half see-through (N2), so the black note is mid grey on white.
+  // Note fills are half see-through, so the black note is mid grey on white.
   expect(await inkIn(page, await toImage(page), [100, 160])).toBeGreaterThan(
     10_000
   );
@@ -916,7 +1180,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
             canvasElements: {
               axisMax: number;
               bars: { label: string; value: number }[];
-              labels: { text: string }[];
+              labels: { reach: number; text: string }[];
               spokes: number[];
               type: string;
             }[];
@@ -930,6 +1194,7 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
       return {
         axisMax,
         labels: labels?.map(({ text }) => text),
+        reaches: labels?.map(({ reach }) => reach),
         spokes: spokes?.length,
         values: bars?.map(({ value }) => value),
         words: bars?.map(({ label }) => label),
@@ -997,6 +1262,16 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
   await page.locator('.capy-chart-label').fill('Science');
   await page.locator('.capy-chart-label').press('Enter');
   await expect.poll(async () => (await chart()).labels).toEqual(['Science']);
+  // Select drags a label anywhere, out from the middle too, not only round (Epo
+  // 2026-11-13).
+  const reach = (await chart()).reaches?.[0] ?? 0;
+  await page.mouse.move(...at(0.55, 0.3));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.6, 0.12), { steps: 6 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await chart()).reaches?.[0])
+    .toBeGreaterThan(reach + 0.1);
   await page.getByRole('button', { name: 'Erase a mark' }).click();
   await page.mouse.click(...at(0.7, 0.5));
   await expect.poll(async () => (await chart()).spokes).toBe(1);
@@ -1386,6 +1661,460 @@ test('the workspace canvas has GIFs, stickers and emoji in a slot, and Formulas 
   await placePiece(page, 'capy-misc-panel', 'deriv');
   await page.locator('.capy-formula math-field').waitFor();
   await expect.poll(() => canvas(page)).toContain('formula');
+});
+
+test("Misc's YouTube tile places a video, and Edit link changes it in place", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'YouTube' }).click();
+  await misc.getByRole('textbox').fill('youtu.be/dQw4w9WgXcQ');
+  await misc.getByRole('button', { name: 'Add' }).click();
+  const card = page.locator('capy-link-card');
+  await expect(card.locator('img')).toBeVisible();
+  const before = await card.boundingBox();
+  // Edit link (Epo 2026-11-13, E1): the address is in the field.
+  await page
+    .locator('affine-toolbar-widget')
+    .getByLabel('Edit link', { exact: true })
+    .click();
+  const field = page.locator('capy-link-edit input');
+  await expect(field).toHaveValue(
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+  );
+  // Not an address: the field stays open and says so.
+  await field.fill('nope');
+  await field.press('Enter');
+  await expect(page.locator('capy-link-edit .error')).toBeVisible();
+  // A web address turns the video into a web card, as wide as it was.
+  await field.fill('example.com/notes');
+  await field.press('Enter');
+  await expect(card).toContainText('example.com');
+  const after = await card.boundingBox();
+  expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
+  expect(after?.height).toBeLessThan(before?.height ?? 0);
+});
+
+test("a placed set fills its card, and its Edit is on the card's toolbar", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio');
+  const tab = page.getByRole('button', { name: 'Canvas' });
+  await tab.waitFor();
+  await tab.click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'Flashcards' }).click();
+  await misc.getByRole('button', { name: /Cell organelles/ }).click();
+  const card = page.locator('capy-material-card');
+  await expect(card).toContainText('Card 1 of 6');
+  // Its face takes the card's height: nothing to scroll (Epo 2026-11-13).
+  const body = card.locator('.capy-card-body');
+  await expect
+    .poll(() => body.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeLessThanOrEqual(1);
+  // No Edit in the card; the toolbar's Edit opens its editor, Done closes it.
+  await expect(card.getByRole('button', { name: 'Edit' })).toHaveCount(0);
+  const toolbar = page.locator('affine-toolbar-widget');
+  await toolbar.getByLabel('Edit', { exact: true }).click();
+  await expect(card).not.toContainText('Card 1 of 6');
+  await toolbar.getByLabel('Done', { exact: true }).click();
+  await expect(card).toContainText('Card 1 of 6');
+});
+
+test("the note menu's Link places a link card", async ({ page }) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // Link before the note kinds, where the board takes link cards (Epo
+  // 2026-11-13, P1): its field opens above the menu's row.
+  await page.locator('capy-note-button').click();
+  await page
+    .locator('edgeless-note-menu')
+    .getByLabel('Link', { exact: true })
+    .click();
+  const field = page.locator('capy-link-add input');
+  await field.fill('nope');
+  await field.press('Enter');
+  await expect(page.locator('capy-link-add .error')).toBeVisible();
+  await field.fill('example.com/notes');
+  await field.press('Enter');
+  await expect(page.locator('capy-link-card')).toContainText('example.com');
+  await expect(page.locator('capy-link-add')).toHaveCount(0);
+});
+
+test("a plane's editor is in the canvas's URL: Back closes it, and a missing one says so", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const editor = page.locator('.capy-plane-editor');
+  await expect(editor).toBeVisible();
+  await expect(page).toHaveURL(/[?&]open=/);
+  await page.goBack();
+  await expect(editor).toHaveCount(0);
+  await page.goForward();
+  await expect(editor).toBeVisible();
+  // Done steps back out of it.
+  await page.locator('.capy-editor-done').click();
+  await expect(page).not.toHaveURL(/[?&]open=/);
+  // A link to something no longer on the canvas.
+  await page.goto('/workspaces/ws_bio?view=canvas&open=gone-card');
+  await expect(
+    page.getByText("That isn't on this canvas anymore")
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/[?&]open=/);
+});
+
+test("a plane's curve bends by its stroke, and the workspace's objects list plots a typed function", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  const marks = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              marks: {
+                handles?: [Vec, Vec][];
+                kind: string;
+                points?: Vec[];
+                term?: string;
+              }[];
+              type: string;
+            }[];
+          };
+        };
+      };
+      return (
+        root.gfx.layer.canvasElements.find(({ type }) => type === 'plane')
+          ?.marks ?? []
+      );
+    });
+
+  // Epo 2026-11-13 (K2): the selected curve's stroke pulls that stretch, its points
+  // staying where they are. Two points make it straight, so its middle is on it.
+  const at = await onPlane(page);
+  await page.getByRole('button', { name: 'Curve through points' }).click();
+  await page.mouse.click(...at(0.5, 0.6));
+  await page.mouse.click(...at(0.8, 0.4));
+  await page.getByRole('button', { name: 'Finish curve' }).click();
+  await page.getByRole('button', { name: 'Select' }).click();
+  await page.mouse.click(...at(0.65, 0.5));
+  const [curve] = await marks();
+  await page.mouse.move(...at(0.65, 0.5));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.65, 0.3), { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await marks())[0].handles).toHaveLength(2);
+  expect((await marks())[0].points).toEqual(curve.points);
+
+  // K1: a double click on a point makes it a corner, its handles on it.
+  const [end] = (await planePoints(page)).points;
+  await page.mouse.dblclick(...end.px);
+  await expect
+    .poll(async () => (await marks())[0].handles?.[0])
+    .toEqual([end.at, end.at]);
+
+  // L2: the list is open on a wide screen; its last row plots what's typed.
+  await expect(page.getByRole('button', { name: 'Objects' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await page.locator('.capy-plane-list li[data-row="new"] math-field').click();
+  await page.keyboard.type('sin(x)');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await marks()).map(({ term }) => term))
+    .toContain('sin(x)');
+
+  // The answer board has no list, so an answer is drawn rather than typed.
+  await openBoard(page);
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Objects' })).toHaveCount(0);
+});
+
+test("a chart's data pane on the workspace canvas types bars and slices", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  const chart = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: {
+          layer: {
+            canvasElements: {
+              axisMax?: number;
+              bars?: { label: string; value: number }[];
+              labels?: { text: string }[];
+              spokes?: number[];
+              type: string;
+            }[];
+          };
+        };
+      };
+      const found = root.gfx.layer.canvasElements
+        .filter(({ type }) => type === 'chart')
+        .at(-1);
+      return {
+        axisMax: found?.axisMax,
+        bars: found?.bars ?? [],
+        labels: (found?.labels ?? []).map(({ text }) => text),
+        spokes: found?.spokes ?? [],
+      };
+    });
+  const toolbar = page.locator('affine-toolbar-widget');
+  const pane = page.locator('.capy-plane-list');
+
+  // Epo 2026-11-13 (B1): "+ Bar", then its label and a value past the axis's top.
+  await placePiece(page, 'capy-misc-panel', 'bar');
+  await toolbar.getByLabel('Edit the chart').click();
+  await expect(page.getByRole('button', { name: 'Data' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await pane.getByRole('button', { name: 'Bar' }).click();
+  await page.keyboard.type('Mon');
+  await pane.getByRole('textbox', { name: 'Value' }).fill('13');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await chart()).bars)
+    .toEqual([expect.objectContaining({ label: 'Mon', value: 13 })]);
+  expect((await chart()).axisMax).toBeGreaterThanOrEqual(13);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // P1: two slices from "+ Slice", the first named and set to 25%.
+  await page.keyboard.press('v');
+  await placePiece(page, 'capy-misc-panel', 'pie');
+  await toolbar.getByLabel('Edit the chart').click();
+  await pane.getByRole('button', { name: 'Slice' }).click();
+  await expect.poll(async () => (await chart()).spokes).toHaveLength(2);
+  await pane
+    .getByRole('textbox', { name: 'Type a label' })
+    .first()
+    .fill('Walk');
+  await pane.getByRole('textbox', { name: 'Share' }).first().fill('25');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await chart()).spokes).toEqual([0, 90]);
+  expect((await chart()).labels).toEqual(['Walk']);
+});
+
+test("a quiz card's Undo while edited is the quiz's, not the canvas's", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'Quiz' }).click();
+  await misc.getByRole('button', { name: /Genetics check-in/ }).click();
+  const card = page.locator('capy-material-card');
+  await page
+    .locator('affine-toolbar-widget')
+    .getByRole('button', { name: 'Edit' })
+    .click();
+  const first = 'A cross between Aa × Aa gives what genotype ratio?';
+  await expect(card).toContainText(first);
+  await card.getByRole('button', { name: 'Remove' }).first().click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Remove' })
+    .click();
+  await expect(card).not.toContainText(first);
+  // The board's menu Undo brings the question back and leaves the card placed.
+  await page.locator('.capy-board-menu .capy-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await expect(card).toContainText(first);
+  await expect(card).toHaveCount(1);
+});
+
+test('a double click places an inline note on the workspace canvas', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // Epo 2026-11-13: a note that takes links and lists, not a canvas label (an
+  // answer board keeps the label).
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  await page.mouse.dblclick(board.x + board.width / 2, board.y + 160);
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
+  await page.keyboard.type('Photosynthesis');
+  const note = page.locator('affine-edgeless-note');
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText('Photosynthesis');
+  await expect(note.locator('[data-inline="true"]')).toHaveCount(1);
+  await expect(page.locator('edgeless-text-editor')).toHaveCount(0);
+
+  // The plus on either side of the selected note places the next one, typed in
+  // at once (local change 60; Epo 2026-11-13).
+  for (const [side, text] of [
+    [0, 'Light'],
+    [1, 'Chlorophyll'],
+  ] as const) {
+    await page.keyboard.press('Escape');
+    await page.mouse.click(board.x + 40, board.y + board.height - 160);
+    await note.first().click();
+    await page.locator('.edgeless-auto-complete-arrow').nth(side).click();
+    await page.keyboard.type(text);
+    await expect(note.filter({ hasText: text })).toHaveCount(1);
+  }
+  await expect(note).toHaveCount(3);
+});
+
+test("a note's link shows its address on hover, and the frame's knob turns the note", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const at = await onCard(page);
+  await page.locator('capy-note-button').first().click();
+  await page
+    .locator('edgeless-note-menu edgeless-tool-icon-button')
+    .first()
+    .click();
+  await page.mouse.click(...at(0.5, 0.5));
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
+  await page.keyboard.type('Read osmosis notes');
+  await page.keyboard.press('Escape');
+  // "osmosis" links to a page, as the text toolbar's link button would.
+  await page.evaluate(() => {
+    const text = document.querySelector(
+      'affine-edgeless-note rich-text'
+    ) as unknown as {
+      inlineEditor: {
+        formatText(range: object, attributes: object): void;
+      };
+    };
+    text.inlineEditor.formatText(
+      { index: 5, length: 7 },
+      { link: 'https://example.com/osmosis' }
+    );
+  });
+  await page.mouse.click(...at(0.05, 0.05));
+
+  // L1 (Epo 2026-11-13): hovering it, with nothing being typed, shows its address
+  // and Open, a new tab.
+  const link = await page
+    .locator('affine-edgeless-note affine-link')
+    .boundingBox();
+  if (!link) throw new Error('the link is not drawn');
+  await page.mouse.move(link.x + link.width / 2, link.y + link.height / 2);
+  const chip = page.locator('.capy-link-chip');
+  await expect(chip).toContainText('example.com/osmosis');
+  await expect(chip.getByRole('link', { name: 'Open' })).toHaveAttribute(
+    'href',
+    'https://example.com/osmosis'
+  );
+
+  // F1: the selected note's frame has a knob above its middle that turns it.
+  await page.evaluate(() => {
+    const { gfx } = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as {
+      gfx: {
+        layer: { blocks: { id: string }[] };
+        selection: { set(selection: object): void };
+      };
+    };
+    gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
+  });
+  const knob = await page
+    .locator('edgeless-selected-rect .handle[aria-label="rotate"]')
+    .boundingBox();
+  if (!knob) throw new Error('the frame has no rotate knob');
+  await page.mouse.move(knob.x + knob.width / 2, knob.y + knob.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(knob.x + 80, knob.y + 40, { steps: 6 });
+  await page.mouse.up();
+  const turned = await page.evaluate(
+    () =>
+      (
+        document.querySelector('affine-edgeless-note') as unknown as {
+          model: { rotate: number };
+        }
+      ).model.rotate
+  );
+  expect(turned).not.toBe(0);
+});
+
+test("the Canvas page's Misc lists every quiz with its workspace, and New opens a quiz in no workspace in a dialog", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await expect(
+    misc.getByRole('heading', { name: 'Quizzes and flashcards' })
+  ).toBeVisible();
+  await misc.getByRole('button', { exact: true, name: 'Quiz' }).click();
+  // Each tile says its workspace, and one in none says nothing (Epo 2026-11-13, A).
+  await expect(
+    misc.locator('.card', { hasText: 'Genetics check-in' }).locator('.ws')
+  ).toHaveText('Biology 101');
+  await expect(
+    misc
+      .locator('.card', { hasText: 'Shared cell biology quiz' })
+      .locator('.ws')
+  ).toHaveCount(0);
+  // The filter matches the workspace's name too.
+  await misc.getByRole('searchbox').fill('calc');
+  await expect(misc.locator('.card:not(.new)')).toHaveCount(1);
+  await misc.getByRole('searchbox').fill('');
+  // New makes one in no workspace (W1), places it and opens its editor in a dialog.
+  await misc.getByRole('button', { name: 'New quiz' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Quiz 1' });
+  await expect(
+    dialog.getByRole('button', { name: 'Add question' })
+  ).toBeVisible();
+  await expect(page.locator('.capy-card .title')).toHaveText('Quiz 1');
 });
 
 test("the Canvas page is a board of the person's own, and its panel lists and makes canvases", async ({

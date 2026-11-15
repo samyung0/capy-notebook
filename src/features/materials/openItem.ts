@@ -77,6 +77,9 @@ export type WorkspaceOpenSearch = {
   view?: WorkspaceView;
   /** The Canvas tab's canvas shown (Epo 2026-11-12: a member has several). */
   c?: string;
+  /** What fills the canvas's screen (Epo 2026-11-13): a plane's or chart's
+   * editor, or a quiz card's drawing answer (`<card>~<part>`). */
+  open?: string;
   /** One of the pages that came out of Study (To do or Assignments,
    * Practice, Members, Study's own summary) in the centre while nothing is open. */
   study?:
@@ -226,6 +229,7 @@ export function parseWorkspaceOpenSearch(
         : undefined,
     c: search.view === 'canvas' ? text(search.c) : undefined,
     chat: search.chat === 'new' ? 'new' : undefined,
+    open: search.view === 'canvas' ? text(search.open) : undefined,
     settings: isSettingsView(search.settings) ? search.settings : undefined,
     settingsQuery: isSettingsView(search.settings)
       ? text(search.settingsQuery)

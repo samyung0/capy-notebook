@@ -15,6 +15,7 @@ import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
   CanvasRenderer,
   DefaultTool,
+  EdgelessCRUDIdentifier,
   ExportManager,
   Overlay,
   type SurfaceBlockComponent,
@@ -93,16 +94,21 @@ import { EdgelessToolbarViewExtension } from '@blocksuite/affine/widgets/edgeles
 import { SlashMenuViewExtension } from '@blocksuite/affine/widgets/slash-menu/view';
 import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
-import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import {
+  Delete02Icon,
+  Redo03Icon,
+  Undo03Icon,
+} from '@hugeicons/core-free-icons';
 import { combinedDarkCssVariables } from '@toeverything/theme';
 import { html, render } from 'lit';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
+import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { BoardBlobSource } from './boardBlobs';
-import { chartExtensions } from './boardChart';
+import { ChartElementModel, chartExtensions, openChart } from './boardChart';
 import { asImage } from './boardData';
 import {
   formulaExtensions,
@@ -113,16 +119,24 @@ import {
 import { forgetFormulas } from './boardFormulaDraw';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
-import { addPlane, planeExtensions, planeMarks } from './boardPlane';
+import { watchNoteLinks } from './boardNoteLinks';
+import {
+  addPlane,
+  openPlane,
+  PlaneElementModel,
+  planeExtensions,
+  planeMarks,
+} from './boardPlane';
 import './boardChartEditor';
 import {
   CardsStoreExtension,
   cardViews,
   lendWorkspace,
+  MATERIAL_FLAVOUR,
   refreshMaterialCards,
   type WorkspaceLinks,
 } from './boardCards';
-import { closeBoardEditor } from './boardEditorShell';
+import { closeBoardEditor, watchBoardEditor } from './boardEditorShell';
 import {
   addedElementFits,
   type BoardKind,
@@ -324,66 +338,6 @@ function keepToCatalog(gfx: GfxController, board: BoardKind) {
   };
 }
 
-/** The tools a placed piece hands back to. */
-const DRAWING_TOOLS = new Set(['brush', 'highlighter', 'eraser']);
-
-/** Something picked over the pen (or highlighter or eraser) and placed gives the
- * tool back (Epo 2026-11-12): every placement adds what it places and takes Select
- * in one step, which is told apart from Select taken by hand, or a pick cancelled.
- * A placed note keeps the focus for typing first; the tool comes back when its
- * editing ends. */
-function returnToDrawing(gfx: GfxController) {
-  type Tool = Parameters<GfxController['tool']['setTool']>[0];
-  let drawing: Tool | null = null;
-  let placed: 'element' | 'note' | null = null;
-  let note: 'placed' | 'editing' | null = null;
-  const mark = (kind: 'element' | 'note') => {
-    if (placed !== 'note') placed = kind;
-    queueMicrotask(() => {
-      placed = null;
-    });
-  };
-  const restore = () => {
-    if (drawing && gfx.tool.currentToolName$.peek() === 'default')
-      gfx.tool.setTool(drawing);
-  };
-  const elements = gfx.surface?.elementAdded.subscribe(() => mark('element'));
-  const blocks = gfx.doc.slots.blockUpdated.subscribe((change) => {
-    if (change.type === 'add')
-      mark(change.flavour === 'affine:note' ? 'note' : 'element');
-  });
-  const tools = gfx.tool.currentToolName$.subscribe((name) => {
-    note = null;
-    if (DRAWING_TOOLS.has(name)) {
-      drawing = gfx.tool.currentTool$.peek()?.constructor as Tool;
-      return;
-    }
-    // A picked shape or note in hand keeps what to go back to.
-    if (name !== 'default') return;
-    if (!(drawing && placed)) {
-      drawing = null;
-      return;
-    }
-    if (placed === 'note') note = 'placed';
-    // After the placement selects what it placed.
-    else queueMicrotask(restore);
-  });
-  const selections = gfx.selection.slots.updated.subscribe(() => {
-    if (!note) return;
-    if (gfx.selection.editing) note = 'editing';
-    else if (note === 'editing') {
-      note = null;
-      queueMicrotask(restore);
-    }
-  });
-  return () => {
-    elements?.unsubscribe();
-    blocks.unsubscribe();
-    tools();
-    selections.unsubscribe();
-  };
-}
-
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
@@ -416,6 +370,9 @@ export type DrawingBoardOptions = {
   workspace?: WorkspaceLinks;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
   saved?: string;
+  /** A plane's or chart's full-board editor opened (its card's id) or closed
+   * (null), for the page's URL. */
+  onEditor?: (cardId: string | null) => void;
 };
 
 export { BoardLoadError } from './boardLoad';
@@ -608,22 +565,42 @@ export function mountDrawingBoard(
       ...(readOnly
         ? []
         : [
+            // A card being edited takes them: its quiz's or set's own history
+            // (Epo 2026-11-13).
             {
-              disabled: !store.canUndo,
+              disabled: !(cardUndo()?.canUndo() ?? store.canUndo),
               icon: Undo03Icon,
               keepsOpen: true,
               label: m.drawing_board_undo(),
-              run: () => store.undo(),
+              run: () => (cardUndo() ?? store).undo(),
             },
             {
-              disabled: !store.canRedo,
+              disabled: !(cardUndo()?.canRedo() ?? store.canRedo),
               icon: Redo03Icon,
               keepsOpen: true,
               label: m.drawing_board_redo(),
-              run: () => store.redo(),
+              run: () => (cardUndo() ?? store).redo(),
             },
           ]),
       { label: m.drawing_board_fit_to_screen(), run: () => gfx.fitToScreen() },
+      // Everything on the canvas goes in one undo step (Epo 2026-11-13).
+      ...(readOnly
+        ? []
+        : [
+            {
+              disabled: !gfx.gfxElements.length,
+              icon: Delete02Icon,
+              label: m.drawing_board_clear_all(),
+              run: () => {
+                const crud = gfx.std.get(EdgelessCRUDIdentifier);
+                gfx.selection.clear();
+                store.captureSync();
+                for (const element of [...gfx.gfxElements])
+                  crud.removeElement(element.id);
+                store.captureSync();
+              },
+            },
+          ]),
     ],
     zoom: {
       in: () => zoomTo(gfx.viewport.zoom + ZOOM_STEP),
@@ -667,11 +644,44 @@ export function mountDrawingBoard(
     event.stopPropagation();
   };
   document.addEventListener('keydown', slotKeys);
-  // A double click types on the canvas, so the label is in the exported image.
+  // While a card is edited, ⌘Z and ⇧⌘Z (Ctrl+Y) on the board reach its quiz's or
+  // set's history, not the canvas's (Epo 2026-11-13). A field keeps its own undo,
+  // and a dialog over the page (a question's) its own.
+  const cardKeys = (event: KeyboardEvent) => {
+    const history = cardUndo();
+    if (!history || !(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    const redo = key === 'y' || (key === 'z' && event.shiftKey);
+    if (!redo && key !== 'z') return;
+    const path = event.composedPath();
+    const [target] = path;
+    const onBoard =
+      target === document.body || (!!board && path.includes(board));
+    if (
+      !onBoard ||
+      (target instanceof Element &&
+        target.closest('input, textarea, [contenteditable="true"], math-field'))
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (redo) history.redo();
+    else history.undo();
+    if (menu.open) menu.draw();
+  };
+  window.addEventListener('keydown', cardKeys, true);
+  const unwatchEditor = options.onEditor
+    ? watchBoardEditor(gfx, options.onEditor)
+    : null;
+  // A double click on empty canvas: a canvas text label on an answer board, with
+  // its maths symbol row and fonts; an inline note on the workspace canvas, which
+  // takes links, lists and bold (Epo 2026-11-13; local change 59).
   store.get(FeatureFlagService).setFlag('enable_edgeless_text', false);
+  store
+    .get(FeatureFlagService)
+    .setFlag('enable_dblclick_note', options.board === 'workspace');
   store.get(FeatureFlagService).setFlag('enable_note_menu_media', false);
   outlineNewShapes(gfx);
-  const unreturn = readOnly ? null : returnToDrawing(gfx);
   // The canvas draws in the app's light or dark (the dark class ThemeProvider sets).
   const root = document.documentElement;
   const theme$ = std.get(ThemeProvider).app$;
@@ -690,6 +700,19 @@ export function mountDrawingBoard(
   void document.fonts.load('24px "blocksuite:surface:Inter"');
   const symbols = readOnly ? null : mountSymbolRow(gfx);
   if (symbols) board?.append(symbols.element);
+  const unwatchLinks =
+    board instanceof HTMLElement ? watchNoteLinks(gfx, board) : null;
+  // A card's toolbar reads who may edit it and which card is edited, which the page
+  // learns after the card is selected: the selection is set again so its toolbar
+  // follows (Edit appears, Edit turns to Done).
+  const unwatchCards = onCardState(() => {
+    const { selection } = gfx;
+    const elements = [...selection.selectedIds];
+    if (elements.length !== 1 || selection.editing) return;
+    if (store.getBlock(elements[0])?.flavour !== MATERIAL_FLAVOUR) return;
+    selection.clear();
+    selection.set({ editing: false, elements });
+  });
 
   // A preset being sized shows on this layer, under the strokes and outside the
   // document. It moves with the board.
@@ -727,7 +750,8 @@ export function mountDrawingBoard(
    * 8-unit margin. `bound` is in board units. */
   const framing = () => {
     const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
-    const bounds = items.map((item) => Bound.deserialize(item.xywh));
+    // Turned items by the box they turn into.
+    const bounds = items.map((item) => item.elementBound);
     const whole = everything();
     const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
     const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
@@ -758,6 +782,9 @@ export function mountDrawingBoard(
           ? [64, 12, 96, 12]
           : [90, 40, 130, 40])
     );
+    // Never opened larger than life: a small drawing (one note) fitted to the
+    // screen came up at 200% and more (Epo 2026-11-13).
+    if (gfx.viewport.zoom > 1) gfx.viewport.setZoom(1);
     place();
     fitted = true;
   };
@@ -879,6 +906,8 @@ export function mountDrawingBoard(
   };
 
   return {
+    /** Leaves the open plane or chart, writing it as Done does. */
+    closeEditor: () => closeBoardEditor(gfx),
     /** The first view again, with this room around it: a board mounted ahead, shown
      * at the screen's width then (a tablet turned since). Before the first view, it
      * only sets that view's room. */
@@ -886,6 +915,8 @@ export function mountDrawingBoard(
       room = padding;
       if (fitted) fitView();
     },
+    /** Whether the board holds `id`, a card or anything else drawn. */
+    has: (id: string) => !!gfx.getElementById(id),
     /** The same with every file the board can get, asking for the ones it
      * doesn't hold yet (a stored drawing's, not shown so far): what Done sends.
      * An image whose file is nowhere is left out, and stays an empty frame. */
@@ -907,6 +938,15 @@ export function mountDrawingBoard(
       ].map((id) => ({ file: blobs.held(id), id })),
     /** Once no image is being stored. */
     imagesSettled: () => blobs.settled(),
+    /** Opens the full-board editor of the plane or chart card `id`: false when
+     * the board has no such card (or opens nothing for editing). */
+    openEditor: (id: string) => {
+      const element = gfx.getElementById(id);
+      if (element instanceof PlaneElementModel) openPlane(gfx, element);
+      else if (element instanceof ChartElementModel) openChart(gfx, element);
+      else return false;
+      return !!board?.querySelector('.capy-plane-editor');
+    },
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {
@@ -926,6 +966,14 @@ export function mountDrawingBoard(
         } | null;
         if (view && !view.blobUrl) view.refreshData?.();
       }
+    },
+    /** Brings `id` into view when it is out of it, so a card's runner mounts. */
+    reveal: (id: string) => {
+      const element = gfx.getElementById(id);
+      if (!(element && 'elementBound' in element)) return;
+      const bound = element.elementBound;
+      if (!gfx.viewport.viewportBounds.contains(bound))
+        gfx.viewport.setCenter(bound.center[0], bound.center[1]);
     },
     /** The board to store, with no undo history: a fresh document keeps only what's
      * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
@@ -984,13 +1032,16 @@ export function mountDrawingBoard(
       historyUpdates.unsubscribe();
       zoomUpdates.unsubscribe();
       unwatchTool();
-      unreturn?.();
       unguard?.();
       imageAdds.unsubscribe();
       document.removeEventListener('keydown', slotKeys);
+      window.removeEventListener('keydown', cardKeys, true);
+      unwatchEditor?.();
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
+      unwatchLinks?.();
+      unwatchCards();
       themeWatch.disconnect();
       document.fonts.removeEventListener('loadingdone', redrawOnFont);
       closeBoardEditor(gfx);

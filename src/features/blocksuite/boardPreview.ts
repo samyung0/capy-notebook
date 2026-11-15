@@ -7,6 +7,7 @@ import {
   CARD_PADS,
   type ChartData,
   filledSlices,
+  functionRuns,
   INK,
   type Mark,
   onScreen,
@@ -133,7 +134,9 @@ export function drawBoardPreview(
     const drawn = drawItem(item, pen, blocks);
     if (!drawn) continue;
     const { dx, dy } = shifts[i];
-    const rotate = Number(item.fields.rotate) || 0;
+    // A block keeps its turn as `prop:rotate` (a note, local change 56; an image).
+    const rotate =
+      Number(item.fields.rotate ?? item.fields['prop:rotate']) || 0;
     const { h, w, x, y } = item.box;
     const moves = [
       dx || dy ? `translate(${num(-dx)} ${num(-dy)})` : '',
@@ -407,9 +410,14 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
       dot(mark.at);
       continue;
     }
-    traces += pathOf(mark, 6)
-      .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
-      .join('');
+    if (mark.kind === 'function') {
+      for (const run of functionRuns(mark, x0, x0 + w / ppu, 2 / ppu, h / ppu))
+        traces += run
+          .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
+          .join('');
+      continue;
+    }
+    const path = pathOf(mark, 6).map(([u, v]): Vec => [X(u), Y(v)]);
     // A line's points show only in the editor, a single point always.
     const [from, to] = mark.points.slice(-2);
     if (mark.kind === 'vector' && from && to) {
@@ -417,10 +425,19 @@ function drawPlane(box: Box, fields: Fields, pen: Pen) {
       const [tx, ty] = [X(to[0]), Y(to[1])];
       const turn = Math.atan2(ty - Y(from[1]), tx - X(from[0]));
       const size = Math.max(12, pen.pixel * 4);
+      // The line stops halfway into the head, as on the card.
+      const back = (size * Math.cos(Math.PI / 7)) / 2;
+      path[path.length - 1] = [
+        tx - back * Math.cos(turn),
+        ty - back * Math.sin(turn),
+      ];
       const side = (sign: number) =>
         `${num(tx - size * Math.cos(turn + (sign * Math.PI) / 7))} ${num(ty - size * Math.sin(turn + (sign * Math.PI) / 7))}`;
       heads += `M${num(tx)} ${num(ty)}L${side(-1)}L${side(1)}Z`;
     }
+    traces += path
+      .map(([u, v], i) => `${i ? 'L' : 'M'}${num(u)} ${num(v)}`)
+      .join('');
   }
   return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${heads ? `<path d="${heads}" fill="${INK}" stroke="none"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
 }
@@ -495,9 +512,23 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   };
   walk(note['sys:children']);
   const { h, w, x, y } = box;
-  // The board's tight card (N2): 8 by 10 px padding, a hairline, a 6 px corner.
+  const text = texts.join('\n');
+  const style = ((note['prop:edgeless'] as Fields | undefined)?.style ??
+    {}) as Fields;
+  const background = note['prop:background'];
+  const bordered = style.borderStyle !== 'none';
+  // An inline note (P1/I1, Epo 2026-11-13) is its text alone, with no padding.
+  if (background === 'transparent' && !style.shadowType && !bordered)
+    return lines(box, text, FONT_SIZE_NOTE, '#1d1d1f', 'left');
+  // A card as the board draws it: 8 by 10 px padding, its corner, the fill half
+  // see-through, its border, or the hairline every shadow is drawn as here.
   const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
-  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+  const edge = bordered
+    ? `stroke="#1d1d1f" stroke-opacity="0.1" stroke-width="${num(Number(style.borderSize) || 4)}"${style.borderStyle === 'dash' ? ' stroke-dasharray="6 4"' : ''}`
+    : style.shadowType
+      ? 'stroke="#e6e6e6" stroke-width="1"'
+      : '';
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${num(Number(style.borderRadius ?? 8))}" fill="${colour(background, '#fff')}" fill-opacity="0.5" ${edge}/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, text, FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
 /** A placed quiz or flashcard set: its box with the title and what it is, as the

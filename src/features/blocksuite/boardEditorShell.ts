@@ -1,12 +1,29 @@
 import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
-import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import {
+  Delete02Icon,
+  Redo03Icon,
+  Undo03Icon,
+} from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
 import { m } from '@/i18n';
 import { BoardMenu, type MenuZoom } from './boardMenu';
 
 const closing = new WeakMap<GfxController, () => void>();
+const watchers = new WeakMap<GfxController, (cardId: string | null) => void>();
+
+/** Tells the page which card's editor is open, null once none is: the canvas
+ * keeps it in its URL (Epo 2026-11-13). */
+export function watchBoardEditor(
+  gfx: GfxController,
+  watch: (cardId: string | null) => void
+) {
+  watchers.set(gfx, watch);
+  return () => {
+    watchers.delete(gfx);
+  };
+}
 
 /** Leaves the open plane or chart, as saving or making the image does. */
 export function closeBoardEditor(gfx: GfxController) {
@@ -21,6 +38,8 @@ export function openBoardEditor(
   hooks: {
     /** The menu's Fit and zoom row, where the card has them. */
     fit?: () => void;
+    /** The menu's Clear all: everything in the card goes in one undo step. */
+    clear?: { empty: () => boolean; run: () => void };
     zoom?: MenuZoom;
     /** Before it goes: whatever it has to write. */
     onLeave: () => void;
@@ -87,6 +106,17 @@ export function openBoardEditor(
         label: m.drawing_board_redo(),
         run: () => gfx.doc.redo(),
       },
+      // Clear all, the last entry, on every board and card (Epo 2026-11-13).
+      ...(hooks.clear
+        ? [
+            {
+              disabled: hooks.clear.empty(),
+              icon: Delete02Icon,
+              label: m.drawing_board_clear_all(),
+              run: hooks.clear.run,
+            },
+          ]
+        : []),
     ],
     zoom: hooks.zoom,
   }));
@@ -118,8 +148,10 @@ export function openBoardEditor(
     board.removeAttribute('data-editor-open');
     closing.delete(gfx);
     gfx.selection.set({ editing: false, elements: [cardId] });
+    watchers.get(gfx)?.(null);
   };
   closing.set(gfx, close);
+  watchers.get(gfx)?.(cardId);
 
   // The board listens on the document, so its shortcuts stop here. Typing elsewhere on
   // the page isn't this editor's, and a field in it keeps its own undo.
@@ -132,8 +164,12 @@ export function openBoardEditor(
     )
       return;
     const key = event.key.toLowerCase();
-    // A field gets its keys; root stops them on their way out to the board.
-    if (target instanceof HTMLInputElement && key !== 'escape') return;
+    // A field gets its keys (a MathLive one too: its keys arrive from the math-field);
+    // root stops them on their way out to the board.
+    const field =
+      target instanceof HTMLInputElement ||
+      (target instanceof Element && target.closest('math-field'));
+    if (field && key !== 'escape') return;
     event.stopPropagation();
     const command = event.metaKey || event.ctrlKey;
     if (key === 'escape') {

@@ -286,7 +286,9 @@ it would change what they are sent.
 
 Answering (`src/features/quizzes/drawing/`): before drawing, the part shows one
 generic squared grid with Draw answer (E1, Epo 2026-11-06), the same for every
-drawing part. Draw answer opens the board full screen (`DrawingBoardScreen`,
+drawing part. It is a whole number of 52 px cells across (up to ten) and of 13 px
+rows down, about 52:30, with its closing right and bottom lines, so a narrow
+column such as a canvas card never cuts it mid-cell (Epo 2026-11-13). Draw answer opens the board full screen (`DrawingBoardScreen`,
 loaded with BlockSuite only then): the question pinned at the top left, folded to
 one line under a top bar on phones, and Done at the top right, both hidden while a
 card (a plane, a chart) is open full screen with its own Done. The board shows a dashed
@@ -1078,7 +1080,11 @@ ends with a small outline Study again on the right (confetti only when the last 
 on the page, not on a reopened result). Public shared pages and a note's embed keep every
 question on one page (`QuizQuestionList`), each with its own Check. While taking it, once a
 question is checked, an outline md Reset at the far right of the title starts
-a new try (`ResetButton`). One question is checked at a time: every Check and
+a new try (`ResetButton`). An embedded quiz (a note's, a canvas card's, a shared
+note's) has no header and no "N of M checked" under it; a checked question has an
+outline Reset where its Check was, beside Check again when it is Not marked, which
+takes that question and its answers out of the try (`reset`, page-only tries,
+Epo 2026-11-13). One question is checked at a time: every Check and
 Reset wait while a check is in flight, so each check builds on the run the
 page shows. The score (`runScore` in `grade.ts`, the server's rule) counts a
 checked question with the marks it was checked against. How a try is kept

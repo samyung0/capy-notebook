@@ -706,7 +706,10 @@ cards in set order, then those last rated Again; skips are not kept. Note
 embeds keep nothing. While studying, once the run has a rating, an outline md
 Reset at the far right of the title (`ResetButton`, also on quiz pages once a
 question is checked) starts a new run and forgets the kept one; the run so far
-stays an attempt. A result shows Study again instead. When the
+stays an attempt. An embedded set (a note's, a canvas card's, a shared note's) has
+no title: an outline Reset at the far left of its Previous and Next row starts the
+run over once it has a rating or has moved past the first card (`StepNav`'s
+`start`, Epo 2026-11-13). A result shows Study again instead. When the
 run ends, the page shows `FlashcardResult` (`src/features/flashcards/FlashcardResult.tsx`)
 in the quiz result's layout (TabContent, left aligned) from the page's own
 ratings, so embeds and share pages show it too. The score of first ratings

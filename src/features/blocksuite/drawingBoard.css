@@ -312,14 +312,11 @@
   --capy-shape-button-triangle: #fff;
   --capy-shape-button-stroke-triangle: #d9dde3;
   --capy-note-edge: #e6e6e6;
-  /* The board keeps AFFiNE's blue for what is selected or active, as its selection
-     frames and pieces are drawn in it; chrome.css maps it to the app's accent for
-     the note. */
-  --affine-primary-color: #1e96eb;
-  --affine-brand-color: #1e96eb;
-  --affine-v2-icon-activated: #1e96eb;
-  --affine-v2-button-primary: #1e96eb;
-  --affine-v2-table-indicator-activated: #1e96eb;
+  /* What is selected or active is in the app's accent, as in the note (Epo
+     2026-11-13, F1): the selection frame and its handles (vendor local change 56),
+     lit buttons and menus. The handles are filled with the board's paper. */
+  --affine-v2-table-indicator-activated: var(--action-accent-bg);
+  --capy-handle-fill: #fff;
   /* BlockSuite's selection layer and the ☰ menu are placed against the board, not
      against a page box that starts higher (a tablet's header row above it). */
   position: relative;
@@ -330,28 +327,78 @@
 html.dark:not([data-board-light]) .capy-board {
   --capy-navy: #5683b3;
   --capy-note-edge: var(--affine-border-color);
+  --capy-handle-fill: var(--affine-background-primary-color);
 }
 
-/* Note cards are tight (N2, Epo 2026-11-08): 8 by 10 px padding, a hairline and a
-   6 px corner, no shadow, the same size while typing, the fill half see-through.
-   Every card on the board takes it, over the note's stored style. */
+/* Notes take their stored style (P1, Epo 2026-11-13): fill, shadow, border and
+   corner from the style panel. A card is tight (N2, 2026-11-08): 8 by 10 px
+   padding, the same size while typing, and its Box shadow is the board's hairline.
+   An inline note (clear fill, no shadow, no border) is its text alone. The fill is
+   half see-through in the note's own style (vendor local change 52). */
+.capy-board {
+  --affine-note-shadow-box: 0 0 0 1px var(--capy-note-edge);
+}
 .capy-board .affine-note-container {
   padding: 8px 10px;
-  border-radius: 6px !important;
-  box-shadow: 0 0 0 1px var(--capy-note-edge);
+  /* Medium, as the app's text (Epo 2026-11-13); AFFiNE's 400 read thin. Headings
+     keep their own 600 and 700. */
+  font-weight: 500;
 }
-.capy-board .affine-note-background,
+/* An inline note is its text alone: no padding, and none of its first and last
+   block's margins, a heading's or quote's on its text (local change 53 sizes its
+   width to the text). A paragraph sets its margin in an inline style, hence the
+   !important. */
+.capy-board .affine-note-container[data-inline="true"] {
+  padding: 0;
+}
+/* An empty one is only a caret wide: its placeholder runs past it, uncut. */
+.capy-board
+  .affine-note-container[data-inline="true"]
+  .affine-paragraph-placeholder {
+  max-width: none;
+}
+.capy-board
+  .affine-note-container[data-inline="true"]
+  .affine-note-block-container
+  > .affine-block-children-container
+  > :first-child
+  > :first-child
+  > .affine-block-component,
+.capy-board
+  .affine-note-container[data-inline="true"]
+  .affine-note-block-container
+  > .affine-block-children-container
+  > :first-child
+  > :first-child
+  > .affine-block-component
+  > .affine-paragraph-block-container
+  > .affine-paragraph-rich-text-wrapper {
+  margin-top: 0 !important;
+}
+.capy-board
+  .affine-note-container[data-inline="true"]
+  .affine-note-block-container
+  > .affine-block-children-container
+  > :last-child
+  > :last-child
+  > .affine-block-component,
+.capy-board
+  .affine-note-container[data-inline="true"]
+  .affine-note-block-container
+  > .affine-block-children-container
+  > :last-child
+  > :last-child
+  > .affine-block-component
+  > .affine-paragraph-block-container
+  > .affine-paragraph-rich-text-wrapper {
+  margin-bottom: 0 !important;
+}
 .capy-board
   .affine-note-container[data-editing="true"]
   .affine-note-background {
   inset: 0;
   width: 100%;
   height: 100%;
-  border: 0 !important;
-  border-radius: 6px !important;
-  box-shadow: none !important;
-  /* Half see-through, so the panel's frost shows as on the plane and chart cards. */
-  opacity: 0.5;
 }
 
 /* No ground of its own: the dots sit on the panel's colour, or on its frost over
@@ -724,10 +771,24 @@ html.dark:not([data-board-light]) .capy-board {
   border-bottom: 1px solid var(--affine-text-primary-color);
 }
 
+/* The canvas label's symbol row, under a plane label being typed (Epo 2026-11-13). */
+.capy-plane-editor .capy-plane-symbols {
+  width: max-content;
+  transform: translateX(-50%);
+}
+
+.capy-plane-editor .capy-plane-symbols button {
+  min-width: 32px;
+  height: 32px;
+  font-size: 15px;
+  color: var(--affine-text-primary-color);
+}
+
 .capy-chart-label {
   all: unset;
   position: absolute;
-  width: 110px;
+  /* In ems: a label typed at its own size keeps room for its characters. */
+  width: 8.5em;
   padding: 2px 4px;
   font:
     500 13px Arial,
@@ -737,6 +798,258 @@ html.dark:not([data-board-light]) .capy-board {
   background: var(--affine-background-overlay-panel-color);
   border-bottom: 1px solid #1e96eb;
   transform: translate(-50%, -50%);
+}
+
+/* The objects list (Epo 2026-11-13, L2): its button at the plane's top left, a
+   card floating under it, and on a phone a sheet over the lower half with the tools
+   riding above it. Rows laid out as the graph dialog's, more compact: 36 px, 14 px
+   text, 15 px formulas (Epo 2026-11-13). */
+.capy-plane-editor .capy-plane-list-toggle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 40px;
+  height: 40px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: var(--radius-toolbar);
+}
+
+.capy-plane-editor .capy-plane-list-toggle:hover,
+.capy-plane-editor .capy-plane-list-toggle[aria-pressed="true"] {
+  background: linear-gradient(
+      var(--affine-hover-color),
+      var(--affine-hover-color)
+    )
+    var(--affine-background-overlay-panel-color);
+}
+
+.capy-plane-editor svg {
+  flex-shrink: 0;
+}
+
+.capy-plane-list-toggle svg,
+.capy-plane-list svg {
+  width: 18px;
+  height: 18px;
+}
+
+.capy-plane-list {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  color: var(--affine-text-primary-color);
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  box-shadow: var(--shadow-pop);
+}
+
+.capy-plane-list[data-layout="floating"] {
+  top: 56px;
+  left: 8px;
+  width: 300px;
+  max-height: calc(100% - 128px);
+  border-radius: var(--radius-toolbar);
+}
+
+.capy-plane-list[data-layout="sheet"] {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 48%;
+  border-width: 1px 0 0;
+  border-radius: 12px 12px 0 0;
+}
+
+.capy-plane-editor[data-list="sheet"] .capy-plane-tools {
+  bottom: calc(48% + 8px);
+}
+
+.capy-plane-editor[data-list="sheet"] .capy-plane-finish {
+  bottom: calc(48% + 60px);
+}
+
+.capy-plane-list ol {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.capy-plane-list li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) 1.5rem;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+  padding: 2px 4px 2px 6px;
+  cursor: text;
+  border-bottom: 1px solid var(--divider);
+}
+
+.capy-plane-list li:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-plane-list li.on,
+.capy-plane-list li:focus-within {
+  background: color-mix(in srgb, var(--affine-primary-color) 9%, transparent);
+  box-shadow: inset 2px 0 0 var(--affine-primary-color);
+}
+
+.capy-plane-list .kind {
+  display: grid;
+  place-items: center;
+  color: var(--affine-icon-color);
+}
+
+.capy-plane-list li.on .kind {
+  color: var(--affine-primary-color);
+}
+
+.capy-plane-list .kind svg {
+  width: 18px;
+  height: 18px;
+}
+
+.capy-plane-list .err {
+  display: grid;
+  place-items: center;
+  color: var(--solid-error);
+}
+
+.capy-plane-list li input {
+  all: unset;
+  width: 100%;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* As the graph dialog's rows: no MathLive menu or keyboard buttons, no padding. */
+.capy-plane-math::part(container) {
+  min-height: 0;
+}
+
+.capy-plane-math::part(content) {
+  padding: 0;
+}
+
+/* The empty new row's "Type a formula". */
+.capy-plane-math::part(placeholder) {
+  color: var(--affine-placeholder-color);
+}
+
+.capy-plane-math::part(menu-toggle),
+.capy-plane-math::part(virtual-keyboard-toggle) {
+  display: none;
+}
+
+.capy-plane-math {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1.2;
+  color: inherit;
+  outline: 0;
+  background: transparent;
+  border: 0;
+}
+
+.capy-plane-list .capy-plane-row-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.capy-plane-editor .capy-plane-list .more {
+  min-width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.capy-plane-list li:hover .more,
+.capy-plane-list li.on .more,
+.capy-plane-list li:focus-within .more,
+.capy-plane-editor .capy-plane-list .more:focus-visible {
+  opacity: 1;
+}
+
+/* A chart's data pane rows (Epo 2026-11-13, B1 and P1): a fill swatch, the label or
+   name, then the value or share (a slice's degrees beside it). */
+.capy-plane-list li.capy-chart-row {
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto 1.5rem;
+}
+
+.capy-plane-editor .capy-plane-list .swatch {
+  justify-self: center;
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--affine-border-color);
+  border-radius: 3px;
+}
+
+.capy-plane-editor .capy-plane-list .swatch:hover {
+  box-shadow: 0 0 0 2px var(--affine-hover-color);
+}
+
+.capy-plane-list li input.num {
+  width: 4rem;
+  text-align: right;
+}
+
+.capy-plane-list .share {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  justify-content: flex-end;
+}
+
+.capy-plane-list .share input.num {
+  width: 2.75rem;
+}
+
+.capy-plane-list .share small {
+  font-size: 12.5px;
+  color: var(--affine-text-secondary-color);
+}
+
+.capy-plane-list .share small:last-child {
+  min-width: 2.25rem;
+  text-align: right;
+}
+
+/* The typed axis sits right of the data pane's button, on its row until a phone's
+   width leaves no room beside the ☰ and Done. */
+.capy-chart-editor:has(.capy-plane-list-toggle) .capy-chart-axis {
+  top: 8px;
+  left: 56px;
+}
+
+@container viewport (width < 460px) {
+  .capy-chart-editor:has(.capy-plane-list-toggle) .capy-chart-axis {
+    top: 56px;
+  }
+}
+
+/* A ghost row as tall as the others, its plus in line with their icons: no border,
+   the hover fill marks it (Epo 2026-11-13). */
+.capy-plane-editor .capy-plane-list .add {
+  flex-shrink: 0;
+  gap: 9px;
+  align-self: stretch;
+  justify-content: flex-start;
+  height: 36px;
+  padding: 0 10px 0 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--affine-text-primary-color);
+  border-radius: 0 0 var(--radius-toolbar) var(--radius-toolbar);
 }
 
 @container viewport (width < 768px) {
@@ -874,4 +1187,59 @@ html.dark:not([data-board-light]) .capy-board {
   flex: 1;
   font-size: 14px;
   color: var(--affine-text-primary-color);
+}
+
+/* A note's links are underlined, and hovering one (or a tap on a touch screen)
+   while no note is typed in shows its address and Open (Epo 2026-11-13, L1;
+   boardNoteLinks.ts). The link sets `text-decoration: none` inline, hence the
+   !important. */
+.capy-board affine-edgeless-note affine-link a {
+  text-decoration: underline 1px
+    color-mix(in srgb, currentColor 55%, transparent) !important;
+  text-underline-offset: 3px;
+}
+.capy-link-chip {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: min(320px, calc(100% - 8px));
+  padding: 4px 4px 4px 10px;
+  font: 500 13px / 20px var(--affine-font-family);
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 8px;
+  box-shadow: var(--affine-overlay-shadow);
+}
+.capy-link-chip .address {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--affine-text-secondary-color);
+  white-space: nowrap;
+}
+.capy-link-chip .open {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 6px;
+  font-weight: 600;
+  color: var(--affine-text-primary-color);
+  border-radius: 6px;
+}
+.capy-link-chip .open:hover {
+  background: var(--affine-hover-color);
+}
+
+/* A list row's ⋮ menu: the ☰ menu's list, under the row's button. */
+.capy-plane-editor .capy-plane-list .capy-menu-list {
+  right: 8px;
+  z-index: 1;
+}
+
+.capy-plane-editor .capy-plane-list .capy-menu-list > button {
+  gap: 8px;
 }

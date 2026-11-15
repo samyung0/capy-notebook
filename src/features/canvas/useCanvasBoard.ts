@@ -22,6 +22,7 @@ import {
   localDrawingDraft,
   saveLocalDrawingDraft,
 } from '@/lib/localDb';
+import type { OpenLink } from '@/lib/openLink';
 
 /** Idle before a save goes up (Epo 2026-11-09), and before the device copy
  * is written. */
@@ -72,9 +73,16 @@ export function useCanvasBoard(
     onBoard?: (board: CanvasBoard | null) => void;
     /** A workspace canvas's quizzes and sets for its cards. */
     workspace?: DrawingBoardOptions['workspace'];
+    /** The page's URL for what fills the screen (Epo 2026-11-13): a plane's or
+     * chart's editor by its card's id, a card's drawing answer as
+     * `<card>~<part>`. */
+    link?: OpenLink;
   } = {}
 ) {
   const [failed, setFailed] = useState<string | null>(null);
+  const [mounted, setMounted] = useState<CanvasBoard | null>(null);
+  // The card whose plane or chart editor is open.
+  const editor = useRef<string | null>(null);
   // The board mounts once per canvas and reads the latest of these when it
   // needs them.
   const latest = useRef({ ...source, ...options });
@@ -267,9 +275,20 @@ export function useCanvasBoard(
         board: 'workspace',
         images: assets.images,
         onChange: schedule,
+        onEditor: (cardId) => {
+          const before = editor.current;
+          editor.current = cardId;
+          const { link } = latest.current;
+          // Leaving the page closes it too: that is no step back.
+          if (disposed || !link) return;
+          if (cardId) link.open(cardId);
+          // Done: the URL still names it. Closed by the URL: it no longer does.
+          else if (before && link.opened === before) link.close();
+        },
         saved,
         workspace: latest.current.workspace,
       });
+      setMounted(board);
       latest.current.onBoard?.(board);
       if (import.meta.env.DEV) Object.assign(window, { __board: board });
       if (draft) schedule();
@@ -296,7 +315,28 @@ export function useCanvasBoard(
       latest.current.onBoard?.(null);
       board?.unmount();
       board = null;
+      editor.current = null;
+      setMounted(null);
     };
   }, [key, container]);
+
+  // The URL drives what fills the screen: Back closes it, Forward or the page's
+  // link opens it, and one no longer on the canvas says so.
+  const opened = options.link?.opened ?? null;
+  useEffect(() => {
+    const { link } = latest.current;
+    if (!(mounted && link)) return;
+    const cardId = opened?.includes('~') ? opened.split('~')[0] : null;
+    if (editor.current && editor.current !== opened) mounted.closeEditor();
+    if (cardId) {
+      if (mounted.has(cardId)) mounted.reveal(cardId);
+      else link.gone();
+    } else if (
+      opened &&
+      editor.current !== opened &&
+      !mounted.openEditor(opened)
+    )
+      link.gone();
+  }, [mounted, opened]);
   return failed;
 }

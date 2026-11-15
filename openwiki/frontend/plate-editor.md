@@ -4491,9 +4491,19 @@ that branch.
   at the root (text, icon, panel, border, hover, shadow, font), since BlockSuite's
   parts read them from inside shadow roots and from popups under `<body>`. It
   outranks the theme sheet and the board's dark palette, and stands down while the
-  marking image is drawn (`[data-board-light]`). The note's active colour is the
-  app's accent; the board keeps AFFiNE's blue, as its selection frames and pieces
-  are drawn in it (`drawingBoard.css`).
+  marking image is drawn (`[data-board-light]`). What is selected or active is the
+  app's accent on the board as in the note (Epo 2026-11-13, F1; until then the board
+  kept AFFiNE's blue), so the notion style's is blue. The selection frame is
+  Excalidraw's (local change 56): a 1px accent line 6px off the selection, dashed
+  round several, 9px square corners filled with the board's paper
+  (`--capy-handle-fill`), a faint bar outside each side that resizes, and a rotate
+  knob above the middle for whatever turns, in place of AFFiNE's hidden ring past
+  each corner. A turn within 4° of a multiple of 45° lands on it (local change 58),
+  Shift snaps to every 15°, and the angle shows in one place while turning, under
+  the circle the selection turns in (above it when the bottom toolbar would hide
+  it). Quiz, set and link cards turn their content with the frame
+  (`boardCards.ts`), as a picture does. The selection's toolbar stands 30px further off, clear of the
+  knob.
 - **One floating bar:** BlockSuite's `editor-toolbar` draws every bar: a text
   selection, a selected block (table, callout, image), a link, and on the board a
   selected element or several (Group, Align, Lock). It is an opaque overlay panel:
@@ -4693,7 +4703,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   page around the board places (its width through `--capy-board-done-width`, its top through
   `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
   wider screen's), so the
-  bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, Clear all (Epo 2026-11-13:
+  everything on the board, or in an open plane or chart, goes in one undo step; greyed
+  out when there's nothing; a pie keeps its 12 o'clock line), then a row of −, the
   zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
   row keep it open, so a few presses step back or zoom; a press anywhere else and
   Escape close it. Its rows are the editor popovers' (30px, medium 14px text, 18px
@@ -4717,7 +4729,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   shape types added to BlockSuite (local change 46: corners in `POLYGON_SHAPES`, one
   polygon implementation for hit tests, connectors, canvas, DOM and cursor preview), so
   they fill, hold text and connect as a square does; `boardPreview.ts` keeps a copy of
-  the corners, checked by its test. Solids and diagrams are presets of straight
+  the corners, checked by its test. A selected shape's Switch shape type menu, and a
+  connector's next-shape panel, offer the same ten in the panel's outlines (local change
+  61, Epo 2026-11-13). Solids and diagrams are presets of straight
   connectors and ellipses in a group (a pen stroke smears at corners). The toolbar's
   square piece is a plain square (local change 43; AFFiNE's was rounded). Clicking the
   toolbar's Shape piece only opens or closes the panel; a shape is taken up by dragging
@@ -4732,18 +4746,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   button closes it) and `followTool` (the panel closes once what was picked is placed or
   another tool is taken while it is open; it opens over any tool, so the pen stays the
   pen until something is picked). The Note button is `capy-note-button`, overriding the `note`
-  senior tool; a picked note follows the pointer drawn as the empty note it places
-  (its size, hairline and corner, the placeholder in the block's font and place, per
-  kind in `notePreviewOf`), centred, and a click places it centred (local change 48; a
-  dragged note lands where its outline was). A paragraph's placeholder clips both axes
-  (local change 49), so a heading's shows no scrollbar.
-- **Back to the drawing tool** (Epo 2026-11-12, `returnToDrawing` in
-  `drawingBoard.ts`): whatever is picked over the pen, highlighter or eraser (a shape, a
-  preset, a note, a carried piece) gives that tool back once it is placed. Every
-  placement adds what it places and takes Select in the same step, which the watcher
-  tells apart from Select taken by hand or a pick cancelled (both stay on Select). A
-  placed note keeps the focus for typing; the tool comes back when its editing ends,
-  and the click that leaves it draws nothing.
+  senior tool; with a kind picked the button stays lit and the pointer is the plus
+  cursor, with nothing following it, and a click (or a drag, at its start) places an
+  inline note whose first line starts at the pointer, centred on it (local change 53,
+  Epo 2026-11-13, like a text tool; it replaced local change 48's carried preview and
+  AFFiNE's dragged-out box). A paragraph's placeholder clips both axes
+  (local change 49), so a heading's shows no scrollbar. The note menu marks a kind only while a note of it is in
+  hand (Epo 2026-11-13): AFFiNE's menu marks the tool's kind, which stayed the last one
+  picked. Where the board takes link cards (the workspace and the Canvas page), the
+  note menu starts with Link (Epo 2026-11-13, P1; local change 57 gives the menu a
+  `lead` button and an `above` slot): its field (`capy-link-add`) opens above the
+  row and places a link card as Misc's YouTube tile does (`placeLink`). A tooltip of
+  something inside a toolbar menu (a popover in the top layer) is shown in the top
+  layer too (local change 51), so it lands above the menu.
+- **Select after placing** (Epo 2026-11-13, replacing 2026-11-12's return to the
+  drawing tool): whatever is placed (a shape, a preset, a carried piece, a Misc card,
+  a GIF, sticker or emoji, a picked image) leaves Select on with it selected, whatever
+  tool was on before. `addCard` and `addPicture` take Select before selecting what
+  they add, and Misc's Image tile before its images land. A placed note keeps the
+  focus for typing.
 - **Strokes** (local change 50, Epo 2026-11-12): a mouse stroke stores no pressure and
   draws at one width, and a mouse click is a dot at pressure 0; a pen or stylus that
   reports pressure keeps it. A stroke at pressure 0.5 is exactly its width wide, as
@@ -4759,14 +4780,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 - **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
   corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
   renderer with a clip, so a card stacks with strokes and reaches the marking image with
-  no special case. A card is a picture on the canvas: Select moves it, its corners resize
+  no special case. A card is a picture on the canvas: Select moves it, the frame's knob
+  turns it about its middle (`rotate`, Epo 2026-11-13; turned, the side across from a
+  dragged handle stays put on the page), its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
   scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
   which the vendored eraser reads: local change 30), while a connector meets its edge
   at four anchors as on a shape. A fresh board starts
   with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
-  40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
+  40 px (a label's or formula's text counted in pixels round its point), its top left
+  staying put; past 1600 px it zooms out instead. Dragging a corner
   makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
   strokes over a card stay where they are, so they can stop lining up. A **polar** card
   (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
@@ -4775,16 +4799,21 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   a ring crosses a spoke.
 - **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
   opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
-  has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
-  and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
+  has one, Undo, Redo, Clear all, and − and + where it zooms; the board's menu hides
+  meanwhile)
+  and Done on its own (Epo 2026-11-08). A plane's Fit to screen shows at least 10
+  units across and up, so an empty plane shows a stretch of grid round the origin
+  (Epo 2026-11-13). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
   pinch zooms, a middle-button drag pans, and Select drags, as on the board.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
-  whole line, curve or label (snapped by grid steps), and a single point or any point
-  of a selected mark takes the whole mark, so dragging one of several selected marks
-  (dots too) moves them all. The moved copies are only drawn until the pointer lifts, so a
+  whole line or curve (snapped by grid steps) or a label (wherever it's dragged, as it's
+  placed where it's clicked, Epo 2026-11-13), and a single point takes the
+  whole point, so dragging one of several selected dots, or a selected line's stroke,
+  moves them all; a line's or curve's own point stays its own to drag, selected or not
+  (Epo 2026-11-13). The moved copies are only drawn until the pointer lifts, so a
   drag is one undo step. Select works as the board's does (Epo 2026-11-09): a click
   selects a mark (blue, its points showing), Shift-click adds or takes one away, and a
   drag on empty paper draws a selection box that picks every mark it touches (Shift
@@ -4794,14 +4823,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
   characters; previews leave labels out, as numbers); after one, the tool goes back to
-  Select. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  Select. With Select, a double click on empty paper types a label there and one on a
+  label edits it, as on the canvas; while one is typed, the canvas label's maths symbol
+  row (`symbolButtons` in `boardFormula.ts`) sits under it, kept inside the plane, and
+  inserts at the caret within the 24 characters (Epo 2026-11-13). A plane label is
+  still its own kind: a `label` mark drawn on the plane, not BlockSuite's canvas text.
+  A label or formula picked alone with Select wears the board's selection frame
+  (`boardTextFrame.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
+  no toolbar; dragging a corner sizes its text about its middle (Epo 2026-11-13),
+  stored as `size` in pixels (8 to 96, `TEXT_SIZE_MIN`/`MAX` in the board catalog;
+  without it 15 px for a label, 18 px for a formula, 12 px for a pie label). Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
   a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
   board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
   the plane zooms. Select drags it whole; Erase takes it. Previews leave formulas out, as
   they can't lay them out (Epo: none rather than broken); the marking image has them.
   Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
-  the plane zooms) at its second point, a `vector` mark of two points. Each tool's
+  the plane zooms) at its second point, a `vector` mark of two points; its line stops
+  halfway into the head, on the card and the preview alike, so the line's round end
+  doesn't show past the point (Epo 2026-11-13). Each tool's
   button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
   Select, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
   chart: V Select, D its bars or slices, F Fill, T Label, E Erase); the row fits a 360 px
@@ -4816,9 +4856,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   top, left, bottom); pulling one sets the width or height about the middle, so it
   stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
   middle (any other mark's first point) landing on the grid, where a ring crosses a
-  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces of their
-  Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
-  the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
+  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces
+  (`curveSegments`): their Catmull-Rom curve (`curvePieces`) until a handle is moved, then
+  their stored handles; ellipses draw as canvas ellipses, smooth at any zoom; the sampled
+  path (`pathOf`) is for hit tests and previews. A line's,
   curve's or ellipse's points show only in the editor, on the mark under the pointer,
   held or still open (Epo 2026-11-08); a single point always shows, on cards, previews
   and the marking image too. A curve clicked back onto its first point closes, smooth there,
@@ -4838,9 +4879,45 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
   or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
   if the view moves.
+- **Bending a curve** (Epo 2026-11-13, K1 and K2, both boards): a curve may store
+  `handles`, an [in, out] pair of plane points per point; with none it keeps the
+  automatic bend, so saved curves draw as before. Select on a curve's point picks it and
+  shows its two handles (a blue line to a 9 px square each). Dragging one bends the
+  pieces on either side; on a smooth point the other handle turns to stay in line at
+  its own length, and Alt drags one alone, leaving a corner. A double click on a point
+  makes it a corner (both handles on it) or smooth again. With one curve selected,
+  dragging its stroke away from any point pulls that stretch through the pointer
+  (`bent`: the two inner handles move by their share of the drag, `t` held to 0.1–0.9),
+  the points either side staying smooth; a ring shows where a press would bend. A
+  closed curve's seam is one point with the last point's in-handle and the first's
+  out-handle (`pairOf`). Moving a point carries its handles; moving the curve moves
+  them all. `fitCard` counts handles.
+- **Functions and the objects list** (Epo 2026-11-13, L2, workspace canvases only): a
+  `function` mark holds the typed LaTeX and the graph dialog's `term` (and an optional
+  domain from `{a <= x <= b}`), read with `functionOf` in `graphSyntax.ts` (natural
+  log, as the dialog; a command such as `line(x)` is refused) and drawn across whatever
+  is shown by `functionRuns`: a sample every 2 px, at most 4000, breaking where the
+  value isn't finite or jumps (a leap past the canvas height whose middle isn't between,
+  as at tan's asymptote; a steep line keeps drawing). It can't be dragged; its row edits
+  it, and `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
+  at the editor's top left: a 300 px card floating below it, open by default from 640 px
+  (`listChoice` remembers a toggle for the session), and under 640 px a sheet over the
+  lower 48% with the tools and Finish riding above it; its "+ Label" is a ghost button
+  (no border, the hover fill marks it). Rows are laid out as the graph dialog's but compact
+  (36 px, 14 px text, 15 px formulas; kind icon, ⋮ with Delete): a point's `(a, b)`, a line's or vector's `(a, b) to
+  (c, d)` and a label's text are typed in place and written on change (Enter or leaving);
+  curves, ellipses and formulas are shaped on the plane, so their rows show only
+  the kind's name (Epo 2026-11-13); a function is a
+  MathLive field (loaded when the list first opens) that plots as it's typed and writes on
+  Enter or leaving, emptied it goes. The empty last row adds a function, or a point for
+  `(3, −2)`; a row that can't be read shows the dialog's warning icon with its reason,
+  keeps its text, and goes back as it was on leaving or Escape. "+ Label" adds a label in
+  the middle of what's in view and selects its text. Hovering a row lights its mark;
+  selected marks light their rows. The answer board has no list button and no
+  functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
-  move and resize like a plane card, the eraser leaves them alone, and their editor fills
+  move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
   tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
@@ -4852,14 +4929,36 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   line, whose chip shows the sector it closes, from the line before it clockwise;
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
   under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
-  line drops it, No fill clears it). Labels sit at an angle inside the circle. Select
+  line drops it, No fill clears it). A label goes where it's clicked, kept as an angle and
+  a share of the radius (`reach`), so it stays put as the card resizes. Select
   (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
   Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
   one pressed: a bar up or down to its value, a line round to a new
-  angle (off the other lines, its fill going with it), a label round the circle. One of
-  several chosen items takes the others of its kind along: bars up or down by as much
-  (none below 0, one taken to 0 goes), lines and labels round by as far. After
+  angle (off the other lines, its fill going with it), a label anywhere on the card, in
+  the pie or out of it (Epo 2026-11-13; it only went round before). A pie label picked
+  alone wears the board's selection frame, and dragging a corner sizes it (`size`, as a
+  plane label's). One of several
+  chosen items takes the others of its kind along: bars up or down by as much (none
+  below 0, one taken to 0 goes), lines round by as far, labels by as far across. After
   one label the tool goes back to Select, as on the plane.
+- **A chart's data pane** (Epo 2026-11-13, B1 and P1, workspace canvases only): the
+  plane list's button, card and phone sheet (`.capy-plane-list`, its own session
+  choice), the chart drawn beside the card or above the sheet (`pads`), and the typed
+  axis right of the button (dropping to the second row under 460 px). A bar's row is
+  its fill swatch, label and value; a value past the axis's top raises the top to the
+  next numbered line (or a fresh axis past 100 lines), and "+ Bar" adds one a step
+  tall with the caret in its label. A pie's row per slice (`slicesOf`, clockwise
+  from each line) is its swatch, name and share in % with its degrees: the name is the
+  first label inside the pie within the slice (typing one adds it at the slice's middle,
+  reach 0.62; emptied it goes), and a share typed moves the slice's closing line in
+  whole degrees, the slices after it keeping their sizes and the last taking up the
+  rest (the last slice's own share moves its opening line), with fills following their
+  line and labels inside keeping their place in their slice. Labels outside the pie
+  (or a slice's second) are rows of their own. "+ Slice" halves the last slice (or puts
+  the first line at 12 o'clock); ⋮ Delete removes a bar or label, or a slice's opening
+  line, joining it to the one before. A swatch opens the fill row (Bars or Fill) and
+  the next fill picked goes to that bar or slice. Hovering a row lights its bar, slice
+  or label; Escape puts a row being typed back as it was.
 - **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
   see-through so the panel's frost over the page frame shows. An open editor uses the
   same paper with no ground of its own and hides the board's `editor-host` under it
@@ -4892,7 +4991,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `span` at most 1,936.
   - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
     for what the page lays over the board, such as a pinned question card or a top bar;
-    without it the fit leaves room for the board's own toolbar and undo.
+    without it the fit leaves room for the board's own toolbar and undo. The first view is
+    never above 100% (Epo 2026-11-13): a small drawing, one note, fitted to the
+    screen opened at 212%, its 14.8 px text at 31 px; it now opens at 100%, centred.
   - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
     undo, symbol row or selection, and nothing opens for editing, so MathLive never
     loads.
@@ -4917,15 +5018,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     workspace canvas) and **Misc** after the shapes (`sheetTools`). Misc shows each board
     what it may hold (`tileFits`, by the board `markBoard` names at mount): an answer
     board the Bar and Pie chart and Image tiles, the workspace canvas also the mind map,
-    the formulas, links and the workspace's quizzes and sets (emoji are the GIF &
+    the formulas, YouTube and web links and the workspace's quizzes and sets (emoji are the GIF &
     Sticker picker's third tab since 2026-11-13). Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
     switching views moves nothing; the home view is tiles in groups, each picked up and
     dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
-    closes once something is down. Every tile fills its grid column, its art centred
-    over its name with 8px padding, inside 16px of panel padding (Epo 2026-11-12: the
+    closes once something is down. Every tile fills its grid column, 60 px tall with
+    its art fitted in a 40 × 30 box centred over its name and groups 8 px apart, so
+    every group shows without scrolling (Epo 2026-11-13, C1, mock
+    YahmqxViPqKKRbPjqJmkW5), inside 16px of panel padding (Epo 2026-11-12: the
     picture tiles were buttons left at the popper's 36px). A panel opened from the
     toolbar (`openPopper`) keeps its clicks, keys (Escape aside), clipboard and wheel
     from the board under it, and lifts the toolbar over a selected element's own bar
@@ -4969,25 +5072,49 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       passes the stored limit says it can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
       says search is off; an uploaded GIF is an ordinary image.
-    - **Link** takes a web
-      address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
-      mark, anything else its host and address; a double click opens it in a new tab.
+    - **YouTube** (Epo 2026-11-13, the Link tile renamed, with YouTube's play mark;
+      Y2 taken as recommended) takes a YouTube link or any web address: a video shows
+      its poster (`i.ytimg.com`) with a play mark, anything else its host and
+      address; a double click opens it in a new tab. A placed one's toolbar has
+      **Edit link** (E1, `editLinkAction` and `capy-link-edit`): a field in
+      BlockSuite's toolbar menu with the address selected; Save points the card at
+      the new address where it stands, as wide as it was, 16:9 for a video and a web
+      card's height for a web link, in one undo step. The form stops its clicks,
+      since BlockSuite's menu closes on any click outside its button. Adding and
+      editing share `readLink`.
     - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
-      two-column grid of thumbnails from each material's stored preview (the first
-      question's stem, the title, the question count; a set's first card front on a
-      stacked pair and its card count), from the Files list (`useOwnedMaterials`, which
-      carries previews; `WorkspaceCanvas` lends them through `workspace` in the mount
-      options), with a filter field from six items. A **New** tile comes first: the page
+      two-column grid of thumbnails from each material's stored preview (the title,
+      the first question's stem, the question count; a set's first card front on a
+      stacked pair, the title and its card count), with no edge or question-type pill
+      on a tile, only the hover's fill, and a dashed New tile (Epo 2026-11-13), from
+      the Files list (`useOwnedMaterials`, which
+      carries previews; `useCanvasMaterials` reads it and `useCanvasLinks` lends it
+      through `workspace` in the mount options), with a filter field from six items. A **New** tile comes first: the page
       creates the quiz or set unfiled in the workspace, named as the Create page names
       one (`nextGenerateTitle`), places its card and opens it. A click places a card
-      that runs it (360 × 420 for a quiz, 360 × 260 for a set, `MATERIAL_CARD_SIZE`):
+      that runs it (440 × 500 for a quiz, 400 × 340 for a set, `MATERIAL_CARD_SIZE`):
       the card is the note embed's own runner, answered and checked on the canvas
       (below). A double click on its header opens the material in the workspace for
       editing, and a card whose material the workspace no longer lists shows "can't be
-      opened" and no runner. `WorkspaceCanvas` reads every page of the list before
+      opened" and no runner. `useCanvasMaterials` reads every page of the list before
       lending it (`fetchNextPage` while `hasNextPage`); until then the list is
       `undefined`, the grid shows the New tile alone and a placed card's body loads
       rather than reading as gone.
+    - **Quizzes and flashcards** on the Canvas page (Epo 2026-11-13, mock
+      DnhMYffHEjdxiUansbBDde A + W1, the group named N1 by default): the same two
+      tiles over every quiz and set the person can open (`GET /api/materials` with
+      `scope=member` and no workspace; items they lost access to are left out),
+      latest edited first in one grid. Each tile has its workspace's icon and name
+      under the count, and nothing for one in no workspace; the filter also matches
+      the workspace's name. New makes a quiz or set in no workspace (`POST
+      /api/quizzes`, `POST /api/flashcards` without `workspaceId`) named Quiz 1,
+      Quiz 2… (Flashcards 1…, the first number no listed title has), places its card
+      and opens it. With no workspace page to open one in, New and a double click on
+      a card's header open `CanvasMaterialDialog`: the shared `SimpleDialog` (a
+      full-screen page on a phone) holding the note embed's editor
+      (`AppEmbedEdit`), whose questions open `QuestionDialog`; closing it reads the
+      material again for the cards (`WorkspaceLinks.account` switches the label,
+      the workspace line and the empty text).
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
     itself), links `affine:embed-capy-link` and quiz or set cards
     `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
@@ -5005,11 +5132,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `focus` listener, since the app's queries never refetch on focus), and
     `WorkspaceCanvas` invalidates the quiz and material queries of the material the
     item dialog showed when the dialog closes (the dialog's saves go through its live
-    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12): a person who
-    can edit the material (`capabilities.canEdit` from `useMaterial`, read once the
-    card is near) sees Edit at the top of the card's body, which swaps the body for
+    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12; on the
+    toolbar since 2026-11-13): a person who can edit the material
+    (`capabilities.canEditContent` from `useMaterial`, read once the card is near)
+    gets Edit on the card's floating toolbar (`a.edit-card`), not in its body. The
+    page tells the board which cards those are and the board's toolbar names the card
+    being edited, both through `materialCardHosts.ts` (`setCardEditable`,
+    `setCardEditing`, `onCardState`); the board sets a selected card's selection again
+    when that changes, so its toolbar follows. Edit swaps the body for
     the note embed's editor (`AppEmbedEdit`: per-question Edit and Remove for a quiz,
-    per-card Edit and Add card for a set) on its live rooms; Done swaps back and
+    per-card Edit and Add card for a set) on its live rooms; Done (lit, where Edit
+    was) swaps back and
     invalidates the material's quiz and material queries so every card redraws. One
     card edits at a time (`CanvasMaterialCards`): with no note seat to join inside,
     each edited card takes its own places among the user's 22 joined documents. The
@@ -5017,7 +5150,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     its last question, a set keeps its last card. A card stops editing on Done,
     another card's Edit or leaving the board, and each of those reads its material
     again. Edit shows on `canEditContent`, so an owner at their storage limit gets
-    none. The block is a BlockSuite block
+    none. While a card is edited the board's Undo and Redo (the ☰ menu, ⌘Z and ⇧⌘Z
+    or Ctrl+Y on the board, not in a field) act on its quiz's or set's own history,
+    not the canvas's, as the plane's editor takes them while open (Epo 2026-11-13):
+    the editor lends its `UndoTarget` through `UndoSink` (`useLendUndo`, in
+    `collaboration/undo.ts`) to `lendCardUndo`, and `cardUndo()` reads it; a
+    question's dialog keeps its own. A card is placed 440 by 500 screen pixels for a quiz and 400 by 340 for a
+    set (Epo 2026-11-13), and a set's card face takes the height its card has, under
+    the count and above Previous and Next (`fill` on `AppEmbedView`, `StudyBody` and
+    `CardStack`), where a note's set sizes it from the window; a quiz scrolls in its
+    card. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
@@ -5107,8 +5249,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
     no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
     exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
-    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` on both), with the same device copy, images and limits, and no workspace
-    cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
+    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` on both), with the same device copy, images and limits, and Misc's
+    **Quizzes and flashcards** (above). `?c=` names the canvas shown; without one (the sidebar's link) the one
     already shown stays, else the latest saved of the person's own, and a first one ("My
     canvas") is made for a person who has none. The id routes serve only a person's own
     canvases, a workspace's while they are a member of it. A frozen account draws on what it has and is offered neither New canvas
@@ -5215,10 +5357,36 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
   in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
-- **Note cards:** every note on the board is a tight card (8×10 px padding, a 1 px
-  hairline, a 6 px corner, no shadow, the same size while typing), set in
-  `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
-  0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
+- **Notes:** a note is inline or a card (Epo 2026-11-13, local change 52). Inline is
+  its text on the canvas with no fill, padding or edge (a `transparent` fill, no shadow,
+  no border); every placed note starts inline. On the workspace canvas a double click
+  on empty canvas places an inline text note there and types in it, as the Note
+  tool's Text does; an answer board's double click keeps placing a canvas text label,
+  which has the maths symbol row and the font menu (Epo 2026-11-13, local change 59,
+  the `enable_dblclick_note` flag). The plus on either side of a selected note places
+  the next note there with the caret in its first line (local change 60). An inline
+  note is as wide as its text,
+  wrapping at a card's 498, with its first and last block's margins dropped
+  (`drawingBoard.css`), so its frame hugs the text; its corners scale it and it has no
+  side handles, and an empty one shows its whole placeholder (local change 53). Card
+  keeps its lines, widening it by the card's padding. An inline note's toolbar has no
+  Style button (a card's). A note has no custom height or fold: it is always as tall
+  as its text (local change 55). A card's sides set its width, its text rewrapping and
+  its height following, down to 40 (times its scale), and its corners scale it. A note
+  turns by the frame's knob about its middle (`rotate`, local change 56). Its links
+  are underlined; hovering one while no note is typed in (or a tap on a touch
+  screen) shows its address and Open, a new tab (`boardNoteLinks.ts`, Epo 2026-11-13,
+  L1), as the note's mask keeps the pointer off the link. A card
+  takes its stored style from the style panel (fill half see-through, shadow, border,
+  corner), with 8×10 px padding and
+  the same size while typing (N2, 2026-11-08); note text is weight 500, the app's
+  (headings keep 600/700); its Box shadow is the board's 1 px
+  hairline (`--affine-note-shadow-box` on `.capy-board`). The style panel opens with an
+  Inline | Card switch (Inline on the left; the other sections only for a card), and
+  the note toolbar's Inline button (lit while inline) turns it either way; Card brings
+  the default fill, the Box shadow and corner 8. The preview draws an inline note as
+  its text and a card with its corner, fill, border, or a hairline for any shadow.
+  AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
   actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set
@@ -5251,8 +5419,23 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   are set on KaTeX, and a saved answer holding more than 2,000 characters draws
   nothing. Laid-out formulas stay until the board closes. Saving answers still needs
   limits on the server.
+- **Full-screen views in the URL** (Epo 2026-11-13): on the account's Canvas page
+  and a workspace's Canvas tab, a plane's or chart's editor and a quiz card's drawing
+  answer are named in the URL (`open`: the card's id, or `<card>~<part>` for a
+  drawing answer), so opening one is a history step: Back closes it, Forward opens
+  it again, and Done or Escape steps back. `boardEditorShell.ts` tells the page which
+  card's editor opened or closed (`watchBoardEditor`, the board's `onEditor`), the
+  board opens one by id (`openEditor`, false when it holds no plane or chart by that
+  id), and `useCanvasBoard` keeps the two in step; a card's drawing answer reads its
+  open state from `OpenLinkContext` (`useOpenView` in `src/lib/openLink.ts`,
+  scoped per card by `scopedOpenLink`), elsewhere it stays local. A link naming a
+  card no longer on the canvas, a quiz no longer listed or a part the quiz no longer
+  has says "That isn't on this canvas anymore" and leaves the URL; a card off screen
+  is brought into view so its runner mounts. A nested board (the drawing answer's
+  own plane) keeps its editor out of the URL.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
-  double click there opens the plane), or a double click on empty canvas. They have a
+  double click there opens the plane), or, on an answer board, a double click on empty
+  canvas (on the workspace canvas that places an inline note). They have a
   maths symbol row while typing. Board text starts at 16 px (local change 45; the size
   menu offers 12, 16, 20, 24, 32, 40, 64 and 128). **Fonts** (local change 44, Epo
   2026-11-12): the font menu offers Fustat (BlockSuite's default `Inter` name drawn in

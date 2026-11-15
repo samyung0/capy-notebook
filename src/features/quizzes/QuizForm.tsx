@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useContext, useState } from 'react';
 import type * as Y from 'yjs';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
@@ -9,7 +9,7 @@ import {
   LiveStatus,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
-import type { UndoTarget } from '@/features/collaboration/undo';
+import { UndoSink, type UndoTarget } from '@/features/collaboration/undo';
 import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
 import { duplicateQuestion } from '@/features/questions/questionEdits';
 import { blankQuestion } from '@/features/questions/types';
@@ -71,6 +71,7 @@ export function QuizForm({
   undo: UndoTarget | null;
 }) {
   const [picked, setPicked] = useState<string>();
+  const hosted = useContext(UndoSink) !== null;
   // A question just added, whose text opens in its editor.
   const [fresh, setFresh] = useState<string>();
   // A new question goes right after `index`, as Google Forms adds one.
@@ -87,10 +88,14 @@ export function QuizForm({
   return (
     // The tour opens its first question.
     <div className="grid gap-3" data-note-quiz="">
-      <div className="flex items-center justify-end gap-2">
-        {undo && <UndoButtons manager={undo} />}
-        <LiveStatus status={status} />
-      </div>
+      {/* A canvas card's toolbar holds its Undo and Redo instead
+          (`useLendUndo`). */}
+      {!hosted && (
+        <div className="flex items-center justify-end gap-2">
+          {undo && <UndoButtons manager={undo} />}
+          <LiveStatus status={status} />
+        </div>
+      )}
       <Suspense fallback={<Skeleton className="h-64" />}>
         <QuestionPane
           embedded

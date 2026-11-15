@@ -32,6 +32,9 @@ export type QuizRunControl = {
   check: (questionId: string, answers: Answers) => Promise<void>;
   /** Starts a new try. */
   redo: () => void;
+  /** Takes one checked question out of the try, its answers with it, so it is
+   * answered again: a try that lives only on the page (an embedded quiz). */
+  reset?: (questionId: string) => void;
 };
 
 const newLocalRun = (): LocalRun => ({
@@ -56,6 +59,20 @@ const addChecked = <R extends QuizRun>(
   checked: [...run.checked.filter((q) => q.id !== question.id), question],
   takenAt: new Date().toISOString(),
 });
+
+/** Takes a checked question and its answers out of a run. */
+const dropChecked = (run: QuizRun, questionId: string): QuizRun => {
+  const question = run.checked.find(({ id }) => id === questionId);
+  if (!question) return run;
+  const own = new Set(question.parts.map(({ id }) => id));
+  return {
+    ...run,
+    answers: Object.fromEntries(
+      Object.entries(run.answers).filter(([id]) => !own.has(id))
+    ),
+    checked: run.checked.filter(({ id }) => id !== questionId),
+  };
+};
 
 /**
  * A signed-in try, recorded on the account. This browser keeps the attempt's
@@ -141,6 +158,8 @@ export function useMemoryRun(
       setRun((current) => addChecked(current, graded.question, answers));
     },
     redo: () => setRun(newRun()),
+    reset: (questionId) =>
+      setRun((current) => dropChecked(current, questionId)),
     run,
   };
 }
