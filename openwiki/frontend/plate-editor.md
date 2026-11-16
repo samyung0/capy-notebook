@@ -2321,7 +2321,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   reloads instead of writing a table view's block as a plain value;
   `MIN_SOURCE` stays 28. Its deploy request names "client protocol 28 -> 29,
   material 22 -> 29".
-  The Q691 pin (982c2ecc5: DOCX View and Edit load only the CJK slices their
+  The Q691 pin (f1848de46: DOCX View and Edit load only the CJK slices their
   pages draw, the XLSX viewer opens without the save capture, the DOCX page
   mirror is patched per key and reads whole words, the XLSX cell editor takes
   the cell's fill) raised `CLIENT_PROTOCOL` to 30 and `MIN_SOURCE` to 30, so
