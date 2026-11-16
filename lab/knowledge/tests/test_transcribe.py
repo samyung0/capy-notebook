@@ -289,7 +289,7 @@ def test_descriptions_land_on_the_first_chunk_of_the_excerpt_indexed_text(run_di
 def test_live_path_aligns_holds_skips_and_describes(run_dir, monkeypatch):
     calls = fake_live(monkeypatch)
     assert transcribe.run(run_dir, "b") == 0
-    assert calls == [1, 2, 3, 4]
+    assert sorted(calls) == [1, 2, 3, 4]  # sent four at a time, in any order
     corpus = read_json(run_dir / "books/b/corpus.json")
     c = {x["id"]: x for x in corpus["chunks"]}
     assert (
@@ -393,7 +393,8 @@ def test_accepting_a_held_span_applies_it_and_survives_a_rerun(run_dir, monkeypa
 def test_a_page_failing_both_live_passes_fails_the_stage(run_dir, monkeypatch):
     calls = fake_live(monkeypatch, fail={3})
     assert transcribe.run(run_dir, "b") == 1
-    assert calls == [1, 2, 3, 4, 3]
+    # The live sender runs four pages at a time, so a pass's order varies.
+    assert sorted(calls[:4]) == [1, 2, 3, 4] and calls[4:] == [3]
     receipt = stages.latest_receipt(run_dir, "transcribe")
     assert receipt["pages_failed"] == [3] and receipt["untranscribed_ids"] == [
         "c3",
@@ -408,7 +409,7 @@ def test_redo_reverts_and_sends_every_page_again(run_dir, monkeypatch):
     assert transcribe.run(run_dir, "b") == 0
     calls.clear()
     assert transcribe.run(run_dir, "b", redo=True) == 0
-    assert calls == [1, 2, 3, 4]
+    assert sorted(calls) == [1, 2, 3, 4]  # sent four at a time, in any order
     assert sorted(p.name.split("-")[0] for p in (run_dir / "archive").iterdir()) == [
         "review",
         "transcribe",
