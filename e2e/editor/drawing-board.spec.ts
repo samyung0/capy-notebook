@@ -2319,7 +2319,8 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
 }) => {
   test.slow();
   await openBoard(page);
-  // A point moved 200 times, one undo step each, as dragging it on the plane does.
+  // A point moved 200 times, one undo step each, as dragging it on the plane does;
+  // it ends at (10, 5), on the card, so the image shows it.
   await page.evaluate(() => {
     const root = document.querySelector('affine-edgeless-root') as unknown as {
       gfx: {
@@ -2332,7 +2333,9 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
     const [card] = root.gfx.layer.canvasElements;
     for (let i = 0; i < 200; i++) {
       root.gfx.doc.captureSync();
-      card.writeList([{ coords: [i / 10, i / 20], id: 'm', type: 'point' }]);
+      card.writeList([
+        { coords: [(i + 1) / 20, (i + 1) / 40], id: 'm', type: 'point' },
+      ]);
     }
   });
   const live = (await stats(page)) as Stats & { bytes: number };

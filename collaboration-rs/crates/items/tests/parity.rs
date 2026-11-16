@@ -120,16 +120,27 @@ fn set_value(cards: &Value) -> Vec<Value> {
 }
 
 /// A document's roots as JSON: what a writer put there, whatever order its
-/// structs (or a value's map keys) were encoded in.
+/// structs (or a value's map keys) were encoded in. Every root of a quiz's
+/// documents and of a set is a map; a loaded root reads as nothing until it
+/// is asked for as one.
 fn roots(state: &str) -> Value {
     let doc = load(state);
+    let names: Vec<String> = doc
+        .transact()
+        .root_refs()
+        .map(|(name, _)| name.to_owned())
+        .collect();
+    assert!(!names.is_empty(), "a document with no roots");
+    let maps: Vec<_> = names
+        .iter()
+        .map(|name| doc.get_or_insert_map(name.as_str()))
+        .collect();
     let txn = doc.transact();
     let mut out = serde_json::Map::new();
-    for (name, root) in txn.root_refs() {
-        out.insert(
-            name.to_owned(),
-            serde_json::to_value(root.to_json(&txn)).unwrap(),
-        );
+    for (name, map) in names.into_iter().zip(maps) {
+        let held = serde_json::to_value(map.to_json(&txn)).unwrap();
+        assert!(held.is_object(), "root {name} did not read as a map");
+        out.insert(name, held);
     }
     Value::Object(out)
 }

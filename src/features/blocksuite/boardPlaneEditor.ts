@@ -348,8 +348,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   /** A row typed into, as the graph dialog reads it: drawn at once, written when
    * Enter or leaving the row says so. The empty row becomes a row of its own. */
   const typedRow = (key: string, latex: string, ascii: string) => {
+    const known = rows.find((row) => row.key === key);
+    if (known?.kind === 'expression' && known.latex === latex) return;
     const read = readRow(latex, ascii);
-    if (rows.some((row) => row.key === key))
+    if (known)
       rows = rows.map((row) =>
         row.key === key && row.kind === 'expression'
           ? { ...row, latex, ...read }
@@ -374,6 +376,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
    * keeps its text and error. */
   const commitRow = (key: string) => {
     const field = fields.get(key);
+    // MathLive tells of the last keys a moment after they land, so Enter pressed
+    // right after them takes what the field shows.
+    if (field) typedRow(key, field.value, field.getValue('ascii-math'));
     if (!drafts.has(key) && field?.value.trim()) return;
     writeRows(
       field && !field.value.trim()
