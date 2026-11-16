@@ -23,9 +23,11 @@ const officeCwd = realpathSync(officeRoot);
 run('bun', ['install', '--frozen-lockfile']);
 run('bun', ['run', '--filter', '@betteroffice/docx-react', 'build:css']);
 for (const engine of engines) run('bun', ['run', engine]);
-// The fonts package decodes packed faces with fontpack.wasm, which the fork
-// gitignores and builds only with this script (cargo decides what is stale).
-run('bun', ['run', 'build:fonts-decoder']);
+// The fonts packages build their dist (the checkpoint bundle imports
+// @betteroffice/fonts/progressive, which resolves only to dist) and
+// fontpack.wasm, the decoder for packed faces, which the fork gitignores
+// (cargo decides what is stale).
+run('bun', ['run', 'build:fonts']);
 run('bun', ['scripts/build-office-checkpoint.ts']);
 
 function run(command, args) {
