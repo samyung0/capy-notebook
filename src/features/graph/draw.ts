@@ -59,7 +59,7 @@ const LABEL_WIDTH = 200;
 const AFTER_SPACE = /(?<=\s)/;
 
 /** A label's font at its size. */
-export const labelFont = (size = LABEL_SIZE) => `${size}px Arial, sans-serif`;
+const labelFont = (size = LABEL_SIZE) => `${size}px Arial, sans-serif`;
 
 /** Greedy lines of at most LABEL_WIDTH pixels; a word wider than that (or
  * unspaced CJK) breaks between characters. */

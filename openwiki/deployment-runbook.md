@@ -4468,6 +4468,12 @@ Each quiz seeds both documents again from `materials.content` on its next
 open, agent edit or command, losing its undo history. Flashcard sets and
 notes are untouched. A database with no quiz rooms (production today) passes.
 
+Neither 0178 nor 0179 rewrites `materials.content`. A quiz or note graph saved
+before this release still holds the `image` field every validator now refuses,
+so that question may drop out of its quiz at the next projection and that note
+may fail to save (Epo 2026-11-17: old UAT data is not worth migrating). Remake
+such a figure by hand if one matters.
+
 It refuses, and the deploy stops at `migrate`, while a quiz's projection is
 behind its stored Yjs state (`materials.content` would miss those edits). The
 deploy stops collaboration before `migrate`, and its 60 s grace flushes and

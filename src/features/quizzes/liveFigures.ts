@@ -8,7 +8,6 @@ import {
   type FigureType,
   isFigureType,
   type LiveFigure,
-  moveChartItem as moveChartItemIn,
   moveElement,
   readFigure,
   removeChartItem as removeChartItemIn,
@@ -197,17 +196,6 @@ export function removeChartItem(
   id: string
 ): boolean {
   return edit(docs, at, (entry) => removeChartItemIn(entry, axis, id));
-}
-
-/** Moves a series or label to `index`. */
-export function moveChartItem(
-  docs: QuizDocs,
-  at: FigureAt,
-  axis: ChartAxis,
-  id: string,
-  index: number
-): boolean {
-  return edit(docs, at, (entry) => moveChartItemIn(entry, axis, id, index));
 }
 
 /** Renames a series or label. */

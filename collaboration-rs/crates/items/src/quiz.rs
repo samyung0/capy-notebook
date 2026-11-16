@@ -962,8 +962,7 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
                 .map(|row| row.as_array().map_or(0, Vec::len))
                 .max()
                 .unwrap_or(0);
-            let columns = figure_map::sync_keys(txn, map, "columns", "c", width);
-            let rows = figure_map::sync_keys(txn, map, "rows", "r", grid.len());
+            let (columns, rows) = align_table(txn, map, grid, width);
             let cells = child_map(txn, map, "cells");
             let mut kept = HashSet::new();
             for (row, row_id) in grid.iter().zip(&rows) {
@@ -994,6 +993,69 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
         }
         _ => figure_map::sync(txn, map, kind, block),
     }
+}
+
+/// A table's columns and rows aligned by `figure_map::align_axis` as the
+/// browser's `writeTable` does: columns first (one added or removed shifts
+/// every row alike), then rows, each compared by its cells' texts. The
+/// column and row ids, in order.
+fn align_table(
+    txn: &mut TransactionMut,
+    map: &MapRef,
+    grid: &[Value],
+    width: usize,
+) -> (Vec<String>, Vec<String>) {
+    let row_map = child_map(txn, map, "rows");
+    let column_map = child_map(txn, map, "columns");
+    let cells = child_map(txn, map, "cells");
+    let held_rows = ordered_keys(txn, Some(&row_map));
+    let held_columns = ordered_keys(txn, Some(&column_map));
+    let cell = |txn: &TransactionMut, row: &str, column: &str| {
+        text_at(txn, &cells, &format!("{row}/{column}"))
+    };
+    let wanted = |row: &Value, c: usize| {
+        row.get(c)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    // As the browser compares: the texts joined.
+    let joined = |texts: Vec<String>| texts.join("\u{0}");
+    let columns = figure_map::align_axis(
+        txn,
+        &column_map,
+        width,
+        |txn, h, w| {
+            let held = held_rows.iter().map(|row| cell(txn, row, &held_columns[h]));
+            let rows = grid.iter().take(held_rows.len());
+            joined(held.collect()) == joined(rows.map(|row| wanted(row, w)).collect())
+        },
+        "col",
+        |txn, column| {
+            for row in &held_rows {
+                cells.remove(txn, &format!("{row}/{column}"));
+            }
+        },
+    );
+    let rows = figure_map::align_axis(
+        txn,
+        &row_map,
+        grid.len(),
+        |txn, h, w| {
+            let held = columns
+                .iter()
+                .map(|column| cell(txn, &held_rows[h], column));
+            let wanted = (0..columns.len()).map(|c| wanted(&grid[w], c));
+            joined(held.collect()) == joined(wanted.collect())
+        },
+        "row",
+        |txn, row| {
+            for column in &columns {
+                cells.remove(txn, &format!("{row}/{column}"));
+            }
+        },
+    );
+    (columns, rows)
 }
 
 fn sync_blocks(txn: &mut TransactionMut, parent: &MapRef, key: &str, blocks: &[Value]) {

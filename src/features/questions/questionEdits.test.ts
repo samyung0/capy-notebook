@@ -98,7 +98,11 @@ it('edits a draft’s new chart in the question as it is made', () => {
   expect(opened.index).toBe(1);
   expect(question.parts[0].blocks).toEqual([text, block]);
   opened.binding.setFields({ title: 'Rain' });
-  opened.binding.setChartCell('s0', 'l0', 4);
+  const { labels, series } = opened.binding.read() ?? {
+    labels: [],
+    series: [],
+  };
+  opened.binding.setChartCell(series[0], labels[0], 4);
   expect(question.parts[0].blocks).toEqual([
     text,
     { ...block, series: [{ name: '', values: [4] }], title: 'Rain' },

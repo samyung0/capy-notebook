@@ -2,11 +2,12 @@ import { slateNodesToInsertDelta } from '@slate-yjs/core';
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
 import '@/features/notes/figureBinding';
-import type { GraphBlock } from '@/features/questions/types';
+import type { GraphBlock, GraphElement } from '@/features/questions/types';
 import {
   type FigureBlock,
   heldBlock,
   readFigure,
+  setElement,
   writeFigure,
 } from './figureMap';
 
@@ -116,5 +117,37 @@ it('writes a changed figure as a diff in either container', () => {
       Y.decodeUpdate(Y.encodeStateAsUpdate(doc, before)).structs
     ).toHaveLength(1);
     expect(readFigure(map, 'graph')?.block).toEqual(next);
+  }
+});
+
+it("keeps a peer's edit of an element when another editor appends after a gap", () => {
+  const point = (id: string, x: number): GraphElement => ({
+    coords: [x, x],
+    id,
+    type: 'point',
+  });
+  const [p, q, r] = [point('p', 0), point('q', 2), point('r', 3)];
+  const local = quizEntry({
+    ...graph,
+    elements: [p, point('x', 1), q],
+  });
+  const here = local.doc as Y.Doc;
+  here.transact(() => writeFigure(local, { ...graph, elements: [p, q] }));
+  const there = new Y.Doc();
+  // The appender wins a clash on one key, so a re-key of q would show.
+  there.clientID = 1;
+  Y.applyUpdate(there, Y.encodeStateAsUpdate(here));
+  const peer = there.getMap<unknown>('entry');
+  there.transact(() => setElement(peer, point('q', 9)));
+  here.transact(() => writeFigure(local, { ...graph, elements: [p, q, r] }));
+  Y.applyUpdate(there, Y.encodeStateAsUpdate(here));
+  Y.applyUpdate(here, Y.encodeStateAsUpdate(there));
+  for (const map of [local, peer]) {
+    expect(readFigure(map, 'graph')?.block).toEqual({
+      ...graph,
+      elements: [p, point('q', 9), r],
+    });
+    const elements = map.get('elements') as Y.Map<{ order: string }>;
+    expect(elements.get('q')?.order).toBe('a2');
   }
 });

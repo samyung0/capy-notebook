@@ -675,7 +675,9 @@ function ToolIcon({ className, name }: { className?: string; name: string }) {
  * It has the canvas plane's gestures and tools (Epo 2026-11-16): the wheel
  * pans, pinch and Ctrl/⌘-wheel zoom, the middle button pans, and the plane's
  * Select, Point, Line, Vector, Curve, Ellipse, Label, Formula and Erase
- * (graph/tools.ts) sit in a strip over its foot, as on the plane. */
+ * (graph/tools.ts). Their strip has its own row under the graph, not over its
+ * foot as on the plane (Epo 2026-11-17): the graph is the figure's real size,
+ * so a strip over it hid the x-axis title and numbers. */
 function GraphStage({
   graph,
   drawable,
@@ -1008,8 +1010,9 @@ function GraphStage({
   return (
     <div className="min-w-0">
       <div
-        // Room under the dialog's title, the block's heading and footer.
-        className="relative mx-auto max-h-[calc(88dvh-15rem)] overflow-hidden"
+        // Room under the dialog's title, the block's heading and footer, and
+        // for the tools' row under the graph.
+        className="relative mx-auto max-h-[calc(88dvh-18rem)] overflow-hidden"
         ref={wrapper}
         style={{
           aspectRatio: scale ? undefined : `${width} / ${height}`,
@@ -1081,31 +1084,12 @@ function GraphStage({
         )}
         {finishLabel && (
           <button
-            className="absolute bottom-13 left-1/2 z-10 h-8 -translate-x-1/2 whitespace-nowrap rounded-(--radius-toolbar-button) bg-action px-3 font-semibold text-[13px] text-action-fg shadow-pop"
+            className="absolute bottom-2 left-1/2 z-10 h-8 -translate-x-1/2 whitespace-nowrap rounded-(--radius-toolbar-button) bg-action px-3 font-semibold text-[13px] text-action-fg shadow-pop"
             onClick={() => tools?.finish()}
             type="button"
           >
             {finishLabel}
           </button>
-        )}
-        {tools && (
-          <BlockToolbar className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2">
-            {toolsFor(Boolean(graph.board.polar)).map(
-              ({ icon, id, key, label }) => (
-                <ToolbarButton
-                  active={tools.tool() === id}
-                  key={id}
-                  label={label()}
-                  onClick={() => tools.pick(id)}
-                  shortcut={key}
-                  tooltipSide="top"
-                  type="button"
-                >
-                  <ToolIcon name={icon} />
-                </ToolbarButton>
-              )
-            )}
-          </BlockToolbar>
         )}
         {formula && formulaAt && (
           <Popover
@@ -1135,6 +1119,25 @@ function GraphStage({
           </Popover>
         )}
       </div>
+      {tools && (
+        <BlockToolbar className="mx-auto mt-2 max-w-full flex-wrap justify-center">
+          {toolsFor(Boolean(graph.board.polar)).map(
+            ({ icon, id, key, label }) => (
+              <ToolbarButton
+                active={tools.tool() === id}
+                key={id}
+                label={label()}
+                onClick={() => tools.pick(id)}
+                shortcut={key}
+                tooltipSide="top"
+                type="button"
+              >
+                <ToolIcon name={icon} />
+              </ToolbarButton>
+            )
+          )}
+        </BlockToolbar>
+      )}
       {toolbarTarget && createPortal(zoomTools, toolbarTarget)}
       {/* The graph as shown, full screen like a note figure. */}
       {preview && (

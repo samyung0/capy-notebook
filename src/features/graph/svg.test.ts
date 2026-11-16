@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
-import { validGraphSvg } from '@/features/questions/validation';
 import { drawGraph } from './draw';
 import type { GraphElement, SizedGraph } from './model';
 import { EXPORT_PAPER, PAPER } from './paper';
 import { graphSvg, type Measure, SvgRecorder } from './svg';
+import { validGraphSvg } from './validGraphSvg.testing';
 import { PLANE_ZOOM, QUESTION_ZOOM } from './view';
 
 /** Arial-ish widths: half the font size a character. */

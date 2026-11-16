@@ -11,7 +11,6 @@ import {
   addChartItem,
   deleteGraphElement,
   liveFigure,
-  moveChartItem,
   moveGraphElement,
   type QuizDocs,
   removeChartItem,
@@ -253,19 +252,16 @@ it('merges two editors changing different cells, series and labels of one chart'
   expect(liveFigure(b, at)?.block).toEqual(expected);
 });
 
-it('moves and removes a chart series or label with its values', () => {
+it('removes a chart series or label with its values', () => {
   const docs = seeded();
   const at = partChart(docs);
   const { labels, series } = liveFigure(docs, at) ?? { labels: [], series: [] };
-  moveChartItem(docs, at, 'series', series[1], 0);
+  removeChartItem(docs, at, 'series', series[0]);
   removeChartItem(docs, at, 'labels', labels[0]);
   expect(liveFigure(docs, at)?.block).toEqual({
     ...chart,
     labels: ['Tue'],
-    series: [
-      { name: 'Sun', values: [4] },
-      { name: 'Rain', values: [null] },
-    ],
+    series: [{ name: 'Sun', values: [4] }],
   });
 });
 

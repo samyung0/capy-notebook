@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
-import { validGraphSvg } from '@/features/questions/validation';
 import { type Drawn, replay, shapes } from './formula';
 import { glyphOutlines } from './glyphOutlines';
 import { type Measure, SvgRecorder } from './svg';
+import { validGraphSvg } from './validGraphSvg.testing';
 
 const measure: Measure = (font, text) =>
   text.length * Number.parseFloat(font) * 0.5;

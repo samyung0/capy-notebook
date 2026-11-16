@@ -4,7 +4,6 @@ import {
   addChartItem,
   deleteGraphElement,
   liveFigure,
-  moveChartItem,
   moveGraphElement,
   type QuizDocs,
   removeChartItem,
@@ -29,9 +28,6 @@ export function roomFigureBinding(
       addChartItem(docs, at, axis, index, name),
     deleteElement: (id) => {
       deleteGraphElement(docs, at, id);
-    },
-    moveChartItem: (axis, id, index) => {
-      moveChartItem(docs, at, axis, id, index);
     },
     moveElement: (id, index) => {
       moveGraphElement(docs, at, id, index);

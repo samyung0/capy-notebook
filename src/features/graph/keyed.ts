@@ -3,7 +3,8 @@
  * different elements both keep their work when the entries merge key by key.
  * Reading sorts by order key and breaks a tie (two editors adding at once) by
  * id. A Y.Map fits `EntryMap`, so this module needs no Yjs. */
-import { keyBetween } from '@/lib/orderKey';
+import { keyBetween, risingOrders } from '@/lib/orderKey';
+import { sameJson } from '@/lib/sameJson';
 import type { GraphElement } from './model';
 
 export type ElementEntry<E extends GraphElement = GraphElement> = {
@@ -11,12 +12,24 @@ export type ElementEntry<E extends GraphElement = GraphElement> = {
   order: string;
 };
 
-/** The writes a keyed map takes: a Y.Map, or a plain Map in tests. */
+/** The keyed map a writer takes: a Y.Map, or a plain Map in tests. */
 export type EntryMap<E extends GraphElement> = {
   delete(key: string): void;
-  entries(): IterableIterator<[string, ElementEntry<E>]>;
+  entries(): IterableIterator<[string, unknown]>;
   set(key: string, value: ElementEntry<E>): unknown;
 };
+
+/** Whether a held value is an element entry for `id` (a malformed one reads
+ * as missing). */
+export const isElementEntry = (
+  value: unknown,
+  id: string
+): value is ElementEntry =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as ElementEntry).order === 'string' &&
+  typeof (value as ElementEntry).element === 'object' &&
+  (value as ElementEntry).element?.id === id;
 
 const before = (a: [string, ElementEntry], b: [string, ElementEntry]) =>
   a[1].order < b[1].order
@@ -46,28 +59,35 @@ export function keyedElements<E extends GraphElement>(list: E[]) {
   return out;
 }
 
-/** Makes `map` hold `next`, touching only what changed: a new element is set
- * after every other, a changed one (a different object) replaced under its own
- * order key, a gone one deleted. Order among kept elements stays as stored. */
+/** Makes `map` hold `next`, in its order, touching only what changed (Epo
+ * 2026-11-16, D10: the plane's, a quiz's and a note's one writer). An element
+ * alike its stored one, the same object or equal JSON (a note's Slate value
+ * hands fresh objects), keeps its stored object; a changed one is replaced;
+ * order keys come from `risingOrders`, so every held key that can stay does
+ * and a moved or new element takes a key between its neighbours; a gone one
+ * is deleted. Each entry is written at most once. */
 export function writeElements<E extends GraphElement>(
   map: EntryMap<E>,
   next: E[]
 ) {
-  const stored = new Map(map.entries());
-  let last: string | null = null;
-  for (const { order } of stored.values())
-    if (last === null || order > last) last = order;
-  const kept = new Set<string>();
-  for (const element of next) {
-    kept.add(element.id);
+  const held = [...map.entries()];
+  const stored = new Map<string, ElementEntry<E>>();
+  for (const [id, value] of held)
+    if (isElementEntry(value, id)) stored.set(id, value as ElementEntry<E>);
+  const orders = risingOrders(
+    next.map((element) => stored.get(element.id)?.order ?? '')
+  );
+  next.forEach((element, i) => {
     const entry = stored.get(element.id);
-    if (entry?.element === element) continue;
-    if (entry) {
-      map.set(element.id, { element, order: entry.order });
-      continue;
-    }
-    last = keyBetween(last, null);
-    map.set(element.id, { element, order: last });
-  }
-  for (const id of stored.keys()) if (!kept.has(id)) map.delete(id);
+    const same =
+      entry !== undefined &&
+      (entry.element === element || sameJson(entry.element, element));
+    if (same && entry.order === orders[i]) return;
+    map.set(element.id, {
+      element: same ? entry.element : element,
+      order: orders[i],
+    });
+  });
+  const kept = new Set(next.map((element) => element.id));
+  for (const [id] of held) if (!kept.has(id)) map.delete(id);
 }

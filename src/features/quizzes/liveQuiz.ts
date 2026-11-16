@@ -17,7 +17,7 @@ import {
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
-import { keyBetween } from '@/lib/orderKey';
+import { keyBetween, keysBetween } from '@/lib/orderKey';
 import { Rng } from '@/lib/rng';
 import {
   blockKey,
@@ -32,7 +32,6 @@ import {
   child,
   type Entry,
   KEYS_ROOT,
-  keysBetween,
   mapAt,
   ordered,
   orderedKeys,

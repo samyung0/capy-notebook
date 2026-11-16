@@ -957,7 +957,7 @@ fn figure_fields_past_their_caps_are_refused_at_admission() {
         |doc| {
             let block = new_figure(doc, &question, "chart", json!({}));
             let values = block.insert(&mut doc.transact_mut(), "values", MapPrelim::default());
-            values.insert(&mut doc.transact_mut(), "s0/l0", "7");
+            values.insert(&mut doc.transact_mut(), "ser0/lab0", "7");
         },
         "a chart value that is not a number",
     );
@@ -1062,8 +1062,8 @@ fn two_editors_merge_different_elements_and_values_of_one_figure() {
     moved(&a, &ids[0], 1.0);
     moved(&b, &ids[1], 2.0);
     let values = ["questions", &chart_q, "stem", &chart, "values"];
-    map_in(&a, &values).insert(&mut a.transact_mut(), "s0/l0", 41.0);
-    map_in(&b, &values).insert(&mut b.transact_mut(), "s0/l1", 42.0);
+    map_in(&a, &values).insert(&mut a.transact_mut(), "ser0/lab0", 41.0);
+    map_in(&b, &values).insert(&mut b.transact_mut(), "ser0/lab1", 42.0);
     converge(&content, Kind::Quiz, &a, &b);
     let read = quiz::questions_json(
         &content.transact(),
@@ -1152,6 +1152,66 @@ fn the_save_api_writes_a_graph_element_by_element() {
         .clone();
     assert_eq!(elements[first], moved);
     assert_eq!(elements[second]["coords"], json!([8, 8]));
+}
+
+/// A table's row or column ids, in order.
+fn axis_ids(doc: &Doc, path: &[&str]) -> Vec<String> {
+    let map = map_in(doc, path);
+    let txn = doc.transact();
+    let mut held: Vec<(String, String)> = map
+        .iter(&txn)
+        .map(|(id, order)| (order.to_string(&txn), id.to_owned()))
+        .collect();
+    held.sort();
+    held.into_iter().map(|(_, id)| id).collect()
+}
+
+/// A save inserting a table row mid-table aligns the rows as the browser's
+/// `writeTable`: the held rows and the columns keep their ids, and a peer's
+/// cell edit in the last row meanwhile stays in that row.
+#[test]
+fn a_save_inserting_a_table_row_keeps_the_held_ids() {
+    let questions = fixtures();
+    let (content, keys, client, _) = rooms(&questions);
+    let (table_q, table) = stem_figure(&questions, "table");
+    let at = questions
+        .iter()
+        .position(|q| q["id"] == json!(table_q))
+        .unwrap();
+    let index: usize = table[1..].parse().unwrap();
+    let path = |key| ["questions", table_q.as_str(), "stem", table.as_str(), key];
+    let (rows, columns) = (
+        axis_ids(&content, &path("rows")),
+        axis_ids(&content, &path("columns")),
+    );
+    // A peer edits the first cell of the last row.
+    let last = format!("{}/{}", rows[rows.len() - 1], columns[0]);
+    let cell = map_in(&client, &path("cells")).get(&client.transact(), &last);
+    let Some(Out::YText(text)) = cell else {
+        panic!("no cell {last}: {cell:?}");
+    };
+    text.insert(&mut client.transact_mut(), 0, "edited ");
+    let mut next = questions.clone();
+    let width = columns.len();
+    next[at]["stem"][index]["rows"]
+        .as_array_mut()
+        .unwrap()
+        .insert(1, json!(vec!["new"; width]));
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let now = axis_ids(&content, &path("rows"));
+    assert_eq!([&now[..1], &now[2..]].concat(), rows);
+    assert_eq!(axis_ids(&content, &path("columns")), columns);
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    let read = quiz::questions_json(
+        &content.transact(),
+        Some(&quiz::KeysRead::new(&keys.transact())),
+    );
+    let mut wanted = next[at]["stem"][index]["rows"].as_array().unwrap().clone();
+    let first = wanted.last().unwrap()[0].as_str().unwrap();
+    let last_row = wanted.len() - 1;
+    wanted[last_row][0] = json!(format!("edited {first}"));
+    assert_eq!(read[at]["stem"][index]["rows"], json!(wanted));
 }
 
 /// A merge that leaves an element naming a gone point reads repaired (the

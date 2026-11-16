@@ -1,5 +1,10 @@
 import * as Y from 'yjs';
-import { type ElementEntry, readElements } from '@/features/graph/keyed';
+import {
+  type ElementEntry,
+  isElementEntry,
+  readElements,
+  writeElements,
+} from '@/features/graph/keyed';
 import { repairFigureBlock } from '@/features/questions/repair';
 import type {
   ChartBlock,
@@ -8,14 +13,12 @@ import type {
   PlotBlock,
 } from '@/features/questions/types';
 import { uid } from '@/lib/id';
-import { keyBetween } from '@/lib/orderKey';
+import { risingOrders } from '@/lib/orderKey';
 import {
   alignAxis,
   child,
   mapAt,
   orderedKeys,
-  risingOrders,
-  samePlain,
   setPlain,
   type YMap,
 } from './yMaps';
@@ -77,16 +80,6 @@ function fields(map: YMap, type: FigureType): Record<string, unknown> {
   });
   return out;
 }
-
-export const isElementEntry = (
-  value: unknown,
-  id: string
-): value is ElementEntry =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as ElementEntry).order === 'string' &&
-  typeof (value as ElementEntry).element === 'object' &&
-  (value as ElementEntry).element?.id === id;
 
 /** A graph's element entries as held, malformed ones left out. */
 function elementEntries(map: YMap): [string, ElementEntry<GraphElement>][] {
@@ -222,27 +215,6 @@ function writeFields(map: YMap, block: FigureBlock) {
       map.delete(key);
 }
 
-/** A graph's elements made `next`, touching only what changed: an equal
- * element keeps its entry, a new one takes an order key between its
- * neighbours, a moved one a new key, a gone one goes. */
-function writeElements(map: YMap, next: GraphElement[]) {
-  const entries = new Map(elementEntries(map));
-  const orders = risingOrders(
-    next.map((element) => entries.get(element.id)?.order ?? '')
-  );
-  next.forEach((element, i) => {
-    const entry = entries.get(element.id);
-    if (entry?.order === orders[i] && samePlain(entry.element, element)) return;
-    map.set(element.id, {
-      element:
-        entry && samePlain(entry.element, element) ? entry.element : element,
-      order: orders[i],
-    });
-  });
-  const kept = new Set(next.map((element) => element.id));
-  for (const id of [...map.keys()]) if (!kept.has(id)) map.delete(id);
-}
-
 function writeGraph(map: YMap, block: GraphBlock) {
   const board = child(map, 'board');
   const wanted = block.board as Record<string, unknown>;
@@ -353,55 +325,42 @@ export function setBoardField<K extends keyof GraphBlock['board']>(
   setPlain(child(map, 'board'), field, value);
 }
 
-const lastOrder = (map: YMap) =>
-  elementEntries(map).reduce<string | null>(
-    (last, [, entry]) =>
-      last === null || entry.order > last ? entry.order : last,
-    null
-  );
+/** A graph's elements in order, each its stored object. */
+const elementsIn = (elements: YMap) => readElements(elementEntries(elements));
 
 /** Sets a graph element by its id: a changed one keeps its place, a new one
- * goes last. */
+ * goes last (`writeElements`). */
 export function setElement(map: YMap, element: GraphElement) {
   const elements = child(map, 'elements');
-  const entry = elements.get(element.id);
-  if (isElementEntry(entry, element.id)) {
-    if (!samePlain(entry.element, element))
-      elements.set(element.id, { element, order: entry.order });
-    return;
-  }
-  elements.set(element.id, {
-    element,
-    order: keyBetween(lastOrder(elements), null),
-  });
+  const list = elementsIn(elements);
+  const at = list.findIndex((item) => item.id === element.id);
+  writeElements(
+    elements,
+    at < 0
+      ? [...list, element]
+      : list.map((item, i) => (i === at ? element : item))
+  );
 }
 
 export function deleteElement(map: YMap, id: string) {
   mapAt(map, 'elements')?.delete(id);
 }
 
-/** An order key at `index` among `orders` (in order), the moved one left out. */
-function orderAt(orders: string[], index: number) {
-  const at = Math.max(0, Math.min(index, orders.length));
-  const lower = orders[at - 1] ?? null;
-  const upper =
-    orders.slice(at).find((order) => lower === null || order > lower) ?? null;
-  return keyBetween(lower, upper);
+/** `list` with the item at `from` moved to `to` (clamped). */
+function moved<T>(list: T[], from: number, to: number) {
+  const next = list.filter((_, i) => i !== from);
+  next.splice(Math.max(0, Math.min(to, next.length)), 0, list[from]);
+  return next;
 }
 
-/** Moves a graph element to `index` in the drawing order. */
+/** Moves a graph element to `index` in the drawing order: it alone takes a
+ * new key between its neighbours (`writeElements`). */
 export function moveElement(map: YMap, id: string, index: number) {
   const elements = mapAt(map, 'elements');
-  const entry = elements?.get(id);
-  if (!(elements && isElementEntry(entry, id))) return;
-  const others = elementEntries(elements)
-    .filter(([key]) => key !== id)
-    .map(([key, value]) => ({ id: key, order: value.order }))
-    .sort((a, b) =>
-      a.order < b.order ? -1 : a.order > b.order ? 1 : a.id < b.id ? -1 : 1
-    )
-    .map((item) => item.order);
-  elements.set(id, { element: entry.element, order: orderAt(others, index) });
+  if (!elements) return;
+  const list = elementsIn(elements);
+  const at = list.findIndex((item) => item.id === id);
+  if (at >= 0) writeElements(elements, moved(list, at, index));
 }
 
 /** A chart's series (rows) or labels (columns). */
@@ -417,8 +376,12 @@ export function addChartItem(
 ): string {
   const id = uid(axis === 'series' ? 'ser' : 'lab');
   const items = child(map, axis);
-  const orders = orderedKeys(items).map((key) => items.get(key) as string);
-  items.set(id, orderAt(orders, index));
+  const ids = orderedKeys(items);
+  ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id);
+  const held = ids.map((key) => (items.get(key) as string | undefined) ?? '');
+  risingOrders(held).forEach((order, i) => {
+    if (order !== held[i]) items.set(ids[i], order);
+  });
   child(map, 'names').set(id, name);
   return id;
 }
@@ -432,21 +395,6 @@ export function removeChartItem(map: YMap, axis: ChartAxis, id: string) {
     const [series, label] = key.split('/');
     if ((axis === 'series' ? series : label) === id) values?.delete(key);
   }
-}
-
-/** Moves a series or label to `index`. */
-export function moveChartItem(
-  map: YMap,
-  axis: ChartAxis,
-  id: string,
-  index: number
-) {
-  const items = mapAt(map, axis);
-  if (!items?.has(id)) return;
-  const orders = orderedKeys(items)
-    .filter((key) => key !== id)
-    .map((key) => items.get(key) as string);
-  items.set(id, orderAt(orders, index));
 }
 
 /** Renames a series or label. */

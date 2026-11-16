@@ -29,8 +29,6 @@ export interface FigureBinding {
   addChartItem(axis: ChartAxis, index: number, name: string): string | null;
   /** Removes a graph element. */
   deleteElement(id: string): void;
-  /** Moves a chart series or label to `index`. */
-  moveChartItem(axis: ChartAxis, id: string, index: number): void;
   /** Moves a graph element to `index` among the others. */
   moveElement(id: string, index: number): void;
   /** The figure now, the same object until it changes; null once it is gone. */

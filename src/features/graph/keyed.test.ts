@@ -48,3 +48,25 @@ it('writes only the elements that changed', () => {
   write(readElements(map.entries()));
   expect(touched).toHaveLength(1);
 });
+
+it('appends after a gap keeping every held key, writing only the new entry', () => {
+  const [p, x, q] = [point('p', 0), point('x', 1), point('q', 2)];
+  const { map, touched, write } = stored([p, x, q]);
+  write([p, q]);
+  const r = point('r', 3);
+  write([p, q, r]);
+  expect(touched.at(-1)).toEqual(['r']);
+  expect(map.get('q')?.order).toBe('a2');
+  expect(readElements(map.entries())).toEqual([p, q, r]);
+});
+
+it('keeps the stored object for an equal fresh copy, and writes a move as one entry', () => {
+  const [a, b, c] = [point('a', 0), point('b', 1), point('c', 2)];
+  const { map, touched, write } = stored([a, b, c]);
+  write([a, b, c].map((element) => structuredClone(element)));
+  expect(touched).toEqual([]);
+  expect(map.get('a')?.element).toBe(a);
+  write([c, a, b]);
+  expect(touched).toEqual([['c']]);
+  expect(readElements(map.entries())).toEqual([c, a, b]);
+});

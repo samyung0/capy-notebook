@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as limits from '@/api/limits.generated';
 import type { GraphElement, Vec } from './model';
-import { type Formula, graphTools, type ToolHost } from './tools';
+import {
+  type Formula,
+  freePointName,
+  graphTools,
+  type ToolHost,
+} from './tools';
 
 /** A canvas box at the page's top left, its events sent by hand. */
 class Canvas extends EventTarget {
@@ -106,9 +111,41 @@ describe('drawing tools', () => {
     const { click, state, tools } = setup();
     tools.pick('point');
     click([41, 362]);
-    expect(state.elements).toMatchObject([{ coords: [1, 1], type: 'point' }]);
+    expect(state.elements).toMatchObject([
+      { coords: [1, 1], name: 'A', type: 'point' },
+    ]);
     // Point stays on, as AFFiNE's pen does.
     expect(tools.tool()).toBe('point');
+  });
+
+  it('names each point it places with the next free name', () => {
+    const { click, state, tools } = setup([
+      { coords: [0, 0], id: 'a', name: 'A', type: 'point' },
+      { coords: [0, 1], id: 'c', name: 'C', type: 'point' },
+    ]);
+    tools.pick('point');
+    click(px(2, 2));
+    click(px(3, 3));
+    expect(
+      state.elements.map((element) => 'name' in element && element.name)
+    ).toEqual(['A', 'C', 'B', 'D']);
+  });
+
+  it('names points past Z with a subscript', () => {
+    const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+    const named = (names: string[]) =>
+      names.map(
+        (name): GraphElement => ({
+          coords: [0, 0],
+          id: name,
+          name,
+          type: 'point',
+        })
+      );
+    expect(freePointName(named(letters))).toBe('A_1');
+    expect(
+      freePointName(named([...letters, ...letters.map((l) => `${l}_1`)]))
+    ).toBe('A_2');
   });
 
   it('draws a line and a vector from one click to the next, then goes back to Select', () => {

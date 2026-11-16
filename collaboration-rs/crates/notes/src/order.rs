@@ -214,9 +214,73 @@ pub fn between(a: Option<&str>, b: Option<&str>) -> Option<String> {
     String::from_utf8(key).ok()
 }
 
+/// Order keys for entries wanted in the given order, from the keys they hold
+/// (empty for one with none yet), as the browser's `risingOrders`
+/// (`src/lib/orderKey.ts`): the longest strictly rising run of held keys
+/// stays, every other entry (a moved or a new one) takes a key between its
+/// neighbours.
+pub fn rising(held: &[String]) -> Vec<String> {
+    // Patience sorting: `tails[n]` ends the best run of length n + 1 so far,
+    // `previous` links runs.
+    let mut tails: Vec<usize> = Vec::new();
+    let mut previous = vec![None; held.len()];
+    for (i, order) in held.iter().enumerate() {
+        if order.is_empty() {
+            continue;
+        }
+        let low = tails.partition_point(|&t| held[t] < *order);
+        if low > 0 {
+            previous[i] = Some(tails[low - 1]);
+        }
+        if low == tails.len() {
+            tails.push(i);
+        } else {
+            tails[low] = i;
+        }
+    }
+    let mut kept = vec![false; held.len()];
+    let mut at = tails.last().copied();
+    while let Some(i) = at {
+        kept[i] = true;
+        at = previous[i];
+    }
+    let mut orders = held.to_vec();
+    let mut i = 0;
+    while i < orders.len() {
+        if kept[i] {
+            i += 1;
+            continue;
+        }
+        let end = (i..orders.len()).find(|&e| kept[e]).unwrap_or(orders.len());
+        let before = orders.get(end).cloned();
+        let mut last = i.checked_sub(1).map(|p| orders[p].clone());
+        for order in &mut orders[i..end] {
+            // Kept neighbours rise, so there is room between them.
+            let key = between(last.as_deref(), before.as_deref())
+                .unwrap_or_else(|| after(last.as_deref()));
+            order.clone_from(&key);
+            last = Some(key);
+        }
+        i = end;
+    }
+    orders
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rising_keeps_the_longest_rising_run() {
+        let rise = |held: &[&str]| rising(&held.iter().map(|k| k.to_string()).collect::<Vec<_>>());
+        // The browser's cases (src/lib/orderKey.test.ts).
+        assert_eq!(rise(&["a0", "a5", ""]), ["a0", "a5", "a6"]);
+        assert_eq!(rise(&["a0", "", "a5"]), ["a0", "a1", "a5"]);
+        assert_eq!(rise(&["a2", "a0", "a1"]), ["Zz", "a0", "a1"]);
+        assert_eq!(rise(&["a1", "a2", "a0"]), ["a1", "a2", "a3"]);
+        // Two held keys alike (a merge): one of them takes a new key.
+        assert_eq!(rise(&["a0", "a0", "a1"]), ["Zz", "a0", "a1"]);
+    }
 
     #[test]
     fn keys_match_fractional_indexing() {

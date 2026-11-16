@@ -441,7 +441,7 @@ function functionTerm(node: Node) {
 }
 
 /** A point's row name: one letter with an optional subscript (`A`, `P_1`). */
-export const POINT_NAME = /^[A-Za-z](?:_[A-Za-z0-9]+)?$/;
+const POINT_NAME = /^[A-Za-z](?:_[A-Za-z0-9]+)?$/;
 const RESERVED = new Set(['x', 'y', 'e']);
 
 /** What a row parses to, before the editor adds its id and style. */
@@ -612,10 +612,7 @@ export function functionOf(term: string): (x: number) => number {
 }
 
 /** LaTeX for a row's math field. `nameOf` gives each point id's row name. */
-export function rowLatex(
-  element: RowElement,
-  nameOf: (id: string) => string
-): string {
+function rowLatex(element: RowElement, nameOf: (id: string) => string): string {
   const points = (ids: string[]) =>
     `\\left(${ids.map(nameOf).map(subscript).join(',')}\\right)`;
   switch (element.type) {
@@ -646,7 +643,7 @@ export function rowLatex(
 }
 
 /** A point row, e.g. after the point is dragged on the board. */
-export function pointLatex(name: string | undefined, [x, y]: [number, number]) {
+function pointLatex(name: string | undefined, [x, y]: [number, number]) {
   const coords = `\\left(${formatNumber(x)},${formatNumber(y)}\\right)`;
   return name ? `${subscript(name)}=${coords}` : coords;
 }
@@ -961,8 +958,9 @@ function toElement(
 }
 
 /** A row for an element a tool made or changed (Epo 2026-11-16, each editor
- * gains the other's tools): a point keeps its row's name and style, a label
- * its row's hidden flag; a free mark's row holds it as it is. */
+ * gains the other's tools): a point keeps its row's name and style, or a new
+ * one the name the Point tool gave it; a label its row's hidden flag; a free
+ * mark's row holds it as it is. */
 function toolRow(element: GraphElement, row?: GraphRow): GraphRow {
   if (isFreeMark(element)) return { element, key: element.id, kind: 'mark' };
   if (element.type === 'text')
@@ -976,8 +974,11 @@ function toolRow(element: GraphElement, row?: GraphRow): GraphRow {
     };
   if (element.type === 'point') {
     const expression = row?.kind === 'expression' ? row : undefined;
-    const name =
-      expression?.parsed?.kind === 'point' ? expression.parsed.name : undefined;
+    const name = expression
+      ? expression.parsed?.kind === 'point'
+        ? expression.parsed.name
+        : undefined
+      : element.name;
     return {
       key: element.id,
       kind: 'expression',

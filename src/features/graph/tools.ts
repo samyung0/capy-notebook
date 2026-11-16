@@ -108,6 +108,22 @@ export const kindOf = (element: GraphElement) =>
           ? 'through'
           : element.type;
 
+/** The name the Point tool gives a point (Epo 2026-11-17), so a row such as
+ * `segment(A, B)` can use it: the first of A … Z, then A_1 … Z_1, A_2 …, that
+ * no point in the graph has. */
+export function freePointName(elements: readonly GraphElement[]) {
+  const taken = new Set(
+    elements.map((element) =>
+      element.type === 'point' ? element.name : undefined
+    )
+  );
+  for (let round = 0; ; round++)
+    for (let letter = 0; letter < 26; letter++) {
+      const name = `${String.fromCharCode(65 + letter)}${round ? `_${round}` : ''}`;
+      if (!taken.has(name)) return name;
+    }
+}
+
 /** The maths symbols under a label being typed. */
 export const SYMBOLS = [
   '²',
@@ -518,7 +534,13 @@ export function graphTools(host: ToolHost) {
   const place = (px: Vec, exact?: Vec) => {
     const at = exact ?? snapped(px);
     const open = openMark();
-    if (tool === 'point') add({ coords: at, id: newId(), type: 'point' });
+    if (tool === 'point')
+      add({
+        coords: at,
+        id: newId(),
+        name: freePointName(elements()),
+        type: 'point',
+      });
     else if (tool === 'ellipse') addCircle(at, tickStep(host.view().ppuX));
     else if (tool === 'line' || tool === 'vector' || tool === 'curve') {
       if (

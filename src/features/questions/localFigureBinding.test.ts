@@ -64,24 +64,48 @@ it('writes nothing for a change that leaves the figure as it is', () => {
   expect(writes).toEqual([]);
 });
 
-it('edits a chart by place: rows, columns, names and cells', () => {
+it('edits a chart by handle: rows, columns, names and cells', () => {
   const { binding } = held(chart);
-  expect(binding.read()).toMatchObject({
-    labels: ['l0', 'l1'],
-    series: ['s0'],
-  });
+  const start = binding.read();
+  if (!start) throw new Error('No chart');
+  expect(start.labels).toHaveLength(2);
+  expect(start.series).toHaveLength(1);
   const label = binding.addChartItem('labels', 2, 'Wed');
   const series = binding.addChartItem('series', 1, 'Sun');
   if (!(label && series)) throw new Error('not added');
   binding.setChartCell(series, label, 7);
-  binding.setChartName('s0', 'Snow');
-  binding.removeChartItem('labels', 'l0');
-  expect(binding.read()?.block).toEqual({
+  binding.setChartName(start.series[0], 'Snow');
+  binding.removeChartItem('labels', start.labels[0]);
+  expect(binding.read()).toMatchObject({
+    block: {
+      ...chart,
+      labels: ['Tue', 'Wed'],
+      series: [
+        { name: 'Snow', values: [null, null] },
+        { name: 'Sun', values: [null, 7] },
+      ],
+    },
+    // Adding and removing keep the other handles.
+    labels: [start.labels[1], label],
+    series: [start.series[0], series],
+  });
+});
+
+it('keeps a series handle on its series when one is inserted above from elsewhere', () => {
+  const { binding, writes } = held(chart);
+  const [rain] = binding.read()?.series ?? [];
+  binding.receive({
     ...chart,
-    labels: ['Tue', 'Wed'],
+    series: [{ name: 'Sun', values: [5, 6] }, ...chart.series],
+  });
+  expect(binding.read()?.series[1]).toBe(rain);
+  const [, tue] = binding.read()?.labels ?? [];
+  binding.setChartCell(rain, tue, 3);
+  expect(writes.at(-1)?.[0]).toEqual({
+    ...chart,
     series: [
-      { name: 'Snow', values: [null, null] },
-      { name: 'Sun', values: [null, 7] },
+      { name: 'Sun', values: [5, 6] },
+      { name: 'Rain', values: [1, 3] },
     ],
   });
 });

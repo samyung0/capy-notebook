@@ -366,35 +366,90 @@ pub fn next_order(held: Option<&str>, last: Option<&str>) -> String {
     }
 }
 
-/// An axis's ids (id to order key: a table's rows or columns, a chart's
-/// series or labels) for `count` of them, by position, in order.
-pub fn sync_keys(
-    txn: &mut TransactionMut,
-    parent: &MapRef,
-    key: &str,
-    prefix: &str,
+/// How `held` entries (an axis's ids) line up with `count` wanted ones as one
+/// editor action leaves them, as the browser's `alignPlaces`
+/// (`src/features/figures/align.ts`): entries alike at the head and tail
+/// (`same(held index, wanted index)`) keep their place, a changed middle keeps
+/// as many as it can by position, and the rest go or come. For each wanted
+/// index, the held index it keeps, or none for a new entry.
+fn align_places(
+    held: usize,
     count: usize,
+    same: impl Fn(usize, usize) -> bool,
+) -> Vec<Option<usize>> {
+    let mut head = 0;
+    while head < held && head < count && same(head, head) {
+        head += 1;
+    }
+    let mut tail = 0;
+    while tail < held - head && tail < count - head && same(held - 1 - tail, count - 1 - tail) {
+        tail += 1;
+    }
+    let keep = (held - head - tail).min(count - head - tail);
+    (0..count)
+        .map(|w| {
+            if w < head + keep {
+                Some(w)
+            } else if w >= count - tail {
+                Some(held - (count - w))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// An axis (id -> order key: a table's rows or columns, a chart's series or
+/// labels) brought to `count` entries as one editor action leaves it, as the
+/// browser's `alignAxis` (`src/features/figures/yMaps.ts`): aligned by
+/// [align_places] (`same(txn, held index, wanted index)`), the ids it drops go
+/// (`drop` clears what they held), new ones come under fresh `prefix<n>` ids,
+/// and the order keys are [order::rising] (a new one between its
+/// neighbours). With the count unchanged every id keeps its place. The ids,
+/// in order.
+pub fn align_axis(
+    txn: &mut TransactionMut,
+    map: &MapRef,
+    count: usize,
+    same: impl Fn(&TransactionMut, usize, usize) -> bool,
+    prefix: &str,
+    mut drop: impl FnMut(&mut TransactionMut, &str),
 ) -> Vec<String> {
-    let map = child_map(txn, parent, key);
     let held = ordered_pairs(map.as_ref());
-    let mut ids = Vec::with_capacity(count);
-    let mut last: Option<String> = None;
+    if held.len() == count {
+        return held.into_iter().map(|(id, _)| id).collect();
+    }
+    let places = {
+        let txn: &TransactionMut = txn;
+        align_places(held.len(), count, |h, w| same(txn, h, w))
+    };
+    let kept: HashSet<usize> = places.iter().flatten().copied().collect();
+    for (i, (id, _)) in held.iter().enumerate() {
+        if !kept.contains(&i) {
+            map.remove(txn, id);
+            drop(txn, id);
+        }
+    }
+    // An axis only grows or only shrinks in one write, so a new id never
+    // takes one just dropped.
     let mut n = 0;
-    for i in 0..count {
-        let id = match held.get(i) {
-            Some((id, _)) => id.clone(),
-            None => fresh_id(txn, &map, prefix, &mut n),
-        };
-        let held_order = held.get(i).map(|(_, order)| order.as_str());
-        let order = next_order(held_order, last.as_deref());
-        sync_plain(txn, &map, &id, Some(string_any(&order)));
-        last = Some(order);
-        ids.push(id);
+    let next: Vec<String> = places
+        .iter()
+        .map(|at| match at {
+            Some(at) => held[*at].0.clone(),
+            None => fresh_id(txn, map, prefix, &mut n),
+        })
+        .collect();
+    let orders: Vec<String> = places
+        .iter()
+        .map(|at| at.map_or_else(String::new, |at| held[at].1.clone()))
+        .collect();
+    for ((id, order), was) in next.iter().zip(order::rising(&orders)).zip(&orders) {
+        if order != *was {
+            map.insert(txn, id.as_str(), string_any(&order));
+        }
     }
-    for (id, _) in held.iter().skip(count) {
-        map.remove(txn, id);
-    }
-    ids
+    next
 }
 
 fn str_of<'v>(value: &'v Value, key: &str) -> &'v str {
@@ -410,8 +465,8 @@ fn array_of<'v>(value: &'v Value, key: &str) -> &'v [Value] {
 
 /// A figure's map made to hold `block` (of `kind`), writing only what
 /// differs: its plain fields, a graph's board fields and elements by id, a
-/// chart's series and labels as a table's rows and columns (by position) with
-/// their names and values. Nothing is written whole, so another writer's
+/// chart's series and labels as a table's rows and columns ([align_axis])
+/// with their names and values. Nothing is written whole, so another writer's
 /// change to another field, element or value meanwhile survives. The map's
 /// `type` (and a quiz entry's `order`) are its container's.
 pub fn sync(txn: &mut TransactionMut, map: &MapRef, kind: &str, block: &Value) {
@@ -452,16 +507,29 @@ fn sync_elements(txn: &mut TransactionMut, map: &MapRef, elements: &[Value]) {
         .into_iter()
         .map(|(id, order, element)| (id, (order, element)))
         .collect();
+    let wanted: Vec<(&str, &Value)> = elements
+        .iter()
+        .filter_map(|element| Some((element.get("id")?.as_str()?, element)))
+        .collect();
+    // Held keys stay wherever the wanted order lets them, as the browser's
+    // `writeElements` keeps them.
+    let orders = order::rising(
+        &wanted
+            .iter()
+            .map(|(id, _)| {
+                held.get(*id)
+                    .map(|(order, _)| order.clone())
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>(),
+    );
     let mut kept = HashSet::new();
-    let mut last: Option<String> = None;
-    for element in elements {
-        let Some(id) = element.get("id").and_then(Value::as_str) else {
-            continue;
-        };
-        let held = held.get(id);
-        let order = next_order(held.map(|(order, _)| order.as_str()), last.as_deref());
+    for ((id, element), order) in wanted.into_iter().zip(orders) {
         let wanted = json_any(element);
-        if held.is_none_or(|(at, was)| *at != order || *was != wanted) {
+        if held
+            .get(id)
+            .is_none_or(|(at, was)| *at != order || *was != wanted)
+        {
             let entry = HashMap::from([
                 ("element".to_owned(), wanted),
                 ("order".to_owned(), string_any(&order)),
@@ -469,20 +537,74 @@ fn sync_elements(txn: &mut TransactionMut, map: &MapRef, elements: &[Value]) {
             map.insert(txn, id, Any::Map(Arc::new(entry)));
         }
         kept.insert(id.to_owned());
-        last = Some(order);
     }
     remove_keys(txn, map, |id| kept.contains(id));
 }
 
-/// A chart's labels and series as a table's columns and rows ([sync_keys]),
-/// their names, and each value (none for an empty cell).
+/// A chart's labels and series as a table's columns and rows, aligned by
+/// [align_axis] as the browser's `writeChart` does (labels first, then
+/// series), their names, and each value (none for an empty cell).
 fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
     let labels = array_of(block, "labels");
     let series = array_of(block, "series");
-    let label_ids = sync_keys(txn, map, "labels", "l", labels.len());
-    let series_ids = sync_keys(txn, map, "series", "s", series.len());
+    let label_map = child_map(txn, map, "labels");
+    let series_map = child_map(txn, map, "series");
     let names = child_map(txn, map, "names");
     let values = child_map(txn, map, "values");
+    let ids = |map: &MapRef| -> Vec<String> {
+        ordered_pairs(map.as_ref())
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    };
+    let held_series = ids(&series_map);
+    let held_labels = ids(&label_map);
+    let name = |txn: &TransactionMut, id: &str| match names.get(txn, id) {
+        Some(Out::Any(Any::String(name))) => name.to_string(),
+        _ => String::new(),
+    };
+    let cell = |txn: &TransactionMut, series: &str, label: &str| match values
+        .get(txn, &format!("{series}/{label}"))
+    {
+        Some(Out::Any(Any::Number(n))) => Some(n),
+        _ => None,
+    };
+    // A wanted series' value under the label at `l`.
+    let wanted = |entry: Option<&Value>, l: usize| {
+        entry.and_then(|entry| array_of(entry, "values").get(l)?.as_f64())
+    };
+    let label_ids = align_axis(
+        txn,
+        &label_map,
+        labels.len(),
+        |txn, h, w| {
+            name(txn, &held_labels[h]) == labels[w].as_str().unwrap_or_default()
+                && held_series
+                    .iter()
+                    .enumerate()
+                    .all(|(s, id)| cell(txn, id, &held_labels[h]) == wanted(series.get(s), w))
+        },
+        "lab",
+        |txn, id| {
+            names.remove(txn, id);
+        },
+    );
+    let series_ids = align_axis(
+        txn,
+        &series_map,
+        series.len(),
+        |txn, h, w| {
+            name(txn, &held_series[h]) == str_of(&series[w], "name")
+                && label_ids
+                    .iter()
+                    .enumerate()
+                    .all(|(l, label)| cell(txn, &held_series[h], label) == wanted(series.get(w), l))
+        },
+        "ser",
+        |txn, id| {
+            names.remove(txn, id);
+        },
+    );
     let mut named = HashSet::new();
     let mut kept = HashSet::new();
     for (id, label) in label_ids.iter().zip(labels) {

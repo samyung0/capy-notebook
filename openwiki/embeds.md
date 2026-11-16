@@ -314,7 +314,17 @@ is in [plate-editor](frontend/plate-editor.md) (Mermaid and figures).
   (`slate_yjs.rs`: `ElementPrelim`, `set_node`) make the map on an insert, a
   bootstrap and a clone, and a `set_node` of `block` writes only the entries
   that differ (`writeFigure`, `figure_map::sync`); the content API's
-  `replace-block` of a figure keeping its keys is such a `set_node`. Rooms
+  `replace-block` of a figure keeping its keys is such a `set_node`. Both
+  writers align a chart's series and labels alike (`alignPlaces` and
+  `alignAxis` in `src/features/figures/`, `figure_map::align_axis`; labels
+  first, then series): entries alike at the head and tail keep their ids, a
+  changed middle keeps as many ids as it can by position, and the rest go or
+  come under new `ser`/`lab` ids, keyed between their neighbours
+  (`risingOrders`, `order::rising`), so a series inserted
+  or removed mid-list leaves the others' names and values where they are and
+  a peer's cell edit meanwhile stays on its series. A quiz table's rows and
+  columns are aligned the same way (`writeTable`, `quiz.rs` `align_table`;
+  columns first, `col`/`row` ids). Rooms
   hold `block` as its map only (Epo 2026-10-18): admission refuses one
   written as a plain value (`PLAIN_BLOCK`), new or replacing a map. Rooms
   stored in the list layout before were reset (migration 0179,
@@ -406,8 +416,12 @@ is in [plate-editor](frontend/plate-editor.md) (Mermaid and figures).
   `<canvas>` of the block's size, at most its column's width, in the app's
   light or dark paper), so a peer's change needs no redraw or write. The note
   export is the one place a graph becomes a picture: `exportGraphSvg` on the
-  light export paper, checked by `validGraphSvg`, a formula's glyphs written
-  as outlines (Epo 2026-11-16, D6; openwiki/question-bank.md). Share pages' Worker HTML holds the
+  light export paper, the SVG written by the engine's recorder
+  (`SvgRecorder` in `src/features/graph/svg.ts`), a formula's glyphs written
+  as outlines (Epo 2026-11-16, D6; openwiki/question-bank.md). Nothing checks
+  the SVG at run time: its safety (text escaped, no script, no external
+  reference, formulas as outlines) is asserted by the unit tests
+  (`svg.test.ts`, `glyphOutlines.test.ts`). Share pages' Worker HTML holds the
   sized canvas and the browser draws into it after hydration; the engine
   (`graphPaint.ts`) is stubbed out of the Worker build (`BROWSER_ONLY` in
   `vite.config.ts`).

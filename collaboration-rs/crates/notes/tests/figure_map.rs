@@ -15,11 +15,12 @@ mod common;
 use common::AdmitBytes;
 use notes::limits::{self, Admission, Refusal, Validator};
 use notes::slate::{Operation, Root};
-use notes::{material, order, plate, questions, slate_yjs};
+use notes::{figure_map, material, order, plate, questions, slate_yjs};
 use serde_json::{Value, json};
+use yrs::updates::decoder::Decode;
 use yrs::{
     Any, Array, ArrayPrelim, ArrayRef, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, Text, Transact,
-    Xml, XmlTextRef,
+    Update, Xml, XmlTextRef,
 };
 
 /// A figure map's own map under `key` (a graph's board or elements, a
@@ -201,6 +202,130 @@ fn two_writers_changes_to_different_entries_merge() {
     assert_eq!(projected(&room), [figure(merged)]);
 }
 
+fn three_series() -> Value {
+    json!({
+        "type": "chart", "kind": "bar", "title": "Sales", "labels": ["Jan", "Feb", "Mar"],
+        "series": [
+            { "name": "A", "values": [1, 2, 3] },
+            { "name": "B", "values": [4, 5, 6] },
+            { "name": "C", "values": [7, 8, 9] },
+        ],
+    })
+}
+
+fn with_series_at_one(mut block: Value) -> Value {
+    let x = json!({ "name": "X", "values": [10, 11, 12] });
+    block["series"].as_array_mut().unwrap().insert(1, x);
+    block
+}
+
+/// A chart axis's ids (a figure map's series or labels), in order.
+fn axis(doc: &Doc, key: &str) -> Vec<String> {
+    let map = inner(doc, &block_map(doc, 0), key);
+    let txn = doc.transact();
+    let mut held: Vec<(String, String)> = map
+        .iter(&txn)
+        .map(|(id, order)| (order.to_string(&txn), id.to_owned()))
+        .collect();
+    held.sort();
+    held.into_iter().map(|(_, id)| id).collect()
+}
+
+/// The server's write of a chart with a series inserted mid-list (the save
+/// API, an agent's command) aligns the series as the browser's `alignAxis`:
+/// the held series keep their ids and only the new one's entries are written.
+#[test]
+fn a_server_write_inserting_a_series_keeps_the_held_ids() {
+    let room = room(&[figure(three_series())]);
+    let held = axis(&room, "series");
+    let next = with_series_at_one(three_series());
+    let before = room.transact().state_vector();
+    let map = block_map(&room, 0);
+    figure_map::sync(&mut room.transact_mut(), &map, "chart", &next);
+    let written = room.transact().encode_state_as_update_v1(&before);
+    let now = axis(&room, "series");
+    assert_eq!([&now[0], &now[2], &now[3]], [&held[0], &held[1], &held[2]]);
+    // Its order key, its name and its three values.
+    assert_eq!(Update::decode_v1(&written).unwrap().blocks().count(), 5);
+    assert_eq!(projected(&room), [figure(next)]);
+}
+
+/// A client sets a cell of the last series while the server inserts a series
+/// before it: after both exchange updates the value sits on the series it
+/// was written to (the review's T3).
+#[test]
+fn a_cell_set_during_a_server_insert_stays_on_its_series() {
+    let server = room(&[figure(three_series())]);
+    let client = common::doc(&common::state(&server), 5);
+    let (series, labels) = (axis(&client, "series"), axis(&client, "labels"));
+    let values = inner(&client, &block_map(&client, 0), "values");
+    let cell = format!("{}/{}", series[2], labels[0]);
+    values.insert(&mut client.transact_mut(), cell, 99.0);
+    let next = with_series_at_one(three_series());
+    let map = block_map(&server, 0);
+    figure_map::sync(&mut server.transact_mut(), &map, "chart", &next);
+    let to_server = edit_since(&client, &server);
+    let to_client = edit_since(&server, &client);
+    common::apply(&server, &to_server);
+    common::apply(&client, &to_client);
+    let mut merged = next;
+    merged["series"][3]["values"][0] = json!(99);
+    assert_eq!(projected(&server), [figure(merged.clone())]);
+    assert_eq!(projected(&client), [figure(merged)]);
+}
+
+/// What `from` holds that `to` lacks.
+fn edit_since(from: &Doc, to: &Doc) -> Vec<u8> {
+    from.transact()
+        .encode_state_as_update_v1(&to.transact().state_vector())
+}
+
+/// Removing a middle label keeps the other labels' ids.
+#[test]
+fn a_server_write_removing_a_middle_label_keeps_the_others() {
+    let room = room(&[figure(three_series())]);
+    let held = axis(&room, "labels");
+    let mut next = three_series();
+    next["labels"] = json!(["Jan", "Mar"]);
+    for series in next["series"].as_array_mut().unwrap() {
+        series["values"].as_array_mut().unwrap().remove(1);
+    }
+    let map = block_map(&room, 0);
+    figure_map::sync(&mut room.transact_mut(), &map, "chart", &next);
+    assert_eq!(axis(&room, "labels"), [held[0].clone(), held[2].clone()]);
+    assert_eq!(projected(&room), [figure(next)]);
+}
+
+/// A server write that moves one element re-keys that element alone, as the
+/// browser's writer does.
+#[test]
+fn a_server_write_moving_an_element_keeps_the_other_keys() {
+    let room = room(&[figure(graph())]);
+    let order_of = |doc: &Doc, id: &str| {
+        let elements = inner(doc, &block_map(doc, 0), "elements");
+        match elements.get(&doc.transact(), id) {
+            Some(Out::Any(Any::Map(entry))) => entry.get("order").cloned(),
+            _ => None,
+        }
+    };
+    let mut next = graph();
+    let elements = next["elements"].as_array_mut().unwrap();
+    let ids: Vec<String> = elements
+        .iter()
+        .map(|element| element["id"].as_str().unwrap().to_owned())
+        .collect();
+    let held: Vec<_> = ids.iter().map(|id| order_of(&room, id)).collect();
+    let first = elements.remove(0);
+    elements.push(first);
+    let map = block_map(&room, 0);
+    figure_map::sync(&mut room.transact_mut(), &map, "graph", &next);
+    for (id, was) in ids.iter().zip(&held).skip(1) {
+        assert_eq!(order_of(&room, id), *was);
+    }
+    assert_ne!(order_of(&room, &ids[0]), held[0]);
+    assert_eq!(projected(&room), [figure(next)]);
+}
+
 /// A merge the validators would refuse (one writer removes a point while
 /// another draws a segment to it) is admitted, and the projection stores it
 /// repaired: the segment naming the gone point is skipped.
@@ -262,7 +387,7 @@ fn admission_refuses_what_the_store_would_inside_a_block_map() {
     // removed.
     let text_value = edit(&room, 6, |peer| {
         let values = inner(peer, &block_map(peer, 0), "values");
-        values.insert(&mut peer.transact_mut(), "s0/l0", "one");
+        values.insert(&mut peer.transact_mut(), "ser0/lab0", "one");
     });
     refused(admit(&room, &text_value), limits::BAD_VALUE);
     let bad_id = edit(&room, 18, |peer| {
@@ -278,7 +403,7 @@ fn admission_refuses_what_the_store_would_inside_a_block_map() {
     // held, a map under a key no figure holds as one.
     let nested = edit(&room, 8, |peer| {
         let names = inner(peer, &block_map(peer, 0), "names");
-        names.insert(&mut peer.transact_mut(), "s0", MapPrelim::default());
+        names.insert(&mut peer.transact_mut(), "ser0", MapPrelim::default());
     });
     refused(admit(&room, &nested), limits::FIGURE_SHAPE);
     let list = edit(&room, 10, |peer| {
@@ -351,7 +476,7 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
     let mut bar = figure(chart());
     bar["id"] = json!("f_bar");
     let room = room(&[figure(pie.clone()), figure(plot), bar]);
-    // The bootstrap's ids: labels l0, l1 and series s0, s1.
+    // The bootstrap's ids: labels lab0, lab1 and series ser0, ser1.
     let second = edit(&room, 3, |peer| {
         let pie = block_map(peer, 0);
         let (series, names, values) = (
@@ -362,8 +487,8 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
         let mut txn = peer.transact_mut();
         series.insert(&mut txn, "s9", order::after(Some("a5")).as_str());
         names.insert(&mut txn, "s9", "B");
-        values.insert(&mut txn, "s9/l0", 3.0);
-        values.insert(&mut txn, "s9/l1", 4.0);
+        values.insert(&mut txn, "s9/lab0", 3.0);
+        values.insert(&mut txn, "s9/lab1", 4.0);
     });
     assert_eq!(admit(&room, &second).unwrap(), Admission::Accepted);
     assert_eq!(projected(&room)[0]["block"]["series"], pie["series"]);
@@ -382,17 +507,17 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
     let no_total = edit(&room, 5, |peer| {
         let values = inner(peer, &block_map(peer, 0), "values");
         let mut txn = peer.transact_mut();
-        values.insert(&mut txn, "s0/l0", 0.0);
-        values.remove(&mut txn, "s0/l1");
+        values.insert(&mut txn, "ser0/lab0", 0.0);
+        values.remove(&mut txn, "ser0/lab1");
     });
     assert_eq!(admit(&room, &no_total).unwrap(), Admission::Accepted);
     let no_series = edit(&room, 6, |peer| {
         let bar = block_map(peer, 2);
         let (series, values) = (inner(peer, &bar, "series"), inner(peer, &bar, "values"));
         let mut txn = peer.transact_mut();
-        for id in ["s0", "s1"] {
+        for id in ["ser0", "ser1"] {
             series.remove(&mut txn, id);
-            for label in ["l0", "l1"] {
+            for label in ["lab0", "lab1"] {
                 values.remove(&mut txn, &format!("{id}/{label}"));
             }
         }
@@ -480,8 +605,8 @@ fn a_figure_map_holds_up_to_twice_its_cap_and_counts_as_held() {
                     let mut txn = peer.transact_mut();
                     series.insert(&mut txn, id.as_str(), last.as_str());
                     names.insert(&mut txn, id.as_str(), format!("S{n}"));
-                    values.insert(&mut txn, format!("{id}/l0"), 1.0);
-                    values.insert(&mut txn, format!("{id}/l1"), 2.0);
+                    values.insert(&mut txn, format!("{id}/lab0"), 1.0);
+                    values.insert(&mut txn, format!("{id}/lab1"), 2.0);
                 }
             })
         };

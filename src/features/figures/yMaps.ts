@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { uid } from '@/lib/id';
-import { keyBetween } from '@/lib/orderKey';
+import { risingOrders } from '@/lib/orderKey';
+import { alignPlaces } from './align';
 
 /* The Y.Map helpers live documents are read and written with (a quiz's
  * documents, figure maps in quiz and note rooms): entries held under ids with
@@ -92,40 +93,6 @@ export function child(map: YMap, key: string): YMap {
   return created;
 }
 
-/** Order keys for `count` new entries between two existing ones. */
-export function keysBetween(
-  after: string | null,
-  before: string | null,
-  count: number
-) {
-  const out: string[] = [];
-  let last = after;
-  for (let i = 0; i < count; i++) {
-    // Past the last key a key after `last` suffices; otherwise squeeze in.
-    last = before === null ? keyBetween(last, null) : keyBetween(last, before);
-    out.push(last);
-  }
-  return out;
-}
-
-/** Order keys that read in the given order ('' for an entry with none yet):
- * keys already in a rising run stay, the others get new keys between their
- * neighbours. */
-export function risingOrders(held: string[]): string[] {
-  const orders = [...held];
-  for (let i = 0; i < orders.length; i++) {
-    const previous = i > 0 ? orders[i - 1] : null;
-    if (previous === null ? orders[i] !== '' : orders[i] > previous) {
-      // Keep it if it also stays below the next kept key.
-      const next = orders.slice(i + 1).find((order) => order > orders[i]);
-      if (next !== undefined || i === orders.length - 1) continue;
-    }
-    const upper = orders.slice(i + 1).find((order) => order > (previous ?? ''));
-    orders[i] = keyBetween(previous, upper ?? null);
-  }
-  return orders;
-}
-
 /** Reorders `entries` (current order) so they read as `ids` ([risingOrders]). */
 export function reorder(entries: Map<string, YMap>, ids: string[]) {
   const held = ids.map((id) => plain<string>(entries.get(id), 'order') ?? '');
@@ -135,11 +102,9 @@ export function reorder(entries: Map<string, YMap>, ids: string[]) {
 }
 
 /** An axis (id -> order key: a table's rows or columns, a chart's series or
- * labels) brought to `count` entries as one editor action leaves it: entries
- * alike at the head and tail (`same(heldIndex, wantedIndex)`) keep their ids,
- * a changed middle keeps as many ids as it can by position, and the rest go
- * (`drop` clears what they held) or come in between their neighbours. With
- * the count unchanged every id keeps its place. The ids, in order. */
+ * labels) brought to `count` entries as one editor action leaves it, aligned
+ * by `alignPlaces`: the ids it drops go (`drop` clears what they held), new
+ * ones come in between their neighbours. The ids, in order. */
 export function alignAxis(
   map: YMap,
   count: number,
@@ -149,26 +114,19 @@ export function alignAxis(
 ): string[] {
   const ids = orderedKeys(map);
   if (ids.length === count) return ids;
-  let head = 0;
-  while (head < ids.length && head < count && same(head, head)) head++;
-  let tail = 0;
-  while (
-    tail < ids.length - head &&
-    tail < count - head &&
-    same(ids.length - 1 - tail, count - 1 - tail)
-  )
-    tail++;
-  const removed = ids.slice(head, ids.length - tail);
-  const keep = Math.min(removed.length, count - head - tail);
-  for (const id of removed.slice(keep)) {
+  const places = alignPlaces(ids.length, count, same);
+  const kept = new Set(places);
+  ids.forEach((id, i) => {
+    if (kept.has(i)) return;
     map.delete(id);
     drop(id);
-  }
-  const orderOf = (id: string | undefined) =>
-    id === undefined ? null : ((map.get(id) as string | undefined) ?? null);
-  const after = orderOf(ids[head + keep - 1]);
-  const before = tail > 0 ? orderOf(ids.at(-tail)) : null;
-  for (const order of keysBetween(after, before, count - head - tail - keep))
-    map.set(uid(prefix), order);
-  return orderedKeys(map);
+  });
+  const next = places.map((at) => (at < 0 ? uid(prefix) : ids[at]));
+  const held = places.map((at) =>
+    at < 0 ? '' : ((map.get(ids[at]) as string | undefined) ?? '')
+  );
+  risingOrders(held).forEach((order, i) => {
+    if (order !== held[i]) map.set(next[i], order);
+  });
+  return next;
 }

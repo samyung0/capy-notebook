@@ -806,18 +806,24 @@ Ctrl/⌘-wheel and pinch zoom about the pointer, the middle button pans; moves
 apply once per animation frame and the visible area is the saved `bbox`,
 reported once a gesture settles (150 ms after the last wheel event, or the last
 pointer up). It also takes the plane's tools (Epo 2026-11-16, D12), in a strip
-floating at the canvas's bottom centre with the plane's icons, labels and
-letter keys (V P L A C O T F E, once the canvas is pressed): Select (a click
+with the plane's icons, labels and letter keys, centred in its own row under
+the graph and wrapping on a narrow dialog (Epo 2026-11-17: the graph is the
+figure's real size, so a strip over its foot hid the x-axis title and numbers;
+the plane keeps its floating strip; Finish sits at the graph's foot while a
+line or curve is drawn) (V P L A C O T F E, once the canvas is pressed): Select (a click
 picks a mark, Shift adds, a drag on empty paper draws a selection box, as on
 the plane, so a primary drag no longer pans; handles, curve bends, label and
-formula frames whose corner sizes the text, 8–96 px), Point, Line, Vector,
+formula frames whose corner sizes the text, 8–96 px), Point (each point takes
+the first name no point in the graph has, A … Z, then A_1 … Z_1, A_2 …
+(`freePointName`, Epo 2026-11-17), so `segment(A, B)` can use it; on the plane
+too, where it draws beside the point), Line, Vector,
 Curve (Finish, or the last point clicked again; at most 100 points), Ellipse
 (not on polar paper), Label (with the plane's symbol row), Formula (a card with
 KaTeX's check) and Erase. The tools are `graphTools` in
 `src/features/graph/tools.ts`, shared with the plane; points and marks snap to
 the grid's small step (polar paper: rings and spokes), labels and formulas to a
 tenth of it. Each tool write becomes rows (`rowsAfterEdit`): a moved named point
-keeps its name, a new point is an unnamed `(a, b)` row, a line or vector a
+keeps its name, a new point is a named `A = (a, b)` row, a line or vector a
 `(a, b) to (c, d)` row typed in place, a curve, ellipse or formula a row with
 its kind's name, as the plane lists them; erasing or deleting a point takes what
 is built on it too. A tool at 100 elements is refused and the cap's issue shows.

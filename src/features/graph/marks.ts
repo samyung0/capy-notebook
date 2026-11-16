@@ -212,7 +212,7 @@ function constructionPath(
 }
 
 /** How far a pixel is from a path of straight screen steps. */
-export function alongPath(points: Vec[], [x, y]: Vec) {
+function alongPath(points: Vec[], [x, y]: Vec) {
   const between = (a: Vec, b: Vec) => {
     const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
     const length = dx * dx + dy * dy;
@@ -235,7 +235,7 @@ function fromLine([a, b]: Vec[], [x, y]: Vec) {
 }
 
 /** An angle's arc, in screen pixels round its middle point, as it is drawn. */
-export const ANGLE_REACH = 24;
+const ANGLE_REACH = 24;
 
 /** How far an element's stroke is from a pixel, in screen pixels: a function is
  * only looked for within `reach` pixels across, where any of it in reach must
@@ -418,7 +418,7 @@ export function pairOf(
     ? [handles[last][0], handles[0][1]]
     : [handles[index][0], handles[index][1]];
 }
-export function putPair(
+function putPair(
   handles: [Vec, Vec][],
   index: number,
   loop: boolean,

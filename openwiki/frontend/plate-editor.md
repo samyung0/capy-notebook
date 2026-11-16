@@ -1060,7 +1060,17 @@ id to order key with `names` (id to name) and `values` ("series/label" to
 number, an empty cell no entry), a plot its fields alone. No Y.Array sits
 inside a figure. One reader, one diffing writer and the one-entry writes serve
 both rooms (`src/features/figures/figureMap.ts`, its Y.Map helpers in
-`figures/yMaps.ts`; `quizzes/liveFigures.ts` re-exports them), and one Rust
+`figures/yMaps.ts`; `quizzes/liveFigures.ts` re-exports them). A graph's
+element entries have one writer wherever they are held, quiz, note and the
+canvas plane alike (`writeElements` in `src/features/graph/keyed.ts`, D10;
+the one-entry `setElement` and `moveElement` go through it too): an element
+alike its stored one (the same object, or equal JSON, as a note's Slate value
+hands fresh objects) keeps its entry, and order keys come from `risingOrders`
+(`src/lib/orderKey.ts`), which keeps every held key that still rises in the
+wanted order (the longest such run), so appending re-keys nothing held and a
+moved element alone takes a key between its neighbours; each entry is written
+at most once. A chart's series and labels are aligned by `alignPlaces`
+(`figures/align.ts`, used by `alignAxis`). One Rust
 module (`collaboration-rs/crates/notes/src/figure_map.rs`) reads, writes and
 admits them for notes and `items::quiz`. Two editors' changes to different
 fields, elements, series, labels or cells merge; a reorder and an edit of
@@ -1091,8 +1101,12 @@ figure's map directly under the editor's local origin was measured and
 dropped: slate-yjs skips its own origin's events, so Slate would hold the
 old block until mirrored, and an unbound editor has no map to write. The
 element hands each change of its block from elsewhere (a peer, an Undo) to
-the binding (`receive`), so the open dialog follows it; a chart's series and
-labels go by place there. Undo is the note's (Cmd+Z in the note, its
+the binding (`receive`), so the open dialog follows it. The binding gives a
+chart's series and labels handles of its own (the plain block has no ids):
+its own changes keep them, and `receive` carries them across a change from
+elsewhere by `alignPlaces`, the rule the room's chart writer keeps its ids
+by, so a cell left after a peer inserted a series above it still writes its
+own series, and a handle that went meanwhile writes nothing. Undo is the note's (Cmd+Z in the note, its
 toolbar): the dialog's writes join the note's Yjs history, transactions
 within the undo manager's 500 ms merged into one step (a typed row writes at
 most once a frame, a drag once on drop, a typed field once left), and an
@@ -3790,8 +3804,8 @@ dialog writes and removes that entry (`figureRoom` in `liveQuiz.ts`: a chart
 or graph through `bind`, a table at its Save). The live
 writes the graph and chart dialogs use, each one undoable step touching only
 what changed, are in `src/features/quizzes/liveFigures.ts` (element by id,
-board field, plain fields, chart value, series and label add, remove, move
-and rename), with `liveFigure` and `subscribeFigure` reading a figure kept
+board field, plain fields, chart value, series and label add, remove and
+rename), with `liveFigure` and `subscribeFigure` reading a figure kept
 until its own entry changes. The server's writers (seeding, the save API,
 agent commands) go through `sync_block`, which writes a figure field by
 field and element by element, never whole. Editors type ordering items and matching options in the keys
@@ -3848,7 +3862,7 @@ update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
 (blank) is structure; it only leaves its question incomplete. Live quiz rooms
 accept only hosted question images: an image names its uploaded `{assetId}`,
-and an image's or a graph's `{url}` is blank or one a stored question keeps
+and an image's `{url}` is blank or one a stored question keeps
 (`figure_url`, `Policy::hosted`: under `BANK_ASSETS_URL`, a copied bank
 figure).
 
@@ -3868,14 +3882,15 @@ footer, at the end of the row after Remove block; phones show the row after
 the content) only closes it. It reads and writes the figure through one
 binding (`FigureBinding` in `src/features/questions/figureBinding.ts`: `read`,
 `subscribe`, `setFields`, `setBoard`, `setElement`, `deleteElement`,
-`moveElement`, `addChartItem`, `removeChartItem`, `moveChartItem`,
+`moveElement`, `addChartItem`, `removeChartItem`,
 `setChartName`, `setChartCell`, `remove`), so its editors (`GraphEditor`,
 `ChartEditor` in `BlockEditor.tsx`) know no quiz: a live quiz's figure binds
 its room entry (`figureRoom(docs).bind`, `roomFigureBinding.ts`, each call one
 `LOCAL_EDIT` transaction through `liveFigures.ts`, so the room's Undo takes it
 back), and a question draft with no room (the bank's question dialog) binds a
 plain block (`localFigureBinding.ts`), each change handed to the draft at
-once; a chart's series and labels go by place there (`s0`, `l0`). A note's
+once; a chart's series and labels go by the binding's own handles there
+(above). A note's
 chart or graph binds its element (`noteFigureBinding`, over the local
 binding: each change one `set_node` of the note's block, a change from
 elsewhere through `receive`; above). `bindFigure` (`questionEdits.ts`) opens
@@ -4917,8 +4932,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   as BlockSuite's mind map keeps its nodes (`propsToY` turns a pasted card's plain
   entries into the map, `@observe` hears changes and tells the renderer and an open
   editor to draw again; D10): reading sorts by order key, a tie by id, cached on the
-  model (`elementList`) until the map changes; writing (`writeList`,
-  `src/features/graph/keyed.ts`) sets or deletes only the entries that changed, so two
+  model (`elementList`) until the map changes; writing (`writeList`, `writeElements` in
+  `src/features/graph/keyed.ts`, the one writer quiz and note graphs use too) sets or
+  deletes only the entries that changed, keeping every held order key that can stay
+  (`risingOrders`), so two
   people drawing on one plane would merge mark by mark once the canvas has a room. A
   plane holds at most 100 elements, as every graph, its labels up to 60 characters and
   a curve up to 100 points, where its tool finishes it (the question bounds
@@ -4957,7 +4974,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   hit-testing (`distanceTo` and `movedGroup` in `marks.ts`, constructions included),
   handles, selection and overlay, and writes whole element lists through its host, here
   the plane's rows and `writeList` as one undo step; the quiz/note graph dialog hosts
-  the same controller.
+  the same controller. The plane's strip floats over its foot; the dialog's sits
+  centred in its own row under the graph, wrapping when narrow, since the dialog's
+  graph is the figure's real size and a strip over it hid the x-axis title and
+  numbers (Epo 2026-11-17); its Finish sits at the graph's foot.
+  Point names each point it places (Epo 2026-11-17, `freePointName`): the first of
+  A … Z, then A_1 … Z_1, A_2 …, that no point in the graph has (a peer's included),
+  so a row such as `segment(A, B)` can use it; the name draws beside the point.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
@@ -5068,7 +5091,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   domain, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
   `sector`, `polygon`) is a MathLive field (loaded when the list first opens) that draws
   as it's typed and writes on Enter or leaving, one undo step; emptied it goes. A point a
-  tool places is an unnamed `(a, b)` row; a line's or vector's `(a, b) to (c, d)` and a
+  tool places is a named `A = (a, b)` row; a line's or vector's `(a, b) to (c, d)` and a
   label's text are typed in place and written on change; curves, ellipses and formulas
   are shaped on the plane, so their rows show only the kind's name (Epo 2026-11-13). The
   empty last row (`data-new`, drawn by the same template as the row it becomes so its

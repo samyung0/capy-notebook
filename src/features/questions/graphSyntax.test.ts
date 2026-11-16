@@ -327,6 +327,24 @@ describe('rows after a tool', () => {
     expect(erased.map((row) => row.key)).toEqual(['A', 'B']);
   });
 
+  it('gives a placed point a named row that a typed segment can use', () => {
+    const placed: GraphElement = {
+      coords: [3, -1],
+      id: 'p',
+      name: 'C',
+      type: 'point',
+    };
+    const next = rowsAfterEdit(rows, elements, [...elements, placed]);
+    expect(next[3]).toMatchObject({ latex: 'C=\\left(3,-1\\right)' });
+    const built = buildElements([...next, typed('t', 'segment(A,C)')]);
+    expect(built.elements.at(-2)).toEqual(placed);
+    expect(built.elements.at(-1)).toEqual({
+      id: 't',
+      points: ['A', 'p'],
+      type: 'segment',
+    });
+  });
+
   it("lists a free mark as the plane does, a line's two points typed in place", () => {
     const line: GraphElement = {
       coords: [

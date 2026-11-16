@@ -1,6 +1,6 @@
 /* The SVG export: the Canvas 2D calls `drawGraph` makes, replayed into SVG
- * made only of the tags `validGraphSvg` admits (no <image>, <foreignObject>,
- * <use> or data: addresses). Coordinates are rounded to 0.1 px and straight
+ * made only of the tags its tests' `validGraphSvg` admits (no <image>,
+ * <foreignObject>, <use> or data: addresses). Coordinates are rounded to 0.1 px and straight
  * runs thinned. A formula's glyphs are written as their outlines when the
  * recorder has them (`exportGraphSvg`, Epo 2026-11-16, D6), its rules as
  * rectangles and its stretched signs as KaTeX's own paths. */

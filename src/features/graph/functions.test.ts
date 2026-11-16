@@ -19,8 +19,8 @@ const same = (a: number, b: number) =>
   (Number.isNaN(a) && Number.isNaN(b)) ||
   Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a));
 
-/** Where our reader and JessieCode differ, listed for Epo to decide (plan step
- * 1: listed, not settled in code). [term, x, JessieCode, functionOf]. */
+/** Where our reader and JessieCode differ, which Epo accepted (2026-11-17):
+ * ours keeps these values. [term, x, JessieCode, functionOf]. */
 const KNOWN: [string, number, number, number][] = [
   // JessieCode's log refuses a base of 0 or 1; ours divides by its log.
   ['log(8,x)', 0, Number.NaN, -0],
