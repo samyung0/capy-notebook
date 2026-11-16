@@ -771,15 +771,15 @@ in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
 points); sectors and polygons can be shaded. A segment's `ticks` (1–3) draws
 hatch marks, so equal sides carry the same count. Every graph surface draws
 with one engine, `src/features/graph/` (no React, no BlockSuite, plan step 1,
-Epo 2026-11-16): `model.ts` holds the element model (the ten quiz kinds plus
-the canvas plane's polyline, curve, ellipse and formula, a segment's `arrow`,
-a label's `size`, a board's `polar`; the validators still admit only the ten),
+Epo 2026-11-16): `model.ts` holds the one element model every surface stores
+(quiz, note and bank graphs and the canvas plane; `questions/types.ts`
+re-exports it), the ten constructions above plus the free marks below,
 `view.ts` the camera (`{left, top, ppuX, ppuY}`, zoom clamped to 10⁻¹⁵–10¹⁵
 pixels per unit in the question editor and 10⁻⁶–10⁶ on the canvas plane), the
 tick rules and the Fit bounds, `draw.ts` one `drawGraph` onto a canvas 2D
 context, `svg.ts` the same calls recorded as SVG (`graphSvg`: coordinates to
 0.1 px, clipped groups, haloed labels as one `paint-order="stroke"` text;
-formula images are left out until the canvas plane moves onto the engine), and
+a formula's stretched signs as KaTeX's own paths), and
 `gestures.ts` the plane's gestures. The look is the canvas plane's everywhere
 (D5/D14): 2 px round-capped ink, 4.5 px points with their names, 15 px labels
 centred on their position and wrapped at 200 px, a fixed 24 px angle mark,
@@ -819,14 +819,36 @@ Numbers follow GeoGebra (Epo 2026-10-17): ticks every 1, 2 or 5 × 10ⁿ from
 off the view (the plane's rule). A graph is
 120–1200 px wide and tall (120 keeps the bank's 150 px box plots) (`QUESTION_GRAPH_DIMENSION_MIN/MAX`, every server);
 a size outside that is an issue, not clamped, and the row count shows the
-x/60 counter beside Add label from 90%.
+x/100 counter beside Add label from 90%.
 Rows and label positions write e-notation as `6.02·10²³` (LaTeX `\cdot 10^{23}`).
 The engine draws in plain doubles from the view's corner, so it has no small
 number cut-off and its grid holds far from the origin; a grid direction with
 more than 1000 lines is left out.
 Label text holds at most 60 characters (`QUESTION_GRAPH_LABEL_MAX`) and wraps at
 200 px into one SVG `text` per line; point names and angle labels hold
-at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server. Implicit curves and inequalities are planned (the central todo list). Question charts sit
+at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server.
+A graph holds at most 100 elements on every surface (`QUESTION_GRAPH_ELEMENTS_MAX`,
+D7, Epo 2026-11-16; a point a construction names counts) and takes the canvas
+plane's free marks, which hold their own coordinates (D1): a `polyline` (one
+point while it is drawn, at most `QUESTION_GRAPH_PATH_MAX` 100; `arrow` puts a
+head on its last point), a `curve` through its points with optional [in, out]
+Bézier `handles`, one pair a point, an upright `ellipse` (`center`, `radii`)
+and a `formula` (non-blank LaTeX up to `QUESTION_GRAPH_LATEX_MAX` 2000 code
+points at `coords`, D6). A segment takes `arrow`, a label and a formula a
+whole-pixel `size` of 8–96 (`QUESTION_GRAPH_TEXT_SIZE_MIN/MAX`), the board
+`polar`. One element check serves every surface: `graphElementSchema` and
+`graphElementsIssue` (`validation.ts`) in the browser, run by the graph
+dialog's `validateGraphRecipe`, the question schema and the canvas plane's
+load check, with Go `questions.graph` and Rust `questions::graph_element` on
+the same shared fixtures (`graph-*.json`). All graph limits are question
+bounds in `fieldlimits.go`; the board catalog reads the formula card's LaTeX
+and the text sizes from them. The graph dialog has no rows for free marks yet:
+it keeps each one in its place (a `mark` row) and a segment's arrow and a
+label's size as they are. In the note export (`exportGraphSvg`) a formula
+waits for KaTeX's layout and its faces, read lazily from KaTeX's own TTFs
+with opentype.js (`glyphOutlines.ts`, out of the share Worker's build), and
+each glyph is written as its outline, so the SVG in its `<img>` needs no
+fonts; a graph without one takes the synchronous `graphSvg`. Implicit curves and inequalities are planned (the central todo list). Question charts sit
 at about a graph's width with a centred title and never show a values table.
 A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
 the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
@@ -857,9 +879,10 @@ remove it, and its add menu does not offer one. Go and the browser
 validate it, and so does the Rust collaboration server (`questions.rs`,
 `material.rs`: a live quiz question holding a plot and a note's `plot` embed,
 with Go's bounds; Node's validator never knew it, Epo 2026-10-12). A live quiz
-room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
-`liveQuiz.ts`; before 2026-10-13 the room's reader dropped it, so an agent's
-plot vanished from the projection). Valid plots are in the shared fixtures
+room keeps a plot as a map of its fields, as it keeps a chart and a graph
+(`items/src/quiz.rs`, `liveFigures.ts`; the layout is in
+[plate-editor](frontend/plate-editor.md); before 2026-10-13 the room's reader
+dropped it, so an agent's plot vanished from the projection). Valid plots are in the shared fixtures
 (`plot.json`, `plot-at-limits.json`), so the live quiz round trip and the
 browser/server parity corpus carry them; refused plot cases are tested in each
 validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. Graphs keep no

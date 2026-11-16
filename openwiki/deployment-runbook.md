@@ -4450,3 +4450,61 @@ pause, unprocessed text edits or a lagging projection, and the gateway does
 not boot. Run `cd server && go run ./cmd/office-maintenance pause`, then
 process or accept the listed rows with the `UPDATE`s above, or recreate the
 local database (`docker compose down -v`; there is no backward compatibility).
+
+## Quiz figure maps reset (migration 0178)
+
+The release that holds live quiz figures as maps (client protocol 30, Epo
+2026-11-16: a chart, plot or graph in a quiz room is a map of its fields, a
+graph's elements keyed by id;
+[plate-editor](frontend/plate-editor.md)) drops every quiz's Yjs rows with
+[`0178_quiz_figure_maps.sql`](../server/migrations/0178_quiz_figure_maps.sql).
+A room stored before holds each figure as one plain value, which the new room
+reads as no figure, and no reader for that layout is kept (no legacy data).
+It releases the quizzes' AI edit Undo, raises `materials.trash_restores` to
+each dropped `room_schema` (as 0080 does for notes, so old tokens and browser
+drafts of the old lineage open copy-only recovery), and deletes each quiz's
+`material_yjs_documents` row; its keys row and both update logs go with it.
+Each quiz seeds both documents again from `materials.content` on its next
+open, agent edit or command, losing its undo history. Flashcard sets and
+notes are untouched. A database with no quiz rooms (production today) passes.
+
+It refuses, and the deploy stops at `migrate`, while a quiz's projection is
+behind its stored Yjs state (`materials.content` would miss those edits). The
+deploy stops collaboration before `migrate`, and its 60 s grace flushes and
+projects every loaded room, so a refusal means a stuck projection.
+
+Steps on UAT:
+
+1. Before the deploy, list quizzes whose projection is behind:
+
+   ```sql
+   SELECT d.material_id, m.owner_user_id, m.trashed_at, d.stored_version,
+          d.projected_version, d.projection_error
+   FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind = 'quiz' AND d.projected_version < d.stored_version;
+   ```
+
+   Wait until it is empty. A row that keeps a `projection_error` (or a trashed
+   quiz, which never projects) needs the quiz fixed or restored on the old
+   release, or, once Epo has approved losing that quiz's unprojected edits,
+   `UPDATE material_yjs_documents SET projected_version = stored_version
+   WHERE material_id = '<id>'`.
+2. Deploy (`deploy-uat`); the deploy request names "client protocol 29 -> 30,
+   material 29 -> 30". Open quiz, note and set tabs read the outdated prompt
+   and reload; a quiz tab's unsent edits open in recovery.
+3. Check that no quiz room from before the reset was recreated:
+
+   ```sql
+   SELECT count(*) FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind = 'quiz' AND d.room_schema <= m.trash_restores;
+   ```
+
+   It prints 0. Open a quiz holding a chart and a graph in Edit (its figures
+   show), change a graph point in its dialog, Save, reload: the graph shows
+   the change once, with no copy beside it.
+
+If 0178 refuses, read the rows with the query of step 1 and handle each as
+step 1 says, then rerun `deploy-uat` at the same SHA. Locally, the compose
+gateway runs the migration at start and refuses the same way; project or
+accept the listed rows, or recreate the local database (`docker compose down
+-v`).

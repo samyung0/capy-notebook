@@ -59,6 +59,7 @@ import { type BlockSection, QuestionBlockView } from './QuestionView';
 import {
   type AddableBlock,
   changeBlocks,
+  type FigureRoom,
   findBlock,
   newPart,
   newQuestionBlock,
@@ -820,6 +821,8 @@ export interface QuestionCardProps {
   addPartInFooter?: boolean;
   /** The question's text opens in its editor (a card just added). */
   autoFocus?: boolean;
+  /** A live quiz's figures, written by their room entries; none in a draft. */
+  figures?: FigureRoom;
   /** The first issue at its top. */
   issues?: string[];
   /** The read's question, whose keys are still to come: none is shown. */
@@ -858,6 +861,7 @@ export function QuestionCard({
   actions,
   addPartInFooter,
   autoFocus,
+  figures,
   issues = [],
   keysPending,
   menu,
@@ -1477,10 +1481,20 @@ export function QuestionCard({
           bank={bank}
           block={figure.block}
           onClose={() => setFigure(null)}
-          // Both read the question as it stands now and find the figure by
-          // its content, so a co-editor's change meanwhile stays.
+          // A live quiz's figure is written by its room entry; a draft's is
+          // found by its content in the question as it stands now.
           onRemove={() => {
             if (figure.isNew) return;
+            if (figures) {
+              const entry = figures.key(figure.block);
+              if (entry)
+                figures.remove({
+                  entry,
+                  question: question.id,
+                  section: figure.section,
+                });
+              return;
+            }
             const now = latest.current;
             const blocks = sectionBlocks(now, figure.section);
             const at = findBlock(blocks, figure.block, figure.index);
@@ -1493,8 +1507,29 @@ export function QuestionCard({
                 )
               );
           }}
-          // After a graph's image renders and uploads.
           onSave={(block) => {
+            if (figures) {
+              const entry = figure.isNew
+                ? undefined
+                : figures.key(figure.block);
+              const at = entry && {
+                entry,
+                question: question.id,
+                section: figure.section,
+              };
+              // One a co-editor removed meanwhile goes back in its place.
+              if (at && figures.replace(at, block)) return;
+              figures.insert(
+                {
+                  after: figure.before && figures.key(figure.before),
+                  index: figure.index,
+                  question: question.id,
+                  section: figure.section,
+                },
+                block
+              );
+              return;
+            }
             const now = latest.current;
             write(
               changeBlocks(

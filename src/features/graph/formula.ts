@@ -1,9 +1,10 @@
 /** A formula laid out by KaTeX, kept as drawing steps any canvas replays: the board's
  * formula cards and formulas on a graph. KaTeX loads on first use. */
-import { BOARD_CATALOG } from '@/api/board.generated';
+import { QUESTION_GRAPH_LATEX_MAX } from '@/api/limits.generated';
 import { FORMULA_SIZE } from './model';
 
 const FONT_SIZE = 24;
+const VIEWBOX_GAPS = /[\s,]+/;
 /** What MathLive writes that KaTeX has no command for. */
 export const KATEX_OPTIONS = {
   macros: {
@@ -59,6 +60,17 @@ type Step =
 /** A formula as glyphs, rules and stretched shapes, replayed at whatever size its card
  * has, so it stays sharp when the card grows or the board zooms in. */
 export type Drawn = { h: number; steps: Step[]; w: number };
+
+/** A stretched sign's own vector (a root, a tall bracket) for the SVG export,
+ * which takes no picture: KaTeX's paths in their viewBox, fitted to the drawn
+ * box as `aspect` (its preserveAspectRatio) says. Keyed by the shape's image. */
+export type Shape = {
+  aspect: string;
+  color: string;
+  paths: string[];
+  viewBox: [number, number, number, number];
+};
+export const shapes = new WeakMap<object, Shape>();
 
 const drawings = new Map<string, Promise<Drawn>>();
 const ready = new Map<string, Drawn>();
@@ -147,6 +159,22 @@ async function layOut(latex: string): Promise<Drawn> {
       const image = new Image();
       image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
       await image.decode();
+      const viewBox = shape
+        .getAttribute('viewBox')
+        ?.trim()
+        .split(VIEWBOX_GAPS)
+        .map(Number);
+      if (viewBox?.length === 4 && viewBox.every(Number.isFinite))
+        shapes.set(image, {
+          // SVG's own default when KaTeX sets none.
+          aspect: shape.getAttribute('preserveAspectRatio') ?? 'xMidYMid meet',
+          color: getComputedStyle(shape).color,
+          paths: [...shape.querySelectorAll('path')].flatMap((path) => {
+            const d = path.getAttribute('d');
+            return d ? [d] : [];
+          }),
+          viewBox: viewBox as Shape['viewBox'],
+        });
       // KaTeX stretches a root's bar with a 400em SVG cut off by a parent.
       const cut = (function clipOf(el: Element | null): Element | null {
         if (!el || el === host) return null;
@@ -178,7 +206,7 @@ async function layOut(latex: string): Promise<Drawn> {
 }
 
 /** What replaying a formula draws with: a canvas, or the SVG recorder, which
- * leaves the stretched shapes out (an SVG takes no picture). */
+ * writes the stretched shapes from `shapes` (an SVG takes no picture). */
 export type ReplayContext = Pick<
   CanvasRenderingContext2D,
   | 'beginPath'
@@ -248,13 +276,11 @@ export function drawing(latex: string) {
   return pending;
 }
 
-/** Longest formula a member can type; nothing past it is drawn. */
-const { LATEX_MAX } = BOARD_CATALOG.limits;
-
 /** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
- * KaTeX can't read stays undrawn. */
+ * KaTeX can't read stays undrawn, and so does one past the longest a graph or a
+ * formula card holds. */
 export function formulaAt(latex: string, refresh: () => void) {
-  if (latex.length > LATEX_MAX) return;
+  if (latex.length > QUESTION_GRAPH_LATEX_MAX) return;
   const drawn = laidOut(latex);
   if (!drawn) drawing(latex).then(refresh, () => undefined);
   return drawn;

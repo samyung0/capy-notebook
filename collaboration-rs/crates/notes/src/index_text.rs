@@ -443,8 +443,9 @@ fn figure(block: &Value) -> String {
 }
 
 /// One graph element as stored: its type, then its term, points (by name,
-/// else coordinates), text or label. An element naming a point that is gone
-/// is left out, as a merged graph is repaired on read.
+/// else coordinates), text, label or formula's LaTeX. An element naming a
+/// point that is gone is left out, as a merged graph is repaired on read, and
+/// so is a mark without text (a stroke, curve or ellipse).
 fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
     let refs = |ids: &[&str]| -> Option<String> {
         let names: Option<Vec<&str>> = ids
@@ -495,6 +496,7 @@ fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
             .zip(refs(&strings(&e["points"])))
             .map(|(center, ends)| format!("center {center}, {ends}")),
         "text" => Some(field(e, "text").to_owned()),
+        "formula" => Some(field(e, "latex").to_owned()),
         _ => None,
     };
     match body {

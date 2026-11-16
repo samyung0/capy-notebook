@@ -44,6 +44,30 @@ fn fixtures() -> Vec<Value> {
         }
         out.push(question);
     }
+    // A solution's figures live in the keys document: one question holds a
+    // graph, a chart and a plot in its stem, its part and its solution.
+    let figure = |kind: &str| {
+        out.iter()
+            .flat_map(|q| q["stem"].as_array().into_iter().flatten())
+            .find(|block| block["type"] == json!(kind))
+            .unwrap()
+            .clone()
+    };
+    let n = out.len();
+    let figures = json!({
+        "id": format!("q{n}"),
+        "layout": "paper",
+        "labels": "letters",
+        "stem": [figure("graph")],
+        "parts": [{
+            "id": format!("q{n}-p"),
+            "answer": { "type": "short", "accepted": ["4"] },
+            "blocks": [figure("chart")],
+            "marks": 1,
+            "solution": [figure("plot"), figure("graph"), figure("chart")],
+        }],
+    });
+    out.push(figures);
     out
 }
 

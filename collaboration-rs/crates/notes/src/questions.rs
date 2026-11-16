@@ -21,14 +21,15 @@ pub use crate::catalog::{
     QUESTION_CHART_LABELS_MAX, QUESTION_CHART_SERIES_MAX, QUESTION_CHART_SERIES_NAME_MAX,
     QUESTION_CHART_TITLE_MAX, QUESTION_CHART_VALUE_MAX, QUESTION_DESCRIPTION_MAX,
     QUESTION_GRAPH_DIMENSION_MAX, QUESTION_GRAPH_DIMENSION_MIN, QUESTION_GRAPH_ELEMENTS_MAX,
-    QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_POLYGON_MAX,
-    QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
-    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
-    QUESTION_PLOT_LABEL_MAX, QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX,
-    QUESTION_PLOT_SERIES_MAX, QUESTION_PLOT_TITLE_MAX, QUESTION_TABLE_COLUMNS_MAX,
-    QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX, QUESTION_UNIT_MAX,
-    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
-    QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_LATEX_MAX, QUESTION_GRAPH_NAME_MAX,
+    QUESTION_GRAPH_PATH_MAX, QUESTION_GRAPH_POLYGON_MAX, QUESTION_GRAPH_TERM_MAX,
+    QUESTION_GRAPH_TEXT_SIZE_MAX, QUESTION_GRAPH_TEXT_SIZE_MIN, QUESTION_ID_MAX,
+    QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
+    QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_LABEL_MAX,
+    QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
+    QUESTION_PLOT_TITLE_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX,
+    QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX, QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX,
+    QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -316,6 +317,25 @@ fn style(map: &Map<String, Value>, what: &str) -> Check {
     optional(map, "hidden", |v| boolean(v, what))
 }
 
+/// A label's or formula's text size: whole pixels within the graph's range.
+fn text_size(value: &Value, what: &str) -> Check {
+    let n = integer(value, what)?;
+    if !(QUESTION_GRAPH_TEXT_SIZE_MIN as f64..=QUESTION_GRAPH_TEXT_SIZE_MAX as f64).contains(&n) {
+        return fail(format!("{what}: size out of range"));
+    }
+    Ok(())
+}
+
+/// A stroke's or curve's points: one while a stroke is drawn on the canvas
+/// plane, at most QUESTION_GRAPH_PATH_MAX.
+fn path_points(value: &Value, what: &str) -> Result<usize, String> {
+    let points = array(value, what, 1, QUESTION_GRAPH_PATH_MAX)?;
+    for point in points {
+        coords(point, what)?;
+    }
+    Ok(points.len())
+}
+
 /// `z.url().max(QUESTION_ASSET_URL_MAX)`: a WHATWG URL after trimming.
 fn url(value: &Value, what: &str) -> Result<String, String> {
     let Some(raw) = value.as_str() else {
@@ -452,7 +472,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         "line" | "segment" => {
             let segment = kind == "segment";
             let extra: &[&str] = if segment {
-                &["ticks", "dash", "hidden"]
+                &["ticks", "arrow", "dash", "hidden"]
             } else {
                 &["dash", "hidden"]
             };
@@ -469,6 +489,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
                         fail(format!("{what}: ticks out of range"))
                     }
                 })?;
+                optional(map, "arrow", |v| boolean(v, what))?;
             }
             style(map, what)?;
             if segment { "segment" } else { "line" }
@@ -488,9 +509,15 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             "circle"
         }
         "text" => {
-            strict(map, what, &["coords", "id", "text", "type"], &["hidden"])?;
+            strict(
+                map,
+                what,
+                &["coords", "id", "text", "type"],
+                &["hidden", "size"],
+            )?;
             coords(&map["coords"], what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
+            optional(map, "size", |v| text_size(v, what))?;
             text(&map["text"], what)?;
             if map["text"]
                 .as_str()
@@ -540,6 +567,71 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             optional(map, "shade", |v| boolean(v, what))?;
             style(map, what)?;
             "polygon"
+        }
+        // The free marks hold their own coordinates (Epo 2026-11-16, D1).
+        "polyline" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "type"],
+                &["arrow", "dash", "hidden"],
+            )?;
+            path_points(&map["coords"], what)?;
+            optional(map, "arrow", |v| boolean(v, what))?;
+            style(map, what)?;
+            "polyline"
+        }
+        // Optional [in, out] Bézier handles, a pair for each point.
+        "curve" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "type"],
+                &["dash", "handles", "hidden"],
+            )?;
+            let count = path_points(&map["coords"], what)?;
+            optional(map, "handles", |v| {
+                for pair in array(v, what, count, count)? {
+                    for handle in array(pair, what, 2, 2)? {
+                        coords(handle, what)?;
+                    }
+                }
+                Ok(())
+            })?;
+            style(map, what)?;
+            "curve"
+        }
+        "ellipse" => {
+            strict(
+                map,
+                what,
+                &["center", "id", "radii", "type"],
+                &["dash", "hidden"],
+            )?;
+            coords(&map["center"], what)?;
+            coords(&map["radii"], what)?;
+            style(map, what)?;
+            "ellipse"
+        }
+        // LaTeX centred on its point (D6).
+        "formula" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "latex", "type"],
+                &["hidden", "size"],
+            )?;
+            coords(&map["coords"], what)?;
+            text(&map["latex"], what)?;
+            if map["latex"]
+                .as_str()
+                .is_some_and(|raw| code_points(raw) > QUESTION_GRAPH_LATEX_MAX)
+            {
+                return fail(format!("{what}: Text is too long."));
+            }
+            optional(map, "hidden", |v| boolean(v, what))?;
+            optional(map, "size", |v| text_size(v, what))?;
+            "formula"
         }
         _ => return fail(format!("{what}: invalid type")),
     };
@@ -778,8 +870,9 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 &["description"],
             )?;
             let board = object(&map["board"], what)?;
-            strict(board, what, &["axis", "bbox", "grid"], &[])?;
+            strict(board, what, &["axis", "bbox", "grid"], &["polar"])?;
             boolean(&board["axis"], what)?;
+            optional(board, "polar", |v| boolean(v, what))?;
             let bbox: Vec<f64> = array(&board["bbox"], what, 4, 4)?
                 .iter()
                 .map(|v| number(v, what))
@@ -813,7 +906,10 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 if !ids.insert(id.as_str()) {
                     return fail("Graph element IDs must be unique.");
                 }
-                let has_points = !matches!(*kind, "functiongraph" | "point" | "circle" | "text");
+                let has_points = matches!(
+                    *kind,
+                    "line" | "segment" | "angle" | "arc" | "sector" | "polygon"
+                );
                 if has_points {
                     let unique: HashSet<&String> = points.iter().collect();
                     if points.iter().any(|p| !point_ids.contains(p.as_str()))
@@ -986,7 +1082,10 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
                 cap_meta(element, "name", what)?;
                 cap_meta(element, "label", what)?;
                 cap_text(element.get("text"), what)?;
+                cap_chars(element, "latex", QUESTION_GRAPH_LATEX_MAX, what)?;
                 cap_list(element.get("points"), QUESTION_GRAPH_POLYGON_MAX, what)?;
+                cap_list(element.get("coords"), QUESTION_GRAPH_PATH_MAX, what)?;
+                cap_list(element.get("handles"), QUESTION_GRAPH_PATH_MAX, what)?;
             }
             // Its elements alone: no picture is stored (Epo 2026-11-16).
             if map.contains_key("image") {

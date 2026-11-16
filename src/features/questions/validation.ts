@@ -5,6 +5,7 @@ import { CopyError } from '@/lib/copyError';
 import { quantityValuePattern } from './quantity';
 import {
   CHART_KINDS,
+  type GraphElement,
   gapNumbers,
   modelMarked,
   type Question,
@@ -178,7 +179,19 @@ export function validGraphSvg(svg: string): boolean {
   );
 }
 
-const graphElement = z.discriminatedUnion('type', [
+const textSize = z
+  .number()
+  .int()
+  .min(limits.QUESTION_GRAPH_TEXT_SIZE_MIN)
+  .max(limits.QUESTION_GRAPH_TEXT_SIZE_MAX);
+// A stroke's or curve's points: one while a stroke is drawn on the plane.
+const pathPoints = z.array(coords).min(1).max(limits.QUESTION_GRAPH_PATH_MAX);
+
+/** One graph element, the one check every surface runs on each element: quiz,
+ * note and bank graphs and the canvas plane's load check (boardLoad.ts). Go
+ * `questions.graph` and Rust `questions::graph_element` are the same, on the
+ * shared fixtures. */
+export const graphElementSchema = z.discriminatedUnion('type', [
   z.strictObject({
     domain: coords.optional(),
     id: identifier,
@@ -202,6 +215,7 @@ const graphElement = z.discriminatedUnion('type', [
     ...style,
   }),
   z.strictObject({
+    arrow: z.boolean().optional(),
     id: identifier,
     points: z.tuple([identifier, identifier]),
     ticks: z.number().int().min(1).max(3).optional(),
@@ -219,6 +233,7 @@ const graphElement = z.discriminatedUnion('type', [
     coords,
     hidden: z.boolean().optional(),
     id: identifier,
+    size: textSize.optional(),
     text: graphLabel,
     type: z.literal('text'),
   }),
@@ -251,7 +266,91 @@ const graphElement = z.discriminatedUnion('type', [
     type: z.literal('polygon'),
     ...style,
   }),
+  // The free marks hold their own coordinates (Epo 2026-11-16, D1).
+  z.strictObject({
+    arrow: z.boolean().optional(),
+    coords: pathPoints,
+    id: identifier,
+    type: z.literal('polyline'),
+    ...style,
+  }),
+  // Optional [in, out] Bézier handles, a pair for each point.
+  z
+    .strictObject({
+      coords: pathPoints,
+      handles: z
+        .array(z.tuple([coords, coords]))
+        .max(limits.QUESTION_GRAPH_PATH_MAX)
+        .optional(),
+      id: identifier,
+      type: z.literal('curve'),
+      ...style,
+    })
+    .refine((v) => !v.handles || v.handles.length === v.coords.length, {
+      error: () => m.question_validation_graph_handles(),
+      path: ['handles'],
+    }),
+  z.strictObject({
+    center: coords,
+    id: identifier,
+    radii: coords,
+    type: z.literal('ellipse'),
+    ...style,
+  }),
+  // LaTeX centred on its point (D6), KaTeX laying it out.
+  z.strictObject({
+    coords,
+    hidden: z.boolean().optional(),
+    id: identifier,
+    latex: z
+      .string()
+      .refine(
+        (value) =>
+          value.trim().length > 0 &&
+          [...value].length <= limits.QUESTION_GRAPH_LATEX_MAX,
+        { error: () => m.question_validation_text_too_long() }
+      ),
+    size: textSize.optional(),
+    type: z.literal('formula'),
+  }),
 ]);
+
+/** What breaks across a graph's elements, past each one's own check: an id
+ * used twice, a construction naming a missing or repeated point or a center
+ * among its points, a function's domain not increasing. */
+export type GraphElementsIssue = 'center' | 'domain' | 'ids' | 'points';
+export function graphElementsIssue(
+  elements: readonly GraphElement[]
+): GraphElementsIssue | null {
+  const ids = new Set<string>();
+  const points = new Set(
+    elements.filter((e) => e.type === 'point').map((e) => e.id)
+  );
+  for (const element of elements) {
+    if (ids.has(element.id)) return 'ids';
+    ids.add(element.id);
+    const named = 'points' in element ? element.points : [];
+    if (
+      named.some((id) => !points.has(id)) ||
+      new Set(named).size !== named.length
+    )
+      return 'points';
+    if (
+      (element.type === 'circle' ||
+        element.type === 'arc' ||
+        element.type === 'sector') &&
+      (!points.has(element.center) || named.includes(element.center))
+    )
+      return 'center';
+    if (
+      element.type === 'functiongraph' &&
+      element.domain &&
+      element.domain[0] >= element.domain[1]
+    )
+      return 'domain';
+  }
+  return null;
+}
 
 /** A chart block. A live one (a room's, repaired: `liveFigureSchema`) may
  * also have no series, and as a pie or stacked chart no positive total. */
@@ -355,14 +454,24 @@ const plotSchema = (live: boolean) =>
       { error: () => m.question_validation_plot_line_points() }
     );
 
+const graphIssueMessages = {
+  center: m.question_validation_graph_circles,
+  domain: m.question_validation_graph_domain,
+  ids: m.question_validation_graph_ids,
+  points: m.question_validation_graph_lines,
+} satisfies Record<GraphElementsIssue, () => string>;
+
 const graphSchema = z
   .strictObject({
     board: z.strictObject({
       axis: z.boolean(),
       bbox: z.tuple([finite, finite, finite, finite]),
       grid: z.boolean(),
+      polar: z.boolean().optional(),
     }),
-    elements: z.array(graphElement).max(limits.QUESTION_GRAPH_ELEMENTS_MAX),
+    elements: z
+      .array(graphElementSchema)
+      .max(limits.QUESTION_GRAPH_ELEMENTS_MAX),
     type: z.literal('graph'),
     ...graphSize,
     description: text.optional(),
@@ -374,45 +483,9 @@ const graphSchema = z
         code: 'custom',
         message: m.question_validation_graph_bounds(),
       });
-    const ids = new Set<string>();
-    const points = new Set(
-      v.elements.filter((e) => e.type === 'point').map((e) => e.id)
-    );
-    for (const element of v.elements) {
-      if (ids.has(element.id))
-        ctx.addIssue({
-          code: 'custom',
-          message: m.question_validation_graph_ids(),
-        });
-      ids.add(element.id);
-      if (
-        'points' in element &&
-        (element.points.some((id) => !points.has(id)) ||
-          new Set(element.points).size !== element.points.length)
-      )
-        ctx.addIssue({
-          code: 'custom',
-          message: m.question_validation_graph_lines(),
-        });
-      if (
-        'center' in element &&
-        (!points.has(element.center) ||
-          ('points' in element && element.points.includes(element.center)))
-      )
-        ctx.addIssue({
-          code: 'custom',
-          message: m.question_validation_graph_circles(),
-        });
-      if (
-        element.type === 'functiongraph' &&
-        element.domain &&
-        element.domain[0] >= element.domain[1]
-      )
-        ctx.addIssue({
-          code: 'custom',
-          message: m.question_validation_graph_domain(),
-        });
-    }
+    const issue = graphElementsIssue(v.elements);
+    if (issue)
+      ctx.addIssue({ code: 'custom', message: graphIssueMessages[issue]() });
   });
 
 export const questionBlockSchema = z.discriminatedUnion('type', [

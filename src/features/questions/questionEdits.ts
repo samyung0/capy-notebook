@@ -157,9 +157,40 @@ export function changeBlocks(
     : { ...question, stem: blocks };
 }
 
+/** Where a live quiz's figure sits: its room entry in a question's section. */
+export type FigureAt = {
+  entry: string;
+  question: string;
+  section: BlockSection;
+};
+
+/** A live quiz's figures by their room entries (Epo 2026-11-16, D2): a block
+ * read from the room knows its entry's key, and a figure dialog's Save and
+ * Remove write that entry, so a figure a co-editor changed meanwhile stays
+ * one figure. A draft (the bank's question dialog) has none: its figures
+ * save by place ([saveFigure]). */
+export type FigureRoom = {
+  /** A new figure after the block keyed `after`, else (none, or a key that
+   * went) at `index`; its entry key, or none when the section went. */
+  insert(
+    place: {
+      after?: string;
+      index: number;
+      question: string;
+      section: BlockSection;
+    },
+    block: QuestionBlock
+  ): string | null;
+  /** The entry a block was read from; none for one not read from the room. */
+  key(block: QuestionBlock): string | undefined;
+  remove(at: FigureAt): boolean;
+  /** Writes only what differs; false when the figure is gone. */
+  replace(at: FigureAt, block: QuestionBlock): boolean;
+};
+
 /** Where an equal block sits now, the one nearest `near` (its place when the
- * dialog opened); -1 when it is gone. Blocks have no ids, and a co-editor may
- * add, move or remove blocks while a figure's dialog is open. */
+ * dialog opened); -1 when it is gone. A draft's blocks have no ids, and its
+ * figure is found by content. */
 export function findBlock(
   blocks: QuestionBlock[],
   block: QuestionBlock | undefined,

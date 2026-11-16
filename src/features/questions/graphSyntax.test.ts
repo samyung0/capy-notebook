@@ -102,7 +102,13 @@ describe('rows and elements', () => {
   it('round-trips a saved recipe, naming an unlabelled point others use', () => {
     const rows = rowsFromElements(elements);
     expect(
-      rows.map((row) => (row.kind === 'expression' ? row.latex : row.text))
+      rows.map((row) =>
+        row.kind === 'expression'
+          ? row.latex
+          : row.kind === 'label'
+            ? row.text
+            : row.key
+      )
     ).toEqual([
       'A=\\left(1,1\\right)',
       'B=\\left(9,1\\right)',
@@ -113,6 +119,18 @@ describe('rows and elements', () => {
       '8 cm',
     ]);
     expect(buildElements(rows)).toEqual({ elements, errors: new Map() });
+  });
+
+  it('keeps free marks, an arrow and a label size it has no row for', () => {
+    const kept: GraphElement[] = [
+      { coords: [0, 0], id: 'A', name: 'A', type: 'point' },
+      { coords: [2, 0], id: 'B', name: 'B', type: 'point' },
+      { arrow: true, id: 's', points: ['A', 'B'], type: 'segment' },
+      { coords: [1, 1], id: 't', size: 24, text: 'Area', type: 'text' },
+      { coords: [-1, 2], id: 'f', latex: '\\frac12', type: 'formula' },
+      { center: [0, 0], id: 'e', radii: [2, 1], type: 'ellipse' },
+    ];
+    expect(buildElements(rowsFromElements(kept)).elements).toEqual(kept);
   });
 
   it('marks rows that use a missing or repeated name', () => {

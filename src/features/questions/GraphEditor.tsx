@@ -21,7 +21,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverContent } from '@/components/ui/ToolbarPopover';
 import { drawGraph, labelFont, wrapLabel } from '@/features/graph/draw';
 import { attachGestures } from '@/features/graph/gestures';
-import { LABEL_SIZE, type Vec } from '@/features/graph/model';
+import { LABEL_SIZE, type RowElement, type Vec } from '@/features/graph/model';
 import { PAPER } from '@/features/graph/paper';
 import {
   bboxOf,
@@ -58,12 +58,12 @@ import {
   syncRows,
 } from './graphSyntax';
 import { IssueIcon, IssueSummary } from './IssueViews';
-import type { GraphBlock, GraphElement } from './types';
+import type { GraphBlock } from './types';
 
 type ExpressionRow = Extract<GraphRow, { kind: 'expression' }>;
 type Bbox = GraphBlock['board']['bbox'];
 
-const elementType = (parsed: ParsedRow): GraphElement['type'] =>
+const elementType = (parsed: ParsedRow): RowElement['type'] =>
   parsed.kind === 'point'
     ? 'point'
     : parsed.kind === 'function'
@@ -149,7 +149,9 @@ export function GraphEditor({
       if (!out.has(row.key))
         out.set(
           row.key,
-          m.question_ui_a_graph_can_contain_at_most_60_elements()
+          m.question_ui_graph_elements_max({
+            max: limits.QUESTION_GRAPH_ELEMENTS_MAX,
+          })
         );
     return out;
   }, [rowErrors, rows]);
@@ -257,7 +259,8 @@ export function GraphEditor({
         current.current.rows.map((row) => {
           if (row.key !== id) return row;
           if (row.kind === 'label') return { ...row, coords };
-          if (row.parsed?.kind !== 'point') return row;
+          if (row.kind !== 'expression' || row.parsed?.kind !== 'point')
+            return row;
           return {
             ...row,
             latex: pointLatex(row.parsed.name, coords),
@@ -298,6 +301,8 @@ export function GraphEditor({
           <ol className="border-divider border-t">
             {order.map((key, index) => {
               const row = rows.find((item) => item.key === key);
+              // A free mark keeps its place with no row of its own yet.
+              if (row?.kind === 'mark') return null;
               if (row?.kind === 'label')
                 return (
                   <LabelRow
@@ -524,10 +529,11 @@ function grabbable(
       if (Math.hypot(...offset) <= 10) return { element, offset };
       continue;
     }
-    const font = labelFont(LABEL_SIZE);
+    const size = element.size ?? LABEL_SIZE;
+    const font = labelFont(size);
     const lines = wrapLabel(element.text, (line) => measure(font, line));
     const w = Math.max(...lines.map((line) => measure(font, line)));
-    const h = lines.length * LABEL_SIZE * 1.2;
+    const h = lines.length * size * 1.2;
     if (Math.abs(offset[0]) <= w / 2 + 4 && Math.abs(offset[1]) <= h / 2 + 4)
       return { element, offset };
   }
@@ -579,7 +585,8 @@ function GraphStage({
       ? {
           ...now.graph,
           elements: now.graph.elements.map((element) =>
-            element.id === drag.id && 'coords' in element
+            element.id === drag.id &&
+            (element.type === 'point' || element.type === 'text')
               ? { ...element, coords: drag.coords }
               : element
           ),
@@ -939,7 +946,7 @@ function StyleMenu({
   onChange,
 }: {
   row: ExpressionRow;
-  type: GraphElement['type'];
+  type: RowElement['type'];
   onChange: (style: RowStyle) => void;
 }) {
   const keys = styleKeys(type);
@@ -1126,12 +1133,12 @@ function GraphGlyph({
   type,
   style,
 }: {
-  type: GraphElement['type'];
+  type: RowElement['type'];
   style: RowStyle;
 }) {
   const dash = style.dash ? '3.5 3' : undefined;
   const shade = style.shade ? 0.18 : 0;
-  const paths: Record<GraphElement['type'], React.ReactNode> = {
+  const paths: Record<RowElement['type'], React.ReactNode> = {
     angle: (
       <>
         <path d="M18 17H3L14 4" fill="none" />

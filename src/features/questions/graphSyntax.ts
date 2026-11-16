@@ -4,6 +4,11 @@
  * JessieCode's syntax with explicit `*`, which `validGraphTerm` checks on
  * every server; `functionOf` evaluates them. */
 import * as limits from '@/api/limits.generated';
+import {
+  type FreeMark,
+  isFreeMark,
+  type RowElement,
+} from '@/features/graph/model';
 import { m } from '@/i18n';
 import { sameJson } from '@/lib/sameJson';
 import type { GraphElement } from './types';
@@ -608,7 +613,7 @@ export function functionOf(term: string): (x: number) => number {
 
 /** LaTeX for a row's math field. `nameOf` gives each point id's row name. */
 export function rowLatex(
-  element: GraphElement,
+  element: RowElement,
   nameOf: (id: string) => string
 ): string {
   const points = (ids: string[]) =>
@@ -656,6 +661,8 @@ export const COMMAND_SHORTCUTS = Object.fromEntries(
 export type RowStyle = {
   dash?: boolean;
   ticks?: number;
+  /** A segment's arrowhead, kept: no row writes one yet. */
+  arrow?: boolean;
   shade?: boolean;
   hidden?: boolean;
   label?: string;
@@ -675,10 +682,19 @@ export type GraphRow =
       key: string;
       text: string;
       coords: [number, number];
+      /** Its text size, kept: no row sets one yet. */
+      size?: number;
       hidden?: boolean;
+    }
+  | {
+      /** A free mark (a stroke, curve, ellipse or formula), kept as it is in
+       * its place: no row writes one yet. */
+      kind: 'mark';
+      key: string;
+      element: FreeMark;
     };
 
-const STYLE_KEYS: Record<GraphElement['type'], (keyof RowStyle)[]> = {
+const STYLE_KEYS: Record<RowElement['type'], (keyof RowStyle)[]> = {
   angle: ['hidden', 'label'],
   arc: ['dash', 'hidden'],
   circle: ['dash', 'hidden'],
@@ -687,14 +703,14 @@ const STYLE_KEYS: Record<GraphElement['type'], (keyof RowStyle)[]> = {
   point: ['hidden'],
   polygon: ['dash', 'shade', 'hidden'],
   sector: ['dash', 'shade', 'hidden'],
-  segment: ['dash', 'ticks', 'hidden'],
+  segment: ['dash', 'ticks', 'arrow', 'hidden'],
   text: ['hidden'],
 };
 
 /** The style keys a row's element takes, for its style menu. */
-export const styleKeys = (type: GraphElement['type']) => STYLE_KEYS[type];
+export const styleKeys = (type: RowElement['type']) => STYLE_KEYS[type];
 
-function styled<T extends GraphElement>(element: T, style: RowStyle): T {
+function styled<T extends RowElement>(element: T, style: RowStyle): T {
   const out: Record<string, unknown> = { ...element };
   for (const key of STYLE_KEYS[element.type])
     if (key !== 'label' && style[key]) out[key] = style[key];
@@ -708,7 +724,11 @@ export function rowsFromElements(elements: GraphElement[]): GraphRow[] {
   const used = new Set(
     elements.flatMap((element) => [
       ...('points' in element ? element.points : []),
-      ...('center' in element ? [element.center] : []),
+      ...(element.type === 'circle' ||
+      element.type === 'arc' ||
+      element.type === 'sector'
+        ? [element.center]
+        : []),
     ])
   );
   const rowNames = new Map<string, string>();
@@ -737,12 +757,14 @@ export function rowsFromElements(elements: GraphElement[]): GraphRow[] {
     }
   const nameOf = (id: string) => rowNames.get(id) ?? '';
   return elements.map((element): GraphRow => {
+    if (isFreeMark(element)) return { element, key: element.id, kind: 'mark' };
     if (element.type === 'text')
       return {
         coords: element.coords,
         hidden: element.hidden,
         key: element.id,
         kind: 'label',
+        size: element.size,
         text: element.text,
       };
     const style: RowStyle = {};
@@ -765,7 +787,7 @@ export function rowsFromElements(elements: GraphElement[]): GraphRow[] {
 }
 
 function parsedOf(
-  element: Exclude<GraphElement, { type: 'text' }>,
+  element: Exclude<RowElement, { type: 'text' }>,
   nameOf: (id: string) => string
 ): ParsedRow {
   switch (element.type) {
@@ -843,6 +865,10 @@ export function buildElements(rows: GraphRow[]): {
   }
   const elements: GraphElement[] = [];
   for (const row of rows) {
+    if (row.kind === 'mark') {
+      elements.push(row.element);
+      continue;
+    }
     if (row.kind === 'label') {
       if (!row.text.trim()) {
         errors.set(row.key, m.question_ui_graph_row_unfinished());
@@ -853,6 +879,7 @@ export function buildElements(rows: GraphRow[]): {
         id: row.key,
         text: row.text,
         type: 'text',
+        ...(row.size && { size: row.size }),
         ...(row.hidden && { hidden: true }),
       });
       continue;
@@ -875,7 +902,7 @@ function toElement(
   parsed: ParsedRow,
   style: RowStyle,
   ids: Map<string, string>
-): GraphElement {
+): RowElement {
   if (parsed.kind === 'point') {
     const label = style.label === undefined ? parsed.name : style.label;
     return {

@@ -40,10 +40,11 @@ import {
   FORMULA_SIZE,
   functionRuns,
   isLoop,
-  LABEL_LENGTH_MAX,
   LABEL_SIZE,
   markFunction,
   PAPER,
+  PATH_MAX,
+  PLANE_LABEL_MAX,
   type PlaneElement,
   pathOf,
   pointsOf,
@@ -1062,8 +1063,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         const [first] = open.coords;
         const closes =
           open.coords.length > 2 && first[0] === at[0] && first[1] === at[1];
-        // A line or vector ends at its second point, a curve once it closes on its first.
-        if (tool !== 'curve' || closes) finish();
+        // A line or vector ends at its second point, a curve once it closes on its first
+        // or holds the most points a graph's curve takes.
+        if (tool !== 'curve' || closes || open.coords.length + 1 >= PATH_MAX)
+          finish();
         return;
       }
       if (model.elementList.length >= ELEMENTS_MAX) return;
@@ -1150,7 +1153,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (!field) return;
     const start = field.selectionStart ?? field.value.length;
     const end = field.selectionEnd ?? start;
-    if (field.value.length - (end - start) + symbol.length > LABEL_LENGTH_MAX)
+    if (field.value.length - (end - start) + symbol.length > PLANE_LABEL_MAX)
       return;
     field.setRangeText(symbol, start, end, 'end');
   };
@@ -1769,7 +1772,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const changed: Mark | null =
       mark.type === 'text'
         ? text
-          ? { ...mark, text: text.slice(0, LABEL_LENGTH_MAX) }
+          ? { ...mark, text: text.slice(0, PLANE_LABEL_MAX) }
           : null
         : mark.type === 'point' && pairs.length === 1
           ? { ...mark, coords: pairs[0] }
@@ -1831,7 +1834,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     )
       return html`<input
         aria-label=${mark.type === 'text' ? m.drawing_board_plane_label() : m.question_ui_graph_expression({ number })}
-        maxlength=${mark.type === 'text' ? LABEL_LENGTH_MAX : 80}
+        maxlength=${mark.type === 'text' ? PLANE_LABEL_MAX : 80}
         type="text"
         .value=${rowText(mark)}
         @change=${(event: Event) => commitText(mark, event.target as HTMLInputElement)}
@@ -1973,7 +1976,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
             ? html`<input
                 aria-label=${m.drawing_board_chart_label()}
                 class="capy-chart-label"
-                maxlength=${LABEL_LENGTH_MAX}
+                maxlength=${PLANE_LABEL_MAX}
                 style="left:${(typing.at[0] - view.x0) * view.ppu}px;top:${(view.y0 - typing.at[1]) * view.ppu}px;font-size:${typing.size ?? LABEL_SIZE}px"
                 type="text"
                 .value=${typing.text}

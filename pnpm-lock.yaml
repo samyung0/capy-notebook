@@ -242,6 +242,9 @@ importers:
       mermaid:
         specifier: ^11.16.0
         version: 11.16.1
+      opentype.js:
+        specifier: 1.3.4
+        version: 1.3.4
       pdfjs-dist:
         specifier: 4.8.69
         version: 4.8.69
@@ -372,6 +375,9 @@ importers:
       "@types/node":
         specifier: ^26.1.1
         version: 26.2.0
+      "@types/opentype.js":
+        specifier: 1.3.10
+        version: 1.3.10
       "@types/react":
         specifier: ^19.0.0
         version: 19.2.18
@@ -9739,6 +9745,12 @@ packages:
         integrity: sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==,
       }
 
+  "@types/opentype.js@1.3.10":
+    resolution:
+      {
+        integrity: sha512-F67EFyk6j02okHz5JCgata3ZRAcZi9GLnzmkHw/rzJq3OCc8/ZVdoKrxMTYjcQP6IYHGBz2cav1cpzkOkPiPCQ==,
+      }
+
   "@types/parse-json@4.0.2":
     resolution:
       {
@@ -14559,6 +14571,14 @@ packages:
       }
     engines: { node: ">=12" }
 
+  opentype.js@1.3.4:
+    resolution:
+      {
+        integrity: sha512-d2JE9RP/6uagpQAVtJoF0pJJA/fgai89Cc50Yp0EJHk+eLp6QQ7gBoblsnubRULNY132I0J1QKMJ+JTbMqz4sw==,
+      }
+    engines: { node: ">= 8.0.0" }
+    hasBin: true
+
   optics-ts@2.4.1:
     resolution:
       {
@@ -16090,6 +16110,12 @@ packages:
         integrity: sha512-ZbmZM0JCihQN91dWnxoipT2KOEyHqEyfRXUyjuRhW8b/xnqPDoq4gWEVApTVa9db2wN8mmoikgFBbjh71+cGeQ==,
       }
     engines: { node: ">=20" }
+
+  string.prototype.codepointat@0.2.1:
+    resolution:
+      {
+        integrity: sha512-2cBVCj6I4IOvEnjgO/hWqXjqBGsY+zwPmHl12Srk9IXSZ56Jwwmy+66XO5Iut/oQVR7t5ihYdLB0GMa4alEUcg==,
+      }
 
   string_decoder@1.1.1:
     resolution:
@@ -21475,6 +21501,8 @@ snapshots:
     dependencies:
       undici-types: 8.3.0
 
+  "@types/opentype.js@1.3.10": {}
+
   "@types/parse-json@4.0.2": {}
 
   "@types/react-dom@19.2.4(@types/react@19.2.18)":
@@ -24652,6 +24680,11 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
+  opentype.js@1.3.4:
+    dependencies:
+      string.prototype.codepointat: 0.2.1
+      tiny-inflate: 1.0.3
+
   optics-ts@2.4.1: {}
 
   option@0.2.4: {}
@@ -25840,6 +25873,8 @@ snapshots:
     dependencies:
       get-east-asian-width: 1.7.0
       strip-ansi: 7.2.0
+
+  string.prototype.codepointat@0.2.1: {}
 
   string_decoder@1.1.1:
     dependencies:

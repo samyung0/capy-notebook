@@ -741,7 +741,8 @@ func graph(b map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if err := keys(board, "bbox axis grid", ""); err != nil {
+	// polar: rings and spokes in place of the square grid.
+	if err := keys(board, "bbox axis grid", "polar"); err != nil {
 		return err
 	}
 	bbox, ok := tuple(board["bbox"], 4)
@@ -752,6 +753,9 @@ func graph(b map[string]any) error {
 		if _, ok := board[key].(bool); !ok {
 			return fail("invalid board flag")
 		}
+	}
+	if !optionalBool(board, "polar") {
+		return fail("invalid board flag")
 	}
 	elems, ok := array(b["elements"], 0, fieldlimits.QuestionGraphElements)
 	if !ok {
@@ -789,14 +793,31 @@ func graph(b map[string]any) error {
 			required += " points"
 			optional += " dash"
 		case "segment":
-			// ticks: 1 to 3 hatch marks showing equal lengths.
+			// ticks: 1 to 3 hatch marks showing equal lengths; arrow: an
+			// arrowhead at the second point.
 			required += " points"
-			optional += " dash ticks"
+			optional += " dash ticks arrow"
 		case "circle":
 			required += " center radius"
 			optional += " dash"
 		case "text":
 			required += " coords text"
+			optional += " size"
+		// The free marks hold their own coordinates (Epo 2026-11-16, D1): a
+		// stroke, a curve with optional [in, out] Bézier handles per point, an
+		// upright ellipse and a LaTeX formula centred on its point (D6).
+		case "polyline":
+			required += " coords"
+			optional += " dash arrow"
+		case "curve":
+			required += " coords"
+			optional += " dash handles"
+		case "ellipse":
+			required += " center radii"
+			optional += " dash"
+		case "formula":
+			required += " coords latex"
+			optional += " size"
 		case "angle":
 			required += " points"
 			optional += " label"
@@ -815,8 +836,13 @@ func graph(b map[string]any) error {
 		if err := keys(e, required, optional); err != nil {
 			return err
 		}
-		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") || !optionalBool(e, "shade") {
+		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") || !optionalBool(e, "shade") || !optionalBool(e, "arrow") {
 			return fail("invalid graph flag")
+		}
+		if size, exists := e["size"]; exists {
+			if n, ok := num(size); !ok || n != math.Trunc(n) || n < fieldlimits.QuestionGraphTextSizeMin || n > fieldlimits.QuestionGraphTextSizeMax {
+				return fail("invalid text size")
+			}
 		}
 		if t, exists := e["ticks"]; exists {
 			if n, ok := num(t); !ok || n < 1 || n > 3 || n != math.Trunc(n) {
@@ -884,6 +910,47 @@ func graph(b map[string]any) error {
 			radius, valid := num(e["radius"])
 			if !ok || !points[center] || !valid || radius <= 0 {
 				return fail("invalid circle")
+			}
+		case "polyline", "curve":
+			// One point while a stroke is being drawn on the canvas plane.
+			coords, ok := array(e["coords"], 1, fieldlimits.QuestionGraphPath)
+			if !ok {
+				return fail("invalid stroke points")
+			}
+			for _, pair := range coords {
+				if _, ok := tuple(pair, 2); !ok {
+					return fail("invalid coordinates")
+				}
+			}
+			if handles, exists := e["handles"]; exists {
+				pairs, ok := array(handles, len(coords), len(coords))
+				if !ok {
+					return fail("invalid curve handles")
+				}
+				for _, raw := range pairs {
+					pair, ok := array(raw, 2, 2)
+					if !ok {
+						return fail("invalid curve handles")
+					}
+					for _, handle := range pair {
+						if _, ok := tuple(handle, 2); !ok {
+							return fail("invalid curve handles")
+						}
+					}
+				}
+			}
+		case "ellipse":
+			_, center := tuple(e["center"], 2)
+			_, radii := tuple(e["radii"], 2)
+			if !center || !radii {
+				return fail("invalid ellipse")
+			}
+		case "formula":
+			if _, ok := tuple(e["coords"], 2); !ok {
+				return fail("invalid coordinates")
+			}
+			if !str(e["latex"], fieldlimits.QuestionGraphLatex, true) {
+				return fail("invalid formula")
 			}
 		}
 	}

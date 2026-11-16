@@ -1140,7 +1140,8 @@ has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 Chart, plot and graph nodes store their question block under `block` (a live
 map in rooms, above), an optional `width`, and a single empty text child;
 a graph's block holds its elements and no picture; the note export draws it
-to SVG (`graphSvg`) and then to PNG like the other figures.
+to SVG (`exportGraphSvg`, a formula's glyphs as outlines) and then to PNG like
+the other figures.
 A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
 and is the figure's accessible label: optional on every figure, images and
 graphs included (Epo 2026-10-14; a blank one is dropped on Save; the chart
@@ -2316,6 +2317,14 @@ design, option d), and the nudge's release file on 2026-10-17.
   reloads instead of writing a table view's block as a plain value;
   `MIN_SOURCE` stays 28. Its deploy request names "client protocol 28 -> 29,
   material 22 -> 29".
+  Quiz figures held as maps (Epo 2026-11-16: a chart, plot or graph in a live
+  quiz room is a map of its fields, a graph's elements keyed by id) raised
+  `CLIENT_PROTOCOL` to 30 and `MIN_MATERIAL` to 30, so a quiz tab from before
+  it, which writes a figure as one value the room now refuses, reloads;
+  `MIN_SOURCE` stays 28. Stored quiz rooms are dropped at that deploy and
+  seed again from their questions (migration 0178,
+  [deployment-runbook](../deployment-runbook.md#quiz-figure-maps-reset-migration-0178)).
+  Its deploy request names "client protocol 29 -> 30, material 29 -> 30".
 
 #### When to bump
 
@@ -3718,7 +3727,30 @@ part names. The limits still measure such a group and its images stay in use
 solution, correct | accepted | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
-`accepted` holds at most one sample answer, which the room refuses past. Editors type ordering items and matching options in the keys
+`accepted` holds at most one sample answer, which the room refuses past.
+A block entry holds its fields in both documents (a solution's in the keys
+document). A chart, plot or graph is a map of plain fields, each replaced
+whole (Epo 2026-11-16, D2, D3, D9; client protocol 30): a graph `{order,
+type, width, height, description?, board: {bbox, axis, grid, polar?},
+elements: element id -> {element, order}}` (the shape of
+`src/features/graph/keyed.ts`, read by order key then id), a chart `{order,
+type, kind, title, xTitle?, yTitle?, gridlines?, description?, series: id ->
+order key, labels: id -> order key, names: id -> name, values:
+"series/label" -> number}` (its series and labels held as a table's rows and
+columns, its values plain numbers where a table's cells are texts, an empty
+cell no entry), and a plot its fields alone. Two editors on different
+fields, elements or values both keep their change; a figure is read repaired
+(`repairFigureBlock`, `q::repair_figure`), and the projection keeps the plain
+block. The room entry's key is the block's identity: blocks read from the
+room carry it (`figureRoom(docs).key`), and the question card's figure
+dialog saves and removes that entry (`figureRoom` in `liveQuiz.ts`). The live
+writes the graph and chart dialogs use, each one undoable step touching only
+what changed, are in `src/features/quizzes/liveFigures.ts` (element by id,
+board field, plain fields, chart value, series and label add, remove, move
+and rename), with `liveFigure` and `subscribeFigure` reading a figure kept
+until its own entry changes. The server's writers (seeding, the save API,
+agent commands) go through `sync_block`, which writes a figure field by
+field and element by element, never whole. Editors type ordering items and matching options in the keys
 document. Readers get them outside Yjs (D3 as revised 2026-10-10: a reader
 copy inside the content document leaked typing order through its tombstones):
 the content room keeps a plain list of texts per part (`items::quiz::
@@ -3755,10 +3787,13 @@ units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
 keeps `QUESTION_TEXT_MAX`, Epo 2026-10-14), image sizes and ids, whole marks, list and table counts, questions, parts per question and per
 quiz, a question's groups (no more than its parts may be), open parts, marking
-items, ticks and matching pairs, and each chart,
-plot and graph value against its kind's caps (`notes::questions::figure_caps`,
-sizes only: an unfinished figure is admitted; the block's type and value are
-read from the update or the held block, whichever writes them). Nothing past a
+items, ticks and matching pairs, and each figure field, graph element
+(`notes::questions::figure_caps` on the element alone; its form is the
+validators') and chart value as it arrives (sizes only: an unfinished figure
+is admitted). A figure's maps (graph elements, chart series, labels, names and
+values) count to twice their caps, as a merge may pass a cap and the read
+keeps the first ones; a figure written as one value (the layout before client
+protocol 30) is refused. Nothing past a
 limit is stored (Epo 2026-10-14): the question dialog's inputs stop at each
 limit and its Add buttons at each count, and everything the store's check
 refuses is refused at admission, so a store never discards a room for it. An
@@ -3777,7 +3812,9 @@ A quiz's question (its page's open card, or a note's quiz block in Edit, which
 edits the same cards in place, Epo 2026-11-15) writes through `writeQuestion`
 (`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
 head and tail, a move as a new order key), a table, chart or graph stays staged until
-its `BlockDialog`'s Save (one value per block, D8), with Undo, Redo and the
+its `BlockDialog`'s Save, which writes only what differs into the block's own
+room entry, found by its key (`FigureRoom`; until the graph and chart dialogs
+go live, Epo 2026-11-16), with Undo, Redo and the
 live state in the page's header or above the note's quiz; there is no Save or
 Cancel. The question card's editors are nested Plate editors inside the note
 block, so their input never reaches the note's. Undo spans both documents (`pairedUndo` in
@@ -4790,9 +4827,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   model (`elementList`) until the map changes; writing (`writeList`,
   `src/features/graph/keyed.ts`) sets or deletes only the entries that changed, so two
   people drawing on one plane would merge mark by mark once the canvas has a room. A
-  plane holds at most 100 elements, as every graph (`ELEMENTS_MAX` in the board
-  catalog, D7); a board saved with the old `marks` list fails the load check (no
-  production data, no shim). A card is a picture on the canvas: Select moves it, the frame's knob
+  plane holds at most 100 elements, as every graph, its labels up to 60 characters and
+  a curve up to 100 points, where its tool finishes it (the question bounds
+  `QUESTION_GRAPH_*`, D7); the load check runs the graph model's one element check
+  (`graphElementSchema`, the same as quiz and note graphs and Go and Rust) on each
+  element of a kind the plane makes (`PLANE_KINDS`); a board saved with the old
+  `marks` list fails it (no production data, no shim). A card is a picture on the canvas: Select moves it, the frame's knob
   turns it about its middle (`rotate`, Epo 2026-11-13; turned, the side across from a
   dragged handle stays put on the page), its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
@@ -4840,12 +4880,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   Select. With Select, a double click on empty paper types a label there and one on a
   label edits it, as on the canvas; while one is typed, the canvas label's maths symbol
   row (`symbolButtons` in `boardFormula.ts`) sits under it, kept inside the plane, and
-  inserts at the caret within the 24 characters (Epo 2026-11-13). A plane label is
+  inserts at the caret within the label's 60 characters (Epo 2026-11-13). A plane label is
   still its own kind: a `text` element drawn on the plane, not BlockSuite's canvas text.
   A label or formula picked alone with Select wears the board's selection frame
   (`boardTextFrame.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
   no toolbar; dragging a corner sizes its text about its middle (Epo 2026-11-13),
-  stored as `size` in pixels (8 to 96, `TEXT_SIZE_MIN`/`MAX` in the board catalog;
+  stored as `size` in pixels (8 to 96, `QUESTION_GRAPH_TEXT_SIZE_MIN`/`MAX`, which
+  the board catalog's `TEXT_SIZE_MIN`/`MAX` repeat for pie labels;
   without it 15 px for a label, 18 px for a formula, 12 px for a pie label). Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
   a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the

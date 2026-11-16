@@ -1,10 +1,13 @@
 /* The SVG export: the Canvas 2D calls `drawGraph` makes, replayed into SVG
  * made only of the tags `validGraphSvg` admits (no <image>, <foreignObject>,
  * <use> or data: addresses). Coordinates are rounded to 0.1 px and straight
- * runs thinned. A formula's stretched shapes (drawImage) are left out until
- * formulas export as glyph outlines (plan step 3). */
+ * runs thinned. A formula's glyphs are written as their outlines when the
+ * recorder has them (`exportGraphSvg`, Epo 2026-11-16, D6), its rules as
+ * rectangles and its stretched signs as KaTeX's own paths. */
 import type { DrawContext } from './draw';
 import { drawGraph } from './draw';
+import { drawing, shapes } from './formula';
+import type { Face, Outlines } from './glyphOutlines';
 import type { SizedGraph, Vec } from './model';
 import { EXPORT_PAPER } from './paper';
 import { viewOf } from './view';
@@ -33,6 +36,26 @@ type State = {
 
 const FONT =
   /^(?:(italic|oblique|normal)\s+)?(?:(normal|bold|\d{3})\s+)?([\d.]+)px\s+(.+)$/;
+const QUOTES = /^["']|["']$/g;
+const SPACES = /\s+/;
+
+/** A CSS font's size in pixels and the face of its first family, as
+ * `ctx.font` and getComputedStyle write it. */
+function fontFace(font: string): { face: Face; size: number } | null {
+  const match = FONT.exec(font.trim());
+  if (!match) return null;
+  const [, style, weight, size, families] = match;
+  return {
+    face: {
+      bold: weight === 'bold' || Number(weight) >= 600,
+      family: families.split(',')[0].trim().replace(QUOTES, ''),
+      italic: style === 'italic' || style === 'oblique',
+    },
+    size: Number(size),
+  };
+}
+/** A transform's scale, finer than a coordinate. */
+const factor = (value: number) => String(Number(value.toPrecision(6)));
 const ANCHOR: Partial<Record<CanvasTextAlign, string>> = {
   center: 'middle',
   end: 'end',
@@ -105,12 +128,21 @@ export class SvgRecorder implements DrawContext {
   private readonly measure: Measure;
   /** Before each clip's id, so several recordings can share one document. */
   private readonly ids: string;
+  /** Glyph outlines for a formula's text, in KaTeX's fonts. */
+  private readonly outlines: Outlines | undefined;
 
-  constructor(width: number, height: number, measure: Measure, ids = '') {
+  constructor(
+    width: number,
+    height: number,
+    measure: Measure,
+    ids = '',
+    outlines?: Outlines
+  ) {
     this.width = width;
     this.height = height;
     this.measure = measure;
     this.ids = ids;
+    this.outlines = outlines;
   }
 
   get fillStyle(): string | CanvasGradient | CanvasPattern {
@@ -455,9 +487,34 @@ export class SvgRecorder implements DrawContext {
       ])}/>`
     );
   }
-  /** Pictures are left out: an exported SVG holds no <image>. */
-  drawImage() {
-    // A formula's stretched shapes wait for the glyph-outline export.
+  /** An exported SVG holds no <image>: a formula's stretched sign is written
+   * as KaTeX's own paths, fitted to the box (x, y, w, h) as the SVG it came
+   * from would be; any other picture is left out. */
+  drawImage(image: object, x: number, y: number, w?: number, h?: number) {
+    const shape = shapes.get(image);
+    if (!(shape && w !== undefined && h !== undefined)) return;
+    const [left, top] = this.device(x, y);
+    const [width, height] = [w * this.state.sx, h * this.state.sy];
+    const [vx, vy, vw, vh] = shape.viewBox;
+    if (!(finite(left, top, width, height) && vw > 0 && vh > 0)) return;
+    const [align, meetOrSlice] = shape.aspect.trim().split(SPACES);
+    const cover = meetOrSlice === 'slice' ? Math.max : Math.min;
+    const uniform = cover(width / vw, height / vh);
+    const [kx, ky] =
+      align === 'none' ? [width / vw, height / vh] : [uniform, uniform];
+    const share = (axis: 'x' | 'y') =>
+      align.includes(`${axis}Mid`) ? 0.5 : align.includes(`${axis}Max`) ? 1 : 0;
+    const e = left + (width - vw * kx) * share('x') - vx * kx;
+    const f = top + (height - vh * ky) * share('y') - vy * ky;
+    const transform = `matrix(${factor(kx)} 0 0 ${factor(ky)} ${factor(e)} ${factor(f)})`;
+    for (const d of shape.paths)
+      this.emit(
+        `<path${attrs([
+          ['transform', transform],
+          ['d', d],
+          ['fill', shape.color],
+        ])}/>`
+      );
   }
 
   private textAttrs(
@@ -504,6 +561,7 @@ export class SvgRecorder implements DrawContext {
   }
   fillText(text: string, x: number, y: number) {
     if (!finite(...this.device(x, y))) return;
+    if (this.outlineText(text, x, y)) return;
     const halo = this.halo;
     this.halo = null;
     const fill = attrs([
@@ -523,6 +581,40 @@ export class SvgRecorder implements DrawContext {
     this.body.push(
       `<text${attrs(this.textAttrs(x, y))}${fill}>${escapeXml(text)}</text>`
     );
+  }
+  /** A formula's glyph run (KaTeX's fonts, drawn on the alphabetic baseline
+   * by `replay`) as its outline, when the recorder has outlines. */
+  private outlineText(text: string, x: number, y: number) {
+    const font = this.outlines && fontFace(this.state.font);
+    if (!(this.outlines && font)) return false;
+    const size = font.size * this.state.sy;
+    const [px, py] = this.device(x, y);
+    const shift =
+      this.state.align === 'center'
+        ? 0.5
+        : this.state.align === 'right' || this.state.align === 'end'
+          ? 1
+          : 0;
+    const d = this.outlines(
+      font.face,
+      size,
+      text,
+      px - shift * this.measure(this.state.font, text) * this.state.sx,
+      py
+    );
+    if (d === null) return false;
+    if (d)
+      this.emit(
+        `<path${attrs([
+          ['d', d],
+          ['fill', this.state.fill],
+          [
+            'fill-opacity',
+            this.state.alpha === 1 ? undefined : String(this.state.alpha),
+          ],
+        ])}/>`
+      );
+    return true;
   }
   private pushHalo(halo: NonNullable<SvgRecorder['halo']>) {
     this.body.push(
@@ -583,10 +675,16 @@ export const canvasMeasure: Measure = (font, text) => {
   return measurer.measureText(text).width;
 };
 
-/** A graph's SVG at its size and stored view, on the light export paper. */
-export function graphSvg(graph: SizedGraph, measure: Measure = canvasMeasure) {
+/** A graph's SVG at its size and stored view, on the light export paper. A
+ * formula draws once laid out, its glyphs as outlines when `outlines` has
+ * them (`exportGraphSvg`). */
+export function graphSvg(
+  graph: SizedGraph,
+  measure: Measure = canvasMeasure,
+  outlines?: Outlines
+) {
   const { width, height } = graph;
-  const recorder = new SvgRecorder(width, height, measure);
+  const recorder = new SvgRecorder(width, height, measure, '', outlines);
   drawGraph(
     recorder,
     { h: height, w: width, x: 0, y: 0 },
@@ -595,4 +693,24 @@ export function graphSvg(graph: SizedGraph, measure: Measure = canvasMeasure) {
     EXPORT_PAPER
   );
   return recorder.toString();
+}
+
+/** A graph's SVG for the note export, which shows it in an <img> that loads no
+ * fonts: a graph with a formula waits for KaTeX to lay each one out and for
+ * the faces its glyphs use, read lazily, and writes the glyphs as outlines.
+ * One without a formula is `graphSvg` as it is. */
+export async function exportGraphSvg(graph: SizedGraph): Promise<string> {
+  const latex = graph.elements.flatMap((element) =>
+    element.type === 'formula' && !element.hidden ? [element.latex] : []
+  );
+  if (!latex.length) return graphSvg(graph);
+  const laid = await Promise.all(latex.map(drawing));
+  const faces = laid.flatMap(({ steps }) =>
+    steps.flatMap((step) => {
+      const font = step.kind === 'text' ? fontFace(step.font) : null;
+      return font ? [font.face] : [];
+    })
+  );
+  const { glyphOutlines } = await import('./glyphOutlines');
+  return graphSvg(graph, canvasMeasure, await glyphOutlines(faces));
 }

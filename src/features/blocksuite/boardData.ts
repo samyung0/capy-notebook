@@ -46,6 +46,17 @@ export type PlaneElement = Extract<
       | 'text';
   }
 >;
+/** The kinds a plane holds: what its tools make. Its load check runs the graph
+ * model's own element check on each (questions/validation.ts). */
+export const PLANE_KINDS: ReadonlySet<string> = new Set<PlaneElement['type']>([
+  'curve',
+  'ellipse',
+  'formula',
+  'functiongraph',
+  'point',
+  'polyline',
+  'text',
+]);
 export type PathElement = Extract<
   PlaneElement,
   { type: 'curve' | 'ellipse' | 'polyline' }
@@ -163,11 +174,16 @@ export function pathOf(mark: PathElement, perSegment = 16): Vec[] {
   });
 }
 
-/** Most elements one plane holds, as every graph (Epo 2026-11-16, D7; the board
- * catalog's, as every limit here). */
-export const { ELEMENTS_MAX } = BOARD_CATALOG.limits;
+/** Most elements one plane holds, a label's length and a curve's points: every
+ * graph's (Epo 2026-11-16, D7), the question bounds. */
+export {
+  QUESTION_GRAPH_ELEMENTS_MAX as ELEMENTS_MAX,
+  QUESTION_GRAPH_LABEL_MAX as PLANE_LABEL_MAX,
+  QUESTION_GRAPH_PATH_MAX as PATH_MAX,
+} from '@/api/limits.generated';
 
-/** Longest formula a member can type; the renderer draws nothing past it. */
+/** Longest formula a member can type, as a card or on a plane; the renderer draws
+ * nothing past it. */
 export const { LATEX_MAX } = BOARD_CATALOG.limits;
 
 /** A bar or pie chart is a card of its own: a coordinate means nothing on either (Epo

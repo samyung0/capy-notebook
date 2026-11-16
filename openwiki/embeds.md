@@ -147,6 +147,12 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   unsupported-type error (Epo 2026-10-23,
   [plate-editor](frontend/plate-editor.md)).
 
+  In a live quiz room a chart, plot or graph question block is a live map
+  too, the block entry itself rather than a `block` key: its plain fields, a
+  graph's `board` and its `elements` keyed by element id, a chart's series,
+  labels and values held as a table's rows, columns and cells (Epo
+  2026-11-16; the layout is in [plate-editor](frontend/plate-editor.md)).
+
   A **value** is an attribute of its node, replaced whole. A **live map**
   keeps its value in a shared map (below, [Live figures](#live-figures)). A
   **live source** keeps its source in shared text. An **item** is a child
@@ -235,7 +241,9 @@ decimal, the shortest that reads back exactly, never with an exponent
   first: `functiongraph: 0.5*x^2-3` (the term verbatim, ` on [a, b]` with a
   domain), `point A: (0, 0)`, `line: A, B`, `segment: A, B`, `polygon: A, B,
   C`, `angle θ: A, B, C` (its label after the type), `circle: center A,
-  radius 2`, `arc: center O, A, B`, `sector: center O, A, B`, `text: Region R`.
+  radius 2`, `arc: center O, A, B`, `sector: center O, A, B`, `text: Region R`,
+  `formula: \frac12` (its LaTeX). A stroke, curve or ellipse holds no text
+  and adds no line.
   A point is named by its `name`, otherwise by its coordinates. A hidden
   element is left out (a hidden point is still named where another element
   uses it), as is an element naming a point that is gone (a merged graph is
@@ -359,7 +367,7 @@ figures).
   its block read as above must be one the room's store takes (`BAD_VALUE`:
   an unknown key, a wrong type, an oversize value); a merge's kept states go
   in. A list holds at most twice its cap (12 chart series, 8 plot series,
-  120 graph elements), so a merge past the cap goes in and an update holding
+  200 graph elements), so a merge past the cap goes in and an update holding
   more is refused (`BAD_VALUE`); the room's size limits (`limits::measure`)
   count the block as the map holds it, the entries a read drops included
   (Epo 2026-10-18). Typing elsewhere in the note stays on the bound with no
@@ -373,8 +381,9 @@ figures).
   (`src/features/graph/`; `GraphView` in `src/features/questions/`, a
   `<canvas>` of the block's size, at most its column's width, in the app's
   light or dark paper), so a peer's change needs no redraw or write. The note
-  export is the one place a graph becomes a picture: `graphSvg` on the light
-  export paper, checked by `validGraphSvg`. Share pages' Worker HTML holds the
+  export is the one place a graph becomes a picture: `exportGraphSvg` on the
+  light export paper, checked by `validGraphSvg`, a formula's glyphs written
+  as outlines (Epo 2026-11-16, D6; openwiki/question-bank.md). Share pages' Worker HTML holds the
   sized canvas and the browser draws into it after hydration; the engine
   (`graphPaint.ts`) is stubbed out of the Worker build (`BROWSER_ONLY` in
   `vite.config.ts`).

@@ -1,0 +1,48 @@
+{
+  "name": "graph-curve-handles-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "curve",
+            "id": "c",
+            "coords": [[0, 0], [1, 1], [2, 0]],
+            "handles": [[[0, 0], [1, 0]], [[1, 1], [2, 1]]]
+          }
+        ],
+        "width": 480,
+        "height": 360,
+        "description": "A curve missing a point's handles"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

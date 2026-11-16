@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
-import { QUESTION_GRAPH_TERM_MAX } from '@/api/limits.generated';
 import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
+import { graphElementSchema } from '@/features/questions/validation';
 import {
   AXIS_MAX,
   BARS_MAX,
@@ -10,7 +10,7 @@ import {
   LABEL_LENGTH_MAX,
   LABELS_MAX,
   LATEX_MAX,
-  markFunction,
+  PLANE_KINDS,
   SPOKES_MAX,
 } from './boardData';
 import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
@@ -77,68 +77,11 @@ const connection = (value: unknown) => {
   );
 };
 
-const isPoint = (value: unknown) =>
-  Array.isArray(value) && value.length === 2 && value.every(finite);
-const isPoints = (value: unknown) =>
-  Array.isArray(value) && value.every(isPoint);
-
-/** One of a plane's elements as its drawing and editor read it: the graph model's
- * kinds the plane makes (boardData.ts `PlaneElement`). */
-function planeElementFits(element: Fields) {
-  switch (element.type) {
-    case 'point':
-      return isPoint(element.coords);
-    case 'text':
-      return (
-        isPoint(element.coords) &&
-        typeof element.text === 'string' &&
-        element.text.length <= LABEL_LENGTH_MAX &&
-        isTextSize(element.size)
-      );
-    // A formula is text KaTeX lays out, within the formula card's limit.
-    case 'formula':
-      return (
-        isPoint(element.coords) &&
-        typeof element.latex === 'string' &&
-        element.latex.length <= LATEX_MAX &&
-        isTextSize(element.size)
-      );
-    // A function is a term the plane can read, in the graph dialog's limits.
-    case 'functiongraph':
-      return (
-        typeof element.term === 'string' &&
-        element.term.length <= QUESTION_GRAPH_TERM_MAX &&
-        markFunction(element.term) !== null &&
-        (element.domain === undefined ||
-          (isPoint(element.domain) &&
-            (element.domain as number[])[0] < (element.domain as number[])[1]))
-      );
-    // A vector runs from one point to one other.
-    case 'polyline':
-      return (
-        isPoints(element.coords) &&
-        (element.arrow === undefined ||
-          (element.arrow === true &&
-            (element.coords as unknown[]).length === 2))
-      );
-    // A curve's handles are a pair of points for each of its points.
-    case 'curve':
-      return (
-        isPoints(element.coords) &&
-        (element.handles === undefined ||
-          (Array.isArray(element.handles) &&
-            element.handles.length === (element.coords as unknown[]).length &&
-            element.handles.every(
-              (pair) =>
-                Array.isArray(pair) && pair.length === 2 && isPoints(pair)
-            )))
-      );
-    case 'ellipse':
-      return isPoint(element.center) && isPoint(element.radii);
-    default:
-      return false;
-  }
-}
+/** One of a plane's elements: a kind the plane makes, held as every graph holds
+ * it (the graph model's one element check, Epo 2026-11-16). */
+const planeElementFits = (element: Fields) =>
+  PLANE_KINDS.has(String(element.type)) &&
+  graphElementSchema.safeParse(element).success;
 
 /** A plane's elements: a map of element id to the element and its order key (Epo
  * 2026-11-16, D10), at most ELEMENTS_MAX of them. */

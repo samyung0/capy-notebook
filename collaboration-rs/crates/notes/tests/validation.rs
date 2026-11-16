@@ -706,10 +706,9 @@ fn plot_text_stops_at_the_charts_bounds() {
     );
 }
 
-/// Grouped parts (Epo 2026-11-04): the shared group fixtures validate as Go
-/// and the browser validate them, under each fixture's policy.
-#[test]
-fn group_fixtures_validate_as_go_and_the_browser() {
+/// The shared fixtures named `prefix`*, validated as Go and the browser
+/// validate them under each fixture's policy; how many there were.
+fn shared_fixtures(prefix: &str) -> usize {
     let dir = format!(
         "{}/../../../server/internal/questions/testdata",
         env!("CARGO_MANIFEST_DIR")
@@ -718,7 +717,7 @@ fn group_fixtures_validate_as_go_and_the_browser() {
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        if !name.starts_with("group-") {
+        if !name.starts_with(prefix) {
             continue;
         }
         seen += 1;
@@ -735,7 +734,22 @@ fn group_fixtures_validate_as_go_and_the_browser() {
             "{name}: {ours:?}"
         );
     }
+    seen
+}
+
+/// Grouped parts (Epo 2026-11-04).
+#[test]
+fn group_fixtures_validate_as_go_and_the_browser() {
+    let seen = shared_fixtures("group-");
     assert!(seen >= 16, "{seen} group fixtures");
+}
+
+/// Graphs, the canvas plane's free marks and styles included (Epo
+/// 2026-11-16, D1/D6/D7).
+#[test]
+fn graph_fixtures_validate_as_go_and_the_browser() {
+    let seen = shared_fixtures("graph-");
+    assert!(seen >= 20, "{seen} graph fixtures");
 }
 
 /// What a merge leaves reads repaired, on the fixtures the browser reads too.
