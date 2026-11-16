@@ -55,7 +55,6 @@ pub const QUESTION_PLOT_MARKS_MAX: usize = 8;
 pub const QUESTION_PLOT_POINTS_MAX: usize = 60;
 pub const QUESTION_PLOT_SERIES_MAX: usize = 4;
 pub const QUESTION_PLOT_TITLE_MAX: usize = 100;
-pub const QUESTION_SVG_BYTES_MAX: usize = 262144;
 pub const QUESTION_TABLE_COLUMNS_MAX: usize = 10;
 pub const QUESTION_TABLE_ROWS_MAX: usize = 30;
 pub const QUESTION_TEXT_MAX: usize = 12000;

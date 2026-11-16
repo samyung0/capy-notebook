@@ -7,10 +7,7 @@ import {
   MERMAID_SOURCE_MAX,
 } from '@/features/materials/document';
 import { MERMAID_EDGES_MAX } from '@/features/materials/mermaidError';
-import {
-  validateQuestions,
-  validGraphSvg,
-} from '@/features/questions/validation';
+import { validateQuestions } from '@/features/questions/validation';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
   nearLimitCards,
@@ -39,7 +36,6 @@ it('keeps both near-limit Mermaid sources just under the caps', () => {
 
 it('stores the near-limit figures', () => {
   const graph = nearLimitGraph();
-  expect(validGraphSvg('svg' in graph.image ? graph.image.svg : '')).toBe(true);
   createMaterialDocument([
     figure('chart', nearLimitChart()),
     figure('plot', nearLimitPlot()),

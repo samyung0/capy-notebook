@@ -28,7 +28,6 @@ const graph = {
     { id: 's1', points: ['p1', 'p2'], type: 'segment' },
   ],
   height: 300,
-  image: { svg: '<svg/>' },
   type: 'graph',
   width: 400,
 };

@@ -1,5 +1,5 @@
 {
-  "name": "svg-root",
+  "name": "graph-image-rejected",
   "valid": false,
   "policy": {},
   "question": {
@@ -39,7 +39,7 @@
           }
         ],
         "image": {
-          "svg": "<svgscript></svg>"
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
         },
         "width": 320,
         "height": 190,

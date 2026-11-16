@@ -318,7 +318,6 @@ def check():
         "height": 400,
         "board": {"bbox": [-5, 5, 5, -5]},
         "elements": [{"type": "functiongraph", "term": "secret", "hidden": True}],
-        "image": {"svg": "secret"},
     }
     q = {
         "id": "q",

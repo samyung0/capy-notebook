@@ -9,7 +9,6 @@ import type {
   Question,
   QuestionPart,
 } from '@/features/questions/types';
-import nearLimitGraphSvg from './fixtures/near-limit-graph.svg?raw';
 
 /* Embeds at their limits for the "Near-limit" files in Biology 101: every
  * count sits at its cap and every text at its length cap. Byte caps are met
@@ -121,10 +120,8 @@ export function nearLimitPlot(): PlotBlock {
   };
 }
 
-/** The graph's recipe. fixtures/near-limit-graph.svg is still the JSXGraph
- * drawing of it; `graphSvg` redraws it once the engine's fixture sheet is
- * approved. */
-export function nearLimitGraphRecipe(): Omit<GraphBlock, 'image'> {
+/** A graph at every graph cap. */
+export function nearLimitGraph(): GraphBlock {
   const points = 30;
   const name = (i: number) => filled(`P${i} `, limits.QUESTION_GRAPH_NAME_MAX);
   const term = (k: number) => {
@@ -203,10 +200,6 @@ export function nearLimitGraphRecipe(): Omit<GraphBlock, 'image'> {
     type: 'graph',
     width: limits.QUESTION_GRAPH_DIMENSION_MAX,
   };
-}
-
-export function nearLimitGraph(): GraphBlock {
-  return { ...nearLimitGraphRecipe(), image: { svg: nearLimitGraphSvg } };
 }
 
 /** An interactive block just under HTML_EMBED_MAX_BYTES: a filterable table. */

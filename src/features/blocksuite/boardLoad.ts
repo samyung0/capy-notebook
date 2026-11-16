@@ -5,11 +5,11 @@ import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
 import {
   AXIS_MAX,
   BARS_MAX,
+  ELEMENTS_MAX,
   isTextSize,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
   LATEX_MAX,
-  MARKS_MAX,
   markFunction,
   SPOKES_MAX,
 } from './boardData';
@@ -77,6 +77,88 @@ const connection = (value: unknown) => {
   );
 };
 
+const isPoint = (value: unknown) =>
+  Array.isArray(value) && value.length === 2 && value.every(finite);
+const isPoints = (value: unknown) =>
+  Array.isArray(value) && value.every(isPoint);
+
+/** One of a plane's elements as its drawing and editor read it: the graph model's
+ * kinds the plane makes (boardData.ts `PlaneElement`). */
+function planeElementFits(element: Fields) {
+  switch (element.type) {
+    case 'point':
+      return isPoint(element.coords);
+    case 'text':
+      return (
+        isPoint(element.coords) &&
+        typeof element.text === 'string' &&
+        element.text.length <= LABEL_LENGTH_MAX &&
+        isTextSize(element.size)
+      );
+    // A formula is text KaTeX lays out, within the formula card's limit.
+    case 'formula':
+      return (
+        isPoint(element.coords) &&
+        typeof element.latex === 'string' &&
+        element.latex.length <= LATEX_MAX &&
+        isTextSize(element.size)
+      );
+    // A function is a term the plane can read, in the graph dialog's limits.
+    case 'functiongraph':
+      return (
+        typeof element.term === 'string' &&
+        element.term.length <= QUESTION_GRAPH_TERM_MAX &&
+        markFunction(element.term) !== null &&
+        (element.domain === undefined ||
+          (isPoint(element.domain) &&
+            (element.domain as number[])[0] < (element.domain as number[])[1]))
+      );
+    // A vector runs from one point to one other.
+    case 'polyline':
+      return (
+        isPoints(element.coords) &&
+        (element.arrow === undefined ||
+          (element.arrow === true &&
+            (element.coords as unknown[]).length === 2))
+      );
+    // A curve's handles are a pair of points for each of its points.
+    case 'curve':
+      return (
+        isPoints(element.coords) &&
+        (element.handles === undefined ||
+          (Array.isArray(element.handles) &&
+            element.handles.length === (element.coords as unknown[]).length &&
+            element.handles.every(
+              (pair) =>
+                Array.isArray(pair) && pair.length === 2 && isPoints(pair)
+            )))
+      );
+    case 'ellipse':
+      return isPoint(element.center) && isPoint(element.radii);
+    default:
+      return false;
+  }
+}
+
+/** A plane's elements: a map of element id to the element and its order key (Epo
+ * 2026-11-16, D10), at most ELEMENTS_MAX of them. */
+function planeElementsFit(elements: unknown) {
+  if (!elements || typeof elements !== 'object' || Array.isArray(elements))
+    return false;
+  const entries = Object.entries(elements as Record<string, Fields>);
+  return (
+    entries.length <= ELEMENTS_MAX &&
+    entries.every(
+      ([id, entry]) =>
+        typeof entry?.order === 'string' &&
+        typeof entry.element === 'object' &&
+        entry.element !== null &&
+        (entry.element as Fields).id === id &&
+        planeElementFits(entry.element as Fields)
+    )
+  );
+}
+
 /** The checks a card's own renderer relies on. */
 function elementProblem(
   fields: Fields,
@@ -116,63 +198,7 @@ function elementProblem(
       finite(fields.y0) &&
       (fields.polar === undefined || typeof fields.polar === 'boolean') &&
       (fields.rotate === undefined || finite(fields.rotate)) &&
-      listUpTo(fields.marks, MARKS_MAX) &&
-      (fields.marks as Fields[]).every(
-        (mark) =>
-          (mark?.kind !== 'label' ||
-            (typeof mark.text === 'string' &&
-              mark.text.length <= LABEL_LENGTH_MAX &&
-              isTextSize(mark.size))) &&
-          // A formula is text KaTeX lays out, within the formula card's limit.
-          (mark?.kind !== 'formula' ||
-            (typeof mark.latex === 'string' &&
-              mark.latex.length <= LATEX_MAX &&
-              isTextSize(mark.size))) &&
-          // A function is a term the plane can read, in the graph dialog's limits.
-          (mark?.kind !== 'function' ||
-            (typeof mark.term === 'string' &&
-              mark.term.length <= QUESTION_GRAPH_TERM_MAX &&
-              markFunction(mark.term) !== null &&
-              typeof mark.latex === 'string' &&
-              mark.latex.length <= LATEX_MAX &&
-              (mark.domain === undefined ||
-                (listUpTo(mark.domain, 2) &&
-                  (mark.domain as unknown[]).length === 2 &&
-                  (mark.domain as unknown[]).every(finite) &&
-                  (mark.domain as number[])[0] <
-                    (mark.domain as number[])[1])))) &&
-          // A curve's handles are a pair of points for each of its points.
-          (mark?.handles === undefined ||
-            (mark.kind === 'curve' &&
-              Array.isArray(mark.handles) &&
-              Array.isArray(mark.points) &&
-              (mark.handles as unknown[]).length === mark.points.length &&
-              (mark.handles as unknown[]).every(
-                (pair) =>
-                  Array.isArray(pair) &&
-                  pair.length === 2 &&
-                  pair.every(
-                    (point) =>
-                      Array.isArray(point) &&
-                      point.length === 2 &&
-                      point.every(finite)
-                  )
-              ))) &&
-          // A vector runs from one point to one other.
-          (mark?.kind !== 'vector' ||
-            (listUpTo(mark.points, 2) &&
-              (mark.points as unknown[]).length === 2)) &&
-          // An ellipse is drawn from exactly its four handles.
-          (mark?.kind !== 'ellipse' ||
-            (listUpTo(mark.points, 4) &&
-              (mark.points as unknown[]).length === 4 &&
-              (mark.points as unknown[]).every(
-                (point) =>
-                  Array.isArray(point) &&
-                  point.length === 2 &&
-                  point.every(finite)
-              )))
-      )
+      planeElementsFit(fields.elements)
       ? null
       : 'plane fields';
   if (type === 'chart') {

@@ -1,0 +1,147 @@
+{
+  "name": "graph-kinds",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Read the graph."
+      },
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-6, 6, 6, -6],
+          "axis": true,
+          "grid": true
+        },
+        "width": 480,
+        "height": 480,
+        "elements": [
+          {
+            "type": "point",
+            "id": "A",
+            "name": "A",
+            "coords": [-4, -3]
+          },
+          {
+            "type": "point",
+            "id": "B",
+            "name": "B",
+            "coords": [-1, -3]
+          },
+          {
+            "type": "point",
+            "id": "C",
+            "name": "C",
+            "coords": [-4, 1]
+          },
+          {
+            "type": "point",
+            "id": "O",
+            "name": "O",
+            "coords": [3, 3]
+          },
+          {
+            "type": "point",
+            "id": "P",
+            "name": "P",
+            "coords": [5, 3]
+          },
+          {
+            "type": "point",
+            "id": "Q",
+            "name": "Q",
+            "coords": [3, 5]
+          },
+          {
+            "type": "point",
+            "id": "D",
+            "coords": [2, -2]
+          },
+          {
+            "type": "point",
+            "id": "E",
+            "name": "E",
+            "coords": [4, -4]
+          },
+          {
+            "type": "functiongraph",
+            "id": "f",
+            "term": "0.2*x^2-3"
+          },
+          {
+            "type": "line",
+            "id": "l",
+            "points": ["D", "E"]
+          },
+          {
+            "type": "segment",
+            "id": "s1",
+            "points": ["A", "B"]
+          },
+          {
+            "type": "segment",
+            "id": "s2",
+            "points": ["A", "C"]
+          },
+          {
+            "type": "polygon",
+            "id": "poly",
+            "points": ["A", "B", "C"]
+          },
+          {
+            "type": "circle",
+            "id": "c",
+            "center": "D",
+            "radius": 1.2
+          },
+          {
+            "type": "angle",
+            "id": "ang",
+            "points": ["B", "A", "C"]
+          },
+          {
+            "type": "arc",
+            "id": "arc",
+            "center": "O",
+            "points": ["P", "Q"]
+          },
+          {
+            "type": "sector",
+            "id": "sec",
+            "center": "O",
+            "points": ["Q", "P"]
+          },
+          {
+            "type": "text",
+            "id": "t",
+            "coords": [-5, 5],
+            "text": "A label"
+          }
+        ],
+        "description": "Every graph element kind, drawn by the graph engine"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  }
+}

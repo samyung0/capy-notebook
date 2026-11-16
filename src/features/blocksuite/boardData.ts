@@ -3,6 +3,7 @@ import {
   curvePieces,
   curveSegments as segmentsOf,
 } from '@/features/graph/curves';
+import type { GraphElement } from '@/features/graph/model';
 import { EXPORT_PAPER, PAPER, type Paper } from '@/features/graph/paper';
 import { type Box, tidy, type Vec } from './boardGeometry';
 
@@ -18,42 +19,60 @@ export type Color =
   | { normal: string }
   | { dark: string; light: string };
 
-/** What's plotted on a plane, in its own units. A line or curve grows a click at a time,
- * each click one undo step. A label is text centred on its point (Epo 2026-11-08). An
- * ellipse (Epo 2026-11-08) is upright, held by its four handles: right, top, left and
- * bottom, so it starts as a circle and its handles stretch it. A formula (Epo
- * 2026-11-08) is LaTeX centred on its point, drawn by KaTeX. A vector is a line
- * from its first point to its second, with an arrowhead there. A curve's `handles`
- * (Epo 2026-11-13) are each point's [in, out] Bézier handles, set once one is
- * pulled; without them it bends smoothly through its points. A function (Epo
- * 2026-11-13) is typed in the objects list: `term` in the graph dialog's syntax,
- * `latex` as typed, drawn across the plane or its `domain`. A label's or formula's
- * `size` (Epo 2026-11-13) is its text size in pixels, set by its frame's corners;
- * without one it's LABEL_SIZE or FORMULA_SIZE. Text keeps its size as the plane zooms. */
-export type Mark =
-  | { id: string; kind: 'dot'; at: Vec }
-  | { id: string; kind: 'label'; at: Vec; text: string; size?: number }
-  | { id: string; kind: 'formula'; at: Vec; latex: string; size?: number }
-  | {
-      id: string;
-      kind: 'line' | 'vector' | 'curve' | 'ellipse';
-      points: Vec[];
-      handles?: [Vec, Vec][];
-    }
-  | {
-      id: string;
-      kind: 'function';
-      latex: string;
-      term: string;
-      domain?: [number, number];
-    };
+/** What's plotted on a plane, in its own units: the graph model's elements the plane
+ * makes (Epo 2026-11-16, D1/D16). A `point`; a line (`polyline`) or curve grows a
+ * click at a time, each click one undo step, and a two-point `polyline` with `arrow`
+ * is a vector, an arrowhead at its second point. A label (`text`, Epo 2026-11-08) is
+ * text centred on its point. An ellipse (Epo 2026-11-08) is upright, held by four
+ * handles (right, top, left, bottom: `ellipseHandles`), so it starts as a circle and
+ * its handles stretch it. A formula (Epo 2026-11-08) is LaTeX centred on its point,
+ * drawn by KaTeX. A curve's `handles` (Epo 2026-11-13) are each point's [in, out]
+ * Bézier handles, set once one is pulled; without them it bends smoothly through its
+ * points. A function (`functiongraph`, Epo 2026-11-13) is typed in the objects list,
+ * a `term` in the graph dialog's syntax drawn across the plane or its `domain`. A
+ * label's or formula's `size` (Epo 2026-11-13) is its text size in pixels, set by its
+ * frame's corners; without one it's LABEL_SIZE or FORMULA_SIZE. Text keeps its size
+ * as the plane zooms. */
+export type PlaneElement = Extract<
+  GraphElement,
+  {
+    type:
+      | 'curve'
+      | 'ellipse'
+      | 'formula'
+      | 'functiongraph'
+      | 'point'
+      | 'polyline'
+      | 'text';
+  }
+>;
+export type PathElement = Extract<
+  PlaneElement,
+  { type: 'curve' | 'ellipse' | 'polyline' }
+>;
+export type Ellipse = Extract<PlaneElement, { type: 'ellipse' }>;
 
-export type PathMark = Extract<Mark, { points: Vec[] }>;
-export type FunctionMark = Extract<Mark, { kind: 'function' }>;
+/** An upright ellipse's four handles: right, top, left, bottom. */
+export const ellipseHandles = ({
+  center: [cx, cy],
+  radii: [rx, ry],
+}: Pick<Ellipse, 'center' | 'radii'>): Vec[] => [
+  [cx + rx, cy],
+  [cx, cy + ry],
+  [cx - rx, cy],
+  [cx, cy - ry],
+];
 
-/** The points a mark is drawn through, or at; a function has none. */
-export const pointsOf = (mark: Mark): Vec[] =>
-  'points' in mark ? mark.points : 'at' in mark ? [mark.at] : [];
+/** The points a mark is drawn through, or at, that a press picks up; a function has
+ * none. */
+export const pointsOf = (mark: PlaneElement): Vec[] =>
+  mark.type === 'polyline' || mark.type === 'curve'
+    ? mark.coords
+    : mark.type === 'ellipse'
+      ? ellipseHandles(mark)
+      : mark.type === 'functiongraph'
+        ? []
+        : [mark.coords];
 
 /** Whether a curve closes on its start, as `curvePieces` takes it: its first and last
  * points are one point, smooth across the seam. */
@@ -74,8 +93,8 @@ export function smoothHandles(points: Vec[]): [Vec, Vec][] {
 }
 
 /** A curve's pieces as cubic Béziers: from, its two controls, to. */
-export const curveSegments = (mark: PathMark) =>
-  segmentsOf(mark.points, mark.handles);
+export const curveSegments = (mark: Extract<PlaneElement, { type: 'curve' }>) =>
+  segmentsOf(mark.coords, mark.handles);
 
 /** A point along a cubic Bézier piece, `t` from 0 to 1. */
 export const bezier = ([a, b, c, d]: [Vec, Vec, Vec, Vec], t: number): Vec => {
@@ -89,39 +108,26 @@ export const bezier = ([a, b, c, d]: [Vec, Vec, Vec, Vec], t: number): Vec => {
   ) as Vec;
 };
 
-/** An upright ellipse's handles from its box: right, top, left, bottom. */
-export const ellipseIn = (
-  left: number,
-  right: number,
-  bottom: number,
-  top: number
-): Vec[] => {
-  const [cx, cy] = [tidy((left + right) / 2), tidy((bottom + top) / 2)];
-  return [
-    [tidy(right), cy],
-    [cx, tidy(top)],
-    [tidy(left), cy],
-    [cx, tidy(bottom)],
-  ];
-};
+/** A circle round `at` on the grid, as the Ellipse tool places one. */
+export const circleAt = (id: string, [x, y]: Vec, r: number): Ellipse => ({
+  center: [tidy(x), tidy(y)],
+  id,
+  radii: [tidy(r), tidy(r)],
+  type: 'ellipse',
+});
 
-/** The middle of an upright ellipse, from its handles. */
-export const ellipseCentre = (points: Vec[]): Vec => [
-  points[1][0],
-  points[0][1],
-];
-
-/** The handles after one is pulled: right or left sets the width and top or bottom the
- * height, about the middle, so it stays put on the grid. `uniform` (Shift) scales the
- * other way by as much, keeping its shape. A pull onto the middle keeps the size. */
+/** The ellipse after handle `index` (right, top, left, bottom) is pulled to `to`:
+ * right or left sets the width and top or bottom the height, about the middle, so it
+ * stays put on the grid. `uniform` (Shift) scales the other way by as much, keeping
+ * its shape. A pull onto the middle keeps the size. */
 export function pullEllipse(
-  points: Vec[],
+  ellipse: Ellipse,
   index: number,
   to: Vec,
   uniform = false
-): Vec[] {
-  const [cx, cy] = ellipseCentre(points);
-  let [rx, ry] = [points[0][0] - cx, points[1][1] - cy];
+): Ellipse {
+  const [cx, cy] = ellipse.center;
+  let [rx, ry] = ellipse.radii;
   if (index % 2 === 0) {
     const next = Math.abs(to[0] - cx) || rx;
     if (uniform && rx) ry *= next / rx;
@@ -131,26 +137,25 @@ export function pullEllipse(
     if (uniform && ry) rx *= next / ry;
     ry = next;
   }
-  return ellipseIn(cx - rx, cx + rx, cy - ry, cy + ry);
+  return { ...ellipse, radii: [tidy(rx), tidy(ry)] };
 }
 
 /** What a line, curve or ellipse draws through, as short straight steps. */
-export function pathOf(mark: PathMark, perSegment = 16): Vec[] {
-  if (mark.kind === 'curve') {
+export function pathOf(mark: PathElement, perSegment = 16): Vec[] {
+  if (mark.type === 'curve') {
     const pieces = curveSegments(mark);
-    if (!pieces.length) return mark.points;
+    if (!pieces.length) return mark.coords;
     return [
       ...pieces.flatMap((piece) =>
         Array.from({ length: perSegment }, (_, step) =>
           bezier(piece, step / perSegment)
         )
       ),
-      mark.points.at(-1) as Vec,
+      mark.coords.at(-1) as Vec,
     ];
   }
-  if (mark.kind === 'line' || mark.kind === 'vector') return mark.points;
-  const [[right, cy], [cx, top]] = mark.points;
-  const [rx, ry] = [right - cx, top - cy];
+  if (mark.type === 'polyline') return mark.coords;
+  const [[cx, cy], [rx, ry]] = [mark.center, mark.radii];
   const steps = perSegment * 4;
   return Array.from({ length: steps + 1 }, (_, i): Vec => {
     const turn = (i / steps) * Math.PI * 2;
@@ -158,8 +163,9 @@ export function pathOf(mark: PathMark, perSegment = 16): Vec[] {
   });
 }
 
-/** Most marks one plane holds (the board catalog's, as every limit here). */
-export const { MARKS_MAX } = BOARD_CATALOG.limits;
+/** Most elements one plane holds, as every graph (Epo 2026-11-16, D7; the board
+ * catalog's, as every limit here). */
+export const { ELEMENTS_MAX } = BOARD_CATALOG.limits;
 
 /** Longest formula a member can type; the renderer draws nothing past it. */
 export const { LATEX_MAX } = BOARD_CATALOG.limits;

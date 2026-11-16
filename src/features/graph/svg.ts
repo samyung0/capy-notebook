@@ -103,11 +103,14 @@ export class SvgRecorder implements DrawContext {
   private readonly width: number;
   private readonly height: number;
   private readonly measure: Measure;
+  /** Before each clip's id, so several recordings can share one document. */
+  private readonly ids: string;
 
-  constructor(width: number, height: number, measure: Measure) {
+  constructor(width: number, height: number, measure: Measure, ids = '') {
     this.width = width;
     this.height = height;
     this.measure = measure;
+    this.ids = ids;
   }
 
   get fillStyle(): string | CanvasGradient | CanvasPattern {
@@ -415,7 +418,7 @@ export class SvgRecorder implements DrawContext {
   clip() {
     const d = this.pathData();
     this.clips++;
-    const id = `clip${this.clips}`;
+    const id = `${this.ids}clip${this.clips}`;
     this.flushHalo();
     this.defs.push(`<clipPath id="${id}"><path d="${d}"/></clipPath>`);
     this.body.push(`<g clip-path="url(#${id})">`);
@@ -535,11 +538,27 @@ export class SvgRecorder implements DrawContext {
     this.body.push(markup);
   }
 
-  toString() {
+  private content() {
     this.flushHalo();
     const open = [this.state, ...this.saved].reduce((n, s) => n + s.opened, 0);
     const defs = this.defs.length ? `<defs>${this.defs.join('')}</defs>` : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}" viewBox="0 0 ${this.width} ${this.height}">${defs}${this.body.join('')}${'</g>'.repeat(open)}</svg>`;
+    return `${defs}${this.body.join('')}${'</g>'.repeat(open)}`;
+  }
+
+  toString() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}" viewBox="0 0 ${this.width} ${this.height}">${this.content()}</svg>`;
+  }
+
+  /** The drawing as an element of another SVG, filling `w` × `h` there at
+   * (x, y) in that SVG's units. It sets the stroke ends the recording leaves at
+   * SVG's defaults, which the SVG around it may have changed. */
+  nested(x: number, y: number, w: number, h: number) {
+    return `<svg${attrs([
+      ['x', x],
+      ['y', y],
+      ['width', w],
+      ['height', h],
+    ])} viewBox="0 0 ${num(this.width)} ${num(this.height)}" overflow="hidden" stroke-linecap="butt" stroke-linejoin="miter">${this.content()}</svg>`;
   }
 }
 
@@ -557,7 +576,7 @@ function onSegment(from: Vec, middle: Vec, to: Vec) {
 
 let measurer: CanvasRenderingContext2D | null = null;
 /** Text widths from a canvas, made once: `graphSvg` runs in a browser. */
-const canvasMeasure: Measure = (font, text) => {
+export const canvasMeasure: Measure = (font, text) => {
   measurer ??= document.createElement('canvas').getContext('2d');
   if (!measurer) throw new Error('No canvas to measure graph text');
   measurer.font = font;

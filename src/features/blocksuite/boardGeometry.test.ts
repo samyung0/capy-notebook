@@ -1,11 +1,5 @@
 import { expect, it } from 'vitest';
-import {
-  type FunctionMark,
-  functionRuns,
-  type PathMark,
-  pathOf,
-  smoothHandles,
-} from './boardData';
+import { functionRuns, pathOf, smoothHandles } from './boardData';
 import {
   clockAngle,
   minorStep,
@@ -14,8 +8,8 @@ import {
   type Vec,
 } from './boardGeometry';
 
-const curve = (points: Vec[], perSegment: number, handles?: [Vec, Vec][]) =>
-  pathOf({ handles, id: 'c', kind: 'curve', points } as PathMark, perSegment);
+const curve = (coords: Vec[], perSegment: number, handles?: [Vec, Vec][]) =>
+  pathOf({ coords, handles, id: 'c', type: 'curve' }, perSegment);
 
 it('lists a grid by index, and gives up on one no step can cross', () => {
   expect(ticks(-1, 3, 1)).toEqual([-1, 0, 1, 2, 3]);
@@ -89,14 +83,7 @@ it("reads a pie angle clockwise from 12 o'clock", () => {
   }
 });
 
-const plotted = (term: string) =>
-  functionRuns(
-    { id: 'f', kind: 'function', latex: '', term } as FunctionMark,
-    -5,
-    5,
-    0.04,
-    16
-  );
+const plotted = (term: string) => functionRuns({ term }, -5, 5, 0.04, 16);
 
 it('draws a steep line whole, and breaks a function at its asymptote', () => {
   expect(plotted('1000*x')).toHaveLength(1);

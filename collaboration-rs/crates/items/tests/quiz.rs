@@ -926,6 +926,12 @@ fn figures_past_their_caps_are_refused_at_admission() {
         },
         "supported mathematical expression",
     );
+    // A graph is its elements alone (Epo 2026-11-16).
+    refused(
+        Kind::Quiz,
+        |doc| figure(doc, "graph", json!({ "image": { "svg": "<svg/>" } })),
+        "a stored picture",
+    );
     // A chart's value retyped as a plot is checked as a plot.
     let (content, _, client, _) = rooms(&questions);
     figure(&client, "chart", json!({ "series": vec![json!({}); 6] }));
@@ -1077,8 +1083,8 @@ fn a_blank_image_block_is_admitted_and_leaves_its_question_incomplete() {
 }
 
 /// Live quiz rooms accept only hosted question images, as a stored question
-/// keeps them: with the quiz figure host set (`BANK_ASSETS_URL`), an image or
-/// a graph linking a URL under it is admitted, one linking anywhere else is
+/// keeps them: with the quiz figure host set (`BANK_ASSETS_URL`), an image
+/// linking a URL under it is admitted, one linking anywhere else is
 /// refused at admission, and an uploaded asset and the blank image waiting
 /// for its upload are admitted. Fails if admission takes any URL again, or
 /// none under the host.
@@ -1106,7 +1112,6 @@ fn a_live_quiz_admits_only_hosted_question_images() {
         };
         admit(&mut check, &content, &diff(&client, &content)).0
     };
-    let graph = |url: &str| json!({ "image": { "url": url }, "width": 10, "height": 10 });
     for image in [
         json!({ "assetId": "ea_upload" }),
         json!({ "url": "" }),
@@ -1118,28 +1123,11 @@ fn a_live_quiz_admits_only_hosted_question_images() {
             "{image}: {result:?}"
         );
     }
-    let result = admitted("graph", "value", graph(hosted));
-    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
-    for (kind, key, value, reason) in [
-        (
-            "image",
-            "image",
-            json!({ "url": elsewhere }),
-            "an image that is not {assetId} or a hosted {url}",
-        ),
-        (
-            "graph",
-            "value",
-            graph(elsewhere),
-            "a graph image that is not a hosted {url}",
-        ),
-    ] {
-        let result = admitted(kind, key, value);
-        assert!(
-            matches!(&result, Err(Refusal::Shape(m)) if m.contains(reason)),
-            "{kind}: {result:?}"
-        );
-    }
+    let result = admitted("image", "image", json!({ "url": elsewhere }));
+    assert!(
+        matches!(&result, Err(Refusal::Shape(m)) if m.contains("an image that is not {assetId} or a hosted {url}")),
+        "{result:?}"
+    );
 }
 
 /// REVIEW1 S2: a structural edit (Add option) on a large quiz takes the

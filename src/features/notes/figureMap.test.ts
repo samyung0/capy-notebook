@@ -38,7 +38,6 @@ const graph = {
     { id: 's1', points: ['p1', 'p2'], type: 'segment' },
   ] as Record<string, unknown>[],
   height: 300,
-  image: { svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
   type: 'graph',
   width: 400,
 };

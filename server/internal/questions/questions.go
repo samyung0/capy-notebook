@@ -37,19 +37,8 @@ type Policy struct {
 // workspace. Empty refuses such links.
 var QuizBankAssetsURL string
 
-const MaxSVGBytes = fieldlimits.QuestionSVGBytes
-
 var termTokens = regexp.MustCompile(`(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[A-Za-z]+|[+\-*/^(),]`)
 var whitespace = regexp.MustCompile(`\s`)
-var svgRoot = regexp.MustCompile(`^\s*<svg[\s>]`)
-var svgEnd = regexp.MustCompile(`</svg>\s*$`)
-var svgUnsafe = regexp.MustCompile(`(?i)<!|<\?|\bon\w+\s*=|javascript:|data:|<\s*/?\s*(?:script|foreignObject|style|image|use|a|animate\w*|set)\b`)
-var svgReference = regexp.MustCompile(`(?i)(?:[a-z]+:)?(?:href|src)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
-var svgLocalReference = regexp.MustCompile(`^["']#[A-Za-z0-9_-]+["']$`)
-var svgURL = regexp.MustCompile(`(?i)url\s*\([^)]*\)`)
-var svgLocalURL = regexp.MustCompile(`(?i)^url\s*\(\s*["']?#[A-Za-z0-9_-]+["']?\s*\)$`)
-var svgEscapedStyle = regexp.MustCompile(`(?i)style\s*=\s*(?:"[^"<>]*\\|'[^'<>]*\\)`)
-var svgTags = regexp.MustCompile(`<\/?([A-Za-z][\w:-]*)\b`)
 
 func validTerm(term string) bool {
 	tokens := termTokens.FindAllString(term, -1)
@@ -66,28 +55,6 @@ func validTerm(term string) bool {
 	return true
 }
 
-// ValidSVG permits the static subset rendered through an img, never active SVG.
-func ValidSVG(svg string) bool {
-	if len(svg) > MaxSVGBytes || !svgRoot.MatchString(svg) || !svgEnd.MatchString(svg) || svgUnsafe.MatchString(svg) || svgEscapedStyle.MatchString(svg) {
-		return false
-	}
-	for _, ref := range svgReference.FindAllStringSubmatch(svg, -1) {
-		if !svgLocalReference.MatchString(ref[1]) {
-			return false
-		}
-	}
-	for _, ref := range svgURL.FindAllString(svg, -1) {
-		if !svgLocalURL.MatchString(ref) {
-			return false
-		}
-	}
-	for _, tag := range svgTags.FindAllStringSubmatch(svg, -1) {
-		if !enum(tag[1], "svg g path rect circle ellipse line polyline polygon text tspan defs marker clipPath title desc") {
-			return false
-		}
-	}
-	return true
-}
 func tableCells(value any) bool {
 	cells, ok := array(value, 1, fieldlimits.QuestionTableColumns)
 	if !ok {
@@ -692,7 +659,9 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "graph":
-		if err := keys(b, "type board elements image width height", "description"); err != nil {
+		// Elements alone: every view draws them, no picture is stored (Epo
+		// 2026-11-16).
+		if err := keys(b, "type board elements width height", "description"); err != nil {
 			return err
 		}
 		if err := imageFields(b, policy); err != nil {
@@ -705,26 +674,6 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		}
 		if err := graph(b); err != nil {
 			return err
-		}
-		im, err := obj(b["image"])
-		if err != nil {
-			return err
-		}
-		if policy.Bank || im["url"] != nil {
-			if err := keys(im, "url", ""); err != nil {
-				return err
-			}
-			if !assetURL(im["url"], bankBase(policy)) {
-				return fail("invalid bank graph URL")
-			}
-		} else {
-			if err := keys(im, "svg", ""); err != nil {
-				return err
-			}
-			svg, ok := im["svg"].(string)
-			if !ok || len(svg) > MaxSVGBytes || !ValidSVG(svg) {
-				return fail("invalid graph SVG")
-			}
 		}
 	default:
 		return fail("unsupported block type")

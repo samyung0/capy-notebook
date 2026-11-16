@@ -5,6 +5,7 @@ import {
   type ChartFrameProps,
 } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
+import { graphSvg } from '@/features/graph/svg';
 import type { ExportImage, Figure } from './render';
 
 // The capy light theme's --chart-* (capy.css).
@@ -112,6 +113,10 @@ async function svgImage(source: string): Promise<ExportImage> {
 export async function renderExportFigure(figure: Figure): Promise<ExportImage> {
   await new Promise((resolve) => setTimeout(resolve, 0));
   if (figure.type === 'image') return svgImage(figure.source);
+  if (figure.type === 'graph')
+    return svgImage(
+      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(graphSvg(figure.block))}`
+    );
   if (figure.type === 'math') {
     if (!figure.html) throw new Error('The formula was not rendered.');
     const { default: css } = await import('katex/dist/katex.min.css?inline');

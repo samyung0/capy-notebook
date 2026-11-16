@@ -1617,7 +1617,7 @@ fn refuse<T>(what: impl Into<String>) -> Result<T, String> {
     Err(format!("a quiz cannot hold {}", what.into()))
 }
 
-/// A figure link (an image's or a graph's `{url}`) a live quiz room admits:
+/// An image's `{url}` a live quiz room admits:
 /// blank while its upload is pending, else one a stored question keeps
 /// (hosted under the policy's figure host, `BANK_ASSETS_URL`).
 fn figure_url(url: &str, policy: &Policy) -> bool {
@@ -2209,13 +2209,6 @@ fn admit<T: ReadTxn>(
         if let (Some(kind), Some(value @ Any::Map(_))) = (kind, value) {
             let value = any_json(&value);
             notes::questions::figure_caps(&kind, &value).or_else(refuse)?;
-            if kind == "graph"
-                && value["image"]["url"]
-                    .as_str()
-                    .is_some_and(|url| !figure_url(url, policy))
-            {
-                return refuse("a graph image that is not a hosted {url}");
-            }
         }
     }
     // A text, a list or the quiz's part counts that may pass a cap send the

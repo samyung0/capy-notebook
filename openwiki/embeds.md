@@ -364,14 +364,20 @@ figures).
   count the block as the map holds it, the entries a read drops included
   (Epo 2026-10-18). Typing elsewhere in the note stays on the bound with no
   copy.
-- **Graph SVG.** Saving draws the graph's SVG with the graph engine's
-  `graphSvg` (`src/features/graph/`, the one drawing every graph surface
-  shares; [question-bank](question-bank.md)); an editor in Edit mode that
-  sees a graph's recipe change redraws it once in an idle callback and writes
-  `image` only when it differs, outside Undo; a recipe the validators refuse
-  keeps its stored SVG, and readers keep the stored SVG. The SVG passes the
-  same `validGraphSvg` check on every server (`svg-engine.json` in the shared
-  question fixtures is an engine drawing).
+- **No stored picture** (Epo 2026-11-16). A graph block is its `board`,
+  `elements`, `width`, `height` and optional `description`, the same in
+  quizzes, notes and the bank; `image` is refused everywhere (TS, Go and Rust
+  validators, `graph-image-rejected.json` in the shared question fixtures)
+  and a live figure value holding one is refused at admission
+  (`figure_caps`). Every view draws the elements with the graph engine
+  (`src/features/graph/`; `GraphView` in `src/features/questions/`, a
+  `<canvas>` of the block's size, at most its column's width, in the app's
+  light or dark paper), so a peer's change needs no redraw or write. The note
+  export is the one place a graph becomes a picture: `graphSvg` on the light
+  export paper, checked by `validGraphSvg`. Share pages' Worker HTML holds the
+  sized canvas and the browser draws into it after hydration; the engine
+  (`graphPaint.ts`) is stubbed out of the Worker build (`BROWSER_ONLY` in
+  `vite.config.ts`).
 
 ## Table views
 

@@ -23,7 +23,6 @@ import { drawGraph, labelFont, wrapLabel } from '@/features/graph/draw';
 import { attachGestures } from '@/features/graph/gestures';
 import { LABEL_SIZE, type Vec } from '@/features/graph/model';
 import { PAPER } from '@/features/graph/paper';
-import { graphSvg } from '@/features/graph/svg';
 import {
   bboxOf,
   elementBounds,
@@ -92,7 +91,7 @@ const sameBox = (a: number[], b: number[]) =>
   );
 
 /** Desmos-style graph editor: typed rows on the left, the live graph on the
- * right; phones stack the graph on top. The graph frames what Save exports.
+ * right; phones stack the graph on top. The graph frames what every view draws.
  * Rows stay here: a keystroke parses its row once and the canvas redraws on
  * the next frame, while the dialog hears the new value in a transition. */
 export function GraphEditor({
@@ -535,7 +534,7 @@ function grabbable(
   return null;
 }
 
-/** The live graph at the export's pixel size, scaled to the column and no
+/** The live graph at its stored pixel size, scaled to the column and no
  * taller than the dialog leaves room for, so the dialog never scrolls for it.
  * It takes the canvas plane's gestures (Epo 2026-11-16): the wheel pans,
  * pinch and Ctrl/⌘-wheel zoom, and a drag on empty paper pans (no Select tool
@@ -558,7 +557,7 @@ function GraphStage({
   const canvas = useRef<HTMLCanvasElement>(null);
   const { isDark } = useTheme();
   const [scale, setScale] = useState(0);
-  const [preview, setPreview] = useState<{ open: boolean; svg: string }>();
+  const [preview, setPreview] = useState<{ bbox: Bbox; open: boolean }>();
   const { width, height } = graph;
   // What frames and gestures read: the newest graph, view and drag.
   const live = useRef({
@@ -799,11 +798,7 @@ function GraphStage({
         onClick={() => {
           const { graph: now, view } = live.current;
           if (!view) return;
-          const shownBox = bboxOf(view, now.width, now.height);
-          setPreview({
-            open: true,
-            svg: graphSvg({ ...now, board: { ...now.board, bbox: shownBox } }),
-          });
+          setPreview({ bbox: bboxOf(view, now.width, now.height), open: true });
         }}
         type="button"
       >
@@ -833,10 +828,10 @@ function GraphStage({
         {!toolbarTarget && tools}
       </div>
       {toolbarTarget && createPortal(tools, toolbarTarget)}
-      {/* What Save would export, full screen like a note figure. */}
+      {/* The graph as shown, full screen like a note figure. */}
       {preview && (
         <FigurePreview
-          block={{ ...graph, image: { svg: preview.svg } }}
+          block={{ ...graph, board: { ...graph.board, bbox: preview.bbox } }}
           onOpenChange={(open) => setPreview({ ...preview, open })}
           open={preview.open}
         />

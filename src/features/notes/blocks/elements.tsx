@@ -87,7 +87,6 @@ import {
   ToolbarPopoverRow,
 } from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
-import { useGraphRedraw } from './graphRedraw';
 import { mermaidSourceText, setMermaidCaption } from './mermaidBlock';
 import { rebaseBlock } from './rebase';
 import type { NoteVisualBlock } from './VisualBlockDialog';
@@ -524,7 +523,6 @@ export function VisualBlockElement(props: PlateElementProps) {
   const shown = useMemo(() => repairFigureBlock(block), [block]);
   const [editing, setEditing] = useState(false);
   const onMouseDown = useSelectOnMouseDown(props.element);
-  useGraphRedraw(props.element, readOnly);
   const update = (patch: Partial<QuestionFigureNode>) => {
     const at = editor.api.findPath(props.element);
     if (at) editor.tf.setNodes(patch, { at });

@@ -661,7 +661,7 @@ keeps the text, each numbered blank becoming a plain line, and drops only the
 untouched sample sentence (`withAnswer`). A text block open in its editor
 closes when its column's figures move or go, or when anyone else adds or
 removes a block in that column, since rows are keyed by place. A figure's Save
-writes into the question as it stands when its graph image resolves. It sits under
+writes into the question as it stands. It sits under
 the normal header, beside the workspace's left panel: the quiz with its chip, ⋮
 and save state, then Undo, Redo and Study. Until its rooms sync the same page shows
 with a working rail and a question that takes no input: drawn from the device's copy
@@ -785,8 +785,8 @@ formula images are left out until the canvas plane moves onto the engine), and
 centred on their position and wrapped at 200 px, a fixed 24 px angle mark,
 light or dark paper in the editor and white paper in every export. The graph
 editor (`GraphEditor.tsx`, the same in quizzes and notes) is Desmos-style: one
-typeset MathLive row per element on the left, a canvas at the export's pixel
-size on the right (stacked on phones). `graphSyntax.ts` turns rows into recipe
+typeset MathLive row per element on the left, a canvas at the graph's stored
+pixel size on the right (stacked on phones). `graphSyntax.ts` turns rows into recipe
 elements and back: Desmos input (`y = 0.5x^2 - 3`, `{0 ≤ x ≤ 4}` restrictions,
 `A = (1, 2)`, `segment(A, B)`, `polygon(…)`, `circle(A, 3)`, `angle(…)`,
 `arc(O, A, B)`, `sector(…)`) with implicit products, stored with JessieCode's
@@ -804,8 +804,14 @@ apply once per animation frame and the visible area is the saved `bbox`,
 reported once a gesture settles (150 ms after the last wheel event, or the last
 pointer up). Zoom in, Zoom out and Fit sit in the toolbar; dragged points and
 labels round to the view's precision (0.1 at about 40 px a unit). Full screen
-opens what Save would export in the note figure preview; Save, a note figure's
-save, `graphRedraw` and the bank render all write `graphSvg`.
+opens the graph as shown in the note figure preview. A graph stores no picture
+(D16, D11, Epo 2026-11-16): the block is its elements, board, size and
+description, the same in quizzes, notes and the bank, and every view (the
+question view, the runner, results, note figures, previews, share pages)
+draws it with the engine through `GraphView` (a canvas at the block's size,
+at most its column's width, redrawn at the screen's density and on a theme
+change; `graphPaint.ts` is loaded in an effect, so share pages' Worker HTML
+holds only the sized box). `graphSvg` runs only for the note export.
 Numbers follow GeoGebra (Epo 2026-10-17): ticks every 1, 2 or 5 × 10ⁿ from
 100px of units rounded down, finer grid lines between them, tick numbers plain
 (`0.25`, `2010`) or scientific (`5E8`) when the step is under 10⁻⁵ or over
@@ -856,10 +862,14 @@ room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
 plot vanished from the projection). Valid plots are in the shared fixtures
 (`plot.json`, `plot-at-limits.json`), so the live quiz round trip and the
 browser/server parity corpus carry them; refused plot cases are tested in each
-validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
-SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
-database and the SVG in the public bucket. Image and graph blocks both keep
-their source under `image`: bank images use `{ url }`, a public content-hashed
+validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. Graphs keep no
+picture anywhere (Epo 2026-11-16): a bank graph is its recipe in the database,
+uploads no SVG and the bank's render script makes none; published bank
+questions whose graphs still name an SVG file are rewritten without it by
+`go run ./cmd/bank graphs` (a dry run listing them) and `graphs --write`, and
+the old files stay in the public bucket. Bank assets are raster figures only
+(PNG, JPEG, GIF, WebP; the browser draws an SVG upload as a PNG first). Image
+blocks keep their source under `image`: bank images use `{ url }`, a public content-hashed
 URL, and quiz images use `{ assetId }`, a private editor asset of the quiz
 (see [backend-storage-quota.md](backend-storage-quota.md)). Quiz images are
 resolved to signed URLs at render and export time and follow editor-asset
@@ -880,7 +890,7 @@ options stay plain strings; no images or rich content go inside them.
 
 `POST /api/bank/assets` checks the editor grant, validates the bytes and uses
 server environment credentials. The local publisher has the same validation.
-Figures are capped at a flat 4 MiB (SVG 256 KiB), with no plan because the
+Figures are PNG, JPEG, GIF or WebP, capped at a flat 4 MiB, with no plan because the
 platform pays; the bank editor shrinks a larger raster image in the browser
 first (`uploadBankAsset`, `src/lib/fitImage.ts`).
 `BANK_ASSETS_URL` is the allowed public base URL for stored bank asset references;
@@ -1558,7 +1568,7 @@ The Biology 101 MSW quiz and both note-embedded quizzes share
 answer types, fixed-unit quantities, multipart questions, grouped parts (board
 U2's, `q_blood`), both layouts, formulas, tables, an editable graph and all six
 chart styles. Every part has a worked
-solution. The graph SVG is rendered from its stored recipe by `graphSvg`. The seeded
+solution. The graph is drawn from its elements wherever it shows. The seeded
 `at_1` attempt includes correct, incorrect, blank and partially credited answers
 for inspecting review states; the seeded attempts are graded by the mock scorer
 from text-shaped answers, as the server stores them. Image examples are

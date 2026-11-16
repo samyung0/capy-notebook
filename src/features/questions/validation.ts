@@ -145,14 +145,11 @@ export function validGraphTerm(term: string): boolean {
   return tokens.every((token) => !letterStart.test(token) || names.has(token));
 }
 
+/** The static SVG subset a graph exports to (the note export, `graphSvg`):
+ * no active content or external resources. No graph stores one (Epo
+ * 2026-11-16). */
 export function validGraphSvg(svg: string): boolean {
-  if (
-    new TextEncoder().encode(svg).length > limits.QUESTION_SVG_BYTES_MAX ||
-    !svgStart.test(svg) ||
-    !svgEnd.test(svg)
-  )
-    return false;
-  // SVG is rendered as an image; reject active content and external resources at storage too.
+  if (!(svgStart.test(svg) && svgEnd.test(svg))) return false;
   if (unsafeSvg.test(svg) || svgEscapedStyle.test(svg)) return false;
   for (const match of svg.matchAll(svgReferences))
     if (!svgLocalReference.test(match[1])) return false;
@@ -366,14 +363,6 @@ const graphSchema = z
       grid: z.boolean(),
     }),
     elements: z.array(graphElement).max(limits.QUESTION_GRAPH_ELEMENTS_MAX),
-    image: z.union([
-      z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
-      z.strictObject({
-        svg: z.string().refine(validGraphSvg, {
-          error: () => m.question_validation_graph_svg(),
-        }),
-      }),
-    ]),
     type: z.literal('graph'),
     ...graphSize,
     description: text.optional(),
@@ -654,8 +643,7 @@ export type RuleIssue = {
     | 'open-answer-length'
     | 'quiz-question-parts'
     | 'description'
-    | 'asset-host'
-    | 'upload-graphs';
+    | 'asset-host';
   part?: number;
   /** A block in `groups[group]` (its section is 'group'). */
   group?: number;
@@ -784,7 +772,7 @@ export function ruleIssues(
         issues.push({ block: { index, section }, group, message, part, rule });
       if (!(policy.bank || descriptionFits(block)))
         fail('description', m.question_validation_text_too_long());
-      if (block.type !== 'image' && block.type !== 'graph') return;
+      if (block.type !== 'image') return;
       // Bank figures must be hosted bank assets; quiz figures are editor
       // assets, or a copied bank question's link under the deployment's
       // BANK_ASSETS_URL (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside
@@ -803,8 +791,6 @@ export function ruleIssues(
           : 'assetId' in block.image && policy.bank
       )
         fail('asset-host', m.question_validation_asset_host());
-      if (policy.bank && block.type === 'graph' && 'svg' in block.image)
-        fail('upload-graphs', m.question_validation_upload_graphs());
     });
   return issues;
 }

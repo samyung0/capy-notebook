@@ -11,7 +11,7 @@ import {
   LABEL_SIZE,
   type Vec,
 } from './model';
-import type { Paper } from './paper';
+import { PAPER, type Paper } from './paper';
 import { axisNumber, minorStep, tickStep, ticks, type View } from './view';
 
 /** What the engine draws with: a canvas's 2D context, or the SVG recorder. */
@@ -45,7 +45,8 @@ export type DrawContext = ReplayContext &
 
 /** A polar board's spokes: a light one every 15°, a darker one every 30°. */
 export const POLAR_SPOKE = 15;
-const DOT_RADIUS = 4.5;
+/** A point's dot, in screen pixels. */
+export const DOT_RADIUS = 4.5;
 /** An arrowhead, in screen pixels: a mark keeps its size as the graph zooms. */
 const ARROW_LENGTH = 12;
 const ARROW_SPREAD = Math.PI / 7;
@@ -402,248 +403,15 @@ function drawElements(
   elements: GraphElement[],
   refresh: () => void
 ) {
-  const { ctx, frame, paper, view, X, Y } = at;
-  const S = ([x, y]: Vec): Vec => [X(x), Y(y)];
-  const points = new Map(
-    elements.flatMap((element) =>
-      element.type === 'point' ? [[element.id, element.coords] as const] : []
-    )
-  );
-  const pointAt = (id: string) => {
-    const found = points.get(id);
-    return found && S(found);
-  };
+  const { ctx, paper } = at;
+  const points = pointsById(elements);
   const labels: Label[] = [];
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.fillStyle = paper.ink;
   for (const element of elements) {
     if (element.hidden || element.type === 'point') continue;
-    ctx.strokeStyle = paper.ink;
-    ctx.fillStyle = paper.ink;
-    ctx.lineWidth = 2;
-    ctx.setLineDash('dash' in element && element.dash ? DASH : []);
-    switch (element.type) {
-      case 'functiongraph': {
-        const left = view.left;
-        const right = view.left + frame.w / view.ppuX;
-        const runs = functionRuns(
-          element,
-          left,
-          right,
-          2 / view.ppuX,
-          frame.h / view.ppuY
-        );
-        ctx.beginPath();
-        for (const run of runs) {
-          let drawing = false;
-          for (const point of run) {
-            const [x, y] = S(point);
-            // Past a float's range at an extreme zoom: the run breaks.
-            if (!(Number.isFinite(x) && Number.isFinite(y))) drawing = false;
-            else if (drawing) ctx.lineTo(x, y);
-            else {
-              ctx.moveTo(x, y);
-              drawing = true;
-            }
-          }
-        }
-        ctx.stroke();
-        break;
-      }
-      case 'line': {
-        const [a, b] = element.points.map(pointAt);
-        const span = a && b && lineInFrame(a, b, frame);
-        if (span) strokeLine(ctx, span, false);
-        break;
-      }
-      case 'segment': {
-        const [a, b] = element.points.map(pointAt);
-        if (!(a && b)) break;
-        strokeLine(ctx, [a, b], Boolean(element.arrow));
-        if (element.ticks) hatch(ctx, a, b, element.ticks);
-        break;
-      }
-      case 'polyline':
-        if (element.coords.length > 1)
-          strokeLine(ctx, element.coords.map(S), Boolean(element.arrow));
-        break;
-      case 'curve': {
-        if (element.coords.length < 2) break;
-        ctx.beginPath();
-        ctx.moveTo(...S(element.coords[0]));
-        for (const [, c1, c2, to] of curveSegments(
-          element.coords,
-          element.handles
-        ))
-          ctx.bezierCurveTo(...S(c1), ...S(c2), ...S(to));
-        ctx.stroke();
-        break;
-      }
-      case 'ellipse': {
-        const [cx, cy] = S(element.center);
-        ctx.beginPath();
-        ctx.ellipse(
-          cx,
-          cy,
-          Math.abs(element.radii[0] * view.ppuX),
-          Math.abs(element.radii[1] * view.ppuY),
-          0,
-          0,
-          Math.PI * 2
-        );
-        ctx.stroke();
-        break;
-      }
-      case 'circle': {
-        const center = pointAt(element.center);
-        if (!center) break;
-        ctx.beginPath();
-        ctx.ellipse(
-          center[0],
-          center[1],
-          element.radius * view.ppuX,
-          element.radius * view.ppuY,
-          0,
-          0,
-          Math.PI * 2
-        );
-        ctx.stroke();
-        break;
-      }
-      case 'arc':
-      case 'sector': {
-        const center = points.get(element.center);
-        const [from, to] = element.points.map((id) => points.get(id));
-        if (!(center && from && to)) break;
-        // Counterclockwise from the first point round to the second's direction,
-        // at the first point's distance.
-        const r = Math.hypot(from[0] - center[0], from[1] - center[1]);
-        const start = Math.atan2(from[1] - center[1], from[0] - center[0]);
-        let end = Math.atan2(to[1] - center[1], to[0] - center[0]);
-        if (end <= start) end += Math.PI * 2;
-        const [cx, cy] = S(center);
-        ctx.beginPath();
-        if (element.type === 'sector') ctx.moveTo(cx, cy);
-        ctx.ellipse(
-          cx,
-          cy,
-          r * view.ppuX,
-          r * view.ppuY,
-          0,
-          -start,
-          -end,
-          true
-        );
-        if (element.type === 'sector') {
-          ctx.closePath();
-          shadeAndStroke(ctx, element.shade);
-        } else ctx.stroke();
-        break;
-      }
-      case 'polygon': {
-        const corners = element.points.map(pointAt);
-        if (!corners.every(Boolean)) break;
-        ctx.beginPath();
-        for (const corner of corners as Vec[]) ctx.lineTo(...corner);
-        ctx.closePath();
-        shadeAndStroke(ctx, element.shade);
-        break;
-      }
-      case 'angle': {
-        const [first, vertex, second] = element.points.map((id) =>
-          points.get(id)
-        );
-        if (!(first && vertex && second)) break;
-        const v = S(vertex);
-        const u1 = unit([X(first[0]) - v[0], Y(first[1]) - v[1]]);
-        const u2 = unit([X(second[0]) - v[0], Y(second[1]) - v[1]]);
-        // Square at 90° on the plane, whatever the axes' scales.
-        const turn = Math.abs(
-          Math.atan2(second[1] - vertex[1], second[0] - vertex[0]) -
-            Math.atan2(first[1] - vertex[1], first[0] - vertex[0])
-        );
-        const square =
-          Math.abs(Math.min(turn, Math.PI * 2 - turn) - Math.PI / 2) < 1e-9;
-        ctx.setLineDash([]);
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        if (square) {
-          const side = ANGLE_RADIUS * 0.7;
-          ctx.moveTo(v[0] + u1[0] * side, v[1] + u1[1] * side);
-          ctx.lineTo(
-            v[0] + (u1[0] + u2[0]) * side,
-            v[1] + (u1[1] + u2[1]) * side
-          );
-          ctx.lineTo(v[0] + u2[0] * side, v[1] + u2[1] * side);
-        } else {
-          // The arc under 180°, whichever way round that is on screen.
-          const a1 = Math.atan2(u1[1], u1[0]);
-          let sweep = Math.atan2(u2[1], u2[0]) - a1;
-          if (sweep > Math.PI) sweep -= Math.PI * 2;
-          if (sweep < -Math.PI) sweep += Math.PI * 2;
-          ctx.moveTo(
-            v[0] + Math.cos(a1) * ANGLE_RADIUS,
-            v[1] + Math.sin(a1) * ANGLE_RADIUS
-          );
-          ctx.arc(v[0], v[1], ANGLE_RADIUS, a1, a1 + sweep, sweep < 0);
-        }
-        ctx.stroke();
-        if (!element.label) break;
-        // The value on the bisector just beyond the arc, inside the angle; narrow
-        // angles push it out until the wedge fits about two characters, up to 70px.
-        let [mx, my] = [u1[0] + u2[0], u1[1] + u2[1]];
-        if (Math.hypot(mx, my) < 1e-6) [mx, my] = [u1[1], -u1[0]];
-        [mx, my] = unit([mx, my]);
-        const half =
-          Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1]))) /
-          2;
-        const distance = Math.min(
-          70,
-          Math.max(ANGLE_RADIUS * 1.6, 15 / Math.tan(Math.max(half, 0.05)))
-        );
-        labels.push({
-          align: 'center',
-          baseline: 'middle',
-          text: element.label,
-          x: v[0] + mx * distance,
-          y: v[1] + my * distance,
-        });
-        break;
-      }
-      case 'text': {
-        const size = element.size ?? LABEL_SIZE;
-        ctx.font = labelFont(size);
-        const lines = wrapLabel(
-          element.text,
-          (line) => ctx.measureText(line).width
-        );
-        const [x, y] = S(element.coords);
-        for (const [i, text] of lines.entries())
-          labels.push({
-            align: 'center',
-            baseline: 'middle',
-            size,
-            text,
-            x,
-            y: y + (i - (lines.length - 1) / 2) * size * 1.2,
-          });
-        break;
-      }
-      case 'formula': {
-        const drawn = formulaAt(element.latex, refresh);
-        if (!drawn) break;
-        const box = formulaBox(drawn, ...S(element.coords), element.size);
-        ctx.save();
-        // KaTeX's ink is black; dark paper turns it light, its colours about kept.
-        if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
-        ctx.translate(box.x, box.y);
-        ctx.scale(box.scale, box.scale);
-        replay(ctx, drawn);
-        ctx.restore();
-        break;
-      }
-    }
+    drawElement(at, element, points, labels, refresh, paper.ink, 2);
   }
   drawPoints(at, elements, labels);
   ctx.textBaseline = 'middle';
@@ -652,6 +420,300 @@ function drawElements(
     ctx.font = labelFont(label.size);
     ctx.textBaseline = label.baseline;
     haloText(at, label.text, label.x, label.y, label.align);
+  }
+}
+
+const pointsById = (elements: GraphElement[]) =>
+  new Map(
+    elements.flatMap((element) =>
+      element.type === 'point' ? [[element.id, element.coords] as const] : []
+    )
+  );
+
+/** A label's lines, wrapped as drawn, and the box they fill centred on (x, y),
+ * in screen pixels. Sets the context's font to the label's. */
+export function textBox(
+  ctx: Pick<DrawContext, 'font' | 'measureText'>,
+  text: string,
+  size: number,
+  x: number,
+  y: number
+) {
+  ctx.font = labelFont(size);
+  const lines = wrapLabel(text, (line) => ctx.measureText(line).width);
+  const w = Math.max(0, ...lines.map((line) => ctx.measureText(line).width));
+  const h = lines.length * size * 1.2;
+  return { h, lines, w, x: x - w / 2, y: y - h / 2 };
+}
+
+/** One element's stroke in `ink` at `width` pixels, over a drawn graph: an
+ * editor's highlight or a mark still being drawn. Points, labels and formulas
+ * are the editor's own to show. `elements` holds the points a construction
+ * names. */
+export function strokeElement(
+  ctx: DrawContext,
+  frame: Frame,
+  view: View,
+  element: GraphElement,
+  ink: string,
+  width: number,
+  elements: GraphElement[] = []
+) {
+  if (
+    element.type === 'point' ||
+    element.type === 'text' ||
+    element.type === 'formula'
+  )
+    return;
+  const at: Screen = {
+    ctx,
+    frame,
+    paper: { ...PAPER.light, ink },
+    view,
+    X: (x) => frame.x + (x - view.left) * view.ppuX,
+    Y: (y) => frame.y + (view.top - y) * view.ppuY,
+  };
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  drawElement(
+    at,
+    element,
+    pointsById(elements),
+    [],
+    () => undefined,
+    ink,
+    width
+  );
+  ctx.setLineDash([]);
+}
+
+/** One element in `ink`, its strokes `width` pixels wide; its text goes on
+ * `labels`, drawn over everything after. */
+function drawElement(
+  at: Screen,
+  element: GraphElement,
+  points: Map<string, Vec>,
+  labels: Label[],
+  refresh: () => void,
+  ink: string,
+  width: number
+) {
+  const { ctx, frame, paper, view, X, Y } = at;
+  const S = ([x, y]: Vec): Vec => [X(x), Y(y)];
+  const pointAt = (id: string) => {
+    const found = points.get(id);
+    return found && S(found);
+  };
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineWidth = width;
+  ctx.setLineDash('dash' in element && element.dash ? DASH : []);
+  switch (element.type) {
+    case 'functiongraph': {
+      const left = view.left;
+      const right = view.left + frame.w / view.ppuX;
+      const runs = functionRuns(
+        element,
+        left,
+        right,
+        2 / view.ppuX,
+        frame.h / view.ppuY
+      );
+      ctx.beginPath();
+      for (const run of runs) {
+        let drawing = false;
+        for (const point of run) {
+          const [x, y] = S(point);
+          // Past a float's range at an extreme zoom: the run breaks.
+          if (!(Number.isFinite(x) && Number.isFinite(y))) drawing = false;
+          else if (drawing) ctx.lineTo(x, y);
+          else {
+            ctx.moveTo(x, y);
+            drawing = true;
+          }
+        }
+      }
+      ctx.stroke();
+      break;
+    }
+    case 'line': {
+      const [a, b] = element.points.map(pointAt);
+      const span = a && b && lineInFrame(a, b, frame);
+      if (span) strokeLine(ctx, span, false);
+      break;
+    }
+    case 'segment': {
+      const [a, b] = element.points.map(pointAt);
+      if (!(a && b)) break;
+      strokeLine(ctx, [a, b], Boolean(element.arrow));
+      if (element.ticks) hatch(ctx, a, b, element.ticks);
+      break;
+    }
+    case 'polyline':
+      if (element.coords.length > 1)
+        strokeLine(ctx, element.coords.map(S), Boolean(element.arrow));
+      break;
+    case 'curve': {
+      if (element.coords.length < 2) break;
+      ctx.beginPath();
+      ctx.moveTo(...S(element.coords[0]));
+      for (const [, c1, c2, to] of curveSegments(
+        element.coords,
+        element.handles
+      ))
+        ctx.bezierCurveTo(...S(c1), ...S(c2), ...S(to));
+      ctx.stroke();
+      break;
+    }
+    case 'ellipse': {
+      const [cx, cy] = S(element.center);
+      ctx.beginPath();
+      ctx.ellipse(
+        cx,
+        cy,
+        Math.abs(element.radii[0] * view.ppuX),
+        Math.abs(element.radii[1] * view.ppuY),
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.stroke();
+      break;
+    }
+    case 'circle': {
+      const center = pointAt(element.center);
+      if (!center) break;
+      ctx.beginPath();
+      ctx.ellipse(
+        center[0],
+        center[1],
+        element.radius * view.ppuX,
+        element.radius * view.ppuY,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.stroke();
+      break;
+    }
+    case 'arc':
+    case 'sector': {
+      const center = points.get(element.center);
+      const [from, to] = element.points.map((id) => points.get(id));
+      if (!(center && from && to)) break;
+      // Counterclockwise from the first point round to the second's direction,
+      // at the first point's distance.
+      const r = Math.hypot(from[0] - center[0], from[1] - center[1]);
+      const start = Math.atan2(from[1] - center[1], from[0] - center[0]);
+      let end = Math.atan2(to[1] - center[1], to[0] - center[0]);
+      if (end <= start) end += Math.PI * 2;
+      const [cx, cy] = S(center);
+      ctx.beginPath();
+      if (element.type === 'sector') ctx.moveTo(cx, cy);
+      ctx.ellipse(cx, cy, r * view.ppuX, r * view.ppuY, 0, -start, -end, true);
+      if (element.type === 'sector') {
+        ctx.closePath();
+        shadeAndStroke(ctx, element.shade);
+      } else ctx.stroke();
+      break;
+    }
+    case 'polygon': {
+      const corners = element.points.map(pointAt);
+      if (!corners.every(Boolean)) break;
+      ctx.beginPath();
+      for (const corner of corners as Vec[]) ctx.lineTo(...corner);
+      ctx.closePath();
+      shadeAndStroke(ctx, element.shade);
+      break;
+    }
+    case 'angle': {
+      const [first, vertex, second] = element.points.map((id) =>
+        points.get(id)
+      );
+      if (!(first && vertex && second)) break;
+      const v = S(vertex);
+      const u1 = unit([X(first[0]) - v[0], Y(first[1]) - v[1]]);
+      const u2 = unit([X(second[0]) - v[0], Y(second[1]) - v[1]]);
+      // Square at 90° on the plane, whatever the axes' scales.
+      const turn = Math.abs(
+        Math.atan2(second[1] - vertex[1], second[0] - vertex[0]) -
+          Math.atan2(first[1] - vertex[1], first[0] - vertex[0])
+      );
+      const square =
+        Math.abs(Math.min(turn, Math.PI * 2 - turn) - Math.PI / 2) < 1e-9;
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (square) {
+        const side = ANGLE_RADIUS * 0.7;
+        ctx.moveTo(v[0] + u1[0] * side, v[1] + u1[1] * side);
+        ctx.lineTo(
+          v[0] + (u1[0] + u2[0]) * side,
+          v[1] + (u1[1] + u2[1]) * side
+        );
+        ctx.lineTo(v[0] + u2[0] * side, v[1] + u2[1] * side);
+      } else {
+        // The arc under 180°, whichever way round that is on screen.
+        const a1 = Math.atan2(u1[1], u1[0]);
+        let sweep = Math.atan2(u2[1], u2[0]) - a1;
+        if (sweep > Math.PI) sweep -= Math.PI * 2;
+        if (sweep < -Math.PI) sweep += Math.PI * 2;
+        ctx.moveTo(
+          v[0] + Math.cos(a1) * ANGLE_RADIUS,
+          v[1] + Math.sin(a1) * ANGLE_RADIUS
+        );
+        ctx.arc(v[0], v[1], ANGLE_RADIUS, a1, a1 + sweep, sweep < 0);
+      }
+      ctx.stroke();
+      if (!element.label) break;
+      // The value on the bisector just beyond the arc, inside the angle; narrow
+      // angles push it out until the wedge fits about two characters, up to 70px.
+      let [mx, my] = [u1[0] + u2[0], u1[1] + u2[1]];
+      if (Math.hypot(mx, my) < 1e-6) [mx, my] = [u1[1], -u1[0]];
+      [mx, my] = unit([mx, my]);
+      const half =
+        Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1]))) / 2;
+      const distance = Math.min(
+        70,
+        Math.max(ANGLE_RADIUS * 1.6, 15 / Math.tan(Math.max(half, 0.05)))
+      );
+      labels.push({
+        align: 'center',
+        baseline: 'middle',
+        text: element.label,
+        x: v[0] + mx * distance,
+        y: v[1] + my * distance,
+      });
+      break;
+    }
+    case 'text': {
+      const size = element.size ?? LABEL_SIZE;
+      const [x, y] = S(element.coords);
+      const { lines } = textBox(ctx, element.text, size, x, y);
+      for (const [i, text] of lines.entries())
+        labels.push({
+          align: 'center',
+          baseline: 'middle',
+          size,
+          text,
+          x,
+          y: y + (i - (lines.length - 1) / 2) * size * 1.2,
+        });
+      break;
+    }
+    case 'formula': {
+      const drawn = formulaAt(element.latex, refresh);
+      if (!drawn) break;
+      const box = formulaBox(drawn, ...S(element.coords), element.size);
+      ctx.save();
+      // KaTeX's ink is black; dark paper turns it light, its colours about kept.
+      if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
+      ctx.translate(box.x, box.y);
+      ctx.scale(box.scale, box.scale);
+      replay(ctx, drawn);
+      ctx.restore();
+      break;
+    }
   }
 }
 

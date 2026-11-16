@@ -40,7 +40,6 @@ fn graph() -> Value {
             { "type": "point", "id": "p2", "coords": [1, 1] },
             { "type": "segment", "id": "s1", "points": ["p1", "p2"] },
         ],
-        "image": { "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"><rect width=\"320\" height=\"190\" fill=\"#eeeeee\"/></svg>" },
         "width": 320, "height": 190,
     })
 }

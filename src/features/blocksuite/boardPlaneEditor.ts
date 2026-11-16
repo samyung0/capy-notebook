@@ -11,29 +11,40 @@ import { html, render } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import type { MathfieldElement } from 'mathlive';
-import { axisNumber, tickStep } from '@/features/graph/view';
+import {
+  DOT_RADIUS,
+  labelFont,
+  POLAR_SPOKE,
+  strokeElement,
+} from '@/features/graph/draw';
+import { attachGestures } from '@/features/graph/gestures';
+import {
+  axisNumber,
+  PLANE_ZOOM,
+  tickStep,
+  zoomedAt,
+} from '@/features/graph/view';
 import {
   type ParsedRow,
   parseRow,
   RowError,
+  rowLatex,
 } from '@/features/questions/graphSyntax';
 import mathFieldStyles from '@/features/questions/mathField.css?inline';
 import { getLocale, m } from '@/i18n';
 import {
   bezier,
+  circleAt,
   curveSegments,
-  ellipseCentre,
-  ellipseIn,
+  ELEMENTS_MAX,
   FORMULA_SIZE,
   functionRuns,
   isLoop,
   LABEL_LENGTH_MAX,
   LABEL_SIZE,
-  MARKS_MAX,
-  type Mark,
   markFunction,
   PAPER,
-  type PathMark,
+  type PlaneElement,
   pathOf,
   pointsOf,
   pullEllipse,
@@ -42,23 +53,17 @@ import {
 import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
 import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
 import { openFormulaCard, symbolButtons } from './boardFormula';
-import { laidOut } from './boardFormulaDraw';
+import { formulaBox, laidOut } from './boardFormulaDraw';
 import { minorStep, snapTo, tidy, type Vec } from './boardGeometry';
 import {
-  arrowHead,
   drawPlane,
   fitCard,
-  formulaBox,
   labelBox,
-  labelFont,
   markPoints,
   type PlaneElementModel,
   type PlaneView,
-  POLAR_SPOKE,
-  type Span,
   setPlaneEditor,
-  traceFunction,
-  traceMark,
+  viewOfPlane,
 } from './boardPlane';
 import {
   CORNER_CURSOR,
@@ -91,16 +96,44 @@ const BLUE = '#1e96eb';
 const HALO = 'rgba(30, 150, 235, 0.18)';
 /** A picked-up point's ring, filled solid over the see-through paper. */
 const RING_FILL = { dark: '#252525', light: '#fff' };
-const PPU_MIN = 1e-6;
-const PPU_MAX = 1e6;
 /** Fit's least span, in units, across and up (Epo 2026-11-13). */
 const FIT_SPAN = 10;
 /** How far from the origin the view goes, in the plane's units. */
 const VIEW_MAX = 1e9;
 
+type Mark = PlaneElement;
+type Curve = Extract<Mark, { type: 'curve' }>;
+type Formula = Extract<Mark, { type: 'formula' }>;
+type Label = Extract<Mark, { type: 'text' }>;
+
+/** What a mark is to the plane's tools and list: the tool that makes it, and its icon
+ * (a function's typed in the list). */
+const kindOf = (mark: Mark) =>
+  mark.type === 'polyline'
+    ? mark.arrow
+      ? 'vector'
+      : 'line'
+    : mark.type === 'functiongraph'
+      ? 'function'
+      : mark.type === 'text'
+        ? 'label'
+        : mark.type;
+
+/** A line or curve, which grows a click at a time. */
+const isStroke = (mark: Mark | undefined) =>
+  mark?.type === 'polyline' || mark?.type === 'curve';
+
 /** Whether a mark has become what it set out to be. Leaving keeps what has, and removes
  * what hasn't, as AFFiNE removes a connector it cancels. */
-const whole = (mark: Mark) => !('points' in mark) || mark.points.length > 1;
+const whole = (mark: Mark) =>
+  !(mark.type === 'polyline' || mark.type === 'curve') ||
+  mark.coords.length > 1;
+
+type FunctionMark = Extract<Mark, { type: 'functiongraph' }>;
+/** A function row's LaTeX, rebuilt from its term as the graph dialog's rows are. */
+const functionLatex = (mark: FunctionMark) => rowLatex(mark, () => '');
+const shownFunction = ({ domain, term }: FunctionMark) =>
+  JSON.stringify([term, domain]);
 
 /** With their keys, shown in their tooltips (Epo 2026-11-08). */
 const TOOLS: { icon: string; id: Tool; key: string; label: () => string }[] = [
@@ -143,18 +176,6 @@ const typedPairs = (text: string): Vec[] =>
       .matchAll(/\(\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\)/g),
   ].map((match) => [Number(match[1]), Number(match[2])]);
 
-/** A mark's icon in the list, the tool that makes it. */
-const ROW_ICON: Record<Mark['kind'], string> = {
-  curve: 'curve',
-  dot: 'point',
-  ellipse: 'ellipse',
-  formula: 'formula',
-  function: 'function',
-  label: 'label',
-  line: 'line',
-  vector: 'vector',
-};
-
 /** Whether segment ab crosses segment cd. */
 function crosses(a: Vec, b: Vec, c: Vec, d: Vec) {
   const side = (p: Vec, q: Vec, r: Vec) =>
@@ -165,7 +186,7 @@ function crosses(a: Vec, b: Vec, c: Vec, d: Vec) {
 /** How far a mark is from a point on the plane, in plane units. A function is only
  * looked for within `reach` across, where any of it in reach must be. */
 function distanceTo(mark: Mark, [x, y]: Vec, reach = 1) {
-  if (mark.kind === 'function')
+  if (mark.type === 'functiongraph')
     return Math.min(
       Number.POSITIVE_INFINITY,
       ...functionRuns(
@@ -176,7 +197,8 @@ function distanceTo(mark: Mark, [x, y]: Vec, reach = 1) {
         Number.POSITIVE_INFINITY
       ).map((run) => alongPath(run, [x, y]))
     );
-  if (!('points' in mark)) return Math.hypot(x - mark.at[0], y - mark.at[1]);
+  if (mark.type === 'point' || mark.type === 'text' || mark.type === 'formula')
+    return Math.hypot(x - mark.coords[0], y - mark.coords[1]);
   return alongPath(pathOf(mark), [x, y]);
 }
 
@@ -251,17 +273,17 @@ function turnOther(point: Vec, pair: [Vec, Vec], moved: 0 | 1) {
 /** A curve with one handle of a point pulled to `to`. A smooth point's other handle
  * turns with it, unless `alone` (Alt), which leaves a corner (Epo 2026-11-13, K1). */
 function pulledHandle(
-  mark: PathMark,
+  mark: Curve,
   index: number,
   side: 0 | 1,
   to: Vec,
   alone: boolean
-): PathMark {
-  const handles = (mark.handles ?? smoothHandles(mark.points)).map(
+): Curve {
+  const handles = (mark.handles ?? smoothHandles(mark.coords)).map(
     ([a, b]): [Vec, Vec] => [a, b]
   );
-  const loop = isLoop(mark.points);
-  const point = mark.points[index];
+  const loop = isLoop(mark.coords);
+  const point = mark.coords[index];
   const pair = pairOf(handles, index, loop);
   const smooth = !alone && smoothAt(point, pair);
   pair[side] = to;
@@ -277,26 +299,26 @@ type Bend = { from: Vec; handles: [Vec, Vec][]; piece: number; t: number };
 /** The curve with piece `bend.piece` pulled through the pointer at its `t`, its two
  * inner handles moving by their share and its points staying smooth (Epo
  * 2026-11-13, K2). */
-function bent(mark: PathMark, bend: Bend, to: Vec): PathMark {
+function bent(mark: Curve, bend: Bend, to: Vec): Curve {
   const t = Math.min(0.9, Math.max(0.1, bend.t));
   const u = 1 - t;
   const k = 1 / (3 * t * u * (u * u + t * t));
   const [dx, dy] = [to[0] - bend.from[0], to[1] - bend.from[1]];
   const handles = bend.handles.map(([a, b]): [Vec, Vec] => [a, b]);
-  const loop = isLoop(mark.points);
+  const loop = isLoop(mark.coords);
   const { piece } = bend;
   const [start, end] = [
     pairOf(handles, piece, loop),
     pairOf(handles, piece + 1, loop),
   ];
   const smooth = [
-    smoothAt(mark.points[piece], pairOf(bend.handles, piece, loop)),
-    smoothAt(mark.points[piece + 1], pairOf(bend.handles, piece + 1, loop)),
+    smoothAt(mark.coords[piece], pairOf(bend.handles, piece, loop)),
+    smoothAt(mark.coords[piece + 1], pairOf(bend.handles, piece + 1, loop)),
   ];
   start[1] = [start[1][0] + dx * k * u, start[1][1] + dy * k * u];
   end[0] = [end[0][0] + dx * k * t, end[0][1] + dy * k * t];
-  if (smooth[0]) turnOther(mark.points[piece], start, 1);
-  if (smooth[1]) turnOther(mark.points[piece + 1], end, 0);
+  if (smooth[0]) turnOther(mark.coords[piece], start, 1);
+  if (smooth[1]) turnOther(mark.coords[piece + 1], end, 0);
   putPair(handles, piece, loop, start);
   putPair(handles, piece + 1, loop, end);
   return { ...mark, handles };
@@ -310,37 +332,43 @@ function moved(
   uniform: boolean
 ): Mark {
   // A function stays where its expression puts it: its row changes it.
-  if (mark.kind === 'function') return mark;
-  if (index !== null) {
-    if (mark.kind === 'ellipse')
-      return { ...mark, points: pullEllipse(mark.points, index, to, uniform) };
-    if (!('points' in mark)) return { ...mark, at: to };
+  if (mark.type === 'functiongraph') return mark;
+  const by = (p: Vec): Vec => [tidy(p[0] + to[0]), tidy(p[1] + to[1])];
+  if (mark.type === 'ellipse')
+    return index === null
+      ? { ...mark, center: by(mark.center) }
+      : pullEllipse(mark, index, to, uniform);
+  if (mark.type === 'polyline' || mark.type === 'curve') {
+    if (index === null)
+      return mark.type === 'curve'
+        ? {
+            ...mark,
+            coords: mark.coords.map(by),
+            ...(mark.handles && {
+              handles: mark.handles.map(([a, b]): [Vec, Vec] => [by(a), by(b)]),
+            }),
+          }
+        : { ...mark, coords: mark.coords.map(by) };
     // A point takes its handles along.
-    const from = mark.points[index];
+    const from = mark.coords[index];
     const shift = (p: Vec): Vec => [
       p[0] + to[0] - from[0],
       p[1] + to[1] - from[1],
     ];
-    return {
-      ...mark,
-      ...(mark.handles && {
-        handles: mark.handles.map((pair, i): [Vec, Vec] =>
-          i === index ? [shift(pair[0]), shift(pair[1])] : pair
-        ),
-      }),
-      points: mark.points.map((p, i) => (i === index ? to : p)),
-    };
+    const coords = mark.coords.map((p, i) => (i === index ? to : p));
+    return mark.type === 'curve'
+      ? {
+          ...mark,
+          coords,
+          ...(mark.handles && {
+            handles: mark.handles.map((pair, i): [Vec, Vec] =>
+              i === index ? [shift(pair[0]), shift(pair[1])] : pair
+            ),
+          }),
+        }
+      : { ...mark, coords };
   }
-  const by = (p: Vec): Vec => [tidy(p[0] + to[0]), tidy(p[1] + to[1])];
-  return 'points' in mark
-    ? {
-        ...mark,
-        ...(mark.handles && {
-          handles: mark.handles.map(([a, b]): [Vec, Vec] => [by(a), by(b)]),
-        }),
-        points: mark.points.map(by),
-      }
-    : { ...mark, at: by(mark.at) };
+  return { ...mark, coords: index === null ? by(mark.coords) : to };
 }
 
 /** The endless plane, filling the board for editing. Everything plotted is written at
@@ -350,7 +378,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const theme = gfx.std.get(ThemeProvider);
   /** The line or curve still taking clicks. Undo simply shortens it. */
   let openId: string | null = null;
-  const openMark = () => model.marks.find((mark) => mark.id === openId);
+  const openMark = () => model.elementList.find((mark) => mark.id === openId);
   /** The label being typed, at its point on the plane; `id` when it's an old one. */
   let typing: { at: Vec; id?: string; size?: number; text: string } | null =
     null;
@@ -360,7 +388,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
 
   const shell = openBoardEditor(gfx, model.id, {
     clear: {
-      empty: () => !model.marks.length,
+      empty: () => !model.elementList.length,
       run: () => {
         typing = null;
         openId = null;
@@ -378,8 +406,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     },
     fit: () => fitMarks(),
     onDelete: () => {
-      if (!model.marks.some(({ id }) => selected.has(id))) return false;
-      write(model.marks.filter(({ id }) => !selected.has(id)));
+      if (!model.elementList.some(({ id }) => selected.has(id))) return false;
+      write(model.elementList.filter(({ id }) => !selected.has(id)));
       selected = new Set();
       editing = null;
       redraw();
@@ -423,11 +451,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       for (const key of [...drafts.keys(), ...(fresh ? [NEW_ROW] : [])])
         commitRow(key);
       openId = null;
-      const kept = model.marks.filter(whole);
-      if (kept.length < model.marks.length)
-        shell?.write(() =>
-          gfx.surface?.updateElement(model.id, { marks: kept })
-        );
+      detachGestures();
+      const kept = model.elementList.filter(whole);
+      if (kept.length < model.elementList.length)
+        shell?.write(() => model.writeList(kept));
       const { height, width } = box();
       const [x, y] = [
         view.x0 + width / 2 / view.ppu,
@@ -535,30 +562,21 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     view.y0 - py / view.ppu,
   ];
   const minor = () => minorStep(tickStep(view.ppu));
-  const screenAxes = () =>
-    [
-      (x: number) => (x - view.x0) * view.ppu,
-      (y: number) => (view.y0 - y) * view.ppu,
-    ] as const;
   const toScreen = ([x, y]: Vec): Vec => [
     (x - view.x0) * view.ppu,
     (view.y0 - y) * view.ppu,
   ];
-  const span = (): Span => {
-    const { height, width } = box();
-    return {
-      height,
-      left: view.x0,
-      ppu: view.ppu,
-      right: view.x0 + width / view.ppu,
-    };
-  };
+  /** Where the plane was last drawn, in pixels on this canvas. */
+  const sheet = { h: 0, w: 0, x: 0, y: 0 };
+  /** A mark's stroke over the drawn plane, in `ink` at `width` pixels. */
+  const stroke = (mark: Mark, ink: string, width: number) =>
+    strokeElement(ctx, sheet, viewOfPlane(view), mark, ink, width);
   /** The point whose dot is under a pixel. */
   const pointAt = (px: Vec) => {
     let best: { id: string; index: number } | null = null;
     let reach = PIXELS_TO_GRAB;
-    for (const mark of model.marks) {
-      if (mark.kind === 'label' || mark.kind === 'formula') continue;
+    for (const mark of model.elementList) {
+      if (mark.type === 'text' || mark.type === 'formula') continue;
       for (const [index, point] of pointsOf(mark).entries()) {
         const [x, y] = toScreen(point);
         const distance = Math.hypot(x - px[0], y - px[1]);
@@ -572,8 +590,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
   /** The line, curve or label under a pixel. */
   /** Whether a pixel is on a formula: its laid-out box, or near its point until then. */
-  const onFormula = (mark: Extract<Mark, { kind: 'formula' }>, px: Vec) => {
-    const [x, y] = toScreen(mark.at);
+  const onFormula = (mark: Formula, px: Vec) => {
+    const [x, y] = toScreen(mark.coords);
     const drawn = laidOut(mark.latex);
     if (!drawn) return Math.hypot(px[0] - x, px[1] - y) <= PIXELS_TO_LABEL;
     const box = formulaBox(drawn, x, y, mark.size);
@@ -585,8 +603,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     );
   };
   /** Whether a pixel is on a label's text, or near its point. */
-  const onLabel = (mark: Extract<Mark, { kind: 'label' }>, px: Vec) => {
-    const [x, y] = toScreen(mark.at);
+  const onLabel = (mark: Label, px: Vec) => {
+    const [x, y] = toScreen(mark.coords);
     const box = labelBox(ctx, mark, x, y);
     return (
       Math.hypot(px[0] - x, px[1] - y) <= PIXELS_TO_LABEL ||
@@ -598,10 +616,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
   const markAt = (px: Vec) => {
     const here = toPlane(px);
-    return model.marks.find((mark) => {
-      if (mark.kind === 'formula') return onFormula(mark, px);
-      if (mark.kind === 'label') return onLabel(mark, px);
-      if (mark.kind === 'dot') return false;
+    return model.elementList.find((mark) => {
+      if (mark.type === 'formula') return onFormula(mark, px);
+      if (mark.type === 'text') return onLabel(mark, px);
+      if (mark.type === 'point') return false;
       const reach = PIXELS_TO_SELECT / view.ppu;
       return distanceTo(mark, here, reach) <= reach;
     });
@@ -616,13 +634,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       Math.max(ay, by),
     ];
     const inside = ([x, y]: Vec) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
-    if (mark.kind === 'formula') {
+    if (mark.type === 'formula') {
       const drawn = laidOut(mark.latex);
-      if (!drawn) return inside(toScreen(mark.at));
-      const f = formulaBox(drawn, ...toScreen(mark.at), mark.size);
+      if (!drawn) return inside(toScreen(mark.coords));
+      const f = formulaBox(drawn, ...toScreen(mark.coords), mark.size);
       return f.x <= x1 && f.x + f.w >= x0 && f.y <= y1 && f.y + f.h >= y0;
     }
-    if (mark.kind === 'function')
+    if (mark.type === 'functiongraph')
       return functionRuns(
         mark,
         toPlane([x0, 0])[0],
@@ -630,7 +648,11 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         2 / view.ppu,
         Number.POSITIVE_INFINITY
       ).some((run) => run.some((point) => inside(toScreen(point))));
-    const path = ('points' in mark ? pathOf(mark) : [mark.at]).map(toScreen);
+    const path = (
+      mark.type === 'point' || mark.type === 'text'
+        ? [mark.coords]
+        : pathOf(mark)
+    ).map(toScreen);
     if (path.some(inside)) return true;
     const corners: Vec[] = [
       [x0, y0],
@@ -653,7 +675,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (
       point &&
       tool === 'select' &&
-      model.marks.find(({ id }) => id === point.id)?.kind === 'dot'
+      model.elementList.find(({ id }) => id === point.id)?.type === 'point'
     )
       return { id: point.id, index: null };
     if (point) return point;
@@ -661,21 +683,21 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     return mark ? { id: mark.id, index: null } : null;
   };
   const editingCurve = () => {
-    const mark = editing && model.marks.find(({ id }) => id === editing?.id);
-    return mark?.kind === 'curve' &&
+    const mark =
+      editing && model.elementList.find(({ id }) => id === editing?.id);
+    return mark?.type === 'curve' &&
       editing &&
-      editing.index < mark.points.length
+      editing.index < mark.coords.length
       ? mark
       : null;
   };
-  const handlesOf = (mark: PathMark) =>
-    mark.handles ?? smoothHandles(mark.points);
+  const handlesOf = (mark: Curve) => mark.handles ?? smoothHandles(mark.coords);
   /** The picked point's handle under a pixel. */
   const knobAt = (px: Vec) => {
     const mark = editingCurve();
     if (!mark || !editing || tool !== 'select') return null;
-    const point = mark.points[editing.index];
-    const pair = pairOf(handlesOf(mark), editing.index, isLoop(mark.points));
+    const point = mark.coords[editing.index];
+    const pair = pairOf(handlesOf(mark), editing.index, isLoop(mark.coords));
     for (const side of [0, 1] as const) {
       if (same(pair[side], point)) continue;
       const [x, y] = toScreen(pair[side]);
@@ -689,9 +711,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const bendAt = (px: Vec) => {
     if (tool !== 'select' || selected.size !== 1) return null;
     const [id] = selected;
-    const mark = model.marks.find((each) => each.id === id);
+    const mark = model.elementList.find((each) => each.id === id);
     // Any mark's point under the press is grabbed rather than the stroke bent.
-    if (mark?.kind !== 'curve' || pointAt(px)) return null;
+    if (mark?.type !== 'curve' || pointAt(px)) return null;
     let best: { at: Vec; d: number; piece: number; t: number } | null = null;
     for (const [piece, segment] of curveSegments(mark).entries())
       for (let step = 1; step < 48; step++) {
@@ -721,28 +743,31 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
   const snapped = (px: Vec) => snapPlane(toPlane(px));
 
-  const write = (marks: Mark[]) =>
-    shell.write(() => gfx.surface?.updateElement(model.id, { marks }));
+  const write = (marks: Mark[]) => shell.write(() => model.writeList(marks));
   const add = (mark: Mark) => {
-    if (model.marks.length < MARKS_MAX) write([...model.marks, mark]);
+    if (model.elementList.length < ELEMENTS_MAX)
+      write([...model.elementList, mark]);
   };
   const replaceOpen = (mark: Mark) =>
-    write(model.marks.map((old) => (old.id === mark.id ? mark : old)));
+    write(model.elementList.map((old) => (old.id === mark.id ? mark : old)));
 
   /** A label's or formula's text on screen; a formula not laid out yet has none. */
   const textBoxOf = (mark: Mark): TextBox | null => {
-    if (mark.kind === 'label') return labelBox(ctx, mark, ...toScreen(mark.at));
-    if (mark.kind !== 'formula') return null;
+    if (mark.type === 'text')
+      return labelBox(ctx, mark, ...toScreen(mark.coords));
+    if (mark.type !== 'formula') return null;
     const drawn = laidOut(mark.latex);
-    return drawn ? formulaBox(drawn, ...toScreen(mark.at), mark.size) : null;
+    return drawn
+      ? formulaBox(drawn, ...toScreen(mark.coords), mark.size)
+      : null;
   };
   /** The one label or formula Select has picked, which wears the frame. */
-  const framed = (marks = model.marks) => {
+  const framed = (marks = model.elementList) => {
     if (tool !== 'select' || selected.size !== 1) return null;
     const [id] = selected;
     const mark = marks.find((each) => each.id === id);
-    return (mark?.kind === 'label' && typing?.id !== id) ||
-      mark?.kind === 'formula'
+    return (mark?.type === 'text' && typing?.id !== id) ||
+      mark?.type === 'formula'
       ? mark
       : null;
   };
@@ -756,45 +781,19 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
 
   /** The mark under the pointer or being dragged, in blue with its point ringed. */
   const drawPicked = (mark: Mark, ringed: number | null) => {
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    if (mark.kind === 'function') {
-      for (const [colour, width] of [
-        [HALO, 10],
-        [BLUE, 2],
-      ] as const) {
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = width;
-        traceFunction(ctx, mark, ...screenAxes(), span());
-        ctx.stroke();
-      }
-      return;
-    }
-    if ('points' in mark) {
-      for (const [colour, width] of [
-        [HALO, 10],
-        [BLUE, 2],
-      ] as const) {
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = width;
-        traceMark(ctx, mark, ...screenAxes());
-        ctx.stroke();
-      }
-      if (mark.kind === 'vector') {
-        ctx.fillStyle = BLUE;
-        arrowHead(ctx, mark, ...screenAxes());
-      }
-    }
-    if (mark.kind === 'formula') {
+    stroke(mark, HALO, 10);
+    stroke(mark, BLUE, 2);
+    if (mark.type === 'functiongraph') return;
+    if (mark.type === 'formula') {
       const drawn = laidOut(mark.latex);
       if (!drawn) return;
-      const box = formulaBox(drawn, ...toScreen(mark.at), mark.size);
+      const box = formulaBox(drawn, ...toScreen(mark.coords), mark.size);
       ctx.fillStyle = HALO;
       ctx.fillRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
       return;
     }
-    if (mark.kind === 'label') {
-      const [x, y] = toScreen(mark.at);
+    if (mark.type === 'text') {
+      const [x, y] = toScreen(mark.coords);
       const box = labelBox(ctx, mark, x, y);
       ctx.font = labelFont(mark.size);
       ctx.textAlign = 'center';
@@ -802,7 +801,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       ctx.fillStyle = HALO;
       ctx.fillRect(box.x - 6, box.y - 3, box.w + 12, box.h + 6);
       ctx.fillStyle = BLUE;
-      ctx.fillText(mark.text, x, y);
+      const line = (mark.size ?? LABEL_SIZE) * 1.2;
+      for (const [i, text] of box.lines.entries())
+        ctx.fillText(text, x, y + (i - (box.lines.length - 1) / 2) * line);
       return;
     }
     for (const [i, point] of pointsOf(mark).entries()) {
@@ -817,7 +818,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         ctx.stroke();
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
-      } else ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      } else ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = BLUE;
       ctx.fill();
     }
@@ -833,10 +834,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     ctx.stroke();
   };
   /** The picked curve point's handles: a line out to each, a square at its end. */
-  const drawHandles = (mark: PathMark, index: number) => {
-    const point = mark.points[index];
+  const drawHandles = (mark: Curve, index: number) => {
+    const point = mark.coords[index];
     const at = toScreen(point);
-    for (const handle of pairOf(handlesOf(mark), index, isLoop(mark.points))) {
+    for (const handle of pairOf(handlesOf(mark), index, isLoop(mark.coords))) {
       if (same(handle, point)) continue;
       const [x, y] = toScreen(handle);
       ctx.strokeStyle = BLUE;
@@ -856,27 +857,43 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const draw = () => {
     const { height, width } = shell.sizeCanvas();
     const preview = grab?.preview;
-    const marks = [
-      ...model.marks.map(
-        (mark) =>
-          preview?.find(({ id }) => id === mark.id) ??
-          drafts.get(mark.id) ??
-          mark
-      ),
-      ...(fresh ? [fresh] : []),
-    ].filter(({ id }) => !erasing?.has(id));
-    drawPlane(
-      ctx,
-      { h: height, w: width, x: 0, y: 0 },
-      view,
-      marks,
-      PAPER[theme.theme],
-      // The open mark's points, and those of the mark under the pointer or held.
-      new Set(
-        [openId, near, grab?.id, ...selected].filter((id): id is string => !!id)
-      ),
-      redraw
-    );
+    // As stored, unless something on it is being dragged, typed or erased.
+    const marks =
+      preview || drafts.size || fresh || erasing?.size
+        ? [
+            ...model.elementList.map(
+              (mark) =>
+                preview?.find(({ id }) => id === mark.id) ??
+                drafts.get(mark.id) ??
+                mark
+            ),
+            ...(fresh ? [fresh] : []),
+          ].filter(({ id }) => !erasing?.has(id))
+        : model.elementList;
+    const paper = PAPER[theme.theme];
+    sheet.h = height;
+    sheet.w = width;
+    drawPlane(ctx, sheet, view, marks, paper, redraw);
+    // The open mark's points, and those of the mark under the pointer or held: a
+    // line's, curve's or ellipse's show only then (Epo 2026-11-08).
+    ctx.fillStyle = paper.ink;
+    for (const mark of marks) {
+      if (
+        !(isStroke(mark) || mark.type === 'ellipse') ||
+        !(
+          mark.id === openId ||
+          mark.id === near ||
+          mark.id === grab?.id ||
+          selected.has(mark.id)
+        )
+      )
+        continue;
+      for (const [x, y] of pointsOf(mark).map(toScreen)) {
+        ctx.beginPath();
+        ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     const picked = preview ? grab : hover;
     const inFrame = framed(marks);
     for (const chosen of marks)
@@ -895,7 +912,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const curve = tool === 'select' && editingCurve();
     if (curve && editing) {
       const shown = marks.find(({ id }) => id === curve.id);
-      if (shown?.kind === 'curve') drawHandles(shown, editing.index);
+      if (shown?.type === 'curve') drawHandles(shown, editing.index);
     }
     if (bendHover && !grab) ring(bendHover, 5);
     const frameBox = inFrame && textBoxOf(inFrame);
@@ -936,26 +953,22 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       return;
     const X = (x: number) => (x - view.x0) * view.ppu;
     const Y = (y: number) => (view.y0 - y) * view.ppu;
-    ctx.strokeStyle = '#1e96eb';
-    ctx.fillStyle = '#1e96eb';
-    ctx.lineWidth = 2;
     // Over a point, the next click lands on it (closing a curve on its first, say).
     const under =
-      hover?.index != null && model.marks.find(({ id }) => id === hover?.id);
+      hover?.index != null &&
+      model.elementList.find(({ id }) => id === hover?.id);
     const at =
       under && hover?.index != null
         ? pointsOf(under)[hover.index]
         : snapped(pointer);
     const open = openMark();
-    if (open && 'points' in open) {
-      const next =
-        open.kind === 'curve'
-          ? { ...open, points: [...open.points, at] }
-          : { ...open, points: [...open.points.slice(-1), at] };
-      traceMark(ctx, next, X, Y);
-      ctx.stroke();
-      if (open.kind === 'vector') arrowHead(ctx, next, X, Y);
-    }
+    if (open?.type === 'curve')
+      stroke({ ...open, coords: [...open.coords, at] }, BLUE, 2);
+    else if (open?.type === 'polyline')
+      stroke({ ...open, coords: [...open.coords.slice(-1), at] }, BLUE, 2);
+    ctx.strokeStyle = BLUE;
+    ctx.fillStyle = BLUE;
+    ctx.lineWidth = 2;
     if (sizing?.r) {
       // The circle being sized, and its radius.
       const [cx, cy] = sizing.centre;
@@ -1018,7 +1031,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const open = openMark();
     openId = null;
     if (open && !whole(open))
-      write(model.marks.filter((mark) => mark.id !== open.id));
+      write(model.elementList.filter((mark) => mark.id !== open.id));
     tool = 'select';
     pointer = null;
     drawControls();
@@ -1026,67 +1039,75 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
   /** A circle round `at`; its handles stretch it into an ellipse. */
   const addCircle = (at: Vec, r: number) => {
-    add({
-      id: newId(),
-      kind: 'ellipse',
-      points: ellipseIn(at[0] - r, at[0] + r, at[1] - r, at[1] + r),
-    });
+    add(circleAt(newId(), at, r));
     finish();
   };
   /** A press lands where it lifts, so a finger can line it up against the chip. */
   const place = (px: Vec, exact?: Vec) => {
     const at = exact ?? snapped(px);
     const open = openMark();
-    if (tool === 'point') add({ at, id: newId(), kind: 'dot' });
+    if (tool === 'point') add({ coords: at, id: newId(), type: 'point' });
     else if (tool === 'ellipse') addCircle(at, tickStep(view.ppu));
     else if (tool === 'line' || tool === 'vector' || tool === 'curve') {
-      if (open?.kind === tool) {
-        const last = open.points.at(-1);
+      if (
+        (open?.type === 'polyline' || open?.type === 'curve') &&
+        kindOf(open) === tool
+      ) {
+        const last = open.coords.at(-1);
         if (last?.[0] === at[0] && last[1] === at[1]) {
           finish();
           return;
         }
-        replaceOpen({ ...open, points: [...open.points, at] });
-        const [first] = open.points;
+        replaceOpen({ ...open, coords: [...open.coords, at] });
+        const [first] = open.coords;
         const closes =
-          open.points.length > 2 && first[0] === at[0] && first[1] === at[1];
+          open.coords.length > 2 && first[0] === at[0] && first[1] === at[1];
         // A line or vector ends at its second point, a curve once it closes on its first.
         if (tool !== 'curve' || closes) finish();
         return;
       }
-      if (model.marks.length >= MARKS_MAX) return;
+      if (model.elementList.length >= ELEMENTS_MAX) return;
       openId = newId();
-      add({ id: openId, kind: tool, points: [at] });
+      add(
+        tool === 'curve'
+          ? { coords: [at], id: openId, type: 'curve' }
+          : {
+              coords: [at],
+              id: openId,
+              type: 'polyline',
+              ...(tool === 'vector' && { arrow: true }),
+            }
+      );
     } else if (tool === 'label') typeLabel(px);
     else if (tool === 'formula') {
       // A click on a formula opens it again; elsewhere a new one goes where it was
       // clicked. One formula, then back to Select.
-      const near = model.marks.find(
-        (mark): mark is Extract<Mark, { kind: 'formula' }> =>
-          mark.kind === 'formula' && onFormula(mark, px)
+      const near = model.elementList.find(
+        (mark): mark is Formula =>
+          mark.type === 'formula' && onFormula(mark, px)
       );
-      const at = near?.at ?? toPlane(px);
-      if (!near && model.marks.length >= MARKS_MAX) return;
+      const at = near?.coords ?? toPlane(px);
+      if (!near && model.elementList.length >= ELEMENTS_MAX) return;
       tool = 'select';
       drawControls();
       void openFormulaCard(gfx, near?.latex ?? '', (latex) => {
         if (latex) {
           const formula: Mark = {
-            at,
+            coords: at,
             id: near?.id ?? newId(),
-            kind: 'formula',
             latex,
-            ...(near?.kind === 'formula' && near.size && { size: near.size }),
+            type: 'formula',
+            ...(near?.size && { size: near.size }),
           };
           write(
             near
-              ? model.marks.map((mark) =>
+              ? model.elementList.map((mark) =>
                   mark.id === near.id ? formula : mark
                 )
-              : [...model.marks, formula]
+              : [...model.elementList, formula]
           );
         } else if (near)
-          write(model.marks.filter((mark) => mark.id !== near.id));
+          write(model.elementList.filter((mark) => mark.id !== near.id));
       });
     }
   };
@@ -1094,9 +1115,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   /** Every mark within the eraser's ring round a pixel joins what it's erasing. */
   const eraseNear = (px: Vec) => {
     const here = toPlane(px);
-    for (const mark of model.marks)
+    for (const mark of model.elementList)
       if (
-        mark.kind === 'formula'
+        mark.type === 'formula'
           ? onFormula(mark, px)
           : distanceTo(mark, here, ERASER_SIZE / 2 / view.ppu) <=
             ERASER_SIZE / 2 / view.ppu
@@ -1108,12 +1129,18 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   const typeLabel = (px: Vec) => {
     commitLabel();
     const here = toPlane(px);
-    const near = model.marks.find(
-      (mark) => mark.kind === 'label' && onLabel(mark, px)
+    const near = model.elementList.find(
+      (mark): mark is Label => mark.type === 'text' && onLabel(mark, px)
     );
-    if (near?.kind === 'label')
-      typing = { at: near.at, id: near.id, size: near.size, text: near.text };
-    else if (model.marks.length < MARKS_MAX) typing = { at: here, text: '' };
+    if (near)
+      typing = {
+        at: near.coords,
+        id: near.id,
+        size: near.size,
+        text: near.text,
+      };
+    else if (model.elementList.length < ELEMENTS_MAX)
+      typing = { at: here, text: '' };
     drawControls();
     controls.querySelector<HTMLInputElement>('.capy-chart-label')?.select();
   };
@@ -1133,47 +1160,58 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     typing = null;
     if (!open || !field) return;
     const text = field.value.trim();
-    const others = model.marks.filter((mark) => mark.id !== open.id);
+    const others = model.elementList.filter((mark) => mark.id !== open.id);
     if (text) {
       const label: Mark = {
-        at: open.at,
+        coords: open.at,
         id: open.id ?? newId(),
-        kind: 'label',
         ...(open.size && { size: open.size }),
         text,
+        type: 'text',
       };
-      if (!open.id) write([...model.marks, label]);
+      if (!open.id) write([...model.elementList, label]);
       else if (text !== open.text)
-        write(model.marks.map((mark) => (mark.id === open.id ? label : mark)));
+        write(
+          model.elementList.map((mark) => (mark.id === open.id ? label : mark))
+        );
     } else if (open.id) write(others);
     // One label, then back to Select, as the other tools do.
     if (tool === 'label') tool = 'select';
     drawControls();
   };
 
+  /** The view stays within VIEW_MAX of the origin. */
   const hold = () => {
     view.x0 = Math.max(-VIEW_MAX, Math.min(VIEW_MAX, view.x0));
     view.y0 = Math.max(-VIEW_MAX, Math.min(VIEW_MAX, view.y0));
-    redraw();
   };
-  const zoomAt = (factor: number, [px, py]: Vec) => {
-    const [x, y] = toPlane([px, py]);
-    view.ppu = Math.max(PPU_MIN, Math.min(PPU_MAX, view.ppu * factor));
-    view.x0 = x - px / view.ppu;
-    view.y0 = y + py / view.ppu;
+  /** Zoomed about a pixel, within the plane's range (`PLANE_ZOOM`). */
+  const zoomAt = (factor: number, at: Vec) => {
+    const next = zoomedAt(viewOfPlane(view), factor, at, PLANE_ZOOM);
+    view.ppu = next.ppuX;
+    view.x0 = next.left;
+    view.y0 = next.top;
     hold();
   };
   const zoomCentre = (factor: number) => {
     const { height, width } = box();
     zoomAt(factor, [width / 2, height / 2]);
+    redraw();
   };
-  const panBy = (dx: number, dy: number) => {
-    view.x0 -= dx / view.ppu;
-    view.y0 += dy / view.ppu;
-    hold();
+  /** A gesture's move, gathered once a frame, is drawn in that same frame. */
+  let moving = false;
+  const drawMoved = () => {
+    if (moving) return;
+    moving = true;
+    queueMicrotask(() => {
+      moving = false;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      draw();
+    });
   };
   const fitMarks = () => {
-    const seen = markPoints(model.marks);
+    const seen = markPoints(model.elementList);
     const xs = seen.map(([x]) => x);
     const ys = seen.map(([, y]) => y);
     const { height, width } = box();
@@ -1186,9 +1224,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     // At least FIT_SPAN units each way, so a plane with nothing (or one point near
     // the origin) shows a stretch of grid rather than one unit across the screen.
     view.ppu = Math.max(
-      PPU_MIN,
+      PLANE_ZOOM.min,
       Math.min(
-        PPU_MAX,
+        PLANE_ZOOM.max,
         (width - 100) / Math.max(x1 - x0, FIT_SPAN),
         (height - 160) / Math.max(y1 - y0, FIT_SPAN)
       )
@@ -1196,46 +1234,37 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     view.x0 = (x0 + x1) / 2 - width / 2 / view.ppu;
     view.y0 = (y0 + y1) / 2 + height / 2 / view.ppu;
     hold();
+    redraw();
   };
 
-  canvas.addEventListener(
-    'wheel',
-    (event) => {
-      event.preventDefault();
-      const rect = box();
-      const at: Vec = [event.clientX - rect.left, event.clientY - rect.top];
-      if (event.ctrlKey || event.metaKey)
-        zoomAt(Math.exp(-event.deltaY * (event.ctrlKey ? 0.01 : 0.002)), at);
-      else panBy(-event.deltaX, -event.deltaY);
+  // The wheel pans, pinch and Ctrl/⌘-wheel zoom about the pointer, the middle button
+  // and two fingers pan: the engine's gestures, as every graph has them.
+  const detachGestures = attachGestures(canvas, {
+    pan: (dx, dy) => {
+      view.x0 -= dx / view.ppu;
+      view.y0 += dy / view.ppu;
+      hold();
+      drawMoved();
     },
-    { passive: false }
-  );
+    settle: () => undefined,
+    zoom: (factor, at) => {
+      zoomAt(factor, at);
+      drawMoved();
+    },
+  });
 
+  /** The primary pointers down here; a second one hands the press to the gestures. */
   const pointers = new Map<number, Vec>();
-  let pinch = 0;
   let pressed = false;
-  /** A middle-button drag pans, as on the board. */
-  let panning = false;
   const local = (event: MouseEvent): Vec => {
     const rect = box();
     return [event.clientX - rect.left, event.clientY - rect.top];
   };
-  // The middle button pans here rather than starting the browser's autoscroll.
-  canvas.addEventListener('mousedown', (event) => {
-    if (event.button === 1) event.preventDefault();
-  });
   canvas.addEventListener('pointerdown', (event) => {
-    if (event.button > 1) return;
-    canvas.setPointerCapture(event.pointerId);
+    if (event.button !== 0) return;
     const at = local(event);
     pointers.set(event.pointerId, at);
-    if (event.button === 1) {
-      panning = true;
-      return;
-    }
     if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);
       pressed = false;
       pointer = null;
       grab = null;
@@ -1299,19 +1328,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const at = local(event);
     const last = pointers.get(event.pointerId);
     if (last) pointers.set(event.pointerId, at);
-    if (panning && last) {
-      panBy(at[0] - last[0], at[1] - last[1]);
-      return;
-    }
-    if (last && pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      const distance = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      if (pinch)
-        zoomAt(distance / pinch, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
-      panBy((at[0] - last[0]) / 2, (at[1] - last[1]) / 2);
-      pinch = distance;
-      return;
-    }
+    // The gestures have a middle-button drag or a pinch.
+    if (event.buttons & 4 || (last && pointers.size === 2)) return;
     if (erasing && last && pressed) {
       for (const px of alongDrag(last, at)) eraseNear(px);
       trail.add(at);
@@ -1335,7 +1353,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       redraw();
       return;
     }
-    const picked = grab && model.marks.find(({ id }) => id === grab?.id);
+    const picked = grab && model.elementList.find(({ id }) => id === grab?.id);
     if (grab && picked && last && pressed) {
       if (
         !grab.preview &&
@@ -1345,12 +1363,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         return;
       if (
         grab.corner !== undefined &&
-        (picked.kind === 'label' || picked.kind === 'formula')
+        (picked.type === 'text' || picked.type === 'formula')
       ) {
-        const plain = picked.kind === 'label' ? LABEL_SIZE : FORMULA_SIZE;
+        const plain = picked.type === 'text' ? LABEL_SIZE : FORMULA_SIZE;
         const size = draggedSize(
           picked.size ?? plain,
-          toScreen(picked.at),
+          toScreen(picked.coords),
           grab.start,
           at
         );
@@ -1364,7 +1382,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       if (
         grab.handle !== undefined &&
         grab.index !== null &&
-        picked.kind === 'curve'
+        picked.type === 'curve'
       ) {
         grab.preview = [
           pulledHandle(
@@ -1379,31 +1397,29 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         redraw();
         return;
       }
-      if (grab.bend && picked.kind === 'curve') {
+      if (grab.bend && picked.type === 'curve') {
         grab.preview = [bent(picked, grab.bend, toPlane(at))];
         canvas.style.cursor = 'grabbing';
         redraw();
         return;
       }
-      if (picked.kind === 'function') return;
+      if (picked.type === 'functiongraph') return;
       const [from, to] = [toPlane(grab.start), toPlane(at)];
       // A whole mark lands its first point (an ellipse its middle) on the grid, a polar
       // one's rings and spokes included, so one off it from before comes back. A label
       // goes where it's dragged, as it's placed where it's clicked (Epo 2026-11-13).
       const anchor =
-        picked.kind === 'ellipse'
-          ? ellipseCentre(picked.points)
-          : pointsOf(picked)[0];
+        picked.type === 'ellipse' ? picked.center : pointsOf(picked)[0];
       if (grab.index === null) {
         const dragged: Vec = [
           anchor[0] + to[0] - from[0],
           anchor[1] + to[1] - from[1],
         ];
-        const landed = picked.kind === 'label' ? dragged : snapPlane(dragged);
+        const landed = picked.type === 'text' ? dragged : snapPlane(dragged);
         const by: Vec = [landed[0] - anchor[0], landed[1] - anchor[1]];
         // One of several selected marks takes them all along.
         const group = selected.has(picked.id)
-          ? model.marks.filter(({ id }) => selected.has(id))
+          ? model.elementList.filter(({ id }) => selected.has(id))
           : [picked];
         grab.preview = group.map((mark) => moved(mark, null, by, false));
       } else
@@ -1436,13 +1452,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
+    if (event.button === 1) return;
     const was = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
-    pinch = 0;
-    if (panning) {
-      panning = false;
-      return;
-    }
     const boxed = boxing;
     boxing = null;
     const held = grab;
@@ -1454,23 +1466,25 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     erasing = null;
     if (erased) {
       trail.end();
-      if (erased.size) write(model.marks.filter(({ id }) => !erased.has(id)));
+      if (erased.size)
+        write(model.elementList.filter(({ id }) => !erased.has(id)));
     } else if (sized && was && pressed) {
       // Dragged, the size it was dragged to; a click, a grid step round.
       addCircle(sized.centre, sized.r ?? tickStep(view.ppu));
     } else if (held?.preview) {
       const { preview } = held;
-      const next = model.marks.map(
+      const next = model.elementList.map(
         (mark) => preview.find(({ id }) => id === mark.id) ?? mark
       );
-      if (JSON.stringify(next) !== JSON.stringify(model.marks)) write(next);
+      if (JSON.stringify(next) !== JSON.stringify(model.elementList))
+        write(next);
       if (tool === 'select' && !selected.has(held.id))
         selected = event.shiftKey
           ? new Set([...selected, held.id])
           : new Set([held.id]);
     } else if (boxed && pressed) {
       // A click on empty paper lets go; a box picks all it touches, Shift adding.
-      const caught = model.marks
+      const caught = model.elementList
         .filter((mark) => touches(mark, boxed.from, boxed.to))
         .map(({ id }) => id);
       const dragged =
@@ -1487,7 +1501,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       selected = next;
     } else if (was && pressed && tool !== 'select') {
       // A tap on a point does the tool's job right at it: Line starts from it.
-      const mark = held && model.marks.find(({ id }) => id === held.id);
+      const mark = held && model.elementList.find(({ id }) => id === held.id);
       place(
         local(event),
         mark && held?.index != null ? pointsOf(mark)[held.index] : undefined
@@ -1501,9 +1515,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       held?.handle === undefined &&
       !held?.bend
     ) {
-      const mark = held && model.marks.find(({ id }) => id === held.id);
+      const mark = held && model.elementList.find(({ id }) => id === held.id);
       editing =
-        held && mark?.kind === 'curve' && held.index !== null
+        held && mark?.type === 'curve' && held.index !== null
           ? { id: held.id, index: held.index }
           : null;
     }
@@ -1515,12 +1529,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   canvas.addEventListener('pointercancel', (event) => {
     pointers.delete(event.pointerId);
     pressed = false;
-    pinch = 0;
     grab = null;
     sizing = null;
     erasing = null;
     boxing = null;
-    panning = false;
     trail.end();
     redraw();
   });
@@ -1538,10 +1550,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (tool !== 'select') return;
     const px = local(event);
     const point = pointAt(px);
-    const mark = point && model.marks.find(({ id }) => id === point.id);
+    const mark = point && model.elementList.find(({ id }) => id === point.id);
     if (!point) {
       const under = markAt(px);
-      if (!under || under.kind === 'label') {
+      if (!under || under.type === 'text') {
         selected = new Set();
         editing = null;
         typeLabel(px);
@@ -1549,17 +1561,17 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       }
       return;
     }
-    if (mark?.kind !== 'curve') return;
+    if (mark?.type !== 'curve') return;
     const handles = handlesOf(mark).map(([a, b]): [Vec, Vec] => [a, b]);
-    const loop = isLoop(mark.points);
-    const at = mark.points[point.index];
+    const loop = isLoop(mark.coords);
+    const at = mark.coords[point.index];
     const [into, out] = pairOf(handles, point.index, loop);
     putPair(
       handles,
       point.index,
       loop,
       same(into, at) && same(out, at)
-        ? pairOf(smoothHandles(mark.points), point.index, loop)
+        ? pairOf(smoothHandles(mark.coords), point.index, loop)
         : [at, at]
     );
     replaceOpen({ ...mark, handles });
@@ -1593,7 +1605,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
   };
   /** What a row's typing makes of it: a function as it's typed, a point in the
    * empty row; anything else is an error under the row's icon. */
-  const typedRow = (key: string, latex: string, ascii: string) => {
+  const typedRow = (key: string, ascii: string) => {
     // The empty row's mark keeps one id as it's typed, so its lit row stays put.
     const id = key === NEW_ROW ? (fresh?.id ?? newId()) : key;
     rowErrors.delete(key);
@@ -1610,15 +1622,14 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (row?.kind === 'function' && markFunction(row.term)) {
       const mark: Mark = {
         id,
-        kind: 'function',
-        latex,
         term: row.term,
+        type: 'functiongraph',
         ...(row.domain && { domain: row.domain }),
       };
       if (key === NEW_ROW) fresh = mark;
       else drafts.set(key, mark);
     } else if (row?.kind === 'point' && key === NEW_ROW)
-      fresh = { at: row.coords, id, kind: 'dot' };
+      fresh = { coords: row.coords, id, type: 'point' };
     else if (row && !rowErrors.has(key))
       rowErrors.set(
         key,
@@ -1636,7 +1647,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const field = fields.get(key);
     if (key === NEW_ROW) {
       if (!fresh) return;
-      if (model.marks.length >= MARKS_MAX) {
+      if (model.elementList.length >= ELEMENTS_MAX) {
         rowErrors.set(key, m.drawing_board_plane_full());
         drawControls();
         return;
@@ -1646,10 +1657,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       field?.setValue('', { silenceNotifications: true });
       add(mark);
     } else {
-      if (!model.marks.some(({ id }) => id === key)) return;
+      if (!model.elementList.some(({ id }) => id === key)) return;
       const draft = drafts.get(key);
       if (field && !field.value.trim())
-        write(model.marks.filter(({ id }) => id !== key));
+        write(model.elementList.filter(({ id }) => id !== key));
       else if (draft) replaceOpen(draft);
       else if (!left) return;
       drafts.delete(key);
@@ -1666,16 +1677,20 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       fresh = null;
       fields.get(key)?.setValue('', { silenceNotifications: true });
     }
-    const mark = model.marks.find(({ id }) => id === key);
+    const mark = model.elementList.find(({ id }) => id === key);
     const field = fields.get(key);
-    if (mark?.kind === 'function')
-      field?.setValue(mark.latex, { silenceNotifications: true });
+    if (mark?.type === 'functiongraph' && field) setLatex(field, mark);
     const input = controls.querySelector<HTMLInputElement>(
       `[data-row="${key}"] input`
     );
     if (mark && input) input.value = rowText(mark);
     drawControls();
     redraw();
+  };
+  /** A function row's field shows its function's LaTeX, noting which it shows. */
+  const setLatex = (field: MathfieldElement, mark: FunctionMark) => {
+    field.setValue(functionLatex(mark), { silenceNotifications: true });
+    field.dataset.shows = shownFunction(mark);
   };
   /** A function row's typeset field, made once per row and kept across draws. */
   const fieldFor = (key: string) => {
@@ -1689,7 +1704,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (key === NEW_ROW)
       field.placeholder = `\\text{${m.drawing_board_plane_type_formula()}}`;
     field.addEventListener('input', () =>
-      typedRow(key, field.value, field.getValue('ascii-math'))
+      typedRow(key, field.getValue('ascii-math'))
     );
     // Capture: MathLive takes keys inside its shadow root first.
     field.addEventListener(
@@ -1719,8 +1734,8 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
    * an unfocused row follows its mark, so undo shows in it. */
   const syncFields = () => {
     for (const [key, field] of fields) {
-      const mark = model.marks.find(({ id }) => id === key);
-      if (key !== NEW_ROW && mark?.kind !== 'function') {
+      const mark = model.elementList.find(({ id }) => id === key);
+      if (key !== NEW_ROW && mark?.type !== 'functiongraph') {
         fields.delete(key);
         continue;
       }
@@ -1733,12 +1748,12 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
         field.menuItems = [];
       }
       if (
-        mark?.kind === 'function' &&
+        mark?.type === 'functiongraph' &&
         !drafts.has(key) &&
-        field.value !== mark.latex &&
+        field.dataset.shows !== shownFunction(mark) &&
         document.activeElement !== field
       )
-        field.setValue(mark.latex, { silenceNotifications: true });
+        setLatex(field, mark);
     }
     if (focusRow) {
       controls
@@ -1752,30 +1767,29 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     const text = input.value.trim();
     const pairs = typedPairs(text);
     const changed: Mark | null =
-      mark.kind === 'label'
+      mark.type === 'text'
         ? text
           ? { ...mark, text: text.slice(0, LABEL_LENGTH_MAX) }
           : null
-        : mark.kind === 'dot' && pairs.length === 1
-          ? { ...mark, at: pairs[0] }
-          : (mark.kind === 'line' || mark.kind === 'vector') &&
-              pairs.length === 2
-            ? { ...mark, points: pairs }
+        : mark.type === 'point' && pairs.length === 1
+          ? { ...mark, coords: pairs[0] }
+          : mark.type === 'polyline' && pairs.length === 2
+            ? { ...mark, coords: pairs }
             : mark;
-    if (!changed) write(model.marks.filter(({ id }) => id !== mark.id));
+    if (!changed) write(model.elementList.filter(({ id }) => id !== mark.id));
     else if (changed === mark) input.value = rowText(mark);
     else replaceOpen(changed);
     redraw();
   };
   const rowText = (mark: Mark) =>
-    mark.kind === 'dot'
-      ? pairText(mark.at)
-      : mark.kind === 'line' || mark.kind === 'vector'
+    mark.type === 'point'
+      ? pairText(mark.coords)
+      : mark.type === 'polyline'
         ? m.drawing_board_plane_from_to({
-            from: pairText(mark.points[0]),
-            to: pairText(mark.points[1]),
+            from: pairText(mark.coords[0]),
+            to: pairText(mark.coords[1]),
           })
-        : mark.kind === 'label'
+        : mark.type === 'text'
           ? mark.text
           : '';
   const addLabel = () => {
@@ -1786,10 +1800,10 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       listLayout() === 'sheet' ? height * 0.26 : height / 2,
     ]);
     const label: Mark = {
-      at,
+      coords: at,
       id: newId(),
-      kind: 'label',
       text: m.drawing_board_plane_label(),
+      type: 'text',
     };
     focusRow = label.id;
     add(label);
@@ -1802,7 +1816,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     redraw();
   };
   const rowBody = (mark: Mark, number: number) => {
-    if (mark.kind === 'function') {
+    if (mark.type === 'functiongraph') {
       const field = fieldFor(mark.id);
       field?.setAttribute(
         'aria-label',
@@ -1811,14 +1825,13 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       return field;
     }
     if (
-      mark.kind === 'dot' ||
-      mark.kind === 'line' ||
-      mark.kind === 'vector' ||
-      mark.kind === 'label'
+      mark.type === 'point' ||
+      mark.type === 'polyline' ||
+      mark.type === 'text'
     )
       return html`<input
-        aria-label=${mark.kind === 'label' ? m.drawing_board_plane_label() : m.question_ui_graph_expression({ number })}
-        maxlength=${mark.kind === 'label' ? LABEL_LENGTH_MAX : 80}
+        aria-label=${mark.type === 'text' ? m.drawing_board_plane_label() : m.question_ui_graph_expression({ number })}
+        maxlength=${mark.type === 'text' ? LABEL_LENGTH_MAX : 80}
         type="text"
         .value=${rowText(mark)}
         @change=${(event: Event) => commitText(mark, event.target as HTMLInputElement)}
@@ -1828,16 +1841,16 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
       />`;
     // Shaped on the plane, not typed: the row names it (Epo 2026-11-13).
     const name =
-      mark.kind === 'curve'
+      mark.type === 'curve'
         ? m.chrome_curve()
-        : mark.kind === 'ellipse'
+        : mark.type === 'ellipse'
           ? m.drawing_board_ellipse()
           : m.drawing_board_plane_formula();
     return html`<span class="capy-plane-row-text">${name}</span>`;
   };
   const objectsList = () => {
     const layout = listLayout();
-    const rows = [...model.marks.map((mark) => drafts.get(mark.id) ?? mark)];
+    const rows = model.elementList.map((mark) => drafts.get(mark.id) ?? mark);
     const newField = fieldFor(NEW_ROW);
     newField?.setAttribute(
       'aria-label',
@@ -1872,7 +1885,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
             @focusin=${() => lightRow(mark.id)}
             @pointerenter=${() => lightRow(mark.id)}
           >
-            <span class="kind">${kindIcon(mark.id, ROW_ICON[mark.kind])}</span>
+            <span class="kind">${kindIcon(mark.id, kindOf(mark))}</span>
             ${rowBody(mark, index + 1)}
             <button
               aria-label=${m.a11y_more_actions()}
@@ -1918,7 +1931,7 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
                   menuFor = null;
                   hot = null;
                   selected.delete(id ?? '');
-                  write(model.marks.filter((mark) => mark.id !== id));
+                  write(model.elementList.filter((mark) => mark.id !== id));
                   drawControls();
                   redraw();
                 }}
@@ -1938,9 +1951,9 @@ function openPlaneEditor(gfx: GfxController, model: PlaneElementModel) {
     if (showList && !Mathfield) void loadMathfield();
     const open = openMark();
     const finishLabel =
-      open?.kind === 'curve'
+      open?.type === 'curve'
         ? m.drawing_board_finish_curve()
-        : open?.kind === 'line'
+        : open?.type === 'polyline' && !open.arrow
           ? m.drawing_board_finish_line()
           : null;
     render(

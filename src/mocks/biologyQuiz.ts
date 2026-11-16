@@ -3,7 +3,6 @@ import type {
   GraphBlock,
   Question,
 } from '@/features/questions/types';
-import surfaceAreaSvg from './fixtures/biology-surface-area.svg?raw';
 
 export const surfaceAreaGraph: GraphBlock = {
   board: { axis: true, bbox: [-0.8, 7.5, 7, -1.5], grid: true },
@@ -28,7 +27,6 @@ export const surfaceAreaGraph: GraphBlock = {
     },
   ],
   height: 400,
-  image: { svg: surfaceAreaSvg },
   type: 'graph',
   width: 600,
 };

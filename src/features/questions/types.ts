@@ -149,7 +149,8 @@ export type GraphBlock = {
     grid: boolean;
   };
   elements: GraphElement[];
-  image: { url: string } | { svg: string };
+  /** The size it is drawn at; no picture is stored, every view draws the
+   * elements (Epo 2026-11-16). */
   width: number;
   height: number;
   /** Alt text and grading text (optional). */

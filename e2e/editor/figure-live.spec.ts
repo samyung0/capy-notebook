@@ -5,9 +5,10 @@ import { openEditorNote } from './helpers';
 
 // Epo 2026-10-17: a chart's, plot's or graph's block is a live map in the
 // note's room. Two editors changing different fields of one chart at once
-// both end with the merged chart; a peer's graph edit makes the open editor
-// redraw the SVG, once, and both converge on it. The other editor is a
-// headless peer in the note's mock room (src/mocks/collaboration.ts).
+// both end with the merged chart; a peer's graph edit is drawn here from its
+// elements, and nothing is written back (no stored picture, Epo 2026-11-16).
+// The other editor is a headless peer in the note's mock room
+// (src/mocks/collaboration.ts).
 
 type Peer = ReturnType<
   typeof import('../../src/mocks/collaboration').mockNotePeer
@@ -26,18 +27,16 @@ const chart = {
   type: 'chart',
 };
 
-const STALE_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 190"><rect width="320" height="190" fill="#eeeeee"/></svg>';
 const graph = {
   block: {
     board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
+    description: 'A segment from A to B',
     elements: [
       { coords: [0, 0], id: 'p1', name: 'A', type: 'point' },
       { coords: [1, 1], id: 'p2', name: 'B', type: 'point' },
       { id: 's1', points: ['p1', 'p2'], type: 'segment' },
     ],
     height: 190,
-    image: { svg: STALE_SVG },
     type: 'graph',
     width: 320,
   },
@@ -133,7 +132,7 @@ test.describe('live figures', () => {
     await expect(figure).toContainText('Revenue');
   });
 
-  test("a peer's graph edit is redrawn here once, and both converge on the new SVG", async ({
+  test("a peer's graph edit is drawn here and nothing is written back", async ({
     page,
   }) => {
     const editor = await openEditorNote(
@@ -142,8 +141,11 @@ test.describe('live figures', () => {
       EDITOR_NOTE.thirdParagraph
     );
     await joinPeer(page, [graph]);
-    await expect(editor.locator('[data-block-id="live-graph"]')).toBeVisible();
-    // The peer moves B without drawing the graph again: its SVG is stale.
+    const drawn = editor
+      .locator('[data-block-id="live-graph"]')
+      .getByRole('img', { name: graph.block.description });
+    await expect(drawn).toBeVisible();
+    // The peer moves B.
     await page.evaluate(() => {
       const { document } = (window as unknown as { peer: Peer }).peer;
       const root = document.get('content') as unknown as {
@@ -166,25 +168,14 @@ test.describe('live figures', () => {
         (window as unknown as { updates: number }).updates += 1;
       });
     });
-    await expect
-      .poll(
-        async () =>
-          ((await peerBlock(page, 'live-graph')) as typeof graph.block).image
-            .svg
-      )
-      .not.toBe(STALE_SVG);
-    const redrawn = (await peerBlock(page, 'live-graph')) as typeof graph.block;
-    expect(redrawn.image.svg).toMatch(/^<svg/);
-    expect(redrawn.elements[1].coords).toEqual([3, 2]);
-    // One write, no redraw of its own redraw.
+    await expect(drawn).toBeVisible();
     await page.waitForTimeout(1500);
     expect(
       await page.evaluate(
         () => (window as unknown as { updates: number }).updates
       )
-    ).toBe(1);
-    expect(
-      ((await peerBlock(page, 'live-graph')) as typeof graph.block).image.svg
-    ).toBe(redrawn.image.svg);
+    ).toBe(0);
+    const held = (await peerBlock(page, 'live-graph')) as typeof graph.block;
+    expect(held.elements[1].coords).toEqual([3, 2]);
   });
 });

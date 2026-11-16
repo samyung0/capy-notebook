@@ -19,8 +19,6 @@ const bound = new WeakMap<object, (unbound: unknown[]) => void>();
 const edited = new WeakSet<object>();
 /** A real edit since the last `takeLocalEdit`. */
 const editing = new WeakSet<object>();
-/** Running `writeNoEdit`: what it writes is no person's edit. */
-const noEdit = new WeakSet<object>();
 /** Writes the trailing paragraph outside Undo. */
 const TRAILING_ORIGIN = Symbol('trailing');
 
@@ -113,7 +111,6 @@ export const roomBindingPlugin = createSlatePlugin({
           return;
       } else if (
         op.type !== 'set_selection' &&
-        !noEdit.has(editor) &&
         (local || YjsEditor.origin(editor) === (editor as Undoable).undoManager)
       ) {
         if (local && YjsEditor.connected(editor) && !edited.has(editor)) {
@@ -221,18 +218,6 @@ export function openTrailingParagraph(plate: PlateEditor) {
   addTrailingParagraph(editor);
   plate.tf.select(plate.api.end([]));
   plate.tf.focus();
-}
-
-/** A write of the editor's own, as a graph's redraw after a co-editor's change:
- * it reaches the room, and the person has still edited nothing, so everyone with
- * the note open adds no paragraph of their own behind it. */
-export function writeNoEdit(editor: object, write: () => void) {
-  noEdit.add(editor);
-  try {
-    write();
-  } finally {
-    noEdit.delete(editor);
-  }
 }
 
 /** Whether a real edit (this person's, an Undo's) happened since the last

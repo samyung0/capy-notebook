@@ -1,4 +1,8 @@
-import { tickStep } from '@/features/graph/view';
+import { drawGraph } from '@/features/graph/draw';
+import { type ElementEntry, readElements } from '@/features/graph/keyed';
+import { EXPORT_PAPER } from '@/features/graph/paper';
+import { canvasMeasure, SvgRecorder } from '@/features/graph/svg';
+import { bboxOf, type View } from '@/features/graph/view';
 import { m } from '@/i18n';
 import { fromBase64 } from './base64';
 import {
@@ -7,18 +11,15 @@ import {
   CARD_PADS,
   type ChartData,
   filledSlices,
-  functionRuns,
   INK,
-  type Mark,
   onScreen,
-  pathOf,
+  type PlaneElement,
   pieCircle,
 } from './boardData';
 import {
   type Box,
   closeUp,
   IMAGE_SIDE_MAX,
-  ticks,
   unite,
   type Vec,
 } from './boardGeometry';
@@ -33,9 +34,10 @@ import {
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
  * the marking image is: everything on the board, far groups drawn nearer, on white.
  * Strokes are plain lines, connectors straight, formulas their LaTeX, notes a line per
- * paragraph, a placed quiz or set its title and kind, pasted images a grey box, and no
- * numbers or labels on cards. Throws a
- * BoardLoadError for a board that doesn't check out. */
+ * paragraph, a placed quiz or set its title and kind, pasted images a grey box, plane
+ * cards as the graph engine draws them (numbers included) without their labels and
+ * formulas, and no labels on charts. Throws a BoardLoadError for a board that doesn't
+ * check out. */
 export function drawBoardPreview(
   saved: string,
   size: { height: number; width: number },
@@ -131,7 +133,7 @@ export function drawBoardPreview(
   const pen: Pen = { pixel: 1 / scale };
   let body = '';
   for (const [i, item] of items.entries()) {
-    const drawn = drawItem(item, pen, blocks);
+    const drawn = drawItem(item, pen, blocks, i);
     if (!drawn) continue;
     const { dx, dy } = shifts[i];
     // A block keeps its turn as `prop:rotate` (a note, local change 56; an image).
@@ -173,7 +175,9 @@ const LINE_HEIGHT = 1.3;
 function drawItem(
   { box, ends, fields, kind }: Item,
   pen: Pen,
-  blocks: Record<string, Fields>
+  blocks: Record<string, Fields>,
+  /** The item's place in the preview, so its own ids stay its own. */
+  n: number
 ) {
   switch (kind) {
     case 'brush':
@@ -193,7 +197,7 @@ function drawItem(
     case 'connector':
       return ends ? drawConnector(ends, fields, pen) : '';
     case 'plane':
-      return drawPlane(box, fields, pen);
+      return drawPlane(box, fields, pen, n);
     case 'chart':
       return drawChart(box, fields as unknown as ChartData, pen);
     case 'formula':
@@ -359,87 +363,41 @@ function endPoint(end: unknown, boxById: Map<string, Box>): Vec | null {
   return position ? [position[0], position[1]] : null;
 }
 
-/** The card, its numbered grid lines while they're apart, the axes and the marks. */
-function drawPlane(box: Box, fields: Fields, pen: Pen) {
+/** The card as the graph engine draws it on the light export paper (one renderer for
+ * every graph, Epo 2026-11-16), at no less than half the card's own size so its marks
+ * keep a pixel. No labels or formulas: the preview can't lay a formula out, and better
+ * none than a broken one (Epo 2026-11-08). */
+function drawPlane(box: Box, fields: Fields, pen: Pen, n: number) {
   const { h, w, x, y } = box;
-  const ppu = Number(fields.ppu);
-  const x0 = Number(fields.x0);
-  const y0 = Number(fields.y0);
-  const marks = (fields.marks as Mark[] | undefined) ?? [];
-  const X = (u: number) => x + (u - x0) * ppu;
-  const Y = (v: number) => y + (y0 - v) * ppu;
-  const step = tickStep(ppu);
-  let grid = '';
-  if (step * ppu > pen.pixel * 6 && fields.polar === true) {
-    // Rings round the origin and a spoke every 30°, out to the farthest corner.
-    const [ox, oy] = [X(0), Y(0)];
-    const far = Math.max(
-      ...[
-        [x, y],
-        [x + w, y],
-        [x, y + h],
-        [x + w, y + h],
-      ].map(([cx, cy]) => Math.hypot(cx - ox, cy - oy))
-    );
-    for (let r = step * ppu; r <= far; r += step * ppu)
-      grid += `M${num(ox + r)} ${num(oy)}a${num(r)} ${num(r)} 0 1 0 ${num(-2 * r)} 0a${num(r)} ${num(r)} 0 1 0 ${num(2 * r)} 0`;
-    for (let a = 30; a < 360; a += 30) {
-      if (a % 90 === 0) continue;
-      const t = (a * Math.PI) / 180;
-      grid += `M${num(ox)} ${num(oy)}L${num(ox + far * Math.cos(t))} ${num(oy - far * Math.sin(t))}`;
-    }
-  } else if (step * ppu > pen.pixel * 6) {
-    for (const u of ticks(x0, x0 + w / ppu, step))
-      grid += `M${num(X(u))} ${num(y)}V${num(y + h)}`;
-    for (const v of ticks(y0 - h / ppu, y0, step))
-      grid += `M${num(x)} ${num(Y(v))}H${num(x + w)}`;
-  }
-  const axes = `M${num(X(0))} ${num(y)}V${num(y + h)}M${num(x)} ${num(Y(0))}H${num(x + w)}`;
-  const ink = Math.max(2, pen.pixel);
-  let traces = '';
-  let heads = '';
-  let dots = '';
-  const dot = ([u, v]: Vec) => {
-    dots += `M${num(X(u))} ${num(Y(v))}h0`;
+  const k = Math.max(1 / pen.pixel, 0.5);
+  const elements = readElements(
+    Object.entries(
+      fields.elements as Record<string, ElementEntry<PlaneElement>>
+    )
+  ).filter(({ type }) => type !== 'text' && type !== 'formula');
+  const recorder = new SvgRecorder(w * k, h * k, canvasMeasure, `p${n}`);
+  const view: View = {
+    left: Number(fields.x0),
+    ppuX: Number(fields.ppu) * k,
+    ppuY: Number(fields.ppu) * k,
+    top: Number(fields.y0),
   };
-  for (const mark of marks) {
-    // No labels on previews, as no numbers, and no formulas: the preview can't lay
-    // them out, and better none than a broken one (Epo 2026-11-08).
-    if (mark.kind === 'label' || mark.kind === 'formula') continue;
-    if (mark.kind === 'dot') {
-      dot(mark.at);
-      continue;
-    }
-    if (mark.kind === 'function') {
-      for (const run of functionRuns(mark, x0, x0 + w / ppu, 2 / ppu, h / ppu))
-        traces += run
-          .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
-          .join('');
-      continue;
-    }
-    const path = pathOf(mark, 6).map(([u, v]): Vec => [X(u), Y(v)]);
-    // A line's points show only in the editor, a single point always.
-    const [from, to] = mark.points.slice(-2);
-    if (mark.kind === 'vector' && from && to) {
-      // Its arrowhead, as the card draws it, never under four preview pixels.
-      const [tx, ty] = [X(to[0]), Y(to[1])];
-      const turn = Math.atan2(ty - Y(from[1]), tx - X(from[0]));
-      const size = Math.max(12, pen.pixel * 4);
-      // The line stops halfway into the head, as on the card.
-      const back = (size * Math.cos(Math.PI / 7)) / 2;
-      path[path.length - 1] = [
-        tx - back * Math.cos(turn),
-        ty - back * Math.sin(turn),
-      ];
-      const side = (sign: number) =>
-        `${num(tx - size * Math.cos(turn + (sign * Math.PI) / 7))} ${num(ty - size * Math.sin(turn + (sign * Math.PI) / 7))}`;
-      heads += `M${num(tx)} ${num(ty)}L${side(-1)}L${side(1)}Z`;
-    }
-    traces += path
-      .map(([u, v], i) => `${i ? 'L' : 'M'}${num(u)} ${num(v)}`)
-      .join('');
-  }
-  return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${heads ? `<path d="${heads}" fill="${INK}" stroke="none"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
+  drawGraph(
+    recorder,
+    { h: h * k, w: w * k, x: 0, y: 0 },
+    view,
+    {
+      board: {
+        axis: true,
+        bbox: bboxOf(view, w * k, h * k),
+        grid: true,
+        polar: fields.polar === true,
+      },
+      elements,
+    },
+    EXPORT_PAPER
+  );
+  return recorder.nested(x, y, w, h);
 }
 
 /** Bars and the axes, or the circle and its spokes. */

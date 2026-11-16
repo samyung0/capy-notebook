@@ -1150,9 +1150,6 @@
               "term": "59*x-7.375"
             }
           ],
-          "image": {
-            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"></svg>"
-          },
           "width": 320,
           "height": 190,
           "description": "Every graph element"
@@ -1181,9 +1178,6 @@
               "hidden": true
             }
           ],
-          "image": {
-            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"></svg>"
-          },
           "width": 120,
           "height": 120
         },

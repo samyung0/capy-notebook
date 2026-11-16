@@ -5,7 +5,6 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { InputError } from '@/components/ui/Input';
-import { graphSvg } from '@/features/graph/svg';
 import { BlockEditor } from '@/features/questions/BlockEditor';
 import { IssueSummary } from '@/features/questions/IssueViews';
 import { blockIssues } from '@/features/questions/issues';
@@ -86,12 +85,8 @@ export default function VisualBlockDialog({
         draft.type !== 'plot'
       )
         throw new Error('Unsupported note block');
-      const next =
-        draft.type === 'graph'
-          ? { ...draft, image: { svg: graphSvg(draft) } }
-          : draft;
-      questionBlockSchema.parse(next);
-      await onSave(next, base.current);
+      questionBlockSchema.parse(draft);
+      await onSave(draft, base.current);
       onClose();
     } catch (error) {
       setError('root', {

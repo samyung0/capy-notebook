@@ -37,6 +37,8 @@ export type Figure =
       type: 'chart';
       block: Extract<QuestionBlock, { type: 'chart' | 'plot' }>;
     }
+  /** Drawn to SVG from its elements here, the one place a graph has one. */
+  | { type: 'graph'; block: Extract<QuestionBlock, { type: 'graph' }> }
   | { type: 'image'; source: string }
   | { type: 'youtube'; videoId: string };
 export interface ExportImage {
@@ -466,17 +468,8 @@ export async function renderExport(
         QuestionBlock,
         { type: 'chart' | 'plot' | 'graph' }
       >;
-      if (block.type === 'graph') {
-        const source =
-          'svg' in block.image
-            ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`
-            : safeExportUrl(block.image.url);
-        return picture(
-          { source, type: 'image' },
-          block.description ?? '',
-          html
-        );
-      }
+      if (block.type === 'graph')
+        return picture({ block, type: 'graph' }, block.description ?? '', html);
       const table = questionBlocks([
         {
           header: true,

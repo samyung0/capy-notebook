@@ -33,8 +33,9 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// void element holding anything but one empty text leaf (Epo 2026-10-18);
 /// a column width the editor never writes (2026-10-25); an indent that is
 /// not a number (2026-10-26); a style value holding `;` or a control
-/// character (Epo Q380); and a text block's `label` and an open answer's
-/// `hints`, removed (Epo 2026-11-15).
+/// character (Epo Q380); a text block's `label` and an open answer's
+/// `hints`, removed (Epo 2026-11-15); and a graph's stored picture, removed
+/// (Epo 2026-11-16).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -74,6 +75,7 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.ends_with("may hold no semicolon or control character")
         || message.ends_with("block: unrecognized key label")
         || message.ends_with("answer: unrecognized key hints")
+        || message.ends_with("block: unrecognized key image")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -197,6 +199,12 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
                 Some((node.clone(), case["kind"].as_str()?.to_owned()))
             })
             .unwrap_or_else(|| panic!("no accepted {kind} in the corpus"));
+        // The frozen corpus's graphs still carry the picture removed since
+        // (Epo 2026-11-16).
+        let mut base = base;
+        if let Some(block) = base["block"].as_object_mut() {
+            block.remove("image");
+        }
         let with_width = |width: Value| {
             let mut node = base.clone();
             node["width"] = width;
@@ -791,7 +799,6 @@ fn a_figure_description_holds_500_outside_the_bank() {
                     "description": description,
                     "elements": [],
                     "height": 190,
-                    "image": { "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>" },
                     "type": "graph",
                     "width": 320,
                 },

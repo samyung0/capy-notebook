@@ -78,8 +78,9 @@ func Get() Catalog {
 			{Flavour: "affine:embed-capy-material", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
 		},
 		Limits: map[string]int64{
-			// A plane's marks, and a label's characters (plane labels, chart labels).
-			"MARKS_MAX":        500,
+			// A plane's elements, at most 100 as in every graph (Epo 2026-11-16), and a
+			// label's characters (plane labels, chart labels).
+			"ELEMENTS_MAX":     100,
 			"LABEL_LENGTH_MAX": 24,
 			// A formula's LaTeX, as a card or a plane mark.
 			"LATEX_MAX": 2000,

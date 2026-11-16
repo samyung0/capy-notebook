@@ -79,7 +79,6 @@ function newVisualBlock(type: NoteVisualBlock['type']): NoteVisualBlock {
           { id: crypto.randomUUID(), term: 'x', type: 'functiongraph' },
         ],
         height: 400,
-        image: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' },
         type,
         width: 600,
       };

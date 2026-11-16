@@ -97,7 +97,6 @@ const (
 	// mark label, bounded as a chart's (Epo 2026-10-17).
 	QuestionPlotTitle      = QuestionChartTitle
 	QuestionPlotLabel      = QuestionChartSeriesName
-	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
 	// User quizzes (not the question bank) are bounded tighter: 150 parts,
@@ -182,7 +181,6 @@ var QuestionBounds = map[string]int{
 	"QUESTION_PLOT_MARKS_MAX":        QuestionPlotMarks,
 	"QUESTION_PLOT_TITLE_MAX":        QuestionPlotTitle,
 	"QUESTION_PLOT_LABEL_MAX":        QuestionPlotLabel,
-	"QUESTION_SVG_BYTES_MAX":         QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX":   QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":         QuestionAssetURL,
 	"QUIZ_PARTS_MAX":                 QuizParts,

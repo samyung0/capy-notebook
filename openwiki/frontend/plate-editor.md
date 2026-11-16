@@ -806,7 +806,7 @@ mode. A chart or graph's hover toolbar has Edit/Copy/Delete in edit mode; Edit
 opens a dialog. Toolbar Copy (charts, graphs, Mermaid, HTML
 blocks) fires a real copy event filled by `setFragmentData`, so the clipboard
 holds `application/x-slate-fragment` like Cmd+C; `navigator.clipboard.write`
-cannot carry that type and its paste inserted nothing. Unresized charts open at 28rem and graphs at their image width;
+cannot carry that type and its paste inserted nothing. Unresized charts open at 28rem and graphs at their stored width;
 the chart preview sits on a page-coloured panel because its text uses page
 colours. Shared pages still render them as plain figures (no frame).
 
@@ -1078,21 +1078,15 @@ editors show a merge's raw block with its issues: a chart's rows past its
 labels and series past the cap, a pie's other series (Remove last series
 shows for it), its negative or missing positive value, no series (Add series
 shows even on a pie), and a graph's rows past the cap or naming a gone point,
-each marked, Save held until they are fixed. A graph's SVG is drawn on Save by the
-graph engine's `graphSvg` (`src/features/graph/svg.ts`, the canvas plane's look on
-white paper); an editor in Edit mode that sees a graph's recipe change (elements,
-board, size) redraws it in an idle callback (`graphRedraw.ts`, synchronous `graphSvg`
-once the recipe validates; a recipe the validators refuse keeps its stored SVG) and
-writes `image`, outside Undo, only when the SVG differs, so its own write never
-redraws again; readers keep the stored SVG. The Rust server writes the same maps on bootstrap and an agent's insert
+each marked, Save held until they are fixed. A graph stores no picture (Epo
+2026-11-16): every view, the editor's and readers', draws its elements (repaired)
+with the graph engine (`GraphView`, [embeds](../embeds.md)), so a co-editor's
+change shows as it arrives and nothing is written back. The Rust server writes the same maps on bootstrap and an agent's insert
 and reads them in one place (`plate::map_value`, behind
 `plate::block_value`); room admission takes a block as its map only and
 refuses a crafted update that puts an unknown key, a wrong type, an oversize
 value or another shape into one (`figure_map.rs`; where the relaxed check for
 a merge's kept states runs: [embeds](../embeds.md#live-figures)).
-The write is no person's edit (`writeNoEdit`): it starts no checkpoint and brings
-no trailing paragraph, so a co-editor's graph edit adds none from everyone with
-the note open.
 
 A note's table view (`table_view`, Epo 2026-11-12, AFFiNE's database look:
 `src/features/notes/tableView/`) is a top-level void like a figure, edited in
@@ -1145,7 +1139,8 @@ has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 
 Chart, plot and graph nodes store their question block under `block` (a live
 map in rooms, above), an optional `width`, and a single empty text child;
-graphs export their SVG before saving.
+a graph's block holds its elements and no picture; the note export draws it
+to SVG (`graphSvg`) and then to PNG like the other figures.
 A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
 and is the figure's accessible label: optional on every figure, images and
 graphs included (Epo 2026-10-14; a blank one is dropped on Save; the chart
@@ -4780,9 +4775,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   it to the toolbar is passed on to what lies under the pointer: one click both puts the
   piece back and works the button or picks up the next piece.
 - **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
-  corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
-  renderer with a clip, so a card stacks with strokes and reaches the marking image with
-  no special case. A card is a picture on the canvas: Select moves it, the frame's knob
+  corner in plane units, board pixels per unit) and its marks, drawn by the graph engine
+  (`drawGraph` in `src/features/graph/draw.ts`, the one renderer every graph shares,
+  Epo 2026-11-16) with a clip, so a card stacks with strokes and reaches the marking
+  image with no special case. Its marks are the graph model's elements
+  (`src/features/graph/model.ts`, D1/D16): a `point`, a `polyline` (a line; with
+  `arrow`, a two-point vector), a `curve` with optional `handles`, an `ellipse`
+  (`center`, `radii`), a `text` label with `size`, a `formula` and a `functiongraph`
+  (`boardData.ts` `PlaneElement`). They are stored in the card's `elements` field, a
+  `Y.Map` of element id to `{ element, order }` (an order key, `src/lib/orderKey.ts`),
+  as BlockSuite's mind map keeps its nodes (`propsToY` turns a pasted card's plain
+  entries into the map, `@observe` hears changes and tells the renderer and an open
+  editor to draw again; D10): reading sorts by order key, a tie by id, cached on the
+  model (`elementList`) until the map changes; writing (`writeList`,
+  `src/features/graph/keyed.ts`) sets or deletes only the entries that changed, so two
+  people drawing on one plane would merge mark by mark once the canvas has a room. A
+  plane holds at most 100 elements, as every graph (`ELEMENTS_MAX` in the board
+  catalog, D7); a board saved with the old `marks` list fails the load check (no
+  production data, no shim). A card is a picture on the canvas: Select moves it, the frame's knob
   turns it about its middle (`rotate`, Epo 2026-11-13; turned, the side across from a
   dragged handle stays put on the page), its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
@@ -4807,7 +4817,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   units across and up, so an empty plane shows a stretch of grid round the origin
   (Epo 2026-11-13). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
-  pinch zooms, a middle-button drag pans, and Select drags, as on the board.
+  pinch zooms about the pointer (the engine's `attachGestures`, within `PLANE_ZOOM`,
+  10⁻⁶ to 10⁶ px a unit), a middle-button drag pans, and Select drags, as on the board.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
@@ -4822,14 +4833,15 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   adds them); a click on empty paper, Escape or another tool lets go, and Delete or
   Backspace removes all that's selected.
   Where points coincide, the last drawn moves.
-  Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
+  Label (Epo 2026-11-08) types text centred where it's clicked, a `text` element at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
-  characters; previews leave labels out, as numbers); after one, the tool goes back to
+  characters, wrapping at 200 px as every graph's labels do; previews leave labels
+  out); after one, the tool goes back to
   Select. With Select, a double click on empty paper types a label there and one on a
   label edits it, as on the canvas; while one is typed, the canvas label's maths symbol
   row (`symbolButtons` in `boardFormula.ts`) sits under it, kept inside the plane, and
   inserts at the caret within the 24 characters (Epo 2026-11-13). A plane label is
-  still its own kind: a `label` mark drawn on the plane, not BlockSuite's canvas text.
+  still its own kind: a `text` element drawn on the plane, not BlockSuite's canvas text.
   A label or formula picked alone with Select wears the board's selection frame
   (`boardTextFrame.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
   no toolbar; dragging a corner sizes its text about its middle (Epo 2026-11-13),
@@ -4841,7 +4853,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the plane zooms. Select drags it whole; Erase takes it. Previews leave formulas out, as
   they can't lay them out (Epo: none rather than broken); the marking image has them.
   Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
-  the plane zooms) at its second point, a `vector` mark of two points; its line stops
+  the plane zooms) at its second point, a two-point `polyline` with `arrow`; its line stops
   halfway into the head, on the card and the preview alike, so the line's round end
   doesn't show past the point (Epo 2026-11-13). Each tool's
   button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
@@ -4854,8 +4866,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   BlockSuite's fading grey trail (`EraserTrail` in `boardEraser.ts`), everything it
   passes over hides, and lifting removes them in one undo step. Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
-  click places one a grid step round. It's an `ellipse` mark of four handles (right,
-  top, left, bottom); pulling one sets the width or height about the middle, so it
+  click places one a grid step round. It's an `ellipse` element (`center`, `radii`)
+  held by four handles (right, top, left, bottom: `ellipseHandles`); pulling one sets
+  the width or height about the middle, so it
   stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
   middle (any other mark's first point) landing on the grid, where a ring crosses a
   spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces
@@ -4868,9 +4881,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   and ends. Point, Line and Curve snap to the
   fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
-  and `axisNumber` in `src/features/graph/view.ts`; the plane still draws with its own code, plan
-  step 1 moved only the shared curve, formula, paper and tick helpers into
-  `src/features/graph/`). Numbers leave with their axis and
+  and `axisNumber` in `src/features/graph/view.ts`; the plane draws through the engine,
+  its editor adding only what it shows on top: the picked mark's blue halo
+  (`strokeElement`), the points of the mark under the pointer, held or open, handles,
+  frames and chips). Numbers leave with their axis and
   marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
   fine to draw goes blank. Each click is written at once, one undo step, and undo
   shortens a line or curve still taking clicks. While a plane or chart is open, undo and
@@ -5347,19 +5361,23 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
-  limits and chart geometry, `boardGeometry.ts` the framing, `src/features/graph/view.ts` the grid
-  step), 12.7 KB minified on its own. Framed as the marking image is (everything, far
+  limits and chart geometry, `boardGeometry.ts` the framing, and the graph engine,
+  `src/features/graph/`, for plane cards). Framed as the marking image is (everything, far
   groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
   at the same index. Strokes are plain lines thinned to one point per preview pixel and
   never thinner than a pixel; shapes their outline, fill and text; connectors straight
   from end to end with their arrowheads; text and shape labels a line per line break;
-  plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
+  plane cards as the graph engine draws them on the light export paper (grid, axes with
+  their numbers, marks; no labels or formulas), recorded by its SVG recorder
+  (`SvgRecorder.nested`, ids prefixed per card) at no less than half the card's size, so
+  its lines keep a pixel; charts their bars
   or circle and spokes; formulas their LaTeX as text; notes their box and a line per
   paragraph; a placed quiz or set its box with the title and what it is (text only, the
-  runner being on the canvas alone); pasted images a grey box. No numbers or labels on cards. It checks the board
+  runner being on the canvas alone); pasted images a grey box. No labels on charts. It checks the board
   first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
-  in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
+  in Node, a 300 KB board (50 strokes of 300 points) 5 ms (measured before plane cards
+  drew through the engine). Show it as an
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
 - **Notes:** a note is inline or a card (Epo 2026-11-13, local change 52). Inline is
   its text on the canvas with no fill, padding or edge (a `transparent` fill, no shadow,

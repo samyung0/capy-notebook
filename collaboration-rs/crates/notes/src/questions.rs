@@ -25,10 +25,10 @@ pub use crate::catalog::{
     QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
     QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
     QUESTION_PLOT_LABEL_MAX, QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX,
-    QUESTION_PLOT_SERIES_MAX, QUESTION_PLOT_TITLE_MAX, QUESTION_SVG_BYTES_MAX,
-    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX,
-    QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX,
-    QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_PLOT_SERIES_MAX, QUESTION_PLOT_TITLE_MAX, QUESTION_TABLE_COLUMNS_MAX,
+    QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX, QUESTION_UNIT_MAX,
+    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
+    QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -345,27 +345,6 @@ static TERM_TOKENS: LazyLock<Regex> = LazyLock::new(|| {
 static WHITESPACE: LazyLock<Regex> = LazyLock::new(|| js_regex(r"\s"));
 static GAP_MARKER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\(([0-9]+)\) ?_{3,}").expect("valid regex"));
-// The SVG patterns run on an ASCII-lowercased copy for the ones JS matches
-// case-insensitively (JS `i` without `u` folds ASCII only).
-static SVG_START: LazyLock<Regex> = LazyLock::new(|| js_regex(r"^\s*<svg[\s>]"));
-static SVG_END: LazyLock<Regex> = LazyLock::new(|| js_regex(r"</svg>\s*$"));
-static SVG_UNSAFE: LazyLock<Regex> = LazyLock::new(|| {
-    js_regex(
-        r"<!|<\?|(?-u:\b)on[A-Za-z0-9_]+\s*=|javascript:|data:|<\s*/?\s*(?:script|foreignobject|style|image|use|a|animate[A-Za-z0-9_]*|set)(?-u:\b)",
-    )
-});
-static SVG_REFERENCES: LazyLock<Regex> =
-    LazyLock::new(|| js_regex(r#"(?:[a-z]+:)?(?:href|src)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)"#));
-static SVG_LOCAL_REFERENCE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^["']#[A-Za-z0-9_-]+["']$"#).expect("valid regex"));
-static SVG_URLS: LazyLock<Regex> = LazyLock::new(|| js_regex(r"url\s*\([^)]*\)"));
-static SVG_LOCAL_URL: LazyLock<Regex> =
-    LazyLock::new(|| js_regex(r#"^url\s*\(\s*["']?#[A-Za-z0-9_-]+["']?\s*\)$"#));
-static SVG_ESCAPED_STYLE: LazyLock<Regex> =
-    LazyLock::new(|| js_regex(r#"style\s*=\s*(?:"[^"<>]*\\|'[^'<>]*\\)"#));
-static SVG_TAGS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"</?([A-Za-z][A-Za-z0-9_:-]*)(?-u:\b)").expect("valid regex"));
-
 /// `validQuantityValue`: values only; a fraction's denominator not zero.
 pub fn valid_quantity_value(value: &str) -> bool {
     let input = js_trim(value);
@@ -399,43 +378,13 @@ pub fn valid_graph_term(term: &str) -> bool {
         .all(|t| !t.starts_with(|c: char| c.is_ascii_alphabetic()) || NAMES.contains(t))
 }
 
-/// `validGraphSvg`: the static subset rendered as an image.
-pub fn valid_graph_svg(svg: &str) -> bool {
-    if svg.len() > QUESTION_SVG_BYTES_MAX || !SVG_START.is_match(svg) || !SVG_END.is_match(svg) {
-        return false;
-    }
-    let lower = svg.to_ascii_lowercase();
-    if SVG_UNSAFE.is_match(&lower) || SVG_ESCAPED_STYLE.is_match(&lower) {
-        return false;
-    }
-    if SVG_REFERENCES
-        .captures_iter(&lower)
-        .any(|c| !SVG_LOCAL_REFERENCE.is_match(&c[1]))
-    {
-        return false;
-    }
-    if SVG_URLS
-        .find_iter(&lower)
-        .any(|m| !SVG_LOCAL_URL.is_match(m.as_str()))
-    {
-        return false;
-    }
-    const ALLOWED: [&str; 16] = [
-        "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text",
-        "tspan", "defs", "marker", "clipPath", "title", "desc",
-    ];
-    SVG_TAGS
-        .captures_iter(svg)
-        .all(|c| ALLOWED.contains(&&c[1]))
-}
-
 /* ----------------------------------------------------------- the schema */
 
 /// A block as the schema leaves it, for the checks after it.
 pub struct Block {
     pub kind: String,
     pub text: Option<String>,
-    /// `image.url` (trimmed), `image.assetId` or `image.svg`.
+    /// An image's `image.url` (trimmed) or `image.assetId`.
     pub image: Option<(&'static str, String)>,
     /// A figure's description (trimmed), when it has one.
     pub description: Option<String>,
@@ -810,7 +759,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 &["height", "image", "type", "width"],
                 &["attribution", "description"],
             )?;
-            let image = figure(&map["image"], false)?;
+            let image = figure(&map["image"])?;
             image_size(map, what)?;
             optional(map, "attribution", |v| meta(v, what))?;
             let description = optional_description(map, what)?;
@@ -825,7 +774,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
             strict(
                 map,
                 what,
-                &["board", "elements", "height", "image", "type", "width"],
+                &["board", "elements", "height", "type", "width"],
                 &["description"],
             )?;
             let board = object(&map["board"], what)?;
@@ -840,7 +789,6 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 .iter()
                 .map(graph_element)
                 .collect::<Result<_, _>>()?;
-            let image = figure(&map["image"], true)?;
             image_size(map, what)?;
             graph_size(map, what)?;
             let description = optional_description(map, what)?;
@@ -889,7 +837,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
             Ok(Block {
                 kind: "graph".into(),
                 text: None,
-                image: Some(image),
+                image: None,
                 description,
             })
         }
@@ -897,22 +845,14 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
     }
 }
 
-/// An image or graph's `image`: `{url}`, `{assetId}` (images) or `{svg}`
-/// (graphs).
-fn figure(value: &Value, graph: bool) -> Result<(&'static str, String), String> {
+/// An image's `image`: `{url}` or `{assetId}`.
+fn figure(value: &Value) -> Result<(&'static str, String), String> {
     let what = "image";
     let map = object(value, what)?;
     if map.contains_key("url") && map.len() == 1 {
         return Ok(("url", url(&map["url"], what)?));
     }
-    if graph {
-        if map.contains_key("svg") && map.len() == 1 {
-            return match map["svg"].as_str() {
-                Some(svg) if valid_graph_svg(svg) => Ok(("svg", svg.to_owned())),
-                _ => fail("Graph SVG contains unsupported content."),
-            };
-        }
-    } else if map.contains_key("assetId") && map.len() == 1 {
+    if map.contains_key("assetId") && map.len() == 1 {
         return Ok(("assetId", identifier(&map["assetId"], what)?));
     }
     fail(format!("{what}: invalid input"))
@@ -1048,21 +988,9 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
                 cap_text(element.get("text"), what)?;
                 cap_list(element.get("points"), QUESTION_GRAPH_POLYGON_MAX, what)?;
             }
-            if let Some(image) = map.get("image").and_then(Value::as_object) {
-                if image
-                    .get("svg")
-                    .and_then(Value::as_str)
-                    .is_some_and(|svg| svg.len() > QUESTION_SVG_BYTES_MAX)
-                {
-                    return fail("Graph SVG contains unsupported content.");
-                }
-                if image
-                    .get("url")
-                    .and_then(Value::as_str)
-                    .is_some_and(|url| utf16_len(url) > QUESTION_ASSET_URL_MAX)
-                {
-                    return fail(format!("{what}: too long"));
-                }
+            // Its elements alone: no picture is stored (Epo 2026-11-16).
+            if map.contains_key("image") {
+                return fail(format!("{what}: a stored picture"));
             }
         }
         _ => {}
@@ -1726,7 +1654,7 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         )
     {
         block.description_fits(policy.bank)?;
-        if block.kind != "image" && block.kind != "graph" {
+        if block.kind != "image" {
             continue;
         }
         let refused = match &block.image {
@@ -1736,9 +1664,6 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         };
         if refused {
             return fail("Figures must use the configured bank asset host.");
-        }
-        if policy.bank && block.kind == "graph" && matches!(block.image, Some(("svg", _))) {
-            return fail("Upload bank graphs before saving the question.");
         }
     }
     Ok(Question {

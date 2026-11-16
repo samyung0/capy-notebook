@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ellipseIn, filledSlices, pullEllipse } from './boardData';
+import {
+  circleAt,
+  ellipseHandles,
+  filledSlices,
+  pullEllipse,
+} from './boardData';
 
 describe('filledSlices', () => {
   it('fills each slice clockwise from its line to the next, past 360 at the end', () => {
@@ -29,16 +34,31 @@ describe('filledSlices', () => {
 });
 
 describe('pullEllipse', () => {
-  const circle = ellipseIn(-2, 2, -2, 2);
+  const circle = circleAt('e', [1, 1], 2);
+
+  it('holds an ellipse by its right, top, left and bottom handles', () => {
+    expect(ellipseHandles(circle)).toEqual([
+      [3, 1],
+      [1, 3],
+      [-1, 1],
+      [1, -1],
+    ]);
+  });
 
   it('sizes about its middle, staying upright and on the grid', () => {
-    expect(pullEllipse(circle, 0, [3, 1])).toEqual(ellipseIn(-3, 3, -2, 2));
-    expect(pullEllipse(circle, 3, [0, -1])).toEqual(ellipseIn(-2, 2, -1, 1));
+    expect(pullEllipse(circle, 0, [4, 0])).toEqual({
+      ...circle,
+      radii: [3, 2],
+    });
+    expect(pullEllipse(circle, 3, [1, 0])).toEqual({
+      ...circle,
+      radii: [2, 1],
+    });
   });
 
   it('keeps its shape when uniform', () => {
-    expect(pullEllipse(ellipseIn(-2, 2, -1, 1), 2, [-4, 0], true)).toEqual(
-      ellipseIn(-4, 4, -2, 2)
-    );
+    expect(
+      pullEllipse({ ...circle, radii: [2, 1] }, 2, [-3, 1], true).radii
+    ).toEqual([4, 2]);
   });
 });
