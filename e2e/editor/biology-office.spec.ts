@@ -164,12 +164,13 @@ for (const [format, name] of [
         .getByRole('paragraph')
         .filter({ hasText: /^人數：20人$/ });
       // Mirror pages away from the viewport hold only plain text: bring the
-      // paragraph's page into view, then point at its positioned glyph.
+      // paragraph's page into view, then point at its last positioned run
+      // (the editor's mirror reads whole words, Q746 A).
       const last = frame
         .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
         .getByRole('paragraph')
         .filter({ hasText: /^人數：20人$/ })
-        .getByText('人', { exact: true })
+        .locator('.layout-run-text')
         .last();
       await expect(async () => {
         await frame
@@ -244,15 +245,15 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
   await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
   const input = frame.getByTestId('yrs-input');
-  // The caret goes into a paragraph through one of its positioned glyphs, as
-  // in the edit test above.
-  const placeIn = async (text: RegExp, glyph: string) => {
+  // The caret goes into a paragraph through its last positioned run, as in
+  // the edit test above.
+  const placeIn = async (text: RegExp) => {
     const paragraph = frame.getByRole('paragraph').filter({ hasText: text });
     const target = frame
       .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
       .getByRole('paragraph')
       .filter({ hasText: text })
-      .getByText(glyph, { exact: true })
+      .locator('.layout-run-text')
       .last();
     await expect(async () => {
       await frame
@@ -279,15 +280,15 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
       .filter({ hasText: new RegExp(`^${text}\\s*\\d+$`) });
 
   // The fixture numbers its headings by hand; two become Heading 1 and 2.
-  await placeIn(/^1\. 引言$/, '引');
+  await placeIn(/^1\. 引言$/);
   await applyStyle('Heading 1');
-  await placeIn(/^1\.1\.\s+活動背景$/, '背');
+  await placeIn(/^1\.1\.\s+活動背景$/);
   await applyStyle('Heading 2');
   // Update is offered once the document holds a table of contents.
   await officeTab(page, 'insert').click();
   await expect(ribbonCommand(page, 'update-toc')).toHaveCount(0);
 
-  await placeIn(/^籌委會籌備小組$/, '籌');
+  await placeIn(/^籌委會籌備小組$/);
   await input.press('Home');
   await runRibbonCommand(page, 'insert', 'insert-toc');
   await expect(entry('1\\. 引言')).toHaveCount(1);
@@ -296,7 +297,7 @@ test('DOCX Insert table of contents lists the headings, and Update follows a ren
     frame.getByRole('paragraph').filter({ hasText: /^籌委會籌備小組$/ })
   ).toHaveCount(1);
 
-  await placeIn(/^1\. 引言$/, '言');
+  await placeIn(/^1\. 引言$/);
   await input.press('End');
   await input.pressSequentially('X');
   await runRibbonCommand(page, 'insert', 'update-toc');
@@ -1246,8 +1247,6 @@ test.describe('DOCX on a phone', () => {
       .context()
       .grantPermissions(['clipboard-read', 'clipboard-write']);
     const frame = await open(page);
-    await editMode(page);
-    expect(await fitted(frame)).toBeLessThan(816 * 0.4);
     const run = (text: string) =>
       frame
         .locator(
@@ -1255,12 +1254,42 @@ test.describe('DOCX on a phone', () => {
         )
         .filter({ hasText: new RegExp(`^${text}$`) })
         .first();
-    const box = async (text: string) => {
+    const pageOne = () => frame.locator('canvas[data-page-index="0"]').first();
+    // View's mirror keeps one element per glyph, on its painted glyph, while
+    // Edit's reads whole words (Q746 A): each glyph's box is read in View as
+    // a share of page 1, and found on Edit's page 1 from that share.
+    const share = async (text: string) => {
       // The screen-reader mirror is built after the pages, at idle.
       await expect(run(text)).toBeAttached({ timeout: 60_000 });
-      const found = await run(text).boundingBox();
-      if (!found) throw new Error(`Missing run ${text}`);
-      return found;
+      const [glyph, sheet] = await Promise.all([
+        run(text).boundingBox(),
+        pageOne().boundingBox(),
+      ]);
+      if (!(glyph && sheet)) throw new Error(`Missing glyph ${text}`);
+      return {
+        height: glyph.height / sheet.height,
+        width: glyph.width / sheet.width,
+        x: (glyph.x - sheet.x) / sheet.width,
+        y: (glyph.y - sheet.y) / sheet.height,
+      };
+    };
+    const glyphs = new Map<string, Awaited<ReturnType<typeof share>>>();
+    for (const text of ['2', '書', '3', '團', '計'])
+      glyphs.set(text, await share(text));
+    await editMode(page);
+    expect(await fitted(frame)).toBeLessThan(816 * 0.4);
+    // Edit's mirror reads the title's last line whole.
+    await expect(run('交流學習團活動計劃書')).toBeAttached({ timeout: 60_000 });
+    const box = async (text: string) => {
+      const glyph = glyphs.get(text);
+      const sheet = await pageOne().boundingBox();
+      if (!(glyph && sheet)) throw new Error(`Missing glyph ${text}`);
+      return {
+        height: glyph.height * sheet.height,
+        width: glyph.width * sheet.width,
+        x: sheet.x + glyph.x * sheet.width,
+        y: sheet.y + glyph.y * sheet.height,
+      };
     };
     const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
     const copy = async () => {
@@ -2320,12 +2349,13 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   await pin.click();
   // The table items hand the caret back to its cell.
   await page.keyboard.type('Cell');
-  // The positioned mirror draws one run per glyph.
+  // The positioned mirror reads whole words (Q746 A): a run's element
+  // starts where its first glyph does.
   const cell = frame
     .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
     .getByRole('paragraph')
     .filter({ hasText: /^Cell$/ })
-    .getByText('C', { exact: true });
+    .getByText('Cell', { exact: true });
   await expect(cell).toBeAttached();
   const left = (await cell.boundingBox())?.x ?? Number.NaN;
   // exchange-plan.docx is a Word 2013+ (mode 15) document: the new table's
@@ -2334,7 +2364,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
     .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
     .getByRole('paragraph')
     .filter({ hasText: /^籌委會籌備小組$/ })
-    .getByText('籌', { exact: true })
+    .getByText('籌委會籌備小組', { exact: true })
     .first();
   const inset = left - ((await body.boundingBox())?.x ?? Number.NaN);
   expect(inset).toBeGreaterThan(5);
