@@ -2260,7 +2260,11 @@ the browser's `online` event, which calls `retryFontSlices()` (no other
 retry), and reports a server's failure through `font-failed` by its face
 (`reportOfficeFontFailure`, tag `office-font`); every other `onError` stays
 fatal. The notice is a warning toast that closes on its timer: the fork
-signals no repaint that drew the missing glyphs. A typed character whose slice is still loading paints after at most
+signals no repaint that drew the missing glyphs. Print and the list-card
+thumbnail wait for every outline the page draws (the fork's `renderPages`)
+and fail when a slice fails: Print shows its failure toast, and a thumbnail
+draw that fails ends its capture cycle like any other, so the next edit or
+open captures again. A typed character whose slice is still loading paints after at most
 300 ms, blank until it lands (Q750 B). Whole CJK faces now load only for
 XLSX's family lookups. The editor's
 Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
