@@ -85,8 +85,9 @@ until it is idle again (`busyAfterOneEdit`, from a Chrome trace), which the
 next frame misses. It also reports the heap over two full
 view-mode passes and over five view-mode opens and closes, what the open and
 View to Edit downloaded (`downloads`: requests and KiB by kind, from every
-realm, as vite preview sent them, uncompressed, and with WASM and fonts at the
-brotli-11 size the Office Worker stores), and records the runner's CPU model in every result. It
+realm, as vite preview sent them (text, JS, CSS and JSON over 1 KB gzipped,
+the rest as built), and with WASM and TTF fonts at the brotli-11 size the
+Office Worker stores; CJK slice indexes count as fonts), and records the runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
 reaches its frame or errors, a fallback to the main-thread engine, a missed budget
 (from three CI runs per format), or scrolling a generated 50,000-row sheet

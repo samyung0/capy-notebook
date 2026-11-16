@@ -19,6 +19,7 @@ import type {
 import { PERF_WORKSPACE_ID } from '../../../src/mocks/perfSeed';
 import { showPanelView } from '../../../e2e/helpers/panelView';
 import { m } from '../../../e2e/i18n';
+import { downloadKind } from './downloads';
 import { cdpSession, percentile, reportMetrics } from './metrics';
 
 /**
@@ -780,43 +781,13 @@ function storedBrotliBytes(url: URL) {
 }
 
 const kib = (bytes: number) => Math.round((bytes / 1024) * 10) / 10;
-// A built file's name without Vite's hash: `docx_view_wasm_bg`.
-const HASHED = /-[\w-]{8}$/;
-
-/** A fetch's kind by its file extension; for an engine, its module too. */
-function downloadKind(
-  entry: Download,
-  url: URL,
-  runtimeOrigin: string
-): { kind: string; module?: string } {
-  const file = url.pathname.split('/').at(-1) ?? '';
-  const dot = file.lastIndexOf('.');
-  const extension = dot < 0 ? '' : file.slice(dot + 1);
-  const module = (dot < 0 ? file : file.slice(0, dot)).replace(HASHED, '');
-  if (
-    entry.initiator === 'navigation' ||
-    ['css', 'html', 'js', 'mjs'].includes(extension)
-  )
-    return {
-      kind: url.origin === runtimeOrigin ? 'officeRuntimeJs' : 'appJsCss',
-    };
-  if (extension === 'wasm')
-    return module.startsWith('fontpack')
-      ? { kind: 'fontDecoder' }
-      : { kind: 'engineWasm', module };
-  if (['otf', 'ttf', 'woff', 'woff2', 'zst'].includes(extension))
-    return { kind: 'fonts' };
-  if (['docx', 'pptx', 'xlsx'].includes(extension))
-    return { kind: 'sourceFile' };
-  return { kind: 'other' };
-}
-
 /**
  * What the fetches that started in [from, to) downloaded, by kind, with the
  * engine WASM per module. `transferredKiB` is what this bench's server sent
- * (vite preview, which sends every file as built, uncompressed);
+ * (vite preview, which gzips text, JavaScript, CSS and JSON responses over
+ * 1 KB and sends WASM, fonts and other binaries as built);
  * `withStoredBrotliKiB` is the same with each body the Office Worker stores
- * as a brotli-11 `.br` (WASM, TTF, OTF) at that size, as production serves
+ * as a brotli-11 `.br` (WASM and TTF) at that size, as production serves
  * it. `bodiesSent` counts the fetches whose body crossed the wire: one
  * answered by the HTTP cache or by MSW's service worker (the app's origin,
  * bench only) transfers nothing, a revalidation (vite preview's ETags) only
@@ -856,7 +827,7 @@ function downloadsBetween(
     if (entry.start < from || entry.start >= to || entry.initiator === 'iframe')
       continue;
     const url = new URL(entry.name);
-    const { kind, module } = downloadKind(entry, url, runtimeOrigin);
+    const { kind, module } = downloadKind(entry.initiator, url, runtimeOrigin);
     // More than the headers came (a revalidation may report no body size).
     const bodySent = entry.encoded > 0 && entry.transfer > entry.encoded;
     const stored = bodySent ? storedBrotliBytes(url) : null;

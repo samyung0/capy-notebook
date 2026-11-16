@@ -178,15 +178,17 @@ Per file it reports:
   it), and during View to Edit, from that click to 5 s after the edit's
   `ready` (`edit`, so fonts that load after the first paint count). Per kind
   (`appJsCss`, `officeRuntimeJs` from the runtime's origin, `engineWasm` with
-  each module in `engineWasmModules`, `fonts`, `fontDecoder` for
-  `fontpack.wasm`, `sourceFile`, `other` with the MSW answers, and `total`):
-  `requests`, `bodiesSent` (fetches whose body crossed the wire),
-  `encodedKiB` (bodies as encoded, also those not sent), `transferredKiB`
-  (what vite preview sent, headers included: every file as built,
-  uncompressed, JS and CSS too) and `withStoredBrotliKiB` (the same with each
-  WASM, TTF and OTF body sent at the brotli-11 `.br` the Office Worker stores
-  and serves; packed `.zst` faces go as stored either way, and JS and CSS stay
-  uncompressed, where production's edge compresses them). A fetch the HTTP
+  each module in `engineWasmModules`, `fonts` with the CJK slice indexes
+  (`slices.json`), `fontDecoder` for `fontpack.wasm`, `sourceFile`, `other`
+  with the MSW answers, and `total`; `downloads.ts`): `requests`,
+  `bodiesSent` (fetches whose body crossed the wire), `encodedKiB` (bodies as
+  encoded, also those not sent), `transferredKiB` (what vite preview sent,
+  headers included: it gzips text, JavaScript, CSS and JSON responses over
+  1 KB and sends WASM, fonts and other binaries as built) and
+  `withStoredBrotliKiB` (the same with each WASM and TTF body sent at the
+  brotli-11 `.br` the Office Worker stores and serves; packed `.zst` faces
+  go as stored either way, and the gzipped text stays as vite preview sent
+  it, where production's edge compresses with brotli). A fetch the HTTP
   cache or
   MSW's service worker answered (the app's origin only: its API, the source
   file and most app chunks, bench only) transfers nothing in its realm's

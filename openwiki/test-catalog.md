@@ -302,6 +302,7 @@ The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py)
 | File                                                        | About                                                                                                                                   |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | [`bench/editor/scripts/snapshot.test.ts`](../bench/editor/scripts/snapshot.test.ts) | First-run reports, warn-only deltas against the median of the newest five green snapshots and the best retained one, mixed-CPU warnings, and exclusion of noisy context metrics from relative comparison. |
+| [`bench/editor/scripts/downloads.test.ts`](../bench/editor/scripts/downloads.test.ts) | `bench:office`'s download kinds (`downloadKind`): a CJK face's slice index, skeleton and chunks and a packed Latin face count as fonts while any other JSON does not, an engine is named by its module with `fontpack.wasm` apart as the font decoder, and the runtime's scripts, the app's and the source file each have their own kind. |
 
 ### Quizzes / workspace
 
