@@ -1261,17 +1261,20 @@ test.describe('DOCX on a phone', () => {
     const share = async (text: string) => {
       // The screen-reader mirror is built after the pages, at idle.
       await expect(run(text)).toBeAttached({ timeout: 60_000 });
-      const [glyph, sheet] = await Promise.all([
-        run(text).boundingBox(),
-        pageOne().boundingBox(),
-      ]);
-      if (!(glyph && sheet)) throw new Error(`Missing glyph ${text}`);
-      return {
-        height: glyph.height / sheet.height,
-        width: glyph.width / sheet.width,
-        x: (glyph.x - sheet.x) / sheet.width,
-        y: (glyph.y - sheet.y) / sheet.height,
-      };
+      // Both boxes at once, so a zoom settling in between cannot skew it.
+      return run(text).evaluate((node) => {
+        const glyph = node.getBoundingClientRect();
+        const sheet = node.ownerDocument
+          .querySelector('canvas[data-page-index="0"]')
+          ?.getBoundingClientRect();
+        if (!sheet) throw new Error('Missing page 1');
+        return {
+          height: glyph.height / sheet.height,
+          width: glyph.width / sheet.width,
+          x: (glyph.x - sheet.x) / sheet.width,
+          y: (glyph.y - sheet.y) / sheet.height,
+        };
+      });
     };
     const glyphs = new Map<string, Awaited<ReturnType<typeof share>>>();
     for (const text of ['2', '書', '3', '團', '計'])
