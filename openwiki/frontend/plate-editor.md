@@ -1076,22 +1076,46 @@ and clones. A table view keeps the patch's shared lists. Undo is the room's
 Yjs undo manager, as for any edit (`notes/figureMap.test.ts`). The note's
 figure (`VisualBlockElement`)
 re-renders on a peer's change and draws the block repaired
-(`repairFigureBlock`); its Edit opens `VisualBlockDialog` from the block
-itself, so the dialog's draft follows the live block: a peer's change rebases
-the draft field by field (`rebaseBlock`: the user's changed fields, series,
-labels, chart cells and elements keep the user's value, the rest follow the
-peer; the graph editor's rows follow the rebased elements, keeping a row still
-being typed), and Save writes the user's changes onto the block as it is then,
-a diff on the keyed maps through the codec, so a peer's change that landed
-meanwhile stays. The dialog stays a draft saved at Save; the quiz dialog's
-live writes are not used here. No merge is refused (Epo 2026-10-18):
+(`repairFigureBlock`). A chart's or graph's Edit opens the quiz's figure
+dialog live (Epo 2026-11-16, D15; `LiveFigureDialog` in
+`blocks/VisualBlockDialog.tsx`, `BlockDialog` in its binding mode): no draft,
+no Save or Cancel, Done only closes, Remove block takes the element out, the
+same dialog and behaviour as in a live quiz (see the quiz's figure dialog
+below). Its binding (`noteFigureBinding.ts`, over `localFigureBinding`)
+writes each change as one Slate `set_node` of the figure's `block` in the
+note's own editor, an ordinary note edit: bound, the codec writes only the
+entries that changed (one moved point is one element entry, one chart cell
+one value entry; `noteFigureBinding.test.ts`); unbound (the editable saved
+copy before the room joins) it is a copy edit like any other. Writing the
+figure's map directly under the editor's local origin was measured and
+dropped: slate-yjs skips its own origin's events, so Slate would hold the
+old block until mirrored, and an unbound editor has no map to write. The
+element hands each change of its block from elsewhere (a peer, an Undo) to
+the binding (`receive`), so the open dialog follows it; a chart's series and
+labels go by place there. Undo is the note's (Cmd+Z in the note, its
+toolbar): the dialog's writes join the note's Yjs history, transactions
+within the undo manager's 500 ms merged into one step (a typed row writes at
+most once a frame, a drag once on drop, a typed field once left), and an
+Undo while the dialog is open reaches it as any change does. The dialog's
+fields keep their own undo: the element stops a React `input` from the
+portaled dialog (a field's `historyUndo`) before slate-react, which would
+run the note's Undo. A chart or graph inserted from the slash menu or
+toolbar goes into the note at once and its element opens the dialog as it
+mounts (`openFigure.ts`); Remove block is the way out (there is no Cancel
+that leaves nothing). A new graph holds no blank description, which a
+note's figure check refuses. A viewer, or a note that is read-only, shows no
+Edit and renders no dialog. A plot keeps its draft dialog (`PlotDialog`):
+its draft follows the live plot field by field, series by index
+(`rebasePlot`: the user's changed fields keep the user's value), and Save
+writes the user's changes onto the plot as it is then; a new plot goes in
+at its Save. No merge is refused (Epo 2026-10-18):
 readers draw it repaired, a chart or plot left without series as an empty
 frame and a pie without a positive value through the chart's empty state. The
 editors show a merge's raw block with its issues: a chart's rows past its
 labels and series past the cap, a pie's other series (Remove last series
 shows for it), its negative or missing positive value, no series (Add series
 shows even on a pie), and a graph's rows past the cap or naming a gone point,
-each marked, Save held until they are fixed. A graph stores no picture (Epo
+each marked (a plot's Save held until they are fixed). A graph stores no picture (Epo
 2026-11-16): every view, the editor's and readers', draws its elements (repaired)
 with the graph engine (`GraphView`, [embeds](../embeds.md)), so a co-editor's
 change shows as it arrives and nothing is written back. The Rust server writes the same maps on bootstrap and an agent's insert
@@ -1174,9 +1198,9 @@ schema, so a refused block fails the agent's write); the agent's note format
 `kind: "scatter"`, as dots, comes from the agent, a pasted fence or the Plot
 command (slash menu and all-blocks menu, beside Chart and Graph), which opens
 the figure dialog on a line through (0, 0) and (1, 1) and inserts the block
-on Save, as Chart and Graph do (Epo 2026-10-17); its hover toolbar has Edit,
+on Save (Epo 2026-10-17; Chart and Graph go in at once, above); its hover toolbar has Edit,
 Copy and Delete like a chart's, Edit opening the plot editor in the figure
-dialog (`VisualBlockDialog`), and exports draw it like a chart with its points
+dialog (`PlotDialog`), and exports draw it like a chart with its points
 as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
@@ -3851,10 +3875,10 @@ its room entry (`figureRoom(docs).bind`, `roomFigureBinding.ts`, each call one
 `LOCAL_EDIT` transaction through `liveFigures.ts`, so the room's Undo takes it
 back), and a question draft with no room (the bank's question dialog) binds a
 plain block (`localFigureBinding.ts`), each change handed to the draft at
-once; a chart's series and labels go by place there (`s0`, `l0`). The note
-figure dialog still edits a draft until its Save: `BlockEditor` binds the
-block it is given to its `onChange` (`useHeldFigure`), and a rebased block
-reaches the editor through `receive`. `bindFigure` (`questionEdits.ts`) opens
+once; a chart's series and labels go by place there (`s0`, `l0`). A note's
+chart or graph binds its element (`noteFigureBinding`, over the local
+binding: each change one `set_node` of the note's block, a change from
+elsewhere through `receive`; above). `bindFigure` (`questionEdits.ts`) opens
 the dialog: a chart or graph just added from Insert goes into the room or the
 draft at once, where Insert put it (both start drawable: a graph with y = x,
 a chart with one empty row and series), so the dialog has it to edit and
@@ -3864,15 +3888,17 @@ row once and the canvas redraws on the next frame) and are written by
 `graphWriter.ts`: a row typed into, restyled, dragged or left unable to draw
 is touched, and on the next frame its element is written if it differs from
 the figure's (at most once a frame however fast it is typed, nothing when
-unchanged; a new one goes last, then to its row's place). A row that does not
+unchanged; a new one goes last, then to its row's place, counted by the
+figure's elements of the rows above it, a row that cannot draw now included).
+A row that does not
 parse or names a point that is not there is not written: it keeps its text
 and issue while the dialog is open, and when the dialog closes the room keeps
 the element's last drawable form (none for a row never drawable). A co-editor's
 change reaches every row (`reconcileRows` in `graphSyntax.ts`: changed,
 added, removed and reordered elements) except one holding what the figure
 does not have yet, which keeps its text until it is written; element ids are
-the rows' keys and never change. A dragged point or label is written once on
-drop, a pan or zoom writes the view once it settles, and a co-editor's view
+the rows' keys and never change. A tool's mark or move is written once on
+drop (only the elements it changed), a pan or zoom writes the view once it settles, and a co-editor's view
 waits while a gesture is under way. Axes and grid write on change; typed
 fields (width, height, bounds, description, a chart's titles, names and
 cells) show their own text while typed in and write once left, on Enter, or
@@ -4926,6 +4952,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
   pinch zooms about the pointer (the engine's `attachGestures`, within `PLANE_ZOOM`,
   10⁻⁶ to 10⁶ px a unit), a middle-button drag pans, and Select drags, as on the board.
+  The tools are every graph editor's (Epo 2026-11-16, D12): `graphTools` in
+  `src/features/graph/tools.ts` (no React, no BlockSuite) holds their state machines,
+  hit-testing (`distanceTo` and `movedGroup` in `marks.ts`, constructions included),
+  handles, selection and overlay, and writes whole element lists through its host, here
+  the plane's rows and `writeList` as one undo step; the quiz/note graph dialog hosts
+  the same controller.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
@@ -4950,7 +4982,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   inserts at the caret within the label's 60 characters (Epo 2026-11-13). A plane label is
   still its own kind: a `text` element drawn on the plane, not BlockSuite's canvas text.
   A label or formula picked alone with Select wears the board's selection frame
-  (`boardTextFrame.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
+  (`src/features/graph/overlay.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
   no toolbar; dragging a corner sizes its text about its middle (Epo 2026-11-13),
   stored as `size` in pixels (8 to 96, `QUESTION_GRAPH_TEXT_SIZE_MIN`/`MAX`, which
   the board catalog's `TEXT_SIZE_MIN`/`MAX` repeat for pie labels;
@@ -5029,15 +5061,23 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   at the editor's top left: a 300 px card floating below it, open by default from 640 px
   (`listChoice` remembers a toggle for the session), and under 640 px a sheet over the
   lower 48% with the tools and Finish riding above it; its "+ Label" is a ghost button
-  (no border, the hover fill marks it). Rows are laid out as the graph dialog's but compact
-  (36 px, 14 px text, 15 px formulas; kind icon, ⋮ with Delete): a point's `(a, b)`, a line's or vector's `(a, b) to
-  (c, d)` and a label's text are typed in place and written on change (Enter or leaving);
-  curves, ellipses and formulas are shaped on the plane, so their rows show only
-  the kind's name (Epo 2026-11-13); a function is a
-  MathLive field (loaded when the list first opens) that plots as it's typed and writes on
-  Enter or leaving, emptied it goes. The empty last row adds a function, or a point for
-  `(3, −2)`; a row that can't be read shows the dialog's warning icon with its reason,
-  keeps its text, and goes back as it was on leaving or Escape. "+ Label" adds a label in
+  (no border, the hover fill marks it). Rows are the graph dialog's rows (Epo 2026-11-16,
+  D12: `graphSyntax.ts`'s one parser, `buildElements`, `reconcileRows` and
+  `rowsAfterEdit`, no second syntax), laid out compact (36 px, 14 px text, 15 px
+  formulas; kind icon, ⋮ with Delete). Every row the dialog takes (a function with its
+  domain, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
+  `sector`, `polygon`) is a MathLive field (loaded when the list first opens) that draws
+  as it's typed and writes on Enter or leaving, one undo step; emptied it goes. A point a
+  tool places is an unnamed `(a, b)` row; a line's or vector's `(a, b) to (c, d)` and a
+  label's text are typed in place and written on change; curves, ellipses and formulas
+  are shaped on the plane, so their rows show only the kind's name (Epo 2026-11-13). The
+  empty last row (`data-new`, drawn by the same template as the row it becomes so its
+  field keeps focus) adds a row. A row that can't be read shows the dialog's warning
+  icon with its reason and keeps its text, unwritten, until it can; Escape puts it back
+  as it was. Moving a named point drags what's built on it; erasing it (Erase, Delete)
+  takes what's built on it too, while deleting its row in the list leaves those rows
+  with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) a tool or a new row
+  is refused with `drawing_board_plane_full` on the new row's icon. "+ Label" adds a label in
   the middle of what's in view and selects its text. Hovering a row lights its mark;
   selected marks light their rows. The answer board has no list button and no
   functions. The shell lets a `math-field` keep its keys.

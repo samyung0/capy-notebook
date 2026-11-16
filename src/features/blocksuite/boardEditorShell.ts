@@ -235,26 +235,6 @@ export function openBoardEditor(
   };
 }
 
-/** The dark value chip beside the pointer. */
-export function drawChip(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  width: number
-) {
-  ctx.font = '13px Arial, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  const textWidth = ctx.measureText(text).width + 14;
-  const chipX = Math.min(width - textWidth - 4, x + 10);
-  const chipY = Math.max(4, y - 30);
-  ctx.fillStyle = '#111';
-  ctx.fillRect(chipX, chipY, textWidth, 22);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, chipX + 7, chipY + 11);
-}
-
 /** AFFiNE's tooltip with its shortcut, as the board's toolbar shows them, for a button
  * in an open card. It goes inside the button. */
 export const toolTip = (tip: string, key: string) =>

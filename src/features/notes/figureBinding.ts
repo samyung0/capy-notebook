@@ -12,7 +12,8 @@ import {
  * the room holds the figure map a quiz room holds (figures/figureMap.ts) and
  * Slate the plain block. A remote change reads the map as held (editors show
  * a merge's issues), a local `set_node` of the block writes only what differs
- * (a dialog's Save, an undo), and an insert or a clone builds a new map.
+ * (each change of the live figure dialog, a plot's Save), and an insert or a
+ * clone builds a new map.
  * Imported, for its registration, wherever slate-yjs meets a note room. */
 
 function figureType(type: string): FigureType {

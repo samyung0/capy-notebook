@@ -27,8 +27,8 @@ const animationFrames: Frames = {
  */
 export function graphWriter(
   binding: FigureBinding,
-  /** The rows' elements now, in row order. */
-  local: () => GraphElement[],
+  /** The rows now: their keys in order and the elements the drawable ones give. */
+  local: () => { elements: readonly GraphElement[]; keys: readonly string[] },
   onRefused: (refused: ReadonlyMap<string, string>) => void,
   frames: Frames = animationFrames
 ) {
@@ -44,20 +44,31 @@ export function graphWriter(
       figure.block.elements.map((element) => [element.id, element])
     );
     const before = refused.size;
+    const { elements, keys } = local();
+    const drawn = new Map(
+      elements
+        .slice(0, limits.QUESTION_GRAPH_ELEMENTS_MAX)
+        .map((element) => [element.id, element])
+    );
+    // How many of the figure's elements come before the row: a row that
+    // cannot draw now still holds its place by the element the figure keeps.
     let placed = 0;
-    for (const element of local().slice(
-      0,
-      limits.QUESTION_GRAPH_ELEMENTS_MAX
-    )) {
-      const there = held.get(element.id);
-      if (!typing.has(element.id) || (there && sameJson(there, element))) {
-        typing.delete(element.id);
+    for (const key of keys) {
+      const element = drawn.get(key);
+      const there = held.get(key);
+      if (!element) {
+        if (there) placed++;
+        continue;
+      }
+      if (!typing.has(key) || (there && sameJson(there, element))) {
+        typing.delete(key);
         if (there) placed++;
         continue;
       }
       const check = graphElementSchema.safeParse(element);
       if (!check.success) {
         refused.set(element.id, check.error.issues[0].message);
+        if (there) placed++;
         continue;
       }
       refused.delete(element.id);

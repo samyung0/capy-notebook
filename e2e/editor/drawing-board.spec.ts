@@ -1856,12 +1856,22 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
     'aria-pressed',
     'true'
   );
-  await page.locator('.capy-plane-list li[data-row="new"] math-field').click();
-  await page.keyboard.type('sin(x)');
-  await page.keyboard.press('Enter');
+  // MathLive takes the keyboard a moment after the click.
+  const typeRow = async (text: string) => {
+    await page.locator('.capy-plane-list li[data-new] math-field').click();
+    await page.waitForTimeout(250);
+    await page.keyboard.type(text);
+    await page.keyboard.press('Enter');
+  };
+  await typeRow('sin(x)');
   await expect
     .poll(async () => (await marks()).map(({ term }) => term))
     .toContain('sin(x)');
+  // It takes the graph dialog's rows too: named points and what's built on them.
+  for (const row of ['A=(1,2)', 'B=(4,3)', 'segment(A,B)']) await typeRow(row);
+  await expect
+    .poll(async () => (await marks()).map(({ type }) => type))
+    .toEqual(expect.arrayContaining(['point', 'point', 'segment']));
 
   // The answer board has no list, so an answer is drawn rather than typed.
   await openBoard(page);

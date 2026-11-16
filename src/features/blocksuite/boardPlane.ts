@@ -29,15 +29,10 @@ import {
   readElements,
   writeElements,
 } from '@/features/graph/keyed';
-import type { Frame, Graph } from '@/features/graph/model';
+import { pointsById, pointsOf } from '@/features/graph/marks';
+import type { Frame, Graph, GraphElement } from '@/features/graph/model';
 import { bboxOf, type View } from '@/features/graph/view';
-import {
-  cardPaper,
-  LABEL_SIZE,
-  type Paper,
-  type PlaneElement,
-  pointsOf,
-} from './boardData';
+import { cardPaper, LABEL_SIZE, type Paper } from './boardData';
 import { laidOut } from './boardFormulaDraw';
 import type { Vec } from './boardGeometry';
 
@@ -74,7 +69,7 @@ export function drawPlane(
   ctx: CanvasRenderingContext2D,
   frame: Frame,
   view: PlaneView,
-  elements: PlaneElement[],
+  elements: GraphElement[],
   paper: Paper,
   /** Draws again once a formula on it is laid out. */
   refresh: () => void = () => undefined
@@ -101,8 +96,12 @@ export const labelBox = (
 ) => textBox(ctx, text, size, x, y);
 
 /** The plane's elements as stored: one entry per element id, each the element and
- * its order key (Epo 2026-11-16, D10), kept as BlockSuite's mind map keeps its nodes. */
-type Entries = Y.Map<ElementEntry<PlaneElement>>;
+ * its order key (Epo 2026-11-16, D10), kept as BlockSuite's mind map keeps its nodes.
+ * A plane holds every kind a graph holds (D16): what its tools draw (points, lines
+ * and vectors as `polyline`, curves with their handles, ellipses, labels and
+ * formulas) and what its objects list types (functions, named points and the
+ * constructions built on them). */
+type Entries = Y.Map<ElementEntry<GraphElement>>;
 
 /** A change to the plane's elements reaches no field, so the plane says so itself:
  * the renderer and an open editor draw again. */
@@ -143,7 +142,7 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     if (props.elements && !(props.elements instanceof Y.Map)) {
       const entries: Entries = new Y.Map();
       for (const [id, entry] of Object.entries(
-        props.elements as Record<string, ElementEntry<PlaneElement>>
+        props.elements as Record<string, ElementEntry<GraphElement>>
       ))
         entries.set(id, entry);
       props.elements = entries;
@@ -152,7 +151,7 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
   }
 
   /** The elements in order, read once per change to the map. */
-  #list: PlaneElement[] | null = null;
+  #list: GraphElement[] | null = null;
   get elementList() {
     this.#list ??= readElements(this.elements.entries());
     return this.#list;
@@ -161,7 +160,7 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     this.#list = null;
   }
   /** Makes the plane hold `next`, writing only the elements that changed. */
-  writeList(next: PlaneElement[]) {
+  writeList(next: GraphElement[]) {
     this.surface.store.transact(() => writeElements(this.elements, next));
   }
 
@@ -261,15 +260,26 @@ export function setPlaneEditor(open: typeof openEditor) {
 export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
   openEditor(gfx, model);
 
-/** Every point a plane's marks reach (a curve's handles too), and its origin, so the
- * axes stay in view. A function reaches none: it runs across whatever is shown. */
-export function markPoints(marks: PlaneElement[]) {
+/** Every point a plane's marks reach (a curve's handles too, a circle round its
+ * centre), and its origin, so the axes stay in view. A function reaches none: it
+ * runs across whatever is shown. */
+export function markPoints(marks: readonly GraphElement[]) {
+  const centres = pointsById(marks);
   return [
     [0, 0] as Vec,
-    ...marks.flatMap((mark) => [
-      ...pointsOf(mark),
-      ...(mark.type === 'curve' && mark.handles ? mark.handles.flat() : []),
-    ]),
+    ...marks.flatMap((mark): Vec[] => {
+      const centre = mark.type === 'circle' && centres.get(mark.center);
+      return [
+        ...pointsOf(mark),
+        ...(mark.type === 'curve' && mark.handles ? mark.handles.flat() : []),
+        ...(centre && mark.type === 'circle'
+          ? ([
+              [centre[0] - mark.radius, centre[1] - mark.radius],
+              [centre[0] + mark.radius, centre[1] + mark.radius],
+            ] as Vec[])
+          : []),
+      ];
+    }),
   ];
 }
 
@@ -287,7 +297,7 @@ let measurer: CanvasRenderingContext2D | null = null;
 /** How far each label's and formula's text reaches past its point, in pixels: as
  * much at any scale, so Fit to size keeps sized text on the card (Epo 2026-11-13). A
  * formula not laid out yet counts as its point. */
-function textReach(marks: PlaneElement[]) {
+function textReach(marks: readonly GraphElement[]) {
   measurer ??= document.createElement('canvas').getContext('2d');
   return marks.flatMap((mark) => {
     if (mark.type === 'text' && measurer) {

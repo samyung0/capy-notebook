@@ -49,13 +49,12 @@ const send = (target: Box, type: string, fields: Record<string, unknown>) =>
     })
   );
 
-const setup = (extra: Pick<GestureHandlers, 'dragPans' | 'press'> = {}) => {
+const setup = () => {
   const target = new Box();
   const handlers = {
     pan: vi.fn<GestureHandlers['pan']>(),
     settle: vi.fn<GestureHandlers['settle']>(),
     zoom: vi.fn<GestureHandlers['zoom']>(),
-    ...extra,
   };
   attachGestures(target as unknown as HTMLElement, handlers);
   return { handlers, target };
@@ -118,21 +117,4 @@ it('pans with a middle-button drag', () => {
   expect(handlers.pan).toHaveBeenCalledWith(15, -20);
   send(target, 'pointerup', {});
   expect(handlers.settle).toHaveBeenCalledOnce();
-});
-
-it('gives a primary press to the surface’s drag, or pans where it takes none', () => {
-  const drag = { end: vi.fn(), move: vi.fn() };
-  const press = vi.fn((at: [number, number]) => (at[0] < 100 ? drag : null));
-  const { handlers, target } = setup({ dragPans: true, press });
-  send(target, 'pointerdown', { clientX: 60, clientY: 70 });
-  send(target, 'pointermove', { clientX: 65, clientY: 75 });
-  send(target, 'pointerup', { clientX: 65, clientY: 75 });
-  expect(press).toHaveBeenCalledWith([50, 50]);
-  expect(drag.move).toHaveBeenCalledWith([55, 55]);
-  expect(drag.end).toHaveBeenCalledWith([55, 55]);
-  expect(handlers.pan).not.toHaveBeenCalled();
-  send(target, 'pointerdown', { clientX: 160, clientY: 70 });
-  send(target, 'pointermove', { clientX: 170, clientY: 70 });
-  nextFrame();
-  expect(handlers.pan).toHaveBeenCalledWith(10, 0);
 });

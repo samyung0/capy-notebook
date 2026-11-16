@@ -959,3 +959,129 @@ function toElement(
       return { id, points: points as [string, string], type: parsed.command };
   }
 }
+
+/** A row for an element a tool made or changed (Epo 2026-11-16, each editor
+ * gains the other's tools): a point keeps its row's name and style, a label
+ * its row's hidden flag; a free mark's row holds it as it is. */
+function toolRow(element: GraphElement, row?: GraphRow): GraphRow {
+  if (isFreeMark(element)) return { element, key: element.id, kind: 'mark' };
+  if (element.type === 'text')
+    return {
+      coords: element.coords,
+      key: element.id,
+      kind: 'label',
+      text: element.text,
+      ...(element.size && { size: element.size }),
+      ...(element.hidden && { hidden: true }),
+    };
+  if (element.type === 'point') {
+    const expression = row?.kind === 'expression' ? row : undefined;
+    const name =
+      expression?.parsed?.kind === 'point' ? expression.parsed.name : undefined;
+    return {
+      key: element.id,
+      kind: 'expression',
+      latex: pointLatex(name, element.coords),
+      parsed: { coords: element.coords, kind: 'point', name },
+      style: expression?.style ?? {},
+    };
+  }
+  // Tools move a function or construction only by its points.
+  if (row) return row;
+  throw new Error(`No tool makes a ${element.type}`);
+}
+
+/** The rows after a tool changed the elements they give: `before` is what the
+ * tool saw (the rows' elements) and `next` what it made of them. A row whose
+ * element is the same object stays as typed, a changed one follows it, a new
+ * element gets a row at the end and a gone one loses its row. Rows that give
+ * no element (an error) stay. */
+export function rowsAfterEdit(
+  rows: GraphRow[],
+  before: readonly GraphElement[],
+  next: readonly GraphElement[]
+): GraphRow[] {
+  const was = new Map(before.map((element) => [element.id, element]));
+  const now = new Map(next.map((element) => [element.id, element]));
+  const out = rows.flatMap((row): GraphRow[] => {
+    const element = now.get(row.key);
+    if (!element) return was.has(row.key) ? [] : [row];
+    return [element === was.get(row.key) ? row : toolRow(element, row)];
+  });
+  const keys = new Set(rows.map((row) => row.key));
+  for (const element of next)
+    if (!keys.has(element.id)) out.push(toolRow(element));
+  return out;
+}
+
+const coordinate = (value: number) =>
+  String(Number(value.toPrecision(12))).replace('-', '−');
+const pairText = ([x, y]: [number, number]) =>
+  `(${coordinate(x)}, ${coordinate(y)})`;
+
+/** The points typed in a line's row: `(2, 1)`, with either minus. */
+const typedPairs = (text: string): [number, number][] =>
+  [
+    ...text
+      .replace(/[−–]/g, '-')
+      .matchAll(/\(\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\)/g),
+  ].map((match) => [Number(match[1]), Number(match[2])]);
+
+/** A free mark's row as both editors list it (Epo 2026-11-13, L2): a line or
+ * vector from one point to the other, typed in place; a curve, ellipse or
+ * formula, shaped on the graph, only by its kind's name (`typed` false). */
+export function markRow(mark: FreeMark): { text: string; typed: boolean } {
+  if (mark.type === 'polyline' && mark.coords.length === 2)
+    return {
+      text: m.drawing_board_plane_from_to({
+        from: pairText(mark.coords[0]),
+        to: pairText(mark.coords[1]),
+      }),
+      typed: true,
+    };
+  return {
+    text:
+      mark.type === 'curve'
+        ? m.chrome_curve()
+        : mark.type === 'ellipse'
+          ? m.drawing_board_ellipse()
+          : mark.type === 'formula'
+            ? m.drawing_board_plane_formula()
+            : mark.arrow
+              ? m.drawing_board_vector()
+              : m.drawing_board_line(),
+    typed: false,
+  };
+}
+
+/** A line's row typed in place: the line through its two typed points, or
+ * null when the text does not hold two. */
+export function typedLine(mark: FreeMark, text: string): FreeMark | null {
+  const pairs = typedPairs(text);
+  return mark.type === 'polyline' && pairs.length === 2
+    ? { ...mark, coords: pairs }
+    : null;
+}
+
+/** What a row's typing reads as: nothing while empty, else its parse or the
+ * error its row shows. `ascii` is the field's ASCII-math. */
+export function readRow(latex: string, ascii: string) {
+  if (!latex.trim()) return { error: undefined, parsed: undefined };
+  try {
+    return { error: undefined, parsed: parseRow(ascii) };
+  } catch (error) {
+    if (!(error instanceof RowError)) throw error;
+    return { error: error.message, parsed: undefined };
+  }
+}
+
+/** The icon (`TOOL_ICONS`) of a row that gives no element yet: its parse's. */
+export function parsedKind(parsed: ParsedRow) {
+  return parsed.kind === 'point'
+    ? 'point'
+    : parsed.kind === 'function'
+      ? 'function'
+      : parsed.command === 'line'
+        ? 'through'
+        : parsed.command;
+}

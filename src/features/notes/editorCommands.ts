@@ -5,6 +5,7 @@ import type { Question } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
+import { openOnMount } from './blocks/openFigure';
 import { customBlockNode } from './blocks/shared';
 import type { NoteVisualBlock } from './blocks/VisualBlockDialog';
 import { toggleEditorBlock } from './editorTransforms';
@@ -73,8 +74,9 @@ function newVisualBlock(type: NoteVisualBlock['type']): NoteVisualBlock {
     case 'graph':
       return {
         board: { axis: true, bbox: [-7.5, 5, 7.5, -5], grid: false },
-        description: '',
-        // A new graph starts drawing y = x (Epo 2026-10-26).
+        // A new graph starts drawing y = x (Epo 2026-10-26). It goes into
+        // the note at once, so it holds no description: the note's figure
+        // check refuses a blank one.
         elements: [
           { id: crypto.randomUUID(), term: 'x', type: 'functiongraph' },
         ],
@@ -583,14 +585,25 @@ EDITOR_COMMANDS.push(
       },
       run: (editor, dialogs) => {
         if (insideContainer(editor)) return;
-        dialogs?.openVisual(newVisualBlock(type), (block) => {
-          insertEditorNode(editor, {
-            block,
-            children: [{ text: '' }],
-            id: uid(block.type),
-            type: block.type,
-          });
+        const node = (block: NoteVisualBlock) => ({
+          block,
+          children: [{ text: '' }],
+          id: uid(block.type),
+          type: block.type,
         });
+        const block = newVisualBlock(type);
+        // A plot goes in on its dialog's Save; a chart or graph at once,
+        // its live dialog opening on it (Epo 2026-11-16, D15), Remove the
+        // way out.
+        if (block.type === 'plot') {
+          dialogs?.openPlot(block, (saved) =>
+            insertEditorNode(editor, node(saved))
+          );
+          return;
+        }
+        const inserted = node(block);
+        openOnMount(inserted.id);
+        insertEditorNode(editor, inserted);
       },
     })
   )

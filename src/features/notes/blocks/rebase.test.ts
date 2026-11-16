@@ -1,118 +1,74 @@
 import { describe, expect, it } from 'vitest';
-import { rebaseBlock } from './rebase';
+import type { PlotBlock } from '@/features/questions/types';
+import { rebasePlot } from './rebase';
 
-/* A figure dialog's draft rebased on a peer's change (Epo 2026-10-17): the
+/* A plot dialog's draft rebased on a peer's change (Epo 2026-10-17): the
  * user's changes keep the user's value, the rest follows the peer. */
 
-const chart = {
-  kind: 'bar',
-  labels: ['Jan', 'Feb'],
+const plot: PlotBlock = {
+  kind: 'line',
   series: [
-    { name: 'A', values: [1, 2] },
-    { name: 'B', values: [3, 4] },
+    {
+      name: 'A',
+      points: [
+        [0, 0],
+        [1, 1],
+      ],
+    },
+    {
+      name: 'B',
+      points: [
+        [0, 1],
+        [1, 2],
+      ],
+    },
   ],
-  title: 'Sales',
-  type: 'chart',
+  title: 'Speed',
+  type: 'plot',
+  xTitle: 't',
+  yTitle: 'v',
 };
 
-const point = (id: string, x: number) => ({
-  coords: [x, 0],
-  id,
-  type: 'point',
-});
-const graph = {
-  board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
-  elements: [
-    point('p1', 0),
-    point('p2', 1),
-    { id: 's1', points: ['p1', 'p2'], type: 'segment' },
-  ],
-  height: 300,
-  type: 'graph',
-  width: 400,
-};
-
-describe('rebaseBlock', () => {
+describe('rebasePlot', () => {
   it('keeps the user’s fields and follows the peer’s others', () => {
-    const draft = { ...chart, title: 'Revenue' };
-    const peer = { ...chart, kind: 'line', xTitle: 'Month' };
-    expect(rebaseBlock(chart, draft, peer)).toEqual({
-      ...chart,
-      kind: 'line',
-      title: 'Revenue',
-      xTitle: 'Month',
+    const draft = { ...plot, title: 'Velocity' };
+    const peer = { ...plot, kind: 'scatter' as const, xTitle: 'time' };
+    expect(rebasePlot(plot, draft, peer)).toEqual({
+      ...plot,
+      kind: 'scatter',
+      title: 'Velocity',
+      xTitle: 'time',
     });
   });
 
   it('takes series by index, each series’ fields on their own', () => {
     const draft = {
-      ...chart,
-      series: [{ name: 'A', values: [10, 20] }, chart.series[1]],
+      ...plot,
+      series: [{ ...plot.series[0], name: 'Alpha' }, plot.series[1]],
     };
     const peer = {
-      ...chart,
+      ...plot,
       series: [
-        { name: 'Alpha', values: [1, 2] },
-        { name: 'B', values: [3, 40] },
-        { name: 'C', values: [5, 6] },
+        {
+          ...plot.series[0],
+          points: [
+            [0, 0],
+            [2, 2],
+          ] as [number, number][],
+        },
+        plot.series[1],
+        { name: 'C', points: [[5, 5]] as [number, number][] },
       ],
     };
-    expect(rebaseBlock(chart, draft, peer).series).toEqual([
-      { name: 'Alpha', values: [10, 20] },
-      { name: 'B', values: [3, 40] },
-      { name: 'C', values: [5, 6] },
-    ]);
-  });
-
-  it('keeps a series the user removed removed', () => {
-    const draft = { ...chart, series: [chart.series[0]] };
-    const peer = {
-      ...chart,
-      series: [chart.series[0], { name: 'B', values: [9, 9] }],
-    };
-    expect(rebaseBlock(chart, draft, peer).series).toEqual([chart.series[0]]);
-  });
-
-  it('takes graph elements by id: edits, the peer’s removals and both sides’ additions', () => {
-    const draft = {
-      ...graph,
-      elements: [
-        point('p1', 5),
-        graph.elements[1],
-        graph.elements[2],
-        point('p9', 9),
-      ],
-    };
-    const peer = {
-      ...graph,
-      elements: [point('p1', 0), point('p2', 1), point('p3', 3)],
-    };
-    expect(rebaseBlock(graph, draft, peer).elements).toEqual([
-      point('p1', 5),
-      point('p2', 1),
-      point('p9', 9),
-      point('p3', 3),
-    ]);
-  });
-
-  it('keeps an element the user changed when the peer removed it', () => {
-    const draft = {
-      ...graph,
-      elements: [graph.elements[0], point('p2', 7), graph.elements[2]],
-    };
-    const peer = { ...graph, elements: [graph.elements[0]] };
-    expect(rebaseBlock(graph, draft, peer).elements).toEqual([
-      graph.elements[0],
-      point('p2', 7),
+    expect(rebasePlot(plot, draft, peer).series).toEqual([
+      { ...peer.series[0], name: 'Alpha' },
+      plot.series[1],
+      peer.series[2],
     ]);
   });
 
   it('follows the peer entirely when the user changed nothing', () => {
-    const peer = {
-      ...chart,
-      labels: ['Q1'],
-      series: [{ name: 'A', values: [1] }],
-    };
-    expect(rebaseBlock(chart, structuredClone(chart), peer)).toEqual(peer);
+    const peer = { ...plot, series: [plot.series[1]], title: 'Other' };
+    expect(rebasePlot(plot, structuredClone(plot), peer)).toEqual(peer);
   });
 });

@@ -88,6 +88,7 @@ import {
   cardEditing,
   setCardEditing,
 } from '@/features/canvas/materialCardHosts';
+import { TOOL_ICONS } from '@/features/graph/toolIcons';
 import {
   cardCountLabel,
   questionCountLabel,
@@ -1122,29 +1123,11 @@ const ICONS: Record<string, string> = {
   bars: '<path d="M3 21h18M6 21v-8h4v8M14 21V7h4v14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
   connect:
     '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M15.97 2.02a.75.75 0 0 1 1.06 0l4.88 4.879a.85.85 0 0 1 0 1.202l-4.88 4.88a.75.75 0 1 1-1.06-1.062l3.67-3.669H18c-3.151 0-4.552.758-5.25 1.662-.745.963-.873 2.28-1.002 3.898l-.008.101c-.119 1.486-.259 3.245-1.303 4.595C9.323 19.946 7.349 20.75 4 20.75a.75.75 0 0 1 0-1.5c3.151 0 4.552-.758 5.25-1.662.745-.963.873-2.28 1.002-3.898l.008-.101c.119-1.486.259-3.245 1.303-4.595C12.677 7.554 14.651 6.75 18 6.75h1.64l-3.67-3.67a.75.75 0 0 1 0-1.06"/>',
-  curve:
-    '<path d="M4 6c2 9 5 13 8 13s6-5 8-14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="4.5" cy="7" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/><circle cx="19.5" cy="7" r="2" fill="currentColor"/>',
-  ellipse:
-    '<ellipse cx="12" cy="12" rx="8.5" ry="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="20.5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="6" r="1.8" fill="currentColor"/><circle cx="3.5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="18" r="1.8" fill="currentColor"/>',
-  erase:
-    '<path d="m9 20 11-11-5-5L4 15l5 5Zm0 0h11M8 11l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
   fill: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3a9 9 0 0 1 7.79 13.5Z" fill="currentColor"/>',
-  formula:
-    '<path d="M18 5H7l6 7-6 7h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  function:
-    '<path d="M9 20c1.6 0 2.2-1.4 2.5-3.2L13.6 6.4C13.9 4.8 14.6 4 16 4M8.5 10h6.5M14.5 14l5 5M19.5 14l-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  label:
-    '<path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  line: '<path d="M6 18 18 6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/>',
   pie: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 12V3M12 12l7.5 5" fill="none" stroke="currentColor" stroke-width="1.5"/>',
   plane:
     '<path d="M6 21V3M6 18h15M3.5 5.5 6 3l2.5 2.5M18.5 15.5 21 18l-2.5 2.5M6 13h1.5M6 8h1.5M11 18v-1.5M16 18v-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  point:
-    '<path d="M12 3v5M12 16v5M3 12h5M16 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>',
-  select:
-    '<path d="M6 3.5 18.5 10.5l-5.8 1.6-2.7 5.9L6 3.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  vector:
-    '<path d="M5 19 17.5 6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M20 4l-1.4 6.6-5.2-5.2Z" fill="currentColor"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/>',
+  ...TOOL_ICONS,
 };
 
 /** A Hugeicons icon's data as an SVG, for the board's Lit templates. */

@@ -1,16 +1,9 @@
 import type { Vec } from '@/features/graph/model';
 
 export { curvePieces } from '@/features/graph/curves';
+export { snapTo, tidy } from '@/features/graph/marks';
 export type { Vec } from '@/features/graph/model';
 export { minorStep, ticks } from '@/features/graph/view';
-
-/** The nearest multiple of `step`, without the float dust that would show in a label. */
-/** A number without float dust (0.30000000000000004 is 0.3). */
-export const tidy = (value: number) => Number(value.toPrecision(12));
-
-export function snapTo(value: number, step: number) {
-  return tidy(Math.round(value / step) * step);
-}
 
 /** Degrees clockwise from 12 o'clock, to the nearest degree, as a protractor reads. */
 export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {

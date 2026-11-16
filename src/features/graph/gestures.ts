@@ -4,20 +4,12 @@
  * per animation frame; `settle` hears when a gesture ends. */
 import type { Vec } from './model';
 
-/** A drag the surface took on a primary press: a point or label moving. */
-export type Drag = { end: (at: Vec) => void; move: (at: Vec) => void };
-
 export type GestureHandlers = {
   pan: (dx: number, dy: number) => void;
   /** Above 1 zooms in, keeping the point under `at` there. */
   zoom: (factor: number, at: Vec) => void;
   /** The view stopped moving: a wheel went quiet, or the last pointer lifted. */
   settle: () => void;
-  /** A primary press the surface may take as its own drag; null leaves it. */
-  press?: (at: Vec) => Drag | null;
-  /** A primary drag no surface drag took pans (the question editor, which has no
-   * Select tool yet). */
-  dragPans?: boolean;
 };
 
 /** A wheel goes quiet this long before the gesture counts as settled. */
@@ -87,7 +79,6 @@ export function attachGestures(
   const pointers = new Map<number, Vec>();
   let pinch = 0;
   let panning = false;
-  let drag: Drag | null = null;
   // The middle button pans here rather than starting the browser's autoscroll.
   const mousedown = (event: MouseEvent) => {
     if (event.button === 1) event.preventDefault();
@@ -105,14 +96,8 @@ export function attachGestures(
       // A second finger turns a drag into a pinch.
       const [a, b] = [...pointers.values()];
       pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      drag?.end(at);
-      drag = null;
       panning = false;
-      return;
     }
-    if (pointers.size > 2) return;
-    drag = handlers.press?.(at) ?? null;
-    panning = !drag && Boolean(handlers.dragPans);
   };
   const move = (event: PointerEvent) => {
     const last = pointers.get(event.pointerId);
@@ -132,8 +117,7 @@ export function attachGestures(
       schedule();
       return;
     }
-    if (drag) drag.move(at);
-    else if (panning) {
+    if (panning) {
       dx += at[0] - last[0];
       dy += at[1] - last[1];
       schedule();
@@ -144,8 +128,6 @@ export function attachGestures(
     if (!at) return;
     pointers.delete(event.pointerId);
     pinch = 0;
-    if (drag) drag.end(local(event));
-    drag = null;
     // A pinch's other finger stays down: it pans no further until pressed again.
     panning = false;
     if (!pointers.size) settle();

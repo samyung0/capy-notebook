@@ -113,7 +113,10 @@ function dialog(binding: FigureBinding) {
   };
   const writer = graphWriter(
     binding,
-    () => buildElements(rows).elements,
+    () => ({
+      elements: buildElements(rows).elements,
+      keys: rows.map((row) => row.key),
+    }),
     () => {},
     frames
   );

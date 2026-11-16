@@ -51,12 +51,12 @@ function moved<T>(list: T[], from: number, to: number) {
 
 /**
  * A figure its caller holds as a plain block (Epo 2026-11-16, one dialog
- * behaviour everywhere): a question draft, or a note dialog's draft until its
- * own Save. Each change makes the next block at once and hands it to the
- * holder, as a room's binding writes its entry. A plain chart's series and
- * labels have no ids: they go by place (`s0`, `l0`), which holds while one
- * editor changes them. `receive` takes the holder's block when it changed
- * from elsewhere (a note dialog's rebase on a peer's edit).
+ * behaviour everywhere): a question draft, or a note's figure, written as a
+ * note edit (`noteFigureBinding`). Each change makes the next block at once
+ * and hands it to the holder, as a room's binding writes its entry. A plain
+ * chart's series and labels have no ids: they go by place (`s0`, `l0`),
+ * which holds while one editor changes them. `receive` takes the holder's
+ * block when it changed from elsewhere (a note peer's edit, an Undo).
  */
 export function localFigureBinding(
   block: FigureBlock,

@@ -1,12 +1,5 @@
 import { Collapsible } from 'radix-ui';
-import {
-  memo,
-  type ReactNode,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
@@ -34,7 +27,6 @@ import {
 import { type FigureBinding, useBoundFigure } from './figureBinding';
 import { GraphEditor } from './GraphEditor';
 import { IssueIcon } from './IssueViews';
-import { localFigureBinding } from './localFigureBinding';
 import { QuestionBlockView } from './QuestionView';
 import { repairFigureBlock } from './repair';
 import { clickPoint, IdleFormulaTools, TextEditor } from './TextEditor';
@@ -935,34 +927,6 @@ export function PlotEditor({
   );
 }
 
-/** A chart or graph its caller holds as a block (a note dialog's draft until
- * its Save), bound as its editor edits it: each change goes to `onChange` at
- * once, and a block changed from elsewhere (a peer's edit rebased in) reaches
- * the editor. None for other blocks, or when the caller binds the figure. */
-function useHeldFigure(
-  block: QuestionBlock,
-  onChange: (block: QuestionBlock) => void,
-  bound: boolean
-) {
-  const latest = useRef(onChange);
-  latest.current = onChange;
-  const [held] = useState(() =>
-    !bound && (block.type === 'chart' || block.type === 'graph')
-      ? localFigureBinding(block, {
-          remove: () => {
-            throw new Error('A held figure is removed by its holder');
-          },
-          write: (next) => latest.current(next),
-        })
-      : null
-  );
-  useLayoutEffect(() => {
-    if (held && (block.type === 'chart' || block.type === 'graph'))
-      held.receive(block);
-  }, [block, held]);
-  return held;
-}
-
 export function BlockEditor({
   bank,
   binding,
@@ -971,15 +935,14 @@ export function BlockEditor({
   onChange,
   uploadAsset,
   onBusyChange,
-  onInvalidChange,
   textPlaceholder,
   toolbarTarget,
   gaps,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
-  /** Where a chart or graph lives, edited a change at a time; without one
-   * its changes go to `onChange`. */
+  /** Where a chart or graph lives, edited a change at a time (every chart
+   * and graph editor has one). */
   binding?: FigureBinding;
   block: QuestionBlock;
   /** Notes edit a plot; quizzes show it (the catalog's plot `edit.user`). */
@@ -987,8 +950,6 @@ export function BlockEditor({
   onChange: (block: QuestionBlock) => void;
   uploadAsset?: UploadQuestionAsset;
   onBusyChange?: (busy: boolean) => void;
-  /** Graph rows that cannot be drawn; a note dialog holds Save meanwhile. */
-  onInvalidChange?: (invalid: boolean) => void;
   /** What an empty text block shows, by where it sits. */
   textPlaceholder?: string;
   /** The block's heading row: a graph's zoom tools and a table cell's
@@ -1012,12 +973,10 @@ export function BlockEditor({
   // Closing the editor cancels a picked image still waiting to upload.
   const uploadAbort = useRef<AbortController | null>(null);
   useEffect(() => () => uploadAbort.current?.abort(), []);
-  const held = useHeldFigure(block, onChange, Boolean(binding));
-  /** The chart or graph being edited: the caller's, else the held one. */
+  /** The chart or graph being edited, where it lives. */
   const figure = () => {
-    const bound = binding ?? held;
-    if (!bound) throw new Error('A chart or graph editor without its figure');
-    return bound;
+    if (!binding) throw new Error('A chart or graph editor without its figure');
+    return binding;
   };
   const descriptionMax = bank
     ? limits.QUESTION_TEXT_MAX
@@ -1085,7 +1044,6 @@ export function BlockEditor({
       <GraphEditor
         binding={figure()}
         descriptionMax={descriptionMax}
-        onInvalidChange={onInvalidChange}
         toolbarTarget={toolbarTarget}
       />
     );

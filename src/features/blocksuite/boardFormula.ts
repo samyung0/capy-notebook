@@ -22,6 +22,7 @@ import {
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
+import { SYMBOLS, symbolLabel } from '@/features/graph/tools';
 import { inertTex } from '@/features/materials/inertTex';
 import mathFieldStyles from '@/features/questions/mathField.css?inline';
 import { getLocale, m } from '@/i18n';
@@ -333,11 +334,6 @@ async function placeFormula(gfx: GfxController, start: FormulaStart) {
 setFormulaOpener(
   (gfx, start) => void (start ? placeFormula(gfx, start) : openEditor(gfx))
 );
-
-const SYMBOLS = ['²', '³', '√', 'π', 'θ', '±', '≤', '≥', '≠', '∞', '→', '°'];
-/** Superscripts read better with something under them on the button. */
-const symbolLabel = (symbol: string) =>
-  '²³'.includes(symbol) ? `x${symbol}` : symbol;
 
 /** The symbol row's buttons; a press keeps the caret in the field typed in. */
 export const symbolButtons = (insert: (symbol: string) => void) =>

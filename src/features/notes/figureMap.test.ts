@@ -9,7 +9,6 @@ import {
 import { createSlateEditor } from 'platejs';
 import { afterEach, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { rebaseBlock } from './blocks/rebase';
 import './figureBinding';
 import { setCell } from './tableView/edit';
 import type { TableViewBlock } from './tableView/model';
@@ -102,7 +101,7 @@ const blockMap = (doc: Y.Doc) =>
 const blockOf = (editor: Editor) =>
   (editor.children[0] as unknown as { block: typeof chart }).block;
 
-/** A local edit of the block, as the dialog's Save writes it. */
+/** A local edit of the block, as the figure dialog writes each change. */
 function save(editor: Editor, change: (block: typeof chart) => object) {
   editor.tf.setNodes(
     { block: change(structuredClone(blockOf(editor))) } as never,
@@ -263,40 +262,6 @@ it('writes only the changed entry', () => {
     Y.decodeUpdate(Y.encodeStateAsUpdate(doc, before)).structs
   ).toHaveLength(1);
   expect(blockMap(doc).get('values')).toBe(values);
-});
-
-it("saves a dialog's draft as a diff, keeping a peer's change to another element", () => {
-  const room = roomOf([figure(graph)]);
-  const a = editorOn(room);
-  const b = editorOn(room);
-  const base = structuredClone(blockOf(a.editor)) as unknown as Graph;
-  // The dialog on A moves p1 while B renames p2.
-  const draft = {
-    ...base,
-    elements: base.elements.map((element) =>
-      element.id === 'p1' ? { ...element, coords: [4, 4] } : element
-    ),
-  };
-  editGraph(b.editor, (block) => ({
-    ...block,
-    elements: block.elements.map((element) =>
-      element.id === 'p2' ? { ...element, name: 'Q' } : element
-    ),
-  }));
-  sync(room, a.doc, b.doc);
-  const before = Y.encodeStateVector(a.doc);
-  editGraph(a.editor, (current) => rebaseBlock(base, draft, current));
-  expect(
-    Y.decodeUpdate(Y.encodeStateAsUpdate(a.doc, before)).structs
-  ).toHaveLength(1);
-  sync(room, a.doc, b.doc);
-  const want = [
-    { ...graph.elements[0], coords: [4, 4] },
-    { ...graph.elements[1], name: 'Q' },
-    graph.elements[2],
-  ];
-  expect(elementsOf(a.editor)).toEqual(want);
-  expect(elementsOf(b.editor)).toEqual(want);
 });
 
 it('undoes a saved change through the Yjs undo manager', () => {

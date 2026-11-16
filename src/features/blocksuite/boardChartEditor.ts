@@ -12,6 +12,14 @@ import {
 import { html, nothing, render } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
+import {
+  CORNER_CURSOR,
+  draggedSize,
+  drawChip,
+  drawTextFrame,
+  frameCornerAt,
+} from '@/features/graph/overlay';
+import { alongDrag, ERASER_SIZE } from '@/features/graph/tools';
 import { m } from '@/i18n';
 import {
   type ChartElementModel,
@@ -32,16 +40,12 @@ import {
   type PieLabel,
   pieCircle,
   SPOKES_MAX,
+  TEXT_SIZE_MAX,
+  TEXT_SIZE_MIN,
 } from './boardData';
-import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
-import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
+import { openBoardEditor, toolTip } from './boardEditorShell';
+import { EraserTrail } from './boardEraser';
 import { clockAngle, snapTo, tidy, type Vec } from './boardGeometry';
-import {
-  CORNER_CURSOR,
-  draggedSize,
-  drawTextFrame,
-  frameCornerAt,
-} from './boardTextFrame';
 import { boardKindOf, fillRow, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
@@ -962,7 +966,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         label.size ?? CHART_TEXT,
         labelPoint(label),
         pressedAt,
-        at
+        at,
+        [TEXT_SIZE_MIN, TEXT_SIZE_MAX]
       );
       canvas.style.cursor = CORNER_CURSOR[resizing.corner];
     } else if (tool === 'select' && pressed && held) {

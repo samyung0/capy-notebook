@@ -6,6 +6,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -15,22 +16,42 @@ import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
-import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { Switch } from '@/components/ui/Switch';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverContent } from '@/components/ui/ToolbarPopover';
-import { drawGraph, labelFont, wrapLabel } from '@/features/graph/draw';
+import { EraserTrail } from '@/features/blocksuite/boardEraser';
+import { drawGraph } from '@/features/graph/draw';
+import { drawing, KATEX_OPTIONS, loadKatex } from '@/features/graph/formula';
 import { attachGestures } from '@/features/graph/gestures';
-import { LABEL_SIZE, type RowElement, type Vec } from '@/features/graph/model';
+import {
+  type FreeMark,
+  type GraphElement,
+  LABEL_SIZE,
+  type RowElement,
+  type Vec,
+} from '@/features/graph/model';
 import { PAPER } from '@/features/graph/paper';
+import { toolIcon } from '@/features/graph/toolIcons';
+import {
+  type GraphTools,
+  graphTools,
+  kindOf,
+  SYMBOLS,
+  symbolLabel,
+  toolsFor,
+} from '@/features/graph/tools';
 import {
   bboxOf,
   elementBounds,
   framed,
   panned,
   QUESTION_ZOOM,
-  snapped,
-  toPlane,
   toScreen,
   type View,
   viewOf,
@@ -55,14 +76,15 @@ import {
   buildElements,
   displayNumber,
   type GraphRow,
+  markRow,
   type ParsedRow,
-  parseRow,
-  pointLatex,
-  RowError,
   type RowStyle,
+  readRow,
   reconcileRows,
+  rowsAfterEdit,
   rowsFromElements,
   styleKeys,
+  typedLine,
 } from './graphSyntax';
 import { graphWriter } from './graphWriter';
 import { IssueIcon, IssueSummary } from './IssueViews';
@@ -77,16 +99,6 @@ const elementType = (parsed: ParsedRow): RowElement['type'] =>
     : parsed.kind === 'function'
       ? 'functiongraph'
       : parsed.command;
-
-function parsedRow(latex: string, ascii: string) {
-  if (!latex.trim()) return { error: undefined, parsed: undefined };
-  try {
-    return { error: undefined, parsed: parseRow(ascii) };
-  } catch (error) {
-    if (!(error instanceof RowError)) throw error;
-    return { error: error.message, parsed: undefined };
-  }
-}
 
 /** The rows with the elements they give and the rows that give none, built
  * once per change. */
@@ -108,14 +120,11 @@ const sameBox = (a: number[], b: number[]) =>
 export const GraphEditor = memo(function GraphEditor({
   binding,
   descriptionMax,
-  onInvalidChange,
   toolbarTarget,
 }: {
   binding: FigureBinding;
   /** The description's bound: the bank's longer one or everyone else's. */
   descriptionMax: number;
-  /** Rows that cannot be drawn (a note dialog holds its Save meanwhile). */
-  onInvalidChange?: (invalid: boolean) => void;
   /** Where the zoom tools go instead of floating over the graph. */
   toolbarTarget?: HTMLElement | null;
 }) {
@@ -132,7 +141,14 @@ export const GraphEditor = memo(function GraphEditor({
     () => new Map()
   );
   const [writer] = useState(() =>
-    graphWriter(binding, () => current.current.elements, setRefused)
+    graphWriter(
+      binding,
+      () => ({
+        elements: current.current.elements,
+        keys: current.current.rows.map((row) => row.key),
+      }),
+      setRefused
+    )
   );
   // Closing the dialog writes what still waits for its frame.
   useEffect(() => () => writer.flush(), [writer]);
@@ -175,6 +191,10 @@ export const GraphEditor = memo(function GraphEditor({
   const fields = useRef(new Map<string, MathfieldElement>());
   // Fresh labels open with their text selected, ready to type over.
   const [freshLabel, setFreshLabel] = useState<string>();
+  // The tools' selection, which the rows light, as it changes.
+  const [, setToolsSeen] = useState(0);
+  // A tool turned away at the cap: the cap's issue shows while it is full.
+  const [capped, setCapped] = useState(false);
   // Rows past the cap (two editors' rows merged) are not drawn for readers:
   // each says so until the graph is back within it.
   const errors = useMemo(() => {
@@ -206,8 +226,16 @@ export const GraphEditor = memo(function GraphEditor({
   }, [drawn]);
   // Each row is one element: a full graph offers no new row.
   const full = rows.length >= limits.QUESTION_GRAPH_ELEMENTS_MAX;
+  if (capped && !full) setCapped(false);
   const order = [...rows.map((row) => row.key), ...(full ? [] : [draftKey])];
   const issues = [
+    ...(capped
+      ? [
+          m.question_ui_graph_elements_max({
+            max: limits.QUESTION_GRAPH_ELEMENTS_MAX,
+          }),
+        ]
+      : []),
     ...order.flatMap((key, index) => {
       const message = errors.get(key);
       return message
@@ -217,11 +245,6 @@ export const GraphEditor = memo(function GraphEditor({
     ...advancedIssues,
   ];
   if (!issues.length && recipeIssue) issues.push(recipeIssue);
-  const invalid = issues.length > 0;
-  useEffect(() => {
-    onInvalidChange?.(invalid);
-  }, [invalid, onInvalidChange]);
-  useEffect(() => () => onInvalidChange?.(false), [onInvalidChange]);
 
   /** New rows: drawn on the next frame, `touched` rows written on it. Rows
    * this change left unable to draw (a point they name went or was renamed)
@@ -254,7 +277,7 @@ export const GraphEditor = memo(function GraphEditor({
             kind: 'expression',
             latex,
             style: {},
-            ...parsedRow(latex, ascii),
+            ...readRow(latex, ascii),
           },
         ],
         [key]
@@ -265,7 +288,7 @@ export const GraphEditor = memo(function GraphEditor({
     commit(
       now.map((row) =>
         row.key === key && row.kind === 'expression'
-          ? { ...row, latex, ...parsedRow(latex, ascii) }
+          ? { ...row, latex, ...readRow(latex, ascii) }
           : row
       ),
       [key]
@@ -298,25 +321,31 @@ export const GraphEditor = memo(function GraphEditor({
   };
 
   const hooks: StageHooks = {
+    full: () =>
+      current.current.rows.length >= limits.QUESTION_GRAPH_ELEMENTS_MAX,
     onBoundingBox: (bbox) => {
       binding.setBoard('bbox', bbox);
       setPending(({ bbox: _, ...rest }) => rest);
     },
-    onMove: (id, coords) =>
+    // Rows show what the tools selected.
+    onToolsChange: () => setToolsSeen((n) => n + 1),
+    // A tool's change goes through the rows, as typing does: each changed or
+    // new element written on the next frame, a gone one at once.
+    onWrite: (next) => {
+      const now = current.current;
+      const before = new Map(
+        now.elements.map((element) => [element.id, element])
+      );
+      const kept = new Set(next.map((element) => element.id));
       commit(
-        current.current.rows.map((row) => {
-          if (row.key !== id) return row;
-          if (row.kind === 'label') return { ...row, coords };
-          if (row.kind !== 'expression' || row.parsed?.kind !== 'point')
-            return row;
-          return {
-            ...row,
-            latex: pointLatex(row.parsed.name, coords),
-            parsed: { ...row.parsed, coords },
-          };
-        }),
-        [id]
-      ),
+        rowsAfterEdit(now.rows, now.elements, next),
+        next.flatMap((element) =>
+          before.get(element.id) === element ? [] : [element.id]
+        )
+      );
+      for (const id of before.keys()) if (!kept.has(id)) writer.remove(id);
+    },
+    refused: () => setCapped(true),
   };
 
   const { min: sizeMin, max: sizeMax } = {
@@ -364,14 +393,43 @@ export const GraphEditor = memo(function GraphEditor({
           toolbarTarget={toolbarTarget}
         />
         <div className="@3xl:order-first flex min-w-0 flex-col gap-3.5">
-          <ol className="border-divider border-t">
+          <ol
+            className="border-divider border-t"
+            onPointerLeave={() => stage.current?.setHot(null)}
+          >
             {order.map((key, index) => {
               const row = rows.find((item) => item.key === key);
-              // A free mark keeps its place with no row of its own yet.
-              if (row?.kind === 'mark') return null;
+              // A row lights its element on the graph, and the graph's
+              // selection lights its rows.
+              const lit = {
+                onHover: () => stage.current?.setHot(row ? key : null),
+                selected: Boolean(row && stage.current?.selected(key)),
+              };
+              if (row?.kind === 'mark')
+                return (
+                  <MarkRow
+                    error={errors.get(key)}
+                    key={key}
+                    label={m.question_ui_graph_expression({
+                      number: index + 1,
+                    })}
+                    onChange={(element) =>
+                      commit(
+                        current.current.rows.map((item) =>
+                          item.key === key ? { ...row, element } : item
+                        ),
+                        [key]
+                      )
+                    }
+                    onRemove={() => remove(key)}
+                    row={row}
+                    {...lit}
+                  />
+                );
               if (row?.kind === 'label')
                 return (
                   <LabelRow
+                    {...lit}
                     autoSelect={key === freshLabel}
                     error={errors.get(key)}
                     key={key}
@@ -389,6 +447,7 @@ export const GraphEditor = memo(function GraphEditor({
                 );
               return (
                 <ExpressionItem
+                  {...lit}
                   autoFocus={key === startKey}
                   error={row ? errors.get(key) : undefined}
                   key={key}
@@ -514,12 +573,32 @@ export const GraphEditor = memo(function GraphEditor({
                     value={numberText(drawn.board.bbox[i], 12)}
                   />
                 ))}
+                {/* Rings and spokes, as the canvas's polar plane has them. */}
+                <SelectField
+                  label={m.question_ui_graph_paper()}
+                  onChange={(next) =>
+                    binding.setBoard('polar', next === 'polar' || undefined)
+                  }
+                  options={[
+                    {
+                      label: m.question_ui_graph_paper_square(),
+                      value: 'square',
+                    },
+                    {
+                      label: m.question_ui_graph_paper_polar(),
+                      value: 'polar',
+                    },
+                  ]}
+                  value={block.board.polar ? 'polar' : 'square'}
+                />
               </div>
               <CommitField
                 count={descriptionMax}
                 label={m.question_ui_description()}
                 maxLength={descriptionMax}
-                onCommit={(description) => binding.setFields({ description })}
+                onCommit={(description) =>
+                  binding.setFields({ description: description || undefined })
+                }
                 value={block.description ?? ''}
               />
             </Collapsible.Content>
@@ -558,48 +637,45 @@ function boardIssues({ width, height, board }: GraphBlock) {
   ];
 }
 
-type StageHandle = { draw: (graph: GraphBlock) => void };
-
-type StageHooks = {
-  /** The visible area once a pan or zoom settles. */
-  onBoundingBox: (bbox: Bbox) => void;
-  /** A dragged point or label, landed on the view's precision. */
-  onMove: (id: string, coords: [number, number]) => void;
+type StageHandle = {
+  draw: (graph: GraphBlock) => void;
+  /** Whether the tools have a row's element selected. */
+  selected: (id: string) => boolean;
+  /** Lights a row's element on the graph, or none. */
+  setHot: (id: string | null) => void;
 };
 
-/** The point or label under a pixel, topmost first, with the pixel's offset
- * from its anchor. */
-function grabbable(
-  graph: GraphBlock,
-  view: View,
-  at: Vec,
-  measure: (font: string, text: string) => number
-) {
-  for (const element of [...graph.elements].reverse()) {
-    if (element.hidden) continue;
-    if (element.type !== 'point' && element.type !== 'text') continue;
-    const [x, y] = toScreen(view, element.coords);
-    const offset: Vec = [x - at[0], y - at[1]];
-    if (element.type === 'point') {
-      if (Math.hypot(...offset) <= 10) return { element, offset };
-      continue;
-    }
-    const size = element.size ?? LABEL_SIZE;
-    const font = labelFont(size);
-    const lines = wrapLabel(element.text, (line) => measure(font, line));
-    const w = Math.max(...lines.map((line) => measure(font, line)));
-    const h = lines.length * size * 1.2;
-    if (Math.abs(offset[0]) <= w / 2 + 4 && Math.abs(offset[1]) <= h / 2 + 4)
-      return { element, offset };
-  }
-  return null;
+type StageHooks = {
+  /** Whether the graph holds all it can. */
+  full: () => boolean;
+  /** The visible area once a pan or zoom settles. */
+  onBoundingBox: (bbox: Bbox) => void;
+  /** The tool or what it selected changed. */
+  onToolsChange: () => void;
+  /** A tool's finished change: every element the graph holds after it. */
+  onWrite: (next: GraphElement[]) => void;
+  /** A tool's new element turned away at the cap. */
+  refused: () => void;
+};
+
+/** A tool icon, the canvas plane's (graph/toolIcons.ts). */
+function ToolIcon({ className, name }: { className?: string; name: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn('contents', className)}
+      // The plane's own SVG strings, one set for both editors.
+      dangerouslySetInnerHTML={{ __html: toolIcon(name) }}
+    />
+  );
 }
 
 /** The live graph at its stored pixel size, scaled to the column and no
  * taller than the dialog leaves room for, so the dialog never scrolls for it.
- * It takes the canvas plane's gestures (Epo 2026-11-16): the wheel pans,
- * pinch and Ctrl/⌘-wheel zoom, and a drag on empty paper pans (no Select tool
- * here yet). */
+ * It has the canvas plane's gestures and tools (Epo 2026-11-16): the wheel
+ * pans, pinch and Ctrl/⌘-wheel zoom, the middle button pans, and the plane's
+ * Select, Point, Line, Vector, Curve, Ellipse, Label, Formula and Erase
+ * (graph/tools.ts) sit in a strip over its foot, as on the plane. */
 function GraphStage({
   graph,
   drawable,
@@ -616,19 +692,27 @@ function GraphStage({
 }) {
   const wrapper = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const labelField = useRef<HTMLInputElement>(null);
   const { isDark } = useTheme();
   const [scale, setScale] = useState(0);
   const [preview, setPreview] = useState<{ bbox: Bbox; open: boolean }>();
+  // The tools' state lives in them; this draws their strip and fields again.
+  const [, toolsChanged] = useReducer((n: number) => n + 1, 0);
+  const [formula, setFormula] = useState<{
+    at: Vec;
+    done: (latex: string) => void;
+    latex: string;
+  } | null>(null);
   const { width, height } = graph;
-  // What frames and gestures read: the newest graph, view and drag.
+  // What frames, gestures and tools read: the newest graph and view.
   const live = useRef({
-    drag: null as { coords: Vec; id: string } | null,
     frame: 0,
-    // A pan, zoom or drag under way: a co-editor's view waits for it.
+    // A pan or zoom under way: a co-editor's view waits for it.
     gesture: false,
     graph,
     hooks,
     paper: PAPER.light,
+    tools: null as GraphTools | null,
     view: null as View | null,
   });
   live.current.hooks = hooks;
@@ -636,19 +720,8 @@ function GraphStage({
     const now = live.current;
     now.frame = 0;
     const ctx = canvas.current?.getContext('2d');
-    if (!(ctx && canvas.current && now.view)) return;
-    const { drag } = now;
-    const shown = drag
-      ? {
-          ...now.graph,
-          elements: now.graph.elements.map((element) =>
-            element.id === drag.id &&
-            (element.type === 'point' || element.type === 'text')
-              ? { ...element, coords: drag.coords }
-              : element
-          ),
-        }
-      : now.graph;
+    if (!(ctx && canvas.current && now.view && now.tools)) return;
+    const shown = now.tools.shown();
     const k = canvas.current.width / now.graph.width;
     ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.clearRect(0, 0, now.graph.width, now.graph.height);
@@ -656,10 +729,13 @@ function GraphStage({
       ctx,
       { h: now.graph.height, w: now.graph.width, x: 0, y: 0 },
       now.view,
-      shown,
+      shown === now.graph.elements
+        ? now.graph
+        : { ...now.graph, elements: shown },
       now.paper,
       redraw
     );
+    now.tools.drawOverlay(now.paper.ink);
   };
   const redraw = () => {
     live.current.frame ||= requestAnimationFrame(paint);
@@ -697,6 +773,8 @@ function GraphStage({
       live.current.graph = next;
       redraw();
     },
+    selected: (id) => live.current.tools?.selected(id) ?? false,
+    setHot: (id) => live.current.tools?.setHot(id),
   }));
   // A graph from the editor (a co-editor's, or ours rendered): drawn; bounds
   // typed or a co-editor's view (once our own gesture ends, which then writes
@@ -726,58 +804,61 @@ function GraphStage({
   useEffect(() => {
     const target = canvas.current;
     if (!target) return;
-    const measurer = document.createElement('canvas').getContext('2d');
-    if (!measurer) throw new Error('No canvas to measure graph labels');
-    const measure = (font: string, text: string) => {
-      measurer.font = font;
-      return measurer.measureText(text).width;
-    };
-    const hit = (at: Vec) => {
-      const { graph: now, view } = live.current;
-      return view ? grabbable(now, view, at, measure) : null;
-    };
-    const detach = attachGestures(
+    const ctx = target.getContext('2d');
+    if (!ctx) throw new Error('No canvas to draw the graph on');
+    const k = () =>
+      target.getBoundingClientRect().width / live.current.graph.width;
+    const tools = graphTools({
+      accent: () =>
+        getComputedStyle(target).getPropertyValue('--color-action-accent'),
+      canvas: target,
+      changed: () => {
+        toolsChanged();
+        live.current.hooks.onToolsChange();
+      },
+      ctx,
+      dark: () => live.current.paper.dark,
+      elements: () => live.current.graph.elements,
+      formula: (near, at, done) =>
+        setFormula({ at, done, latex: near?.latex ?? '' }),
+      full: () => live.current.hooks.full(),
+      labelText: () => labelField.current?.value ?? null,
+      local: (event) => {
+        const rect = target.getBoundingClientRect();
+        const s = k();
+        return [
+          (event.clientX - rect.left) / s,
+          (event.clientY - rect.top) / s,
+        ];
+      },
+      polar: () => Boolean(live.current.graph.board.polar),
+      redraw,
+      refused: () => live.current.hooks.refused(),
+      size: () => ({
+        h: live.current.graph.height,
+        w: live.current.graph.width,
+      }),
+      trail: new EraserTrail(redraw),
+      view: () =>
+        live.current.view ??
+        viewOf(
+          live.current.graph.board.bbox,
+          live.current.graph.width,
+          live.current.graph.height
+        ),
+      write: (next) => live.current.hooks.onWrite(next),
+    });
+    live.current.tools = tools;
+    const detachTools = tools.attach();
+    const detachGestures = attachGestures(
       target,
       {
-        dragPans: true,
         pan: (dx, dy) => {
           const { view } = live.current;
           if (!view) return;
           live.current.gesture = true;
           live.current.view = panned(view, dx, dy);
           redraw();
-        },
-        press: (at) => {
-          const grabbed = hit(at);
-          if (!grabbed) return null;
-          const { element, offset } = grabbed;
-          target.style.cursor = 'grabbing';
-          live.current.gesture = true;
-          return {
-            end: () => {
-              const { drag, view } = live.current;
-              live.current.drag = null;
-              live.current.gesture = false;
-              target.style.cursor = '';
-              if (!(drag && view)) return;
-              const coords = snapped(view, drag.coords);
-              if (
-                coords[0] !== element.coords[0] ||
-                coords[1] !== element.coords[1]
-              )
-                live.current.hooks.onMove(element.id, coords);
-              redraw();
-            },
-            move: (to) => {
-              const { view } = live.current;
-              if (!view) return;
-              live.current.drag = {
-                coords: toPlane(view, [to[0] + offset[0], to[1] + offset[1]]),
-                id: element.id,
-              };
-              redraw();
-            },
-          };
         },
         settle: () => {
           live.current.gesture = false;
@@ -791,26 +872,52 @@ function GraphStage({
           redraw();
         },
       },
-      () => target.getBoundingClientRect().width / live.current.graph.width
+      k
     );
-    // Points and labels show they can be picked up.
-    const hover = (event: PointerEvent) => {
-      if (event.buttons) return;
-      const rect = target.getBoundingClientRect();
-      const k = rect.width / live.current.graph.width;
-      target.style.cursor = hit([
-        (event.clientX - rect.left) / k,
-        (event.clientY - rect.top) / k,
-      ])
-        ? 'grab'
-        : '';
+    // The graph takes the keys once pressed: Delete, Escape and the tools'
+    // letters, as on the plane. Escape with nothing of the tools' to end
+    // reaches the dialog, which closes. Window capture, ahead of the dialog's.
+    const focus = () => target.focus({ preventScroll: true });
+    const key = (event: KeyboardEvent) => {
+      const active = document.activeElement;
+      const name = event.key.toLowerCase();
+      if (active === labelField.current) {
+        if (name !== 'escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        tools.escape();
+        return;
+      }
+      if (active !== target) return;
+      const command = event.metaKey || event.ctrlKey;
+      if (name === 'escape') {
+        if (!tools.escape()) return;
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (
+        (name === 'delete' || name === 'backspace') &&
+        tools.deleteSelected()
+      )
+        event.preventDefault();
+      else if (
+        !(command || event.altKey || event.shiftKey) &&
+        event.code.startsWith('Key') &&
+        tools.shortcut(event.code.slice(3))
+      )
+        event.preventDefault();
     };
-    target.addEventListener('pointermove', hover);
+    target.addEventListener('pointerdown', focus);
+    window.addEventListener('keydown', key, true);
+    toolsChanged();
     return () => {
-      detach();
-      target.removeEventListener('pointermove', hover);
+      tools.commitLabel();
+      detachTools();
+      detachGestures();
+      target.removeEventListener('pointerdown', focus);
+      window.removeEventListener('keydown', key, true);
       cancelAnimationFrame(live.current.frame);
       live.current.frame = 0;
+      live.current.tools = null;
     };
   }, []);
   // The column's width or the wrapper's max-height, whichever binds first.
@@ -837,7 +944,27 @@ function GraphStage({
   }, []);
   // A new size refits; fitStage reads it from `live`.
   useEffect(fitStage, [width, height]);
-  const tools = (
+  const tools = live.current.tools;
+  const view = live.current.view;
+  const s = scale || 1;
+  const typing = tools?.typing();
+  const typedAt = typing && view && toScreen(view, typing.at);
+  const finishLabel = tools?.finishLabel();
+  const formulaAt = formula && view && toScreen(view, formula.at);
+  /** A symbol typed where the label's caret is, within its length. */
+  const insertSymbol = (symbol: string) => {
+    const field = labelField.current;
+    if (!field) return;
+    const start = field.selectionStart ?? field.value.length;
+    const end = field.selectionEnd ?? start;
+    if (
+      field.value.length - (end - start) + symbol.length >
+      limits.QUESTION_GRAPH_LABEL_MAX
+    )
+      return;
+    field.setRangeText(symbol, start, end, 'end');
+  };
+  const zoomTools = (
     <BlockToolbar
       className={cn(
         // In the heading row it is part of the page, not floating over it.
@@ -891,15 +1018,124 @@ function GraphStage({
         }}
       >
         <canvas
-          className="block origin-top-left touch-none"
+          aria-label={m.drawing_board_maths()}
+          className="block origin-top-left touch-none outline-none"
           ref={canvas}
           style={{ height, transform: `scale(${scale || 1})`, width }}
+          tabIndex={0}
         />
         {/* MediaFrame's toolbar, always shown, unless the dialog's heading
             row holds it. */}
-        {!toolbarTarget && tools}
+        {!toolbarTarget && zoomTools}
+        {typing && typedAt && (
+          <>
+            <input
+              aria-label={m.drawing_board_chart_label()}
+              // The plane's label field, at its size on the graph.
+              className="absolute z-10 w-[8.5em] -translate-x-1/2 -translate-y-1/2 border-[#1e96eb] border-b bg-overlay px-1 py-0.5 text-center font-[Arial,sans-serif] font-medium text-fg outline-none"
+              defaultValue={typing.text}
+              key={typing.id ?? typing.at.join()}
+              maxLength={limits.QUESTION_GRAPH_LABEL_MAX}
+              onBlur={() => tools?.commitLabel()}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                tools?.commitLabel();
+                // The graph keeps the keys: its tools' letters, Delete, Escape.
+                canvas.current?.focus({ preventScroll: true });
+              }}
+              ref={(field) => {
+                if (field && labelField.current !== field) {
+                  labelField.current = field;
+                  field.focus();
+                  field.select();
+                } else if (!field) labelField.current = null;
+              }}
+              style={{
+                fontSize: (typing.size ?? LABEL_SIZE) * s,
+                left: typedAt[0] * s,
+                top: typedAt[1] * s,
+              }}
+              type="text"
+            />
+            <div
+              className="absolute z-10 flex max-w-[calc(100%-16px)] -translate-x-1/2 flex-wrap rounded-(--radius-toolbar) border border-overlay-line bg-overlay p-[3px] shadow-pop"
+              style={{
+                left: Math.min(Math.max(typedAt[0] * s, 120), width * s - 120),
+                top:
+                  typedAt[1] * s + ((typing.size ?? LABEL_SIZE) * s) / 2 + 12,
+              }}
+            >
+              {SYMBOLS.map((symbol) => (
+                <button
+                  className="grid size-8 place-items-center rounded-(--radius-toolbar-button) text-[15px] text-fg hover:bg-surface-hover-bg"
+                  key={symbol}
+                  onClick={() => insertSymbol(symbol)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  type="button"
+                >
+                  {symbolLabel(symbol)}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {finishLabel && (
+          <button
+            className="absolute bottom-13 left-1/2 z-10 h-8 -translate-x-1/2 whitespace-nowrap rounded-(--radius-toolbar-button) bg-action px-3 font-semibold text-[13px] text-action-fg shadow-pop"
+            onClick={() => tools?.finish()}
+            type="button"
+          >
+            {finishLabel}
+          </button>
+        )}
+        {tools && (
+          <BlockToolbar className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2">
+            {toolsFor(Boolean(graph.board.polar)).map(
+              ({ icon, id, key, label }) => (
+                <ToolbarButton
+                  active={tools.tool() === id}
+                  key={id}
+                  label={label()}
+                  onClick={() => tools.pick(id)}
+                  shortcut={key}
+                  tooltipSide="top"
+                  type="button"
+                >
+                  <ToolIcon name={icon} />
+                </ToolbarButton>
+              )
+            )}
+          </BlockToolbar>
+        )}
+        {formula && formulaAt && (
+          <Popover
+            onOpenChange={(open) => {
+              if (!open) setFormula(null);
+            }}
+            open
+          >
+            <PopoverAnchor
+              className="absolute size-0"
+              style={{ left: formulaAt[0] * s, top: formulaAt[1] * s }}
+            />
+            <PopoverContent
+              className="w-72 p-3"
+              // The formula's field takes the keys once MathLive has it, not Cancel.
+              onOpenAutoFocus={(event) => event.preventDefault()}
+            >
+              <FormulaCard
+                latex={formula.latex}
+                onCancel={() => setFormula(null)}
+                onSave={(latex) => {
+                  setFormula(null);
+                  formula.done(latex);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
-      {toolbarTarget && createPortal(tools, toolbarTarget)}
+      {toolbarTarget && createPortal(zoomTools, toolbarTarget)}
       {/* The graph as shown, full screen like a note figure. */}
       {preview && (
         <FigurePreview
@@ -912,8 +1148,91 @@ function GraphStage({
   );
 }
 
+/** A formula typed for the graph, as the board's formula card: Save keeps
+ * the card open until KaTeX can draw it; an empty one takes the formula away. */
+function FormulaCard({
+  latex,
+  onCancel,
+  onSave,
+}: {
+  latex: string;
+  onCancel: () => void;
+  onSave: (latex: string) => void;
+}) {
+  const typed = useRef(latex);
+  const [error, setError] = useState<string>();
+  const save = async () => {
+    const value = typed.current.trim();
+    if (!value) {
+      onSave('');
+      return;
+    }
+    if ([...value].length > limits.QUESTION_GRAPH_LATEX_MAX) {
+      setError(m.drawing_board_formula_too_long());
+      return;
+    }
+    try {
+      (await loadKatex()).renderToString(value, {
+        ...KATEX_OPTIONS,
+        throwOnError: true,
+      });
+      await drawing(value);
+    } catch {
+      setError(m.drawing_board_formula_error());
+      return;
+    }
+    onSave(value);
+  };
+  return (
+    <div className="space-y-3">
+      <div className="rounded-md border border-divider px-2 py-1.5">
+        <GraphRowField
+          autoFocus
+          label={m.drawing_board_plane_formula()}
+          latex={latex}
+          onChange={(next) => {
+            typed.current = next;
+            setError(undefined);
+          }}
+          onEnter={() => void save()}
+          onMoveOut={() => undefined}
+          register={() => undefined}
+        />
+      </div>
+      {error && <p className="text-[13px] text-solid-error">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <Button onClick={onCancel} size="sm" type="button" variant="ghost">
+          {m.action_cancel()}
+        </Button>
+        <Button
+          onClick={() => void save()}
+          size="sm"
+          type="button"
+          variant="accent"
+        >
+          {m.action_save()}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** A row's look: lit while typed in, or while the graph has its element
+ * selected. */
+const rowClass = (selected: boolean) =>
+  cn(
+    'group grid min-h-12 cursor-text grid-cols-[2rem_minmax(0,1fr)_1.75rem] items-center gap-2 border-divider border-b py-1 pl-1 focus-within:bg-tint-accent-1/25 focus-within:shadow-[inset_2px_0_0_var(--color-action-accent)]',
+    selected &&
+      'bg-tint-accent-1/25 shadow-[inset_2px_0_0_var(--color-action-accent)]'
+  );
+
+/** What lights a row: its element under the pointer or selected on the graph. */
+type RowLight = { onHover: () => void; selected: boolean };
+
 function ExpressionItem({
   autoFocus,
+  onHover,
+  selected,
   row,
   error,
   label,
@@ -936,11 +1255,11 @@ function ExpressionItem({
   onRemoveEmpty?: () => void;
   onRestyle: (style: RowStyle) => void;
   register: (field: MathfieldElement | null) => void;
-}) {
+} & RowLight) {
   const type = row?.parsed && !error ? elementType(row.parsed) : undefined;
   return (
     <li
-      className="group grid min-h-12 cursor-text grid-cols-[2rem_minmax(0,1fr)_1.75rem] items-center gap-2 border-divider border-b py-1 pl-1 focus-within:bg-tint-accent-1/25 focus-within:shadow-[inset_2px_0_0_var(--color-action-accent)]"
+      className={rowClass(selected)}
       onClick={(event) => {
         if (
           event.target === event.currentTarget ||
@@ -952,6 +1271,8 @@ function ExpressionItem({
             ) as HTMLElement | null
           )?.focus();
       }}
+      onFocus={onHover}
+      onPointerEnter={onHover}
     >
       {error ? (
         <RowIssue message={error} />
@@ -1116,6 +1437,8 @@ function HideSwitch({
 
 function LabelRow({
   autoSelect,
+  onHover,
+  selected,
   row,
   error,
   onChange,
@@ -1126,7 +1449,7 @@ function LabelRow({
   error: string | undefined;
   onChange: (row: Extract<GraphRow, { kind: 'label' }>) => void;
   onRemove: () => void;
-}) {
+} & RowLight) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!autoSelect) return;
@@ -1135,7 +1458,7 @@ function LabelRow({
   }, [autoSelect]);
   return (
     <li
-      className="group grid min-h-12 cursor-text grid-cols-[2rem_minmax(0,1fr)_1.75rem] items-center gap-2 border-divider border-b py-1 pl-1 focus-within:bg-tint-accent-1/25 focus-within:shadow-[inset_2px_0_0_var(--color-action-accent)]"
+      className={rowClass(selected)}
       onClick={(event) => {
         if (
           event.target === event.currentTarget ||
@@ -1147,6 +1470,8 @@ function LabelRow({
             ) as HTMLElement | null
           )?.focus();
       }}
+      onFocus={onHover}
+      onPointerEnter={onHover}
     >
       {error ? (
         <RowIssue message={error} />
@@ -1188,6 +1513,64 @@ function LabelRow({
           })}
         </span>
       </span>
+      <RowMenu onRemove={onRemove} />
+    </li>
+  );
+}
+
+/** A free mark's row, as the canvas plane lists it (Epo 2026-11-13, L2): a
+ * line or vector typed in place from one point to the other, a curve, ellipse
+ * or formula by its kind's name; drawn and changed on the graph. */
+function MarkRow({
+  error,
+  label,
+  onChange,
+  onHover,
+  onRemove,
+  row,
+  selected,
+}: {
+  error: string | undefined;
+  label: string;
+  onChange: (element: FreeMark) => void;
+  onRemove: () => void;
+  row: Extract<GraphRow, { kind: 'mark' }>;
+} & RowLight) {
+  const shown = markRow(row.element);
+  return (
+    <li
+      className={rowClass(selected)}
+      onFocus={onHover}
+      onPointerEnter={onHover}
+    >
+      {error ? (
+        <RowIssue message={error} />
+      ) : (
+        <span className="grid size-8 place-items-center text-fg-secondary [&_svg]:size-[18px]">
+          <ToolIcon name={kindOf(row.element)} />
+        </span>
+      )}
+      {shown.typed ? (
+        <FieldInput
+          aria-label={label}
+          defaultValue={shown.text}
+          // A new value (a drag, a co-editor) starts the field again.
+          key={shown.text}
+          maxLength={80}
+          onBlur={(event) => {
+            const line = typedLine(row.element, event.currentTarget.value);
+            if (line) onChange(line);
+            else event.currentTarget.value = shown.text;
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
+          variant="transparent"
+          wrapperClassName="min-w-0"
+        />
+      ) : (
+        <span className="truncate">{shown.text}</span>
+      )}
       <RowMenu onRemove={onRemove} />
     </li>
   );

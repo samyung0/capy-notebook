@@ -1,5 +1,6 @@
 import { drawGraph } from '@/features/graph/draw';
 import { type ElementEntry, readElements } from '@/features/graph/keyed';
+import type { GraphElement } from '@/features/graph/model';
 import { EXPORT_PAPER } from '@/features/graph/paper';
 import { canvasMeasure, SvgRecorder } from '@/features/graph/svg';
 import { bboxOf, type View } from '@/features/graph/view';
@@ -13,7 +14,6 @@ import {
   filledSlices,
   INK,
   onScreen,
-  type PlaneElement,
   pieCircle,
 } from './boardData';
 import {
@@ -372,7 +372,7 @@ function drawPlane(box: Box, fields: Fields, pen: Pen, n: number) {
   const k = Math.max(1 / pen.pixel, 0.5);
   const elements = readElements(
     Object.entries(
-      fields.elements as Record<string, ElementEntry<PlaneElement>>
+      fields.elements as Record<string, ElementEntry<GraphElement>>
     )
   ).filter(({ type }) => type !== 'text' && type !== 'formula');
   const recorder = new SvgRecorder(w * k, h * k, canvasMeasure, `p${n}`);

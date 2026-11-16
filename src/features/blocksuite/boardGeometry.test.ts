@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { functionRuns, pathOf, smoothHandles } from './boardData';
+import { functionRuns } from '@/features/graph/curves';
+import { pathOf, smoothHandles } from '@/features/graph/marks';
 import {
   clockAngle,
   minorStep,

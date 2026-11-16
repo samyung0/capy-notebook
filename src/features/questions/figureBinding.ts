@@ -19,8 +19,9 @@ type Board = GraphBlock['board'];
 /**
  * What a chart or graph dialog edits (Epo 2026-11-16, live figures): the
  * figure where it lives, written a change at a time, so the dialog holds no
- * draft and Done only closes it. A quiz room's entry (`figureRoom().bind`)
- * and a question draft (`localFigureBinding`) implement it; each write is one
+ * draft and Done only closes it. A quiz room's entry (`figureRoom().bind`),
+ * a question draft (`localFigureBinding`) and a note's figure
+ * (`noteFigureBinding`, over the local one) implement it; each write is one
  * change, and does nothing once the figure is gone.
  */
 export interface FigureBinding {

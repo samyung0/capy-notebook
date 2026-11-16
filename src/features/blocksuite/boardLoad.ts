@@ -10,7 +10,6 @@ import {
   LABEL_LENGTH_MAX,
   LABELS_MAX,
   LATEX_MAX,
-  PLANE_KINDS,
   SPOKES_MAX,
 } from './boardData';
 import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
@@ -77,10 +76,9 @@ const connection = (value: unknown) => {
   );
 };
 
-/** One of a plane's elements: a kind the plane makes, held as every graph holds
- * it (the graph model's one element check, Epo 2026-11-16). */
+/** One of a plane's elements, of any kind a graph holds, checked as every graph's
+ * (the graph model's one element check, Epo 2026-11-16). */
 const planeElementFits = (element: Fields) =>
-  PLANE_KINDS.has(String(element.type)) &&
   graphElementSchema.safeParse(element).success;
 
 /** A plane's elements: a map of element id to the element and its order key (Epo

@@ -4,9 +4,13 @@ import {
   displayNumber,
   functionOf,
   type GraphRow,
+  markRow,
   parseRow,
+  readRow,
   reconcileRows,
+  rowsAfterEdit,
   rowsFromElements,
+  typedLine,
 } from './graphSyntax';
 import type { GraphElement } from './types';
 import { validGraphTerm } from './validation';
@@ -280,5 +284,69 @@ describe('functionOf', () => {
       2 + Math.log(Math.PI / 2)
     );
     expect(functionOf('x^2/4 - 3')(2)).toBeCloseTo(-2);
+  });
+});
+
+describe('rows after a tool', () => {
+  const typed = (key: string, latex: string): GraphRow => ({
+    key,
+    kind: 'expression',
+    latex,
+    style: {},
+    ...readRow(latex, latex),
+  });
+  const rows = [
+    typed('A', 'A=(1,2)'),
+    typed('B', 'B=(4,3)'),
+    typed('s', 'segment(A,B)'),
+  ];
+  const { elements } = buildElements(rows);
+
+  it('moves a named point in its row, adds a drawn mark and drops an erased one', () => {
+    const line: GraphElement = {
+      coords: [
+        [0, 0],
+        [1, 1],
+      ],
+      id: 'l',
+      type: 'polyline',
+    };
+    const moved = elements.map((element) =>
+      element.id === 'A' && element.type === 'point'
+        ? { ...element, coords: [2, 2] as [number, number] }
+        : element
+    );
+    const next = rowsAfterEdit(rows, elements, [...moved, line]);
+    expect(next[0]).toMatchObject({ latex: 'A=\\left(2,2\\right)' });
+    expect(next.slice(1, 3)).toEqual(rows.slice(1, 3));
+    expect(next[3]).toEqual({ element: line, key: 'l', kind: 'mark' });
+    expect(buildElements(next).elements).toEqual([...moved, line]);
+    const erased = rowsAfterEdit(next, buildElements(next).elements, [
+      ...moved.slice(0, 2),
+    ]);
+    expect(erased.map((row) => row.key)).toEqual(['A', 'B']);
+  });
+
+  it("lists a free mark as the plane does, a line's two points typed in place", () => {
+    const line: GraphElement = {
+      coords: [
+        [0, -1],
+        [2.5, 1],
+      ],
+      id: 'l',
+      type: 'polyline',
+    };
+    expect(markRow(line)).toEqual({ text: '(0, −1) to (2.5, 1)', typed: true });
+    expect(typedLine(line, '(1, 1) to (-3, 4)')).toEqual({
+      ...line,
+      coords: [
+        [1, 1],
+        [-3, 4],
+      ],
+    });
+    expect(typedLine(line, '(1, 1)')).toBeNull();
+    expect(
+      markRow({ center: [0, 0], id: 'e', radii: [1, 1], type: 'ellipse' })
+    ).toEqual({ text: 'Ellipse', typed: false });
   });
 });

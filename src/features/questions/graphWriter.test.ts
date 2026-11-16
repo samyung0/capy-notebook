@@ -49,9 +49,20 @@ function setup(start: GraphElement[]) {
       return 1;
     },
   };
-  const local = { elements: start };
+  // The rows' keys are their elements' unless a test has rows that do not draw.
+  const local: { elements: GraphElement[]; keys?: string[] } = {
+    elements: start,
+  };
   const refused = vi.fn();
-  const writer = graphWriter(counted, () => local.elements, refused, frames);
+  const writer = graphWriter(
+    counted,
+    () => ({
+      elements: local.elements,
+      keys: local.keys ?? local.elements.map((element) => element.id),
+    }),
+    refused,
+    frames
+  );
   const frame = () => {
     const run = queued;
     queued = null;
@@ -101,6 +112,17 @@ it('keeps a row that gives no element unwritten and typing until it does', () =>
   ]);
   expect(elements()).toEqual(local.elements);
   expect(writer.typing('C')).toBe(false);
+});
+
+it('puts a new row after a row that cannot draw but keeps its element', () => {
+  const { calls, elements, frame, local, writer } = setup(graph.elements);
+  // B's row no longer draws (typed into), and Q is added under it.
+  local.keys = ['A', 'B', 'Q'];
+  local.elements = [point('A', 0), point('Q', 3)];
+  writer.touch(['B', 'Q']);
+  frame();
+  expect(calls.mock.calls).toEqual([['set', 'Q']]);
+  expect(elements().map(({ id }) => id)).toEqual(['A', 'B', 'Q']);
 });
 
 it('names an element the graph check refuses and does not write it', () => {
