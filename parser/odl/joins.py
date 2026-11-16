@@ -76,11 +76,11 @@ def repair_joins(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             or len(block.get("bbox") or []) != 4
             or type(page_index) is not int
             or not 0 <= page_index < len(document)
-            or document[page_index].rotation
+            or page_text.page_at(document, page_index).rotation
         ):
             out.append(block)
             continue
-        page = document[page_index]
+        page = page_text.page_at(document, page_index)
         if current[0] != page_index:
             current = (page_index, *_page_lines(page))
         _, lines, ends = current

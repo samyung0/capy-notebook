@@ -60,21 +60,23 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
 test('Workspace settings shows the tabs first, reached by the URL with its search', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?settings=menu&settingsQuery=invite');
+  await page.goto('/workspaces/ws_bio?settings=menu&settingsQuery=transfer');
   const list = page.getByRole('dialog', { name: m.workspace_settings() });
   await expect(
     list.getByRole('textbox', { name: m.workspace_settings_search() })
-  ).toHaveValue('invite', { timeout: 60_000 });
+  ).toHaveValue('transfer', { timeout: 60_000 });
   await expect(list.getByRole('tab')).toHaveCount(1);
 
-  await list.getByRole('tab', { name: m.workspace_sharing() }).click();
-  const sharing = page.getByRole('dialog', { name: m.workspace_sharing() });
-  await expect(sharing.getByText(m.members_people())).toBeVisible();
-  await expect(page).toHaveURL(/settings=sharing&settingsQuery=invite/);
+  await list.getByRole('tab', { name: m.workspace_tab_danger() }).click();
+  const danger = page.getByRole('dialog', { name: m.workspace_tab_danger() });
+  await expect(
+    danger.getByRole('button', { name: m.workspace_transfer_confirm() })
+  ).toBeVisible();
+  await expect(page).toHaveURL(/settings=danger&settingsQuery=transfer/);
 
-  await sharing.getByRole('button', { name: m.action_back() }).click();
+  await danger.getByRole('button', { name: m.action_back() }).click();
   await expect(list.getByRole('tab')).toHaveCount(1);
-  await expect(page).toHaveURL(/settings=menu&settingsQuery=invite/);
+  await expect(page).toHaveURL(/settings=menu&settingsQuery=transfer/);
 });
 
 test('chat docks as a button, keeps a draft, and grows into its page on send', async ({
@@ -198,10 +200,8 @@ test('Make a quiz hides the dock, and the chat comes back with its draft and thr
   ).toBeVisible();
 });
 
-// A personal workspace: a class's owner and editors have no Summary.
-test('⋮ reaches Summary, which one column has no panel for', async ({
-  page,
-}) => {
+// A personal workspace: a class's owner and editors have no Study.
+test('⋮ reaches Study, as phones have no rail', async ({ page }) => {
   await page.goto('/workspaces/ws_calc?material=f_7');
   await page.addStyleTag({
     content: '[data-testid=mock-scenario-panel] { display: none }',
@@ -210,9 +210,9 @@ test('⋮ reaches Summary, which one column has no panel for', async ({
     .getByTestId('content-header')
     .getByRole('button', { name: m.a11y_open_menu() })
     .click({ timeout: 60_000 });
-  await page.getByRole('menuitem', { name: m.study_panel_summary() }).click();
+  await page.getByRole('menuitem', { name: m.workspace_tab_study() }).click();
   await expect(
-    page.getByRole('heading', { level: 1, name: m.study_panel_summary() })
+    page.getByRole('heading', { level: 1, name: m.workspace_tab_study() })
   ).toBeVisible();
 });
 

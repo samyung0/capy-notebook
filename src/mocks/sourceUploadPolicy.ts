@@ -87,8 +87,17 @@ function extensionsFor(kind: FileKind): string[] {
     .sort((a, b) => a.localeCompare(b));
 }
 
-/** Mirrors sourceupload.parseExtensions: the document parser's format list. */
-const parseExtensions = ['.docx', '.pdf', '.pptx', '.xlsx'];
+/** Mirrors sourceupload.ParseExtensions: the document parser's formats and
+ * the legacy Office ones, parsed once converted. */
+const parseExtensions = [
+  '.doc',
+  '.docx',
+  '.pdf',
+  '.ppt',
+  '.pptx',
+  '.xls',
+  '.xlsx',
+];
 
 export const sourceUploadPolicy: SourceUploadPolicy = {
   accept: '',

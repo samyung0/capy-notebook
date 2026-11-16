@@ -46,6 +46,12 @@ vi.mock('@/api/hooks', () => ({
     data: { id: 'ws', kind: 'class', name: 'Biology 101', role: 'owner' },
   }),
 }));
+// Manage's own page: its test is MembersRoster.test.tsx.
+vi.mock('./MembersRoster', () => ({
+  MembersRoster: ({ header }: { header: ReactNode }) => (
+    <div data-roster>{header}</div>
+  ),
+}));
 vi.mock('../assignments/LazyNewAssignmentDialog', () => ({
   NewAssignmentDialog: (props: object) => {
     dialog(props);
@@ -111,7 +117,7 @@ const member = (
 
 const host = document.createElement('div');
 document.body.append(host);
-const show = async (search: { member?: string } = {}) => {
+const show = async (search: { manage?: true; member?: string } = {}) => {
   const root = createRoot(host);
   await act(async () =>
     root.render(<MembersPage search={search} workspaceId="ws" />)
@@ -156,6 +162,33 @@ it('lays out a table where it fits and a plain list on phones', async () => {
   expect(phones.textContent).not.toContain(m.practice_questions({ count: 12 }));
   expect(phones.textContent).toContain(m.members_missing({ count: 2 }));
   await act(async () => root.unmount());
+});
+
+// Epo 2026-11-11: the marks are Overview; sharing, invitations and roles are
+// Manage, under the same heading.
+it("gives a class's staff Overview and Manage", async () => {
+  const root = await show();
+  const tabs = [...host.querySelectorAll('[role="tab"]')];
+  expect(tabs.map((tab) => tab.textContent)).toEqual([
+    m.members_tab_overview(),
+    m.members_tab_manage(),
+  ]);
+  expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+  await press(tabs[1]);
+  expect(navigate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      search: { manage: true, show: undefined, study: 'members' },
+    })
+  );
+  act(() => root.unmount());
+
+  const managing = await show({ manage: true });
+  const roster = host.querySelector('[data-roster]');
+  expect(roster?.textContent).toContain(m.study_panel_members());
+  expect(roster?.querySelector('[aria-selected="true"]')?.textContent).toBe(
+    m.members_tab_manage()
+  );
+  act(() => managing.unmount());
 });
 
 it('marks a member whose storage is full, with its hint', async () => {

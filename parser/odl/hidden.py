@@ -95,10 +95,10 @@ def recover_hidden_ocr_order(
 ) -> list[dict]:
     """Reorder only source-verified hidden OCR pages; preserve every block."""
     result = blocks.copy()
-    for page in sorted({block["page_idx"] for block in blocks}):
-        positions = [
-            index for index, block in enumerate(blocks) if block["page_idx"] == page
-        ]
+    pages: dict[int, list[int]] = {}
+    for index, block in enumerate(blocks):
+        pages.setdefault(block["page_idx"], []).append(index)
+    for page, positions in sorted(pages.items()):
         original = [blocks[index] for index in positions]
         cut = gutter(original) if page in eligible_pages else None
         if cut is None or any("bbox" not in block for block in original):

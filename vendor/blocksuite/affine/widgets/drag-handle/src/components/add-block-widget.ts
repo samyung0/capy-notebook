@@ -1,3 +1,4 @@
+import { tr } from '@blocksuite/affine-shared/utils';
 import { PlusIcon } from '@blocksuite/icons/lit';
 import { css, html, LitElement } from 'lit';
 import { property } from 'lit/decorators.js';
@@ -15,9 +16,10 @@ export class AffineAddBlockWidget extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 18px;
-      height: 18px;
-      margin-top: 8px;
+      /* Capy (local change 36): level with the grip, in the same size. */
+      width: 20px;
+      height: 24px;
+      margin-top: 0;
       cursor: pointer;
       border-radius: 4px;
       color: var(--affine-placeholder-color);
@@ -38,8 +40,8 @@ export class AffineAddBlockWidget extends LitElement {
     }
 
     .affine-add-block-widget svg {
-      width: 12px;
-      height: 12px;
+      width: 16px;
+      height: 16px;
       flex-shrink: 0;
     }
   `;
@@ -61,8 +63,8 @@ export class AffineAddBlockWidget extends LitElement {
     return html`
       <button
         class="affine-add-block-widget"
-        title="Click to add a block below"
-        aria-label="Add block below"
+        title=${tr('Click to add a block below')}
+        aria-label=${tr('Add block below')}
         @click=${this._handleClick}
       >
         ${PlusIcon({ width: '12', height: '12' })}

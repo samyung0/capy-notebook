@@ -138,7 +138,8 @@ def test_an_image_is_oriented_shrunk_and_flattened(tmp_path, monkeypatch):
     "route,format_name",
     [
         (ingest_plan.IMAGE_CAPTION, "svg"),
-        (ingest_plan.STORE_ONLY, "doc"),
+        (ingest_plan.STORE_ONLY, ""),
+        (ingest_plan.LEGACY_CONVERT, "doc"),
         (ingest_plan.AUDIO_TRANSCRIPTION, "mp3"),
         (ingest_plan.DELIMITED_TEXT, "csv"),
     ],

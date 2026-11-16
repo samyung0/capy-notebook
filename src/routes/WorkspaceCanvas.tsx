@@ -50,9 +50,9 @@ export default function WorkspaceCanvas({
         : undefined,
     [pages, hasNextPage]
   );
-  // Editing happens in the item dialog, whose saves go through its live room, not
-  // the card's snapshot query: when the dialog closes or moves on, the material it
-  // showed is read again by any card in view.
+  // The item dialog's saves go through its live room, not the cards' snapshot
+  // query: when the dialog closes or moves on, the material it showed is read
+  // again by any card in view (a card's own Edit does the same on Done).
   const qc = useQueryClient();
   const lastOpen = useRef(openMaterialId);
   useEffect(() => {

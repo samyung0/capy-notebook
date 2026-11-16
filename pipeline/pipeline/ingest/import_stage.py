@@ -70,12 +70,12 @@ class ImportWait(CapacityWait):
         self.release = release
 
 
-def _gateway(path: str, body: dict) -> tuple[int, dict]:
+def gateway_post(path: str, body: dict) -> tuple[int, dict]:
+    """One POST to an internal gateway route: its status and JSON object.
+    A gateway that is not configured or cannot be reached is the caller's
+    infrastructure fault, whatever the job."""
     if not cfg.gateway_url or not cfg.pipeline_secret:
-        raise ImportFailure(
-            "gateway_unconfigured",
-            "GATEWAY_URL and PIPELINE_SECRET are required for provider imports",
-        )
+        raise RetryableError("GATEWAY_URL and PIPELINE_SECRET are not configured")
     try:
         response = requests.post(
             cfg.gateway_url.rstrip("/") + path,
@@ -84,9 +84,7 @@ def _gateway(path: str, body: dict) -> tuple[int, dict]:
             timeout=_GATEWAY_TIMEOUT_S,
         )
     except (requests.Timeout, requests.ConnectionError) as exc:
-        raise ImportRetry(
-            "gateway_unreachable", f"gateway request failed: {exc}"
-        ) from exc
+        raise RetryableError(f"gateway request failed: {exc}") from exc
     payload: object = {}
     if response.content:
         try:
@@ -98,6 +96,20 @@ def _gateway(path: str, body: dict) -> tuple[int, dict]:
     if retry_after.isdigit():
         payload.setdefault("retryAfterSeconds", int(retry_after))
     return response.status_code, payload
+
+
+def _gateway(path: str, body: dict) -> tuple[int, dict]:
+    """``gateway_post`` for an import: an import worker without a gateway is
+    misconfigured for good, and an unreachable one is reported by its code."""
+    if not cfg.gateway_url or not cfg.pipeline_secret:
+        raise ImportFailure(
+            "gateway_unconfigured",
+            "GATEWAY_URL and PIPELINE_SECRET are required for provider imports",
+        )
+    try:
+        return gateway_post(path, body)
+    except RetryableError as exc:
+        raise ImportRetry("gateway_unreachable", str(exc)) from exc
 
 
 def _raise_for_gateway(status: int, payload: dict, what: str) -> None:
@@ -209,6 +221,28 @@ def _download(grant: dict, max_bytes: int) -> bytearray:
     return body
 
 
+def office_pictures(
+    data: bytes, image_max_bytes: int, deadline: float
+) -> tuple[bytes, int]:
+    """The picture rule of an Office file that did not come through the
+    browser (an import, a converted legacy upload): its pictures compressed
+    one by one (Q347) until ``deadline`` and the ones nothing can show
+    removed, then the header check. Returns the bytes to store and how many
+    pictures were removed; raises images.OutOfTime or image_check.Refused."""
+    package, removed = images.compress_office(
+        data,
+        lambda picture: decode.office_picture(
+            picture,
+            image_max_bytes=image_max_bytes,
+            max_pixels=cfg.image_max_pixels,
+        ),
+        deadline,
+    )
+    stored = package if package is not None else data
+    image_check.check_office(stored, image_max_bytes)
+    return stored, removed
+
+
 def _prepare(data: bytes, acquired: dict, deadline: float) -> tuple[bytes, dict]:
     """The bytes to store and what the completion reports beside them: an
     Office file with its pictures compressed one by one (Q347) until
@@ -224,20 +258,9 @@ def _prepare(data: bytes, acquired: dict, deadline: float) -> tuple[bytes, dict]
         if image_max_bytes <= 0:
             raise ImportRetry("acquire_invalid", "acquire response names no image cap")
         try:
-            package, removed = images.compress_office(
-                data,
-                lambda picture: decode.office_picture(
-                    picture,
-                    image_max_bytes=image_max_bytes,
-                    max_pixels=cfg.image_max_pixels,
-                ),
-                deadline,
-            )
+            stored, removed = office_pictures(data, image_max_bytes, deadline)
         except images.OutOfTime as exc:
             raise ImportFailure("import_too_slow", str(exc)) from exc
-        stored = package if package is not None else data
-        try:
-            image_check.check_office(stored, image_max_bytes)
         except image_check.Refused as exc:
             raise ImportFailure(exc.code, str(exc)) from exc
         return stored, {"removedPictures": removed}

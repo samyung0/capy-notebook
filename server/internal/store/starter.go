@@ -100,7 +100,7 @@ func StarterCopyFor(locale string) StarterCopy {
 }
 
 // CreateStarterNote adds the welcome note, with its quiz and flashcards, to
-// the starter workspace's topic. The account pays for it, as for any note.
+// the starter workspace's topic. Its title names it; the body repeats none. The account pays for it, as for any note.
 func (s *Store) CreateStarterNote(ctx context.Context, userID string, ws StarterWorkspace, topicID string) (Material, error) {
 	c := StarterCopyFor(ws.Locale).note
 	quizID, cardsID := uid("mat"), uid("mat")
@@ -116,8 +116,9 @@ func (s *Store) CreateStarterNote(ctx context.Context, userID string, ws Starter
 		return block("material_ref", text(""), map[string]any{"materialId": id, "refKind": kind})
 	}
 	bullet := map[string]any{"indent": 1, "listStyleType": "disc"}
+	// No first heading: the note shows its name as its title (Epo 2026-11-10),
+	// so the body starts with the introduction.
 	value := []map[string]any{
-		block("h1", text(c.title), nil),
 		block("p", text(c.intro), nil),
 		block("h2", text(c.holdsHeading), nil),
 		block("p", c.holds[0], bullet),

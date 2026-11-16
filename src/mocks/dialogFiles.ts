@@ -19,11 +19,20 @@ export const dialogFiles = [
     kind: 'txt',
     name: 'No stored bytes.txt',
   },
+  // Failed and still named as legacy Office: its conversion failed.
   {
     hasBytes: true,
     id: 'mock-preview-legacy',
     kind: 'doc',
-    name: 'Legacy document.doc',
+    name: 'Failed conversion.doc',
+  },
+  // Ready and still .ppt: stored as it was uploaded, never converted.
+  {
+    hasBytes: true,
+    id: 'mock-preview-legacy-ready',
+    kind: 'slides',
+    name: 'Not converted.ppt',
+    status: 'ready',
   },
   {
     hasBytes: true,
@@ -79,7 +88,9 @@ export const dialogFiles = [
     kind: 'txt',
     name: 'Broken preview.txt',
   },
-] satisfies Array<Pick<SourceFile, 'id' | 'name' | 'kind' | 'hasBytes'>>;
+] satisfies Array<
+  Pick<SourceFile, 'id' | 'name' | 'kind' | 'hasBytes'> & { status?: 'ready' }
+>;
 
 export function dialogSourceFile(id: string): SourceFile {
   const fixture = dialogFiles.find((file) => file.id === id);
@@ -92,7 +103,7 @@ export function dialogSourceFile(id: string): SourceFile {
     position: 0,
     revision: 1,
     sizeBytes: 2048,
-    status: 'failed',
+    status: 'status' in fixture ? fixture.status : 'failed',
     topicId: null,
     workspaceId: 'ws_bio',
   };

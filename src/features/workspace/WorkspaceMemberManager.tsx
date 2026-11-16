@@ -49,7 +49,7 @@ function formError(error: unknown): FormError {
   };
 }
 
-function day(iso: string) {
+export function inviteDay(iso: string) {
   return new Date(iso).toLocaleDateString(getLocale(), {
     day: 'numeric',
     month: 'short',
@@ -71,16 +71,9 @@ function roleOptions(isClass: boolean) {
   ] as const satisfies readonly { label: string; value: AssignableRole }[];
 }
 
-/** People with access, each with their role. The owner (`canManage`) also
- * invites, changes a role and removes; an editor member reads the list. Leaving
- * is in Workspace settings → Danger. */
-export function WorkspaceMemberManager({
-  canManage,
-  workspaceId,
-}: {
-  canManage: boolean;
-  workspaceId: string;
-}) {
+/** The roster and what its owner does to it (invite, cancel an invitation, change
+ * a role, remove), for the Share dialog's list and the Members page. */
+export function useMemberManager(workspaceId: string, canManage: boolean) {
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
   });
@@ -156,6 +149,65 @@ export function WorkspaceMemberManager({
     }
   }
 
+  return {
+    cancel,
+    cancelError,
+    cancelling,
+    control,
+    inviteDisabled,
+    inviteError,
+    invitesData,
+    invitesError,
+    isClass,
+    isSubmitting,
+    membersData,
+    membersError,
+    onInvite: formSubmit(invite),
+    refetchInvites,
+    refetchMembers,
+    removing,
+    roles,
+    setRemoving,
+    updated,
+    updateMember,
+    updatingRole,
+  };
+}
+
+/** People with access, each with their role. The owner (`canManage`) also
+ * invites, changes a role and removes; an editor member reads the list. Leaving
+ * is in Workspace settings → Danger. */
+export function WorkspaceMemberManager({
+  canManage,
+  workspaceId,
+}: {
+  canManage: boolean;
+  workspaceId: string;
+}) {
+  const {
+    cancel,
+    cancelError,
+    cancelling,
+    control,
+    inviteDisabled,
+    inviteError,
+    invitesData,
+    invitesError,
+    isClass,
+    isSubmitting,
+    membersData,
+    membersError,
+    onInvite,
+    refetchInvites,
+    refetchMembers,
+    removing,
+    roles,
+    setRemoving,
+    updated,
+    updateMember,
+    updatingRole,
+  } = useMemberManager(workspaceId, canManage);
+
   return (
     <section aria-labelledby="workspace-members-title">
       <div>
@@ -169,10 +221,7 @@ export function WorkspaceMemberManager({
 
       {canManage && (
         <>
-          <form
-            className="mt-3 flex flex-col gap-2"
-            onSubmit={formSubmit(invite)}
-          >
+          <form className="mt-3 flex flex-col gap-2" onSubmit={onInvite}>
             <Controller
               control={control}
               name="role"
@@ -310,8 +359,8 @@ export function WorkspaceMemberManager({
                   </p>
                   <p className="t-meta text-fg-muted">
                     {m.members_pending_meta({
-                      expires: day(pending.expiresAt),
-                      sent: day(pending.sentAt),
+                      expires: inviteDay(pending.expiresAt),
+                      sent: inviteDay(pending.sentAt),
                     })}
                   </p>
                 </div>
@@ -346,7 +395,7 @@ export function WorkspaceMemberManager({
   );
 }
 
-function RemoveMemberDialog({
+export function RemoveMemberDialog({
   workspaceId,
   member,
   onClose,
@@ -381,7 +430,7 @@ function RemoveMemberDialog({
   );
 }
 
-function RoleSelect({
+export function RoleSelect({
   value,
   onChange,
   disabled,

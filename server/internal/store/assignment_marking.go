@@ -37,9 +37,10 @@ type AnswerToMark struct {
 // AnswersToMark lists what the AI has yet to mark in an assignment, or in one of
 // its attempts (attemptID). Each answer's PayerID is who attempted it: all AI
 // marking of an assignment is theirs (Epo 2026-11-08, superseding the owner's).
+// workspaceID is empty for a task with no workspace.
 func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID string) (workspaceID string, answers []AnswerToMark, err error) {
 	var marking string
-	if err = s.pool.QueryRow(ctx, `SELECT workspace_id, marking FROM assignments WHERE id=$1`, assignmentID).Scan(&workspaceID, &marking); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), marking FROM assignments WHERE id=$1`, assignmentID).Scan(&workspaceID, &marking); err != nil {
 		if isNoRows(err) {
 			err = ErrNotFound
 		}
@@ -341,16 +342,13 @@ func (s *Store) takeAIMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, grad
 // as the owner approving each one would. Answers it has not marked keep waiting.
 // It returns how many it approved.
 func (s *Store) ApproveAIMarks(ctx context.Context, actorID, assignmentID, questionID string, now time.Time) (int, error) {
-	var workspaceID string
-	if err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM assignments WHERE id=$1`, assignmentID).Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return 0, ErrNotFound
-		}
+	row, err := s.taskRow(ctx, s.pool, assignmentID)
+	if err != nil {
 		return 0, err
 	}
 	approved := 0
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, workspaceID, actorID); err != nil {
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
 			return err
 		}
 		rows, err := tx.Query(ctx, `SELECT `+attemptRowCols+`

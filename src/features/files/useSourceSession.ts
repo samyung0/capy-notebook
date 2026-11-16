@@ -217,7 +217,7 @@ export function useSizeLimitView(
     if (!editing || !atSizeLimit) return;
     setLimited(true);
     toViewRef.current();
-    userToast({ title: m.files_size_limit() });
+    userToast({ title: m.files_size_limit(), variant: 'warning' });
   }, [editing, atSizeLimit]);
   return limited || atSizeLimit;
 }

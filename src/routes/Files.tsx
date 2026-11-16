@@ -1,5 +1,7 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { memo, useCallback, useContext, useState } from 'react';
+import { qk } from '@/api/client';
 import {
   usePurgeTrashed,
   useRestoreTrashed,
@@ -31,6 +33,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { CanvasTab } from '@/features/files/CanvasTab';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { ItemsList } from '@/features/files/ItemsList';
+import { toastLostAccess } from '@/features/files/lostAccess';
 import {
   clearOnBlank,
   SelectionAction,
@@ -67,7 +70,7 @@ export default function Files() {
           actions={
             <>
               <AccountStatusButton />
-              {/* Add file and New block move here on phones, so the toolbar
+              {/* Add file moves here on phones, so the toolbar
                   keeps one row. */}
               <div className="sm:hidden" ref={setHeaderSlot} />
             </>
@@ -115,6 +118,21 @@ export default function Files() {
   );
 }
 
+/** Where a trashed item opens read-only: the file page Files opens it on. A
+ * board opens only live, on its workspace. */
+function trashLink(item: TrashItem) {
+  if (item.kind === 'source_file')
+    return linkOptions({
+      params: { fileId: item.id },
+      to: '/files/$fileId',
+    });
+  if (item.materialKind === 'canvas') return;
+  return linkOptions({
+    params: { materialId: item.id },
+    to: '/materials/$materialId',
+  });
+}
+
 /** One trashed item; memoised like FileItem. */
 const TrashCard = memo(function TrashCard({
   item,
@@ -132,6 +150,22 @@ const TrashCard = memo(function TrashCard({
   workspaceIconId?: string;
 }) {
   const busy = !!useContext(ItemPick)?.busy;
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const link = trashLink(item);
+  // Its reads cached while it was live would paint it live first (a PDF's
+  // marks, a note's room), so it opens on a fresh read.
+  const open = link
+    ? () => {
+        queryClient.removeQueries({
+          queryKey:
+            item.kind === 'source_file'
+              ? qk.file(item.id)
+              : qk.material(item.id),
+        });
+        void navigate(link);
+      }
+    : undefined;
   return (
     <ItemCard
       actions={
@@ -161,7 +195,9 @@ const TrashCard = memo(function TrashCard({
       }
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
+      // An item whose workspace the payer left stays shut, as in Files.
       meta={formatDate(item.purgeAfter)}
+      onOpen={item.lostAccess ? toastLostAccess : open}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{
@@ -185,8 +221,9 @@ function formatDate(iso: string): string {
   );
 }
 
-/** Owner-only bin. Rows are metadata only: a trashed row is never a preview
- * or a download. Restore and permanent deletion are the only actions. */
+/** Owner-only bin. Rows are metadata only; one opens read-only on the file
+ * page, as from Files (trashLink). Restore and permanent deletion are the
+ * actions. */
 function TrashTab({
   view,
   onViewChange,
@@ -301,13 +338,12 @@ function TrashTab({
           // -mr-1.5: the view toggle's icon on the gutter, as in ListToolbar.
           <div className="-mr-1.5 ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
             <Button
-              className="px-1.5"
+              className="px-2.5"
               disabled={
                 selection.busy || isFetchingNextPage || items.length === 0
               }
               iconLeft="trash"
               onClick={() => void prepareEmptyTrash()}
-              size="sm"
               variant="danger-light"
             >
               {m.trash_empty_action()}
@@ -339,7 +375,7 @@ function TrashTab({
                   m.list_col_name(),
                   m.create_filter_workspace(),
                   m.list_col_details(),
-                  m.trash_expires({ date: '' }).trim(),
+                  m.list_col_expires(),
                 ]}
                 view={view}
               >

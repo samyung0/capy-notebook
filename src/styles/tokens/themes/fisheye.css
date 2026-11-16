@@ -10,6 +10,9 @@
   --radius-button-lg: 18px;
   --radius-button-xl: 9999px;
   --radius-tile: 14px;
+  /* BlockSuite's floating bars and menus, and a bar's buttons. */
+  --radius-toolbar: 14px;
+  --radius-toolbar-button: 10px;
   --radius-flashcard: 24px;
   --radius-card: 18px;
   --radius-card-lg: 24px;

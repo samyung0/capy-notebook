@@ -1,3 +1,5 @@
+// Capy (local change 37): names go through `tr`.
+import { tr } from '@blocksuite/affine-shared/utils';
 import { IS_MOBILE } from '@blocksuite/global/env';
 import {
   CheckBoxCheckSolidIcon,
@@ -218,7 +220,7 @@ export const menuButtonItems = {
           return html`
             ${config.prefix}
             <div class="affine-menu-action-text">
-              ${config.label?.() ?? config.name} ${config.info}
+              ${config.label?.() ?? tr(config.name)} ${config.info}
             </div>
             ${config.postfix ?? (config.isSelected ? DoneIcon() : undefined)}
           `;
@@ -256,7 +258,7 @@ export const menuButtonItems = {
               : CheckBoxUnIcon()
           }
           <div class="affine-menu-action-text">
-            ${config.label?.() ?? config.name}
+            ${config.label?.() ?? tr(config.name)}
           </div>
           ${config.postfix}
         `,
@@ -292,7 +294,7 @@ export const menuButtonItems = {
         content: () => html`
           ${config.prefix}
           <div class="affine-menu-action-text">
-            ${config.label?.() ?? config.name}
+            ${config.label?.() ?? tr(config.name)}
           </div>
           <toggle-switch
             .on="${config.on}"

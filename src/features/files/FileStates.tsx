@@ -15,7 +15,11 @@ import type { IconName } from '@/components/ui/Icon';
 import { useSlowedLine } from '@/features/collaboration/SlowedOpen';
 import { m } from '@/i18n';
 import { useOnlineStatus } from '@/lib/online';
-import { fileIsIngesting, notIndexedMessage } from './fileUtils';
+import {
+  failedNotIndexedMessage,
+  fileIsIngesting,
+  notIndexedMessage,
+} from './fileUtils';
 
 export function FileLoading({
   message = m.files_loading_preview(),
@@ -147,13 +151,13 @@ export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
 export function FileNotIndexedBanner({
   file,
 }: {
-  file: Pick<SourceFile, 'indexed' | 'indexLimit' | 'status'>;
+  file: Pick<SourceFile, 'indexed' | 'indexLimit' | 'name' | 'status'>;
 }) {
   if (fileIsIngesting(file.status) || file.indexed) return null;
   const failed = file.status === 'failed';
   return (
     <FileBanner
-      message={failed ? m.files_not_indexed_failed() : notIndexedMessage(file)}
+      message={failed ? failedNotIndexedMessage(file) : notIndexedMessage(file)}
       testId="file-not-indexed"
       tone={failed ? 'error' : 'neutral'}
     />

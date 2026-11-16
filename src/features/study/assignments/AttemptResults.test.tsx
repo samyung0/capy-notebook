@@ -16,12 +16,14 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 vi.mock('@/api/hooks', () => ({
   useMarkAssignmentAnswer: () => ({ mutate: vi.fn() }),
   useStartAssignment: () => ({ isPending: false, mutate: vi.fn() }),
+  useWorkspace: () => ({ data: undefined }),
 }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
     <a href="/">{children}</a>
   ),
   useNavigate: () => vi.fn(),
+  useParams: () => ({ workspaceId: 'ws' }),
 }));
 
 const { createRoot } = await import('react-dom/client');
@@ -78,5 +80,30 @@ it('lists answers without marks while grades wait for release', async () => {
   expect(text).toContain(m.assignment_answered());
   expect(text).toContain(m.assignment_blank());
   expect(text).not.toContain('/ 2');
+  act(() => root.unmount());
+});
+
+it("lets a task's maker attempt again, though they run it too", async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <AttemptResults
+        assignment={
+          {
+            attempts: 3,
+            manage: {},
+            mine: { attemptsUsed: 1 },
+            own: true,
+            postedBy: 'Kate',
+            workspaceId: '',
+          } as Assignment
+        }
+        attempt={{ ...attempt, gradesHidden: false }}
+      />
+    )
+  );
+  expect(host.textContent).toContain(m.assignment_attempt_again());
   act(() => root.unmount());
 });

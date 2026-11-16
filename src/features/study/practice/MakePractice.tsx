@@ -152,27 +152,24 @@ function Field({
   );
 }
 
-/** Make my own practice (Epo 2026-11-04, boards P3 and T5): a quiz written from
- * the sources picked, kept as a quiz file. A member's is their own, which only
- * they can reach (`onlyYou`); it opens ready to answer. Questions keep the
- * generation prompt as it was. */
-export function MakePractice({
+/** The generate form and its Start, for a dialog to lay out: Make my own
+ * practice's, and Add practice's Generate quiz tab. */
+export function useMakePractice({
   initialTopicId,
-  onClose,
+  mixable = true,
   onMade,
   onlyYou,
-  title,
   workspaceId,
 }: {
   /** The topic it starts on: Summary's weakest. */
   initialTopicId?: string;
-  onClose: () => void;
+  /** Off where the quiz is for the members, who have answered nothing of the
+   * maker's (Add practice). */
+  mixable?: boolean;
   /** Stays on the page once the quiz is made, rather than opening it to answer:
    * a teacher making one for an assignment. */
   onMade?: () => void;
   onlyYou: boolean;
-  /** The dialog's title, where "Make my own practice" isn't what's happening. */
-  title?: string;
   workspaceId: string;
 }) {
   const navigate = useNavigate();
@@ -222,7 +219,7 @@ export function MakePractice({
       const made = (await generate({
         count,
         fileIds: from === 'files' ? picked : [],
-        mix,
+        mix: mixable && mix,
         title: m.practice_own_title({
           name: nameOf(picked[0])?.slice(0, 80) ?? '',
         }),
@@ -252,6 +249,96 @@ export function MakePractice({
       {isPending ? m.generating_quiz() : m.review_start()}
     </Button>
   );
+  const body = (
+    <>
+      <div className="flex flex-col gap-4">
+        {nothingToRead && (
+          <p className="text-fg-secondary text-sm">
+            {m.practice_nothing_to_read()}
+          </p>
+        )}
+        <Field
+          label={m.practice_from()}
+          onChange={(v) => setFrom(v as 'topics' | 'files')}
+          options={[
+            { label: m.practice_from_topics(), value: 'topics' },
+            { label: m.practice_from_files(), value: 'files' },
+          ]}
+          value={from}
+        />
+        {from === 'topics' ? (
+          <Picks
+            add={m.practice_add_topic()}
+            label={m.practice_from_topics()}
+            onChange={setPickedTopics}
+            options={sources.topics}
+            picked={chosenTopics}
+          />
+        ) : (
+          <Picks
+            add={m.practice_add_file()}
+            label={m.practice_from_files()}
+            onChange={setPickedFiles}
+            options={sources.items}
+            picked={pickedFiles}
+          />
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label={m.practice_choose_questions()}
+            onChange={(v) => setCount(Number(v))}
+            options={COUNTS.map((n) => ({
+              label: String(n),
+              value: String(n),
+            }))}
+            value={String(count)}
+          />
+          <Field
+            label={m.practice_question_types()}
+            onChange={setTypes}
+            options={TYPES.map((t) => ({
+              label: t.label(),
+              value: t.value,
+            }))}
+            value={types}
+          />
+        </div>
+        {mixable && (
+          <label className="flex items-center justify-between gap-3">
+            <span>{m.practice_mix_answered()}</span>
+            <Switch checked={mix} onCheckedChange={setMix} />
+          </label>
+        )}
+      </div>
+      <FormAlert
+        errorId={formError?.errorId}
+        message={formError?.message ?? null}
+      />
+    </>
+  );
+  const credits = (
+    <>
+      <Icon name="ai" size={14} />
+      {onlyYou ? m.practice_credits_only_you() : m.practice_credits()}
+    </>
+  );
+  return { body, credits, isPending, startButton };
+}
+
+/** Make my own practice (Epo 2026-11-04, boards P3 and T5): a quiz written from
+ * the sources picked, kept as a quiz file. A member's is their own, which only
+ * they can reach (`onlyYou`); it opens ready to answer. Questions keep the
+ * generation prompt as it was. */
+export function MakePractice({
+  onClose,
+  title,
+  ...form
+}: Parameters<typeof useMakePractice>[0] & {
+  onClose: () => void;
+  /** The dialog's title, where "Make my own practice" isn't what's happening. */
+  title?: string;
+}) {
+  const { body, credits, isPending, startButton } = useMakePractice(form);
   return (
     <Dialog onOpenChange={(open) => !open && !isPending && onClose()} open>
       <DialogContent
@@ -262,75 +349,13 @@ export function MakePractice({
         <DialogTitle action={startButton} className="pb-0">
           {title ?? m.practice_make_own()}
         </DialogTitle>
-        <div className="mt-4 flex flex-col gap-4">
-          {nothingToRead && (
-            <p className="text-fg-secondary text-sm">
-              {m.practice_nothing_to_read()}
-            </p>
-          )}
-          <Field
-            label={m.practice_from()}
-            onChange={(v) => setFrom(v as 'topics' | 'files')}
-            options={[
-              { label: m.practice_from_topics(), value: 'topics' },
-              { label: m.practice_from_files(), value: 'files' },
-            ]}
-            value={from}
-          />
-          {from === 'topics' ? (
-            <Picks
-              add={m.practice_add_topic()}
-              label={m.practice_from_topics()}
-              onChange={setPickedTopics}
-              options={sources.topics}
-              picked={chosenTopics}
-            />
-          ) : (
-            <Picks
-              add={m.practice_add_file()}
-              label={m.practice_from_files()}
-              onChange={setPickedFiles}
-              options={sources.items}
-              picked={pickedFiles}
-            />
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label={m.practice_choose_questions()}
-              onChange={(v) => setCount(Number(v))}
-              options={COUNTS.map((n) => ({
-                label: String(n),
-                value: String(n),
-              }))}
-              value={String(count)}
-            />
-            <Field
-              label={m.practice_question_types()}
-              onChange={setTypes}
-              options={TYPES.map((t) => ({
-                label: t.label(),
-                value: t.value,
-              }))}
-              value={types}
-            />
-          </div>
-          <label className="flex items-center justify-between gap-3">
-            <span>{m.practice_mix_answered()}</span>
-            <Switch checked={mix} onCheckedChange={setMix} />
-          </label>
-        </div>
+        <div className="mt-4">{body}</div>
         <p className="t-meta mt-4 flex items-center gap-1.5 text-fg-muted sm:hidden">
-          <Icon name="ai" size={14} />
-          {onlyYou ? m.practice_credits_only_you() : m.practice_credits()}
+          {credits}
         </p>
-        <FormAlert
-          errorId={formError?.errorId}
-          message={formError?.message ?? null}
-        />
         <DialogFooter className="mt-2.5 max-sm:hidden sm:-mx-7 sm:px-7 sm:pb-5">
           <span className="t-meta mr-auto flex items-center gap-1.5 text-fg-muted">
-            <Icon name="ai" size={14} />
-            {onlyYou ? m.practice_credits_only_you() : m.practice_credits()}
+            {credits}
           </span>
           <Button disabled={isPending} onClick={onClose} variant="ghost">
             {m.action_cancel()}

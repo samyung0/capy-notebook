@@ -16,7 +16,7 @@ import { qk } from '@/api/client';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import { useDeleteMaterial, useUpdateMaterial } from '@/api/hooks';
 import { pagedRows } from '@/api/paged';
-import { MobileNavDrawer } from '@/components/app/Sidebar';
+import { PagePanel } from '@/components/app/layout';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { CanvasSwitcher } from '@/features/canvas/CanvasSwitcher';
@@ -49,7 +49,7 @@ function OwnCanvas({ gone, id }: { gone: () => boolean; id: string }) {
   );
   return (
     <div
-      className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
+      className="h-full w-full overflow-hidden [&>div]:h-full"
       ref={container}
     >
       {failed && (
@@ -160,45 +160,48 @@ export default function CanvasPage() {
         })
       : show(canvas.id);
 
+  // In the page panel every account page has, without its phone row: the board
+  // fills the panel (Epo 2026-11-12).
   return (
-    <div className="relative h-full w-full">
-      {current && (
-        <OwnCanvas
-          gone={() => deleted.current === current.id}
-          id={current.id}
-          key={current.id}
-        />
-      )}
-      {own?.length === 0 && frozen && (
-        <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
-      )}
-      {canvases && (
-        // A phone has no sidebar: its navigation opens beside the panel, and the
-        // row stops short of the board's own menu at the top right.
-        <div className="absolute top-2 right-14 left-2 flex gap-2 sm:top-4 sm:right-auto sm:left-4 [&>[data-slot=dropdown-menu-anchor]]:flex-1 sm:[&>[data-slot=dropdown-menu-anchor]]:flex-none">
-          <MobileNavDrawer account className="shrink-0 bg-surface sm:hidden" />
-          <CanvasSwitcher
-            canvases={canvases}
-            current={current}
-            frozen={frozen}
-            onDelete={() => setDeleting(true)}
-            onNew={() =>
-              void add(newTitle((own ?? []).map(({ title }) => title)))
-            }
-            onOpen={(canvas) => void open(canvas)}
-            onOpenChange={(opened) => {
-              if (opened) void refetch();
-            }}
-            onRename={() => setRenaming(true)}
-            paging={{
-              fetchNextPage,
-              hasNextPage,
-              isFetchingNextPage,
-              isFetchNextPageError,
-            }}
+    <PagePanel fill phoneRow={false}>
+      {/* The board and the switcher over it. */}
+      <div className="relative min-h-0 flex-1">
+        {current && (
+          <OwnCanvas
+            gone={() => deleted.current === current.id}
+            id={current.id}
+            key={current.id}
           />
-        </div>
-      )}
+        )}
+        {own?.length === 0 && frozen && (
+          <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
+        )}
+        {canvases && (
+          // On a phone the row stops short of the board's own menu at the top right.
+          <div className="absolute top-2 right-14 left-2 flex sm:top-4 sm:right-auto sm:left-4 [&>[data-slot=dropdown-menu-anchor]]:flex-1 sm:[&>[data-slot=dropdown-menu-anchor]]:flex-none">
+            <CanvasSwitcher
+              canvases={canvases}
+              current={current}
+              frozen={frozen}
+              onDelete={() => setDeleting(true)}
+              onNew={() =>
+                void add(newTitle((own ?? []).map(({ title }) => title)))
+              }
+              onOpen={(canvas) => void open(canvas)}
+              onOpenChange={(opened) => {
+                if (opened) void refetch();
+              }}
+              onRename={() => setRenaming(true)}
+              paging={{
+                fetchNextPage,
+                hasNextPage,
+                isFetchingNextPage,
+                isFetchNextPageError,
+              }}
+            />
+          </div>
+        )}
+      </div>
       {/* Mounted for each rename: the form reads its first name once. */}
       {renaming && current && (
         <NameFormDialog
@@ -234,6 +237,6 @@ export default function CanvasPage() {
         }}
         open={deleting}
       />
-    </div>
+    </PagePanel>
   );
 }

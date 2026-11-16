@@ -19,7 +19,6 @@ import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
-import { cn } from '@/lib/cn';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
 import { SettingRow } from '../../components/app/tabPanel';
 import { Input } from '../../components/ui/Input';
@@ -117,9 +116,11 @@ export function ShareDialog({
   onShareRoleChange,
   canManageMembers = false,
   embedded = false,
-  containerClassName,
+  members = true,
 }: {
   embedded?: boolean;
+  /** Off where the people are listed beside it (the Members page). */
+  members?: boolean;
   open: boolean;
   onClose: () => void;
   title?: string;
@@ -135,7 +136,6 @@ export function ShareDialog({
   canManageMembers?: boolean;
   shareRole?: SharedRole;
   onShareRoleChange?: (role: SharedRole) => void | Promise<unknown>;
-  containerClassName?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [savingField, setSavingField] = useState<SavingField | null>(null);
@@ -165,6 +165,7 @@ export function ShareDialog({
       userToast({
         description: absoluteLink,
         title: m.share_copy_failed(),
+        variant: 'warning',
       });
     }
   }
@@ -227,7 +228,7 @@ export function ShareDialog({
 
   const content = (
     <>
-      <div className={cn('flex flex-col gap-6', containerClassName)}>
+      <div className="flex flex-col gap-6">
         <div className="mt-3">
           <SettingRow hint={current.hint} title={m.share_visibility()}>
             <div className="w-40 shrink-0 sm:w-auto sm:min-w-45 sm:max-w-70">
@@ -337,7 +338,7 @@ export function ShareDialog({
             )}
           </div>
         )}
-        {workspaceId && (
+        {workspaceId && members && (
           <>
             <Separator />
             <WorkspaceMemberManager

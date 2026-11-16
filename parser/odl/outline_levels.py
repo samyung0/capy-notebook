@@ -26,7 +26,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-from . import levels
+from . import levels, page_text
 from .furniture import clean_inline
 from .headings import _literal
 from .levels import _heading, _labelled, _text
@@ -85,7 +85,7 @@ def _entries(document: pymupdf.Document) -> list[dict]:
     """Outline entries in page order: level, title, page (1-based), y (0-1000)."""
     out = []
     wrapped: list[int] = []  # levels of open wrappers
-    toc = document.get_toc(simple=False)
+    toc = page_text.outline(document, simple=False)
     for n, (level, title, page, dest) in enumerate(toc):
         title = " ".join(title.split())
         while wrapped and level <= wrapped[-1]:

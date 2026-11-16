@@ -18,7 +18,6 @@ vi.mock('@/api/hooks', () => ({
   useLeaveWorkspace: () => idle,
   useMe: () => ({ data: { id: 'u_me' } }),
   useUpdateWorkspace: () => idle,
-  useUpdateWorkspaceSharing: () => idle,
   useWorkspaceStats: () => ({}),
 }));
 vi.mock('@tanstack/react-query', async (original) => ({
@@ -42,7 +41,6 @@ vi.mock('@/components/ui/Dialog', () => ({
 }));
 vi.mock('@/components/ui/SearchInput', () => ({ SearchInput: () => null }));
 vi.mock('./CloneWorkspaceDialog', () => ({ CloneWorkspaceDialog: () => null }));
-vi.mock('./ShareDialog', () => ({ ShareDialog: () => null }));
 vi.mock('./WorkspaceFormEditDialog', () => ({
   WorkspaceFormEditDialog: () => null,
 }));

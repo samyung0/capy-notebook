@@ -42,6 +42,20 @@ const (
 	ListIndentMax = 8
 )
 
+// A note's table view (Epo 2026-11-12, AFFiNE's database look on Plate):
+// lengths in UTF-16 units, counts per block, TableViewMaxCount per note.
+const (
+	TableViewIDMax      = 64
+	TableViewNameMax    = 100
+	TableViewCellMax    = 2000
+	TableViewNumberMax  = 1_000_000_000_000_000
+	TableViewColumnsMax = 20
+	TableViewRowsMax    = 500
+	TableViewViewsMax   = 8
+	TableViewOptionsMax = 50
+	TableViewMaxCount   = 20
+)
+
 // Material kinds.
 const (
 	Note       = "note"
@@ -106,10 +120,13 @@ const (
 	IndexQuestion Index = "question"
 	// IndexItem gives the referenced item's text at the reference's place.
 	IndexItem Index = "item"
+	// IndexTableView gives a table view's title, then its first view's rows
+	// as a Markdown table.
+	IndexTableView Index = "table_view"
 )
 
 // IndexRules lists every index rule.
-var IndexRules = []Index{IndexNone, IndexText, IndexFigure, IndexMermaid, IndexQuestion, IndexItem}
+var IndexRules = []Index{IndexNone, IndexText, IndexFigure, IndexMermaid, IndexQuestion, IndexItem, IndexTableView}
 
 // Element is one element type a material document may hold.
 type Element struct {
@@ -345,6 +362,16 @@ func elementTypes() []Element {
 	canvas.Assets = []string{"boardAssetId", "images[].assetId"}
 	canvas.Materials = []string{Canvas}
 
+	// A note's table view: its block a live map whose columns, rows and views
+	// merge entry by entry.
+	tableView := void("table_view", IndexTableView)
+	tableView.TopLevel = true
+	tableView.Required = []string{"id", "block"}
+	tableView.Fields = []string{"type", "id", "block", "children"}
+	tableView.SharedMap = []string{"block"}
+	tableView.SharedLists = []string{"columns", "rows", "views"}
+	tableView.Materials = []string{Note}
+
 	return []Element{
 		plain("p", IndexText),
 		plain("h1", IndexText), plain("h2", IndexText), plain("h3", IndexText),
@@ -370,6 +397,7 @@ func elementTypes() []Element {
 		// An upload in progress holds nothing yet.
 		void("placeholder", IndexNone),
 		figure("chart", "series"), figure("plot", "series"), figure("graph", "elements"),
+		tableView,
 		html,
 		mermaid, plain("mermaid_caption", IndexText),
 		ref,
@@ -412,6 +440,13 @@ func Embeds() []Embed {
 			QuestionBlock: true,
 			Surfaces:      []string{SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
 			Edit:          Edit{User: []string{SurfaceNote, SurfaceQuiz}, Agent: []string{}},
+		},
+		{
+			// The agent reads a table view (index text) but writes none yet.
+			Kind: "table_view", Class: ClassLiveMap, Element: "table_view",
+			Fence:    Fence{Lang: "table-view", Body: "json"},
+			Surfaces: []string{SurfaceNote, SurfaceShare, SurfaceExport},
+			Edit:     Edit{User: []string{SurfaceNote}, Agent: []string{}},
 		},
 		{
 			Kind: "html_embed", Class: ClassValue, Element: "html_embed",
@@ -494,6 +529,15 @@ func Limits() []Limit {
 		{"MEDIA_WIDTH_MIN", MediaWidthMin},
 		{"MEDIA_WIDTH_MAX", MediaWidthMax},
 		{"LIST_INDENT_MAX", ListIndentMax},
+		{"TABLE_VIEW_ID_MAX", TableViewIDMax},
+		{"TABLE_VIEW_NAME_MAX", TableViewNameMax},
+		{"TABLE_VIEW_CELL_MAX", TableViewCellMax},
+		{"TABLE_VIEW_NUMBER_MAX", TableViewNumberMax},
+		{"TABLE_VIEW_COLUMNS_MAX", TableViewColumnsMax},
+		{"TABLE_VIEW_ROWS_MAX", TableViewRowsMax},
+		{"TABLE_VIEW_VIEWS_MAX", TableViewViewsMax},
+		{"TABLE_VIEW_OPTIONS_MAX", TableViewOptionsMax},
+		{"TABLE_VIEW_MAX_COUNT", TableViewMaxCount},
 		{"CARD_FRONT_MAX", fieldlimits.CardFront},
 		{"CARD_BACK_MAX", fieldlimits.CardBack},
 	}

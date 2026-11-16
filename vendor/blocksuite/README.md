@@ -333,3 +333,86 @@ Outside this directory, for BlockSuite:
   patch for that package, as a pnpm patch.
 - Upstream's yarn patch for `yjs` 13.6.21 (53-bit client ids) is **not**
   carried: our rooms assign client ids.
+34. Chrome on the app's tokens (`affine/components` `src/toolbar/{styles,toolbar,icon-button,separator,menu-button}.ts`
+    and `affine/shared` `src/styles/panel.ts`, marked `Capy (local change 34)`; Epo
+    2026-11-10, mock S2): the floating bar and its menus live in shadow roots, so page
+    CSS cannot restyle them. `styles.ts` no longer pins AFFiNE's light or dark palette
+    on a bar (its two functions return nothing), so bars read the variables the app maps
+    onto its tokens in `src/features/blocksuite/chrome.css`. The rest read custom
+    properties set there, each falling back to upstream's value: a panel's corner
+    (`--radius-toolbar`) with a 1px border, a bar's height, gap and padding
+    (`--capy-toolbar-height`, `-gap`, `-padding`), a button's least size, corner and
+    icon size (`--capy-toolbar-button-size`, `-button-justify`, `-button-radius`,
+    `-icon-size`), a separator's width and line (`--capy-toolbar-separator-*`), and a
+    menu row's corner and height (`--capy-menu-row-height`).
+    The bar also takes `--capy-toolbar-max-width` and scrolls sideways past it (a
+    phone keeps every control), and the slash menu and the context `icon-button` use
+    the app's font. Icons drawn at AFFiNE's 20px (`svg[width='20']` slotted into
+    `icon-button.ts` and `menu-button.ts`, and the two duotone icons of
+    `highlight-dropdown-menu/`) take the button's icon size: 18px in a bar, and 16px
+    in the inner bars that set `iconSize` to 16px (the code block's bar).
+35. Slash menu rows (`widgets/slash-menu` `slash-menu-popover.ts` and `styles.ts`,
+    marked `Capy (local change 35)`; Epo 2026-11-10, mock M1): 28px rows in a 240px
+    panel with an 18px icon, the name and its Markdown shortcut at the right (a small
+    table of names in the popover), uppercase group labels, and no description line.
+36. Gutter handle (`widgets/drag-handle` `drag-handle.ts`, `styles.ts`, `config.ts`,
+    `utils.ts`, `components/add-block-widget.ts`, `watchers/pointer-event-watcher.ts`,
+    `watchers/handle-event-watcher.ts`, `widgets/slash-menu` `widget.ts`, and
+    `components` `context-menu/sub-menu.ts`, marked `Capy (local change 36)`; Epo
+    2026-11-10, mock H1): a note block's handle is the six-dot grip beside a 20 by 24px
+    + button (upstream: a 4px bar, the dots on the canvas only), both centred on the
+    block's first line; `heightMap` is retuned to the note's own type sizes
+    (`src/features/blocksuite/pageEditor.css`), with callout and table entries. A
+    click on the grip dispatches `capy-block-menu` (`{ block, grip }`) after selecting
+    the block, which the app answers with its block menu
+    (`src/features/blocksuite/blockMenu.ts`); `sideSubMenuMiddleware` places a submenu
+    beside its row for it. A click on + is not a grip click (the watcher checks the
+    event's path), and the grip stays where it is while hovered in a note (upstream
+    re-pads its container to 8px and narrows its bar to 2px there). + adds a line
+    below and opens the slash menu on it: the slash widget's `openOn(inlineEditor)`
+    types the slash and opens the menu on the first `selectionchange` that finds the
+    inline range after the slash and the browser's caret inside that line (a note's
+    caret is moved by the host a moment after the inline range is set). A menu
+    opened this way and left without a pick takes its slash with it, so the line is
+    empty again (`_handleInput` hands the menu the caller's `AbortController`); a
+    search typed after the slash stays. Only the BlockSuite note on the
+    `blocksuite-notes` branch registers the drag handle and answers
+    `capy-block-menu`; on main (no cut, Epo 2026-11-12) the boards carry this change
+    unused.
+37. Labels through one hook (`shared` `src/utils/label.ts`, new, exported from
+    `utils/index.ts`; marked `Capy (local change 37)`; Epo 2026-11-10): `tr(label)`
+    returns the app's translation of an English label, set once with
+    `setLabelTranslator` (`src/features/blocksuite/chromeLabels.ts`), or the label as
+    written. Called where labels are drawn: a bar button's tooltip
+    (`components` `toolbar/icon-button.ts`), an action's label (`widgets/toolbar`
+    `utils.ts`), a popup menu's item and submenu names (`components`
+    `context-menu/button.ts`, `sub-menu.ts`), the slash menu's item and group names,
+    the Turn into and alignment names (`blocks/root` `configs/toolbar.ts`) and the +
+    button's title. Labels written straight into other templates are not covered yet.
+38. Header rows (`blocks/table` `table-cell.ts` and `table-data-manager.ts`, marked
+    `Capy (local change 38)`): a row with `header` (the note layout's own prop) draws
+    semibold on the dim fill unless a colour was picked; the app's table bar toggles it
+    (`src/features/blocksuite/tableBar.ts`). A table's header is its first row:
+    `keepHeaderFirst` runs inside the transaction of every row add, delete, move,
+    reorder and duplicate and leaves `header` on the first row alone, and a deleted
+    header row hands it to the next first row. Only the first row draws as a header
+    (`table-cell.ts` checks its row index), so a flag that arrives lower down (two
+    people moving rows at once, a converted table) shows nothing. The table bar is
+    the BlockSuite note's, on `blocksuite-notes`; main's boards hold no table.
+39. Callout kinds (`blocks/callout` `callout-block.ts`, marked `Capy (local change
+    39)`; Epo 2026-11-10): once the app calls `setCalloutVariantIcon`, a callout sets
+    `data-variant` from the block's `variant` (none reads as info), draws that kind's
+    icon in place of the emoji with no icon picker, and leaves its background to the
+    app's styles (`src/features/blocksuite/calloutLook.ts`, `pageEditor.css`).
+    Callout's row in the slash menu, in Turn into and in the phone keyboard toolbar
+    (`configs/slash-menu.ts`, `rich-text` `conversion.ts`, `widgets/keyboard-toolbar`
+    `config.ts`) shows the information icon, where upstream reuses Text's. The
+    callout look (`calloutLook.ts`, `pageEditor.css`) is the BlockSuite note's, on
+    `blocksuite-notes`; main's boards never call `setCalloutVariantIcon`.
+
+Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
+`src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
+replaces about ninety names with the app's Hugeicons, so the swap itself edits no
+vendored file. The two duotone highlight icons keep AFFiNE's drawing (their first
+path takes the picked colour); the icon edits that are in vendored files are the
+sizes of local change 34 and the Callout rows of 39.

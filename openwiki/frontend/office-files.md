@@ -8,7 +8,10 @@ tags: [frontend, office, wasm, xlsx, pptx, uploads]
 # Office files
 
 Capy Notebook uses its BetterOffice fork for modern Word, spreadsheet, and
-presentation files. PDF stays on the PDF viewer, while CSV and TSV keep a small table preview alongside raw-source editing. Legacy `.doc`, `.xls`, and `.ppt` files and unknown
+presentation files. PDF stays on the PDF viewer, while CSV and TSV keep a small table preview alongside raw-source editing. An uploaded legacy `.doc`, `.xls` or `.ppt`
+file is converted by the server to DOCX, XLSX or PPTX and renamed, and then
+opens here like any other file of its new format
+([Legacy Office files](#legacy-office-files)). Unknown
 formats may be uploaded within the plan byte limit, but remain store-only.
 
 | Format | View | Edit | Engine |
@@ -2342,8 +2345,8 @@ pickers and the cost summary described below.
 Local selection and Google Drive/OneDrive selection both lead to the same
 details dialog. Files above the uploader's 10 MiB/30 MiB cap are
 rejected before they enter the list, except DOCX, PPTX, XLSX and raster
-images, whose cap is checked after the compression below; unknown and legacy
-formats remain eligible for store-only upload. Cloud metadata comes
+images, whose cap is checked after the compression below; unknown formats
+remain eligible for store-only upload. Cloud metadata comes
 from `sources/import-inspect`; the analysis worker reads provider bytes through
 a bounded, authenticated same-origin proxy, so provider tokens never enter the
 browser. The proxy accepts only editor access, bounds response bytes, validates
@@ -2377,8 +2380,10 @@ The estimate feeds the dialog summary and the page limits, both from
 `source-upload-policy` (`parseModes[fast].maxPages` 1,400 and `maxOcrPages`
 500, the parser's own env values `CAPY_PARSE_MAX_PAGES` and
 `CAPY_PARSE_OCR_PAGE_CAP`; the OCR names predate the VLM read). Every reserved fast-parse source carries
-an estimate, so a failed analysis keeps Add disabled until the row is removed
-or switched to no parsing. The row names the failure: a damaged file, more
+an estimate, except a legacy Office file
+([Legacy Office files](#legacy-office-files)), so a failed analysis keeps Add
+disabled until the row is removed or switched to no parsing. The row names
+the failure: a damaged file, more
 pages than `maxPages` (fast parsing is also disabled in the row's mode menu),
 or the generic message for a transport error or a browser safety limit. A PDF
 that needs a password to open (an owner-password-only PDF opens and passes) is
@@ -2427,6 +2432,102 @@ The same dialog submits each cloud row with its own topic and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.
 Browser analysis is advisory and does not replace ingest or decide whether a
 source is searchable.
+
+### Legacy Office files
+
+A `.doc`, `.xls` or `.ppt` is converted on the ingest host to `.docx`, `.xlsx`
+or `.pptx`; the converted file replaces the uploaded bytes and the file is
+renamed (decisions 2026-11-11,
+[agentic-retrieval.md](../agentic-retrieval.md#legacy-office-conversion)). The
+browser reads OOXML only, so it does less for these files:
+
+- The upload policy lists the three formats under fast parsing, so
+  `defaultParseMode` gives them `fast`, but no analysis runs: the row starts
+  idle with no page count (`initialAnalysisStatus`), nothing holds its submit
+  (`sourceAnalysisBlocksSubmit`), and the upload carries no estimate. The
+  server parses the file once it is converted.
+- The pictures are not compressed before the upload (`sourceCompression`
+  returns null). The file goes as picked, within the plain per-file cap, and
+  the server applies the picture rule to the converted file.
+- With parsing off the upload takes no ingest slot (`needsIngestJob` is
+  false); it is still converted.
+
+The conversion is told from the name alone, with no API field
+(`legacyOfficeTarget` in `features/files/fileUtils.ts`): a file still named
+`.doc`, `.xls` or `.ppt` is waiting for its conversion, in it, or failed in
+it. One that is `ready` under a legacy name was stored without a conversion
+(a hand-in's file, or a paper's whose uploader had no credits) and reads as
+any file without an index. Such a file has no Office session; its failure
+message is in [error-handling.md](error-handling.md). Once renamed it is an
+ordinary DOCX, XLSX or PPTX: it opens in the Office runtime and is `pending`
+again for its parse, or `ready` when it was uploaded with parsing off.
+
+What the open file shows under a legacy name (`FileViewerContent`, mock A,
+Epo 2026-11-11):
+
+- `pending` or `processing`: the pane's loader with "Converting to a new
+  Office format…" (`FileLoading`, `files_converting`), for every reader,
+  until the rename.
+- `ready` or `failed`, opened by someone who may reprocess the file
+  (`canConvertLegacy`): the download-only screen in its conversion form
+  (`UnsupportedPreview` with `convertTo`). Its title is "Old Office format"
+  (`files_legacy_title`), its body "{ext} files can't be opened here. Convert
+  this file to {target} to view and edit it." (`files_legacy_body`), and a
+  dark button, "Convert to new Office format" (`files_legacy_convert`, the
+  default `Button` variant), sits over the unchanged Download original.
+- `ready` or `failed`, opened by anyone else: the plain download-only screen
+  (`files_preview_unavailable`, Download original).
+
+`canConvertLegacy` follows who is offered the file's ⋮ Retry processing: the
+workspace's owner while the workspace is not read-only (`isWorkspaceReadOnly`
+on its capabilities), or, for a file outside a workspace, its payer
+(`isPayer`) unless the account is frozen. A workspace file waits on the
+loader until the workspace has loaded. Convert is the file's Retry
+processing (`useRetryFileProcessing`, `fast` sent, the started toast of the
+⋮ Retry); the server reruns the upload's own pipeline whatever mode is sent
+([agentic-retrieval.md](../agentic-retrieval.md#legacy-office-conversion)).
+The button stays disabled while the file's retry is pending
+(`useRetryingFileIds`), and the mutation's settle rereads the open file's
+detail, so the screen turns to the converting pane. On a failed file the
+same button tries again.
+
+A file row carries no hand-in field, so the viewer cannot tell a hand-in's
+file. The submission surfaces open a hand-in with its assignment
+(`SubmissionItem`, `PaperPane`) and never mount this viewer; a hand-in
+opened by a typed `/files/<id>` address shows the button to someone
+`canConvertLegacy` admits, and the server refuses the press (409
+`revision_conflict`, the default mutation error toast).
+
+No event names the rename, so an open file learns it from a reread:
+
+- In a workspace the swap sends the tree event, which refetches the files
+  list. `filesQuery` then invalidates the cached detail of any file that is
+  still named as legacy there while the list row has another name, once (the
+  parse that follows changes no name), without cancelling a reread already
+  under way.
+- A standalone file has no tree event. The worker publishes one ingest event
+  after the swap (`pending` when a parse follows, `ready` and not indexed
+  with parsing off), and `applyIngestEvent` rereads the owned-files list and
+  the detail while a cached copy is still named as legacy. Once renamed, the
+  parse's own progress events reread nothing.
+
+The upload panel's row shows the stored name once the file exists, so it
+follows the rename too.
+
+Under MSW the mock worker converts a legacy upload after its two seconds
+(`convertMockLegacyFile` in `src/mocks/officeFixtures.ts`): the file takes the
+new ending, a revision and the Biology fixture of that format as its bytes,
+and opens in the runtime. The mock then sends the worker's event after the
+swap (`mockConvertedEvent`), named by its workspace or as the owner's
+`ingest` notification for a standalone file, and with parsing on ends the
+parse two seconds later with a done event. The mock policy lists the legacy
+formats under fast parsing as the server's does. The mock's Retry processing
+converts a legacy file that is failed or `ready` under its legacy name the
+same way, with parsing off (`convertMockLegacyUpload`), and a converted
+dialog fixture stops answering with its broken link and session
+(`isDialogFile`). Conversion fidelity is
+LibreOffice's; what was measured, and on which files, is in the
+[report](../../bench/parsers/reports/2026-11-11-legacy-office-conversion.md).
 
 ## Citation geometry
 

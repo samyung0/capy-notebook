@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import type { Practice } from '@/api/types';
+import { workspaceSections } from '@/features/workspace/WorkspaceRail';
 import { m } from '@/i18n';
 import { PracticePage } from './PracticePage';
-import { StudyPanel } from './StudyPanel';
 
 const page = vi.hoisted(() => ({
   data: undefined as Practice | undefined,
@@ -113,33 +113,48 @@ it('lets the owner of a personal workspace practise, add and edit', () => {
   expect(html).not.toContain(m.practice_col_average());
 });
 
-it('lists Study pages for each of the four people', () => {
-  const panel = (kind: 'class' | 'personal', role: 'owner' | 'viewer') =>
-    renderToStaticMarkup(
-      <StudyPanel
-        active="practice"
-        onOpen={() => {}}
-        workspace={{ id: 'ws', kind, role }}
-      />
-    );
-  const teacher = panel('class', 'owner');
-  expect(teacher.indexOf(m.study_panel_members())).toBeLessThan(
-    teacher.indexOf(m.study_panel_assignments())
-  );
-  expect(teacher).not.toContain(m.study_panel_summary());
-  expect(teacher).toContain('aria-current="page"');
-  const member = panel('class', 'viewer');
-  expect(member.indexOf(m.study_panel_summary())).toBeLessThan(
-    member.indexOf(m.study_panel_assignments())
-  );
-  expect(member).not.toContain(m.study_panel_members());
-  for (const personal of [
-    panel('personal', 'owner'),
-    panel('personal', 'viewer'),
-  ]) {
-    expect(personal).toContain(m.study_panel_summary());
-    expect(personal).toContain(m.study_panel_practice());
-    expect(personal).not.toContain(m.study_panel_assignments());
-    expect(personal).not.toContain(m.study_panel_members());
-  }
+// Epo 2026-11-11: Study's pages each have their own place on the rail.
+it('gives each of the four people their rail', () => {
+  const rail = (kind: 'class' | 'personal', role: 'owner' | 'viewer') =>
+    workspaceSections({ kind, role }).map((section) => section.label);
+  const before = [
+    m.workspace_section_dashboard(),
+    m.workspace_tab_files(),
+    m.workspace_section_agent(),
+  ];
+  // A class's staff give out assignments and see every member's marks; they
+  // have no marks of their own, so no Study.
+  expect(rail('class', 'owner')).toEqual([
+    ...before,
+    m.study_panel_assignments(),
+    m.study_panel_practice(),
+    m.study_panel_members(),
+    m.workspace_section_canvas(),
+  ]);
+  // Everyone else has their own To do and Study, and sees who the members are
+  // without marks.
+  for (const own of [
+    rail('class', 'viewer'),
+    rail('personal', 'owner'),
+    rail('personal', 'viewer'),
+  ])
+    expect(own).toEqual([
+      ...before,
+      m.nav_todo(),
+      m.study_panel_practice(),
+      m.study_panel_members(),
+      m.workspace_tab_study(),
+      m.workspace_section_canvas(),
+    ]);
+  // A link or public visitor is no member: no Members, and no canvas.
+  expect(
+    workspaceSections({ kind: 'personal', role: '' as never }).map(
+      (section) => section.label
+    )
+  ).toEqual([
+    ...before,
+    m.nav_todo(),
+    m.study_panel_practice(),
+    m.workspace_tab_study(),
+  ]);
 });

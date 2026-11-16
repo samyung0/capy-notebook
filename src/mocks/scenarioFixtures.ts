@@ -335,7 +335,9 @@ export async function scenarioSourceSession(
     );
   const seed = sourceSeeds.get(fileId);
   if (!seed) return null;
-  const file = db.files.find((item) => item.id === fileId)!;
+  // A trashed file's view read too (opened from the Trash).
+  const file = (db.files.find((item) => item.id === fileId) ??
+    db.trash.find((entry) => entry.item.id === fileId)?.file)!;
   const text =
     seed.format === 'text'
       ? decodeURIComponent(seed.sourceURL.split(',')[1])

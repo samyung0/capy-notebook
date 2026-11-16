@@ -23,7 +23,10 @@ import { iconUrl } from '@/lib/icon-catalog';
  * under its icon and name, then New canvas, and the shown one's Rename and
  * Delete (not in the mock's first round: a canvas of one's own has no other
  * place for them). The list comes a page at a time as it is scrolled, in a
- * box of its own above the actions (Epo 2026-11-10). */
+ * box of its own above the actions (Epo 2026-11-10). Rows are sized as the
+ * workspace Files panel's (FileListItem: 30px, a 16px icon, one truncated
+ * line), with the time a canvas was saved at their end; the menu is as wide as
+ * its trigger (Epo 2026-11-12). */
 export function CanvasSwitcher({
   canvases,
   current,
@@ -52,97 +55,99 @@ export function CanvasSwitcher({
   const own = canvases.filter(({ workspaceId }) => !workspaceId);
   const shared = canvases.filter(({ workspaceId }) => workspaceId);
   const row = (canvas: CanvasListItem) => (
-    <DropdownMenuItem
-      className={cn(
-        'min-h-11 cursor-pointer gap-2.5 px-2 py-1',
-        canvas.id === current?.id && 'bg-overlay-hover'
-      )}
+    <CanvasMenuItem
+      className={cn(canvas.id === current?.id && 'bg-overlay-hover text-fg')}
       key={canvas.id}
       onSelect={() => onOpen(canvas)}
     >
       {canvas.workspaceIconId ? (
         <img
           alt=""
-          className="size-7 shrink-0 rounded-[7px]"
+          className="size-4 shrink-0 rounded-[4px]"
           src={iconUrl(canvas.workspaceIconId)}
         />
       ) : (
-        <span className="grid size-7 shrink-0 place-items-center">
-          <FileIcon className="size-5" name={materialIconName('canvas')} />
-        </span>
+        <FileIcon className="size-4" name={materialIconName('canvas')} />
       )}
-      <span className="min-w-0 flex-1 truncate font-semibold">
+      <span className="min-w-0 flex-1 truncate">
         {canvas.workspaceName || canvas.title}
       </span>
-      <span className="t-meta shrink-0 text-fg-muted">
+      <span className="shrink-0 font-normal text-fg-muted text-xs">
         {relativeTime(canvas.updatedAt)}
       </span>
-    </DropdownMenuItem>
+    </CanvasMenuItem>
   );
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
+        {/* One width, the menu's too; a phone's fills its row. As tall as the
+            board's ☰ button at every width (Epo 2026-11-12). */}
         <Button
-          className="w-full min-w-0 justify-between gap-2 bg-surface sm:w-[300px]"
+          className="w-full min-w-0 justify-between bg-surface px-3.5 sm:w-60"
+          iconRight="chevronDown"
           variant="outline"
         >
           <span className="min-w-0 truncate">
             {current?.title ?? m.workspace_section_canvas()}
           </span>
-          <Icon name="chevronDown" size={18} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="flex max-h-[70dvh] w-(--radix-dropdown-menu-trigger-width) min-w-64 flex-col p-1.5"
+        className="flex max-h-[70dvh] w-(--radix-dropdown-menu-trigger-width) min-w-0 flex-col p-1"
+        collisionPadding={8}
       >
         {/* The list scrolls by itself, so the actions under it stay in reach
             however many pages it loads. */}
         <div className="min-h-0 flex-1 overflow-y-auto" ref={list}>
           {own.map(row)}
           {shared.length > 0 && (
-            <DropdownMenuLabel className="t-meta px-2 pt-2 pb-0.5 font-normal text-fg-muted">
-              {m.canvas_in_workspaces()}
-            </DropdownMenuLabel>
+            <DropdownMenuLabel>{m.canvas_in_workspaces()}</DropdownMenuLabel>
           )}
           {shared.map(row)}
           <ListEnd {...paging} root={list} />
         </div>
-        {!(frozen && !current) && <DropdownMenuSeparator />}
+        {!(frozen && !current) && (
+          <DropdownMenuSeparator className="mx-1.5 my-1 bg-overlay-line" />
+        )}
         {!frozen && (
-          <DropdownMenuItem
-            className="min-h-11 cursor-pointer gap-2.5 px-2 py-1 font-semibold"
-            onSelect={onNew}
-          >
-            <span className="grid size-7 shrink-0 place-items-center">
-              <Icon name="plus" size={18} />
-            </span>
-            {m.canvas_new()}
-          </DropdownMenuItem>
+          <CanvasMenuItem onSelect={onNew}>
+            <Icon name="plus" />
+            <span className="min-w-0 truncate">{m.canvas_new()}</span>
+          </CanvasMenuItem>
         )}
         {current && !frozen && (
-          <DropdownMenuItem
-            className="min-h-11 cursor-pointer gap-2.5 px-2 py-1"
-            onSelect={onRename}
-          >
-            <span className="grid size-7 shrink-0 place-items-center">
-              <Icon name="pencil" size={18} />
-            </span>
-            {m.action_rename()}
-          </DropdownMenuItem>
+          <CanvasMenuItem onSelect={onRename}>
+            <Icon name="pencil" />
+            <span className="min-w-0 truncate">{m.action_rename()}</span>
+          </CanvasMenuItem>
         )}
         {current && (
-          <DropdownMenuItem
-            className="min-h-11 cursor-pointer gap-2.5 px-2 py-1 text-danger"
+          <CanvasMenuItem
+            className="text-tint-error-fg data-[highlighted]:bg-tint-error data-[highlighted]:text-tint-error-fg"
             onSelect={onDelete}
           >
-            <span className="grid size-7 shrink-0 place-items-center">
-              <Icon name="trash" size={18} />
-            </span>
-            {m.action_delete()}
-          </DropdownMenuItem>
+            <Icon name="trash" />
+            <span className="min-w-0 truncate">{m.action_delete()}</span>
+          </CanvasMenuItem>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** A row of the menu, at the Files panel's row size. */
+function CanvasMenuItem({
+  className,
+  ...props
+}: ComponentProps<typeof DropdownMenuItem>) {
+  return (
+    <DropdownMenuItem
+      className={cn(
+        'min-h-7.5 py-1 font-medium text-fg-secondary data-[highlighted]:text-fg [&_svg]:size-4',
+        className
+      )}
+      {...props}
+    />
   );
 }

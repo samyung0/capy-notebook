@@ -79,6 +79,7 @@ import {
   GithubIcon,
   GroupIcon,
   ImageIcon,
+  InformationIcon,
   ItalicIcon,
   LinkedPageIcon,
   LinkIcon,
@@ -297,7 +298,8 @@ const textToolActionItems: KeyboardToolbarActionItem[] = [
   },
   {
     name: 'Callout',
-    icon: FontIcon(),
+    // Capy (local change 39): a callout's own icon, not Text's.
+    icon: InformationIcon(),
     showWhen: ({ rootComponent: { model } }) => {
       return !isInsideBlockByFlavour(
         model.store,

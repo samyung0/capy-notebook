@@ -13,7 +13,8 @@ steal, free memory and swap.
     python3 stress_parser.py burst --manifest m.json --out DIR --container NAME
 
 ``solo`` sends the documents one after another. ``burst`` sends them all at
-once, so queue wait and the 429 at queue capacity show up. ``--keep DIR``
+once, so queue wait and the 429 at queue capacity show up; with ``--clients N``
+it keeps N in flight instead, for a set larger than the queue. ``--keep DIR``
 copies each bundle (``--keep-ids`` limits which) before it is deleted.
 ``--watch`` names containers that must not restart and ``--abort-swap-gib``
 the host swap growth allowed; past either the parser container is killed and
@@ -433,6 +434,8 @@ def summarize(results: list[dict], sampler: Sampler, health: dict, abort: str) -
 
 def run(args) -> None:
     docs = json.loads(Path(args.manifest).read_text())
+    if args.mode == "burst" and args.clients is not None and args.clients < 1:
+        raise SystemExit("--clients must be at least 1")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     spool = spool_dir(args.container)
@@ -459,18 +462,25 @@ def run(args) -> None:
             time.sleep(args.gap)
     else:
         lock = threading.Lock()
+        gate = threading.Semaphore(args.clients or len(docs))
 
         def worker(doc: dict) -> None:
-            result = parse_one(args, doc, spool, health["parser_version"])
-            with lock:
-                results.append(result)
-                print(json.dumps({k: v for k, v in result.items() if k[0] != "_"}), flush=True)
+            try:
+                result = parse_one(args, doc, spool, health["parser_version"])
+                with lock:
+                    results.append(result)
+                    print(json.dumps({k: v for k, v in result.items() if k[0] != "_"}), flush=True)
+            finally:
+                gate.release()
 
         threads = []
         for doc in docs:
+            gate.acquire()
+            if watchdog.reason:
+                break
             threads.append(threading.Thread(target=worker, args=(doc,)))
             threads[-1].start()
-            time.sleep(0.5)  # a stable queue order
+            time.sleep(0.05 if args.clients else 0.5)  # a stable queue order
         for thread in threads:
             thread.join()
     time.sleep(1)
@@ -515,6 +525,7 @@ def main() -> None:
         p.add_argument("--url", default="http://127.0.0.1:18090")
         p.add_argument("--tag", default=uuid.uuid4().hex[:8])
         p.add_argument("--gap", type=float, default=5)
+        p.add_argument("--clients", type=int, help="burst: documents in flight at a time")
         p.add_argument("--keep", help="copy bundles here before they are deleted")
         p.add_argument("--keep-ids", type=lambda v: set(filter(None, v.split(","))), default=set())
         p.add_argument("--watch", help="comma-separated containers that must not restart")

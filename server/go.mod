@@ -1,6 +1,6 @@
 module github.com/samyung0/capy-notebook/server
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
@@ -8,12 +8,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.2.12
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.104.1
 	github.com/aws/smithy-go v1.27.1
-	github.com/clerk/clerk-sdk-go/v2 v2.7.0
+	github.com/clerk/clerk-sdk-go/v2 v2.8.0
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/getsentry/sentry-go v0.48.0
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/go-chi/cors v1.2.1
-	github.com/go-jose/go-jose/v3 v3.0.5
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/open-spaced-repetition/go-fsrs/v3 v3.3.1
@@ -39,6 +39,5 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )

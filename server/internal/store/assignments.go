@@ -25,6 +25,8 @@ import (
 // A marked one serves a frozen copy of a quiz, never the quiz; an unmarked one
 // is a title and files members tick off. Only a class has them: in a personal
 // workspace they are hidden, not deleted, until it changes back (board U3).
+// A task someone sets themself (own, Epo 2026-11-11) is the same row with its
+// maker as its only staff and the only one it goes to, in any workspace or none.
 
 const (
 	AssignmentMarked   = "marked"
@@ -76,6 +78,9 @@ type Assignment struct {
 	// Closed: as ClosedAt, for either kind (Epo 2026-11-09, "same rules").
 	Closed bool `json:"closed"`
 	Draft  bool `json:"draft"`
+	// Own: a task its maker set themself (Epo 2026-11-10, New task), which only
+	// they read, tick, change and delete.
+	Own bool `json:"own"`
 	// NoLate: it closes itself at the due date. Off, late work is open until it
 	// is closed by hand, with a marked one's LatePenaltyPct (0, 20 or 50) off
 	// its mark.
@@ -112,6 +117,27 @@ type AssignmentFile struct {
 	Name       string  `json:"name"`
 	// Kind is the file's or material's kind, which picks its icon.
 	Kind string `json:"kind"`
+	// WorkspaceID and WorkspaceName are where it sits and opens, absent for one
+	// with no workspace; a task's files need not be its own workspace's.
+	WorkspaceID   *string `json:"workspaceId,omitempty"`
+	WorkspaceName string  `json:"workspaceName,omitempty"`
+}
+
+// ownTaskFileSQL and ownTaskMaterialSQL hold a files row f and a materials row
+// m to what user may put on a task of their own and open from it (Epo
+// 2026-11-11): their own with no workspace, and what a workspace they are a
+// member of shows them. In a workspace user_id and owner_user_id name who pays,
+// which opens nothing once they have left. A canvas is not a file to open.
+func ownTaskFileSQL(user string) string {
+	return `((f.workspace_id IS NULL AND f.user_id=` + user + `) OR f.workspace_id IN (` + memberWorkspacesSQL(user) + `))
+		AND f.trashed_at IS NULL AND f.submission_position IS NULL
+		AND workspace_item_visible(f.hidden, f.workspace_id, ` + user + `)`
+}
+
+func ownTaskMaterialSQL(user string) string {
+	return `((m.workspace_id IS NULL AND m.owner_user_id=` + user + `) OR m.workspace_id IN (` + memberWorkspacesSQL(user) + `))
+		AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind <> 'canvas'
+		AND workspace_item_visible(` + materialHiddenSQL + `, m.workspace_id, ` + user + `)`
 }
 
 // AssignmentManage is what its owner and teaching assistants read.
@@ -119,6 +145,9 @@ type AssignmentManage struct {
 	QuizID *string `json:"quizId,omitempty"`
 	// QuizTitle is its quiz's current title, for the edit form.
 	QuizTitle string `json:"quizTitle,omitempty"`
+	// QuizWorkspaceID is where its quiz sits, absent for a quiz with no
+	// workspace: a task's quiz need not be its own workspace's.
+	QuizWorkspaceID *string `json:"quizWorkspaceId,omitempty"`
 	// QuizTrashed: its quiz is in the trash, with nothing to open or republish.
 	QuizTrashed bool     `json:"quizTrashed,omitempty"`
 	AssignAll   bool     `json:"assignAll"`
@@ -132,7 +161,13 @@ type AssignmentManage struct {
 	// GradesReleasedAt, when staff released them.
 	ShowGrades       string     `json:"showGrades" enum:"automatic,manual"`
 	GradesReleasedAt *time.Time `json:"gradesReleasedAt,omitempty"`
-	Shuffle          bool       `json:"shuffle"`
+	// PracticeAt is when staff turned its quiz to practice. Until then, under
+	// Show answers Do not show, the quiz stays held from members past the close
+	// (Epo 2026-11-11); ToPractice is whether staff can turn it now: closed,
+	// its grades showing, and a quiz still there.
+	PracticeAt *time.Time `json:"practiceAt,omitempty"`
+	ToPractice bool       `json:"toPractice,omitempty"`
+	Shuffle    bool       `json:"shuffle"`
 	// Assigned counts who it went to; Done those who submitted or ticked it.
 	Assigned int `json:"assigned"`
 	Done     int `json:"done"`
@@ -224,17 +259,11 @@ type AssignmentFileRef struct {
 
 // assignmentStaff is the caller's standing in a class: true for an owner or
 // editor member (persisted: a share-role editor sees only their own). A workspace
-// that is not a class has no assignments for anyone.
+// that is not a class has no assignments for anyone, only each person's own
+// tasks (taskStaff).
 func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID string) (bool, error) {
-	member, effective, err := workspaceRoles(ctx, q, userID, wsID)
+	kind, member, err := s.taskStanding(ctx, q, userID, wsID)
 	if err != nil {
-		return false, err
-	}
-	if effective == "" {
-		return false, ErrNotFound
-	}
-	var kind WorkspaceKind
-	if err := q.QueryRow(ctx, `SELECT kind FROM workspaces WHERE id=$1`, wsID).Scan(&kind); err != nil {
 		return false, err
 	}
 	if kind != WorkspaceClass {
@@ -243,16 +272,66 @@ func (s *Store) assignmentStaff(ctx context.Context, q rowQueryer, userID, wsID 
 	return RoleCanEdit(member), nil
 }
 
-const assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
+// taskStaff is assignmentStaff for what a personal workspace has too (Epo
+// 2026-11-10): reading, making, changing, ticking and deleting. Nobody is staff
+// there: each person has only the tasks they set themselves (givenSQL).
+func (s *Store) taskStaff(ctx context.Context, q rowQueryer, userID, wsID string) (bool, error) {
+	kind, member, err := s.taskStanding(ctx, q, userID, wsID)
+	return kind == WorkspaceClass && RoleCanEdit(member), err
+}
+
+// staffOf is the caller's standing on an assignment or a task. An assignment's
+// staff are its class's (assignmentStaff). A task someone set themself has its
+// maker alone, who runs it as staff do and takes it as a member does (Epo
+// 2026-11-11): in the workspace it sits in while they are still its member, or
+// in none. Anyone else is refused.
+func (s *Store) staffOf(ctx context.Context, q rowQueryer, userID string, r taskRow) (bool, error) {
+	if !r.own {
+		return s.assignmentStaff(ctx, q, userID, r.wsID)
+	}
+	if !r.mayChange(false, userID) {
+		return false, ErrNotFound
+	}
+	if r.wsID != "" {
+		_, member, err := s.taskStanding(ctx, q, userID, r.wsID)
+		if err != nil {
+			return false, err
+		}
+		if member == "" {
+			return false, ErrNotFound
+		}
+	}
+	return true, nil
+}
+
+// taskStanding reads the workspace's kind and the caller's membership of it
+// (empty for a link or public visitor); someone with no way in is refused.
+func (s *Store) taskStanding(ctx context.Context, q rowQueryer, userID, wsID string) (WorkspaceKind, WorkspaceRole, error) {
+	member, effective, err := workspaceRoles(ctx, q, userID, wsID)
+	if err != nil {
+		return "", "", err
+	}
+	if effective == "" {
+		return "", "", ErrNotFound
+	}
+	var kind WorkspaceKind
+	if err := q.QueryRow(ctx, `SELECT kind FROM workspaces WHERE id=$1`, wsID).Scan(&kind); err != nil {
+		return "", "", err
+	}
+	return kind, member, nil
+}
+
+var assignmentCols = `a.id, COALESCE(a.workspace_id, ''), a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
-	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(m.hidden, false), m.trashed_at IS NOT NULL,
-	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.released_at, a.allow_uploads,
+	a.source_quiz_id, COALESCE(m.title,''), m.topic_id, COALESCE(` + materialHiddenSQL + `, false), m.trashed_at IS NOT NULL,
+	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.practice_at, a.shuffle, a.released_at, a.allow_uploads,
 	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
-		WHERE p->'answer'->>'type' = 'drawing')`
+		WHERE p->'answer'->>'type' = 'drawing'), a.own, COALESCE(a.created_by, ''), m.workspace_id`
 
 // readAssignments reads the rows matching where (assignments a, users u and
 // materials m aliased) and fills what the caller may see of them; a caller who
-// is not staff keeps only those given to them.
+// is not staff keeps only those given to them, as staff do of members' own
+// tasks. A task's maker reads it as its staff and as the one it is given to.
 func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, now time.Time, where string, args ...any) ([]Assignment, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+assignmentCols+`
 		FROM assignments a LEFT JOIN users u ON u.id=a.created_by LEFT JOIN materials m ON m.id=a.source_quiz_id
@@ -273,10 +352,11 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		var a Assignment
 		var manage AssignmentManage
 		var src source
+		var maker string
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &src.topicID, &src.hidden, &src.trashed,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &src.released, &a.AllowUploads, &a.DrawingParts); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.PracticeAt, &manage.Shuffle, &src.released, &a.AllowUploads, &a.DrawingParts, &a.Own, &maker, &manage.QuizWorkspaceID); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
@@ -288,15 +368,20 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		}
 		manage.Assignees = []string{}
 		manage.QuizTrashed = src.trashed
-		if staff {
+		manages := staff
+		if a.Own {
+			manages = maker == userID
+		}
+		if manages {
 			a.Manage = &manage
 		}
-		// Hidden again by the owner, it is no longer practice for members; under
-		// Do not show it never is, as its quiz stays refused (assignmentKeysHeldSQL).
-		if manage.QuizID != nil && src.released != nil && !src.trashed &&
-			(staff || (!src.hidden && manage.ShowAnswers != AnswersNever)) {
+		// Hidden again by the owner, or held by another assignment, it is no
+		// longer practice for members.
+		if manage.QuizID != nil && src.released != nil && !src.trashed && (manages || !src.hidden) {
 			a.PracticeQuizID = manage.QuizID
 		}
+		manage.ToPractice = !a.Own && a.Kind == AssignmentMarked && !a.Draft && a.Closed && !a.GradesHidden &&
+			manage.ShowAnswers == AnswersNever && manage.PracticeAt == nil && manage.QuizID != nil && !src.trashed
 		sources[a.ID] = src
 		list = append(list, a)
 	}
@@ -309,30 +394,31 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 	}
 	ids := make([]string, len(list))
 	at := make(map[string]int, len(list))
+	var managed []string
 	for i, a := range list {
 		ids[i], at[a.ID] = a.ID, i
+		if a.Manage != nil {
+			managed = append(managed, a.ID)
+		}
 	}
 	if err := s.fillAssignmentFiles(ctx, userID, ids, at, list); err != nil {
 		return nil, err
 	}
-	if staff {
-		if err := s.fillAssignmentManage(ctx, userID, ids, at, list); err != nil {
+	if len(managed) > 0 {
+		if err := s.fillAssignmentManage(ctx, userID, managed, at, list); err != nil {
 			return nil, err
 		}
 	}
 	if err := s.fillAssignmentMine(ctx, userID, ids, at, list, now); err != nil {
 		return nil, err
 	}
-	if staff {
-		return list, nil
-	}
-	mine := list[:0]
+	seen := list[:0]
 	for _, a := range list {
-		if a.Mine != nil {
-			mine = append(mine, a)
+		if a.Mine != nil || a.Manage != nil {
+			seen = append(seen, a)
 		}
 	}
-	return mine, nil
+	return seen, nil
 }
 
 // assignmentClosedAt is when it closed, if it has: by hand, or under No late
@@ -395,14 +481,18 @@ const countedAttemptOrder = attemptMarkSQL + ` / NULLIF(t.total, 0) DESC NULLS L
 // fillAssignmentFiles adds each unmarked assignment's files the caller can see,
 // in the order added, and takes its topics from them, the most used first.
 func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []string, at map[string]int, list []Assignment) error {
+	// A task of one's own holds files from anywhere, each read while its maker
+	// can still open it; an assignment's are its workspace's.
 	rows, err := s.pool.Query(ctx, `SELECT af.assignment_id, f.id, m.id, COALESCE(f.name, m.title), COALESCE(f.kind::text, m.kind::text),
-			COALESCE(f.topic_id, m.topic_id)
+			COALESCE(f.topic_id, m.topic_id), fw.id, COALESCE(fw.name, '')
 		FROM assignment_files af
 		JOIN assignments a ON a.id=af.assignment_id
 		LEFT JOIN files f ON f.id=af.file_id AND f.trashed_at IS NULL
 		LEFT JOIN materials m ON m.id=af.material_id AND m.trashed_at IS NULL
+		LEFT JOIN workspaces fw ON fw.id=COALESCE(f.workspace_id, m.workspace_id)
 		WHERE af.assignment_id = ANY($1) AND (f.id IS NOT NULL OR m.id IS NOT NULL)
-			AND workspace_item_visible(COALESCE(f.hidden, m.hidden), a.workspace_id, $2)
+			AND CASE WHEN a.own THEN (f.id IS NULL OR (`+ownTaskFileSQL("$2")+`)) AND (m.id IS NULL OR (`+ownTaskMaterialSQL("$2")+`))
+				ELSE workspace_item_visible(COALESCE(f.hidden, `+materialHiddenSQL+`), a.workspace_id, $2) END
 		ORDER BY af.assignment_id, af.position`, ids, userID)
 	if err != nil {
 		return err
@@ -413,7 +503,7 @@ func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []st
 		var id string
 		var file AssignmentFile
 		var topic *string
-		if err := rows.Scan(&id, &file.FileID, &file.MaterialID, &file.Name, &file.Kind, &topic); err != nil {
+		if err := rows.Scan(&id, &file.FileID, &file.MaterialID, &file.Name, &file.Kind, &topic, &file.WorkspaceID, &file.WorkspaceName); err != nil {
 			return err
 		}
 		a := &list[at[id]]
@@ -435,14 +525,27 @@ func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []st
 	return rows.Err()
 }
 
-// assigneesSQL lists who each of the assignments in $1 went to: the workspace's
-// viewers when it is for all members, plus anyone named who is still a member.
-// A workspace that is not a class gives them to nobody until it changes back.
+// givenSQL reads whether assignment a, in workspace aw, is given to member wm:
+// its maker for a task they set themself, in any workspace (Epo 2026-11-10);
+// else, in a class, its viewers when it is for all members and anyone named. A
+// workspace that is not a class gives a class's assignments to nobody until it
+// changes back. A task with no workspace has no member row: ownedSQL reads it.
+const givenSQL = `(CASE WHEN a.own THEN a.created_by=wm.user_id
+	ELSE aw.kind='class' AND ((a.assign_all AND wm.role='viewer')
+		OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=wm.user_id)) END)`
+
+// ownedSQL reads whether assignment a is a task with no workspace (Epo
+// 2026-11-11), which is its maker's whatever they are a member of.
+const ownedSQL = `a.workspace_id IS NULL AND a.own`
+
+// assigneesSQL lists who each of the assignments in $1 went to (givenSQL), among
+// those still members, and the maker of a task with no workspace.
 const assigneesSQL = `SELECT a.id AS assignment_id, wm.user_id
-	FROM assignments a JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
+	FROM assignments a JOIN workspaces aw ON aw.id=a.workspace_id
 	JOIN workspace_members wm ON wm.workspace_id=a.workspace_id
-	WHERE a.id = ANY($1) AND ((a.assign_all AND wm.role='viewer')
-		OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=wm.user_id))`
+	WHERE a.id = ANY($1) AND ` + givenSQL + `
+	UNION ALL SELECT a.id, a.created_by FROM assignments a
+	WHERE a.id = ANY($1) AND ` + ownedSQL + ` AND a.created_by IS NOT NULL`
 
 // fillAssignmentManage adds the counts, the named assignees and whether the
 // caller ticked the answers waiting off their To do.
@@ -597,11 +700,12 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 }
 
 // ListAssignments is Study → Assignments: every assignment for a class's owner
-// and editor members, the published ones given to them for anyone else. Open
+// and editor members, the published ones given to them for anyone else, and the
+// tasks the caller set themself, which is all a personal workspace has. Open
 // ones come first by due date, the latest closed after them.
 func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now time.Time) (AssignmentList, error) {
 	out := AssignmentList{Items: []Assignment{}}
-	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
+	staff, err := s.taskStaff(ctx, s.pool, userID, wsID)
 	if err != nil {
 		return out, err
 	}
@@ -638,13 +742,16 @@ func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now ti
 
 // GetAssignment reads one assignment the caller may see.
 func (s *Store) GetAssignment(ctx context.Context, userID, id string, now time.Time) (Assignment, error) {
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return Assignment{}, err
 	}
-	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
-	if err != nil {
-		return Assignment{}, err
+	// With no workspace it is its maker's, which the read itself holds it to.
+	var staff bool
+	if row.wsID != "" {
+		if staff, err = s.taskStaff(ctx, s.pool, userID, row.wsID); err != nil {
+			return Assignment{}, err
+		}
 	}
 	list, err := s.readAssignments(ctx, userID, staff, now, `a.id=$1`, id)
 	if err != nil {
@@ -656,20 +763,65 @@ func (s *Store) GetAssignment(ctx context.Context, userID, id string, now time.T
 	return list[0], nil
 }
 
-func (s *Store) assignmentWorkspace(ctx context.Context, id string) (string, error) {
-	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM assignments WHERE id=$1`, id).Scan(&wsID)
+// taskRow is what decides who may touch an assignment or a member's own task.
+type taskRow struct {
+	// wsID is empty for a task with no workspace.
+	wsID  string
+	own   bool
+	maker *string
+	// quizWsID is where an own task's quiz sits, which need not be wsID.
+	quizWsID string
+}
+
+func (s *Store) taskRow(ctx context.Context, q rowQueryer, id string) (taskRow, error) {
+	var r taskRow
+	err := q.QueryRow(ctx, `SELECT COALESCE(a.workspace_id, ''), a.own, a.created_by,
+			COALESCE((SELECT sq.workspace_id FROM materials sq WHERE sq.id=a.source_quiz_id), '')
+		FROM assignments a WHERE a.id=$1`, id).Scan(&r.wsID, &r.own, &r.maker, &r.quizWsID)
 	if isNoRows(err) {
-		return "", ErrNotFound
+		return r, ErrNotFound
 	}
-	return wsID, err
+	return r, err
+}
+
+// checkFreezeTx: a task's maker must still be able to open its quiz when it is
+// frozen, as when the task was made (checkAssignmentQuizTx); a class's quiz is
+// its staff's to freeze.
+func (r taskRow) checkFreezeTx(ctx context.Context, tx pgx.Tx, actorID, kind string, quizID *string) error {
+	if !r.own || kind != AssignmentMarked || quizID == nil {
+		return nil
+	}
+	return checkAssignmentQuizTx(ctx, tx, r.wsID, actorID, *quizID, true)
+}
+
+// lockQuizWorkspaceTx key-shares the workspace an own task's quiz sits in when
+// it is not the task's own. The task's answer events and ratings name that
+// workspace (attemptRow.quiz), and their foreign key would otherwise take its
+// row after the accounts are held (lockWorkspaceKeyShareTx), so it goes first.
+func (r taskRow) lockQuizWorkspaceTx(ctx context.Context, tx pgx.Tx) error {
+	if !r.own || r.quizWsID == r.wsID {
+		return nil
+	}
+	return lockWorkspaceKeyShareTx(ctx, tx, r.quizWsID)
+}
+
+// mayChange: an assignment is its class's staff's, a member's own task its
+// maker's alone.
+func (r taskRow) mayChange(staff bool, actorID string) bool {
+	if r.own {
+		return r.maker != nil && *r.maker == actorID
+	}
+	return staff
 }
 
 /* ------------------------------------------------------------------ writes */
 
 // checkAssignmentForm checks the form against the workspace, in the write's
-// transaction: its quiz, assignees and files must belong here.
-func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID string, form AssignmentForm) error {
+// transaction: an assignment's quiz, assignees and files must belong here, the
+// files among those the actor sees. A task of one's own (own, already held to
+// its maker by checkOwnTask) takes files and a quiz from anywhere its maker can
+// open, whatever workspace it is in or none (Epo 2026-11-11).
+func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID, actorID string, form AssignmentForm, own bool) error {
 	if form.Kind != AssignmentMarked && form.Kind != AssignmentUnmarked {
 		return assignmentInput("choose marked or unmarked")
 	}
@@ -699,7 +851,7 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID string, form Assig
 	} else if form.QuizID != "" || form.TimeLimitMin != nil {
 		return assignmentInput("an unmarked assignment has no quiz or time limit")
 	}
-	if len(form.Assignees) > 0 {
+	if len(form.Assignees) > 0 && !own {
 		var known int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspace_members WHERE workspace_id=$1 AND user_id = ANY($2)`,
 			wsID, form.Assignees).Scan(&known); err != nil {
@@ -713,15 +865,22 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID string, form Assig
 		var found bool
 		var err error
 		switch {
+		case f.FileID != "" && f.MaterialID == "" && own:
+			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM files f WHERE f.id=$1 AND `+ownTaskFileSQL("$2")+`)`, f.FileID, actorID).Scan(&found)
+		case f.MaterialID != "" && f.FileID == "" && own:
+			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials m WHERE m.id=$1 AND `+ownTaskMaterialSQL("$2")+`)`, f.MaterialID, actorID).Scan(&found)
 		case f.FileID != "" && f.MaterialID == "":
-			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL)`,
-				f.FileID, wsID).Scan(&found)
+			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL
+				AND workspace_item_visible(hidden, workspace_id, $3))`, f.FileID, wsID, actorID).Scan(&found)
 		case f.MaterialID != "" && f.FileID == "":
-			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL AND parent_material_id IS NULL)`,
-				f.MaterialID, wsID).Scan(&found)
+			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL AND parent_material_id IS NULL
+				AND workspace_item_visible(hidden, workspace_id, $3))`, f.MaterialID, wsID, actorID).Scan(&found)
 		}
 		if err != nil {
 			return err
+		}
+		if !found && own {
+			return assignmentInput("a file cannot be opened")
 		}
 		if !found {
 			return assignmentInput("a file is not in this workspace")
@@ -768,9 +927,9 @@ func uniqueStrings(values []string) []string {
 }
 
 // lockAssignmentStaffTx admits an owner or editor member of the class, not
-// frozen, and holds the workspace row (and the also accounts) for the write.
-func (s *Store) lockAssignmentStaffTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, also ...string) error {
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID, also...); err != nil {
+// frozen, and holds the workspace row for the write.
+func (s *Store) lockAssignmentStaffTx(ctx context.Context, tx pgx.Tx, wsID, actorID string) error {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
 		return err
 	}
 	staff, err := s.assignmentStaff(ctx, tx, actorID, wsID)
@@ -783,33 +942,104 @@ func (s *Store) lockAssignmentStaffTx(ctx context.Context, tx pgx.Tx, wsID, acto
 	return nil
 }
 
-// assignmentPayer reads an assignment's workspace and whoever its frozen copy is
-// charged to, for the writes that take that charge off them.
-func (s *Store) assignmentPayer(ctx context.Context, id string) (string, *string, error) {
-	var wsID string
-	var payer *string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id, frozen_by FROM assignments WHERE id=$1`, id).Scan(&wsID, &payer)
-	if isNoRows(err) {
-		return "", nil, ErrNotFound
+// lockStaffOfTx is lockAssignmentStaffTx for either: a task's maker is held as
+// lockTaskTx holds them.
+func (s *Store) lockStaffOfTx(ctx context.Context, tx pgx.Tx, r taskRow, actorID string) error {
+	if !r.own {
+		return s.lockAssignmentStaffTx(ctx, tx, r.wsID, actorID)
 	}
-	return wsID, payer, err
+	if err := r.lockQuizWorkspaceTx(ctx, tx); err != nil {
+		return err
+	}
+	if _, err := s.lockTaskTx(ctx, tx, r.wsID, actorID, true); err != nil {
+		return err
+	}
+	if !r.mayChange(false, actorID) {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// lockTaskTx admits a member of the workspace for the writes a personal
+// workspace and a class's viewer members have too (the form's, and deleting),
+// and holds the workspace row. staff: a class's owner or editor member, whose
+// form makes an assignment; anyone else's makes a task for themself
+// (checkOwnTask). A frozen account edits nothing but still deletes. With no
+// workspace (wsID empty) the task is its maker's, and only their account decides.
+func (s *Store) lockTaskTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, editing bool) (staff bool, err error) {
+	if actorID == "" {
+		return false, ErrNotFound
+	}
+	if wsID == "" {
+		if err := s.lockAccountSessionsTx(ctx, tx, actorID); err != nil {
+			return false, err
+		}
+		if editing {
+			return false, s.assertEditableTx(ctx, tx, actorID)
+		}
+		return false, nil
+	}
+	if _, err := s.lockWorkspaceMutationTx(ctx, tx, wsID, actorID); err != nil {
+		return false, err
+	}
+	kind, member, err := s.taskStanding(ctx, tx, actorID, wsID)
+	if err != nil {
+		return false, err
+	}
+	if member == "" {
+		return false, ErrNotFound
+	}
+	if editing {
+		if err := s.assertEditableTx(ctx, tx, actorID); err != nil {
+			return false, err
+		}
+	}
+	return kind == WorkspaceClass && RoleCanEdit(member), nil
+}
+
+// checkOwnTask holds a member's own task to what it is: for its maker alone,
+// with no draft, which is an assignment kept from its members until published.
+// Everything else an assignment takes, it takes (Epo 2026-11-11).
+func checkOwnTask(form AssignmentForm, actorID string) error {
+	if form.Draft || form.AssignAll || len(form.Assignees) != 1 || form.Assignees[0] != actorID {
+		return assignmentInput("a task is for yourself")
+	}
+	return nil
+}
+
+// assignmentPayer reads who decides an assignment's or a task's writes and
+// whoever its frozen copy is charged to, for the writes that take that charge
+// off them.
+func (s *Store) assignmentPayer(ctx context.Context, id string) (taskRow, *string, error) {
+	var r taskRow
+	var payer *string
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), own, created_by, frozen_by FROM assignments WHERE id=$1`, id).
+		Scan(&r.wsID, &r.own, &r.maker, &payer)
+	if isNoRows(err) {
+		return r, nil, ErrNotFound
+	}
+	return r, payer, err
 }
 
 // lockAssignmentPayerRowsTx holds the workspace and, in id order, the rows of the
 // owner, the actor and whoever a frozen copy is charged to, for a write that moves
 // that charge. The meter's foreign key needs the payer's row held, but their account
 // state decides nothing: a publisher suspended or leaving must not hide the
-// assignment from the class's staff.
+// assignment from the class's staff. A task with no workspace (wsID empty) has
+// only the accounts to hold.
 func (s *Store) lockAssignmentPayerRowsTx(ctx context.Context, tx pgx.Tx, wsID, actorID string, payer *string) error {
-	ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
-	if err != nil {
-		return err
+	ids := []string{actorID}
+	if wsID != "" {
+		ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, ownerID)
 	}
-	ids := []string{ownerID, actorID}
 	if payer != nil {
 		ids = append(ids, *payer)
 	}
-	_, err = tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids)
+	_, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids)
 	return err
 }
 
@@ -817,13 +1047,20 @@ func (s *Store) lockAssignmentPayerRowsTx(ctx context.Context, tx pgx.Tx, wsID, 
 // closed by hand nor past a No late submissions due date.
 const assignmentOpenSQL = `NOT a.draft AND a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now())`
 
+// assignmentAnswersHeldSQL is a marked assignment row a under Show answers Do
+// not show that staff have not turned to practice (Epo 2026-11-11): closed, its
+// quiz stays held from every viewer member as if it were still open, whenever
+// it was set to Do not show (TurnAssignmentToPractice writes practice_at).
+const assignmentAnswersHeldSQL = `a.kind='marked' AND a.answers_shown='never' AND a.practice_at IS NULL`
+
 // assignmentKeysHeldSQL is a closed marked assignment row a whose quiz still
 // holds back its keys from those it went to: its grades wait for release under
-// Show grades Manual, or its answers are Do not show (finding 5, Q714).
-const assignmentKeysHeldSQL = `a.kind='marked' AND ((a.grades_shown='manual' AND a.grades_released_at IS NULL)
-	OR a.answers_shown='never')`
+// Show grades Manual, or its answers are held (finding 5, Q714).
+const assignmentKeysHeldSQL = `((a.kind='marked' AND a.grades_shown='manual' AND a.grades_released_at IS NULL)
+	OR (` + assignmentAnswersHeldSQL + `))`
 
-// quizAssignedToSQL reads the assignment a viewer member takes this quiz
+// quizAssignedToSQL reads the class's assignment (never a task someone set
+// themself, which holds no quiz back) a viewer member takes this quiz
 // through, the earliest due, or null (Epo 2026-11-04): an open one, or a closed
 // one still holding its keys (assignmentKeysHeldSQL). While it reads an id the
 // row lists for them, hidden or not, and opens that assignment, while the quiz
@@ -832,56 +1069,78 @@ func quizAssignedToSQL(quiz, user string) string {
 	return `(SELECT a.id FROM assignments a
 		JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
 		JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=` + user + ` AND am.role='viewer'
-		WHERE a.source_quiz_id=` + quiz + ` AND NOT a.draft AND (` + assignmentOpenSQL + ` OR ` + assignmentKeysHeldSQL + `)
+		WHERE a.source_quiz_id=` + quiz + ` AND NOT a.own AND NOT a.draft AND (` + assignmentOpenSQL + ` OR ` + assignmentKeysHeldSQL + `)
 			AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x WHERE x.assignment_id=a.id AND x.user_id=` + user + `))
 		ORDER BY a.due_at, a.id LIMIT 1)`
 }
 
-// quizAssignmentOpenSQL reads whether any open assignment uses this quiz; only
-// the workspace's owner and teaching assistants clone it then.
-func quizAssignmentOpenSQL(quiz string) string {
+// quizAssignmentHoldsSQL reads whether a class's assignment holds this quiz: an
+// open one, or a closed one whose answers are held (assignmentAnswersHeldSQL).
+// Only the workspace's owner and teaching assistants clone it then.
+func quizAssignmentHoldsSQL(quiz string) string {
 	return `EXISTS (SELECT 1 FROM assignments a JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
-		WHERE a.source_quiz_id=` + quiz + ` AND ` + assignmentOpenSQL + `)`
+		WHERE a.source_quiz_id=` + quiz + ` AND NOT a.own AND NOT a.draft AND ((` + assignmentOpenSQL + `) OR (` + assignmentAnswersHeldSQL + `)))`
 }
+
+// materialHiddenSQL is whether a materials row m is kept from everyone who
+// does not edit its workspace, the flag workspace_item_visible and the access
+// checks take: hidden by its owner, or a class's quiz while an assignment holds
+// it (Epo 2026-11-11). A member it did not go to would otherwise read its
+// answers and pass them on; one it went to keeps a row that opens the assignment
+// (quizAssignedToSQL). The hold ends when the assignment closes, is turned to
+// practice under Do not show, or is deleted, and the hold writes nothing to the
+// hidden column, so the owner's own choice and the standings, which read that
+// column, are as they were.
+var materialHiddenSQL = `(m.hidden OR (m.kind='quiz' AND ` + quizAssignmentHoldsSQL("m.id") + `))`
 
 // materialAssignedCols reads a materials row m's Assigned and AssignmentID for
 // the caller: the icon shows to whoever it went to and whoever edits the quiz.
 func materialAssignedCols(user string) string {
 	return `m.kind='quiz' AND m.workspace_id IS NOT NULL AND (` + quizAssignedToSQL("m.id", user) + ` IS NOT NULL
-			OR (` + quizAssignmentOpenSQL("m.id") + ` AND ` + editableWorkspaceSQL("m.workspace_id", user) + `)),
+			OR (` + quizAssignmentHoldsSQL("m.id") + ` AND ` + editableWorkspaceSQL("m.workspace_id", user) + `)),
 		COALESCE(` + quizAssignedToSQL("m.id", user) + `, '')`
 }
 
 // CreateAssignment makes an assignment, freezing a marked one's quiz unless it
-// is a draft. It changes nothing about the quiz (Epo 2026-11-04).
+// is a draft. It changes nothing about the quiz (Epo 2026-11-04). From anyone but
+// a class's staff it makes a task for themself (Epo 2026-11-10), which with no
+// workspace (wsID empty, Epo 2026-11-11) is all anyone makes.
 func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form AssignmentForm, now time.Time) (Assignment, error) {
 	id := uid("as")
+	var own bool
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+		staff, err := s.lockTaskTx(ctx, tx, wsID, actorID, true)
+		if err != nil {
 			return err
 		}
-		if err := checkAssignmentForm(ctx, tx, wsID, form); err != nil {
+		own = !staff
+		if own {
+			if err := checkOwnTask(form, actorID); err != nil {
+				return err
+			}
+		}
+		if err := checkAssignmentForm(ctx, tx, wsID, actorID, form, own); err != nil {
 			return err
 		}
-		if err := assertAssignmentRoomTx(ctx, tx, wsID, true, !form.Draft, now); err != nil {
+		if own {
+			err = assertOwnTaskRoomTx(ctx, tx, wsID, actorID)
+		} else {
+			err = assertAssignmentRoomTx(ctx, tx, wsID, true, !form.Draft, now)
+		}
+		if err != nil {
 			return err
 		}
 		if form.Kind == AssignmentMarked {
-			var quiz bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2 AND kind='quiz'
-				AND trashed_at IS NULL AND parent_material_id IS NULL)`, form.QuizID, wsID).Scan(&quiz); err != nil {
+			if err := checkAssignmentQuizTx(ctx, tx, wsID, actorID, form.QuizID, own); err != nil {
 				return err
-			}
-			if !quiz {
-				return assignmentInput("choose a quiz in this workspace")
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, posted_at, created_at)
-			VALUES ($1,$2,$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$17,$17)`,
+				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, posted_at, created_at, own)
+			VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$17,$17,$19)`,
 			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-			form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads); err != nil {
+			form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own); err != nil {
 			return err
 		}
 		if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
@@ -890,12 +1149,41 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 		if form.Draft {
 			return nil
 		}
-		return s.publishAssignmentTx(ctx, tx, id, wsID, actorID, form.Kind, form.Questions, now)
+		return s.publishAssignmentTx(ctx, tx, id, taskRow{wsID: wsID, own: own}, actorID, form.Kind, form.Questions, now)
 	})
 	if err != nil {
 		return Assignment{}, err
 	}
 	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// checkAssignmentQuizTx: an assignment's quiz is its class's. A task of one's
+// own takes any quiz its maker can open, from any workspace or none (Epo
+// 2026-11-11), so not one a class has out (materialHiddenSQL) or still holds
+// back from them (materialEffectiveAccess): freezing it would hand them its keys.
+func checkAssignmentQuizTx(ctx context.Context, tx pgx.Tx, wsID, actorID, quizID string, own bool) error {
+	var quiz bool
+	if !own {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND workspace_id=$2 AND kind='quiz'
+			AND trashed_at IS NULL AND parent_material_id IS NULL)`, quizID, wsID).Scan(&quiz); err != nil {
+			return err
+		}
+		if !quiz {
+			return assignmentInput("choose a quiz in this workspace")
+		}
+		return nil
+	}
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM materials m WHERE m.id=$1 AND m.kind='quiz' AND `+ownTaskMaterialSQL("$2")+`)`,
+		quizID, actorID).Scan(&quiz); err != nil {
+		return err
+	}
+	if quiz {
+		_, err := materialEffectiveAccess(ctx, tx, actorID, quizID)
+		if err == nil || !errors.Is(err, ErrNotFound) {
+			return err
+		}
+	}
+	return assignmentInput("choose a quiz you can open")
 }
 
 // writeAssignmentLists replaces its named assignees and files.
@@ -921,11 +1209,12 @@ func writeAssignmentLists(ctx context.Context, tx pgx.Tx, id string, form Assign
 
 // publishAssignmentTx makes it members', posted now. A marked one freezes its
 // quiz: its questions with their keys, and its images as new rows of the
-// workspace with no material, so editing or deleting the quiz leaves them. The
+// workspace (of the task alone, for one its maker set themself) with no
+// material, so editing or deleting the quiz leaves them. The
 // actor pays for the copied images, as for a clone (Epo 2026-10-11), and for the
 // frozen questions (Epo 2026-11-05), so this is the last that fits their storage.
 // A republish pays only for what it adds to what it replaces.
-func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, actorID, kind string, qs []map[string]any, now time.Time) error {
+func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id string, r taskRow, actorID, kind string, qs []map[string]any, now time.Time) error {
 	if kind == AssignmentUnmarked {
 		_, err := tx.Exec(ctx, `UPDATE assignments SET draft=false, posted_at=$2 WHERE id=$1`, id, now)
 		return err
@@ -937,7 +1226,7 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 	for _, q := range qs {
 		assetIDs = append(assetIDs, questions.AssetIDs(q)...)
 	}
-	idMap, err := s.copyFrozenAssetsTx(ctx, tx, id, wsID, actorID, assetIDs, now)
+	idMap, err := s.copyFrozenAssetsTx(ctx, tx, id, r, actorID, assetIDs, now)
 	if err != nil {
 		return err
 	}
@@ -975,15 +1264,26 @@ func (s *Store) publishAssignmentTx(ctx context.Context, tx pgx.Tx, id, wsID, ac
 
 // copyFrozenAssetsTx copies the quiz's ready images and returns old id → new id.
 // An image the assignment already holds from an earlier publish keeps its row.
-func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID, wsID, actorID string, ids []string, now time.Time) (map[string]string, error) {
+// An assignment's are its class's images, and so are its copies. A task of
+// one's own takes its quiz's, wherever the quiz sits, and its copies name the
+// task alone (Epo 2026-11-11): it leaves a workspace with its maker.
+func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID string, r taskRow, actorID string, ids []string, now time.Time) (map[string]string, error) {
 	idMap := map[string]string{}
 	if len(ids) == 0 {
 		return idMap, nil
 	}
+	// A class's images are its workspace's. A task's quiz may sit anywhere, so
+	// its images are that quiz's, and no workspace write holds them: FOR SHARE
+	// keeps each until its copy is in.
+	from, copyTo := `s.workspace_id=$2`, r.wsID
+	if r.own {
+		from = `s.material_id=(SELECT source_quiz_id FROM assignments WHERE id=$3 AND workspace_id IS NOT DISTINCT FROM NULLIF($2::text, ''))`
+		copyTo = ""
+	}
 	rows, err := tx.Query(ctx, `SELECT s.id, s.object_path, s.size_bytes, h.id FROM editor_assets s
 		LEFT JOIN LATERAL (SELECT x.id FROM editor_assets x WHERE x.assignment_id=$3 AND x.object_path=s.object_path
 			AND x.status='ready' AND x.trashed_at IS NULL LIMIT 1) h ON true
-		WHERE s.id = ANY($1) AND s.workspace_id=$2 AND s.status='ready' AND s.trashed_at IS NULL`, uniqueStrings(ids), wsID, assignmentID)
+		WHERE s.id = ANY($1) AND `+from+` AND s.status='ready' AND s.trashed_at IS NULL FOR SHARE OF s`, uniqueStrings(ids), r.wsID, assignmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1023,9 +1323,9 @@ func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID,
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, assignment_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes,
 			 status, etag, created_at, completed_at, thumbnail_key)
-			SELECT $1::text, workspace_id, NULL::text, $5::text, $2::text, $2::text, name, purpose, object_path, content_type, size_bytes,
+			SELECT $1::text, NULLIF($6::text, ''), NULL::text, $5::text, $2::text, $2::text, name, purpose, object_path, content_type, size_bytes,
 				'ready', etag, $3::timestamptz, $3::timestamptz, thumbnail_key
-			FROM editor_assets WHERE id=$4`, newID, actorID, now, oldID, assignmentID); err != nil {
+			FROM editor_assets WHERE id=$4`, newID, actorID, now, oldID, assignmentID, copyTo); err != nil {
 			return nil, err
 		}
 	}
@@ -1033,15 +1333,21 @@ func (s *Store) copyFrozenAssetsTx(ctx context.Context, tx pgx.Tx, assignmentID,
 }
 
 // UpdateAssignment saves the form's settings; the kind, the quiz and a published
-// assignment's frozen copy stay. A running attempt keeps its deadline.
+// assignment's frozen copy stay. A running attempt keeps its deadline. A member's
+// own task is changed by its maker alone.
 func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form AssignmentForm, now time.Time) (Assignment, error) {
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return Assignment{}, err
 	}
+	wsID := row.wsID
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+		staff, err := s.lockTaskTx(ctx, tx, wsID, actorID, true)
+		if err != nil {
 			return err
+		}
+		if !row.mayChange(staff, actorID) {
+			return ErrNotFound
 		}
 		var kind string
 		var draft bool
@@ -1056,7 +1362,12 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 		if quizID != nil {
 			form.QuizID = *quizID
 		}
-		if err := checkAssignmentForm(ctx, tx, wsID, form); err != nil {
+		if row.own {
+			if err := checkOwnTask(form, actorID); err != nil {
+				return err
+			}
+		}
+		if err := checkAssignmentForm(ctx, tx, wsID, actorID, form, row.own); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
@@ -1081,18 +1392,19 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 // PublishAssignment gives a draft to its members. questions is its quiz's
 // current content, or nil when the quiz is gone.
 func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []map[string]any, now time.Time) (Assignment, error) {
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return Assignment{}, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
 			return err
 		}
 		var kind string
 		var draft bool
 		var due *time.Time
-		if err := tx.QueryRow(ctx, `SELECT kind, draft, due_at FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&kind, &draft, &due); err != nil {
+		var quizID *string
+		if err := tx.QueryRow(ctx, `SELECT kind, draft, due_at, source_quiz_id FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&kind, &draft, &due, &quizID); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
@@ -1107,10 +1419,12 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 		if kind == AssignmentMarked && qs == nil {
 			return ErrAssignmentQuizGone
 		}
-		if err := assertAssignmentRoomTx(ctx, tx, wsID, false, true, now); err != nil {
+		// Only a class's assignment is ever a draft, and a class has room for
+		// so many open.
+		if err := assertAssignmentRoomTx(ctx, tx, row.wsID, false, true, now); err != nil {
 			return err
 		}
-		return s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now)
+		return s.publishAssignmentTx(ctx, tx, id, row, actorID, kind, qs, now)
 	})
 	if err != nil {
 		return Assignment{}, err
@@ -1124,15 +1438,15 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 // submitted one keeps its graded copy and marks. Images it stops using stay until
 // it is deleted, as submissions may show them. questions is nil when the quiz is gone.
 func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs []map[string]any, now time.Time) (Assignment, error) {
-	wsID, payer, err := s.assignmentPayer(ctx, id)
+	row, payer, err := s.assignmentPayer(ctx, id)
 	if err != nil {
 		return Assignment{}, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentPayerRowsTx(ctx, tx, wsID, actorID, payer); err != nil {
+		if err := s.lockAssignmentPayerRowsTx(ctx, tx, row.wsID, actorID, payer); err != nil {
 			return err
 		}
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
 			return err
 		}
 		// The counters before the row, as reconciliation takes them.
@@ -1149,8 +1463,9 @@ func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs 
 		var kind string
 		var draft, noLate bool
 		var due, closed *time.Time
-		if err := tx.QueryRow(ctx, `SELECT kind, draft, no_late, due_at, closed_at FROM assignments WHERE id=$1 FOR UPDATE`, id).
-			Scan(&kind, &draft, &noLate, &due, &closed); err != nil {
+		var quizID *string
+		if err := tx.QueryRow(ctx, `SELECT kind, draft, no_late, due_at, closed_at, source_quiz_id FROM assignments WHERE id=$1 FOR UPDATE`, id).
+			Scan(&kind, &draft, &noLate, &due, &closed, &quizID); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
@@ -1173,7 +1488,10 @@ func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs 
 		if err != nil {
 			return err
 		}
-		if err := s.publishAssignmentTx(ctx, tx, id, wsID, actorID, kind, qs, now); err != nil {
+		if err := row.checkFreezeTx(ctx, tx, actorID, kind, quizID); err != nil {
+			return err
+		}
+		if err := s.publishAssignmentTx(ctx, tx, id, row, actorID, kind, qs, now); err != nil {
 			return err
 		}
 		return dropStaleAnswersTx(ctx, tx, id, before, qs)
@@ -1322,16 +1640,17 @@ func (s *Store) AssignmentSourceQuiz(ctx context.Context, id string) (string, er
 }
 
 // SetAssignmentClosed closes it by hand, stopping late submissions and making its
-// quiz practice, or reopens it. A running attempt goes on for the grace, for its
+// quiz practice (under Show answers Do not show only once staff turn it,
+// TurnAssignmentToPractice), or reopens it. A running attempt goes on for the grace, for its
 // page to send what it holds (the caller tells it, Epo 2026-11-05); past that the
 // sweep or the member's next request submits what was saved.
 func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, closed bool, now time.Time) (Assignment, error) {
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return Assignment{}, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
 			return err
 		}
 		at := &now
@@ -1342,8 +1661,8 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 			if err := tx.QueryRow(ctx, `SELECT closed_at IS NOT NULL FROM assignments WHERE id=$1 AND NOT draft FOR UPDATE`, id).Scan(&wasClosed); err != nil && !isNoRows(err) {
 				return err
 			}
-			if wasClosed {
-				if err := assertAssignmentRoomTx(ctx, tx, wsID, false, true, now); err != nil {
+			if wasClosed && !row.own {
+				if err := assertAssignmentRoomTx(ctx, tx, row.wsID, false, true, now); err != nil {
 					return err
 				}
 			}
@@ -1357,18 +1676,57 @@ func (s *Store) SetAssignmentClosed(ctx context.Context, actorID, id string, clo
 	return s.GetAssignment(ctx, actorID, id, now)
 }
 
+// TurnAssignmentToPractice ends the hold a class's closed assignment under Show
+// answers Do not show keeps on its quiz (Epo 2026-11-11): staff make it practice
+// for members by hand. The hold ends with this write; the release that rates
+// what was submitted follows, from here or, if a member's write holds the row,
+// from the sweep.
+func (s *Store) TurnAssignmentToPractice(ctx context.Context, actorID, id string, now time.Time) (Assignment, error) {
+	row, err := s.taskRow(ctx, s.pool, id)
+	if err != nil {
+		return Assignment{}, err
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE assignments SET practice_at=$1
+			WHERE id=$2 AND NOT own AND answers_shown='never' AND practice_at IS NULL
+				AND EXISTS (SELECT 1 FROM materials q WHERE q.id=source_quiz_id AND q.trashed_at IS NULL)
+				AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
+				AND (grades_shown='automatic' OR grades_released_at IS NOT NULL)`, now, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return assignmentInput("this assignment's quiz is not waiting to be turned to practice")
+		}
+		return nil
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	// The turn stands either way: the sweep releases what this could not.
+	if err := s.releaseAssignment(ctx, id, now); err != nil {
+		obs.Log(ctx).Warn("assignment not released", "assignment_id", id, "error", err)
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
 // ReleaseAssignmentGrades shows members their grades on an assignment whose
 // Show grades is manual (Epo 2026-11-08, mock T5). Marks decided later show as
 // they land. Once it has also closed, the sweep makes its quiz practice and
-// rates what was submitted.
+// rates what was submitted, unless its answers are Do not show
+// (TurnAssignmentToPractice).
 func (s *Store) ReleaseAssignmentGrades(ctx context.Context, actorID, id string, now time.Time) (Assignment, []Notification, error) {
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return Assignment{}, nil, err
 	}
+	wsID := row.wsID
 	var sent []Notification
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
+		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
 			return err
 		}
 		var title string
@@ -1380,6 +1738,10 @@ func (s *Store) ReleaseAssignmentGrades(ctx context.Context, actorID, id string,
 		}
 		if err != nil {
 			return err
+		}
+		// A task's maker released them themself: there is no one else to tell.
+		if row.own {
+			return nil
 		}
 		// The bell tells each member who handed something in (T, Epo 2026-11-08).
 		rows, err := tx.Query(ctx, `SELECT DISTINCT user_id FROM attempts
@@ -1424,26 +1786,37 @@ func (s *Store) RunningAttemptUsers(ctx context.Context, id string) ([]string, e
 }
 
 // DeleteAssignment deletes it with its attempts, frozen questions and images,
-// which leave their payer's meter (a trigger's); its quiz is as it was.
+// which leave their payer's meter (a trigger's); its quiz is as it was. A
+// member's own task is deleted by its maker alone.
 func (s *Store) DeleteAssignment(ctx context.Context, actorID, id string) error {
-	wsID, payer, err := s.assignmentPayer(ctx, id)
+	row, payer, err := s.assignmentPayer(ctx, id)
 	if err != nil {
 		return err
 	}
+	wsID := row.wsID
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := s.lockAssignmentPayerRowsTx(ctx, tx, wsID, actorID, payer); err != nil {
 			return err
 		}
 		// Deleting is one of the things a frozen account keeps (Epo 2026-11-05).
-		if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
-			return err
-		}
-		staff, err := s.assignmentStaff(ctx, tx, actorID, wsID)
-		if err != nil {
-			return err
-		}
-		if !staff {
-			return ErrNotFound
+		if row.own {
+			if _, err := s.lockTaskTx(ctx, tx, wsID, actorID, false); err != nil {
+				return err
+			}
+			if !row.mayChange(false, actorID) {
+				return ErrNotFound
+			}
+		} else {
+			if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
+				return err
+			}
+			staff, err := s.assignmentStaff(ctx, tx, actorID, wsID)
+			if err != nil {
+				return err
+			}
+			if !staff {
+				return ErrNotFound
+			}
 		}
 		// The counter before the row, as reconciliation takes them.
 		if payer != nil {
@@ -1480,16 +1853,19 @@ func assignedTx(ctx context.Context, q rowQueryer, id, userID string) (bool, err
 func (s *Store) SetAssignmentDone(ctx context.Context, userID, id string, done bool, now time.Time) error {
 	var wsID, kind string
 	var draft bool
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id, kind, draft FROM assignments WHERE id=$1`, id).Scan(&wsID, &kind, &draft)
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), kind, draft FROM assignments WHERE id=$1`, id).Scan(&wsID, &kind, &draft)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	// Not a class, or its owner's account is locked: nothing is ticked.
-	if _, err := s.assignmentStaff(ctx, s.pool, userID, wsID); err != nil {
-		return err
+	// No way in, or its owner's account is locked: nothing is ticked. A task
+	// with no workspace is its maker's (assignedTx).
+	if wsID != "" {
+		if _, err := s.taskStaff(ctx, s.pool, userID, wsID); err != nil {
+			return err
+		}
 	}
 	assigned, err := assignedTx(ctx, s.pool, id, userID)
 	if err != nil {
@@ -1635,19 +2011,39 @@ type attemptRow struct {
 	paper string
 	// marking is the assignment's (MarkingAIApprove, MarkingAI or MarkingManual).
 	marking string
+	// own and maker: a task its maker set themself (taskRow); wsID is then empty
+	// when it has no workspace, and quizWsID is where its quiz sits.
+	own      bool
+	maker    *string
+	quizWsID string
 }
 
-const attemptRowCols = `t.id, t.assignment_id, t.user_id, a.workspace_id, COALESCE(a.source_quiz_id,''),
+// task is who decides the attempt's assignment or task.
+func (r attemptRow) task() taskRow {
+	return taskRow{wsID: r.wsID, own: r.own, maker: r.maker, quizWsID: r.quizWsID}
+}
+
+// quiz is the attempt's quiz for its answer events and ratings: an
+// assignment's sits in its class; a task's is wherever its maker took it from.
+func (r attemptRow) quiz() Material {
+	if r.own {
+		return Material{ID: r.sourceID, WorkspaceID: r.quizWsID}
+	}
+	return Material{ID: r.sourceID, WorkspaceID: r.wsID}
+}
+
+const attemptRowCols = `t.id, t.assignment_id, t.user_id, COALESCE(a.workspace_id, ''), COALESCE(a.source_quiz_id,''),
 	t.started_at, t.deadline_at, t.submitted_at, a.due_at, a.closed_at, a.released_at,
 	a.no_late, a.late_penalty_pct, t.auto_submitted, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, t.correct::float8, t.total::float8, t.waiting_marks::float8, t.waiting_answers,
-	t.answers, t.questions, a.questions, COALESCE(t.paper, ''), a.marking`
+	t.answers, t.questions, a.questions, COALESCE(t.paper, ''), a.marking, a.own, a.created_by,
+	COALESCE((SELECT sq.workspace_id FROM materials sq WHERE sq.id=a.source_quiz_id), '')`
 
 func scanAttemptRow(row pgx.Row) (attemptRow, error) {
 	var r attemptRow
 	err := row.Scan(&r.id, &r.assignmentID, &r.userID, &r.wsID, &r.sourceID,
 		&r.startedAt, &r.deadline, &r.submitted, &r.dueAt, &r.closedAt, &r.released,
 		&r.noLate, &r.latePenaltyPct, &r.auto, &r.showAnswers, &r.showGrades, &r.gradesReleased, &r.shuffle, &r.correct, &r.total, &r.waitingMarks, &r.waitingAnswers,
-		&r.answers, &r.graded, &r.frozen, &r.paper, &r.marking)
+		&r.answers, &r.graded, &r.frozen, &r.paper, &r.marking, &r.own, &r.maker, &r.quizWsID)
 	if isNoRows(err) {
 		return r, ErrNotFound
 	}
@@ -1678,12 +2074,16 @@ func (r attemptRow) timedOut(now time.Time) bool {
 func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload bool, now time.Time) (AssignmentAttempt, error) {
 	var attemptID, handedIn string
 	var view AssignmentAttempt
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return view, err
 	}
+	wsID := row.wsID
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		handedIn = ""
+		if err := row.lockQuizWorkspaceTx(ctx, tx); err != nil {
+			return err
+		}
 		if err := lockWorkspaceKeyShareTx(ctx, tx, wsID); err != nil {
 			return err
 		}
@@ -1691,7 +2091,7 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 			return err
 		}
 		// Not a class, or its owner's account is locked: nothing starts or submits.
-		if _, err := s.assignmentStaff(ctx, tx, userID, wsID); err != nil {
+		if _, err := s.staffOf(ctx, tx, userID, row); err != nil {
 			return err
 		}
 		var kind, title, wsName string
@@ -1700,8 +2100,8 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 		var limit, allowed int
 		var hasLimit *int
 		var total float64
-		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, w.name, a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8, a.allow_uploads
-			FROM assignments a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1 FOR SHARE OF a`, id).
+		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, COALESCE(w.name, ''), a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8, a.allow_uploads
+			FROM assignments a LEFT JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1 FOR SHARE OF a`, id).
 			Scan(&kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total, &allowUploads)
 		if isNoRows(err) {
 			return ErrNotFound
@@ -1769,7 +2169,7 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO attempts (id, user_id, workspace_id, kind, assignment_id, quiz_name, workspace_name,
 				total, started_at, taken_at, deadline_at, paper)
-			VALUES ($1,$2,$3,'assignment',$4,$5,$6,$7,$8,$8,$9,$10)`,
+			VALUES ($1,$2,NULLIF($3::text,''),'assignment',$4,$5,$6,$7,$8,$8,$9,$10)`,
 			attemptID, userID, wsID, id, title, truncateRunes(wsName, 80), total, now, deadline, paper)
 		return err
 	})
@@ -1829,17 +2229,17 @@ func (s *Store) SaveAssignmentAnswers(ctx context.Context, userID, attemptID str
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		// This runs every few seconds per member: it leaves the frozen copy out.
 		var r attemptRow
-		err := tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at
+		err := tx.QueryRow(ctx, `SELECT COALESCE(a.workspace_id, ''), a.own, a.created_by, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at
 			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 			WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
-			Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt)
+			Scan(&r.wsID, &r.own, &r.maker, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		if _, err := s.assignmentStaff(ctx, tx, userID, r.wsID); err != nil {
+		if _, err := s.staffOf(ctx, tx, userID, r.task()); err != nil {
 			return err
 		}
 		if r.submitted != nil {
@@ -1916,7 +2316,7 @@ func (s *Store) SubmitAssignmentAttempt(ctx context.Context, userID, attemptID s
 		if err != nil {
 			return err
 		}
-		if _, err := s.assignmentStaff(ctx, tx, userID, r.wsID); err != nil {
+		if _, err := s.staffOf(ctx, tx, userID, r.task()); err != nil {
 			return err
 		}
 		if r.submitted != nil {
@@ -1987,7 +2387,7 @@ func (s *Store) finishAttemptTx(ctx context.Context, tx pgx.Tx, r attemptRow, an
 		r.id, rawAnswers, rawGraded, correct, total, pct, now, auto, waitingMarks, waitingAnswers); err != nil {
 		return err
 	}
-	mt := Material{ID: r.sourceID, WorkspaceID: r.wsID}
+	mt := r.quiz()
 	for _, q := range graded {
 		if err := logAnswerTx(ctx, tx, r.userID, mt, q, given, answerSourceAssignment, r.id, now); err != nil {
 			return err
@@ -2142,7 +2542,7 @@ func (s *Store) GetAssignmentAttempt(ctx context.Context, userID, attemptID stri
 	if err != nil {
 		return AssignmentAttempt{}, err
 	}
-	staff, err := s.assignmentStaff(ctx, s.pool, userID, r.wsID)
+	staff, err := s.staffOf(ctx, s.pool, userID, r.task())
 	if err != nil {
 		return AssignmentAttempt{}, err
 	}
@@ -2170,17 +2570,24 @@ func (s *Store) readAttempt(ctx context.Context, attemptID string) (attemptRow, 
 }
 
 // lockAttemptWorkspaceTx takes an attempt's workspace first (see
-// lockWorkspaceKeyShareTx); an attempt that is gone is its caller's to report.
+// lockWorkspaceKeyShareTx), when its task has one, and for an own task the one
+// its quiz sits in (taskRow.lockQuizWorkspaceTx); an attempt that is gone is its
+// caller's to report.
 func lockAttemptWorkspaceTx(ctx context.Context, tx pgx.Tx, attemptID string) error {
-	var wsID string
-	err := tx.QueryRow(ctx, `SELECT a.workspace_id FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, attemptID).Scan(&wsID)
+	var r taskRow
+	err := tx.QueryRow(ctx, `SELECT COALESCE(a.workspace_id, ''), a.own,
+			COALESCE((SELECT sq.workspace_id FROM materials sq WHERE sq.id=a.source_quiz_id), '')
+		FROM attempts t JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, attemptID).Scan(&r.wsID, &r.own, &r.quizWsID)
 	if isNoRows(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return lockWorkspaceKeyShareTx(ctx, tx, wsID)
+	if err := r.lockQuizWorkspaceTx(ctx, tx); err != nil {
+		return err
+	}
+	return lockWorkspaceKeyShareTx(ctx, tx, r.wsID)
 }
 
 // finishAttemptIfRunning submits what was saved, if nothing beat it to it. A
@@ -2408,7 +2815,7 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		return AssignmentAttempt{}, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockAssignmentStaffTx(ctx, tx, first.wsID, actorID); err != nil {
+		if err := s.lockStaffOfTx(ctx, tx, first.task(), actorID); err != nil {
 			return err
 		}
 		r, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
@@ -2482,7 +2889,7 @@ func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRo
 		r.id, raw, correct, total, pct, waitingMarks, waitingAnswers); err != nil {
 		return err
 	}
-	mt := Material{ID: r.sourceID, WorkspaceID: r.wsID}
+	mt := r.quiz()
 	if err := logAnswerPartsTx(ctx, tx, r.userID, mt, question, given, answerSourceAssignment, r.id, now, changed); err != nil {
 		return err
 	}
@@ -2670,11 +3077,11 @@ const wrongAnswersShown = 5
 // GetAssignmentReport reads the report for a class's owner and editor members.
 func (s *Store) GetAssignmentReport(ctx context.Context, userID, id string, now time.Time) (AssignmentReport, error) {
 	out := AssignmentReport{Members: []AssignmentMemberRow{}, Questions: []AssignmentQuestionReport{}, Answers: []AssignmentAnswerRow{}}
-	wsID, err := s.assignmentWorkspace(ctx, id)
+	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
 		return out, err
 	}
-	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
+	staff, err := s.staffOf(ctx, s.pool, userID, row)
 	if err != nil {
 		return out, err
 	}
@@ -3148,6 +3555,7 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 	rows, err = s.pool.Query(ctx, `SELECT id FROM assignments
 		WHERE released_at IS NULL AND kind='marked' AND NOT draft AND (closed_at IS NOT NULL OR (no_late AND due_at <= $1))
 			AND (grades_shown='automatic' OR grades_released_at IS NOT NULL)
+			AND (own OR answers_shown<>'never' OR practice_at IS NOT NULL)
 		ORDER BY random() LIMIT $2`, now, limit)
 	if err != nil {
 		return finished, 0, err
@@ -3179,8 +3587,9 @@ type SweptAttempt struct {
 func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var wsID string
+		var own bool
 		var source *string
-		err := tx.QueryRow(ctx, `SELECT workspace_id, source_quiz_id FROM assignments WHERE id=$1`, id).Scan(&wsID, &source)
+		err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), source_quiz_id, own FROM assignments WHERE id=$1`, id).Scan(&wsID, &source, &own)
 		if isNoRows(err) {
 			return nil
 		}
@@ -3209,10 +3618,14 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 		if source == nil {
 			return nil
 		}
-		var othersOpen bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM assignments WHERE source_quiz_id=$1 AND id<>$2 AND NOT draft
-			AND closed_at IS NULL AND NOT (no_late AND due_at <= $3))`, *source, id, now).Scan(&othersOpen); err != nil {
-			return err
+		// A task someone set themself hides and shows no quiz: only a class's
+		// assignments hold one back.
+		othersOpen := own
+		if !own {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM assignments WHERE source_quiz_id=$1 AND id<>$2 AND NOT own AND NOT draft
+				AND closed_at IS NULL AND NOT (no_late AND due_at <= $3))`, *source, id, now).Scan(&othersOpen); err != nil {
+				return err
+			}
 		}
 		if !othersOpen {
 			if _, err := tx.Exec(ctx, `UPDATE materials SET hidden=false WHERE id=$1 AND trashed_at IS NULL AND hidden`, *source); err != nil {

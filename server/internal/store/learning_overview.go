@@ -38,6 +38,7 @@ type LearningRow struct {
 	Kind          string  `json:"kind" enum:"session,quiz,start,review"`
 	WorkspaceID   string  `json:"workspaceId"`
 	WorkspaceName string  `json:"workspaceName"`
+	IconID        string  `json:"iconId"`
 	SessionID     *string `json:"sessionId,omitempty"`
 	Group         string  `json:"group,omitempty" enum:"topic,others,workspace,"`
 	TopicName     string  `json:"topicName,omitempty"`
@@ -244,6 +245,9 @@ func (s *Store) LearningOverview(ctx context.Context, userID string, now time.Ti
 	if err := s.learningSuggestions(ctx, &out, suggestions); err != nil {
 		return out, err
 	}
+	for i := range out.Next {
+		out.Next[i].IconID = byID[out.Next[i].WorkspaceID].iconID
+	}
 	return out, nil
 }
 
@@ -362,7 +366,7 @@ func (s *Store) learningStart(ctx context.Context, userID string, scope []*learn
 		LEFT JOIN study_progress sp ON sp.material_id=m.id AND sp.user_id=$1
 		WHERE m.workspace_id = ANY($2) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
 			AND m.parent_material_id IS NULL AND sp.material_id IS NULL
-			AND workspace_item_visible(m.hidden, m.workspace_id, $1)
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)
 		ORDER BY m.topic_id IS NULL, t.position, m.position, m.created_at DESC, m.id`, userID, ids)
 	if err != nil {
 		return nil, err

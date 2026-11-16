@@ -26,8 +26,10 @@ test.describe('workspace invitations', () => {
       .getByPlaceholder(m.members_invite_placeholder())
       .fill('viewer@capynotebook.test');
     await ownerPage
-      .getByRole('group', { name: m.members_invite_role() })
-      .getByRole('button', { name: m.members_role_view() })
+      .getByRole('combobox', { name: m.members_invite_role() })
+      .click();
+    await ownerPage
+      .getByRole('option', { exact: true, name: m.members_role_view() })
       .click();
 
     const createResponse = waitForApi(
@@ -132,14 +134,14 @@ test.describe('workspace invitations', () => {
       expect(member).not.toHaveProperty('email');
     }
 
-    // The settings dialog and its tab live in the URL (Epo 2026-10-19), so
-    // the reload reopens Sharing.
+    // Members is a page of its own in the URL, so the reload reopens it.
     await ownerPage.reload();
     await expect(
-      ownerPage
-        .getByRole('dialog')
-        .getByRole('tab', { exact: true, name: m.workspace_sharing() })
-    ).toHaveAttribute('aria-selected', 'true');
+      ownerPage.getByRole('heading', {
+        exact: true,
+        name: m.study_panel_members(),
+      })
+    ).toBeVisible();
     await expect(ownerPage.getByText('E2E Viewer')).toBeVisible();
     await expect(ownerPage.getByText('viewer@capynotebook.test')).toHaveCount(
       0

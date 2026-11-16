@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import {
   useMoveFiles,
   useOwnedFiles,
@@ -34,10 +34,13 @@ const MOVE_MAX = 20;
  * picked.
  */
 export function YourFilesPanel({
+  aboveFooter,
   defaultTopicId = null,
   onMoved,
   workspaceId,
 }: {
+  /** Files' Add to field, right above the footer. */
+  aboveFooter?: ReactNode;
   /** The topic the footer starts on: the open one. */
   defaultTopicId?: string | null;
   onMoved: () => void;
@@ -196,6 +199,7 @@ export function YourFilesPanel({
         errorId={formError?.errorId}
         message={formError?.message ?? null}
       />
+      {aboveFooter}
       <DialogFooter className="shrink-0">
         <div className="mr-auto">
           {newTopic === null ? (

@@ -32,6 +32,9 @@ const DECODE_ENTITIES = [
   'mdast-util-from-markdown',
   'decode-named-character-reference',
 ].reduce((from, id) => createRequire(from).resolve(id), import.meta.filename);
+/** BlockSuite's icon imports, which resolve to the app's table of replacements
+ * (src/features/blocksuite/blocksuiteIcons.ts) in the vendored code and in ours. */
+const BLOCKSUITE_ICONS = /^@blocksuite\/icons\/lit$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
 /** MSW's entry points (src/main.tsx, src/share) and the dev-only drawing board's
  * route. A build without MSW never runs them, but Rollup loads every dynamic import,
@@ -321,6 +324,13 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         {
           find: 'decode-named-character-reference',
           replacement: DECODE_ENTITIES,
+        },
+        {
+          find: BLOCKSUITE_ICONS,
+          replacement: path.resolve(
+            import.meta.dirname,
+            './src/features/blocksuite/blocksuiteIcons.ts'
+          ),
         },
         ...(useMsw
           ? [

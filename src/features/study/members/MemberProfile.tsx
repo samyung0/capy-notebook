@@ -61,7 +61,8 @@ const weakest = (topics: SummaryTopic[]) =>
 
 /** A member's profile (board G2): the grade so far, every assignment, topics
  * with their labels and evidence, the questions still missed and recent work.
- * Practice shows as counts only. */
+ * Practice shows as counts only. An empty section says so under its heading;
+ * a member with nothing at all gets one line instead. */
 export function MemberProfilePage({
   memberId,
   show,
@@ -128,6 +129,12 @@ export function MemberProfilePage({
       </PracticeFrame>
     );
   const focus = weakest(data.topics);
+  // Nothing given, answered or done yet: one line stands in for the sections.
+  const notStarted =
+    data.assignments.length === 0 &&
+    data.missed.length === 0 &&
+    data.activity.length === 0 &&
+    data.topics.every((t) => t.asked === 0);
   const openAssignment = (a: MemberAssignment) =>
     navigate({
       search: a.attemptId
@@ -165,20 +172,31 @@ export function MemberProfilePage({
         </div>
       </div>
 
-      <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-8">
-        <div className="flex min-w-0 flex-col gap-8.5 lg:w-158 lg:shrink">
-          {data.assignments.length > 0 && (
+      {notStarted ? (
+        <div className="mt-7.5 flex max-w-140 flex-col gap-1 border-divider border-t pt-6">
+          <p className="font-semibold">
+            {m.member_not_started({ name: data.name })}
+          </p>
+          <p className="text-fg-muted">{m.member_not_started_body()}</p>
+        </div>
+      ) : (
+        <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-12 xl:gap-16">
+          <div className="flex min-w-0 flex-col gap-8.5 lg:w-158 lg:shrink">
             <section>
               <h2 className="t-subtitle">{m.study_panel_assignments()}</h2>
-              <ul className="mt-1">
-                {data.assignments.map((a) => (
-                  <AssignmentRow
-                    assignment={a}
-                    key={a.id}
-                    onOpen={() => void openAssignment(a)}
-                  />
-                ))}
-              </ul>
+              {data.assignments.length === 0 ? (
+                <Empty>{m.member_no_assignments({ name: data.name })}</Empty>
+              ) : (
+                <ul className="mt-1">
+                  {data.assignments.map((a) => (
+                    <AssignmentRow
+                      assignment={a}
+                      key={a.id}
+                      onOpen={() => void openAssignment(a)}
+                    />
+                  ))}
+                </ul>
+              )}
               {data.overall !== undefined && (
                 <div className="mt-3 flex items-center gap-2.5">
                   <span className="font-semibold">{m.member_overall()}</span>
@@ -195,71 +213,77 @@ export function MemberProfilePage({
                 </div>
               )}
             </section>
-          )}
-          {data.topics.length > 0 && (
             <section>
               <h2 className="t-subtitle">{m.summary_topics()}</h2>
-              <ul className="mt-1">
-                {data.topics.map((t) => (
-                  <TopicRow key={t.topicId ?? t.group} topic={t} />
-                ))}
-              </ul>
+              {data.topics.length === 0 ? (
+                <Empty>{m.member_no_topic_answers()}</Empty>
+              ) : (
+                <ul className="mt-1">
+                  {data.topics.map((t) => (
+                    <TopicRow key={t.topicId ?? t.group} topic={t} />
+                  ))}
+                </ul>
+              )}
             </section>
-          )}
-        </div>
+          </div>
 
-        <div className="flex min-w-0 flex-col gap-7.5 lg:w-95 lg:shrink-0">
-          {focus && (
-            <section className="flex flex-col gap-1.5 rounded-xl border border-divider px-4.5 py-4">
-              <div className="flex items-center gap-2">
-                <Icon
-                  className="shrink-0 text-tint-accent-fg"
-                  name="ai"
-                  size={18}
-                />
-                <h2 className="t-subtitle">
-                  {m.member_needs_practice_on({ topic: topicName(focus) })}
-                </h2>
-              </div>
-              <p className="pl-6.5 text-fg-secondary">
-                {m.member_missed_of({
-                  asked: focus.asked,
-                  wrong: focus.asked - focus.right,
-                })}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2 pl-6.5">
-                <Button
-                  onClick={() => setAssigning(true)}
-                  size="sm"
-                  variant="outline"
-                >
-                  {m.member_assign_practice()}
-                </Button>
-              </div>
-            </section>
-          )}
-          {data.missed.length > 0 && (
+          <div className="flex min-w-0 flex-col gap-7.5 lg:w-95 lg:shrink-0">
+            {focus && (
+              <section className="flex flex-col gap-1.5 rounded-xl border border-divider px-4.5 py-4">
+                <div className="flex items-center gap-2">
+                  <Icon
+                    className="shrink-0 text-tint-accent-fg"
+                    name="ai"
+                    size={18}
+                  />
+                  <h2 className="t-subtitle">
+                    {m.member_needs_practice_on({ topic: topicName(focus) })}
+                  </h2>
+                </div>
+                <p className="pl-6.5 text-fg-secondary">
+                  {m.member_missed_of({
+                    asked: focus.asked,
+                    wrong: focus.asked - focus.right,
+                  })}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 pl-6.5">
+                  <Button
+                    onClick={() => setAssigning(true)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {m.member_assign_practice()}
+                  </Button>
+                </div>
+              </section>
+            )}
             <section>
-              <h2 className="t-subtitle">{m.member_still_missing()}</h2>
-              <ul className="mt-0.5">
-                {data.missed.map((q) => (
-                  <MissedRow key={`${q.materialId}/${q.questionId}`} q={q} />
-                ))}
-              </ul>
+              <h2 className="t-subtitle">{m.member_frequently_wrong()}</h2>
+              {data.missed.length === 0 ? (
+                <Empty>{m.member_none_wrong()}</Empty>
+              ) : (
+                <ul className="mt-0.5">
+                  {data.missed.map((q) => (
+                    <MissedRow key={`${q.materialId}/${q.questionId}`} q={q} />
+                  ))}
+                </ul>
+              )}
             </section>
-          )}
-          {data.activity.length > 0 && (
             <section>
               <h2 className="t-subtitle">{m.member_recent_activity()}</h2>
-              <ul className="mt-0.5">
-                {data.activity.map((a, i) => (
-                  <ActivityRow activity={a} key={`${a.at}-${i}`} />
-                ))}
-              </ul>
+              {data.activity.length === 0 ? (
+                <Empty>{m.member_no_activity()}</Empty>
+              ) : (
+                <ul className="mt-0.5">
+                  {data.activity.map((a, i) => (
+                    <ActivityRow activity={a} key={`${a.at}-${i}`} />
+                  ))}
+                </ul>
+              )}
             </section>
-          )}
+          </div>
         </div>
-      </div>
+      )}
       {assigning && (
         <NewAssignmentDialog
           onClose={() => setAssigning(false)}
@@ -272,6 +296,11 @@ export function MemberProfilePage({
     </PracticeFrame>
   );
 }
+
+/** A section with nothing in it keeps its heading and says so. */
+const Empty = ({ children }: { children: ReactNode }) => (
+  <p className="mt-2 text-fg-muted">{children}</p>
+);
 
 const ROW =
   'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-divider border-b py-2 md:min-h-9 md:py-1';

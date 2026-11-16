@@ -78,6 +78,9 @@
   --radius-button-lg: 10px;
   --radius-button-xl: 10px;
   --radius-tile: 10px;
+  /* BlockSuite's floating bars and menus, and a bar's buttons. */
+  --radius-toolbar: 8px;
+  --radius-toolbar-button: 5px;
   /* Flashcards keep fisheye's rounder corner. */
   --radius-flashcard: 24px;
   --radius-card: 10px;

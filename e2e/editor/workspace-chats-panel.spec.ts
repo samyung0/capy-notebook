@@ -32,7 +32,9 @@ async function openChatRow(page: Page, name = 'What is a cell?') {
 const width = async (page: Page, id: string) =>
   Math.round((await page.locator(`#${id}`).boundingBox())?.width ?? 0);
 
-test('the rail avatar menu invites from the Sharing tab', async ({ page }) => {
+test("the rail avatar menu invites from Members' Manage tab", async ({
+  page,
+}) => {
   await openWorkspace(page, 1600);
   await page
     .getByRole('navigation', { name: m.workspace_rail_label() })
@@ -41,11 +43,12 @@ test('the rail avatar menu invites from the Sharing tab', async ({ page }) => {
   await page
     .getByRole('menuitem', { name: m.workspace_invite_member() })
     .click();
-  await expect(page).toHaveURL(/settings=sharing/);
+  await expect(page).toHaveURL(/study=members&manage=true/);
   await expect(
-    page
-      .getByRole('dialog', { name: m.workspace_settings() })
-      .getByRole('tab', { name: m.workspace_sharing(), selected: true })
+    page.getByRole('tab', { name: m.members_tab_manage(), selected: true })
+  ).toBeVisible();
+  await expect(
+    page.getByPlaceholder(m.members_invite_placeholder())
   ).toBeVisible();
 });
 
@@ -179,7 +182,7 @@ test('a chat sits beside the Dashboard, and a Practice page, which keep the cent
   await openChatRow(page);
   await expect(dashboard).toBeVisible();
 
-  await openSection(page, m.workspace_tab_study());
+  await openSection(page, m.study_panel_practice());
   await expect(
     page
       .locator('#viewer')
@@ -256,7 +259,7 @@ test('a page has one h1', async ({ page }) => {
     page.getByRole('heading', { exact: true, name: 'Biology 101' })
   ).toBeVisible({ timeout: 60_000 });
   await expect(headings).toHaveCount(1);
-  await openSection(page, m.workspace_tab_study());
+  await openSection(page, m.study_panel_practice());
   await expect(
     page.getByRole('heading', { level: 1, name: m.study_panel_practice() })
   ).toBeVisible();

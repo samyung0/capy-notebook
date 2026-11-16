@@ -91,3 +91,34 @@ func TestCreateBlankFileTakesTheStorageGate(t *testing.T) {
 		t.Fatalf("full create = %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// With no workspace (Files' Add file, Epo 2026-11-12) the starter is a
+// standalone file the caller pays for, in no workspace and no topic; a topic
+// is refused before anything is built.
+func TestCreateStandaloneBlankFile(t *testing.T) {
+	fx, authority := openBlankFiles(t)
+
+	rec := doAsUser(t, fx.h, http.MethodPost, "/api/files/blank", fx.editor,
+		map[string]any{"format": "xlsx", "name": "Budget", "topicId": fx.ch})
+	if rec.Code != http.StatusBadRequest || len(authority.sent("/internal/documents/create")) != 0 {
+		t.Fatalf("topic create = %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = doAsUser(t, fx.h, http.MethodPost, "/api/files/blank", fx.editor,
+		map[string]any{"format": "xlsx", "name": "Budget"})
+	var file struct{ ID, Name, Status string }
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &file) != nil ||
+		file.Name != "Budget.xlsx" || file.Status != "ready" {
+		t.Fatalf("create = %d %s", rec.Code, rec.Body.String())
+	}
+	var payer string
+	var workspaceID, topicID *string
+	if err := fx.st.Pool().QueryRow(context.Background(),
+		`SELECT user_id, workspace_id, topic_id FROM files WHERE id=$1`, file.ID).
+		Scan(&payer, &workspaceID, &topicID); err != nil {
+		t.Fatal(err)
+	}
+	if payer != fx.editor || workspaceID != nil || topicID != nil {
+		t.Fatalf("payer=%s workspace=%v topic=%v, want the caller's standalone file", payer, workspaceID, topicID)
+	}
+}

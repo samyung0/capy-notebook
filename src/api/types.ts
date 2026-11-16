@@ -572,6 +572,7 @@ export type {
   ResourceRef,
   ToolError,
   TrashActionReq,
+  Trashed,
   UndoEditReq,
   UndoPayload,
   UndoRef,
@@ -785,6 +786,8 @@ export interface ItemListParams {
   dir?: 'asc' | 'desc';
   kinds?: ItemKind[];
   locations?: FileListLocation[];
+  /** Keeps rows whose shown name holds this text. */
+  q?: string;
   scope?: ItemListScope;
   sort?: ItemListSort;
   workspaceIds?: string[];

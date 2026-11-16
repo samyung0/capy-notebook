@@ -89,13 +89,20 @@ function ShownToast({ toast }: { toast: QueuedToast }) {
     };
   }, [toast.closing, toast.id]);
 
-  // The drag writes the node's style directly: no render per pointer move.
+  // The drag writes the node's style directly: no render per pointer move. It
+  // ends on release, on cancel, or when the browser drops the capture (a
+  // flick off the window), which would otherwise leave the toast mid-drag.
   const release = (event: PointerEvent<HTMLDivElement>) => {
     const start = drag.current;
     const el = node.current;
     if (!start || !el) return;
     drag.current = null;
     el.removeAttribute('data-dragging');
+    // A captured drag sends no pointerleave until the pointer next moves,
+    // and none at all while it is off the window: hovered is read from where
+    // the drag ended, so the timer runs again.
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    setHovered(!!under && el.contains(under));
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
     const ms = event.timeStamp - start.at;
@@ -118,6 +125,7 @@ function ShownToast({ toast }: { toast: QueuedToast }) {
     <div
       className="motion-fade cursor-grab touch-none select-none data-dragging:cursor-grabbing"
       data-state={toast.closing ? 'closed' : 'open'}
+      onLostPointerCapture={release}
       onPointerCancel={release}
       onPointerDown={(event) => {
         if (

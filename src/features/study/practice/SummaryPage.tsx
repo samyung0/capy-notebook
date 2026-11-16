@@ -12,7 +12,8 @@ import { MakePractice } from './MakePractice';
 import { PracticeFrame } from './studyPage';
 import { studyView } from './studyView';
 
-/** Study → Summary (boards G5, M1), for whoever practises here: each topic's
+/** Study (boards G5, M1; Study's Summary page until Epo 2026-11-11), for whoever
+ * practises here, so not a class's staff: their own standing, each topic's
  * label, what it rests on and every question's result, grey when not attempted, with Practise. Assignments'
  * overall joins it once they exist; a section with nothing to show is not
  * drawn. */
@@ -37,7 +38,7 @@ export function SummaryPage({ workspaceId }: { workspaceId: string }) {
     <PracticeFrame>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.25">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-          <h1 className="t-page-title">{m.study_panel_summary()}</h1>
+          <h1 className="t-page-title">{m.workspace_tab_study()}</h1>
           <span className="t-meta text-fg-muted">{ws?.name}</span>
         </div>
         <Button iconLeft="plus" onClick={() => setMaking(true)}>

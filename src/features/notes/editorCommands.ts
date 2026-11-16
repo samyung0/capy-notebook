@@ -13,6 +13,8 @@ import { insertMediaPlaceholder } from './insertMediaPlaceholder';
 import { insertInlineEquation } from './mathInsert';
 import type { EditorCommandGroup, EditorWidgetId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
+import { tableViewCount, toastTableViewCap } from './tableView/count';
+import { newTableViewBlock, TABLE_VIEW_LIMITS } from './tableView/model';
 import { insertYouTubeEmbed } from './youtube';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
@@ -328,6 +330,40 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
         })),
         type: KEYS.table,
       }),
+    widget: 'table',
+  },
+  {
+    get description() {
+      return m.editor_cmd_table_view();
+    },
+    group: 'blockElements',
+    icon: 'tableView',
+    id: 'table-view',
+    keywords: ['database', 'kanban'],
+    get label() {
+      return m.editor_table_view();
+    },
+    run: (editor) => {
+      if (insideContainer(editor)) return;
+      if (tableViewCount(editor.children) >= TABLE_VIEW_LIMITS.count) {
+        toastTableViewCap();
+        return;
+      }
+      insertEditorNode(editor, {
+        block: newTableViewBlock({
+          done: m.table_view_done(),
+          kanban: m.table_view_kanban(),
+          name: m.table_view_name(),
+          notYet: m.table_view_not_yet(),
+          revising: m.table_view_revising(),
+          status: m.table_view_status(),
+          table: m.editor_table(),
+        }),
+        children: [{ text: '' }],
+        id: uid('table_view'),
+        type: 'table_view',
+      });
+    },
     widget: 'table',
   },
   {

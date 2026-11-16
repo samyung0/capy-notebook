@@ -9,6 +9,7 @@ import { m } from '@/i18n';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { PracticeFrame } from '../practice/studyPage';
 import { BackToAssignments } from './AssignmentAttemptPage';
+import { fileLink } from './assignmentPage';
 import { dayLabel, kindLabel } from './assignmentText';
 import { YourWork } from './HandIns';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
@@ -166,16 +167,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
                   {file.name}
                 </span>
                 <UnderlineLink asChild className="text-fg">
-                  <Link
-                    search={
-                      file.fileId
-                        ? { file: file.fileId }
-                        : { material: file.materialId }
-                    }
-                    to="."
-                  >
-                    {m.assignment_open()}
-                  </Link>
+                  <Link {...fileLink(file)}>{m.assignment_open()}</Link>
                 </UnderlineLink>
               </li>
             ))}

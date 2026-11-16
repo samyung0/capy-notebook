@@ -302,12 +302,13 @@ struct Written {
 /// level): `material::assert_canonical`, the embed catalog's `required` of
 /// the elements a Plate room holds, less a media block's `assetId`
 /// ([on_candidate] checks it).
-pub const OWN_KEYS: [(&str, &[&str]); 8] = [
+pub const OWN_KEYS: [(&str, &[&str]); 9] = [
     // Not a top-level block only, so its id is its own key.
     ("mermaid", &["id", "source"]),
     ("chart", &["block"]),
     ("plot", &["block"]),
     ("graph", &["block"]),
+    (crate::table_view::TYPE, &["block"]),
     (crate::material::HTML_EMBED_TYPE, &["html"]),
     (
         crate::material::MATERIAL_REF_TYPE,
@@ -1122,6 +1123,8 @@ pub const NESTED_BLOCK: &str = "a top-level block below the top level";
 pub const BAD_VALUE: &str = "an element with a value it cannot hold";
 /// [Refusal::Content] for more interactive blocks than a document holds.
 pub const TOO_MANY_EMBEDS: &str = "more interactive blocks than a document holds";
+/// [Refusal::Content] for more table views than a note holds.
+pub const TOO_MANY_TABLE_VIEWS: &str = "more table views than a note holds";
 /// [Refusal::Content] for an element given a key the catalog forbids it.
 pub const FORBIDDEN_KEY: &str = "an element with a key it never carries";
 /// [Refusal::Content] for a block type the catalog does not list for the
@@ -1427,6 +1430,7 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
     use yrs::Transact;
     let txn = candidate.transact();
     let mut embeds_counted = false;
+    let mut table_views_counted = false;
     for id in touched {
         let Some(branch) = id.get_branch(&txn) else {
             continue;
@@ -1459,6 +1463,16 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
                 .transpose()
                 .map_err(ProjectionError::from)?
                 .unwrap_or(Value::Null);
+            // A table view's block is read as held (no repair) and takes the
+            // writers' structural rules whole (Epo 2026-11-12): a merge that
+            // would leave two title columns or a list past its cap is refused
+            // here, as this update arrives.
+            if kind == crate::table_view::TYPE {
+                if crate::table_view::block(&block).is_err() {
+                    return Err(Refusal::Content(BAD_VALUE));
+                }
+                continue;
+            }
             // Every held list entry is one a writer could write, the ones a
             // read leaves out too (Epo 2026-10-18); the repaired block is one
             // the room's store takes.
@@ -1477,15 +1491,28 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
         {
             return Err(Refusal::Content(UNEXPECTED_KEY));
         }
-        // An interactive block made: the document's top level holds at most
-        // `HTML_EMBED_MAX_COUNT`, counted once on the copy.
-        if !embeds_counted
-            && matches!(attributes.get("type"), Some(Any::String(kind))
-                if &**kind == crate::material::HTML_EMBED_TYPE)
-        {
-            embeds_counted = true;
-            if top_level_embeds(&txn)? > catalog::HTML_EMBED_MAX_COUNT {
-                return Err(Refusal::Content(TOO_MANY_EMBEDS));
+        // An interactive block or a table view made: the document's top
+        // level holds at most `HTML_EMBED_MAX_COUNT` and
+        // `TABLE_VIEW_MAX_COUNT`, each counted once on the copy.
+        for (counted, counted_kind, max, refusal) in [
+            (
+                &mut embeds_counted,
+                crate::material::HTML_EMBED_TYPE,
+                catalog::HTML_EMBED_MAX_COUNT,
+                TOO_MANY_EMBEDS,
+            ),
+            (
+                &mut table_views_counted,
+                crate::table_view::TYPE,
+                catalog::TABLE_VIEW_MAX_COUNT,
+                TOO_MANY_TABLE_VIEWS,
+            ),
+        ] {
+            if !*counted && kind == counted_kind {
+                *counted = true;
+                if top_level_count(&txn, counted_kind)? > max {
+                    return Err(Refusal::Content(refusal));
+                }
             }
         }
         let media = matches!(attributes.get("type"), Some(Any::String(kind))
@@ -1507,18 +1534,18 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
     Ok(())
 }
 
-/// The interactive blocks at a document's top level.
-fn top_level_embeds<T: ReadTxn>(txn: &T) -> Result<usize, Refusal> {
+/// The blocks of type `kind` at a document's top level.
+fn top_level_count<T: ReadTxn>(txn: &T, kind: &str) -> Result<usize, Refusal> {
     let Some(root) = plate::content_root(txn) else {
         return Ok(0);
     };
     let mut count = 0;
     for op in plate::insert_delta(&root)? {
         if let Insert::Element(element) = op.insert {
-            let kind = plate::properties(&element)?
+            let element_kind = plate::properties(&element)?
                 .into_iter()
                 .find(|(key, _)| &**key == "type");
-            if matches!(kind, Some((_, Any::String(kind))) if &*kind == crate::material::HTML_EMBED_TYPE)
+            if matches!(element_kind, Some((_, Any::String(element_kind))) if &*element_kind == kind)
             {
                 count += 1;
             }

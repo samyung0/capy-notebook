@@ -18,12 +18,14 @@ vi.mock('@/api/hooks', () => ({
   useRemoveHandInFile: () => ({ isPending: false, mutate: vi.fn() }),
   useSetAssignmentDone: () => ({ isPending: false, mutate: setDone }),
   useStartAssignment: () => ({ isPending: false, mutate: start }),
+  useWorkspace: () => ({ data: undefined }),
 }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
     <a href="/">{children}</a>
   ),
   useNavigate: () => navigate,
+  useParams: () => ({ workspaceId: 'ws' }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 // Your work's uploads, as the page holds them.
@@ -58,7 +60,7 @@ it('leaves a way back and Start after a start that failed', async () => {
     root.render(<MemberAssignment assignment={assignment} />)
   );
   expect(start).toHaveBeenCalledTimes(1);
-  expect(host.textContent).toContain(m.study_panel_assignments());
+  expect(host.textContent).toContain(m.nav_todo());
   expect(host.textContent).toContain('Cells test');
   const button = [...host.querySelectorAll('button')].find(
     (item) => item.textContent === m.assignment_start()

@@ -73,14 +73,14 @@ func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (Wo
 					AND ao.kind='create_material' AND ao.outcome='succeeded'
 					AND ao.effect->'resource'->>'id' = m.id), m.hidden
 			FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-				AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+				AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 				AND `+quizAssignedToSQL("m.id", "$2")+` IS NULL
 			ORDER BY m.created_at DESC LIMIT $3)
 			UNION ALL
 			(SELECT 'assigned', s.created_by, NULL, NULL, s.id, s.title, s.posted_at, false, false
 			FROM assignments s JOIN workspaces w ON w.id=s.workspace_id
 			JOIN workspace_members wm ON wm.workspace_id=s.workspace_id AND wm.user_id=$2
-			WHERE s.workspace_id=$1 AND NOT s.draft AND w.kind='class' AND (wm.role IN ('owner', 'editor')
+			WHERE s.workspace_id=$1 AND NOT s.draft AND NOT s.own AND w.kind='class' AND (wm.role IN ('owner', 'editor')
 				OR (s.assign_all AND wm.role='viewer')
 				OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=s.id AND aa.user_id=$2))
 			ORDER BY s.posted_at DESC LIMIT $3))

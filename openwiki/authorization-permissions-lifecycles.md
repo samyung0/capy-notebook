@@ -98,8 +98,10 @@ at two levels:
   editor grant counts as an editor. `canClone`, Explore's `canClone`, a file row's
   `rights.clone` and `assertCloneSourceTx` agree with it. A personal workspace
   doesn't change, viewers included. A refusal answers the usual non-disclosing 404.
-- **Assignment.** A quiz under a published assignment that hasn't closed is cloned
-  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`),
+- **Assignment.** A quiz under a published assignment that hasn't closed, or that
+  closed under Show answers Do not show and was not turned to practice, is cloned
+  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`,
+  `quizAssignmentHoldsSQL`),
   which covers link and public editors too. Their workspace clone leaves that quiz
   out and counts it in the toast, and Explore's row and their item menu drop Clone.
   After closing the normal rules are back. On a quiz's own page Clone still shows
@@ -114,8 +116,10 @@ results", class only) and who pays for AI marking (class: the owner for
 assignments, a member for their own practice; personal: each person).
 
 Assignments ([study-progress.md](study-progress.md#assignments)) are a class's
-alone, and the store checks each of these itself (`assignmentStaff`,
-`lockAssignmentStaffTx`):
+alone, but for the tasks a member sets themself in any workspace (after the
+table), and the store checks each of these itself (`assignmentStaff`, `taskStaff`,
+`lockAssignmentStaffTx`; `staffOf` and `lockStaffOfTx` read the assignment's row
+first, since a task's only staff is its maker):
 
 | Action | Owner | Editor member | Link/public editor | Viewer member it went to | Other viewer member |
 | --- | --- | --- | --- | --- | --- |
@@ -128,11 +132,28 @@ alone, and the store checks each of these itself (`assignmentStaff`,
 | A running attempt | Only their own | Only their own | No | Their own | No |
 | Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No | No |
 
-Everything else answers 404, as does every route in a personal workspace, where
-they are hidden and not deleted; Members' store refuses a class's own viewer
+Everything else answers 404. A personal workspace hides a class's assignments
+without deleting them. Apart from assignments, any member of a workspace sets
+themself tasks (Epo 2026-11-10, New task: `assignments.own`, naming its maker
+alone and never a draft): a class's viewer members and everyone in a personal
+workspace, while a class's owner and editor members make assignments instead.
+Such a task takes every option an assignment does but who it goes to (Epo
+2026-11-11), and its maker is both its staff and the one it went to: they alone
+read, take, tick, mark, close, republish and delete it and read its report and
+its frozen images, on the same routes, while a class's staff and the workspace's
+owner get 404 on every one and see none of them. In a workspace it needs its
+maker still a member; when they leave or are removed, or the workspace is
+deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
+/api/todo/tasks`), and its quiz and files are any its maker can open, from any
+workspace or none (`checkAssignmentQuizTx`, `ownTaskFileSQL`,
+`ownTaskMaterialSQL`): never one hidden from them (a class's quiz under an open
+assignment is held from every viewer member, and one it went to stays refused
+past the close while its keys are held), and a file they later lose access to leaves
+the task, so a task shows its maker nothing they could not open themself;
+in a personal workspace every otherassignment route answers 404; Members' store refuses a class's own viewer
 members with `ErrForbidden` (`membersStaff`), which the API answers as 404 like
 the rest (`TestMembersRoutesAuthorize`). Members shows staff a member's practice
-as counts only, never answers; its Still missing lists prompts from the class's
+as counts only, never answers; its Frequently wrong lists prompts from the class's
 own quizzes only, never from a member's own practice quiz, whose title Recent
 activity hides too (Q723). Who pays and a frozen account: making or marking
 is editing and refused when frozen; a member's own start, save, submit and tick
@@ -448,6 +469,13 @@ unchanged.
   annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
+- **Held by an assignment.** A class's quiz under an open assignment is read as
+  hidden by the same checks without the column being written
+  (`materialHiddenSQL`, Epo 2026-11-11): every viewer member loses it until the
+  assignment closes or is deleted, or under Show answers Do not show until
+  staff turn it to practice after the close, and the one it went to keeps the
+  row that opens the assignment. See
+  [study progress](study-progress.md#assignments), One row.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
   file" / "Unhide file") or its header: a Hide file button on a visible item (from
@@ -487,7 +515,10 @@ unchanged.
   workspace or of one item, copies each item's flag as it is: hidden stays
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
-- **Make a quiz.** An extracted quiz starts hidden. Files uploaded in the
+- **Make a quiz.** A converted quiz starts hidden unless its maker turns off
+  the files step's switch, Hide the quiz from members (Epo 2026-11-11; on by
+  default and off from Practice's Add practice, sent as `hidden` with the run
+  and kept on its row). Files uploaded in the
   Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
   mark scheme uploaded for the quiz never reaches the students; a file picked
   from the workspace keeps its setting, and the run changes no file's
@@ -520,17 +551,21 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   may edit, share-role editors included, can read the collaborator directory
   behind mention autocomplete, which carries only user id, display name, and
   avatar. A user whose display name is empty is shown by user id.
-- **People with access** in Workspace settings → Sharing (Epo 2026-11-04): the
-  owner's row reads Owner; for the owner each other row has its role dropdown,
-  applied at once, and a trash that asks first ("Remove {name}?", staying open
-  if the removal fails), and a role switch sits above the invite's email field
-  and Invite. An editor member sees the list
-  with each role as text, no invite and no pending invitations; they leave from
-  Danger. Viewer members have no Sharing tab.
+- **People with access** on the workspace's Members page (Epo 2026-11-11; a
+  class's owner and teaching assistants find it on Members' Manage tab, and
+  Workspace settings has no Sharing tab): link sharing first, for the owner
+  and editors. The owner's row reads Owner; for the owner each other row has
+  its role dropdown, applied at once, and a Remove button that asks first
+  ("Remove {name}?", staying open if the removal fails), under an invite row
+  of address, role dropdown and Invite. An editor member sees the list with
+  each role as text, no invite and no pending invitations; they leave from
+  Danger. Viewer members see names and roles only. The workspace card's Share
+  dialog keeps its own list (Epo 2026-11-04: a role switch above the invite's
+  field, a trash per row).
 - **Members, and share-role visitors who may clone**, open Workspace
   settings (`hasWorkspaceSettings`); with Hide study progress gone (Q727 A)
   there is no Study tab, so a visitor who may not clone has no entry to it.
-  General, Sharing, Indexing and Statistics are for owners and editors;
+  General, Indexing and Statistics are for owners and editors;
   Others shows with Clone, so not for a class's viewer member; Danger holds
   Delete for the owner and Leave for any other member.
 - **The dialog's layout** (Epo 2026-11-04): the tabs sit in a left column under
@@ -693,6 +728,30 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 - Upload reservations and finalized bytes are charged to the editor who
   uploaded them (uploader pays), and only that editor completes its
   reservation.
+- A legacy Office upload (`.doc`, `.xls`, `.ppt`) is converted to `.docx`,
+  `.xlsx` or `.pptx` and renamed by the pipeline, with no request of its own:
+  an editor's upload or import of such a file is the only thing that starts a
+  conversion, and its job runs as that editor
+  ([agentic-retrieval.md](agentic-retrieval.md#legacy-office-conversion)).
+  The source upload policy lists the three legacy formats under fast parsing
+  (`parseModes[fast].extensions`), beside PDF, DOCX, XLSX and PPTX. A failed
+  conversion leaves the file `failed` under its uploaded name: the uploaded
+  bytes stay stored, charged to their payer and downloadable until the file
+  is deleted. The queue never converts it again; Retry processing does, and
+  that is the workspace owner's alone (a standalone file's owner). On a
+  legacy name Retry reruns the upload's own pipeline, the conversion and then
+  the file's stored parse mode, whatever mode the request names
+  (`RetryFileProcessing`), so with parsing stored on it takes the credit
+  check and charges its owner as the upload would have. It is also the one
+  Retry taken on a `ready` file: a legacy file stored unconverted. The open
+  file's Convert button is that request, offered to the same people
+  ([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
+  A hand-in's file is refused (`409 revision_conflict`) and keeps its bytes.
+  Bytes whose conversion hit the parser's hard timeout or an OOM
+  kill are refused again on a retry or a new upload, before LibreOffice runs.
+  A rename keeps the file's extension, compared under the file's row lock
+  (`UpdateFile`, `file_extension_changed`), so it cannot change a legacy
+  ending around the conversion's own rename.
 - The Create tab's Blank DOCX and Blank XLSX
   (`POST /api/workspaces/{id}/files/blank`) take an upload's gates without a
   reservation: an editor whose account may add bytes, the editor's storage
@@ -700,6 +759,9 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   engine builds the starter and again at the insert. The file is stored ready
   and not processed (parse mode `none`, no credits); the Indexing tab
   processes it like any store-only upload. It is in the upload rate class.
+  `POST /api/files/blank` (Files' Add file on No workspace) makes the same
+  file standalone: the caller's own, no topic (refused with one) and, like a
+  standalone upload, no file-count cap.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
 - Short-lived read links (a file's `/links`, an editor asset's resolve, the
@@ -745,8 +807,8 @@ the caller can edit) and then opens the same Add file dialog for it.
   standalone again; a workspace file may also be cloned standalone. A copy
   into or out of standalone is ingested in its own scope rather than copying
   the index.
-- The Files page (`location=standalone`), dashboard Recent, the quick open and
-  search list it for its owner; it opens at `/files/{id}`.
+- The Files page (`location=standalone`), dashboard Recent and search list it
+  for its owner; it opens at `/files/{id}`.
 - Account deletion cancels its pending upload (0125 made
   `cancel_user_async_work` find uploads without a workspace), and an owner
   lock evicts its source rooms.
@@ -1368,7 +1430,12 @@ needs a file and locks them; Undo hand in reopens them while it is open.
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
 The files go with the assignment (cascade), with the member as they leave the
 class, and list on the Files page once it closes, for the member to
-delete; like a paper's they are read only and out of account chat.
+delete; like a paper's they are read only and out of account chat. They
+are stored as uploaded and never parsed, so a legacy Office file handed in is
+not converted and stays a `.doc`, `.xls` or `.ppt`: Retry processing refuses
+a hand-in's file (`409 revision_conflict`), which the file viewer's Convert
+button cannot know
+([frontend/office-files.md](frontend/office-files.md#legacy-office-files)).
 
 Sources: [drawing routes](../server/internal/httpapi/drawings.go) and
 [drawing store](../server/internal/store/drawings.go).
@@ -1780,10 +1847,10 @@ its bottom-right corner; a part under 96px tall goes above or below it
 instead, so the phone mic is not covered. The question step edits the workspace's first quiz,
 else the welcome note's embedded one: its quiz block's Edit opens the same
 dialog. The last step lights the mic that opens the
-account voice overlay: the voice card on the rail or the full sidebar, and on
-phones the mic after the nav and recent-files buttons in the top row (shown
-where the browser can record). A step whose part this width lacks (side panels
-on phones) or whose note is missing is passed over.
+account voice overlay: the voice card on the rail or the full sidebar. A step
+whose part this width lacks (side panels on phones, and this mic, since the
+phone top row has none since Epo 2026-11-11) or whose note is missing is
+passed over.
 
 Where the starter workspace has nothing yet, the tour shows examples
 (`guide/tourSamples.ts`, labelled Example) only while it runs for that
@@ -1927,7 +1994,10 @@ none ([thumbnails.md](thumbnails.md)).
 Workspace file status describes processing after upload finalization:
 `pending` is queued, `processing` is parsing or indexing, `ready` is finished
 (including store-only files with `indexed=false`), and `failed` means processing
-failed. These are separate from the upload session's own status. Once
+failed. A legacy Office file is `pending` or `processing` through its
+conversion and again through the parse of the converted file; one that is
+`failed` and still named `.doc`, `.xls` or `.ppt` failed in its conversion.
+These are separate from the upload session's own status. Once
 `hasBytes=true`, the workspace file list allows opening the original source
 while processing continues; the viewer shows progress above the preview.
 
@@ -1958,6 +2028,26 @@ with source sessions the gateway reads the promoted object back once and
 records its SHA-256 in that transaction; it never takes a hash from the
 browser or the worker, since the collaboration server checks the originals it
 loads against it.
+
+A converted legacy Office file is handed over on
+`POST /api/internal/files/convert` (`internalConvertLegacyFile`). The route
+takes the pipeline secret (`X-Pipeline-Secret`, 401 without it, like every
+`/api/internal/*` route) and no user session; it is outside the OpenAPI spec
+and not rate limited. The secret alone moves nothing. The handoff must name a
+`parse` job on the `legacy_convert` plan, running at the attempt it claims
+with a live lease, that job's own file (not trashed, still named as legacy,
+at the revision and ETag the job was queued for) and that job's own key,
+`incoming/legacy-convert/<jobId>.<format>`. The gateway reads the object's
+size, content type and SHA-256 from the bucket itself, hashing the promoted
+object, and takes only bytes that open with the ZIP signature. The job's
+actor must still be an editor of the workspace (the owner of a standalone
+file), and the workspace
+owner's, the actor's and the payer's accounts must not be locked; otherwise
+the handoff answers `409 convert_claim_lost` and changes nothing. The parse
+coordinator writes that object with the ingest host's bucket credentials, and
+it is the only object a conversion writes; the gateway does the promotion.
+The swap and its storage gate are in
+[backend-storage-quota](backend-storage-quota.md#reservations-and-clones).
 
 The upload sweeper runs once on server startup and every minute afterward. It
 finds pending sessions whose deadline has passed (a drive import's, or a
@@ -2042,6 +2132,28 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `GET /api/trash`, `POST /api/trash/{kind}/{id}/restore` and
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
+
+A trashed item opens from the Trash on the file page Files uses
+(`/files/{id}`, `/materials/{id}`), read-only, for whoever sees it in a Trash
+list: the payer, unless they lost access to its workspace, or the live
+workspace's owner (Epo 2026-11-12, `trashReaderSQL`). This is the one
+exception to the `trashed_at IS NULL` rule above: when the live read finds
+nothing, these reads fall back to the trash reader rule and answer with a
+`trash` field (episode, purge date, `canRestore`): `GET /api/files/{id}`,
+`GET /api/files/{id}/links`, `GET /api/files/{id}/source-session?view=true`
+(the saved state, which may be ahead of the bytes), `GET /api/materials/{id}`
+(no role, so every capability is off; a quiz without its keys; edits a room
+still holds are projected first) and the editor-asset resolve for the
+material's own images and audio, and `GET /api/files/{id}/annotations` for
+a PDF (still only the caller's own marks, shown read-only; Epo 2026-11-12,
+"Yes, load them"). Every write (a mark included), room token and record-open
+still refuses a trashed row, and the app joins no room for it. Opening an
+item from the Trash drops its reads cached while it was live, so it never
+paints live first: the page shows a strip with the purge date and Restore, and restoring
+reopens it live. A note's embedded quizzes and sets stay unreadable, because
+they are trashed with it. A board stays shut until restored, since it opens
+only on its workspace. An item whose workspace the payer left stays shut, as
+it does in Files.
 
 A note's or quiz's images follow it (their `editor_assets.material_id` names
 it, in a workspace too; an embedded quiz's images name the quiz, not its
@@ -2144,7 +2256,8 @@ upsert rewrites only rows older than that. The old per-workspace
 `last_accessed_at`, which only the owner's opens moved, is gone; ops reads
 `max(opened_at)` (active workspaces in 7 days, a user's workspaces).
 
-Recent Files and the phone quick open (Epo 2026-10-26) are one list,
+Recent Files (Epo 2026-10-26; the phone quick open that shared it was removed
+with the top row's arrow, Epo 2026-11-11) is one list,
 `GET /api/recent`: the caller's `item_opens` (same migration), newest open
 first, kept to what a Member listing still shows them (untrashed files and
 top-level materials in the workspace list's set, their own standalone
@@ -2155,7 +2268,7 @@ five-minute debounce on both sides; creating an item counts as opening it
 (uploads, source imports, Office blanks, new materials, a single file or
 material copy), while copying a whole workspace marks nothing, so a clone
 never fills Recent. Each row's hint is its open time, relative ("3 hours
-ago"), on the dashboard and in the quick open. A visitor's opens leave Recent with the workspace (Forget,
+ago"), on the dashboard. A visitor's opens leave Recent with the workspace (Forget,
 private, lost link). The gateway's no-database acknowledgement holds only for
 a member's visit: a visitor's visit always re-checks access and writes, so a
 Forget or privacy change handled elsewhere never swallows the reopen. Opens of

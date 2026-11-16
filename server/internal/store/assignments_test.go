@@ -478,8 +478,9 @@ func TestAssignmentAuthorization(t *testing.T) {
 	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='personal' WHERE id=$1`, f.ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.s.ListAssignments(ctx, f.user, f.ws.ID, now)
-	notFound("personal list", err)
+	if hidden, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now); err != nil || len(hidden.Items) != 0 {
+		t.Fatalf("personal list: %+v, err %v", hidden, err)
+	}
 	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id=$1`, f.ws.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -1292,9 +1293,10 @@ func (f assignmentFixture) inPractice(t *testing.T, userID string, now time.Time
 }
 
 // TestAssignedVisibleQuizIsOneRow: a draft changes nothing; published from a
-// visible quiz it stays visible, with the icon for its assignee, whose row opens
-// the assignment, whose quiz is refused and off Practice; the member it did not
-// go to keeps a normal quiz; at close it is a normal quiz for the assignee too.
+// visible quiz it stays one row for its assignee, whose row opens the assignment,
+// whose quiz is refused and off Practice; the member it did not go to has no row
+// and no quiz while it is open (Epo 2026-11-11); staff keep it; at close it is a
+// normal quiz for both members again.
 func TestAssignedVisibleQuizIsOneRow(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-one-row")
 	ctx := context.Background()
@@ -1325,14 +1327,28 @@ func TestAssignedVisibleQuizIsOneRow(t *testing.T) {
 	if f.inPractice(t, f.viewer, now) {
 		t.Fatal("an assigned quiz on its assignee's Practice")
 	}
-	if row, ok := f.assignedRow(t, f.other); !ok || row.Assigned || row.AssignmentID != "" {
-		t.Fatalf("the unassigned member's row = %+v, listed %v", row, ok)
+	if row, ok := f.assignedRow(t, f.other); ok {
+		t.Fatalf("the unassigned member lists the row %+v", row)
 	}
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.other, f.quiz.ID); err != nil {
-		t.Fatalf("the unassigned member lost the quiz: %v", err)
+	if _, err := f.s.MaterialEffectiveRole(ctx, f.other, f.quiz.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the unassigned member read the quiz: %v", err)
 	}
-	if !f.inPractice(t, f.other, now) {
-		t.Fatal("the quiz left an unassigned member's Practice")
+	if f.inPractice(t, f.other, now) {
+		t.Fatal("an assigned quiz on an unassigned member's Practice")
+	}
+	// Held, it gives them no review question and none to count as unattempted.
+	held, err := f.s.WorkspaceReview(ctx, f.other, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, ReviewOptions{}, now)
+	if err != nil || len(held.Items) != 0 {
+		t.Fatalf("the unassigned member's review = %+v, err %v", held.Items, err)
+	}
+	standings, err := f.s.topicStandings(ctx, f.other, f.ws.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, topic := range standings {
+		if topic.Unattempted != 0 {
+			t.Fatalf("the unassigned member's standings count the held quiz: %+v", topic)
+		}
 	}
 	for _, staff := range []string{f.user, f.editor} {
 		if row, ok := f.assignedRow(t, staff); !ok || !row.Assigned || row.AssignmentID != "" {
@@ -1370,6 +1386,12 @@ func TestAssignedVisibleQuizIsOneRow(t *testing.T) {
 	}
 	if !f.inPractice(t, f.viewer, now) {
 		t.Fatal("after closing the quiz is not on Practice")
+	}
+	if row, ok := f.assignedRow(t, f.other); !ok || row.Assigned || row.AssignmentID != "" {
+		t.Fatalf("after closing the unassigned member's row = %+v, listed %v", row, ok)
+	}
+	if !f.inPractice(t, f.other, now) {
+		t.Fatal("after closing the quiz is off the unassigned member's Practice")
 	}
 }
 
@@ -1846,8 +1868,8 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 }
 
 // TestPublishingRefusesKeptCopies (security regression): once a draft is published
-// its assignee's device may keep no copy of the quiz, while an unassigned member
-// and staff keep it, and after closing the assignee has it back. Nothing closes a
+// no viewer member's device may keep a copy of the quiz, assigned it or not, while
+// staff keep it, and after closing the members have it back. Nothing closes a
 // connection (Epo 2026-11-05); rooms.rs holds the room's own refusal of a join.
 // Fails without the assigned rule in ReadableMaterialIDs.
 func TestPublishingRefusesKeptCopies(t *testing.T) {
@@ -1870,7 +1892,10 @@ func TestPublishingRefusesKeptCopies(t *testing.T) {
 	if f.keepsQuiz(t, f.viewer) {
 		t.Fatal("the assignee's device keeps the published quiz")
 	}
-	for _, user := range []string{f.other, f.editor, f.user} {
+	if f.keepsQuiz(t, f.other) {
+		t.Fatal("an unassigned member's device keeps the published quiz")
+	}
+	for _, user := range []string{f.editor, f.user} {
 		if !f.keepsQuiz(t, user) {
 			t.Fatalf("%s lost the quiz", user)
 		}
@@ -1880,6 +1905,127 @@ func TestPublishingRefusesKeptCopies(t *testing.T) {
 	}
 	if !f.keepsQuiz(t, f.viewer) {
 		t.Fatal("after closing the assignee's copy is refused")
+	}
+	if !f.keepsQuiz(t, f.other) {
+		t.Fatal("after closing the unassigned member's copy is refused")
+	}
+}
+
+// TestDoNotShowHoldsUntilTurnedToPractice (Epo 2026-11-11): closed under Show
+// answers Do not show, the quiz stays held from every viewer member as if the
+// assignment were open and the sweep releases nothing; staff, not a member,
+// turn it to practice, and both members then have the quiz and its practice.
+// One set to Do not show after the sweep released it is held the same way.
+// Fails with the hold ending at the close.
+func TestDoNotShowHoldsUntilTurnedToPractice(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-never-practice")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(time.Hour))
+	form.AssignAll, form.Assignees, form.ShowAnswers = false, []string{f.viewer}, AnswersNever
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Manage.ToPractice {
+		t.Fatal("an open assignment offers the turn")
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(time.Hour)
+	if _, _, err := f.s.SweepAssignments(ctx, 50, later); err != nil {
+		t.Fatal(err)
+	}
+	held, err := f.s.GetAssignment(ctx, f.user, created.ID, later)
+	if err != nil || !held.Manage.ToPractice || held.PracticeQuizID != nil {
+		t.Fatalf("closed = to practice %v, practice %v, err %v", held.Manage.ToPractice, held.PracticeQuizID, err)
+	}
+	if row, _ := f.assignedRow(t, f.viewer); row.AssignmentID != created.ID {
+		t.Fatalf("closed, the assignee's row = %+v", row)
+	}
+	if _, listed := f.assignedRow(t, f.other); listed {
+		t.Fatal("closed, the unassigned member lists the quiz")
+	}
+	for _, member := range []string{f.viewer, f.other} {
+		if f.keepsQuiz(t, member) || f.inPractice(t, member, later) {
+			t.Fatalf("closed, %s has the quiz", member)
+		}
+	}
+	if !f.keepsQuiz(t, f.editor) {
+		t.Fatal("closed, staff lost the quiz")
+	}
+
+	if _, err := f.s.TurnAssignmentToPractice(ctx, f.viewer, created.ID, later); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("a member turned it to practice: %v", err)
+	}
+	turned, err := f.s.TurnAssignmentToPractice(ctx, f.editor, created.ID, later)
+	if err != nil || turned.Manage.ToPractice || turned.PracticeQuizID == nil {
+		t.Fatalf("turned = %+v, err %v", turned.Manage, err)
+	}
+	for _, member := range []string{f.viewer, f.other} {
+		if row, listed := f.assignedRow(t, member); !listed || row.AssignmentID != "" || !f.keepsQuiz(t, member) || !f.inPractice(t, member, later) {
+			t.Fatalf("turned to practice, %s's row = %+v, listed %v", member, row, listed)
+		}
+	}
+	if mine, err := f.s.GetAssignment(ctx, f.viewer, created.ID, later); err != nil || mine.PracticeQuizID == nil {
+		t.Fatalf("the assignee's Practise this quiz = %v, err %v", mine.PracticeQuizID, err)
+	}
+	var again *AssignmentInputError
+	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, created.ID, later); !errors.As(err, &again) {
+		t.Fatalf("a second turn: %v", err)
+	}
+
+	shown := f.form(t, later.Add(time.Hour))
+	second, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, shown, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, second.ID, true, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.s.SweepAssignments(ctx, 50, later); err != nil {
+		t.Fatal(err)
+	}
+	if !f.keepsQuiz(t, f.other) {
+		t.Fatal("released by the sweep, the quiz is refused")
+	}
+	shown.ShowAnswers = AnswersNever
+	edited, err := f.s.UpdateAssignment(ctx, f.user, second.ID, shown, later)
+	if err != nil || !edited.Manage.ToPractice || f.keepsQuiz(t, f.other) || f.keepsQuiz(t, f.viewer) {
+		t.Fatalf("set to Do not show after its release: to practice %v, err %v", edited.Manage != nil && edited.Manage.ToPractice, err)
+	}
+	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, second.ID, later); err != nil || !f.keepsQuiz(t, f.other) {
+		t.Fatalf("turned after its release: %v", err)
+	}
+}
+
+// TestTurnToPracticeWaitsForGrades: under Show grades Manual with answers Do not
+// show, the turn is neither offered nor taken until the grades are released.
+func TestTurnToPracticeWaitsForGrades(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-practice-grades")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	form := f.form(t, now.Add(time.Hour))
+	form.ShowAnswers, form.ShowGrades = AnswersNever, GradesManual
+	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now)
+	if err != nil || closed.Manage.ToPractice {
+		t.Fatalf("closed with grades waiting: to practice %v, err %v", closed.Manage != nil && closed.Manage.ToPractice, err)
+	}
+	var waiting *AssignmentInputError
+	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, created.ID, now); !errors.As(err, &waiting) {
+		t.Fatalf("turned before the grades were released: %v", err)
+	}
+	released, _, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, now)
+	if err != nil || !released.Manage.ToPractice {
+		t.Fatalf("grades released: to practice %v, err %v", released.Manage != nil && released.Manage.ToPractice, err)
+	}
+	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, created.ID, now); err != nil || !f.keepsQuiz(t, f.viewer) {
+		t.Fatalf("turned after the release: %v", err)
 	}
 }
 
@@ -1895,8 +2041,9 @@ func (f assignmentFixture) keepsQuiz(t *testing.T, user string) bool {
 }
 
 // TestTheRefusalComesBack (security regression): each way an assignment takes the
-// quiz from a member again refuses it for them: reopening, adding them to the list,
-// moving a No late submissions due date forward, the workspace going back to class.
+// quiz from a member again refuses it for them: reopening, moving a No late
+// submissions due date forward, the workspace going back to class; a member added
+// to the list, refused already, gets the row that opens it.
 func TestTheRefusalComesBack(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -1929,15 +2076,16 @@ func TestTheRefusalComesBack(t *testing.T) {
 		form := f.form(t, now.Add(time.Hour))
 		form.AssignAll, form.Assignees = false, []string{f.viewer}
 		created := assign(t, f, form)
-		if !f.keepsQuiz(t, f.other) {
-			t.Fatal("off the list: the member's quiz is refused")
+		// Off the list the quiz is held from them with no row (Epo 2026-11-11).
+		if _, ok := f.assignedRow(t, f.other); ok || f.keepsQuiz(t, f.other) {
+			t.Fatal("off the list: the member has the quiz")
 		}
 		form.Assignees = []string{f.viewer, f.other}
 		if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
 			t.Fatal(err)
 		}
-		if f.keepsQuiz(t, f.other) {
-			t.Fatal("added: the member keeps the quiz")
+		if row, _ := f.assignedRow(t, f.other); row.AssignmentID != created.ID || f.keepsQuiz(t, f.other) {
+			t.Fatalf("added: the member's row = %+v", row)
 		}
 	})
 	t.Run("moving a no-late due date forward", func(t *testing.T) {

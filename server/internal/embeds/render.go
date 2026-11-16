@@ -73,13 +73,11 @@ func Rust() []byte {
 /// What an element gives its document's index text (` + "`index_text`" + `).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Index {
-    None,
-    Text,
-    Figure,
-    Mermaid,
-    Question,
-    Item,
-}
+`)
+	for _, index := range IndexRules {
+		fmt.Fprintf(&out, "    %s,\n", rustIndex(index))
+	}
+	out.WriteString(`}
 
 /// One element type a material document may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,13 +207,18 @@ pub fn material_kind(kind: &str) -> Option<&'static MaterialKind> {
 	return out.Bytes()
 }
 
-// rustIndex is an index rule's Rust variant; an unknown rule stops the
-// generator (TestCatalogIsConsistent names it).
+// rustIndex is an index rule's Rust variant, in CamelCase (table_view is
+// TableView); an unknown rule stops the generator (TestCatalogIsConsistent
+// names it).
 func rustIndex(index Index) string {
 	if !slices.Contains(IndexRules, index) {
 		panic(fmt.Sprintf("unknown index rule %q", index))
 	}
-	return strings.ToUpper(string(index[:1])) + string(index[1:])
+	var out strings.Builder
+	for word := range strings.SplitSeq(string(index), "_") {
+		out.WriteString(strings.ToUpper(word[:1]) + word[1:])
+	}
+	return out.String()
 }
 
 func rustStrs(values []string) string {

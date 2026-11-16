@@ -172,7 +172,7 @@ export function WorkspaceCardSkeleton({ className }: { className?: string }) {
     <Skeleton
       className={cn('rounded-card border border-transparent', className)}
     >
-      <div aria-hidden className="invisible h-16 sm:h-auto">
+      <div aria-hidden className="invisible h-23 sm:h-auto">
         <div className="hidden sm:block">
           <div className="h-19" />
           <div className="-mt-5 ml-3 size-9" />
@@ -212,7 +212,8 @@ export function WorkspaceCardFace({
   return (
     <Card
       border="solid"
-      className="group h-full flex-row gap-0 overflow-hidden border-divider p-0 sm:flex-col"
+      // Phones: as tall as a card with badges, so a list of them reads even.
+      className="group h-full min-h-23 flex-row gap-0 overflow-hidden border-divider p-0 sm:min-h-0 sm:flex-col"
       interactive={interactive}
     >
       <div className="relative w-10 shrink-0 bg-page-hover sm:h-19 sm:w-auto">

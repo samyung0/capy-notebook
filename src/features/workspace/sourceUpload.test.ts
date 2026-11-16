@@ -13,6 +13,7 @@ import {
   mapWithConcurrency,
   needsIngestJob,
   parseModeIssues,
+  sourceCompression,
   splitSourceWave,
 } from './sourceUpload';
 
@@ -74,6 +75,30 @@ describe('source upload policy', () => {
     expect(
       parseModeIssues(file('book.pdf'), 'pdf', sourceUploadPolicy, 'unreadable')
     ).toEqual({ fast: null });
+  });
+
+  // The policy lists the legacy formats under fast parsing: the server
+  // converts them, then parses the new file (Epo 2026-11-11).
+  it('offers parsing on a legacy Office file and sends it uncompressed', () => {
+    for (const [name, kind] of [
+      ['essay.doc', 'doc'],
+      ['grades.xls', 'sheet'],
+      ['talk.ppt', 'slides'],
+    ] as const) {
+      expect(getFileKind(name, sourceUploadPolicy)).toBe(kind);
+      expect(parseModeIssues(file(name), kind, sourceUploadPolicy)).toEqual({
+        fast: null,
+      });
+      expect(defaultParseMode(file(name), kind, sourceUploadPolicy)).toBe(
+        'fast'
+      );
+      // The browser's picture compression reads OOXML only.
+      expect(sourceCompression(name, kind)).toBe(null);
+    }
+    expect(sourceCompression('essay.docx', 'doc')).toBe('office');
+    // With parsing off the conversion takes no ingest slot.
+    expect(needsIngestJob('essay.doc', 'doc', 'none')).toBe(false);
+    expect(needsIngestJob('essay.doc', 'doc', 'fast')).toBe(true);
   });
 });
 

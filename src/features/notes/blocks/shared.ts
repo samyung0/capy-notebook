@@ -21,6 +21,12 @@ import {
 } from '@/features/materials/document';
 import { questionBlockSchema } from '@/features/questions/validation';
 import { uid } from '@/lib/id';
+import {
+  isTableViewBlock,
+  TABLE_VIEW_LANG,
+  TABLE_VIEW_TYPE,
+  type TableViewElement,
+} from '../tableView/model';
 
 export const QUIZ_KEY = 'quiz';
 export const FLASHCARDS_KEY = 'flashcards';
@@ -49,7 +55,28 @@ export type CustomBlockElement =
   | FlashcardsElement
   | MermaidElement
   | MaterialRefElement
-  | HtmlEmbedElement;
+  | HtmlEmbedElement
+  | TableViewElement;
+
+/** A table-view fence's node: the block as JSON, kept only when it is one a
+ * writer may store (`isTableViewBlock`); null otherwise, so a Markdown import
+ * keeps the fence as code. */
+export function tableViewFenceNode(code: string): TableViewElement | null {
+  let block: unknown;
+  try {
+    block = JSON.parse(code);
+  } catch {
+    return null;
+  }
+  return isTableViewBlock(block)
+    ? {
+        block,
+        children: [{ text: '' }],
+        id: uid('block'),
+        type: TABLE_VIEW_TYPE,
+      }
+    : null;
+}
 
 /** Node for a fenced block. Quiz and flashcards fences become pending
  * references: a note keeps study blocks in their own material rows, created
@@ -74,6 +101,11 @@ export function customBlockNode(
   }
   if (type === HTML_EMBED_LANG) return htmlEmbedFenceNode(code);
   if (type === MERMAID_KEY) return mermaidNode(code);
+  if (type === TABLE_VIEW_LANG) {
+    const node = tableViewFenceNode(code);
+    if (!node) throw new Error('Invalid table view block.');
+    return node;
+  }
   throw new Error(`No block reads a ${type} fence.`);
 }
 
@@ -107,7 +139,8 @@ export function customBlockCode(element: CustomMaterialElement): string {
   if (
     element.type === 'chart' ||
     element.type === 'plot' ||
-    element.type === 'graph'
+    element.type === 'graph' ||
+    element.type === TABLE_VIEW_TYPE
   )
     return JSON.stringify(element.block);
   if (element.type === QUIZ_KEY)

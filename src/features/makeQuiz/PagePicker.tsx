@@ -446,6 +446,7 @@ export function usePageStep({
   active,
   answers,
   file,
+  hidden,
   onCancel,
   onChangeFiles,
   onFile,
@@ -455,6 +456,8 @@ export function usePageStep({
 }: {
   active: boolean;
   answers: string[];
+  /** The files step's switch: the quiz starts hidden from members. */
+  hidden: boolean;
   /** The file on show, from the address; a phone's list when there is none. */
   file: string | undefined;
   onCancel: () => void;
@@ -794,6 +797,7 @@ export function usePageStep({
                       paperFiles.map((row) => row.id),
                       answerFiles.map((row) => row.id),
                       selected,
+                      hidden,
                       drawn
                     ),
                     { onSuccess: (run) => onStarted(run.id) }

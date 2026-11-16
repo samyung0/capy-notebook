@@ -81,7 +81,7 @@ export const queryClient = new QueryClient({
     },
     // Recent rows come from many lists (files, materials, workspaces): any
     // write may rename, move, trash or create one, so every success marks it
-    // stale. It refetches only where it shows (dashboard, quick open).
+    // stale. It refetches only where it shows (the dashboard).
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.recent });
     },

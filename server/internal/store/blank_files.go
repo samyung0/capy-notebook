@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
@@ -21,30 +22,39 @@ type BlankFileDraft struct {
 // indexed; the Indexing tab processes it later like any store-only upload.
 // It takes an upload's gates: the actor edits the workspace and its account
 // may add bytes, the actor pays (uploader pays) within its storage, and the
-// workspace has room for one more file.
+// workspace has room for one more file. With no WorkspaceID it is a
+// standalone file (Files' Add file, Epo 2026-11-12): no topic and, like a
+// standalone upload, no file-count cap.
 func (s *Store) CreateBlankFile(ctx context.Context, d BlankFileDraft) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, d.WorkspaceID, d.ActorUserID); err != nil {
+	if _, err := s.lockFileEditorMutationTx(ctx, tx, d.WorkspaceID, d.ActorUserID, d.ActorUserID); err != nil {
 		return File{}, err
 	}
-	topicID, err := s.resolveUploadTopicID(ctx, tx, d.WorkspaceID, d.TopicID, "")
-	if err != nil {
-		return File{}, err
+	topicID := d.TopicID
+	if d.WorkspaceID == "" && topicID != nil {
+		return File{}, fmt.Errorf("%w: a standalone file has no topic", ErrNotFound)
+	}
+	if d.WorkspaceID != "" {
+		if topicID, err = s.resolveUploadTopicID(ctx, tx, d.WorkspaceID, topicID, ""); err != nil {
+			return File{}, err
+		}
 	}
 	if err := s.gateStorageTx(ctx, tx, d.ActorUserID, d.SizeBytes); err != nil {
 		return File{}, err
 	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, d.WorkspaceID, 1); err != nil {
-		return File{}, err
+	if d.WorkspaceID != "" {
+		if err := s.gateWorkspaceFilesTx(ctx, tx, d.WorkspaceID, 1); err != nil {
+			return File{}, err
+		}
 	}
 	fileID := uid("f")
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, topic_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, source_sha256)
-		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11,$12)`,
+		VALUES ($1,NULLIF($2,''),$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11,$12)`,
 		fileID, d.WorkspaceID, d.ActorUserID, topicID, d.Name, d.Kind, d.SizeBytes, time.Now().UTC(),
 		d.Parser, d.BlobPath, sourceupload.ParseModeNone, d.SHA256); err != nil {
 		return File{}, err

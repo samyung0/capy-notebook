@@ -1,4 +1,5 @@
 import type { SourceFile, Workspace } from '@/api/types';
+import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { m } from '@/i18n';
 
 const IMAGE_EXTS = new Set([
@@ -72,6 +73,26 @@ export function officeFormatOf(
   return ext === 'docx' || ext === 'xlsx' || ext === 'pptx' ? ext : null;
 }
 
+/** The legacy Office formats and what the server converts an upload of each
+ * to (`legacyConvertTo` in sourceupload/rules.go). */
+const LEGACY_OFFICE_TARGETS = {
+  doc: 'docx',
+  ppt: 'pptx',
+  xls: 'xlsx',
+} as const;
+
+/** The format a legacy Office name (.doc, .xls, .ppt) is converted to, else
+ * null. The conversion renames the file, so one still named this way is
+ * waiting for it, in it, or failed in it. */
+export function legacyOfficeTarget(
+  name: string
+): 'docx' | 'xlsx' | 'pptx' | null {
+  const ext = fileExt(name);
+  return Object.hasOwn(LEGACY_OFFICE_TARGETS, ext)
+    ? LEGACY_OFFICE_TARGETS[ext as keyof typeof LEGACY_OFFICE_TARGETS]
+    : null;
+}
+
 export function isImageFile(file: Pick<SourceFile, 'kind' | 'name'>) {
   return file.kind === 'image' || IMAGE_EXTS.has(fileExt(file.name));
 }
@@ -114,6 +135,35 @@ export function fileCanMoveTo(
   workspace: { isOwner: boolean } | undefined
 ) {
   return file.isPayer || !!workspace?.isOwner;
+}
+
+/** Whether the open file offers Convert: an old Office file that is not
+ * converted (ready or failed, still named as legacy), to whoever the file's
+ * ⋮ Retry processing is offered to: its workspace's owner while the workspace
+ * is editable (FilesPanel), or the payer of a file with no workspace
+ * (FileItem), unless their account is frozen, which the server refuses and
+ * a workspace's capabilities already say. A hand-in's file is not told apart
+ * here (a file row has no such field): it is listed as a submission and opens
+ * with its assignment (SubmissionItem, PaperPane), never in the file viewer,
+ * and the server refuses it. */
+export function canConvertLegacy(
+  file: Pick<SourceFile, 'isPayer' | 'name' | 'status' | 'workspaceId'>,
+  workspace: Pick<Workspace, 'capabilities' | 'isOwner'> | undefined,
+  frozen: boolean
+) {
+  if (!legacyOfficeTarget(file.name) || fileIsIngesting(file.status)) {
+    return false;
+  }
+  if (!file.workspaceId) return file.isPayer && !frozen;
+  return !!workspace?.isOwner && !isWorkspaceReadOnly(workspace.capabilities);
+}
+
+/** Why a failed file has no index: a legacy Office file failed in its
+ * conversion, anything else in its parse or indexing. */
+export function failedNotIndexedMessage(file: Pick<SourceFile, 'name'>) {
+  return legacyOfficeTarget(file.name)
+    ? m.files_convert_failed()
+    : m.files_not_indexed_failed();
 }
 
 /** Why a ready file is not searchable: its content is over an ingest limit,

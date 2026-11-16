@@ -11,7 +11,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
-	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -88,6 +87,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/recent", "listWorkspaceRecent", tag, "List a workspace's newest files and materials", http.StatusOK, a.listWorkspaceRecent)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/files/blank", "createBlankFile", tag, "Create a blank Word or Excel file", http.StatusCreated, a.createBlankFile)
+	reg(api, http.MethodPost, "/api/files/blank", "createStandaloneBlankFile", tag, "Create a blank Word or Excel file with no workspace", http.StatusCreated, a.createStandaloneBlankFile)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
 	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)
@@ -260,12 +260,19 @@ func (a *api) thumbnailURL(ctx context.Context, key string) (*string, error) {
 }
 
 func (a *api) getFile(ctx context.Context, in *fileIDInput) (*fileOutput, error) {
-	if _, err := a.fileRead(ctx, in.ID); err != nil {
-		return nil, hErr(err)
+	_, err := a.fileRead(ctx, in.ID)
+	var res store.File
+	if err == nil {
+		res, err = a.s.GetFile(ctx, in.ID)
 	}
-	res, err := a.s.GetFile(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		// Opened from the Trash: read-only.
+		if res, _, err = a.trashedFile(ctx, in.ID, err); err != nil {
+			return nil, hErr(err)
+		}
+		// Its /preview route answers only live files; links signs its bytes.
+		res.PreviewURL = nil
+		return &fileOutput{Body: res}, nil
 	}
 	res.IsPayer = res.PayerID == userID(ctx)
 	return &fileOutput{Body: res}, nil
@@ -282,15 +289,24 @@ func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutp
 	// The read check (fileRead, or the payer's Download) and the role the
 	// strip needs, in one lookup.
 	role, err := a.fileReadOrPayer(ctx, in.ID)
+	var source, preview string
+	if err == nil {
+		source, preview, err = a.s.FileBlobPaths(ctx, in.ID)
+	}
 	if err != nil {
-		return nil, hErr(err)
+		// Opened from the Trash: a ready PDF is its own citation preview, as
+		// in FileBlobPaths.
+		file, blobPath, err := a.trashedFile(ctx, in.ID, err)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		source, role = blobPath, ""
+		if file.PreviewURL != nil {
+			preview = blobPath
+		}
 	}
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
-	}
-	source, preview, err := a.s.FileBlobPaths(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
 	}
 	if source == "" {
 		return nil, huma.Error404NotFound("no content")
@@ -328,23 +344,9 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 		return nil, hErr(err)
 	}
 	patch := store.FilePatch{Name: apimodel.Str(in.Body.Name)}
-	if patch.Name != nil {
-		// A rename keeps the file's extension, which names its kind and the
-		// checks its upload passed (Epo 2026-10-24, Q346).
-		if !fieldlimits.ValidFileName(*patch.Name) {
-			return nil, invalidFileName()
-		}
-		file, err := a.s.GetFile(ctx, in.ID)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		if sourceupload.Extension(*patch.Name) != sourceupload.Extension(file.Name) {
-			return nil, &huma.ErrorModel{
-				Status: http.StatusUnprocessableEntity, Title: http.StatusText(http.StatusUnprocessableEntity),
-				Detail: "a rename keeps the file's extension",
-				Errors: []*huma.ErrorDetail{{Message: "file_extension_changed"}},
-			}
-		}
+	// The upload's name rule (Q346); the store keeps the extension.
+	if patch.Name != nil && !fieldlimits.ValidFileName(*patch.Name) {
+		return nil, invalidFileName()
 	}
 	// topicId: "" unfiles (NULL), a real id files it, omitted leaves it.
 	if in.Body.TopicID != nil {
@@ -358,6 +360,13 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 		}
 	}
 	res, err := a.s.UpdateFile(ctx, userID(ctx), in.ID, patch)
+	if errors.Is(err, store.ErrFileExtensionChanged) {
+		return nil, &huma.ErrorModel{
+			Status: http.StatusUnprocessableEntity, Title: http.StatusText(http.StatusUnprocessableEntity),
+			Detail: "a rename keeps the file's extension",
+			Errors: []*huma.ErrorDetail{{Message: "file_extension_changed"}},
+		}
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}

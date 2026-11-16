@@ -880,7 +880,7 @@ def replace_tables(
         block["_native_table_title"] = bundle["table"]["title"]
         area = pymupdf.Rect(block["bbox"])
         if bundle["table"].get("source_grid") == "mixed":
-            page = document[block["page_idx"]]
+            page = page_text.page_at(document, block["page_idx"])
             x0, y0, x1, y1 = bundle["table"]["bbox"]
             # Context expands citation bounds, not the set of native blocks
             # consumed by this repair. Complete adjacent captions stay intact.
@@ -930,7 +930,7 @@ def replace_tables(
         ):
             continue
         if not removed_coverage(
-            document[block["page_idx"]],
+            page_text.page_at(document, block["page_idx"]),
             bundle["table"],
             [blocks[i] for i in whole if i not in preserved_headings],
             watermarks,

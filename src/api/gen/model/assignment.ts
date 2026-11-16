@@ -28,6 +28,7 @@ export interface Assignment {
   marks: number;
   mine?: AssignmentMine;
   noLate: boolean;
+  own: boolean;
   postedAt: string;
   postedBy: string;
   practiceQuizId?: string;

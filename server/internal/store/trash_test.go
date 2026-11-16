@@ -346,3 +346,69 @@ func TestTrashRefusesATranscribingAudioFile(t *testing.T) {
 	}
 	ended(cascadedCall)
 }
+
+// A trashed item opens read-only for whoever sees it in a Trash list (Epo
+// 2026-11-12): its payer while it can reach the workspace, and the workspace's
+// owner. An editor who only trashed it, or a payer who left, reads nothing.
+func TestTrashedItemReaders(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID, editorID, ws, file, mt := trashFixture(t, s)
+	editorFile, err := s.createReadyFile(ctx, ws.ID, editorID, "editor.md", "md", nil, "", 128, "sources/"+uid("blob")+"/editor.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.TrashedFile(ctx, ownerID, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("untrashed file preview = %v", err)
+	}
+	for _, id := range []string{file.ID, editorFile.ID} {
+		if _, err := s.TrashFile(ctx, editorID, id, AgentOperation{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.TrashMaterial(ctx, editorID, mt.ID, "", AgentOperation{}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, blobPath, err := s.TrashedFile(ctx, ownerID, file.ID)
+	if err != nil || got.ID != file.ID || blobPath == "" || got.Trash == nil || got.Trash.EpisodeID == "" || !got.Trash.CanRestore {
+		t.Fatalf("owner file read = %+v %q %v", got, blobPath, err)
+	}
+	note, err := s.TrashedMaterial(ctx, ownerID, mt.ID)
+	if err != nil || note.ID != mt.ID || len(note.Content) == 0 || note.Trash == nil || note.Trash.PurgeAfter.IsZero() {
+		t.Fatalf("owner material read = %+v %v", note, err)
+	}
+	// Its images resolve for the same readers.
+	if ok, err := s.MaterialInTrashFor(ctx, ownerID, mt.ID); err != nil || !ok {
+		t.Fatalf("owner trashed note assets = %v %v", ok, err)
+	}
+	// The editor pays for its own file, which the owner also reads.
+	if _, _, err := s.TrashedFile(ctx, editorID, editorFile.ID); err != nil {
+		t.Fatalf("payer preview = %v", err)
+	}
+	if _, _, err := s.TrashedFile(ctx, ownerID, editorFile.ID); err != nil {
+		t.Fatalf("owner preview of a member's file = %v", err)
+	}
+	// A trashed text file's saved state reads only through the trash reader.
+	if view, err := s.TrashedSourceSession(ctx, editorFile.ID); err != nil || view.Format != "text" || view.BaseBlobPath == "" {
+		t.Fatalf("trashed text session = %+v %v", view, err)
+	}
+	if _, err := s.ViewSourceSession(ctx, editorFile.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("view session of a trashed file = %v", err)
+	}
+	if _, _, err := s.TrashedFile(ctx, editorID, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("editor preview of the owner's file = %v", err)
+	}
+	if _, err := s.TrashedMaterial(ctx, editorID, mt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("editor preview of the owner's note = %v", err)
+	}
+	if ok, err := s.MaterialInTrashFor(ctx, editorID, mt.ID); err != nil || ok {
+		t.Fatalf("editor trashed note assets = %v %v", ok, err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.TrashedFile(ctx, editorID, editorFile.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("preview after leaving = %v", err)
+	}
+}

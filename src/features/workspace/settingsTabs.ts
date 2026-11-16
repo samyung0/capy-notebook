@@ -1,7 +1,6 @@
 /** Workspace settings tabs, also the workspace URL's `settings` value. */
 export const SETTINGS_TABS = [
   'general',
-  'sharing',
   'indexing',
   'statistics',
   'others',

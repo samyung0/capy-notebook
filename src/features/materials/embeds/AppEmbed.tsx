@@ -125,7 +125,7 @@ function LiveSetEdit({
   onEmpty,
 }: {
   materialId: string;
-  onEmpty: () => void;
+  onEmpty?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);
@@ -153,8 +153,9 @@ export function AppEmbedEdit({
   ownerId,
   onEmpty,
 }: OwnedProps & {
-  /** Removing the last question or card removes the block instead. */
-  onEmpty: () => void;
+  /** Removing the last question or card removes the block instead; without it
+   * (a canvas card) the last one stays. */
+  onEmpty?: () => void;
 }) {
   switch (refKind) {
     case 'quiz':
@@ -335,7 +336,7 @@ function EmbedQuizEditor({
   onEmpty,
 }: {
   quizId: string;
-  onEmpty: () => void;
+  onEmpty?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);

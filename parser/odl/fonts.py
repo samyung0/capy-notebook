@@ -127,12 +127,20 @@ def repair_fonts(data: bytes) -> tuple[bytes, int]:
             doc.update_object(xref, "<<>>")
             doc.update_stream(xref, font["unicode_cmap"])
             doc.xref_set_key(font["xref"], "ToUnicode", f"{xref} 0 R")
+        # One walk of every page's fonts for the four repairs. Each takes the
+        # numbers still inside the xref table, which MuPDF may rebuild while
+        # an earlier repair reads a damaged file.
+        xrefs = _font_xrefs(doc)
+
+        def fonts() -> list[int]:
+            return [xref for xref in xrefs if _valid(doc, xref)]
+
         repaired = (
             len(selected)
-            + repair_named_glyphs(doc)
-            + split_wide_ranges(doc)
-            + map_tex_fonts(doc)
-            + map_symbol_fonts(doc)
+            + repair_named_glyphs(doc, fonts())
+            + split_wide_ranges(doc, fonts())
+            + map_tex_fonts(doc, fonts())
+            + map_symbol_fonts(doc, fonts())
         )
         if not repaired:
             return data, 0
@@ -170,14 +178,14 @@ _RANGE = re.compile(
 )
 
 
-def split_wide_ranges(doc: pymupdf.Document) -> int:
+def split_wide_ranges(doc: pymupdf.Document, xrefs: list[int]) -> int:
     """Split two-byte bfranges that cross a last-byte block into per-block ranges.
 
     A block is rewritten only when its entries account for all of it, so a form
     this parser does not read is left as written. Returns the CMaps changed.
     """
     fixed, seen = 0, set()
-    for font in _font_xrefs(doc):
+    for font in xrefs:
         xref = _target(doc, doc.xref_get_key(font, "ToUnicode"))
         if xref is None or xref in seen:
             continue
@@ -332,13 +340,13 @@ _TEX_NAMES = {
 _TEX_FONT = re.compile(r"(?:[A-Z]{6}\+)?(?:CM[A-Z]{1,5}|MSAM|MSBM)\d+")
 
 
-def map_tex_fonts(doc: pymupdf.Document) -> int:
+def map_tex_fonts(doc: pymupdf.Document, xrefs: list[int]) -> int:
     """Give embedded TeX Type1 fonts that have no ToUnicode and no /Encoding a
     map from their built-in encoding array (pdfTeX or dvips without
     glyphtounicode), which veraPDF would otherwise blank for TeX glyph names.
     Names without a checked Unicode value stay unmapped. Returns the fonts."""
     mapped = 0
-    for xref in _font_xrefs(doc):
+    for xref in xrefs:
         if (
             doc.xref_get_key(xref, "Subtype")[1] != "/Type1"
             or doc.xref_get_key(xref, "ToUnicode")[0] != "null"
@@ -388,12 +396,12 @@ def symbol_values(mapping: dict[int, str]) -> dict[int, str]:
     return fixed
 
 
-def map_symbol_fonts(doc: pymupdf.Document) -> int:
+def map_symbol_fonts(doc: pymupdf.Document, xrefs: list[int]) -> int:
     """Rewrite Symbol fonts' private-use ToUnicode entries. A map with array
     destinations is left alone: ``_read_cmap`` does not read them, and the
     rewrite would drop them. Returns the fonts."""
     mapped = 0
-    for xref in _font_xrefs(doc):
+    for xref in xrefs:
         target = _target(doc, doc.xref_get_key(xref, "ToUnicode"))
         if target is None or not _SYMBOL_FONT.fullmatch(
             doc.xref_get_key(xref, "BaseFont")[1][1:]
@@ -431,12 +439,12 @@ def _contradicts(have: str, want: str) -> bool:
     return have.isascii() and maths
 
 
-def repair_named_glyphs(doc: pymupdf.Document) -> int:
+def repair_named_glyphs(doc: pymupdf.Document, xrefs: list[int]) -> int:
     """Rebuild simple-font ToUnicode maps whose entries contradict the font's own
     /Differences glyph names. A font needs two contradicted entries, or one mapped
     to a control character or left unmapped. Returns the fonts rebuilt."""
     repaired = 0
-    for xref in _font_xrefs(doc):
+    for xref in xrefs:
         if doc.xref_get_key(xref, "Subtype")[1] not in (
             "/Type1",
             "/TrueType",

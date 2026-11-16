@@ -1,0 +1,378 @@
+/* The toast pill, copied from Ding 0.0.3 (MIT, YusufCeng1z/ding,
+   packages/core/src/styles.ts) with Epo's say-so on 2026-11-12: its markup,
+   colours, sizes and glyph animations. Not copied: its store and spring
+   motion (bind.ts), which size and reveal the pill from 44px. Here the pill
+   is drawn at its own size from the start (`.tst` and `.tst-body` below are
+   the static form of what bind.ts animates to), and the springs' easings are
+   fixed curves, and an error's shake and a warning's hop (bind.ts's `react`)
+   are keyframes traced from its springs. Always Ding's dark pill (Epo's
+   black toast, 2026-11-03 and 2026-11-12). Placement, queueing, timers and
+   the swipe stay AppToaster's.
+   Layered so Tailwind's utilities win. */
+@layer components {
+  .tst {
+    --tst-bg: light-dark(#fff, #0c0c0d);
+    --tst-fg: light-dark(#0f0f13, #fafafa);
+    --tst-ring: light-dark(oklch(0 0 0 / 0.08), oklch(1 0 0 / 0.1));
+    --tst-shadow:
+      0 0 0 1px var(--tst-ring),
+      0 4px 12px -4px light-dark(oklch(0 0 0 / 0.14), oklch(0 0 0 / 0.45));
+    --tst-success: light-dark(#12a36b, #4ade80);
+    --tst-error: light-dark(#e5484d, #f87171);
+    --tst-warning: light-dark(#c77d00, #fbbf24);
+    --tst-info: light-dark(#2f7de1, #60a5fa);
+    --tst-size: 44px;
+    --tst-radius: 22px;
+    /* The springs' stand-ins (stack: tight, no wobble; enter: a hint of
+       overshoot). */
+    --tst-stack: cubic-bezier(0.2, 0, 0, 1);
+    --tst-stack-dur: 400ms;
+    --tst-pop: cubic-bezier(0.34, 1.4, 0.64, 1);
+    --tst-pop-dur: 450ms;
+    /* --c: the status colour of the glyph. */
+    --c: var(--tst-fg);
+    --md: 0.55s;
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    align-items: flex-start;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    min-height: var(--tst-size);
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 500;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.3;
+    color: var(--tst-fg);
+    color-scheme: dark;
+    background: var(--tst-bg);
+    border: 1px solid transparent;
+    border-radius: var(--tst-radius);
+    box-shadow: var(--tst-shadow);
+  }
+  .tst[data-type="success"] {
+    --c: var(--tst-success);
+  }
+  .tst[data-type="error"] {
+    --c: var(--tst-error);
+  }
+  .tst[data-type="warning"] {
+    --c: var(--tst-warning);
+  }
+  .tst[data-type="info"] {
+    --c: var(--tst-info);
+  }
+
+  .tst-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: calc(var(--tst-size) - 2px);
+    height: calc(var(--tst-size) - 2px);
+    margin-inline-start: -1px;
+    color: var(--c);
+  }
+  .tst-badge {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+  }
+  .tst-svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: var(--c);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke 0.3s cubic-bezier(0.2, 0, 0, 1);
+    animation: tst-swap var(--tst-stack-dur) var(--tst-stack) 0.1s both;
+  }
+  .tst-svg path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: tst-draw 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.15s forwards;
+  }
+  .tst-svg path:first-child {
+    stroke-dasharray: 1 1;
+    transition: stroke-dasharray 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .tst-svg path:nth-child(n + 2) {
+    animation-duration: 0.32s;
+    animation-delay: var(--md);
+  }
+  .tst-svg path:nth-child(3) {
+    animation-delay: calc(var(--md) + 0.08s);
+  }
+  /* A working toast's ring is an arc, turning (Ding turns it from bind.ts). */
+  .tst[data-type="loading"] .tst-svg {
+    animation:
+      tst-swap var(--tst-stack-dur) var(--tst-stack) 0.1s both,
+      tst-spin 0.9s linear infinite;
+  }
+  .tst[data-type="loading"] .tst-svg path:first-child {
+    stroke-dasharray: 0.28 0.72;
+  }
+  /* Each status has its own little gesture, built from the parts of its glyph. */
+  .tst[data-type="success"] .tst-svg {
+    animation:
+      tst-swap var(--tst-stack-dur) var(--tst-stack) 0.1s both,
+      tst-pulse 0.45s var(--tst-pop) calc(var(--md) + 0.25s);
+  }
+  .tst[data-type="success"] .tst-badge::after {
+    position: absolute;
+    inset: 1px;
+    content: "";
+    border: 1.5px solid var(--c);
+    border-radius: 50%;
+    opacity: 0;
+    animation: tst-ripple 0.7s cubic-bezier(0.2, 0, 0, 1)
+      calc(var(--md) + 0.25s);
+  }
+  /* An error shakes its head and a warning hops: the whole pill, as it
+     arrives (Ding: a sideways kick of 380px/s on a 520/13 spring; a 200px/s
+     hop up on its entrance spring). */
+  .tst[data-type="error"] {
+    animation: tst-shake 0.65s linear 0.15s;
+  }
+  .tst[data-type="warning"] {
+    animation: tst-hop 0.5s ease-out 0.15s;
+  }
+  .tst[data-type="warning"] .tst-svg path:nth-child(2) {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    animation: tst-drop 0.5s var(--tst-pop) var(--md) both;
+  }
+  .tst[data-type="warning"] .tst-svg path:nth-child(3) {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    animation: tst-dot 0.38s var(--tst-pop) calc(var(--md) + 0.16s) both;
+  }
+  .tst[data-type="info"] .tst-svg path:nth-child(3) {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    animation: tst-dot 0.4s var(--tst-pop) var(--md) both;
+  }
+  .tst[data-type="info"] .tst-svg path:nth-child(2) {
+    animation-delay: calc(var(--md) + 0.16s);
+  }
+
+  .tst-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 8px;
+    align-items: center;
+    min-width: 0;
+    min-height: calc(var(--tst-size) - 2px);
+    padding-inline-end: 8px;
+  }
+  .tst-copy {
+    width: max-content;
+    max-width: min(340px, calc(100vw - 176px));
+    padding-block: 11px;
+    padding-inline: 0 6px;
+    line-height: 1.4;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  .tst-body[data-wrapped] {
+    padding-bottom: 10px;
+  }
+  .tst-body[data-wrapped] .tst-copy {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .tst-body[data-wrapped] .tst-copy + * {
+    margin-inline-start: auto;
+  }
+  .tst-title {
+    font-weight: 550;
+  }
+  .tst-count {
+    margin-inline-start: 6px;
+    opacity: 0.7;
+  }
+  .tst-desc {
+    margin-top: 3px;
+    font-size: 13px;
+    font-weight: 450;
+    white-space: pre-line;
+    opacity: 0.65;
+    animation: tst-in-up var(--tst-pop-dur) var(--tst-pop) 0.1s both;
+  }
+  .tst-action,
+  .tst-close {
+    position: relative;
+    flex: none;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    transition-timing-function: ease-out;
+    transition-duration: 0.15s;
+    transition-property: background-color, scale;
+    animation: tst-in-btn var(--tst-pop-dur) var(--tst-pop) 0.16s backwards;
+  }
+  .tst-action {
+    height: 30px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--tst-bg);
+    background: var(--tst-fg);
+    border-radius: 999px;
+  }
+  .tst-close {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  /* 30px look, 44px target: a taller hit area, narrow enough sideways that
+     neighbours (8px apart) never overlap. */
+  .tst-action::before,
+  .tst-close::before {
+    position: absolute;
+    inset: -7px -3px;
+    content: "";
+  }
+  .tst-close svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+  }
+  @media (hover: hover) {
+    .tst-action:hover {
+      background: color-mix(in srgb, var(--tst-fg) 82%, var(--tst-bg));
+    }
+    .tst-close:hover {
+      color: var(--tst-fg);
+      background: color-mix(in srgb, var(--tst-fg) 10%, transparent);
+    }
+  }
+  .tst-action:not(:disabled):active,
+  .tst-close:not(:disabled):active {
+    scale: 0.96;
+  }
+  .tst-action:focus-visible,
+  .tst-close:focus-visible {
+    outline: 2px solid var(--tst-fg);
+    outline-offset: 2px;
+  }
+
+  @keyframes tst-swap {
+    from {
+      opacity: 0;
+      scale: 0.25;
+      filter: blur(4px);
+    }
+  }
+  @keyframes tst-in-btn {
+    from {
+      opacity: 0;
+      translate: 0 8px;
+      filter: blur(4px);
+    }
+  }
+  @keyframes tst-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+      filter: blur(4px);
+    }
+  }
+  @keyframes tst-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes tst-pulse {
+    40% {
+      transform: scale(1.14);
+    }
+  }
+  @keyframes tst-ripple {
+    from {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.9);
+    }
+  }
+  /* The spring's swing: peaks of 11, -4.6, 1.9 and -0.8px every 0.14s. */
+  @keyframes tst-shake {
+    11% {
+      translate: 11px 0;
+    }
+    33% {
+      translate: -4.6px 0;
+    }
+    55% {
+      translate: 1.9px 0;
+    }
+    77% {
+      translate: -0.8px 0;
+    }
+    to {
+      translate: 0;
+    }
+  }
+  @keyframes tst-hop {
+    25% {
+      translate: 0 -5px;
+    }
+    60% {
+      translate: 0 0.5px;
+    }
+    to {
+      translate: 0;
+    }
+  }
+  @keyframes tst-drop {
+    from {
+      opacity: 0;
+      translate: 0 -5px;
+    }
+  }
+  @keyframes tst-dot {
+    from {
+      opacity: 0;
+      scale: 0;
+    }
+  }
+  @keyframes tst-spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tst {
+      animation: none !important;
+    }
+    .tst-svg,
+    .tst-desc,
+    .tst-action,
+    .tst-close,
+    .tst[data-type] .tst-badge::after {
+      animation: none !important;
+    }
+    .tst-svg path {
+      stroke-dashoffset: 0 !important;
+      animation: none !important;
+    }
+  }
+}

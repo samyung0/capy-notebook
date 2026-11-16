@@ -99,26 +99,27 @@ test.describe('as a member', () => {
       timeout: 60_000,
     });
     const assigned = await page.evaluate(async () => {
-      await fetch('/api/workspaces/ws_bio/assignments', {
-        body: JSON.stringify({
-          assignAll: true,
-          assignees: [],
-          attempts: 1,
-          draft: false,
-          dueAt: new Date(Date.now() + 86_400_000).toISOString(),
-          files: [],
-          kind: 'marked',
-          latePenaltyPct: 0,
-          marking: 'ai_approve',
-          noLate: false,
-          quizId: 'qz_bio_near',
-          showAnswers: 'submitted',
-          showGrades: 'automatic',
-          shuffle: false,
-          title: 'Assigned while open',
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
+      // The class's owner assigns it: a member's own POST makes a task for
+      // themself, which holds nothing.
+      const { assignAsMockOwner } = await import(
+        '/src/mocks/assignments.ts' as string
+      );
+      assignAsMockOwner('ws_bio', {
+        assignAll: true,
+        assignees: [],
+        attempts: 1,
+        draft: false,
+        dueAt: new Date(Date.now() + 86_400_000).toISOString(),
+        files: [],
+        kind: 'marked',
+        latePenaltyPct: 0,
+        marking: 'ai_approve',
+        noLate: false,
+        quizId: 'qz_bio_near',
+        showAnswers: 'submitted',
+        showGrades: 'automatic',
+        shuffle: false,
+        title: 'Assigned while open',
       });
       const paths = ['/src/api/queryClient.ts', '/src/api/client.ts'];
       const [{ queryClient }, { qk }] = await Promise.all(

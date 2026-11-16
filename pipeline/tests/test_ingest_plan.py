@@ -114,3 +114,60 @@ def test_audio_is_transcribed(format_name) -> None:
 def test_audio_takes_only_the_audio_route(value) -> None:
     with pytest.raises(TerminalError):
         plan.require(value)
+
+
+_LEGACY = {
+    "route": "legacy_convert",
+    "parserRoute": "",
+    "office": True,
+    "stages": ["fetch_source", "convert_legacy", "replace_source"],
+    "resources": [
+        "object_storage_read",
+        "object_storage_write",
+        "document_parser",
+        "shared_parse_spool",
+    ],
+}
+
+
+@pytest.mark.parametrize(
+    ("format_name", "convert_to"), [("doc", "docx"), ("xls", "xlsx"), ("ppt", "pptx")]
+)
+def test_a_legacy_office_file_is_converted(format_name, convert_to) -> None:
+    processing_plan = plan.require(
+        _value(format=format_name, convertTo=convert_to, **_LEGACY)
+    )
+
+    assert processing_plan.route == plan.LEGACY_CONVERT
+    assert processing_plan.convert_to == convert_to
+    assert processing_plan.office and not processing_plan.parser_route
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Each legacy format converts only to its own twin, and must name it.
+        _value(format="doc", convertTo="xlsx", **_LEGACY),
+        _value(format="doc", **_LEGACY),
+        _value(format="docx", convertTo="docx", **_LEGACY),
+        _value(format="pdf", **_LEGACY),
+        _value(format="doc", convertTo="docx", **{**_LEGACY, "office": False}),
+        _value(format="doc", convertTo="docx", **{**_LEGACY, "parserRoute": "fast"}),
+        _value(format="doc", convertTo="docx", **{**_LEGACY, "stages": []}),
+        _value(
+            format="doc",
+            convertTo="docx",
+            **{**_LEGACY, "resources": ["object_storage_read", "document_parser"]},
+        ),
+        # No other route carries a conversion target.
+        _value(convertTo="docx"),
+        _value(format="docx", office=True, convertTo=""),
+        # A legacy file is no longer kept as uploaded.
+        _value(
+            format="doc", route="store_only", parserRoute="", stages=[], resources=[]
+        ),
+    ],
+)
+def test_legacy_conversion_takes_only_its_exact_contract(value) -> None:
+    with pytest.raises(TerminalError):
+        plan.require(value)

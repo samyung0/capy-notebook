@@ -25,7 +25,7 @@ const workspace = (workspaceId: string, items: Assignment[], manages = false) =>
     workspaceId,
   }) as TodoWorkspace;
 
-it('splits a class into open, done and answers waiting for its staff', () => {
+it('splits a class into open, done and answers waiting for whoever runs it', () => {
   const waiting = row('waiting', {
     manage: { toApprove: 2 } as Assignment['manage'],
     mine: undefined,
@@ -33,13 +33,20 @@ it('splits a class into open, done and answers waiting for its staff', () => {
   const done = row('done', { mine: { done: true } as Assignment['mine'] });
   const open = row('open');
   const items = [waiting, done, open, row('closed', { closedAt: 'x' })];
-  expect(todoRows(items, true)).toEqual({
+  expect(todoRows(items)).toEqual({
     approvedOff: [],
     done: [done],
     open: [open],
     toApprove: [waiting],
   });
-  expect(todoRows(items, false).toApprove).toEqual([]);
+});
+
+it('lists a task with a quiz for its maker, and its answers waiting', () => {
+  const task = row('task', {
+    manage: { toApprove: 1 } as Assignment['manage'],
+    own: true,
+  });
+  expect(todoRows([task])).toMatchObject({ open: [task], toApprove: [task] });
 });
 
 const view = (patch: Partial<TodoView> = {}): TodoView => ({
@@ -150,12 +157,23 @@ it('sorts rows by title, and classes by name', () => {
   expect(rowIds(reversed[0])).toEqual(['b', 'a']);
 });
 
+it('keeps the tasks with no workspace first under either sort', () => {
+  const classes = [
+    workspace('Art', [row('a', { dueAt: '2026-11-01T00:00:00Z', title: 'A' })]),
+    workspace('', [row('loose', { title: 'Z' })]),
+  ];
+  expect(ids(todoSections(classes, view()))).toEqual(['', 'Art']);
+  expect(
+    ids(todoSections(classes, view({ ascending: false, sort: 'title' })))
+  ).toEqual(['', 'Art']);
+});
+
 it('moves answers staff ticked off down with the ticked rows', () => {
   const ticked = row('ticked', {
     manage: { approvalsCheckedOff: true, toApprove: 1 } as Assignment['manage'],
     mine: undefined,
   });
-  expect(todoRows([ticked], true)).toMatchObject({
+  expect(todoRows([ticked])).toMatchObject({
     approvedOff: [ticked],
     toApprove: [],
   });

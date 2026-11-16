@@ -142,6 +142,33 @@ def test_the_local_stack_runs_the_ingest_services_as_deployed() -> None:
         assert services[name]["security_opt"] == ["no-new-privileges:true"], name
 
 
+def test_the_parse_coordinator_can_reach_the_gateway() -> None:
+    """A converted legacy Office file is handed to the gateway: production
+    and the local stack name its URL and secret on the service, and the shared
+    stack's coordinators read the queue env file that carries both."""
+    production = yaml.safe_load(
+        (DEPLOY / "docker-compose.ingest-host.yml").read_text()
+    )["services"]["parse-coordinator"]["environment"]
+    assert production["GATEWAY_URL"].startswith("${GATEWAY_URL:?")
+    assert production["PIPELINE_SECRET"].startswith("${PIPELINE_SECRET:?")
+    local = yaml.safe_load((DEPLOY / "docker-compose.yml").read_text())["services"]
+    for key in ("GATEWAY_URL", "PIPELINE_SECRET"):
+        assert (
+            local["parse-coordinator"]["environment"][key]
+            == local["import-worker"]["environment"][key]
+        )
+    shared = yaml.safe_load(
+        (DEPLOY / "docker-compose.ingest-host.nonprod.yml").read_text()
+    )["services"]
+    queue_env = (DEPLOY / "ingest-host.nonprod.queue.env.example").read_text()
+    assert "\nGATEWAY_URL=" in queue_env and "\nPIPELINE_SECRET=" in queue_env
+    for environment in ("local", "uat"):
+        assert (
+            shared[f"parse-coordinator-{environment}"]["env_file"]
+            == shared[f"import-worker-{environment}"]["env_file"]
+        )
+
+
 @pytest.mark.parametrize(("name", "targets"), COMPOSE.items())
 def test_every_required_variable_is_required_by_the_manifest(
     name: str, targets: set[str]

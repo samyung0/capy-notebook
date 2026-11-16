@@ -54,6 +54,9 @@
   --radius-button-xl: 9999px;
   --radius-row: 6px;
   --radius-tile: 14px;
+  /* BlockSuite's floating bars and menus, and a bar's buttons. */
+  --radius-toolbar: 8px;
+  --radius-toolbar-button: 5px;
   --radius-card: 8px;
   --radius-card-lg: 10px;
   --radius-card-xl: 12px;

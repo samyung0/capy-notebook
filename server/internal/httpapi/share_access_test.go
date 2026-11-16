@@ -530,7 +530,7 @@ func TestEditorPaysForTheImageItUploadsIntoAnotherPayersNote(t *testing.T) {
 
 // An image resolves for who may read what it belongs to, not every reader of the
 // workspace (security regression): a hidden quiz's for its owner and editor, an
-// assigned quiz's not for its assignee, and a frozen copy's for staff and who it
+// assigned quiz's for no viewer member, and a frozen copy's for staff and who it
 // went to, until a personal workspace hides it from all. Fails if resolve goes
 // back to workspace access.
 func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
@@ -605,7 +605,8 @@ func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
 	if err := st.Pool().QueryRow(ctx, `SELECT id FROM editor_assets WHERE assignment_id=$1`, made.ID).Scan(&frozenAsset); err != nil {
 		t.Fatal(err)
 	}
-	resolves("an assigned quiz's image", assignedAsset, map[string]int{"u_owner": 200, "u_viewer": 404, "u_other": 200})
+	// Open, the quiz is held from every viewer member, assigned it or not.
+	resolves("an assigned quiz's image", assignedAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 404, "u_other": 404})
 	resolves("a frozen copy's image", frozenAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 200, "u_other": 404})
 	if _, err := st.Pool().Exec(ctx, `UPDATE workspaces SET kind='personal' WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)

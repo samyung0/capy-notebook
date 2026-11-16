@@ -1,6 +1,6 @@
 import type { FileKind, SourceFile, SourceUploadPolicy } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
-import { fileExt } from '@/features/files/fileUtils';
+import { fileExt, legacyOfficeTarget } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 
 import {
@@ -32,6 +32,7 @@ interface AnalyzedSource {
   analysisResult?: SourceAnalysisResult;
   analysisStatus: SourceAnalysisStatus;
   kind: FileKind;
+  name: string;
   parseMode: ParseMode;
 }
 
@@ -122,9 +123,12 @@ export function sourceAnalysisBlocksSubmit(
   if (source.parseMode !== 'fast' || isTextKind(source.kind, policy)) {
     return false;
   }
+  // A legacy Office file has no estimate: the browser cannot read it, and the
+  // server parses it once converted.
+  if (legacyOfficeTarget(source.name)) return false;
   // Running or failed analysis holds submit until the source is removed or
-  // its parsing is turned off, so every reserved fast-parse document carries
-  // an estimate.
+  // its parsing is turned off, so every other reserved fast-parse document
+  // carries an estimate.
   return (
     !source.analysisInput ||
     source.analysisStatus !== 'ready' ||
@@ -204,13 +208,14 @@ export function toastRejectedSources(
 
 /** A source the policy fast-parses but the browser cannot estimate starts in
  * the error state, so the row says why submit stays disabled instead of
- * sitting idle forever. */
+ * sitting idle forever. A legacy Office file is never estimated and stays
+ * idle: it goes without a page count. */
 export function initialAnalysisStatus(
   name: string,
   input: SourceAnalysisInput | undefined,
   policy: Pick<SourceUploadPolicy, 'parseModes'>
 ): SourceAnalysisStatus {
-  if (input) return 'idle';
+  if (input || legacyOfficeTarget(name)) return 'idle';
   return fastParseExtensions(policy).has(fileExt(name)) ? 'error' : 'idle';
 }
 

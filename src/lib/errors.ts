@@ -344,6 +344,11 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_assignment_open_limit_body(),
         title: m.error_assignment_open_limit_title(),
       };
+    case 'task_limit':
+      return {
+        description: m.error_task_limit_body(),
+        title: m.error_task_limit_title(),
+      };
     case 'checkout_limit':
       return {
         description: m.error_checkout_limit_body(),

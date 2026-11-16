@@ -10,17 +10,15 @@ import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon } from '@/components/ui/Icon';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { selectTriggerVariants } from '@/components/ui/Select';
+import { Switch } from '@/components/ui/Switch';
 import {
-  matchesSearch,
-  PanelSearchField,
-} from '@/features/workspace/PanelSearch';
+  FileMenuNote,
+  FileMenuRow,
+  FileSearchMenu,
+} from '@/features/files/FileSearchMenu';
+import { matchesSearch } from '@/features/workspace/PanelSearch';
 import {
   type SourceTransfer,
   useSourceTransfers,
@@ -148,20 +146,6 @@ function FileRow({
   );
 }
 
-/** A row of the file menu. */
-function MenuRow({ className, ...props }: React.ComponentProps<'button'>) {
-  return (
-    <button
-      className={cn(
-        'flex min-h-9 w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-button px-2.5 text-left font-semibold outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg disabled:cursor-progress disabled:opacity-50',
-        className
-      )}
-      type="button"
-      {...props}
-    />
-  );
-}
-
 /** A file in the menu (X0a). */
 function MenuFileRow({
   file,
@@ -171,13 +155,13 @@ function MenuFileRow({
   onPick: () => void;
 }) {
   return (
-    <MenuRow aria-selected={false} onClick={onPick} role="option">
+    <FileMenuRow aria-selected={false} onClick={onPick} role="option">
       <FileIcon
         className="size-4 shrink-0"
         name={fileIconName({ kind: file.kind, name: file.name })}
       />
       <span className="min-w-0 truncate">{file.name}</span>
-    </MenuRow>
+    </FileMenuRow>
   );
 }
 
@@ -206,61 +190,45 @@ function FileMenu({
   /** Under a small button: as wide as the dialog's fields, not the button. */
   wide?: boolean;
 }) {
-  const [query, setQuery] = useState('');
-  const shown = files.filter((file) => matchesSearch(file.name, query));
   return (
-    <Popover
-      onOpenChange={(next) => {
-        if (!next) setQuery('');
-        onOpenChange(next);
-      }}
+    <FileSearchMenu
+      label={label}
+      onOpenChange={onOpenChange}
       open={open}
+      searchLabel={m.make_quiz_search_files()}
+      top={
+        <>
+          <FileMenuRow disabled={!policy} onClick={onUpload}>
+            <Icon name="upload" size={16} />
+            {m.make_quiz_upload_file()}
+          </FileMenuRow>
+          <hr className="my-1 border-divider" />
+          <p className="px-2.5 pt-2 pb-1.5 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
+            {m.make_quiz_in_workspace({ workspace: workspaceName })}
+          </p>
+        </>
+      }
+      trigger={trigger}
+      wide={wide}
     >
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        align="start"
-        alignWidthToTrigger={!wide}
-        className={cn(
-          'max-h-[min(420px,var(--radix-popover-content-available-height))] gap-0 overflow-hidden p-1.5',
-          wide && 'w-[550px] max-w-[calc(100vw-2rem)]'
-        )}
-        collisionPadding={8}
-      >
-        <div className="mb-1 shrink-0">
-          <PanelSearchField
-            label={m.make_quiz_search_files()}
-            onChange={setQuery}
-            value={query}
-          />
-        </div>
-        <MenuRow disabled={!policy} onClick={onUpload}>
-          <Icon name="upload" size={16} />
-          {m.make_quiz_upload_file()}
-        </MenuRow>
-        <hr className="my-1 border-divider" />
-        <p className="px-2.5 pt-2 pb-1.5 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
-          {m.make_quiz_in_workspace({ workspace: workspaceName })}
-        </p>
-        <div
-          aria-label={label}
-          className="min-h-0 overflow-y-auto"
-          role="listbox"
-        >
-          {shown.map((file) => (
-            <MenuFileRow
-              file={file}
-              key={file.id}
-              onPick={() => onPick(file)}
-            />
-          ))}
-          {shown.length === 0 && (
-            <p className="t-meta px-2.5 py-2 text-fg-muted">
-              {m.make_quiz_no_files()}
-            </p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+      {(query) => {
+        const shown = files.filter((file) => matchesSearch(file.name, query));
+        return (
+          <>
+            {shown.map((file) => (
+              <MenuFileRow
+                file={file}
+                key={file.id}
+                onPick={() => onPick(file)}
+              />
+            ))}
+            {shown.length === 0 && (
+              <FileMenuNote>{m.make_quiz_no_files()}</FileMenuNote>
+            )}
+          </>
+        );
+      }}
+    </FileSearchMenu>
   );
 }
 
@@ -313,6 +281,7 @@ export function MakeQuizDialog({
   onStarted,
   runId,
   step: stepName,
+  tabs,
   workspaceId,
   workspaceName,
 }: {
@@ -334,6 +303,14 @@ export function MakeQuizDialog({
   runId?: string;
   /** Each step is an address, so the browser's Back walks them. */
   step: 'files' | 'pages' | 'run';
+  /** Add practice: the files step is one tab of a dialog under this title.
+   * `strip` is its tab row and `other` the tab on show when it isn't this one,
+   * in place of the files and their footer. */
+  tabs?: {
+    other?: { body: React.ReactNode; footer: React.ReactNode };
+    strip: React.ReactNode;
+    title: string;
+  };
   workspaceId: string;
   workspaceName: string;
 }) {
@@ -353,6 +330,10 @@ export function MakeQuizDialog({
     fromFiles(initial.answers)
   );
   const onPages = stepName === 'pages';
+  // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11), but
+  // shown from Add practice, whose quiz is for the members. A reload on a
+  // later step starts from that again.
+  const [hidden, setHidden] = useState(!tabs);
   // A link opens before the files arrive.
   const seeded = useRef(!!files);
   useEffect(() => {
@@ -511,6 +492,7 @@ export function MakeQuizDialog({
     active: onPages,
     answers: choice.answers,
     file,
+    hidden,
     onCancel: onClose,
     onChangeFiles: () => onShowFiles(choice),
     onFile,
@@ -548,7 +530,7 @@ export function MakeQuizDialog({
       <div className="flex flex-col gap-6 pb-1">
         <div>
           <p className="t-meta text-fg-muted">
-            {m.make_quiz_no_spreadsheets()}
+            {m.make_quiz_no_spreadsheets()} {m.make_quiz_uploads_hidden()}
           </p>
           {lost.length > 0 && (
             <FormAlert
@@ -719,13 +701,15 @@ export function MakeQuizDialog({
         ? pages
         : {
             body: null,
-            closable: false,
-            footer: (
+            closable: !!tabs,
+            footer: tabs?.other ? (
+              tabs.other.footer
+            ) : (
               <>
-                <p className="t-meta mr-auto flex min-w-0 items-center gap-2 self-center text-fg-muted max-sm:w-full">
-                  <Icon className="shrink-0" name="viewOffSlash" size={16} />
-                  {m.make_quiz_hidden_note()}
-                </p>
+                <label className="mr-auto flex min-w-0 items-center gap-2 self-center text-sm max-sm:w-full">
+                  <Switch checked={hidden} onCheckedChange={setHidden} />
+                  {m.make_quiz_hide_quiz()}
+                </label>
                 <span className="contents max-sm:hidden">
                   <DialogCancel />
                 </span>
@@ -754,8 +738,8 @@ export function MakeQuizDialog({
               </>
             ),
             onCloseClick: onClose,
-            title: m.make_quiz_title(),
-            width: 720,
+            title: tabs?.title ?? m.make_quiz_title(),
+            width: tabs ? 600 : 720,
           };
   return (
     <SimpleDialog
@@ -786,7 +770,11 @@ export function MakeQuizDialog({
       width={step.width}
     >
       {/* Kept mounted, so a step's pages aren't read or drawn again on return. */}
-      <div hidden={stepName !== 'files'}>{filesBody}</div>
+      <div hidden={stepName !== 'files'}>
+        {tabs?.strip}
+        <div hidden={!!tabs?.other}>{filesBody}</div>
+        {tabs?.other?.body}
+      </div>
       <div
         className={cn(onPages && 'flex min-h-0 flex-1 flex-col')}
         hidden={!onPages}

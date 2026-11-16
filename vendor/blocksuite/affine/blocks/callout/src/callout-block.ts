@@ -64,6 +64,16 @@ const getIcon = (icon?: IconData) => {
   }
   return null;
 };
+// Capy (local change 39, Epo 2026-11-10): a note's callout keeps the app's own look.
+// Its kind is the block's `variant` (the note layout's prop: info, tip, warning,
+// success, danger; none reads as info), set on the element for the app's styles,
+// and the app supplies that kind's icon in place of the emoji.
+let variantIcon: ((variant: string) => unknown) | null = null;
+
+export function setCalloutVariantIcon(render: (variant: string) => unknown) {
+  variantIcon = render;
+}
+
 export class CalloutBlockComponent extends CaptionedBlockComponent<CalloutBlockModel> {
   private _popupCloseHandler: (() => void) | null = null;
 
@@ -224,21 +234,27 @@ export class CalloutBlockComponent extends CaptionedBlockComponent<CalloutBlockM
       cssVarV2.block.callout.background as Record<string, string>
     )[normalizedBackgroundName ?? 'grey'];
 
-    const iconContent = getIcon(icon);
+    const variant = variantIcon
+      ? ((this.model.props as { variant?: string }).variant ?? 'info')
+      : null;
+    if (variant) this.dataset.variant = variant;
+    const iconContent = variant ? variantIcon?.(variant) : getIcon(icon);
 
     return html`
       <div
         class="${calloutBlockContainerStyles}"
         @click=${this._handleBlockClick}
         style=${styleMap({
-          backgroundColor: backgroundColor ?? 'transparent',
+          backgroundColor: variant
+            ? undefined
+            : (backgroundColor ?? 'transparent'),
         })}
       >
         ${
           iconContent
             ? html`
                 <div
-                  @click=${this._toggleIconPicker}
+                  @click=${variant ? null : this._toggleIconPicker}
                   contenteditable="false"
                   class="${calloutEmojiContainerStyles}"
                   style=${styleMap({

@@ -1,12 +1,17 @@
 import type { SourceFile } from '@/api/types';
-import { notIndexedMessage } from '@/features/files/fileUtils';
+import {
+  failedNotIndexedMessage,
+  legacyOfficeTarget,
+  notIndexedMessage,
+} from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import type { SourceTransfer } from './sourceTransfers';
 
 export type TransferStatus =
   | { kind: 'progress'; label: string; value: number }
   | { kind: 'indeterminate'; label: string }
-  /** Waiting in the gateway's line: a label too long for the progress row. */
+  /** A label too long for the progress row, on the whole line: a place in
+   * the gateway's line, or a legacy Office file being converted. */
   | { kind: 'queued'; label: string }
   | {
       detail?: string;
@@ -72,6 +77,10 @@ export function transferStatus(
     return { kind: 'progress', label: m.source_transfer_queued(), value: 0 };
   }
   if (file.status === 'processing') {
+    // Still named as legacy Office: the conversion, which renames it.
+    if (!transfer.copy && legacyOfficeTarget(file.name)) {
+      return { kind: 'queued', label: m.files_converting() };
+    }
     return {
       kind: 'progress',
       label: transfer.copy
@@ -86,9 +95,12 @@ export function transferStatus(
     return {
       detail: file.indexed
         ? m.files_processing_error()
-        : m.files_not_indexed_failed(),
+        : failedNotIndexedMessage(file),
       kind: 'error',
-      label: m.source_transfer_parse_failed(),
+      // A legacy Office file failed before any parse: the file tree's label.
+      label: legacyOfficeTarget(file.name)
+        ? m.files_processing_error()
+        : m.source_transfer_parse_failed(),
     };
   }
   // Ready, or a file without a status, which the app treats as done. A file

@@ -149,11 +149,39 @@ function progress(workspaceId: string): MembersProgress {
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString();
 
+/** Members whose profile leaves sections empty, to see the page without them:
+ * no wrong questions, no recent activity, no assignments, or nothing at all
+ * (a class with no quizzes yet, so no topics either). */
+const EMPTY: Record<
+  string,
+  ('activity' | 'assignments' | 'missed' | 'topics')[]
+> = {
+  'Cara Moss': ['activity'],
+  'Dan Kim': ['activity', 'assignments', 'missed', 'topics'],
+  'Farah Ali': ['assignments'],
+  'Gus Ito': ['missed'],
+};
+
 function profile(workspaceId: string, memberId: string) {
   const member = progress(workspaceId).members.find(
     (m) => m.userId === memberId
   );
   if (!member) return null;
+  const full = fullProfile(member);
+  const empty = EMPTY[member.name] ?? [];
+  return {
+    ...full,
+    activity: empty.includes('activity') ? [] : full.activity,
+    assignments: empty.includes('assignments') ? [] : full.assignments,
+    // Nothing at all: never active, no mark to average.
+    lastActiveAt: empty.length === 4 ? undefined : full.lastActiveAt,
+    missed: empty.includes('missed') ? [] : full.missed,
+    overall: empty.includes('assignments') ? undefined : full.overall,
+    topics: empty.includes('topics') ? [] : full.topics,
+  } satisfies MemberProfile;
+}
+
+function fullProfile(member: MemberProgress) {
   return {
     activity: [
       {

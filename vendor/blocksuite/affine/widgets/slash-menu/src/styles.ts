@@ -19,14 +19,17 @@ export const styles = css`
     left: 0;
     top: 0;
     box-sizing: border-box;
-    padding: 8px 4px 8px 8px;
-    width: 280px;
+    /* Capy (local change 35): the app's menu panel, 240px. */
+    padding: 4px;
+    width: 240px;
+    border: 1px solid ${unsafeCSSVarV2('layer/insideBorder/border')};
     overflow-y: auto;
-    font-family: ${unsafeCSS(baseTheme.fontSansFamily)};
+    /* Capy (local change 35): the app's font. */
+    font-family: var(--affine-font-family, ${unsafeCSS(baseTheme.fontSansFamily)});
 
     background: ${unsafeCSSVarV2('layer/background/overlayPanel')};
     box-shadow: ${unsafeCSSVar('overlayPanelShadow')};
-    border-radius: 8px;
+    border-radius: var(--radius-toolbar, 8px);
     z-index: var(--affine-z-index-popover);
     user-select: none;
     /* transition: max-height 0.2s ease-in-out; */
@@ -36,37 +39,38 @@ export const styles = css`
 
   .slash-menu-group-name {
     box-sizing: border-box;
-    padding: 2px 8px;
+    padding: 8px 8px 4px;
 
-    font-size: var(--affine-font-xs);
-    font-weight: 500;
-    line-height: var(--affine-line-height);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     text-align: left;
-    color: var(
-      --light-textColor-textSecondaryColor,
-      var(--textColor-textSecondaryColor, #8e8d91)
-    );
+    color: ${unsafeCSSVarV2('text/tertiary')};
   }
 
   .slash-menu-item {
-    padding: 2px 8px 2px 8px;
+    padding: 0 8px;
     justify-content: flex-start;
     gap: 10px;
+    border-radius: var(--capy-toolbar-button-radius, 4px);
   }
 
   .slash-menu-item-icon {
     box-sizing: border-box;
-    width: 28px;
-    height: 28px;
-    padding: 4px;
-    border: 1px solid var(--affine-border-color, #e3e2e4);
-    border-radius: 4px;
+    width: 18px;
+    height: 18px;
     color: var(--affine-icon-color);
-    background: ${unsafeCSSVarV2('layer/background/overlayPanel')};
 
     display: flex;
     justify-content: center;
     align-items: center;
+  }
+
+  .slash-menu-item-shortcut {
+    font-size: 12px;
+    color: ${unsafeCSSVarV2('text/tertiary')};
   }
 
   .slash-menu-item-icon svg {

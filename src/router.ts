@@ -46,6 +46,7 @@ import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
   parseMaterialPageSearch,
+  parseTaskSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import {
@@ -278,6 +279,12 @@ const appRoutes = [
     },
     path: '/todo',
     validateSearch: parseTodoSearch,
+  }),
+  createRoute({
+    component: lazyPage(() => import('@/routes/TodoTask')),
+    getParentRoute: () => authShellRoute,
+    path: '/todo/task',
+    validateSearch: parseTaskSearch,
   }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({

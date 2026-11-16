@@ -13,7 +13,11 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
-import { closedItself, dayTimeLabel } from './assignmentText';
+import {
+  closedItself,
+  dayTimeLabel,
+  holdsQuizPastClose,
+} from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { NoAnswersWarning } from './NoAnswersWarning';
 
@@ -44,6 +48,7 @@ export function AssignmentSettingsTab({
   const { workspaceId, id, draft, closedAt, manage } = assignment;
   // A quiz in the trash has nothing to open or republish.
   const quizId = manage?.quizTrashed ? undefined : manage?.quizId;
+  const answersHeld = holdsQuizPastClose(assignment);
   const [editing, setEditing] = useState(false);
   const [asking, setAsking] = useState<Asking | null>(null);
   const { mutate: publish, isPending: publishing } = usePublishAssignment(
@@ -92,9 +97,23 @@ export function AssignmentSettingsTab({
             title={m.assignment_settings_quiz()}
           >
             <RowButton asChild iconLeft="pencil">
-              <Link search={{ material: quizId }} to=".">
-                {m.assignment_edit_quiz()}
-              </Link>
+              {/* A task's quiz sits wherever its maker took it from. */}
+              {manage?.quizWorkspaceId ? (
+                <Link
+                  params={{ workspaceId: manage.quizWorkspaceId }}
+                  search={{ material: quizId }}
+                  to="/workspaces/$workspaceId"
+                >
+                  {m.assignment_edit_quiz()}
+                </Link>
+              ) : (
+                <Link
+                  params={{ materialId: quizId }}
+                  to="/materials/$materialId"
+                >
+                  {m.assignment_edit_quiz()}
+                </Link>
+              )}
             </RowButton>
           </SettingRow>
         )}
@@ -174,12 +193,18 @@ export function AssignmentSettingsTab({
       )}
       {asking === 'close' && (
         <ConfirmDialog
+          // A class's quiz under Do not show stays held past the close.
+          body={answersHeld ? m.assignment_close_held_body() : undefined}
           confirmLabel={m.assignment_close()}
           danger={false}
           onClose={() => setAsking(null)}
           onConfirm={close}
           open
-          title={m.assignment_close_confirm()}
+          title={
+            answersHeld
+              ? m.assignment_close_confirm_held()
+              : m.assignment_close_confirm()
+          }
         />
       )}
       {asking === 'delete' && (

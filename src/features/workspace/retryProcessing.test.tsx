@@ -63,16 +63,39 @@ describe('retryFailedFile', () => {
   it('retries a still-indexed file in one click, without the dialog', async () => {
     const retry = vi.fn(() => Promise.resolve());
     const openDialog = vi.fn();
-    retryFailedFile({ id: 'f_1', indexed: true }, retry, openDialog);
+    retryFailedFile(
+      { id: 'f_1', indexed: true, name: 'scan.pdf' },
+      retry,
+      openDialog
+    );
     await vi.waitFor(() => expect(userToast).toHaveBeenCalledOnce());
     expect(retry).toHaveBeenCalledWith({ id: 'f_1', parseMode: 'fast' });
+    expect(openDialog).not.toHaveBeenCalled();
+  });
+
+  // The server reruns an old Office file's own upload, whatever mode is sent,
+  // so there is no mode to pick.
+  it('retries an old Office file in one click, without the dialog', async () => {
+    const retry = vi.fn(() => Promise.resolve());
+    const openDialog = vi.fn();
+    retryFailedFile(
+      { id: 'f_2', indexed: false, name: 'essay.doc' },
+      retry,
+      openDialog
+    );
+    await vi.waitFor(() => expect(userToast).toHaveBeenCalledOnce());
+    expect(retry).toHaveBeenCalledWith({ id: 'f_2', parseMode: 'fast' });
     expect(openDialog).not.toHaveBeenCalled();
   });
 
   it('opens the dialog for a file that is not indexed', () => {
     const retry = vi.fn(() => Promise.resolve());
     const openDialog = vi.fn();
-    retryFailedFile({ id: 'f_1', indexed: false }, retry, openDialog);
+    retryFailedFile(
+      { id: 'f_1', indexed: false, name: 'scan.pdf' },
+      retry,
+      openDialog
+    );
     expect(openDialog).toHaveBeenCalledOnce();
     expect(retry).not.toHaveBeenCalled();
   });

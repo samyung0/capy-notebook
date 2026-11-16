@@ -281,7 +281,7 @@ def classify(
     # as x or dx sits among different words each time.
     contexts: dict[bytes, Counter] = defaultdict(Counter)
     for index in sorted(images):
-        page = document[blocks[index]["page_idx"]]
+        page = page_text.page_at(document, blocks[index]["page_idx"])
         if repeated(index) and (page_fact := page_facts(page)):
             beside = _words_beside(_rect(blocks[index], page), page_fact[3])
             contexts[identity[index]][beside] += 1
@@ -296,7 +296,7 @@ def classify(
         if index not in images:
             out.append(block)
             continue
-        page = document[block["page_idx"]]
+        page = page_text.page_at(document, block["page_idx"])
         rect = _rect(block, page)
         short, long = sorted((rect.width, rect.height))
         if short < MIN_SIDE_PT or short < SUBTLE_ASPECT * long:
@@ -515,7 +515,7 @@ def _figure_clusters(
             grid[at].append(node)
         return True
 
-    for path in page.get_cdrawings() if paths is None else paths:
+    for path in page_text.page_drawings(page) if paths is None else paths:
         x0, y0, x1, y1 = path["rect"]
         w, h = x1 - x0, y1 - y0
         if (w < 0.5 and h < 0.5) or (w >= 0.9 * width and h >= 0.9 * height):

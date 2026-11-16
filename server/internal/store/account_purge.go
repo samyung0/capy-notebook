@@ -243,6 +243,11 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM attempts WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
+	// The tasks they set themself are theirs alone, and one with no workspace
+	// has no cascade to go with.
+	if _, err := tx.Exec(ctx, `DELETE FROM assignments WHERE own AND created_by=$1`, userID); err != nil {
+		return err
+	}
 	// Private marks on files in other people's workspaces outlive the files'
 	// cascade, and the tombstone row never fires the author FK cascade.
 	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {

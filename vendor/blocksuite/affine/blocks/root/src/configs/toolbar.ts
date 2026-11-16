@@ -54,6 +54,8 @@ import {
 import {
   getMostCommonValue,
   isInsideBlockByFlavour,
+  // Capy (local change 37): names go through `tr`.
+  tr,
 } from '@blocksuite/affine-shared/utils';
 import {
   CopyIcon,
@@ -132,11 +134,11 @@ const conversionsActionGroup = {
               item => item.name,
               ({ flavour, type, name, icon }) => html`
                 <editor-menu-action
-                  aria-label=${name}
+                  aria-label=${tr(name)}
                   ?data-selected=${conversion.name === name}
                   @click=${() => update(flavour, type)}
                 >
-                  ${icon}<span class="label">${name}</span>
+                  ${icon}<span class="label">${tr(name)}</span>
                 </editor-menu-action>
               `
             )}
@@ -191,10 +193,10 @@ const alignActionGroup = {
               item => item.name,
               ({ textAlign, name, icon }) => html`
                 <editor-menu-action
-                  aria-label=${name}
+                  aria-label=${tr(name)}
                   @click=${() => update(textAlign)}
                 >
-                  ${icon}<span class="label">${name}</span>
+                  ${icon}<span class="label">${tr(name)}</span>
                 </editor-menu-action>
               `
             )}

@@ -1,7 +1,7 @@
 import { focusBlockEnd } from '@blocksuite/affine-shared/commands';
 import { isInsideBlockByFlavour } from '@blocksuite/affine-shared/utils';
 import { type SlashMenuConfig } from '@blocksuite/affine-widget-slash-menu';
-import { FontIcon } from '@blocksuite/icons/lit';
+import { InformationIcon } from '@blocksuite/icons/lit';
 
 import { calloutTooltip } from './tooltips';
 
@@ -10,7 +10,8 @@ export const calloutSlashMenuConfig: SlashMenuConfig = {
     {
       name: 'Callout',
       description: 'Let your words stand out.',
-      icon: FontIcon(),
+      // Capy (local change 39): a callout's own icon, not Text's.
+      icon: InformationIcon(),
       tooltip: {
         figure: calloutTooltip,
         caption: 'Callout',

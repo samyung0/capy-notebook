@@ -342,7 +342,8 @@ func (s *Store) finalizeUploadSessionTx(
 		Scan(&paper, &handIn); err != nil {
 		return File{}, err
 	}
-	// Nothing reads a hand-in's files: they are stored, never parsed.
+	// Nothing reads a hand-in's files: they are stored, never parsed (nor
+	// converted).
 	ready := processingPlan.Route == sourceupload.RouteStoreOnly || handIn
 	status := "pending"
 	if ready {
@@ -521,17 +522,17 @@ func (s *Store) PruneUploadSessions(ctx context.Context) error {
 	return err
 }
 
-// queueIngestTx queues a finalized upload's ingest job on its uploader's
-// credits. A paper's file the uploader has no credits for is kept ready with
-// no parse instead (queued false): credits never refuse a paper (Epo
-// 2026-11-08), its pages still render for marking, and marking then waits as
-// No credits.
+// queueIngestTx queues a finalized upload's first job on its uploader's
+// credits (a legacy conversion with parsing off: on a system session). A
+// paper's file the uploader has no credits for is kept ready with no parse
+// instead (queued false): credits never refuse a paper (Epo 2026-11-08), its
+// pages still render for marking, and marking then waits as No credits.
 func (s *Store) queueIngestTx(ctx context.Context, tx pgx.Tx, u UploadSession, fileID, parser, sourceETag string, plan sourceupload.ProcessingPlan) (bool, error) {
 	actor := ""
 	if u.CreatedBy != nil {
 		actor = *u.CreatedBy
 	}
-	reservationID, err := s.beginIngestSpendTx(ctx, tx, actor, u.WorkspaceID)
+	reservationID, err := s.beginFileJobSessionTx(ctx, tx, actor, u.WorkspaceID, plan, u.ParseMode)
 	if errors.Is(err, ErrCreditsExhausted) {
 		var paper bool
 		if err := tx.QueryRow(ctx, `SELECT attempt_id IS NOT NULL FROM upload_sessions WHERE id=$1`, u.ID).Scan(&paper); err != nil {
@@ -545,19 +546,10 @@ func (s *Store) queueIngestTx(ctx context.Context, tx pgx.Tx, u UploadSession, f
 	if err != nil {
 		return false, err
 	}
-	payload, err := s.ingestJobPayload(ctx, tx, actor, map[string]any{
-		"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
-		"kind": u.Kind, "parser": parser,
-		"parseMode":      u.ParseMode,
-		"processingPlan": plan,
-		"sourceETag":     sourceETag,
-		"sourceRevision": int64(1),
-		"reservationId":  reservationID,
-	})
-	if err != nil {
-		return false, err
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`,
-		uid("job"), initialPipelineJobType(plan), payload)
-	return true, err
+	_, err = s.enqueueFileJobTx(ctx, tx, fileJob{
+		actorID: actor, payerID: u.UserID, workspaceID: u.WorkspaceID, fileID: fileID,
+		blobPath: u.FinalPath, kind: u.Kind, parser: parser, parseMode: u.ParseMode,
+		sourceETag: sourceETag, reservationID: reservationID, sourceRevision: 1,
+	}, plan)
+	return err == nil, err
 }

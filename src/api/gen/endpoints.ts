@@ -1452,6 +1452,56 @@ export const markAssignmentWithAI = async (id: string, options?: RequestInit): P
 
 
 
+export type turnAssignmentToPracticeResponse200 = {
+  data: Assignment
+  status: 200
+}
+
+export type turnAssignmentToPracticeResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type turnAssignmentToPracticeResponseSuccess = (turnAssignmentToPracticeResponse200) & {
+  headers: Headers;
+};
+export type turnAssignmentToPracticeResponseError = (turnAssignmentToPracticeResponseDefault) & {
+  headers: Headers;
+};
+
+export type turnAssignmentToPracticeResponse = (turnAssignmentToPracticeResponseSuccess | turnAssignmentToPracticeResponseError)
+
+export const getTurnAssignmentToPracticeUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/practice`
+}
+
+/**
+ * @summary Make a closed assignment's quiz practice for members when its answers are not shown
+ */
+export const turnAssignmentToPractice = async (id: string, options?: RequestInit): Promise<turnAssignmentToPracticeResponse> => {
+
+  const res = await fetch(getTurnAssignmentToPracticeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: turnAssignmentToPracticeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as turnAssignmentToPracticeResponse
+}
+
+
+
 export type publishAssignmentResponse200 = {
   data: Assignment
   status: 200
@@ -5197,6 +5247,70 @@ export const listOwnedFiles = async (params?: ListOwnedFilesParams, options?: Re
 
   const data: listOwnedFilesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listOwnedFilesResponse
+}
+
+
+
+export type createStandaloneBlankFileResponse201 = {
+  data: File
+  status: 201
+}
+
+export type createStandaloneBlankFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createStandaloneBlankFileResponseSuccess = (createStandaloneBlankFileResponse201) & {
+  headers: Headers;
+};
+export type createStandaloneBlankFileResponseError = (createStandaloneBlankFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type createStandaloneBlankFileResponse = (createStandaloneBlankFileResponseSuccess | createStandaloneBlankFileResponseError)
+
+export const getCreateStandaloneBlankFileUrl = () => {
+
+
+
+
+  return `/api/files/blank`
+}
+
+/**
+ * @summary Create a blank Word or Excel file with no workspace
+ */
+export const createStandaloneBlankFile = async (createBlankFileReq: NonReadonly<CreateBlankFileReq>, options?: RequestInit): Promise<createStandaloneBlankFileResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateStandaloneBlankFileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createBlankFileReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createStandaloneBlankFileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createStandaloneBlankFileResponse
 }
 
 
@@ -11100,6 +11214,70 @@ const res = await fetch(getHideTodoDoneUrl(),
 
   const data: hideTodoDoneResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as hideTodoDoneResponse
+}
+
+
+
+export type createTodoTaskResponse201 = {
+  data: Assignment
+  status: 201
+}
+
+export type createTodoTaskResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createTodoTaskResponseSuccess = (createTodoTaskResponse201) & {
+  headers: Headers;
+};
+export type createTodoTaskResponseError = (createTodoTaskResponseDefault) & {
+  headers: Headers;
+};
+
+export type createTodoTaskResponse = (createTodoTaskResponseSuccess | createTodoTaskResponseError)
+
+export const getCreateTodoTaskUrl = () => {
+
+
+
+
+  return `/api/todo/tasks`
+}
+
+/**
+ * @summary Set oneself a task that belongs to no workspace
+ */
+export const createTodoTask = async (assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createTodoTaskResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateTodoTaskUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentFormReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTodoTaskResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTodoTaskResponse
 }
 
 

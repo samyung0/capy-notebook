@@ -109,11 +109,13 @@ export default function Notifications() {
        * list keeps its reading width. */}
       <div className="page-px flex w-full flex-col">
         <div className="flex items-center justify-end">
+          {/* md buttons with tighter sides, so the pair keeps its spacing
+              (Epo 2026-11-12). */}
           <Button
+            className="px-3"
             disabled={!unread?.count}
             iconLeft="tickDouble"
             onClick={() => markAllRead()}
-            size="sm"
             variant="ghost-hover"
           >
             {m.notifications_mark_all_read()}
@@ -121,10 +123,10 @@ export default function Notifications() {
           <IconButton
             asChild
             // Square at the text button's height, so the two line up.
-            className="size-(--button-h-sm) p-0"
+            className="size-(--control-h) p-0"
             icon="settings"
             label={m.notifications_settings()}
-            size="sm"
+            size="md"
             tooltip
             variant="ghost-hover"
           >

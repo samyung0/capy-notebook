@@ -10,4 +10,6 @@ export interface AssignmentFile {
   kind: string;
   materialId?: string;
   name: string;
+  workspaceId?: string;
+  workspaceName?: string;
 }

@@ -488,7 +488,7 @@ func (s *Store) SavePaperRead(ctx context.Context, attemptID string, reads map[s
 			r.id, rawAnswers, rawGraded, correct, total, pct, waitingMarks, waitingAnswers); err != nil {
 			return err
 		}
-		mt := Material{ID: r.sourceID, WorkspaceID: r.wsID}
+		mt := r.quiz()
 		for _, q := range graded {
 			if err := logAnswerTx(ctx, tx, r.userID, mt, q, given, answerSourceAssignment, r.id, now); err != nil {
 				return err
@@ -560,11 +560,12 @@ func (s *Store) PapersToRead(ctx context.Context, assignmentID, attemptID string
 // of its assignment's class once submitted; anyone else gets ErrNotFound. kind
 // tells a PDF, shown page by page, from other files.
 func (s *Store) PaperFileBlob(ctx context.Context, userID, attemptID, fileID string) (blobPath, kind string, err error) {
-	var owner, wsID string
+	var owner string
+	var row taskRow
 	var submitted bool
-	err = s.pool.QueryRow(ctx, `SELECT t.user_id, a.workspace_id, t.submitted_at IS NOT NULL, COALESCE(f.blob_path, ''), f.kind
+	err = s.pool.QueryRow(ctx, `SELECT t.user_id, COALESCE(a.workspace_id, ''), a.own, a.created_by, t.submitted_at IS NOT NULL, COALESCE(f.blob_path, ''), f.kind
 		FROM files f JOIN attempts t ON t.id=f.attempt_id JOIN assignments a ON a.id=t.assignment_id
-		WHERE f.id=$1 AND f.attempt_id=$2`, fileID, attemptID).Scan(&owner, &wsID, &submitted, &blobPath, &kind)
+		WHERE f.id=$1 AND f.attempt_id=$2`, fileID, attemptID).Scan(&owner, &row.wsID, &row.own, &row.maker, &submitted, &blobPath, &kind)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}
@@ -574,7 +575,7 @@ func (s *Store) PaperFileBlob(ctx context.Context, userID, attemptID, fileID str
 	if owner == userID {
 		return blobPath, kind, nil
 	}
-	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
+	staff, err := s.staffOf(ctx, s.pool, userID, row)
 	if err != nil || !staff || !submitted {
 		return "", "", ErrNotFound
 	}

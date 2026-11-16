@@ -239,7 +239,12 @@ export function SourceTransferPanel() {
   );
   const rows = transfers.map((transfer) => {
     const file = transfer.fileId ? files.get(transfer.fileId) : undefined;
-    return { file, status: transferStatus(transfer, file), transfer };
+    return {
+      file,
+      status: transferStatus(transfer, file),
+      // The stored name: a legacy Office file is renamed once converted.
+      transfer: file ? { ...transfer, name: file.name } : transfer,
+    };
   });
   useElementLimitToasts(rows);
   const quizRuns = useQuizRuns((state) => state.runs);

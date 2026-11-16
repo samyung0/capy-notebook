@@ -1,3 +1,5 @@
+// Capy (local change 37): names go through `tr`.
+import { tr } from '@blocksuite/affine-shared/utils';
 import { IS_MOBILE } from '@blocksuite/global/env';
 import { ArrowRightSmallIcon } from '@blocksuite/icons/lit';
 import {
@@ -36,6 +38,14 @@ export const subMenuPlacements = autoPlacement({
   allowedPlacements: ['bottom-end'],
 });
 export const subMenuMiddleware = [subMenuOffset, subMenuPlacements];
+
+// Capy (local change 36): a submenu beside its row, for the note's block menu
+// (the app has no floating-ui of its own to build this with).
+export const sideSubMenuMiddleware = [
+  offset({ mainAxis: 8, crossAxis: -5 }),
+  autoPlacement({ allowedPlacements: ['right-start', 'left-start'] }),
+  shift({ padding: 8 }),
+];
 
 export const dropdownSubMenuMiddleware = [
   autoPlacement({ allowedPlacements: ['bottom-end'] }),
@@ -257,7 +267,7 @@ export const subMenuItems = {
         content: () =>
           html`${config.prefix}
             <div class="affine-menu-action-text">
-              ${config.label?.() ?? config.name}
+              ${config.label?.() ?? tr(config.name)}
             </div>
             ${config.postfix}
             ${config.disableArrow ? nothing : ArrowRightSmallIcon()} `,

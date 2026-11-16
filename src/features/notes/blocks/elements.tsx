@@ -232,7 +232,8 @@ function StudyBlockToolbar({
     <FloatingPortal>
       <PopupMotion
         aria-label={m.editor_study_actions()}
-        className="flex items-center gap-0.5 rounded-lg border border-overlay-line bg-overlay p-1 shadow-pop"
+        // The shared floating bar's box (BlockToolbar), around its own motion.
+        className="flex items-center gap-0.5 rounded-(--radius-toolbar) border border-overlay-line bg-overlay p-0.5 shadow-pop [--radius-button:var(--radius-toolbar-button)] [--toolbar-button:26px] sm:p-[3px] sm:[--toolbar-button:28px]"
         contentEditable={false}
         data-floating-toolbar
         data-frost={frosted || undefined}

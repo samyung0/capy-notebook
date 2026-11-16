@@ -50,7 +50,6 @@ test.describe('workspace sharing', () => {
     await expect(
       editorPage.getByRole('button', { exact: true, name: m.members_invite() })
     ).toHaveCount(0);
-    await editorPage.keyboard.press('Escape');
     await expect(
       editorPage.getByRole('button', { name: m.action_clone_workspace() })
     ).toHaveCount(0);

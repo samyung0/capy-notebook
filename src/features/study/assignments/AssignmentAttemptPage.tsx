@@ -1,6 +1,6 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
 import { useCallback, useRef, useState } from 'react';
-import { useAssignment, useAssignmentAttempt } from '@/api/hooks';
+import { useAssignment, useAssignmentAttempt, useWorkspace } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -9,11 +9,24 @@ import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { PracticeFrame } from '../practice/studyPage';
+import { studyView } from '../practice/studyView';
 import { AssignmentSubmitted } from './AssignmentSubmitted';
 import { AssignmentTake } from './AssignmentTake';
 import { AttemptResults } from './AttemptResults';
 
-/** "← Assignments" over an assignment's pages. */
+/** The list's name, as the rail has it: Assignments to the class staff who
+ * give them out, To do to everyone else (Epo 2026-11-11). */
+export function useTodoPageName() {
+  const { workspaceId } = useParams({ strict: false }) as {
+    workspaceId?: string;
+  };
+  const { data: ws } = useWorkspace(workspaceId ?? '', {
+    errorBoundary: false,
+  });
+  return studyView(ws).manages ? m.study_panel_assignments() : m.nav_todo();
+}
+
+/** "← To do" or "← Assignments" over an assignment's pages. */
 export function BackToAssignments({
   label,
   search,
@@ -21,6 +34,7 @@ export function BackToAssignments({
   label?: string;
   search?: Record<string, unknown>;
 }) {
+  const list = useTodoPageName();
   return (
     <UnderlineLink
       asChild
@@ -29,7 +43,7 @@ export function BackToAssignments({
       noArrow
     >
       <Link search={search ?? { study: 'assignments' as const }} to=".">
-        {label ?? m.study_panel_assignments()}
+        {label ?? list}
       </Link>
     </UnderlineLink>
   );

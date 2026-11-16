@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
+import { useDeleteAssignment, useTodoTick } from '@/api/hooks';
 import type { Assignment, TodoWorkspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
@@ -7,12 +8,15 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { formatPoints } from '@/features/quizzes/grade';
+import { questionsLabel } from '@/features/study/practice/practiceText';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import { assignmentPage, fileLink } from './assignmentPage';
 import { dateLabel, dateTimeLabel, minutesText } from './assignmentText';
+import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { assignmentFileIcon, useOpenAssignment } from './TodoSection';
-import { isPlainTask, type TodoRow } from './todoRows';
+import { isPlainTask, isTicked, type TodoRow } from './todoRows';
 
 /** A handed-in quiz's or hand-in's line: its mark when it shows, else that it
  * waits for marks, else that it is handed in. */
@@ -34,7 +38,8 @@ export const rowHeading = (row: TodoRow) =>
  * waiting, due with how long is left, the quiz's facts, who posted it) and the
  * files, each opening in its workspace. The actions sit in the shared dialog
  * footer (Epo 2026-11-10): a task's Mark as done; a quiz's Start, Continue or See results, an approval's
- * Approve marks, each with Mark as done beside it while it can be ticked.
+ * Approve marks, each with Mark as done beside it while it can be ticked. A task
+ * its viewer set themself (`own`) has Delete and Edit there too.
  */
 export function TodoDialog({
   canTick,
@@ -56,6 +61,8 @@ export function TodoDialog({
   const { a } = row;
   const done = !!a.mine?.done;
   const plain = isPlainTask(a);
+  const [asking, setAsking] = useState<'edit' | 'delete' | null>(null);
+  const { mutate: remove } = useDeleteAssignment(a.workspaceId);
   const go = (label: string, run: () => void) => (
     <Button
       iconRight="navigationForward"
@@ -71,15 +78,7 @@ export function TodoDialog({
   let primary: ReactNode = null;
   if (row.approval)
     primary = go(m.todo_approve_marks(), () => {
-      void navigate({
-        params: { workspaceId: a.workspaceId },
-        search: {
-          assignment: a.id,
-          study: 'assignments' as const,
-          tab: 'approve' as const,
-        },
-        to: '/workspaces/$workspaceId',
-      });
+      void navigate(assignmentPage(a, { tab: 'approve' }));
     });
   else if (plain)
     primary = canTick && (
@@ -124,8 +123,10 @@ export function TodoDialog({
 
   const overdue =
     !ticked && !!a.dueAt && Date.parse(a.dueAt) <= Date.now() && !a.closed;
-  const facts: { icon: IconName; label: string; value: ReactNode }[] = [
-    {
+  const facts: { icon: IconName; label: string; value: ReactNode }[] = [];
+  // A task with no workspace has no such row (Epo 2026-11-10).
+  if (workspace.workspaceId)
+    facts.push({
       icon: 'workspaces',
       label: m.todo_fact_workspace(),
       value: (
@@ -140,8 +141,7 @@ export function TodoDialog({
           <span className="truncate">{workspace.name}</span>
         </span>
       ),
-    },
-  ];
+    });
   if (row.approval)
     facts.push({
       icon: 'clipboard',
@@ -182,8 +182,11 @@ export function TodoDialog({
       value: (
         <>
           {m.todo_quiz_size({
-            marks: formatPoints(a.marks),
-            questions: a.questions,
+            marks:
+              a.marks === 1
+                ? m.question_ui_one_mark()
+                : m.question_ui_marks({ count: formatPoints(a.marks) }),
+            questions: questionsLabel(a.questions),
           })}
           {a.allowUploads && (
             <span className="t-meta block text-fg-muted">
@@ -223,6 +226,27 @@ export function TodoDialog({
         ? { ok: false, text: m.todo_checked_note() }
         : null;
 
+  if (asking === 'edit')
+    return (
+      <NewAssignmentDialog
+        existing={a}
+        onClose={() => setAsking(null)}
+        onDone={onClose}
+        workspaceId={a.workspaceId}
+      />
+    );
+  if (asking === 'delete')
+    return (
+      <ConfirmDialog
+        body={m.todo_delete_task_body()}
+        confirmLabel={m.action_delete()}
+        onClose={() => setAsking(null)}
+        // Its row goes with it, so the details close too.
+        onConfirm={() => remove(a.id, { onSuccess: onClose })}
+        open
+        title={m.todo_delete_task_title({ title: a.title })}
+      />
+    );
   return (
     <SimpleDialog
       // The shared dialog's footer, on phones after the content (Epo
@@ -230,6 +254,28 @@ export function TodoDialog({
       // corner closes.
       footer={
         <>
+          {a.own && (
+            <>
+              <Button
+                iconLeft="trash"
+                onClick={() => setAsking('delete')}
+                size="lg"
+                type="button"
+                variant="ghost-hover"
+              >
+                {m.action_delete()}
+              </Button>
+              <Button
+                iconLeft="pencil"
+                onClick={() => setAsking('edit')}
+                size="lg"
+                type="button"
+                variant="ghost-hover"
+              >
+                {m.action_edit()}
+              </Button>
+            </>
+          )}
           {second}
           {primary}
         </>
@@ -282,16 +328,12 @@ export function TodoDialog({
             <ul>
               {a.files.map((file) => (
                 <li key={file.fileId ?? file.materialId}>
-                  {/* The workspace panel's file row: a bare 16px icon. */}
+                  {/* The workspace panel's file row: a bare 16px icon. It
+                      opens where the file sits, which for a task of one's own
+                      need not be the task's workspace (Epo 2026-11-11). */}
                   <Link
                     className="-mx-2 flex min-h-9 items-center gap-2.5 rounded-button px-2 font-medium hover:bg-surface-hover-bg focus-visible:outline-2 focus-visible:outline-action"
-                    params={{ workspaceId: a.workspaceId }}
-                    search={
-                      file.fileId
-                        ? { file: file.fileId }
-                        : { material: file.materialId }
-                    }
-                    to="/workspaces/$workspaceId"
+                    {...fileLink(file)}
                   >
                     <FileIcon
                       className="size-4 shrink-0"
@@ -300,6 +342,12 @@ export function TodoDialog({
                     <span className="min-w-0 flex-1 translate-y-px truncate">
                       {file.name}
                     </span>
+                    {file.workspaceName &&
+                      file.workspaceId !== a.workspaceId && (
+                        <span className="t-meta max-w-[40%] shrink-0 truncate text-fg-muted">
+                          {file.workspaceName}
+                        </span>
+                      )}
                     <Icon
                       className="shrink-0 text-fg-muted"
                       name="navigationForward"
@@ -313,6 +361,56 @@ export function TodoDialog({
         )}
       </div>
     </SimpleDialog>
+  );
+}
+
+/** A task its viewer set themself, opened inside its workspace (the Dashboard's
+ * To do, a member's To do): To do's details, ticked here as the To do page
+ * ticks. A plain task's tick is its done; a quiz's or a hand-in's asks first
+ * and only clears To do, and a submitted one can't be unticked. */
+export function OwnTaskDetails({
+  onClose,
+  task,
+  workspace,
+}: {
+  onClose: () => void;
+  task: Assignment;
+  workspace: { iconId: string; id: string; name: string };
+}) {
+  const { mutate: tick } = useTodoTick();
+  const [asking, setAsking] = useState(false);
+  const plain = isPlainTask(task);
+  const ticked = isTicked(task);
+  const row = { a: task, approval: false, ticked };
+  const send = (checked: boolean) => {
+    tick([{ checked, id: task.id, task: plain, workspaceId: workspace.id }]);
+    onClose();
+  };
+  if (asking)
+    return (
+      <TodoCheckDialog
+        onClose={onClose}
+        onConfirm={() => send(true)}
+        rows={[row]}
+      />
+    );
+  return (
+    <TodoDialog
+      canTick={!task.closed && (plain || !task.mine?.done)}
+      onClose={onClose}
+      onTick={(checked) =>
+        checked && !plain ? setAsking(true) : send(checked)
+      }
+      row={row}
+      ticked={ticked}
+      workspace={{
+        iconId: workspace.iconId,
+        items: [],
+        manages: false,
+        name: workspace.name,
+        workspaceId: workspace.id,
+      }}
+    />
   );
 }
 

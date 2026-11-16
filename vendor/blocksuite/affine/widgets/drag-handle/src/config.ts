@@ -1,4 +1,5 @@
-export const ADD_BLOCK_WIDGET_WIDTH = 16;
+// Capy (local change 36): the + button is 20px wide, clear of the grip.
+export const ADD_BLOCK_WIDGET_WIDTH = 20;
 export const DRAG_HANDLE_CONTAINER_HEIGHT = 24;
 export const DRAG_HANDLE_CONTAINER_WIDTH = 16;
 export const DRAG_HANDLE_CONTAINER_WIDTH_TOP_LEVEL = 8;

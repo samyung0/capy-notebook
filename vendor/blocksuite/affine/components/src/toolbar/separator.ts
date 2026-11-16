@@ -9,14 +9,15 @@ export class EditorToolbarSeparator extends LitElement {
       align-self: stretch;
       flex-shrink: 0;
 
-      width: 4px;
+      /* Capy (local change 34): the app sets the gap round the line and its height. */
+      width: var(--capy-toolbar-separator-width, 4px);
     }
 
     :host::after {
       content: '';
       display: flex;
-      width: 0.5px;
-      height: 100%;
+      width: var(--capy-toolbar-separator-line, 0.5px);
+      height: var(--capy-toolbar-separator-height, 100%);
       background-color: var(--affine-border-color);
     }
 

@@ -52,6 +52,7 @@ import { Separator } from '@/components/ui/Separator';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { outOfCredits } from '@/features/billing/credits';
+import { AddFileDestination } from '@/features/files/AddFileDestination';
 import { markGettingStarted } from '@/features/guide/gettingStarted';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
@@ -80,7 +81,7 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
-import { CreateFilePanel } from './CreateFilePanel';
+import { CreateFilePanel, StandaloneCreatePanel } from './CreateFilePanel';
 import { setConnectResume } from './connectResume';
 import { retryStartedToast } from './retryProcessing';
 import { ProviderIcon } from './SourceTransferPanel';
@@ -737,12 +738,16 @@ export function AddSourceDialog({
   resumeProvider,
   retryFile,
   defaultTopicId = null,
+  onDestinationChange,
 }: {
   open: boolean;
   onClose: () => void;
   /** The destination; null adds standalone files (No workspace): no
-   * topics, no workspace file room and no Create tab. */
+   * topics, no workspace file room, and Create makes standalone blocks. */
   workspaceId: string | null;
+  /** The Files page's Add file: the destination is picked in the dialog, in
+   * an Add to field above the footer (Epo 2026-11-12). */
+  onDestinationChange?: (workspaceId: string | null) => void;
   /** Opens what the Create tab made. */
   onOpenItem?: (item: OpenItem) => void;
   /** Tab to open on: the plus menu lands New file on `create`. */
@@ -1322,6 +1327,19 @@ export function AddSourceDialog({
   }
 
   const acceptsDrop = mode === 'upload' && Boolean(uploadPolicy) && canAdd;
+  // Files' Add to, right above whichever tab's footer shows.
+  const destination = onDestinationChange && (
+    <div className="shrink-0 pt-4">
+      <AddFileDestination
+        onChange={(id) => {
+          // Your files moves files into a workspace: none has no tab.
+          if (!id && mode === 'files') setMode('upload');
+          onDestinationChange(id);
+        }}
+        value={workspaceId}
+      />
+    </div>
+  );
   const tabLabel = (label: string, count: number) => (
     <span className="flex items-center gap-1.5">
       {label}
@@ -1378,14 +1396,12 @@ export function AddSourceDialog({
               label: tabLabel(m.action_import(), imports.sources.length),
               value: 'import',
             },
-            // Standalone notes and sets come from Blocks' New block, and
-            // blank Office files are workspace-scoped (P2, 2026-10-27).
+            // Without a workspace, Create makes standalone blocks only
+            // (Epo 2026-11-12: Files' New block folded in here).
+            { label: m.action_create(), value: 'create' },
+            // Moves files the user pays for in from elsewhere.
             ...(workspaceId
-              ? [
-                  { label: m.action_create(), value: 'create' },
-                  // Moves files the user pays for in from elsewhere.
-                  { label: m.source_tab_your_files(), value: 'files' },
-                ]
+              ? [{ label: m.source_tab_your_files(), value: 'files' }]
               : []),
           ]}
           value={mode}
@@ -1528,20 +1544,30 @@ export function AddSourceDialog({
             )}
           </div>
         )}
+        {(mode === 'upload' || mode === 'import') && destination}
         {workspaceId && mode === 'files' ? (
           <YourFilesPanel
+            aboveFooter={destination}
             defaultTopicId={defaultTopicId}
             onMoved={onClose}
             workspaceId={workspaceId}
           />
-        ) : workspaceId && mode === 'create' ? (
-          <CreateFilePanel
-            onCreated={(item) => {
-              onOpenItem?.(item);
-              onClose();
-            }}
-            workspaceId={workspaceId}
-          />
+        ) : mode === 'create' ? (
+          workspaceId ? (
+            <CreateFilePanel
+              aboveFooter={destination}
+              onCreated={(item) => {
+                onOpenItem?.(item);
+                onClose();
+              }}
+              workspaceId={workspaceId}
+            />
+          ) : (
+            <StandaloneCreatePanel
+              aboveFooter={destination}
+              onCreated={onClose}
+            />
+          )
         ) : mode === 'import' ? (
           <SourceFooter
             batch={imports}

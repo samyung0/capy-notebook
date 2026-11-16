@@ -50,6 +50,17 @@ fn documents() -> BTreeMap<&'static str, Vec<Value>> {
     note.extend([
         json!({ "type": "plot", "id": "cat_plot", "block": question("plot")["stem"][1], "children": leaf() }),
         json!({ "type": "placeholder", "id": "cat_upload", "mediaType": "img", "children": leaf() }),
+        json!({ "type": "table_view", "id": "cat_table_view", "block": {
+            "title": "Tracker",
+            "columns": [
+                { "id": "c_title", "name": "Topic", "kind": "title" },
+                { "id": "c_status", "name": "Status", "kind": "select", "options": [
+                    { "id": "o_1", "name": "Done", "color": "green" },
+                ] },
+            ],
+            "rows": [{ "id": "r_1", "c_title": "Krebs", "c_status": "o_1" }],
+            "views": [{ "id": "v_1", "name": "Table", "kind": "table" }],
+        }, "children": leaf() }),
         json!({ "type": "p", "id": "cat_inputs", "children": [
             { "text": "Ask " },
             { "type": "mention_input", "trigger": "@", "children": leaf() },
@@ -790,7 +801,7 @@ fn the_shared_keys_are_the_catalogs() {
             .iter()
             .map(|element| element.name)
             .collect::<Vec<_>>(),
-        ["chart", "plot", "graph"]
+        ["chart", "plot", "graph", "table_view"]
     );
     for element in &figures {
         assert_eq!(element.shared_map, ["block"]);

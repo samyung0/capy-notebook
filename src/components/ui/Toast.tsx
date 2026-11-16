@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { ContentSwap } from './ContentSwap';
 import { Icon, type IconName } from './Icon';
+import './toast.css';
 
 type ToastVariant = 'default' | 'error' | 'loading' | 'success' | 'warning';
 
@@ -28,49 +28,39 @@ interface ToastOptions {
   variant?: ToastVariant;
 }
 
-/* Every kind is the same black pill; only the icon and its colour change
-   (board K2, Epo 2026-11-03). Dark themes draw it as an overlay surface. */
-const ICON_COLOUR: Partial<Record<ToastVariant, string>> = {
-  error: 'text-[#ff9b9b]',
-  success: 'text-[#86d6a8]',
-  warning: 'text-[#f2c46d]',
-};
-const ICON: Record<Exclude<ToastVariant, 'loading'>, IconName> = {
-  default: 'info',
-  error: 'alertCircle',
-  success: 'check',
-  warning: 'alert',
+/** Ding's glyphs: 24×24 strokes drawn in by CSS (`pathLength` 1). The first
+ * is the ring, an arc while working. */
+const RING = 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18';
+const GLYPH: Record<Exclude<ToastVariant, 'default'>, string[]> = {
+  error: [RING, 'M9.3 9.3l5.4 5.4', 'M14.7 9.3l-5.4 5.4'],
+  loading: [RING],
+  success: [RING, 'M7.9 12.4l3 3 5.3-6'],
+  warning: [RING, 'M12 7.6v5.2', 'M12 16.3h.01'],
 };
 
-/** The ring spinner of a working toast. */
-function Working() {
+function Glyph({ paths }: { paths: string[] }) {
   return (
     <svg
       aria-hidden
-      className="size-4.5 animate-spin"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeWidth={1.6}
+      className="tst-svg"
+      height={22}
       viewBox="0 0 24 24"
+      width={22}
     >
-      <circle cx="12" cy="12" opacity={0.25} r="8" />
-      <path d="M12 4a8 8 0 0 1 8 8" />
+      {paths.map((d) => (
+        <path d={d} key={d} pathLength={1} />
+      ))}
     </svg>
   );
 }
 
-/* Ding's buttons (Epo 2026-11-09): 30px tall, a 44px tall hit area that
-   never reaches a neighbour 8px away, a press that shrinks them a little. */
-const TOAST_BUTTON =
-  'relative h-7.5 shrink-0 cursor-pointer whitespace-nowrap rounded-full font-semibold text-[13px] transition-[background-color,color,scale] duration-150 ease-out before:absolute before:-inset-x-0.75 before:-inset-y-1.75 focus-visible:outline-2 focus-visible:outline-current focus-visible:outline-offset-2 active:scale-96';
-
 /**
- * The pill: icon, copy and count, then the buttons: the filled action and
- * the close (errors and working toasts), 7px in from the pill's edge.
- * One line is a 44px pill; a description or a title that wraps takes more
- * lines with rounder (18px) corners, as wide as 384px. Copy too wide to sit
- * beside the buttons puts them on their own row at the right.
+ * Ding's toast (toast.css, Epo 2026-11-12): the 44px icon cell with its
+ * glyph, the copy (title, count, description; at most 340px), then the
+ * filled action and the close (every toast, Epo 2026-11-12) beside it. A
+ * screen too narrow for both puts the buttons on a row of their own at the
+ * right. A plain toast is a green check; one with its own icon (Link
+ * copied) shows it in the glyph's place, in the text colour.
  */
 function Toast({
   toast,
@@ -82,120 +72,82 @@ function Toast({
   onClose: () => void;
 }) {
   const { button, description, icon, title, variant = 'default' } = toast;
+  // A plain toast confirms something (Moved, Invitation submitted): the green
+  // check, unless it brings its own icon (Epo 2026-11-12).
+  const type = variant === 'default' ? (icon ? undefined : 'success') : variant;
   const pill = useRef<HTMLDivElement>(null);
   const copy = useRef<HTMLDivElement>(null);
-  const buttons = useRef<HTMLDivElement>(null);
-  const [wraps, setWraps] = useState(false);
-  const [stacked, setStacked] = useState(false);
-  // A title too long for one line wraps; the pill then rounds less.
+  const buttons = useRef<HTMLButtonElement>(null);
+  const [wrapped, setWrapped] = useState(false);
+  // Ding's test: the first button starts below the copy, not beside it.
   useLayoutEffect(() => {
     const node = pill.current;
     if (!node) return;
-    const measure = () => {
-      setWraps(node.offsetHeight > 44);
-      setStacked(
+    const measure = () =>
+      setWrapped(
         !!copy.current &&
           !!buttons.current &&
-          buttons.current.offsetTop > copy.current.offsetTop
+          buttons.current.offsetTop >=
+            copy.current.offsetTop + copy.current.offsetHeight
       );
-    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  const tall = Boolean(description) || wraps;
-  // Toasts that stay until something happens can be closed.
-  const closes = variant === 'error' || variant === 'loading';
-  const hasButtons = Boolean(button) || closes;
   return (
     <div
-      className={cn(
-        'pointer-events-auto flex min-h-11 items-start rounded-[22px] bg-[#222] font-semibold text-sm text-white shadow-[0_8px_24px_rgba(20,22,21,0.18)] dark:bg-overlay dark:text-fg dark:shadow-[inset_0_0_0_1px_var(--border-overlay),0_8px_24px_rgba(0,0,0,0.35)]',
-        tall && 'rounded-[18px]',
-        // The padding stays put when a title wraps, so it cannot unwrap it.
-        hasButtons ? 'pr-1.75' : description ? 'pr-4.5' : 'pr-5',
-        description
-          ? 'w-[min(384px,calc(100vw-32px))]'
-          : 'w-max max-w-[min(384px,calc(100vw-32px))]'
-      )}
+      className="tst pointer-events-auto"
       data-toast={variant}
+      data-type={type}
       ref={pill}
       role={variant === 'error' ? 'alert' : 'status'}
     >
-      <span
-        className={cn(
-          'flex h-11 w-11 shrink-0 items-center justify-center',
-          ICON_COLOUR[variant]
-        )}
-      >
-        {variant === 'loading' ? (
-          <Working />
-        ) : (
-          <Icon name={icon && variant === 'default' ? icon : ICON[variant]} />
-        )}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-start">
-        <div
-          className={cn(
-            'flex min-w-0 flex-[1_1_auto] items-start pt-2.5',
-            !stacked && 'pb-2.5'
-          )}
-          ref={copy}
-        >
-          {/* A working toast turning into its done toast swaps its copy in place. */}
-          <ContentSwap
-            className={cn('min-w-0 leading-6', tall && 'flex-1')}
-            contentKey={JSON.stringify([title, description])}
-          >
-            <span className="wrap-anywhere block">{title}</span>
-            {description && (
-              <span className="wrap-anywhere mt-0.5 block whitespace-pre-line font-medium text-[13px] text-white/72 leading-[1.45] dark:text-fg-secondary">
-                {description}
-              </span>
-            )}
-          </ContentSwap>
-          {count > 1 && (
-            <span className="mt-px ml-3 inline-flex h-5.5 shrink-0 items-center rounded-[11px] bg-white/16 px-2 font-bold text-[12.5px]">
-              ×{count}
-            </span>
+      {/* Keyed, so a working toast turning into its done toast draws in again. */}
+      <div className="tst-icon" key={variant}>
+        <div className="tst-badge">
+          {variant === 'default' && icon ? (
+            <Icon name={icon} />
+          ) : (
+            <Glyph paths={GLYPH[type ?? 'success']} />
           )}
         </div>
-        {hasButtons && (
-          <div
-            className="ml-auto flex h-11 shrink-0 items-center gap-2 pl-3"
+      </div>
+      <div className="tst-body" data-wrapped={wrapped || undefined}>
+        <div className="tst-copy" ref={copy}>
+          {/* A working toast turning into its done toast swaps its copy in place. */}
+          <ContentSwap contentKey={JSON.stringify([title, description])}>
+            <div className="tst-title">
+              {title}
+              {count > 1 && <span className="tst-count">×{count}</span>}
+            </div>
+            {description && <div className="tst-desc">{description}</div>}
+          </ContentSwap>
+        </div>
+        {button && (
+          <button
+            className="tst-action"
+            onClick={() => {
+              button.onClick();
+              onClose();
+            }}
             ref={buttons}
+            type="button"
           >
-            {button && (
-              <button
-                className={cn(
-                  TOAST_BUTTON,
-                  'bg-white px-3.5 text-[#222] hover:bg-white/85 dark:bg-fg dark:text-overlay dark:hover:bg-fg/85'
-                )}
-                onClick={() => {
-                  button.onClick();
-                  onClose();
-                }}
-                type="button"
-              >
-                {button.label}
-              </button>
-            )}
-            {closes && (
-              <button
-                aria-label={m.action_close()}
-                className={cn(
-                  TOAST_BUTTON,
-                  'grid size-7.5 place-items-center text-white/65 hover:bg-white/10 hover:text-white dark:text-fg-secondary dark:hover:bg-fg/10 dark:hover:text-fg'
-                )}
-                onClick={onClose}
-                type="button"
-              >
-                <Icon name="x" size={16} />
-              </button>
-            )}
-          </div>
+            {button.label}
+          </button>
         )}
+        <button
+          aria-label={m.action_close()}
+          className="tst-close"
+          onClick={onClose}
+          ref={button ? undefined : buttons}
+          type="button"
+        >
+          <svg aria-hidden height={12} viewBox="0 0 24 24" width={12}>
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
       </div>
     </div>
   );

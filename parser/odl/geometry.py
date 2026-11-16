@@ -90,19 +90,8 @@ def row_groups(lines: list[dict], tolerance: float = 2.0) -> list[list[dict]]:
 
 
 def horizontal_rules(page: pymupdf.Page) -> list[list[float]]:
-    rules = []
-    for drawing in page.get_drawings():
-        for item in drawing["items"]:
-            if item[0] == "l":
-                a, b = item[1:3]
-                if abs(a.y - b.y) <= 1 and abs(a.x - b.x) >= page.rect.width * 0.35:
-                    rules.append([min(a.x, b.x), (a.y + b.y) / 2, max(a.x, b.x)])
-            elif item[0] == "re":
-                rect = item[1]
-                if rect.height <= 2 and rect.width >= page.rect.width * 0.35:
-                    rules.append([rect.x0, (rect.y0 + rect.y1) / 2, rect.x1])
     unique: list[list[float]] = []
-    for rule in sorted(rules):
+    for rule in sorted(page_text.page_rules(page)):
         if not any(max(abs(a - b) for a, b in zip(rule, r)) < 1 for r in unique):
             unique.append(rule)
     return unique

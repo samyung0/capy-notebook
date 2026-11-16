@@ -345,6 +345,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/import/acquire", a.internalAcquireSourceImport)
 		r.Post("/api/internal/import/complete", a.internalCompleteSourceImport)
 		r.Post("/api/internal/import/fail", a.internalFailSourceImport)
+		r.Post("/api/internal/files/convert", a.internalConvertLegacyFile)
 	}
 	r.Get("/api/workspaces/{id}/sources/import-content", a.getSourceImportContent)
 	r.Get("/api/sources/import-content", a.getSourceImportContent)

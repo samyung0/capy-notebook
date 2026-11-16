@@ -325,6 +325,9 @@ services:
       dockerfile: pipeline/Dockerfile
     environment:
       <<: *app-ingest-env
+      # A converted legacy Office file is handed to the gateway.
+      GATEWAY_URL: http://server:8080
+      PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       CAPY_PARSE_COORDINATOR_CONCURRENCY: "1"
       CAPY_DB_SYNC_POOL_MAX_SIZE: "2"
       CAPY_DB_ASYNC_POOL_MAX_SIZE: "2"

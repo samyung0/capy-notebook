@@ -103,10 +103,10 @@ func itemUnionSQL(all bool) string {
 	UNION ALL
 	` + fileBranch(`f.workspace_id IN (`+memberWorkspacesSQL("$1")+`) AND f.user_id<>$1
 			AND workspace_item_visible(f.hidden, f.workspace_id, $1)`)
-		materials = materialBranch(`m.owner_user_id=$1 AND workspace_item_visible(m.hidden, m.workspace_id, $1)`) + `
+		materials = materialBranch(`m.owner_user_id=$1 AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)`) + `
 	UNION ALL
 	` + materialBranch(`m.workspace_id IN (`+memberWorkspacesSQL("$1")+`) AND m.owner_user_id<>$1
-			AND (workspace_item_visible(m.hidden, m.workspace_id, $1) OR `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)`)
+			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1) OR `+quizAssignedToSQL("m.id", "$1")+` IS NOT NULL)`)
 	}
 	return files + `
 	UNION ALL

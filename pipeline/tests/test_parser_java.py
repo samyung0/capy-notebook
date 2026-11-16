@@ -91,6 +91,17 @@ def test_java_sizes_its_threads_by_the_containers_cpu_quota(
     assert f"-XX:ActiveProcessorCount={java.CPUS}" in commands[0]
 
 
+def test_java_runs_the_quick_compiler_alone(tmp_path, monkeypatch, jars):
+    """A JVM option, so it comes before the class path; after the main class
+    it would be OpenDataLoader's argument."""
+    run, commands = _fake_run((1, b"failed"))
+    monkeypatch.setattr(java.capy_sandbox, "run", run)
+    with pytest.raises(RuntimeError):
+        java.run(tmp_path / "document.pdf", tmp_path, timeout_s=60)
+    options = commands[0][: commands[0].index("-cp")]
+    assert "-XX:TieredStopAtLevel=1" in options
+
+
 # A fake JVM: it leaves, as the native JSON ODL would write, what it could
 # and could not do.
 _PROBE = """#!{python} -I

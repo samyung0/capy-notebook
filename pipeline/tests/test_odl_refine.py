@@ -32,6 +32,7 @@ from odl import (
     context,
     fonts,
     furniture,
+    geometry,
     hidden,
     joins,
     lists,
@@ -276,6 +277,9 @@ def test_column_reorder_only_on_two_clear_columns() -> None:
     assert order.repair(result)[0] == result
     mixed = [a, b, c, d, {"type": "image", "page_idx": 0, "bbox": [0, 0, 100, 100]}]
     assert order.repair(mixed) == (mixed, set())
+    # Each page on its own: the second page's blocks keep their places.
+    later = [{**x, "page_idx": 1} for x in (a, c, b, d)]
+    assert order.repair([a, b, c, d, *later]) == ([a, c, b, d, *later], {0})
 
 
 def test_hidden_ocr_pages_are_read_column_by_column() -> None:
@@ -655,9 +659,10 @@ def test_wide_to_unicode_ranges_split_at_byte_blocks() -> None:
             b"<0100> <0101> [<65E5> <5927>]\nendbfrange\n",
         )
         document.xref_set_key(page.get_fonts()[0][0], "ToUnicode", f"{cmap} 0 R")
-        assert fonts.split_wide_ranges(document) == 1
+        xrefs = fonts._font_xrefs(document)
+        assert fonts.split_wide_ranges(document, xrefs) == 1
         text = document.xref_stream(cmap).decode("latin-1")
-        assert fonts.split_wide_ranges(document) == 0
+        assert fonts.split_wide_ranges(document, xrefs) == 0
     ranges = re.findall(r"<([0-9A-F]{4})> <([0-9A-F]{4})> <([0-9A-F]{4})>", text)
     assert len(ranges) == 256 and ranges[0] == ("0000", "00FF", "0000")
     assert ranges[-1] == ("FF00", "FFFF", "FF00")
@@ -1767,14 +1772,99 @@ def test_center_inside_answers_as_pymupdfs_own_test() -> None:
         except (TypeError, OverflowError) as exc:
             return type(exc)
 
+    # Away from the edges the answer needs no conversion (5.0, -3.0, 25.0).
     values = [0.0, 10.0, 9.99999999, 10.00000001, 1e39, math.inf, math.nan, -0.0]
+    values += [5.0, -3.0, 25.0]
     area = pymupdf.Rect(0, 0, 10, 10)
     for x in values:
-        for y in (5.0, 0.0, 10.0):
+        for y in (5.0, 0.0, 10.0, 25.0, math.nan):
             assert ours((x, y, x, y), area) == binding((x, y, x, y), area)
     for edge in (1e39, math.inf, 9.99999999):
         wide = pymupdf.Rect(0, 0, edge, 10)
         assert ours((5, 5, 5, 5), wide) == binding((5, 5, 5, 5), wide)
+
+
+def test_page_rules_are_the_drawings_wide_strokes_read_once(
+    tmp_path, monkeypatch
+) -> None:
+    def draw(page):
+        page.draw_line((60, 100), (540, 100))  # a rule
+        page.draw_line((60, 130), (540, 130.8))  # within a point of level
+        page.draw_line((60, 160), (200, 160))  # under 35% of the page width
+        page.draw_line((300, 60), (300, 700))  # vertical
+        page.draw_rect(pymupdf.Rect(60, 200, 540, 201.5), fill=(0, 0, 0))  # a bar
+        page.draw_rect(pymupdf.Rect(60, 300, 540, 340))  # a box, not a rule
+        # A bar drawn right to left: its rectangle arrives with x1 < x0.
+        contents = page.get_contents()[0]
+        page.parent.update_stream(
+            contents,
+            page.parent.xref_stream(contents) + b"\nq 540 300 -480 1.5 re f Q\n",
+        )
+
+    path = _pdf(tmp_path, draw)
+    original = pymupdf.Page.get_cdrawings
+    reads = []
+
+    def counted(self, *args, **kwargs):
+        reads.append(self.number)
+        return original(self, *args, **kwargs)
+
+    with pymupdf.open(path) as document:
+        page = document[0]
+        # The rules as PyMuPDF's objects give them (how they were read before).
+        expected = []
+        for drawing in page.get_drawings():
+            for item in drawing["items"]:
+                if item[0] == "l":
+                    a, b = item[1:3]
+                    if abs(a.y - b.y) <= 1 and abs(a.x - b.x) >= 0.35 * 600:
+                        expected.append([min(a.x, b.x), (a.y + b.y) / 2, max(a.x, b.x)])
+                elif item[0] == "re" and item[1].height <= 2 and item[1].width >= 210:
+                    expected.append(
+                        [item[1].x0, (item[1].y0 + item[1].y1) / 2, item[1].x1]
+                    )
+        assert len(expected) == 4
+        monkeypatch.setattr(pymupdf.Page, "get_cdrawings", counted)
+        with page_text.session(path):
+            pictures.Drawings().clusters(page)  # the first reader of the drawings
+            assert sorted(page_text.page_rules(page)) == sorted(expected)
+            assert len(geometry.horizontal_rules(page)) == 4
+            assert reads == [0]
+        assert sorted(page_text.page_rules(page)) == sorted(expected)  # no session
+        assert reads == [0, 0]
+
+
+def test_the_session_hands_out_one_page_object_and_one_outline(
+    tmp_path, monkeypatch
+) -> None:
+    path = tmp_path / "outlined.pdf"
+    document = pymupdf.open()
+    document.new_page()
+    document.new_page()
+    document.set_toc([[1, "One", 1], [1, "Two", 2]])
+    document.save(path)
+    original = pymupdf.Document.get_toc
+    reads = []
+
+    def counted(self, *args, **kwargs):
+        reads.append(args)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Document, "get_toc", counted)
+    with pymupdf.open(path) as document, page_text.session(path):
+        first = page_text.page_at(document, 0)
+        assert page_text.page_at(document, 0) is first
+        assert page_text.page_at(document, 1).number == 1
+        assert page_text.page_at(document, 0).number == 0
+        with pymupdf.open(path) as reopened:
+            assert page_text.page_at(reopened, 0).parent is reopened
+        for _ in range(2):
+            assert [row[:3] for row in page_text.outline(document)] == [
+                [1, "One", 1],
+                [1, "Two", 2],
+            ]
+            assert len(page_text.outline(document, simple=False)[0]) == 4
+        assert len(reads) == 2  # once simple, once with destinations
 
 
 def test_the_line_grid_returns_every_box_a_query_meets(monkeypatch) -> None:

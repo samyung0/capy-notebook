@@ -1,5 +1,6 @@
 import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
+import type { IngestEvent } from '@/api/eventStream';
 import {
   createMaterialBodyTitleMax,
   ReportEditIncidentBody,
@@ -42,6 +43,7 @@ import type {
   WorkspaceMember,
 } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
+import { legacyOfficeTarget } from '@/features/files/fileUtils';
 import { parseFlashcardsBlock } from '@/features/materials/blocks';
 import {
   createMaterialDocument,
@@ -95,6 +97,7 @@ import { uid } from './db';
 import { editorAssetHandlers, embeds } from './editorAssets';
 import { extractionHandlers, seedExtractionFiles } from './extraction';
 import { membersHandlers } from './members';
+import { convertMockLegacyFile, mockConvertedEvent } from './officeFixtures';
 import { mockPage } from './paging';
 import { questionBankHandlers } from './questionBank';
 import {
@@ -165,6 +168,8 @@ const workspaceNameOf = (id?: string) =>
 const fileListRow = (f: SourceFile) => ({
   ...f,
   rights: { clone: true, move: true, rename: true, trash: true },
+  // As the server's owned-list rows name where each file sits.
+  workspaceName: workspaceNameOf(f.workspaceId) || undefined,
 });
 
 /** A material the lists show: one of these kinds and not embedded in a note
@@ -272,6 +277,16 @@ const mockInviteCandidates: MockInviteCandidate[] = [
 
 const SOURCE_EPOCH = 1;
 
+/** Whether a file answers as a dialog preview fixture, with its broken link
+ * and session. An old Office one stops once converted: it then opens like
+ * any converted upload. */
+function isDialogFile(id: unknown) {
+  const fixture = dialogFiles.find((file) => file.id === id);
+  if (!fixture) return false;
+  const name = db.files.find((file) => file.id === id)?.name ?? fixture.name;
+  return !(legacyOfficeTarget(fixture.name) && !legacyOfficeTarget(name));
+}
+
 /** The plan's workspace cap, owned and joined together, as the gateway
  * enforces it. */
 function atWorkspaceCap() {
@@ -296,7 +311,8 @@ async function mockSourceSession(
 ): Promise<SourceSession | null> {
   const scenario = await scenarioSourceSession(fileId, view);
   if (scenario) return scenario;
-  const file = db.files.find((row) => row.id === fileId);
+  const file =
+    db.files.find((row) => row.id === fileId) ?? trashedEntry(fileId)?.file;
   const link = db.fileLinks[fileId];
   if (!(file && link?.url.startsWith('data:text/plain'))) return null;
   const text = decodeURIComponent(link.url.slice(link.url.indexOf(',') + 1));
@@ -515,6 +531,15 @@ function trashMaterial(id: string, kind?: string) {
   });
 }
 
+/** A trashed item as the normal reads serve it to its trash readers: its
+ * row with its trash state (the Go reads' trash fallback). */
+function trashedEntry(id: unknown) {
+  const entry = db.trash.find((row) => row.item.id === id);
+  if (!entry) return;
+  const { canRestore, episodeId, purgeAfter } = entry.item;
+  return { ...entry, trash: { canRestore, episodeId, purgeAfter } };
+}
+
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
 
 export { mockWorkspaceMembers } from './workspaceMembers';
@@ -616,7 +641,56 @@ type SourceUploadMetadata = {
   hidden?: boolean;
   kind: string;
   name: string;
+  parseMode?: string;
 };
+
+/** The mock worker's ingest event, in the worker's shape: named by its
+ * workspace, or `type: 'ingest'` on the owner's notifications for a
+ * standalone file. */
+function publishMockIngest(
+  file: Pick<SourceFile, 'id' | 'workspaceId'>,
+  event: Omit<IngestEvent, 'fileId'>
+) {
+  window.dispatchEvent(
+    new CustomEvent('capy:mock-stream', {
+      detail: {
+        fileId: file.id,
+        ...(file.workspaceId
+          ? { workspaceId: file.workspaceId }
+          : { type: 'ingest' }),
+        ...event,
+      },
+    })
+  );
+}
+
+/** The mock worker's legacy Office job: the file is converted and renamed and
+ * the event after the swap goes out; with parsing on, its parse ends 2 s
+ * later with the worker's done event. */
+function convertMockLegacyUpload(
+  file: SourceFile,
+  convertTo: 'docx' | 'xlsx' | 'pptx',
+  parseMode = 'fast'
+) {
+  const url = convertMockLegacyFile(file, convertTo);
+  db.fileLinks[file.id] = { url };
+  seedUploadedOffice(file.id, convertTo, url);
+  const converted = mockConvertedEvent(file.name, parseMode);
+  file.status = converted.status;
+  publishMockIngest(file, converted);
+  if (converted.status === 'ready') return;
+  setTimeout(() => {
+    file.status = 'ready';
+    file.indexed = true;
+    publishMockIngest(file, {
+      indexed: true,
+      message: '',
+      pct: 100,
+      stage: 'done',
+      status: 'ready',
+    });
+  }, 2000);
+}
 
 /** A clone's topic: the picked one, or one by name (any case), created
  * when missing. */
@@ -728,12 +802,12 @@ seedExtractionFiles();
 
 export const handlers = [
   ...extractionHandlers(
-    (workspaceId, title, questions) => {
+    (workspaceId, title, questions, hidden) => {
       const quiz = db.makeMaterial({
         ...ownerMaterialAccess,
         content: quizDocument(questions),
         createdAt: new Date().toISOString(),
-        hidden: true,
+        hidden,
         id: uid('qz'),
         kind: 'quiz',
         privacy: 'private',
@@ -798,7 +872,7 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/files/:id/links', ({ params }) => {
-    if (!dialogFiles.some((file) => file.id === params.id)) return;
+    if (!isDialogFile(params.id)) return;
     if (params.id === 'mock-preview-links')
       return new HttpResponse(null, { status: 503 });
     if (params.id === 'mock-preview-annotations')
@@ -820,7 +894,9 @@ export const handlers = [
     () => new HttpResponse(null, { status: 503 })
   ),
   http.get('/api/files/:id/source-session', async ({ params, request }) => {
-    const file = db.files.find((row) => row.id === params.id);
+    const file =
+      db.files.find((row) => row.id === params.id) ??
+      trashedEntry(params.id)?.file;
     const view = new URL(request.url).searchParams.get('view') === 'true';
     // The viewer's read of a text source is lock-free on the server: only the
     // last saved state, while one is ahead of the published bytes.
@@ -832,7 +908,7 @@ export const handlers = [
         format: 'text',
         state: savedSourceState(file.id),
       });
-    if (dialogFiles.some((file) => file.id === params.id)) {
+    if (isDialogFile(params.id)) {
       return HttpResponse.json(
         { detail: 'Mock source session unavailable.', status: 503 },
         { status: 503 }
@@ -1292,16 +1368,26 @@ export const handlers = [
     return new HttpResponse(null, { status: 202 });
   }),
   // Retry processing: the owner reruns a failed file on its stored bytes; the
-  // mock worker finishes it like an upload ('none' just stores it).
+  // mock worker finishes it like an upload ('none' just stores it). An old
+  // Office file, failed or ready and never converted, reruns its own upload:
+  // the conversion, then its stored parse mode, whatever mode is sent.
   http.post('/api/files/:id/retry-processing', async ({ params, request }) => {
     const file = db.files.find((item) => item.id === params.id);
     if (!file) return new HttpResponse(null, { status: 404 });
-    if (file.status !== 'failed') return codeError(409, 'conflict');
+    const convertTo = legacyOfficeTarget(file.name);
+    const unconverted = file.status === 'ready' && !!convertTo;
+    if (file.status !== 'failed' && !unconverted)
+      return codeError(409, 'conflict');
     const { parseMode } = (await request.json()) as { parseMode: string };
     file.status = 'pending';
     // The server sends an error id on failed files only.
     delete file.errorId;
     setTimeout(() => {
+      if (convertTo) {
+        // Its stored parse mode, whatever was sent; the mock keeps none.
+        convertMockLegacyUpload(file, convertTo, 'none');
+        return;
+      }
       file.status = 'ready';
       file.indexed = parseMode !== 'none' && file.kind !== 'audio';
     }, 2000);
@@ -1869,6 +1955,31 @@ export const handlers = [
     if (topicId) db.topics.find((c) => c.id === topicId)?.fileIds.push(file.id);
     return HttpResponse.json(file, { status: 201 });
   }),
+  // Standalone (Files' Add file on No workspace): no topic, no workspace.
+  http.post('/api/files/blank', async ({ request }) => {
+    const body = (await request.json()) as CreateBlankFileReq;
+    if (body.topicId) return new HttpResponse(null, { status: 400 });
+    const url = blankOffice[body.format].sourceURL;
+    const file: (typeof db.files)[number] = {
+      addedAt: new Date().toISOString(),
+      hasBytes: true,
+      id: uid('f'),
+      indexed: false,
+      isPayer: true,
+      kind: body.format === 'docx' ? 'doc' : 'sheet',
+      name: `${body.name.trim()}.${body.format}`,
+      position: 0,
+      revision: 1,
+      sizeBytes: (await (await fetch(url)).arrayBuffer()).byteLength,
+      status: 'ready',
+      topicId: null,
+      workspaceId: '',
+    };
+    db.fileLinks[file.id] = { url };
+    await prepareBlankOffice(file.id, body.format);
+    db.files.push(file);
+    return HttpResponse.json(file, { status: 201 });
+  }),
   // Move into a workspace: the first move of f_1 out of Biology asks about
   // the progress it drops, so the confirmation can be tried.
   http.post('/api/files/move', async ({ request }) => {
@@ -2208,7 +2319,11 @@ export const handlers = [
   ),
   http.get('/api/files/:id', async ({ params }) => {
     const f = db.files.find((x) => x.id === params.id);
-    return f ? HttpResponse.json(f) : new HttpResponse(null, { status: 404 });
+    if (f) return HttpResponse.json(f);
+    const trashed = trashedEntry(params.id);
+    return trashed?.file
+      ? HttpResponse.json({ ...trashed.file, trash: trashed.trash })
+      : new HttpResponse(null, { status: 404 });
   }),
   http.get('/api/files/:id/links', async ({ params }) => {
     const links = db.fileLinks[String(params.id)];
@@ -2488,9 +2603,23 @@ export const handlers = [
     }
 
     await hydrateEditorState(String(params.id));
-    const mt = db.materials.find((x) => x.id === params.id);
+    const trashed = trashedEntry(params.id);
+    const mt =
+      db.materials.find((x) => x.id === params.id) ?? trashed?.material;
     if (!mt) return new HttpResponse(null, { status: 404 });
-    const read = { ...db.learnerMaterial(mt), sharePath: db.mockSharePath(mt) };
+    const read = trashed?.material
+      ? // No role, as the Go read: it opens read-only.
+        {
+          ...db.learnerMaterial(mt),
+          capabilities: {
+            canEdit: false,
+            canEditContent: false,
+            canManageMembers: false,
+            canView: true,
+          },
+          trash: trashed.trash,
+        }
+      : { ...db.learnerMaterial(mt), sharePath: db.mockSharePath(mt) };
     return HttpResponse.json(
       new URL(request.url).searchParams.get('noContent') === 'true'
         ? { ...read, content: { ...read.content, value: [] } }
@@ -2868,8 +2997,14 @@ export const handlers = [
       if (f.topicId)
         db.topics.find((c) => c.id === f.topicId)?.fileIds.push(f.id);
       // Finish the ingest before the client's animation (5 × 450 ms) refetches
-      // the list; scenarios can rewrite the outcome on that read.
+      // the list; scenarios can rewrite the outcome on that read. A legacy
+      // Office upload is converted first, and opens as its new format.
       setTimeout(() => {
+        const convertTo = legacyOfficeTarget(f.name);
+        if (convertTo) {
+          convertMockLegacyUpload(f, convertTo, body.parseMode);
+          return;
+        }
         f.status = 'ready';
         f.indexed = f.kind !== 'audio';
       }, 2000);

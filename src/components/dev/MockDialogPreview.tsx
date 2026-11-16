@@ -56,20 +56,10 @@ export default function MockDialogPreview({
   const workspaceId = scenarioWorkspace;
   const workspace = workspaces.find((item) => item.id === workspaceId)!;
   const { mutateAsync: updateTask } = useUpdateTask();
-  if (
-    dialog === 'workspace-stats' ||
-    dialog === 'workspace-settings' ||
-    dialog === 'workspace-sharing'
-  )
+  if (dialog === 'workspace-stats' || dialog === 'workspace-settings')
     return (
       <WorkspaceSettingsDialog
-        initialTab={
-          dialog === 'workspace-stats'
-            ? 'statistics'
-            : dialog === 'workspace-sharing'
-              ? 'sharing'
-              : 'general'
-        }
+        initialTab={dialog === 'workspace-stats' ? 'statistics' : 'general'}
         onClose={onClose}
         open
         workspace={workspace}

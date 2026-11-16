@@ -10,6 +10,7 @@ import type { FilePreview } from './filePreview.ts';
 import type { FileRights } from './fileRights.ts';
 import type { FileStatus } from './fileStatus.ts';
 import type { Provenance } from './provenance.ts';
+import type { Trashed } from './trashed.ts';
 
 export interface File {
   /** A URL to the JSON Schema for this object. */
@@ -39,6 +40,7 @@ export interface File {
   thumbnailUrl?: string;
   /** @nullable */
   topicId: string | null;
+  trash?: Trashed;
   workspaceId: string;
   workspaceName?: string;
 }

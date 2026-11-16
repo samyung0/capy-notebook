@@ -21,6 +21,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 /* ------------------------------------------------------------------ patches */
@@ -775,6 +776,11 @@ func (s *Store) deleteWorkspaceWithResultTx(
 		return nil, err
 	}
 	rows.Close()
+	// The tasks its members set themselves are theirs, not the workspace's:
+	// they stay, in no workspace, as when a member leaves.
+	if _, err := tx.Exec(ctx, `UPDATE assignments SET workspace_id=NULL WHERE workspace_id=$1 AND own`, id); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
 		return nil, err
 	}
@@ -1121,7 +1127,7 @@ func (s *Store) VisibleSourceItems(ctx context.Context, wsID, viewer string) ([]
 			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
 			WHERE mc.material_id=m.id), 1, m.position, m.created_at
 		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 	) items ORDER BY src, position, at`, wsID, viewer)
 	if err != nil {
 		return nil, err
@@ -1164,6 +1170,9 @@ func nextContentPosition(ctx context.Context, q rowQueryer, wsID string, topicID
 	return position, err
 }
 
+// ErrFileExtensionChanged refuses a rename to another extension.
+var ErrFileExtensionChanged = errors.New("a rename keeps the file's extension")
+
 func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -1190,8 +1199,22 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 		return File{}, ErrNotFound
 	}
 	if p.Name != nil {
-		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2
-			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($3, '') AND trashed_at IS NULL`, id, *p.Name, wsID); err != nil {
+		// A rename keeps the file's extension, which names its kind and the
+		// checks its upload passed (Epo 2026-10-24, Q346). It is compared
+		// under the row lock: a legacy conversion changes the ending too.
+		var current string
+		err := tx.QueryRow(ctx, `SELECT name FROM files
+			WHERE id=$1 AND workspace_id IS NOT DISTINCT FROM NULLIF($2, '') AND trashed_at IS NULL FOR UPDATE`, id, wsID).Scan(&current)
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		if err != nil {
+			return File{}, err
+		}
+		if sourceupload.Extension(*p.Name) != sourceupload.Extension(current) {
+			return File{}, ErrFileExtensionChanged
+		}
+		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2 WHERE id=$1`, id, *p.Name); err != nil {
 			return File{}, err
 		}
 	}
@@ -2002,7 +2025,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.topic_id, m.position, m.created_at, m.size_bytes, m.node_count, m.max_depth,
 			m.provenance, m.hidden, `+materialAssignedCols("$2")+`
 		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.trashed_at IS NULL
-			AND (workspace_item_visible(m.hidden, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
+			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
 		ORDER BY m.position, m.created_at DESC`, wsID, userID)
 	if err != nil {
 		return nil, err

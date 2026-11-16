@@ -47,6 +47,37 @@ func (a *api) registerTrash(api huma.API) {
 	reg(api, http.MethodDelete, "/api/trash/{kind}/{id}", "purgeTrashed", tag, "Permanently delete a trashed file or material", http.StatusOK, a.purgeTrashed)
 }
 
+// trashedFile serves a trashed file to its trash readers (TrashedFile) when
+// the live read did not find it (denied): the file page opens it read-only
+// from the Trash (Epo 2026-11-12). Anyone else still gets denied.
+func (a *api) trashedFile(ctx context.Context, id string, denied error) (store.File, string, error) {
+	if !errors.Is(denied, store.ErrNotFound) {
+		return store.File{}, "", denied
+	}
+	file, blobPath, err := a.s.TrashedFile(ctx, userID(ctx), id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.File{}, "", denied
+	}
+	file.IsPayer = file.PayerID == userID(ctx)
+	return file, blobPath, err
+}
+
+// trashedMaterial is trashedFile for a material, with the edits a room still
+// held projected first, as getMaterial does.
+func (a *api) trashedMaterial(ctx context.Context, id string, project bool, denied error) (store.Material, error) {
+	if !errors.Is(denied, store.ErrNotFound) {
+		return store.Material{}, denied
+	}
+	mt, err := a.s.TrashedMaterial(ctx, userID(ctx), id)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Material{}, denied
+	}
+	if err == nil && project && a.projectLive(ctx, id) {
+		mt, err = a.s.TrashedMaterial(ctx, userID(ctx), id)
+	}
+	return mt, err
+}
+
 func (a *api) listTrash(ctx context.Context, in *trashListInput) (*trashPageOutput, error) {
 	if in.WorkspaceID != "" {
 		if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.WorkspaceID); err != nil {

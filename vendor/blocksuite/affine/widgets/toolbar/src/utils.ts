@@ -1,3 +1,4 @@
+// Capy (local change 37): labels go through `tr`.
 import {
   type EditorMenuButton,
   type EditorToolbar,
@@ -10,6 +11,7 @@ import {
   type ToolbarContext,
   type ToolbarPlacement,
 } from '@blocksuite/affine-shared/services';
+import { tr } from '@blocksuite/affine-shared/utils';
 import { nextTick } from '@blocksuite/global/utils';
 import { MoreVerticalIcon } from '@blocksuite/icons/lit';
 import type {
@@ -392,7 +394,7 @@ function renderActionItem(action: ToolbarAction, context: ToolbarContext) {
       ${action.icon}
       ${
         action.showLabel && action.label
-          ? html`<span class="label">${action.label}</span>`
+          ? html`<span class="label">${tr(action.label)}</span>`
           : null
       }
     </editor-icon-button>
@@ -427,7 +429,7 @@ function renderMenuActionItem(action: ToolbarAction, context: ToolbarContext) {
       @click=${() => action.run?.(context)}
     >
       ${action.icon}
-      ${action.label ? html`<span class="label">${action.label}</span>` : null}
+      ${action.label ? html`<span class="label">${tr(action.label)}</span>` : null}
     </editor-menu-action>
   `;
 }

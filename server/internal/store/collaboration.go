@@ -193,6 +193,13 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	if err != nil {
 		return nil, false, err
 	}
+	// The tasks they set themself here stay theirs, in no workspace, and so do
+	// their attempts at them.
+	if _, err := tx.Exec(ctx, `WITH moved AS (UPDATE assignments SET workspace_id=NULL
+			WHERE workspace_id=$1 AND own AND created_by=$2 RETURNING id)
+		UPDATE attempts SET workspace_id=NULL WHERE assignment_id IN (SELECT id FROM moved)`, wsID, memberID); err != nil {
+		return nil, false, err
+	}
 	if err := dropLeaverMarkedDrawingsTx(ctx, tx, wsID, memberID); err != nil {
 		return nil, false, err
 	}

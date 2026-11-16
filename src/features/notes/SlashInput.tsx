@@ -34,6 +34,7 @@ import {
   type EditorCommand,
 } from './editorCommands';
 import { isEditorCommandAllowed } from './editorMode';
+import { isGutterSlash } from './gutterSlash';
 import { useNoteEditorPrefs, WIDGET_GROUPS } from './noteEditorPrefs';
 
 export function SlashInputElement(
@@ -105,6 +106,8 @@ export function SlashInputElement(
       // At that point the slash node has already been deliberately removed, so
       // do not restore the slash query as if the user had cancelled the menu.
       if (isSelectingCommandRef.current) return;
+      // The gutter's + opened it: with nothing searched, its line stays empty.
+      if (!query && isGutterSlash(props.element)) return;
       if (cause !== 'backspace') {
         editor.tf.insertText(`/${query}`, {
           at: insertPointRef.current?.current ?? undefined,

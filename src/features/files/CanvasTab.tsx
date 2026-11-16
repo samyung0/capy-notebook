@@ -98,11 +98,10 @@ export function CanvasTab({
         {/* -mr-1.5: the view toggle's icon on the gutter, as in ListToolbar. */}
         <div className="-mr-1.5 ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
           <Button
-            className="px-1.5"
+            className="px-2.5"
             disabled={busy || items.length === 0}
             iconLeft="trash"
             onClick={() => setConfirm('all')}
-            size="sm"
             variant="danger-light"
           >
             {m.canvas_delete_all()}

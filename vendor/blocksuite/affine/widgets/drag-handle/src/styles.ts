@@ -67,6 +67,28 @@ export const styles = css`
     transition: unset;
   }
 
+  /* Capy (local change 36): in a note the grip sits in its container instead of
+     hanging left of it, and takes the hover wash at rest size. */
+  .affine-drag-handle-grabber.dots.page {
+    /* The watcher sizes a 4px bar inline and centres 12px of it on the first line. */
+    width: 16px !important;
+    height: 24px;
+    min-height: 24px;
+    flex: none;
+    margin-top: -6px;
+    padding: 5px 3px;
+    border-radius: 4px !important;
+    transform: none;
+    align-content: center;
+    justify-content: center;
+  }
+
+  .affine-drag-handle-grabber.dots.page > .dot {
+    width: 3px;
+    height: 3px;
+    flex: 0 0 3px;
+  }
+
   .affine-drag-handle-grabber.dots:hover {
     background-color: ${unsafeCSSVarV2('layer/background/hoverOverlay')};
   }

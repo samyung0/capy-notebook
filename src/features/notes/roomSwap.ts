@@ -156,6 +156,9 @@ export function copyPausedView(root: HTMLElement, scrollTop: number) {
   // Canvases (charts, plots) and math fields' shadow content do not clone:
   // they show blank in the copy until the swap (openwiki plate-editor).
   for (const frame of copy.querySelectorAll('iframe')) frame.remove();
+  // The note's title is a field (NoteHeading): the copy's takes no typing.
+  for (const field of copy.querySelectorAll('textarea, input'))
+    field.setAttribute('readonly', '');
   copy.querySelector('[data-note-toolbar]')?.setAttribute('inert', '');
   copy.removeAttribute('inert');
   delete copy.dataset.noteMount;

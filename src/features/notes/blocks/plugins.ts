@@ -1,6 +1,9 @@
 import { YjsEditor } from '@slate-yjs/core';
 import { createPlatePlugin } from 'platejs/react';
 import { useNoteEditorPrefs } from '../noteEditorPrefs';
+import { toastTableViewCap, withinTableViewCap } from '../tableView/count';
+import { TABLE_VIEW_TYPE } from '../tableView/model';
+import { TableViewElement } from '../tableView/TableViewElement';
 import {
   FlashcardBackElement,
   FlashcardElement,
@@ -106,6 +109,45 @@ export const MaterialRefPlugin = createPlatePlugin({
   }))
   .withComponent(MaterialRefElement);
 
+/** A note's table view: a top-level void (one nested by a paste is lifted
+ * out), and block Duplicate or paste stops at the note's cap as the slash
+ * command does (revision 2.4). */
+export const TableViewPlugin = createPlatePlugin({
+  key: TABLE_VIEW_TYPE,
+  node: { isElement: true, isVoid: true, type: TABLE_VIEW_TYPE },
+})
+  .overrideEditor(
+    ({ editor, tf: { insertFragment, insertNodes, normalizeNode } }) => ({
+      transforms: {
+        insertFragment(fragment, options) {
+          const kept = withinTableViewCap(editor.children, fragment);
+          if (kept.dropped) toastTableViewCap();
+          insertFragment(kept.nodes, options);
+        },
+        insertNodes(nodes, options) {
+          const kept = withinTableViewCap(
+            editor.children,
+            Array.isArray(nodes) ? nodes : [nodes]
+          );
+          if (kept.dropped) toastTableViewCap();
+          if (kept.nodes.length) insertNodes(kept.nodes, options);
+        },
+        normalizeNode([node, path]) {
+          if (
+            'type' in node &&
+            node.type === TABLE_VIEW_TYPE &&
+            path.length > 1
+          ) {
+            editor.tf.liftNodes({ at: path });
+            return;
+          }
+          normalizeNode([node, path]);
+        },
+      },
+    })
+  )
+  .withComponent(TableViewElement);
+
 export const customBlockPlugins = [
   // Top-level voids: one nested by a paste is lifted out.
   ...(
@@ -133,6 +175,7 @@ export const customBlockPlugins = [
       }))
       .withComponent(component)
   ),
+  TableViewPlugin,
   MaterialRefPlugin,
   QuizElementPlugin,
   QuizQuestionPlugin,

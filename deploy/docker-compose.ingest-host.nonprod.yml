@@ -168,6 +168,8 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # GATEWAY_URL and PIPELINE_SECRET (the legacy Office conversion's handoff)
+  # come from each environment's queue env file.
   parse-coordinator-local:
     <<: [*pipeline-service, *coordinator-resources]
     profiles: [local]

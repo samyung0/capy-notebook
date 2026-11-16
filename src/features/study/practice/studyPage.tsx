@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-/** The Study pages' padding: the boards' 28px 36px, the phone gutter below sm. */
+/** The Study pages' padding: the page gutter (`page-px`), 28px above from lg. */
 export function PracticeFrame({
   children,
   className,
@@ -13,7 +13,7 @@ export function PracticeFrame({
     // One column leaves room under the page for the floating chat button.
     <div
       className={cn(
-        'min-h-0 flex-1 overflow-auto px-4 pt-5 pb-24 sm:px-6 lg:px-9 lg:pt-7 lg:pb-10',
+        'page-px min-h-0 flex-1 overflow-auto pt-5 pb-24 lg:pt-7 lg:pb-10',
         className
       )}
     >
