@@ -1,3 +1,4 @@
+import type { DocxViewerSlicedFace } from '@betteroffice/docx/viewer';
 import {
   BASE_LATIN_FAMILY,
   decodeFontFaceOutsideEngine,
@@ -7,13 +8,17 @@ import {
 import { expect, onTestFinished, test, vi } from 'vitest';
 import {
   keepOfficeFontBytes,
+  keepSliceFiles,
   type OfficeFace,
   officeFonts,
   officeViewerFonts,
   onOfficeFontFailure,
+  openFailure,
   paintedFaces,
   paintedFamilies,
   registerOfficeFaces,
+  registerSlicedFaces,
+  slicedOfficeFaces,
   usedOfficeFaces,
 } from './officeFonts';
 
@@ -94,14 +99,142 @@ test('a face whose decode fails is reported as an error', async () => {
   );
 });
 
-test('DOCX layout gets the CJK faces it measures and paints with', () => {
+test('DOCX layout gets the CJK faces it measures and paints with, as slices', () => {
   const provider = officeFonts.createFontProvider();
-  expect(provider.resolveScriptFallback('cjk-tc', false, false)).toBeTypeOf(
-    'function'
+  const fallback = provider.resolveScriptFallback('cjk-tc', false, false);
+  const named = provider.resolve('Microsoft JhengHei', false, false);
+  // The layout opens each from its skeleton and loads only the outline
+  // chunks its glyphs need; no decoded copy is kept once a load settles.
+  for (const loader of [fallback, named]) {
+    expect(loader).toBeTypeOf('function');
+    expect(loader?.slices?.ref.index).toBe('NotoSansTC-Regular/slices.json');
+    expect(loader?.slices?.retain).toBe(false);
+  }
+  // A Latin face loads whole.
+  expect(provider.resolve('Calibri', false, false)?.slices).toBeUndefined();
+});
+
+test("Edit opens a sliced face from the View's decoded files", () => {
+  const files = new Map([['NotoSansJP-Regular/c093.zst', new ArrayBuffer(4)]]);
+  keepSliceFiles([
+    {
+      bytes: new ArrayBuffer(1),
+      families: [],
+      files,
+      index: 'NotoSansJP-Regular/slices.json',
+    },
+  ]);
+  const provider = officeFonts.createFontProvider();
+  expect(provider.resolve('MS Gothic', false, false)?.slices?.files).toBe(
+    files
   );
-  expect(provider.resolve('Microsoft JhengHei', false, false)).toBeTypeOf(
-    'function'
+  // Another face fetches its own.
+  expect(
+    provider.resolve('Microsoft YaHei', false, false)?.slices?.files
+  ).toBeUndefined();
+});
+
+test('the viewer frame gets each sliced face under the families its pages paint it with', () => {
+  keepOfficeFontBytes();
+  const provider = officeViewerFonts.createFontProvider();
+  // The registry opens these from their slices without calling the loaders.
+  provider.resolve('MS Gothic', false, false);
+  provider.resolve('MS Gothic', true, false);
+  provider.resolveScriptFallback('cjk-jp', false, false);
+  const index = 'NotoSansJP-Regular/slices.json';
+  const bytes = new ArrayBuffer(8);
+  const files = new Map([['NotoSansJP-Regular/c001.zst', new ArrayBuffer(2)]]);
+  const displayList = {
+    pages: [
+      {
+        primitives: [
+          {
+            fallbackFont: '400 16px "MS Gothic", sans-serif',
+            kind: 'glyphRun',
+          },
+          // A list marker names the face by its private family.
+          {
+            font: '400 16px "Calibri", "BetterOffice Sliced 1.0", sans-serif',
+            kind: 'text',
+          },
+        ],
+      },
+    ],
+  };
+  const sliced = slicedOfficeFaces(
+    [
+      {
+        bytes,
+        family: 'BetterOffice Sliced 1.0',
+        files,
+        slices: { ref: { index } } as DocxViewerSlicedFace['slices'],
+      },
+    ],
+    displayList
   );
+  // Noto Sans JP (the script fallback) paints nothing here, so it is left out.
+  expect(sliced).toEqual([
+    {
+      bytes,
+      families: [
+        { family: 'BetterOffice Sliced 1.0' },
+        { family: 'MS Gothic', style: 'normal', weight: '400' },
+      ],
+      files,
+      index,
+    },
+  ]);
+});
+
+test("a layout's sliced faces are registered for it and deleted with it", async () => {
+  const fonts = new Set<unknown>();
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+  vi.stubGlobal(
+    'FontFace',
+    class {
+      readonly family: string;
+      constructor(family: string) {
+        this.family = family;
+      }
+      async load() {}
+    }
+  );
+  vi.stubGlobal('document', {
+    fonts: {
+      add: (face: unknown) => fonts.add(face),
+      delete: (face: unknown) => fonts.delete(face),
+    },
+  });
+  const release = await registerSlicedFaces([
+    {
+      bytes: new ArrayBuffer(1),
+      families: [
+        { family: 'BetterOffice Sliced 1.0' },
+        { family: 'MS Gothic', style: 'normal', weight: '400' },
+      ],
+      files: new Map(),
+      index: 'NotoSansJP-Regular/slices.json',
+    },
+  ]);
+  expect([...fonts].map((face) => (face as { family: string }).family)).toEqual(
+    ['BetterOffice Sliced 1.0', 'MS Gothic']
+  );
+  release();
+  expect(fonts.size).toBe(0);
+});
+
+test('a slice that fails the View open names its file', () => {
+  // What a slice fetch throws when the network fails: the fetch's own error.
+  const failure = Object.assign(new TypeError('Failed to fetch'), {
+    file: 'NotoSansJP-Regular/c093.zst',
+    reason: 'network',
+  });
+  expect(openFailure(failure).message).toBe(
+    'The font slice NotoSansJP-Regular/c093.zst failed to load: Failed to fetch'
+  );
+  expect(openFailure(new Error('corrupt')).message).toBe('corrupt');
 });
 
 test('the viewer frame registers only faces of the families its runs paint with', () => {
@@ -135,19 +268,19 @@ test('the frame gets one face per painted family, weight and style: the first lo
     family,
   });
   const loaded = [
-    face('PMingLiU', 'NotoSansTC-Regular.otf'),
-    face('PMingLiU', 'LiberationSerif-Regular.ttf'),
-    face('PMingLiU', 'NotoSansTC-Bold.otf', 700),
-    face('Noto Sans JP', 'NotoSansJP-Regular.otf'),
+    face('Calibri', 'Carlito-Regular.ttf.zst'),
+    face('Calibri', 'LiberationSans-Regular.ttf.zst'),
+    face('Calibri', 'Carlito-Bold.ttf.zst', 700),
+    face('Cambria', 'Caladea-Regular.ttf.zst'),
   ];
   const displayList = {
     pages: [
-      { primitives: [{ font: '16px PMingLiU, sans-serif', kind: 'text' }] },
+      { primitives: [{ font: '16px Calibri, sans-serif', kind: 'text' }] },
     ],
   };
   expect(
     paintedFaces(loaded, displayList).map(({ face }) => face.file)
-  ).toEqual(['NotoSansTC-Regular.otf', 'NotoSansTC-Bold.otf']);
+  ).toEqual(['Carlito-Regular.ttf.zst', 'Carlito-Bold.ttf.zst']);
 });
 
 test('a face the frame registered once is not added again', async () => {

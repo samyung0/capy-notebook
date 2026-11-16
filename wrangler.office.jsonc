@@ -13,8 +13,7 @@
     "run_worker_first": [
       "/office-runtime.html",
       "/assets/*.wasm",
-      "/assets/*.ttf",
-      "/assets/*.otf"
+      "/assets/*.ttf"
     ]
   },
   "cache": {
@@ -39,8 +38,7 @@
         "run_worker_first": [
           "/office-runtime.html",
           "/assets/*.wasm",
-          "/assets/*.ttf",
-          "/assets/*.otf"
+          "/assets/*.ttf"
         ]
       },
       "routes": [
@@ -71,8 +69,7 @@
         "run_worker_first": [
           "/office-runtime.html",
           "/assets/*.wasm",
-          "/assets/*.ttf",
-          "/assets/*.otf"
+          "/assets/*.ttf"
         ]
       }
     }

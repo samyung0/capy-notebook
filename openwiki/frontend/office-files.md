@@ -2235,15 +2235,26 @@ style or for Cambria; it still loads the raw TTFs the fork keeps in
 (`@betteroffice/fonts-cjk`: Noto Sans TC, SC, JP, KR and Noto Serif SC, 3.4
 to 8.7 MB each packed) loads only when a document's text or fonts need that
 script, so the engine measures CJK text with the face the page paints; without
-them CJK text overlapped in view and vanished in edit. A DOCX downloads one
-whole face per script, picked by the document's East Asian language (a
-Japanese file loads Noto Sans JP alone, 3.6 MB packed, where the old rule added
-Noto Sans SC; Epo 2026-11-09, Q708 A); the Unicode-range slices come at a later
-pin. The language is each run's resolved East Asian language: a Japanese file
-whose runs carry none (or one other than Japanese, Korean or Chinese) also
-loads Noto Sans SC for its Han (about 10 MB with JP), and its kanji-only
-paragraphs paint in Simplified Chinese forms, with no error since both faces
-load; a document-level language (`w:themeFontLang`) is for the slices pin. The editor's
+them CJK text overlapped in view and vanished in edit. A DOCX loads each CJK
+face as Unicode-range slices (Epo 2026-10-17): Capy's loaders carry the face's
+`slices` (`bundledFontSlices`), so the layout opens the face from its skeleton
+(every table but the outlines: metrics and page breaks equal the whole face's)
+and loads only the outline chunks the pages draw (exchange-plan's View about
+1.8 MB of CJK instead of 17.5 MB). The face is picked by each run's resolved
+East Asian language, then the document defaults', then `w:themeFontLang`'s
+(Q751 B), else by the script (kana Japanese, Hangul Korean, Han Simplified
+Chinese). The viewer worker posts each sliced face's bytes (every outline its
+pages draw) with the Office families the layout resolved it for and the
+private family (`BetterOffice Sliced <open>.<n>`) its list markers and
+watermarks name it by; the frame registers them as `FontFace`s for that
+layout only, deleting them when the layout goes, and keeps the decoded slice
+files for Edit, whose open takes them instead of fetching and decoding them
+again (`SliceLocation.files`, checked against the index by length and
+SHA-256). In Edit the fork registers its own faces in whichever thread
+paints. A slice that fails while the DOCX opens fails the open naming the
+file. A typed character whose slice is still loading paints after at most
+300 ms, blank until it lands (Q750 B). Whole CJK faces now load only for
+XLSX's family lookups. The editor's
 Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
 font with no bundled face paints with its CSS fallback stack. Characters a
 document's face and Liberation lack (unstyled Greek or Cyrillic, general

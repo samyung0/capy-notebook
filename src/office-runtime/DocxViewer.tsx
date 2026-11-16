@@ -20,7 +20,13 @@ import { officeMark, officeMarkAt } from '@/lib/officeMarks';
 import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
 import { takeDocxViewerWorker } from './docxViewerWorker';
-import { type OfficeFace, registerOfficeFaces } from './officeFonts';
+import {
+  keepSliceFiles,
+  type OfficeFace,
+  registerOfficeFaces,
+  registerSlicedFaces,
+  type SlicedOfficeFace,
+} from './officeFonts';
 import {
   canvasPage,
   type OfficeMenuReporter,
@@ -43,6 +49,7 @@ type Layout = {
   displayList: DisplayList;
   faces: OfficeFace[];
   marks: Record<string, number>;
+  sliced: SlicedOfficeFace[];
 };
 
 type WorkerResponse =
@@ -126,7 +133,13 @@ export function DocxViewer({
   onZoomChange: (zoom: OfficeZoom) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [displayList, setDisplayList] = useState<DisplayList | null>(null);
+  // The layout shown, and what deletes the sliced faces registered for it.
+  const [shown, setShown] = useState<{
+    displayList: DisplayList;
+    release: () => void;
+  } | null>(null);
+  const displayList = shown?.displayList ?? null;
+  useEffect(() => shown?.release, [shown]);
   // In percent, as the menu lists it, or 'fit' until a level is picked.
   const [zoom, setZoom] = useState<number | 'fit'>(() =>
     initialZoom === 'fit' ? 'fit' : Math.round(initialZoom * 100)
@@ -212,22 +225,28 @@ export function DocxViewer({
       if (kind !== 'print') throw new Error('Nothing to render');
       // The reading layout is one column: a print takes the pages.
       let printed = displayList;
+      let release = () => {};
       if (reading) {
         const layout = await layOut(bytes, null).promise;
         await registerOfficeFaces(layout.faces);
+        release = await registerSlicedFaces(layout.sliced);
         printed = layout.displayList;
       }
       // One page drawn, encoded and released at a time, as pptxRender does;
       // a page that cannot be drawn fails the print.
       const pages: OfficeRenderedPage[] = [];
-      for (const page of printed.pages) {
-        const canvas = await rasterizeDisplayPage(page, { resolveImage });
-        try {
-          pages.push(await canvasPage(canvas, page.width, page.height));
-        } finally {
-          canvas.width = 0;
-          canvas.height = 0;
+      try {
+        for (const page of printed.pages) {
+          const canvas = await rasterizeDisplayPage(page, { resolveImage });
+          try {
+            pages.push(await canvasPage(canvas, page.width, page.height));
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
         }
+      } finally {
+        release();
       }
       return pages;
     });
@@ -246,18 +265,22 @@ export function DocxViewer({
       reading ? { padding: READING_PADDING, width: readingWidth } : null
     );
     void job.promise
-      .then(async ({ displayList, faces, marks }) => {
+      .then(async ({ displayList, faces, marks, sliced }) => {
         if (markedRef.current !== bytes) {
           markedRef.current = bytes;
           for (const [stage, epoch] of Object.entries(marks))
             officeMarkAt(stage, epoch);
         }
+        // Edit opens the same sliced faces from these files.
+        keepSliceFiles(sliced);
         // Paint with the faces the worker measured, under their Office
         // names, from the bytes it fetched.
         officeMark('fonts:start', { faces: faces.length });
         await registerOfficeFaces(faces);
+        const release = await registerSlicedFaces(sliced);
         officeMark('fonts:end');
-        if (!cancelled) setDisplayList(displayList);
+        if (cancelled) release();
+        else setShown({ displayList, release });
       })
       .catch((value: unknown) => {
         if (!cancelled)
