@@ -1129,6 +1129,7 @@
   "files_office_edit_too_large": "此更改过大，无法一次完成。请每次修改较少的单元格。",
   "files_office_copy_too_large": "所选区域过大，无法复制。请选择较少的单元格。",
   "files_office_copy_failed": "无法复制所选内容。请重试，或选择较少的单元格。",
+  "files_office_font_slice_unavailable": "部分字符要等网络恢复后才能显示。",
   "files_office_image_budget": "此文件已没有空间容纳这么大的图片。请换一张较小的图片。",
   "files_size_limit": "此文件已达到大小上限，只能查看。",
   "files_office_png_failed": "无法保存图片，请重试。",

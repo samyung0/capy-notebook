@@ -157,18 +157,44 @@ describe('the notices a frame shows', () => {
       [...titles, ...titles].map((title) => [title])
     );
   });
+
+  // Q752 B: the runtime sends it once until the browser is back online, so
+  // a slice failing after the retry shows it again in the same frame.
+  it('toasts each DOCX font slice notice the runtime sends', () => {
+    const toast = vi.fn();
+    const notices = officeNotices(toast);
+    notices.show('font-slice-unavailable', 2_097_152);
+    notices.show('font-slice-unavailable', 2_097_152);
+    expect(toast.mock.calls).toEqual([
+      [m.files_office_font_slice_unavailable()],
+      [m.files_office_font_slice_unavailable()],
+    ]);
+  });
 });
 
 // Q710 C: an XLSX face that failed keeps the browser's font with nothing
 // shown; Sentry hears which family.
 describe('an XLSX face the frame failed to load', () => {
   it('goes to Sentry with its family', () => {
-    reportOfficeFontFailure('Calibri', 'decode failed');
+    reportOfficeFontFailure('xlsx', 'Calibri', 'decode failed');
     expect(captureException).toHaveBeenCalledExactlyOnceWith(
       new Error('An XLSX font failed to load'),
       {
         extra: { cause: 'decode failed' },
         tags: { component: 'office-font', family: 'Calibri' },
+      }
+    );
+  });
+
+  // Q752 B: a DOCX font slice a server failed while editing, by its face.
+  it('a DOCX font slice goes to Sentry with its face', () => {
+    vi.mocked(captureException).mockClear();
+    reportOfficeFontFailure('docx', 'NotoSansJP-Regular', 'HTTP 503');
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(
+      new Error('A DOCX font slice failed to load'),
+      {
+        extra: { cause: 'HTTP 503' },
+        tags: { component: 'office-font', family: 'NotoSansJP-Regular' },
       }
     );
   });

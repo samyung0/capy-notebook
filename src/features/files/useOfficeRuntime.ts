@@ -128,14 +128,26 @@ export function isCurrentOfficeRuntimeMessage(
 
 /**
  * An XLSX bundled face the frame failed to load. The sheet keeps the
- * browser's font and shows nothing (Q710 C); Sentry hears which family.
+ * browser's font and shows nothing (Q710 C); Sentry hears which family. A
+ * DOCX font slice a server failed while editing (Q752 B), by its face.
  */
-export function reportOfficeFontFailure(family: string, message: string) {
+export function reportOfficeFontFailure(
+  format: OfficeFormat,
+  family: string,
+  message: string
+) {
   // Only bundled families load, so the tag stays a short list.
-  captureException(new Error('An XLSX font failed to load'), {
-    extra: { cause: message },
-    tags: { component: 'office-font', family },
-  });
+  captureException(
+    new Error(
+      format === 'docx'
+        ? 'A DOCX font slice failed to load'
+        : 'An XLSX font failed to load'
+    ),
+    {
+      extra: { cause: message },
+      tags: { component: 'office-font', family },
+    }
+  );
 }
 
 /**
@@ -826,7 +838,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'font-failed') {
-        reportOfficeFontFailure(message.family, message.message);
+        reportOfficeFontFailure(format, message.family, message.message);
         return;
       }
       if (message.type === 'error') {
@@ -1268,6 +1280,11 @@ const OFFICE_NOTICE_TOASTS: Record<
   },
   // A refused keystroke repeats on every key: once per frame.
   'equation-text': { once: true, title: () => m.files_office_equation_text() },
+  // The runtime sends it once until the browser is back online.
+  'font-slice-unavailable': {
+    once: false,
+    title: () => m.files_office_font_slice_unavailable(),
+  },
   // Each refused image is its own pick: every time.
   'image-budget': { once: false, title: () => m.files_office_image_budget() },
   // Each refused image is its own pick: every time.

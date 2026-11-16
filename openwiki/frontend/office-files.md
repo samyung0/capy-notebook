@@ -2252,7 +2252,15 @@ files for Edit, whose open takes them instead of fetching and decoding them
 again (`SliceLocation.files`, checked against the index by length and
 SHA-256). In Edit the fork registers its own faces in whichever thread
 paints. A slice that fails while the DOCX opens fails the open naming the
-file. A typed character whose slice is still loading paints after at most
+file. One that fails while the document is edited (offline, say) keeps the
+editor running with its characters drawn blank (Q752 B):
+`DocxEditorHost`'s `onError` takes the fork's `FontSliceUnavailableError`
+(`fontSliceErrors`), sends the `font-slice-unavailable` notice once until
+the browser's `online` event, which calls `retryFontSlices()` (no other
+retry), and reports a server's failure through `font-failed` by its face
+(`reportOfficeFontFailure`, tag `office-font`); every other `onError` stays
+fatal. The notice is a warning toast that closes on its timer: the fork
+signals no repaint that drew the missing glyphs. A typed character whose slice is still loading paints after at most
 300 ms, blank until it lands (Q750 B). Whole CJK faces now load only for
 XLSX's family lookups. The editor's
 Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
