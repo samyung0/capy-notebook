@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
+import { usePhoneMenuItem } from '@/features/files/fileModeContext';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -9,8 +10,8 @@ const QuizPreviewDialog = lazy(() =>
   }))
 );
 
-/** Preview, outlined with the eye (Epo 2026-11-15); its label goes on
- * phones, kept for the screen reader. */
+/** Preview, outlined (Epo 2026-11-15), its word alone at every width: the
+ * eye read as the Hidden chip's beside it (Epo 2026-11-16). */
 export function PreviewButton({
   className,
   disabled,
@@ -21,26 +22,32 @@ export function PreviewButton({
   onClick: () => void;
 }) {
   return (
-    <Button
-      aria-label={m.assignment_preview()}
-      className={cn('shrink-0 max-sm:w-(--control-h) max-sm:px-0', className)}
+    <PageButton
+      className={cn('shrink-0', className)}
       disabled={disabled}
-      iconLeft="view"
       onClick={onClick}
       variant="outline"
     >
-      <span className="max-sm:hidden">{m.assignment_preview()}</span>
-    </Button>
+      {m.assignment_preview()}
+    </PageButton>
   );
 }
 
-/** A practice quiz's Preview beside Study: its questions as members get them,
- * the dialog loading as it opens. */
+/** A practice quiz's Preview in its header: its questions as members get
+ * them, the dialog loading as it opens. Phones have it in ⋮ (Epo 2026-11-16). */
 export function QuizPreviewButton({ quizId }: { quizId: string }) {
   const [open, setOpen] = useState(false);
+  usePhoneMenuItem('preview', {
+    icon: 'view',
+    label: m.assignment_preview(),
+    onClick: () => setOpen(true),
+  });
   return (
     <>
-      <PreviewButton onClick={() => setOpen(true)} />
+      <PreviewButton
+        className="max-sm:hidden sm:mr-1"
+        onClick={() => setOpen(true)}
+      />
       {open && (
         <Suspense fallback={null}>
           <QuizPreviewDialog onClose={() => setOpen(false)} quizId={quizId} />

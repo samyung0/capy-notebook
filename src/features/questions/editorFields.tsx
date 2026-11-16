@@ -70,25 +70,6 @@ function CardInput({ wrapperClassName, ...props }: InputProps) {
   );
 }
 
-/** `CardInput` for text that may run long (a marking point): it grows a
- * line at a time as it wraps. */
-function CardTextarea({
-  className,
-  ...props
-}: React.ComponentProps<'textarea'>) {
-  return (
-    <textarea
-      className={cn(
-        'field-sizing-content block min-h-10 w-full min-w-0 resize-none border-transparent border-b bg-transparent px-0.5 py-2 leading-normal outline-none placeholder:text-placeholder hover:not-focus:border-line focus:border-action-accent focus:border-b-2',
-        !props.value && 'border-line',
-        className
-      )}
-      rows={1}
-      {...props}
-    />
-  );
-}
-
 /** A question editor's written text on ruled lines, as learners write
  * theirs: `lines` tall, growing two more before it scrolls. */
 export function FieldTextarea({
@@ -655,7 +636,7 @@ const TEXT_FIELD =
  * row drags from anywhere outside its text field, an accent line shows where
  * it lands, and `onMove` gets its old and new index. Rows spread
  * `row(i, text)`. */
-function useRowDrag(onMove: (from: number, to: number) => void) {
+export function useRowDrag(onMove: (from: number, to: number) => void) {
   const [dragged, setDragged] = useState<number | null>(null);
   const [drop, setDrop] = useState<{ index: number; after: boolean } | null>(
     null
@@ -665,13 +646,15 @@ function useRowDrag(onMove: (from: number, to: number) => void) {
     setDrop(null);
   };
   return (index: number, text: string) => ({
+    // The dragged row fades and a straight 2px line marks where it lands,
+    // over the row's edge, as a note's block drag draws it (Epo 2026-11-16).
     className: cn(
-      'rounded-lg',
-      dragged === index && 'bg-page opacity-70',
+      'relative rounded-lg',
+      dragged === index && 'opacity-50',
       drop?.index === index &&
-        (drop.after
-          ? 'shadow-[inset_0_-2px_0_var(--color-action-accent)]'
-          : 'shadow-[inset_0_2px_0_var(--color-action-accent)]')
+        'before:pointer-events-none before:absolute before:inset-x-0 before:z-10 before:h-0.5 before:rounded-full before:bg-action-accent',
+      drop?.index === index &&
+        (drop.after ? 'before:-bottom-px' : 'before:-top-px')
     ),
     onDragEnd: end,
     onDragOver: (event: React.DragEvent<HTMLElement>) => {
@@ -1288,22 +1271,30 @@ function GapAnswers({
 /** A long answer's or drawing's marking points (board Types2): each with
  * its marks, adding up to the part's. */
 export function MarkSchemeRows({
+  field,
   items,
   max,
   onChange,
 }: {
+  /** A point's text, edited in place with formulas (Epo 2026-11-16). */
+  field: (
+    text: string,
+    onText: (text: string) => void,
+    /** A point just added, which opens in its editor. */
+    added: boolean
+  ) => ReactNode;
   items: MarkItem[];
   /** Marking items a part holds at most (a quiz's bound is lower). */
   max: number;
   /** The items and the marks they add up to. */
   onChange: (items: MarkItem[], marks: number) => void;
 }) {
-  const { ref, willAdd } = useFocusAdded(items.length);
+  const [added, setAdded] = useState<number | null>(null);
   const total = items.reduce((sum, item) => sum + item.marks, 0);
   const set = (next: MarkItem[]) => onChange(next, schemeMarks(next));
   const label = m.question_ui_marking_scheme();
   return (
-    <div data-card-list="" ref={ref}>
+    <div data-card-list="">
       <h4 className="mb-1 font-bold">{label}</h4>
       {items.map((item, i) => (
         // Top-aligned (Epo 2026-11-15): a point that wraps keeps its number and
@@ -1312,19 +1303,15 @@ export function MarkSchemeRows({
           className="grid min-h-11 grid-cols-[1.375rem_minmax(0,1fr)_3.25rem_auto] items-start gap-2.5 py-0.5"
           key={i}
         >
-          <span className="pt-2 leading-normal">{i + 1}.</span>
-          <CardTextarea
-            aria-label={m.question_ui_numbered_item({ label, number: i + 1 })}
-            maxLength={limits.QUESTION_MARK_ITEM_MAX}
-            onChange={(event) =>
-              set(
-                items.map((row, j) =>
-                  j === i ? { ...row, text: event.target.value } : row
-                )
-              )
-            }
-            value={item.text}
-          />
+          <span className="pt-2 leading-[1.7]">{i + 1}.</span>
+          <div className="min-w-0">
+            {field(
+              item.text,
+              (text) =>
+                set(items.map((row, j) => (j === i ? { ...row, text } : row))),
+              i === added
+            )}
+          </div>
           {/* Up to what the part's marks leave over the other items. */}
           <MarksInput
             className="mt-1"
@@ -1352,7 +1339,7 @@ export function MarkSchemeRows({
         label={m.question_ui_add_mark_point()}
         lead={<span className="w-5.5 shrink-0" />}
         onClick={() => {
-          willAdd();
+          setAdded(items.length);
           set([
             ...items,
             { marks: 1, text: m.question_default_marking_point() },

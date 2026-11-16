@@ -48,7 +48,7 @@ import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
-import { HiddenChip, HideFileButton } from '@/features/workspace/HiddenChip';
+import { HiddenChip } from '@/features/workspace/HiddenChip';
 import { useToggleHidden } from '@/features/workspace/hiddenFromMembers';
 import {
   OfflineStatus,
@@ -89,8 +89,7 @@ function StatusIcon({ state }: { state: NoteEditorSaveState }) {
    scroll anchoring for a reader while blocks are added above (Q393), so
    WebKit browsers (Safari and every iOS browser, all of which report Apple's
    vendor) skip `@container/header` and measure the header instead:
-   `data-roomy` at 36rem (`@xl`) and `data-wide` at 42rem (`@2xl`), which the
-   label variants also read. */
+   `data-wide` at 42rem (`@2xl`), which the label variants also read. */
 const WEBKIT =
   typeof navigator !== 'undefined' &&
   navigator.vendor === 'Apple Computer, Inc.';
@@ -102,7 +101,6 @@ function measureHeader(header: HTMLDivElement | null) {
   );
   const observer = new ResizeObserver(([entry]) => {
     const width = entry.contentRect.width;
-    header.toggleAttribute('data-roomy', width >= 36 * rem);
     header.toggleAttribute('data-wide', width >= 42 * rem);
   });
   observer.observe(header);
@@ -156,7 +154,8 @@ export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
  * tooltip, held open with the slowed line while an open waits on the open
  * budget; `labelled` (a dialog's footer) writes the label beside the icon,
  * and `labelWhenWide` (every file's header, Epo 2026-10-22) once the header
- * is 36rem wide, measured on the header so a dragged panel drops it too. */
+ * is 42rem wide (36rem until Epo 2026-11-16, tight beside the Hidden chip),
+ * measured on the header so a dragged panel drops it too. */
 export function EditorSaveStatus({
   labelled = false,
   labelWhenWide = false,
@@ -209,7 +208,7 @@ export function EditorSaveStatus({
           // With its label the button grows to fit it rather than spilling
           // the icon over the ⋮ before it.
           labelWhenWide &&
-            '@xl/header:w-auto @xl/header:px-1.5 group-data-roomy/header:w-auto group-data-roomy/header:px-1.5',
+            '@2xl/header:w-auto @2xl/header:px-1.5 group-data-wide/header:w-auto group-data-wide/header:px-1.5',
           failed && 'text-solid-error'
         )}
         data-save-state={editorStatus.saveState}
@@ -226,7 +225,7 @@ export function EditorSaveStatus({
             labelWhenWide &&
               !opening &&
               // Dropped 1px with the cloud.
-              't-meta @xl/header:not-sr-only @xl/header:ml-2 translate-y-[1px] @xl/header:whitespace-nowrap group-data-roomy/header:not-sr-only group-data-roomy/header:ml-2 group-data-roomy/header:whitespace-nowrap'
+              't-meta @2xl/header:not-sr-only @2xl/header:ml-2 translate-y-[1px] @2xl/header:whitespace-nowrap group-data-wide/header:not-sr-only group-data-wide/header:ml-2 group-data-wide/header:whitespace-nowrap'
           )}
         >
           {statusLabel}
@@ -359,9 +358,13 @@ export function Header({
   menuBar,
   menuShown,
   oneColumn,
+  phoneItems = [],
   presence,
 }: {
   oneColumn?: OneColumnChrome;
+  /** The open file's buttons a phone has no room for, first in ⋮ there
+   * (Preview, Epo 2026-11-16; `usePhoneMenuItem`). */
+  phoneItems?: MenuItem[];
   standalone?: boolean;
   fileControls?: ReactNode;
   /** Office files: buttons the runtime adds before the mode toggle (Present). */
@@ -423,14 +426,17 @@ export function Header({
   // the ⋮ menu; viewers never see a hidden item.
   const itemReadOnly =
     readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
-  const toggleHidden = useToggleHidden(workspaceId);
+  const { dialog: unhideDialog, toggle: toggleHidden } =
+    useToggleHidden(workspaceId);
   // A graded quiz's own quiz is its assignment's: held from members always,
   // never moved, cloned or trashed on its own.
   const owned =
     !!material && 'assignmentId' in material && !!material.assignmentId;
   const canHide = !itemReadOnly && !!workspaceId && !owned;
-  const hiddenChip =
-    file?.hidden || material?.hidden ? (
+  // Only a hidden item says so (Epo 2026-11-16): a visible one shows nothing,
+  // and the ⋮ menu's Hide file hides it.
+  const hiddenChip = (file?.hidden || material?.hidden) && (
+    <>
       <HiddenChip
         onShow={
           canHide
@@ -438,14 +444,14 @@ export function Header({
             : undefined
         }
       />
-    ) : canHide && (file || material) ? (
-      <HideFileButton
-        onHide={() => toggleHidden({ id: item.id, type: item.kind }, true)}
-      />
-    ) : null;
+      {unhideDialog}
+    </>
+  );
   const name = oneColumn ? (
     <>
-      <h2 className="min-w-0">
+      {/* Never narrower than its icon and padding: a squeezed name truncates
+          to nothing, and the Hidden chip would cover the icon. */}
+      <h2 className="min-w-7">
         <OneColumnTitle>
           {fileIcon}
           <span className={nameClassName}>{title ?? '--'}</span>
@@ -490,10 +496,14 @@ export function Header({
       )}
     </>
   );
-  // The file's ⋮ follows its name, the status icons after it; phones keep
-  // ⋮ at the row's end.
+  // The file's ⋮ ends the row at every width (Epo 2026-11-16), after the
+  // file's own buttons.
+  // The dots are a thin column in a wide box, so they read further off than
+  // an icon at the same gap: from sm the box is 24px wide (not 32), so its
+  // hover hugs them and never overlaps Preview before it; phones, which have
+  // no Preview there, pull their 30px box 4px in.
   const menu = owned ? null : (
-    <div className="flex items-center gap-0">
+    <div className="flex items-center gap-0 max-sm:-ml-1 sm:[&_[data-slot=dropdown-menu-trigger]]:w-6">
       <ContentActions
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
@@ -509,6 +519,7 @@ export function Header({
         display="menu"
         key={`${item.kind}:${item.id}`}
         leadingItems={[
+          ...(sm ? [] : phoneItems),
           ...(oneColumn?.addItems ?? []),
           ...(sm
             ? [
@@ -563,12 +574,12 @@ export function Header({
       {!compact && <WorkspaceStatusButton />}
     </>
   );
-  // One row so the status icons keep the ⋮'s button spacing. Phones, where
-  // the status follows the title's chevron, pull its button box in so the
-  // cloud's ink sits about as far from the chevron as the name from its icon.
+  // One row for the status icons, its button box pulled in so the cloud's ink
+  // sits about 10px after the name or the Hidden chip, as the right side's
+  // buttons are apart (Epo 2026-11-16). Phones, where the status follows the
+  // title's chevron, pull it further, about as far as the name from its icon.
   const statusRow = (
-    <div className={cn('flex items-center', compact && '-ml-2')}>
-      {!compact && menu}
+    <div className={cn('flex items-center', compact ? '-ml-2' : '-ml-1')}>
       {status}
     </div>
   );
@@ -601,7 +612,7 @@ export function Header({
             // The workspace chrome at the row's height; the workspace picker
             // (a dropdown trigger) as a slimmer pill. The save status grows
             // with its label where it shows one, or its icon spills under ⋮.
-            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6 @xl/header:[&_[role=status]]:w-auto group-data-roomy/header:[&_[role=status]]:w-auto',
+            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6 @2xl/header:[&_[role=status]]:w-auto group-data-wide/header:[&_[role=status]]:w-auto',
             '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-2'
           )}
         >
@@ -633,7 +644,7 @@ export function Header({
           )}
         >
           {right}
-          {compact && menu}
+          {menu}
         </div>
       </div>
     );
@@ -641,7 +652,8 @@ export function Header({
     <div
       className={cn(
         WEBKIT ? 'group/header' : '@container/header',
-        'flex h-12 items-center gap-1 border-divider border-b sm:h-15',
+        // A tall page under it must not squeeze it (the Files view did).
+        'flex h-12 shrink-0 items-center gap-1 border-divider border-b sm:h-15',
         // Workspace buttons at the left edge sit as far in as the right's.
         leading ? 'px-3' : 'pr-2 pl-2 sm:pl-4',
         // The title pill's padding already spaces it from the back button.
@@ -674,7 +686,7 @@ export function Header({
       </div>
       <div className="ml-auto flex items-center gap-0">
         {right}
-        {compact && menu}
+        {menu}
       </div>
     </div>
   );

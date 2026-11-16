@@ -63,7 +63,7 @@ export function useBlockActions() {
       if (item.kind === 'quiz') {
         items.push({
           icon: 'quiz',
-          label: m.action_study(),
+          label: m.action_practice(),
           onClick: () =>
             navigate({
               params: { quizId: item.id },
@@ -73,7 +73,7 @@ export function useBlockActions() {
       } else if (item.kind === 'flashcards') {
         items.push({
           icon: 'flashcards',
-          label: m.action_study(),
+          label: m.action_practice(),
           onClick: () =>
             navigate({
               params: { flashcardSetId: item.id },

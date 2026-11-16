@@ -2210,6 +2210,7 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	mt, err := s.CreateMaterial(ctx, Material{
 		ID: q.ID, CreatedBy: q.UserID, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName, Kind: "quiz",
 		Title: q.Name, Content: content, ScopeTopics: q.Topics, ScopeFileNames: q.ScopeFileNames, Privacy: q.Privacy,
+		Hidden: q.Hidden,
 	})
 	if err != nil {
 		return Quiz{}, err

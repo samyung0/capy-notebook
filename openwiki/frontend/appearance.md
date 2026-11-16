@@ -164,9 +164,26 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   up), phone values first and the `sm` breakpoint's in a media block.
   Components read them and never set a height per style; one that needs a
   control's height uses `h-(--control-h)`.
-  A page header's action (New workspace, Add task, the workspace
-  Dashboard's Upload and Make a quiz, New assignment, Add
-  practice) is `PageButton`: md, 4px shorter than `--control-h`.
+  A page or file header's action (New workspace, Add task, the workspace
+  Dashboard's Upload and Make a quiz, New assignment, Add practice, a
+  file's Preview, a quiz's or set's Practice) is `PageButton`: 36px (`h-9`) in every
+  style and on every screen (Epo 2026-11-16). The center header row
+  (`data-center-header`) is `shrink-0`, so a tall page under it, as the
+  Files view is, cannot squeeze it below its 48/60px.
+  An open file's header (`CenterContentHeader`, Epo 2026-11-16): back (a
+  phone's bare arrow, named Files for screen readers), the file's icon, name,
+  Hidden chip and save status on the left; presence, Undo/Redo and Preview (its
+  word, no eye: the eye read as the Hidden chip's) on the right, with ⋮ last
+  at every width. On phones Preview (a quiz's, a note's Preview/Edit/Close) is
+  the first item in ⋮ instead (`usePhoneMenuItem` in `fileModeContext.ts`).
+  A quiz's or set's Practice is not in the header: it sits at the pane's top
+  right beside the title (`QuizPaneTitle`, `PaintedCards`). Neighbours sit about 10px apart by their ink:
+  the save status is pulled 4px in after the name or chip, a quiz's buttons
+  Preview 4px past Redo, and ⋮ 4px past Preview. Its dots are a thin column
+  in a wide box, so from sm the ⋮ box is 24px wide (not 32) and its hover
+  never overlaps Preview; on phones (no Preview there) its 30px box sits 4px
+  in. The status's label (Saved) shows from a 42rem
+  header (`@2xl/header`, `data-wide` on WebKit), 36rem until then.
 
 | | Capy | Fisheye |
 | --- | --- | --- |

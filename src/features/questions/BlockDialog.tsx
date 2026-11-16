@@ -101,7 +101,9 @@ export function BlockDialog({
       }
       footer={
         <Button
-          className="mr-auto"
+          // Pulled left by its padding so its label lines up with the
+          // content, as the card's borderless buttons are (Epo 2026-11-16).
+          className="mr-auto -ml-5"
           disabled={saving}
           onClick={() => {
             onRemove();
@@ -128,7 +130,9 @@ export function BlockDialog({
       title={
         <div className="flex items-center justify-between gap-3">
           <span>{blockLabels[block.type]()}</span>
-          <div className="flex items-center" ref={setTools} />
+          {/* Phones: the tools take no more height than the title's line, so
+              the title stays level with the close and Save beside it. */}
+          <div className="flex items-center max-sm:-my-1.5" ref={setTools} />
         </div>
       }
       width={1040}

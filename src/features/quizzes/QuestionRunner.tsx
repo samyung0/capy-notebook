@@ -1,10 +1,16 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { QUIZ_OPEN_ANSWER_MAX } from '@/api/limits.generated';
 import type { Question, QuestionPart } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount, Input, InputError } from '@/components/ui/Input';
-import { Textarea } from '@/components/ui/TextArea';
 import { AiWarning } from '@/features/questions/AiWarning';
 import { MatchingGrid } from '@/features/questions/MatchingGrid';
 import {
@@ -39,6 +45,68 @@ import type { PinnedQuestion } from './drawing/DrawingBoardScreen';
 import { isDrawingValue } from './drawing/drawingValue';
 import { pinnedQuestion } from './drawing/pinnedQuestion';
 import { type Answer, type Answers, emptyAnswer, quantityValue } from './grade';
+
+// Plate and the formula field load with the first long answer.
+const TextEditor = lazy(() =>
+  import('@/features/questions/TextEditor').then((module) => ({
+    default: module.TextEditor,
+  }))
+);
+
+/** A learner's long answer as written, formulas typeset, on ruled lines. */
+function OpenAnswerView({ text }: { text: string }) {
+  return (
+    <div className="ruled-lines min-h-[calc(var(--ruled-line)*3)] px-0.5">
+      <TextView marks text={text} />
+    </div>
+  );
+}
+
+/** A learner's long answer with formulas (Epo 2026-11-16, mock B): one
+ * Formula button and the formula keyboard under it. The editor reads its
+ * value once, so a value changed from outside (a reset) remounts it. */
+function OpenAnswerField({
+  onChange,
+  value,
+}: {
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const own = useRef(value);
+  const [shown, setShown] = useState({ key: 0, value });
+  if (value !== shown.value)
+    setShown({
+      key: value === own.current ? shown.key : shown.key + 1,
+      value,
+    });
+  const [tools, setTools] = useState<HTMLSpanElement | null>(null);
+  return (
+    <>
+      <Suspense fallback={<OpenAnswerView text={value} />}>
+        <TextEditor
+          answer
+          key={shown.key}
+          maxLength={QUIZ_OPEN_ANSWER_MAX}
+          onChange={(text) => {
+            own.current = text;
+            onChange(text);
+          }}
+          placeholder={m.question_ui_type_answer()}
+          toolbarTarget={tools}
+          value={value}
+        />
+      </Suspense>
+      <div className="flex min-h-9 items-center gap-1">
+        <span className="flex items-center gap-1" ref={setTools} />
+        <CharCount
+          className="ml-auto"
+          max={QUIZ_OPEN_ANSWER_MAX}
+          value={textLength(value)}
+        />
+      </div>
+    </>
+  );
+}
 
 // Silent cap on gap and short answers; they are graded without the model.
 const SHORT_ANSWER_MAX = 1000;
@@ -761,21 +829,10 @@ function PartRunner({
         {review && isAuthoredPart(part) && (
           <OpenVerdict answered={text.trim() !== ''} part={part} />
         )}
-        <Textarea
-          aria-label={m.question_ui_your_answer()}
-          className="ruled-lines max-h-[calc(var(--ruled-line)*8)] min-h-[calc(var(--ruled-line)*3)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0 disabled:cursor-default disabled:bg-transparent disabled:text-fg"
-          disabled={review || disabled}
-          maxLength={QUIZ_OPEN_ANSWER_MAX}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={m.question_ui_type_answer()}
-          value={text}
-        />
-        {!review && (
-          <CharCount
-            className="self-end"
-            max={QUIZ_OPEN_ANSWER_MAX}
-            value={textLength(text)}
-          />
+        {review || disabled ? (
+          <OpenAnswerView text={text} />
+        ) : (
+          <OpenAnswerField onChange={onChange} value={text} />
         )}
       </div>
     );

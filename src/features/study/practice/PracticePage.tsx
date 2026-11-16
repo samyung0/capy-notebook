@@ -15,7 +15,7 @@ import type {
   Topic,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
+import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { PageButton } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -30,7 +30,15 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { MakePractice } from './MakePractice';
 import { scoreText, sizeLabel } from './practiceText';
 import { SuggestedList } from './SuggestedList';
-import { PracticeFrame, StudyTabs, Td, Th, TopicsCell } from './studyPage';
+import {
+  ListRow,
+  PracticeFrame,
+  RowScore,
+  StudyTabs,
+  Td,
+  Th,
+  TopicsCell,
+} from './studyPage';
 import { studyView } from './studyView';
 import {
   PracticeResult,
@@ -174,9 +182,11 @@ function PracticeList({
           variant="panel"
         />
       ) : (
-        // Sections 26px apart, the Dashboard's gap (Epo 2026-11-13).
+        // Sections 26px apart, the Dashboard's gap (Epo 2026-11-13). Staff
+        // start with the toolbar, whose Filter sits 8px into its row: 16px
+        // under the tabs, as on Files.
         <div
-          className={cn('flex flex-col gap-6.5', staff ? 'mt-4' : 'mt-5.5')}
+          className={cn('flex flex-col gap-6.5', staff ? 'mt-2' : 'mt-5.5')}
           ref={revealRef}
         >
           {suggested && (
@@ -384,26 +394,27 @@ function AllPractice({
 
   return (
     <section className="@container">
-      {/* 16px to the first text under it: phones' first row holds 11px above
-          its text, the table's header 8px. */}
-      <div className="@[740px]:mb-2 mb-1.25 flex items-center gap-2">
-        {title && <h2 className="t-subtitle mr-2">{m.practice_all()}</h2>}
-        {options.length > 0 && (
-          // The list pages' Filter (Epo 2026-11-13).
-          <FilterPopover
-            filters={[
-              {
-                key: 'topic',
-                label: m.practice_col_topics(),
-                onToggle: (value) => setPicked(toggleValue(picked, value)),
-                options,
-                selected: picked,
-              },
-            ]}
-            onResetFilters={() => setPicked([])}
-          />
-        )}
-      </div>
+      {options.length > 0 ? (
+        // The list pages' toolbar (Epo 2026-11-16): -mb-1 is its -mb-3 with
+        // the 8px a PageBody under it adds.
+        <ListToolbar
+          before={title && <h2 className="t-subtitle">{m.practice_all()}</h2>}
+          className="-mb-1"
+          filters={[
+            {
+              key: 'topic',
+              label: m.practice_col_topics(),
+              onToggle: (value) => setPicked(toggleValue(picked, value)),
+              options,
+              selected: picked,
+            },
+          ]}
+          inPage
+          onResetFilters={() => setPicked([])}
+        />
+      ) : (
+        title && <h2 className="t-subtitle mb-2">{m.practice_all()}</h2>
+      )}
       {rows.length === 0 ? (
         <p className="t-meta mt-6 text-fg-muted">{m.practice_empty()}</p>
       ) : shown.length === 0 ? (
@@ -537,9 +548,8 @@ function AllPractice({
               ].filter(Boolean);
               const score = review?.best ?? item?.best;
               return (
-                <li
+                <ListRow
                   className={cn(
-                    'flex min-h-14 items-center gap-3 border-divider border-b py-2',
                     opens &&
                       'cursor-pointer outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg'
                   )}
@@ -565,12 +575,18 @@ function AllPractice({
                   </div>
                   {staff
                     ? item?.average !== undefined && (
-                        <span className="font-bold">{`${Math.round((item?.average ?? 0) * 100)}%`}</span>
+                        <RowScore
+                          label={m.study_score_average()}
+                          value={`${Math.round(item.average * 100)}%`}
+                        />
                       )
                     : score && (
-                        <span className="font-bold">{scoreText(score)}</span>
+                        <RowScore
+                          label={m.study_score_best()}
+                          value={scoreText(score)}
+                        />
                       )}
-                </li>
+                </ListRow>
               );
             })}
           </ul>

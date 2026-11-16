@@ -148,9 +148,12 @@ type AssignmentManage struct {
 	QuizTitle string `json:"quizTitle,omitempty"`
 	// QuizChanged: its quiz's content was saved after it was last published,
 	// so Republish would change what members take (Epo 2026-11-14).
-	QuizChanged bool     `json:"quizChanged,omitempty"`
-	AssignAll   bool     `json:"assignAll"`
-	Assignees   []string `json:"assignees" nullable:"false"`
+	QuizChanged bool `json:"quizChanged,omitempty"`
+	// QuizUpdatedAt is when its quiz was last saved, its Settings' "Last
+	// edited" (Epo 2026-11-16); absent when the quiz is gone.
+	QuizUpdatedAt *time.Time `json:"quizUpdatedAt,omitempty"`
+	AssignAll     bool       `json:"assignAll"`
+	Assignees     []string   `json:"assignees" nullable:"false"`
 	// Marking: ai_approve (the AI, approved before members see it), ai or manual.
 	Marking string `json:"marking" enum:"ai_approve,ai,manual"`
 	// ShowAnswers is when members read the keys on their results: closed,
@@ -360,7 +363,7 @@ var assignmentCols = `a.id, COALESCE(a.workspace_id, ''), a.kind, a.title, a.pos
 	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.allow_uploads,
 	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
 		WHERE p->'answer'->>'type' = 'drawing'), a.own, COALESCE(a.created_by, ''),
-	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), a.points,
+	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), m.updated_at, a.points,
 	` + questionTopicsSQL
 
 // questionTopicIDsSQL is every topic id assignment a's questions name as
@@ -399,7 +402,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &topicID,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.DrawingParts, &a.Own, &maker, &manage.QuizChanged, &a.Points, &questionTopics); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.DrawingParts, &a.Own, &maker, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &questionTopics); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)

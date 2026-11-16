@@ -96,7 +96,8 @@ export type WorkspaceOpenSearch = {
    * not its report. */
   own?: true;
   /** An assignment's report: its tab, and on Approve AI marks a question or
-   * member to open at. On a class staff's Study, `member` is the profile open. */
+   * member to open at. On a class staff's Study, `member` is the profile open;
+   * beside `attempt`, the profile it was opened from. */
   tab?:
     | 'questions'
     | 'responses'
@@ -315,7 +316,19 @@ function parseAssignments(
   const assignment = text(search.assignment);
   if (!assignment) return { study: 'assignments' };
   const attempt = text(search.attempt);
-  if (attempt) return { assignment, attempt, study: 'assignments' };
+  if (attempt) {
+    // Opened from a member's profile: its back link returns there.
+    const member = text(search.member);
+    return {
+      assignment,
+      attempt,
+      study: 'assignments',
+      ...(member ? { member } : {}),
+      ...(member && search.show === 'topics'
+        ? { show: 'topics' as const }
+        : {}),
+    };
+  }
   const tab = TABS.find((t) => t === search.tab);
   const question = tab === 'approve' ? text(search.question) : undefined;
   const member = tab === 'approve' ? text(search.member) : undefined;

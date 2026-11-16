@@ -531,7 +531,11 @@ export function QuestionView({
               <ul className="space-y-1">
                 {part.markscheme.map((item, i) => (
                   <li className="flex items-baseline gap-4" key={i}>
-                    <TextView className="min-w-0 flex-1" text={item.text} />
+                    <TextView
+                      className="min-w-0 flex-1"
+                      marks
+                      text={item.text}
+                    />
                     <span className="shrink-0 text-fg-muted text-sm">
                       [{item.marks}]
                     </span>

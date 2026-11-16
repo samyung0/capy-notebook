@@ -49,7 +49,7 @@ export function MaterialListItem({
   return (
     <div
       className={cn(
-        'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+        'group relative flex min-h-7.5 items-center rounded-button pr-1 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
         indent ? 'pl-7' : 'pl-2',
         active && 'bg-surface-hover-bg'
       )}
@@ -74,7 +74,8 @@ export function MaterialListItem({
             ? m.files_quiz_row({ title: matRef.title })
             : matRef.title}
         </span>
-        {matRef.hidden && <HiddenMark />}
+        {/* In the ⋮'s 28px column, centred under it (Epo 2026-11-16). */}
+        {matRef.hidden && <HiddenMark className="w-7 justify-center" />}
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
       {hoverMenu && (

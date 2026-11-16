@@ -15,7 +15,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   materialTokenQuery,
@@ -37,9 +36,10 @@ import type {
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
+import type { MenuItem } from '@/components/ui/Menu';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -70,6 +70,7 @@ import {
   FileMenuShown,
   FileMenuTarget,
   FileModeContext,
+  PhoneMenuItems,
   PresenceContext,
 } from '@/features/files/fileModeContext';
 import {
@@ -85,7 +86,11 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
-import { QuizEditor, QuizReadSplit } from '@/features/quizzes/QuizEditor';
+import {
+  QuizEditor,
+  QuizPaneTitle,
+  QuizReadSplit,
+} from '@/features/quizzes/QuizEditor';
 import { QuizPreviewButton } from '@/features/study/assignments/PreviewButton';
 import {
   OfflineStatus,
@@ -179,6 +184,16 @@ export function CenterContent({
   const [fileHeader, setFileHeader] = useState<HTMLSpanElement | null>(null);
   const [fileMenu, setFileMenu] = useState<HTMLSpanElement | null>(null);
   const [fileActions, setFileActions] = useState<HTMLSpanElement | null>(null);
+  // What the open file puts in ⋮ on phones (usePhoneMenuItem).
+  const [phoneItems, setPhoneItems] = useState<Record<string, MenuItem>>({});
+  const setPhoneItem = useCallback(
+    (key: string, menuItem: MenuItem | null) =>
+      setPhoneItems((current) => {
+        const { [key]: _gone, ...rest } = current;
+        return menuItem ? { ...rest, [key]: menuItem } : rest;
+      }),
+    []
+  );
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
   // An Office or text file's: a material opens at the highest mode its reader
   // may have (Epo 2026-11-04).
@@ -285,104 +300,107 @@ export function CenterContent({
               <EditorStatusStoreContext.Provider value={editorStatus}>
                 <PresenceContext.Provider value={setPresence}>
                   <FileMenuShown.Provider value={setMenuShown}>
-                    <div
-                      className={cn(
-                        // Only fullscreen needs its own fill; in the panel the
-                        // panel's shows through, frosted or not. Fixed, it
-                        // covers both side panels without closing them.
-                        'flex min-h-0 flex-1 flex-col',
-                        isFullscreen && 'fixed inset-0 z-40 bg-surface'
-                      )}
-                    >
-                      {/* Hidden, not unmounted: the file's controls portal
-                       * into the header's slots. */}
-                      <div className={isFullscreen ? 'hidden' : 'contents'}>
-                        <Header
-                          color={color}
-                          editorStatus={editorStatus}
-                          fileActions={
-                            <span
-                              className="flex items-center"
-                              ref={setFileActions}
-                            />
-                          }
-                          fileControls={
-                            <span
-                              className="flex items-center"
-                              ref={setFileHeader}
-                            />
-                          }
-                          imageZoom={imageZoom}
-                          isFullscreen={isFullscreen}
-                          item={item}
-                          leading={leading}
-                          menuBar={
-                            <span
-                              className="flex min-w-0 items-center"
-                              ref={setFileMenu}
-                            />
-                          }
-                          menuShown={menuShown}
-                          onDeleted={onDeleted}
-                          oneColumn={oneColumn}
-                          onImageZoomChange={setImageZoom}
-                          onToggleFullscreen={() =>
-                            setFullscreen(!isFullscreen)
-                          }
-                          presence={presence}
-                          readOnly={readOnly}
-                          standalone={standalone}
-                          topics={topics}
-                          workspaceId={workspaceId}
-                        />
-                      </div>
-                      {/* One strip at a time under the header: the newest shows. */}
-                      <BannerStack key={item.id}>
-                        {trash && (
-                          <TrashBanner
+                    <PhoneMenuItems.Provider value={setPhoneItem}>
+                      <div
+                        className={cn(
+                          // Only fullscreen needs its own fill; in the panel the
+                          // panel's shows through, frosted or not. Fixed, it
+                          // covers both side panels without closing them.
+                          'flex min-h-0 flex-1 flex-col',
+                          isFullscreen && 'fixed inset-0 z-40 bg-surface'
+                        )}
+                      >
+                        {/* Hidden, not unmounted: the file's controls portal
+                         * into the header's slots. */}
+                        <div className={isFullscreen ? 'hidden' : 'contents'}>
+                          <Header
+                            color={color}
+                            editorStatus={editorStatus}
+                            fileActions={
+                              <span
+                                className="flex items-center"
+                                ref={setFileActions}
+                              />
+                            }
+                            fileControls={
+                              <span
+                                className="flex items-center"
+                                ref={setFileHeader}
+                              />
+                            }
+                            imageZoom={imageZoom}
+                            isFullscreen={isFullscreen}
                             item={item}
-                            trash={trash}
+                            leading={leading}
+                            menuBar={
+                              <span
+                                className="flex min-w-0 items-center"
+                                ref={setFileMenu}
+                              />
+                            }
+                            menuShown={menuShown}
+                            onDeleted={onDeleted}
+                            oneColumn={oneColumn}
+                            onImageZoomChange={setImageZoom}
+                            onToggleFullscreen={() =>
+                              setFullscreen(!isFullscreen)
+                            }
+                            phoneItems={Object.values(phoneItems)}
+                            presence={presence}
+                            readOnly={readOnly}
+                            standalone={standalone}
+                            topics={topics}
                             workspaceId={workspaceId}
                           />
-                        )}
-                        <div
-                          className={cn(
-                            'relative min-h-0 flex-1',
-                            item.kind === 'file'
-                              ? 'flex flex-col overflow-hidden'
-                              : 'overflow-auto'
-                          )}
-                        >
-                          {item.kind === 'material' && (
-                            <MaterialBody
-                              allowExternalAssets={!readOnly}
-                              centerQuiz={!standalone}
-                              citation={item.citation}
-                              key={item.id}
-                              materialId={item.id}
-                              onEditorStatusChange={setEditorStatus}
-                              onPresenceChange={setPresence}
-                              readOnly={readOnly}
-                              target={item.target}
-                              trashed={trashed}
+                        </div>
+                        {/* One strip at a time under the header: the newest shows. */}
+                        <BannerStack key={item.id}>
+                          {trash && (
+                            <TrashBanner
+                              item={item}
+                              trash={trash}
                               workspaceId={workspaceId}
                             />
                           )}
-                          {item.kind === 'file' && (
-                            <FileBody
-                              citation={item.citation}
-                              color={color}
-                              fileId={item.id}
-                              imageZoom={imageZoom}
-                              key={item.id}
-                              onImageZoomChange={setImageZoom}
-                              page={item.page}
-                              regions={item.regions}
-                            />
-                          )}
-                        </div>
-                      </BannerStack>
-                    </div>
+                          <div
+                            className={cn(
+                              'relative min-h-0 flex-1',
+                              item.kind === 'file'
+                                ? 'flex flex-col overflow-hidden'
+                                : 'overflow-auto'
+                            )}
+                          >
+                            {item.kind === 'material' && (
+                              <MaterialBody
+                                allowExternalAssets={!readOnly}
+                                centerQuiz={!standalone}
+                                citation={item.citation}
+                                key={item.id}
+                                materialId={item.id}
+                                onEditorStatusChange={setEditorStatus}
+                                onPresenceChange={setPresence}
+                                readOnly={readOnly}
+                                target={item.target}
+                                trashed={trashed}
+                                workspaceId={workspaceId}
+                              />
+                            )}
+                            {item.kind === 'file' && (
+                              <FileBody
+                                citation={item.citation}
+                                color={color}
+                                fileId={item.id}
+                                imageZoom={imageZoom}
+                                key={item.id}
+                                onImageZoomChange={setImageZoom}
+                                page={item.page}
+                                regions={item.regions}
+                              />
+                            )}
+                          </div>
+                        </BannerStack>
+                      </div>
+                    </PhoneMenuItems.Provider>
                   </FileMenuShown.Provider>
                 </PresenceContext.Provider>
               </EditorStatusStoreContext.Provider>
@@ -740,17 +758,13 @@ function MaterialContentBody({
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
       <QuizEditor
-        action={
-          // Preview beside Study: the quiz as members get it (Epo 2026-11-15).
-          <span className="inline-flex items-center gap-2">
-            <QuizPreviewButton quizId={materialId} />
-            <StudyButton kind="quiz" materialId={materialId} />
-          </span>
-        }
+        // Preview: the quiz as members get it (Epo 2026-11-15).
+        action={<QuizPreviewButton quizId={materialId} />}
         copy={roomCopy}
         key={materialId}
         onPresenceChange={onPresenceChange}
         onStatusChange={onEditorStatusChange}
+        practice={<PracticeButton kind="quiz" materialId={materialId} />}
         quizId={materialId}
         sources={
           <SourcesLine
@@ -775,7 +789,7 @@ function MaterialContentBody({
             {editorMounted ? (
               <LiveFlashcards
                 action={
-                  <StudyButton kind="flashcards" materialId={materialId} />
+                  <PracticeButton kind="flashcards" materialId={materialId} />
                 }
                 copy={roomCopy}
                 onPresenceChange={onPresenceChange}
@@ -790,7 +804,7 @@ function MaterialContentBody({
               <LiveSetGrid
                 action={
                   !trashed && (
-                    <StudyButton kind="flashcards" materialId={materialId} />
+                    <PracticeButton kind="flashcards" materialId={materialId} />
                   )
                 }
                 live={!trashed}
@@ -911,7 +925,6 @@ function QuizPreview({
   title: string;
 }) {
   const overBar = useContext(FloatingBarContext);
-  const headerActions = useContext(FileActionsTarget);
   // Someone gone from editing to viewing keeps no answers on this device.
   useEffect(() => {
     void dropDeviceCopies(quizId, 'keys');
@@ -925,14 +938,16 @@ function QuizPreview({
   return (
     <>
       {/* The header names it for the eye; the page's one h1 stays its title. */}
-      <h1 className="sr-only">{title}</h1>
-      {live &&
-        headerActions &&
-        createPortal(
-          <StudyButton kind="quiz" materialId={quizId} />,
-          headerActions
-        )}
+      {!live && <h1 className="sr-only">{title}</h1>}
       <QuizReadSplit
+        head={
+          live && (
+            <QuizPaneTitle
+              action={<PracticeButton kind="quiz" materialId={quizId} />}
+              title={title}
+            />
+          )
+        }
         paneClassName={cn(overBar && 'pb-20')}
         questions={questions}
         sources={
@@ -947,8 +962,8 @@ function QuizPreview({
   );
 }
 
-/** Study: a quiz's attempt or a set's study session, in View and Edit. */
-function StudyButton({
+/** Practice: a quiz's attempt or a set's study session, in View and Edit. */
+function PracticeButton({
   kind,
   materialId,
 }: {
@@ -957,7 +972,7 @@ function StudyButton({
 }) {
   const navigate = useNavigate();
   return (
-    <Button
+    <PageButton
       className="shrink-0"
       onClick={() =>
         kind === 'quiz'
@@ -970,11 +985,10 @@ function StudyButton({
               to: '/flashcards/$flashcardSetId',
             })
       }
-      size="md"
       variant="dark"
     >
-      {m.action_study()}
-    </Button>
+      {m.action_practice()}
+    </PageButton>
   );
 }
 
@@ -1000,7 +1014,8 @@ function EmptyCenter({
     <>
       <div
         className={cn(
-          'flex h-12 items-center gap-1 border-divider border-b sm:h-15',
+          // A tall page under it must not squeeze it (the Files view did).
+          'flex h-12 shrink-0 items-center gap-1 border-divider border-b sm:h-15',
           // Workspace buttons at the edges sit as far in as a file header's.
           leading ? 'px-3' : 'px-2 sm:px-4',
           // As in a file header: the title pill's padding spaces it.

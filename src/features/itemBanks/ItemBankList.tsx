@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useState } from 'react';
+import { type KeyboardEvent, lazy, Suspense, useState } from 'react';
 import {
   PERSONAL_BANK,
   useDeleteItemBankQuestion,
@@ -17,7 +17,6 @@ import { SearchInput } from '@/components/ui/SearchInput';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverContent } from '@/components/ui/ToolbarPopover';
 import { MenuItem } from '@/features/questions/editorFields';
-import { QuestionDialog } from '@/features/questions/QuestionDialog';
 import { blankQuestion, questionMarks } from '@/features/questions/types';
 import { questionSummary } from '@/features/quizzes/QuizSplit';
 import { dayMonth } from '@/features/study/assignments/assignmentText';
@@ -33,6 +32,12 @@ import {
   TopicAndTags,
   useBankTopics,
 } from './TopicAndTags';
+
+const QuestionDialog = lazy(() =>
+  import('@/features/questions/QuestionDialog').then((module) => ({
+    default: module.QuestionDialog,
+  }))
+);
 
 /**
  * One item bank's page body (Epo 2026-11-14, mock A): Search over the
@@ -226,32 +231,39 @@ export function ItemBankList({
           />
         </div>
       )}
-      <QuestionDialog
-        onClose={() => {
-          onCreatingChange(false);
-          setBlank(blankQuestion());
-        }}
-        onSave={(question, tagged) =>
-          save({ bank, question, tags: tagged }).then(() => undefined)
-        }
-        open={creating}
-        question={blank}
-        tags={{ catalog: bankTags, initial: [] }}
-        topics={workspaceBank ? topics : undefined}
-      />
+      {/* The question editor loads only when its dialog opens (Epo 2026-11-16). */}
+      {creating && (
+        <Suspense fallback={null}>
+          <QuestionDialog
+            onClose={() => {
+              onCreatingChange(false);
+              setBlank(blankQuestion());
+            }}
+            onSave={(question, tagged) =>
+              save({ bank, question, tags: tagged }).then(() => undefined)
+            }
+            open
+            question={blank}
+            tags={{ catalog: bankTags, initial: [] }}
+            topics={workspaceBank ? topics : undefined}
+          />
+        </Suspense>
+      )}
       {editing && (
-        <QuestionDialog
-          onClose={() => setEditing(null)}
-          onSave={(question, tagged) =>
-            save({ bank, id: editing.id, question, tags: tagged }).then(
-              () => undefined
-            )
-          }
-          open
-          question={editing.question}
-          tags={{ catalog: bankTags, initial: editing.tags }}
-          topics={workspaceBank ? topics : undefined}
-        />
+        <Suspense fallback={null}>
+          <QuestionDialog
+            onClose={() => setEditing(null)}
+            onSave={(question, tagged) =>
+              save({ bank, id: editing.id, question, tags: tagged }).then(
+                () => undefined
+              )
+            }
+            open
+            question={editing.question}
+            tags={{ catalog: bankTags, initial: editing.tags }}
+            topics={workspaceBank ? topics : undefined}
+          />
+        </Suspense>
       )}
       <ConfirmDialog
         body={m.bank_delete_body()}

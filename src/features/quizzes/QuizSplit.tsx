@@ -96,6 +96,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   onQuestion,
   paneClassName,
   paneOnPhone,
+  phoneHead,
   phoneStrip,
   questions,
   rowEnd,
@@ -118,6 +119,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   paneClassName?: string;
   /** Phones: the pane alone, which holds its own list (the quiz's cards). */
   paneOnPhone?: boolean;
+  /** Phones: above the list, as the pane's top shows it on wider screens. */
+  phoneHead?: ReactNode;
   /** Phones: always above the question, with no list. */
   phoneStrip?: ReactNode;
   questions: Q[];
@@ -156,6 +159,9 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
         )}
         ref={list}
       >
+        {phoneHead && (
+          <div className="px-1.5 pt-1.5 pb-3 md:hidden">{phoneHead}</div>
+        )}
         <div className="flex min-h-7 items-center px-1.5 pt-0.5 pb-1.5">
           <p className="min-w-0 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
             {m.quiz_editor_questions({ count: questions.length })}
@@ -178,7 +184,9 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
           >
             <span className="font-bold text-fg-secondary">{i + 1}</span>
             <span className="truncate">{questionSummary(item)}</span>
-            <span className="flex min-w-5 items-center justify-end gap-1.5 text-right text-fg-muted text-xs">
+            {/* Each mark, a number or an icon, centred in its own 20px column,
+                so the rows' marks share one centre line (Epo 2026-11-16). */}
+            <span className="grid auto-cols-[20px] grid-flow-col items-center justify-items-center gap-1.5 text-fg-muted text-xs">
               {rowEnd(item)}
             </span>
           </button>

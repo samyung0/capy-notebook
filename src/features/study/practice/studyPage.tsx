@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import type { ReactNode, Ref } from 'react';
+import type { ComponentProps, ReactNode, Ref } from 'react';
 import {
   ariaSort,
   type ColumnSort,
@@ -90,6 +90,56 @@ export function Td({
     >
       {children}
     </td>
+  );
+}
+
+/** A narrow list's row, where the Study pages' tables do not fit (phones and
+ * narrow panes): 56px at least, 8px above and below its lines, a divider
+ * under it (Epo 2026-11-16). With `onOpen` the row is one button; without,
+ * the page makes it clickable around controls of its own. */
+export function ListRow({
+  children,
+  className,
+  onOpen,
+  ...props
+}: ComponentProps<'li'> & { onOpen?: () => void }) {
+  if (onOpen)
+    return (
+      <li className="border-divider border-b" {...props}>
+        <button
+          className={cn(
+            'flex min-h-14 w-full items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
+            className
+          )}
+          onClick={onOpen}
+          type="button"
+        >
+          {children}
+        </button>
+      </li>
+    );
+  return (
+    <li
+      className={cn(
+        'flex min-h-14 items-center gap-3 border-divider border-b py-2',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </li>
+  );
+}
+
+/** A narrow row's score at its end with the word that says what it is
+ * ("88% overall", "74% average", "8 / 10 best"; Epo 2026-11-16): the wide
+ * tables' column headers say it there. */
+export function RowScore({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="flex shrink-0 items-baseline gap-1.5">
+      <span className="font-bold">{value}</span>
+      <span className="t-meta text-fg-muted">{label}</span>
+    </span>
   );
 }
 

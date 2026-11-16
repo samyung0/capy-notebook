@@ -504,6 +504,8 @@ type BankQuiz struct {
 	Title                      string
 	// GradedPending: made for a graded quiz (Material.GradedPending).
 	GradedPending bool
+	// Hidden: starts hidden from members (the request handler sets it).
+	Hidden bool
 }
 
 // CreateQuizFromBank copies the picked questions, in the order given, into a
@@ -528,6 +530,7 @@ func (s *Store) CreateQuizFromBank(ctx context.Context, in BankQuiz) (Material, 
 		id, err = s.createMaterialTx(ctx, tx, Material{
 			CreatedBy: in.ActorID, WorkspaceID: in.WorkspaceID, WorkspaceName: in.WorkspaceName,
 			Kind: "quiz", Title: in.Title, Content: content, Privacy: "private", GradedPending: in.GradedPending,
+			Hidden: in.Hidden,
 		})
 		if err != nil {
 			return err

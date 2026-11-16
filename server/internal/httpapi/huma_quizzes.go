@@ -124,6 +124,9 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 	res, err := a.s.CreateQuiz(ctx, store.Quiz{
 		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Topics: b.Topics,
 		Questions: apimodel.EncodeQuestions(b.Questions), Privacy: privacy, TimeLimitMin: nil,
+		// A workspace's quiz starts hidden from members until shown (Epo
+		// 2026-11-16, every quiz an editor makes).
+		Hidden: wsID != "",
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		// The request's questions, answered as createMaterial does; generated

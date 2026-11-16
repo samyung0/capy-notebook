@@ -109,6 +109,10 @@ export function AssignmentSettingsTab({
   const published = draft
     ? null
     : m.assignment_last_published({ date: dayTimeLabel(assignment.postedAt) });
+  // Its quiz's last save, read with the assignment (Epo 2026-11-16).
+  const edited =
+    manage?.quizUpdatedAt &&
+    m.assignment_last_edited({ date: dayTimeLabel(manage.quizUpdatedAt) });
 
   return (
     <div className={cn('flex max-w-5xl flex-col gap-8', className)}>
@@ -153,10 +157,14 @@ export function AssignmentSettingsTab({
               </>
             )}
             {published}
+            {edited && ` · ${edited}`}
           </p>
         )}
         {draft && (
-          <p className="t-meta text-fg-muted">{m.assignment_draft_note()}</p>
+          <p className="t-meta text-fg-muted">
+            {m.assignment_draft_note()}
+            {edited && ` · ${edited}`}
+          </p>
         )}
         {draft && quizId && <NoAnswersWarning quizId={quizId} />}
       </div>

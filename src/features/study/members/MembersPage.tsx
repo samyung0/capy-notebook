@@ -8,7 +8,7 @@ import type {
   Workspace,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { FilterPopover } from '@/components/app/ListToolbar';
+import { ListToolbar } from '@/components/app/ListToolbar';
 import {
   ariaSort,
   type ColumnSort,
@@ -22,7 +22,7 @@ import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { percentText } from '../assignments/assignmentText';
-import { PracticeFrame } from '../practice/studyPage';
+import { ListRow, PracticeFrame, RowScore } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { LabelPill } from '../topicLabels';
 import { MemberProfilePage } from './MemberProfile';
@@ -145,32 +145,32 @@ function MembersList({
   return (
     <PracticeFrame className="@container">
       {header}
-      {/* The list pages' Filter (Epo 2026-11-13); columns sort from their
-          headers. */}
-      <div className="mt-4 mb-1.5 flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 sm:min-h-11.5">
-        {/* -ml-1 with the button's -mx-1 puts its icon on the gutter, as ListToolbar does. */}
-        <div className="-ml-1 flex">
-          <FilterPopover
-            filters={[
-              {
-                key: 'attention',
-                label: m.members_col_member(),
-                onToggle: () => setAttention(!attention),
-                options: [
-                  { label: m.members_filter_attention(), value: 'attention' },
-                ],
-                selected: attention ? ['attention'] : [],
-              },
-            ]}
-            onResetFilters={() => setAttention(false)}
-          />
-        </div>
-        {topics && (
-          <span className="t-meta text-fg-muted">
-            {m.members_labels_need()}
-          </span>
-        )}
-      </div>
+      {/* The list pages' toolbar (Epo 2026-11-16), as Practice's; columns
+          sort from their headers. 16px under the tabs, as on Files; -mb-1 is its
+          -mb-3 with a PageBody's 8px. */}
+      <ListToolbar
+        after={
+          topics && (
+            <span className="t-meta text-fg-muted">
+              {m.members_labels_need()}
+            </span>
+          )
+        }
+        className="mt-2 -mb-1"
+        filters={[
+          {
+            key: 'attention',
+            label: m.members_col_member(),
+            onToggle: () => setAttention(!attention),
+            options: [
+              { label: m.members_filter_attention(), value: 'attention' },
+            ],
+            selected: attention ? ['attention'] : [],
+          },
+        ]}
+        inPage
+        onResetFilters={() => setAttention(false)}
+      />
       {isPending ? (
         <SkeletonList className="mt-4" count={6} rowHeight={topics ? 64 : 52} />
       ) : isError ? (
@@ -296,10 +296,10 @@ function PhoneList({
   onOpen: (member: MemberProgress) => void;
 }) {
   return (
-    <ul className="mt-1 @4xl:hidden">
+    <ul className="@4xl:hidden">
       {members.map((member) => (
-        <li
-          className="flex min-h-16 cursor-pointer items-center gap-3 border-divider border-b py-3"
+        <ListRow
+          className="cursor-pointer"
           key={member.userId}
           onClick={() => onOpen(member)}
         >
@@ -337,15 +337,15 @@ function PhoneList({
               </span>
             )}
           </div>
-          <span
-            className={cn(
-              'shrink-0 font-bold',
-              member.overall === undefined && 'text-fg-muted'
-            )}
-          >
-            {member.overall === undefined ? '–' : percentText(member.overall)}
-          </span>
-        </li>
+          {member.overall === undefined ? (
+            <span className="shrink-0 font-bold text-fg-muted">–</span>
+          ) : (
+            <RowScore
+              label={m.study_score_overall()}
+              value={percentText(member.overall)}
+            />
+          )}
+        </ListRow>
       ))}
     </ul>
   );

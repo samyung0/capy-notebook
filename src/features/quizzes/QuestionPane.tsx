@@ -283,9 +283,10 @@ export function PartKey({
               className="grid min-h-11 grid-cols-[1.375rem_minmax(0,1fr)_3.25rem_auto] items-start gap-2.5 py-0.5"
               key={i}
             >
-              <span className="pt-2 leading-normal">{i + 1}.</span>
-              <span className="min-h-10 border-transparent border-b px-0.5 py-2 leading-normal">
-                <TextView text={item.text} />
+              <span className="pt-2 leading-[1.7]">{i + 1}.</span>
+              {/* As the open card's point draws it: no shift on opening. */}
+              <span className="border-transparent border-b py-2 leading-[1.7]">
+                <TextView marks text={item.text} />
               </span>
               {/* Where the marks select's value sits. */}
               <span className="mt-1 flex h-8 items-center justify-center">
@@ -404,6 +405,7 @@ const ClosedCard = memo(function ClosedCard({
 export function QuestionPane({
   embedded,
   foot,
+  head,
   fresh,
   keysPending,
   onAdd,
@@ -425,6 +427,8 @@ export function QuestionPane({
   embedded?: boolean;
   /** Under the cards: the AI-marked count and the sources. */
   foot?: ReactNode;
+  /** Above the cards: the quiz's title and Practice (`QuizPaneTitle`). */
+  head?: ReactNode;
   /** A question just added: its text opens in its editor. */
   fresh?: string;
   /** The read's questions, whose keys are still to come. */
@@ -677,6 +681,7 @@ export function QuestionPane({
         className="mx-auto flex max-w-190 flex-col gap-3 @min-[58rem]:px-0 px-4 pt-3 @min-[58rem]:pb-6 pb-24 sm:gap-3.5 sm:pt-5"
         inert={opening}
       >
+        {head}
         {questions.map(card)}
         {/* No open card to float beside: the bar sits in the column. */}
         {questions.length === 0 &&

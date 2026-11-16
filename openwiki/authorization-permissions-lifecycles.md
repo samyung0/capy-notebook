@@ -482,8 +482,9 @@ unchanged.
   [study progress](study-progress.md#assignments), The owned quiz.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
   /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
-  file" / "Unhide file") or its header: a Hide file button on a visible item (from
-  `sm`), the chip on a hidden one. Owners and editors may switch it: the
+  file" / "Unhide file") or the chip on a hidden one's header. Unhiding, from either, asks first
+  ("Unhide this file?", everyone in the workspace will see it; Epo
+  2026-11-16); hiding does not ask. Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
@@ -519,23 +520,33 @@ unchanged.
   workspace or of one item, copies each item's flag as it is: hidden stays
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
+- **Every quiz an editor makes starts hidden** (Epo 2026-11-16): an owner or
+  editor shows it to members from its Hidden chip or ⋮ menu when it is ready.
+  Generate (`huma_generate.go`, an editor's quiz), Create quiz (`createQuiz`
+  and `createMaterial` with kind quiz), From the bank (`CreateQuizFromBank`,
+  `bankCopyToNewQuiz`) and the chat agent's quiz (`internal_materials.go`, in a
+  workspace) insert it with `hidden`; a viewer's own practice quiz is a
+  standalone material nobody else reaches, and a quiz embedded in a note
+  follows its note (the new workspace's starter quiz is one).
 - **Make a quiz.** A converted quiz starts hidden unless its maker turns off
-  the files step's switch, Hide the quiz (Epo 2026-11-11; on by
-  default and off from Practice's Add practice, sent as `hidden` with the run
-  and kept on its row). Files uploaded in the
+  the files step's switch, Hide the quiz (Epo 2026-11-11; on by default
+  wherever the dialog opens, Practice's Add practice too since 2026-11-16,
+  sent as `hidden` with the run and kept on its row). Files uploaded in the
   Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
   mark scheme uploaded for the quiz never reaches the students; a file picked
   from the workspace keeps its setting, and the run changes no file's
   visibility (Epo 2026-11-04). See
   [agentic-retrieval.md](agentic-retrieval.md#make-a-quiz-questions-from-uploaded-files).
 
-An open hidden item's header shows a "Hidden from members" chip after its
+An open hidden item's header shows a "Hidden" chip (the state alone, Epo
+2026-11-16; the upload dialog's choice keeps "Hidden from members") after its
 name (X2; the icon alone on phones). For owners and editors who may change the
 item the chip is a button ("Unhide file" in its tooltip) that shows it to
-members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
-hiding again stays in the menu, and a read-only editor's chip is a plain
+members, as the ⋮ menu does (`useToggleHidden`, same request, error toast and
+confirm dialog); a visible item's header shows nothing (Epo 2026-11-16) and
+hiding stays in the menu, and a read-only editor's chip is a plain
 label. A hidden item's Files row carries the eye at its end (`HiddenMark`,
-board T3).
+board T3), centred in the hover ⋮'s 28px column as a topic's count is.
 
 Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 [routes](../server/internal/httpapi/huma_hidden.go),

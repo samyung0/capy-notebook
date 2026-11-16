@@ -2566,6 +2566,8 @@ export const handlers = [
       ...ownerMaterialAccess,
       content: body.content ?? emptyMaterialDocument(),
       createdAt: new Date().toISOString(),
+      // A quiz starts hidden from members, as the server makes it.
+      hidden: body.kind === 'quiz',
       id: uid('mat'),
       kind: body.kind,
       privacy: 'private',
@@ -3262,6 +3264,8 @@ export const handlers = [
       ...ownerMaterialAccess,
       content: quizDocument(qs),
       createdAt: new Date().toISOString(),
+      // An editor's quiz starts hidden from members, as the server makes it.
+      hidden: true,
       id: uid('qz'),
       kind: 'quiz',
       privacy: 'private',

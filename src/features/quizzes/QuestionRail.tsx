@@ -1,4 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { Question } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { PendingDot } from '@/components/ui/PendingDot';
@@ -9,7 +15,11 @@ import {
   useMenuOpenAutoFocus,
 } from '@/components/ui/Popover';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { answerKind, kindIcons } from '@/features/questions/editorFields';
+import {
+  answerKind,
+  kindIcons,
+  useRowDrag,
+} from '@/features/questions/editorFields';
 import { questionIssues } from '@/features/questions/issues';
 import { questionMarks } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -39,24 +49,35 @@ function OutlineContent({ children }: { children: ReactNode }) {
  * boards ListA and ListA2): a narrow rail of numbers, the open one dark and one
  * with an issue dotted, whose ≡ opens the outline (number, type, question,
  * marks), as Canvas's Question Navigator, and + under them adds a question at
- * the end. From md; phones have the cards alone.
+ * the end. A number drags to reorder (Epo 2026-11-16), an accent line showing
+ * where it lands. From md; phones have the cards alone.
  */
 export function QuestionRail({
   current,
   onAdd,
+  onBank,
+  onMove,
   onOpen,
   opening,
   questions,
 }: {
   current: string | undefined;
-  /** Add question, at the quiz's end, from the + under the numbers. */
+  /** Add question and From the bank under the numbers, which add after the
+   * open question, else at the end, as the floating bar does. */
   onAdd: () => void;
+  onBank: () => void;
+  /** A dragged number's question to its place among the others. */
+  onMove: (id: string, index: number) => void;
   onOpen: (id: string) => void;
   /** Painted before its rooms sync: nothing to mark yet. */
   opening?: boolean;
   questions: Question[];
 }) {
   const [outline, setOutline] = useState(false);
+  const drag = useRowDrag((from, to) => {
+    const question = questions[from];
+    if (question) onMove(question.id, to);
+  });
   const rail = useRef<HTMLElement>(null);
   // The open question's number stays in view.
   useEffect(() => {
@@ -65,6 +86,31 @@ export function QuestionRail({
       // Not in every test DOM.
       ?.scrollIntoView?.({ block: 'nearest' });
   }, [current]);
+  // A reorder slides each number from its old place to its new one, so a
+  // drop or a move reads as one (Epo 2026-11-16): set before paint (FLIP).
+  const tops = useRef(new Map<string, number>());
+  const order = questions.map((question) => question.id).join();
+  useLayoutEffect(() => {
+    const moved: [HTMLElement, number][] = [];
+    const next = new Map<string, number>();
+    for (const button of rail.current?.querySelectorAll<HTMLElement>(
+      '[data-question-row]'
+    ) ?? []) {
+      const id = button.dataset.questionRow ?? '';
+      const was = tops.current.get(id);
+      next.set(id, button.offsetTop);
+      if (was !== undefined && was !== button.offsetTop)
+        moved.push([button, was - button.offsetTop]);
+    }
+    tops.current = next;
+    if (!moved.length || matchMedia('(prefers-reduced-motion: reduce)').matches)
+      return;
+    for (const [button, shift] of moved)
+      button.animate(
+        [{ transform: `translateY(${shift}px)` }, { transform: 'none' }],
+        { duration: 200, easing: 'cubic-bezier(0.2, 0, 0, 1)' }
+      );
+  }, [order]);
   const issue = (question: Question) =>
     !opening && questionIssues(question).length > 0;
   const total = questions.reduce((sum, q) => sum + questionMarks(q), 0);
@@ -127,28 +173,35 @@ export function QuestionRail({
       </Popover>
       {/* The numbers scroll between ≡ and +, faded at an edge with more. */}
       <div className="scroll-fade-y flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {questions.map((question, i) => (
-          <button
-            aria-current={question.id === current || undefined}
-            aria-label={
-              issue(question)
-                ? `${m.quiz_editor_question({ number: i + 1 })}, ${m.quiz_editor_has_issue()}`
-                : m.quiz_editor_question({ number: i + 1 })
-            }
-            className={cn(
-              'relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg font-semibold text-[13.5px] text-fg-secondary outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
-              question.id === current &&
-                'bg-action text-action-fg hover:bg-action-hover'
-            )}
-            data-question-row={question.id}
-            key={question.id}
-            onClick={() => onOpen(question.id)}
-            type="button"
-          >
-            {i + 1}
-            {issue(question) && <PendingDot className="top-1.25 right-1.25" />}
-          </button>
-        ))}
+        {questions.map((question, i) => {
+          const row = drag(i, String(i + 1));
+          return (
+            <button
+              {...(opening ? {} : row)}
+              aria-current={question.id === current || undefined}
+              aria-label={
+                issue(question)
+                  ? `${m.quiz_editor_question({ number: i + 1 })}, ${m.quiz_editor_has_issue()}`
+                  : m.quiz_editor_question({ number: i + 1 })
+              }
+              className={cn(
+                'relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg font-semibold text-[13.5px] text-fg-secondary outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
+                !opening && row.className,
+                question.id === current &&
+                  'bg-action text-action-fg hover:bg-action-hover'
+              )}
+              data-question-row={question.id}
+              key={question.id}
+              onClick={() => onOpen(question.id)}
+              type="button"
+            >
+              {i + 1}
+              {issue(question) && (
+                <PendingDot className="top-1.25 right-1.25" />
+              )}
+            </button>
+          );
+        })}
       </div>
       <ToolbarButton
         className="mt-1.5"
@@ -157,6 +210,13 @@ export function QuestionRail({
         onClick={onAdd}
       >
         <Icon name="plus" />
+      </ToolbarButton>
+      <ToolbarButton
+        disabled={opening}
+        label={m.practice_tab_bank()}
+        onClick={onBank}
+      >
+        <Icon name="fileImport" />
       </ToolbarButton>
     </nav>
   );

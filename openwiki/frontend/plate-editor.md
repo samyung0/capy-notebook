@@ -4338,6 +4338,11 @@ Pointer-down outside the formula, keyboard and its toggles also hides it,
 including toolbar controls that preserve editor focus.
 Question editors retain external controls, with the menu below the keyboard for
 block formulas and a centered menu alone for inline formulas.
+A click beside an inline formula, not on it, puts the caret on the side clicked
+(`FormulaCaretPlugin` in `formulaCaret.ts`, notes and question editors): Chrome
+lands such a click in the formula's hidden spacer, which selects the formula and
+drops typed text. It checks on the click and on the selection change, since Slate
+throttles DOM selection and an already-selected formula sends no change.
 The formula menu filters MathLive's native items to Insert Matrix, Insert, Mode,
 Copy and Paste. Its shadow-root CSS matches ToolbarPopover's tokens, row spacing,
 border and shadow, retaining native matrix grids, templates and clipboard formats.

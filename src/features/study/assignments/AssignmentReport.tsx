@@ -13,7 +13,7 @@ import type {
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, PageButton } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -55,7 +55,7 @@ import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { blockText, questionLine } from '../practice/practiceText';
-import { PracticeFrame, Td, Th } from '../practice/studyPage';
+import { ListRow, PracticeFrame, Td, Th } from '../practice/studyPage';
 import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import {
@@ -192,6 +192,12 @@ export function AssignmentReport({
       >
         <h1 className="t-page-title min-w-0">{assignment.title}</h1>
         <div className="flex flex-wrap items-center gap-1.5">
+          {/* Published and not closed yet: Open, in green, first (Epo 2026-11-16). */}
+          {!assignment.draft && !assignment.closedAt && (
+            <span className={cn(CHIP, 'bg-tint-success text-tint-success-fg')}>
+              {m.assignment_state_open()}
+            </span>
+          )}
           {/* The time limit alone, with no kind before it. */}
           {assignment.timeLimitMin ? (
             <span className={cn(CHIP, 'gap-1')}>
@@ -397,7 +403,8 @@ function ResponsesTab({
           }
           value={byQuestion ? 'question' : 'member'}
         >
-          <SelectTrigger aria-label={view} className="w-42.5">
+          {/* 36px, as the header's Preview (Epo 2026-11-16). */}
+          <SelectTrigger aria-label={view} className="h-9 w-42.5">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -412,15 +419,15 @@ function ResponsesTab({
         <span className="t-meta text-fg-muted max-sm:order-last max-sm:basis-full">
           {summary}
         </span>
-        <Button
-          className="ml-auto shrink-0"
+        <PageButton
+          className="ml-auto"
           onClick={() => void go({ tab: 'approve' })}
         >
           {manual
             ? m.assignment_mark_answers()
             : m.assignment_approve_ai_grades()}
           {waiting > 0 && <span className="opacity-75">{`· ${waiting}`}</span>}
-        </Button>
+        </PageButton>
       </div>
       {byQuestion ? (
         <>
@@ -636,11 +643,8 @@ function MembersTab({
       </table>
       <ul className="mt-1 md:hidden">
         {members.map((member) => (
-          <li
-            className={cn(
-              'flex min-h-14 items-center gap-3 border-divider border-b py-2',
-              member.attemptId && 'cursor-pointer'
-            )}
+          <ListRow
+            className={cn(member.attemptId && 'cursor-pointer')}
             key={member.userId}
             onClick={() => open(member)}
           >
@@ -659,7 +663,7 @@ function MembersTab({
                 {markText(member.mark, member.total ?? 0)}
               </span>
             )}
-          </li>
+          </ListRow>
         ))}
       </ul>
       {takesLateWork(assignment) && (
@@ -881,12 +885,15 @@ function QuestionReportRow({
       <li className="border-divider border-b">
         <button
           aria-expanded={false}
-          className="grid min-h-15 w-full grid-cols-[minmax(0,1fr)_20px] items-center gap-x-3 gap-y-1 py-3 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset md:grid-cols-[240px_minmax(0,1fr)_auto_20px]"
+          // One line from md, 36px as the members' table rows (Epo
+          // 2026-11-16); phones stack it on three.
+          className="grid min-h-15 w-full grid-cols-[minmax(0,1fr)_20px] items-center gap-x-3 gap-y-1 py-3 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset md:min-h-9 md:grid-cols-[240px_minmax(0,1fr)_auto_20px] md:py-1"
           onClick={onToggle}
           type="button"
         >
           <span className="t-meta truncate text-fg-secondary">{meta}</span>
-          <span className="truncate font-semibold max-md:col-start-1 max-md:row-start-2">
+          {/* One line: TextView's own pre-wrap would wrap past truncate. */}
+          <span className="truncate font-semibold max-md:col-start-1 max-md:row-start-2 [&_span]:whitespace-nowrap">
             {line}
           </span>
           <span className="whitespace-nowrap max-md:col-start-1 max-md:row-start-3">
@@ -1011,7 +1018,7 @@ function PartStats({
               return (
                 <div className="contents" key={item.text}>
                   <div className="border-divider border-b py-2.5 pr-2">
-                    <TextView text={item.text} />
+                    <TextView marks text={item.text} />
                   </div>
                   <div className="flex min-h-11 items-center gap-2 border-divider border-b py-2">
                     <span

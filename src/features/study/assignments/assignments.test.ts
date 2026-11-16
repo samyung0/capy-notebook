@@ -82,6 +82,16 @@ it('keeps each report link in the URL', () => {
   expect(
     parse({ assignment: 'as1', attempt: 'at1', study: 'assignments' })
   ).toMatchObject({ assignment: 'as1', attempt: 'at1' });
+  // Opened from a member's profile: the profile to go back to.
+  expect(
+    parse({
+      assignment: 'as1',
+      attempt: 'at1',
+      member: 'u1',
+      show: 'topics',
+      study: 'assignments',
+    })
+  ).toMatchObject({ member: 'u1', show: 'topics' });
   // An unknown tab clears, and a question only belongs to Approve AI marks.
   expect(parse({ assignment: 'as1', study: 'assignments', tab: 'x' }).tab).toBe(
     undefined

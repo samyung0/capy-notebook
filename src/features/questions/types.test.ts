@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 import { exampleQuestion } from './questionFixtures';
-import { withGapsText, withoutGapsBlock } from './types';
+import {
+  gapListsByBlock,
+  withGapsBlocks,
+  withGapsText,
+  withoutGapsBlock,
+} from './types';
 
 it('keeps each blank with its answers as a text gains a blank', () => {
   const question = exampleQuestion('gaps', {
@@ -44,4 +49,29 @@ it('drops a removed text block with its blanks and their answers, renumbering th
     { text: 'Freezes at (1) ______.', type: 'text' },
   ]);
   expect(next.answer).toMatchObject({ accepted: [['0']] });
+});
+
+it('moves a text block with its blanks and their answers, renumbering them', () => {
+  const question = exampleQuestion('gaps', {
+    accepted: [['100'], ['0']],
+    type: 'gaps',
+  });
+  const part = {
+    ...question.parts[0],
+    blocks: [
+      { text: 'Boils at (1) ______.', type: 'text' as const },
+      { text: 'Freezes at (2) ______.', type: 'text' as const },
+    ],
+  };
+  const [boils, freezes] = gapListsByBlock(part);
+  const next = withGapsBlocks(
+    part,
+    [part.blocks[1], part.blocks[0]],
+    [freezes, boils]
+  );
+  expect(next.blocks).toEqual([
+    { text: 'Freezes at (1) ______.', type: 'text' },
+    { text: 'Boils at (2) ______.', type: 'text' },
+  ]);
+  expect(next.answer).toMatchObject({ accepted: [['0'], ['100']] });
 });

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { QUESTION_BLOCKS_MAX } from '@/api/limits.generated';
 import {
   addSubPart,
-  appendGroup,
   canMoveItem,
   canPlaceItem,
   canRemoveGroup,
@@ -16,7 +15,9 @@ import {
   placeItem,
   questionItems,
   removeGroup,
+  removePart,
   repairGroups,
+  splitPart,
   ungroup,
 } from './groups';
 import { exampleQuestion } from './questionFixtures';
@@ -144,19 +145,24 @@ describe("the editor's actions", () => {
     expect(canPlaceItem(q, { part: 'a' }, { part: 'a' })).toBe(false);
   });
 
-  it('adds a group with its first part at the end, and a sub-part after its last', () => {
-    const added = appendGroup(question(), { blocks: [], id: 'h' }, part('new'));
-    expect(added.groups?.map((group) => group.id)).toEqual(['g', 'h']);
-    expect(added.parts.at(-1)).toMatchObject({ group: 'h', id: 'new' });
+  it("adds a sub-part after the group's last", () => {
     const sub = addSubPart(question(), 'g', part('iii'));
     expect(ids(sub)).toEqual(['a', 'i', 'ii', 'iii', 'c']);
     expect(sub.parts[3].group).toBe('g');
-    const first = appendGroup(
-      exampleQuestion('q'),
-      { blocks: [], id: 'h' },
-      part('p')
-    );
-    expect(first.groups).toEqual([{ blocks: [], id: 'h' }]);
+  });
+
+  it('splits a part into sub-parts, its text and answer kept in (i)', () => {
+    const q = question();
+    const split = splitPart(q, 'a', 'h', part('new'));
+    expect(ids(split)).toEqual(['a', 'new', 'i', 'ii', 'c']);
+    expect(split.groups?.map((group) => group.id)).toEqual(['h', 'g']);
+    expect(split.parts[0]).toEqual({ ...q.parts[0], group: 'h' });
+    expect(split.parts[1].group).toBe('h');
+  });
+
+  it('turns a group left with one sub-part back into the part it was', () => {
+    const split = splitPart(question(), 'a', 'h', part('new'));
+    expect(removePart(split, 'new')).toEqual(question());
   });
 
   it("ungroups without losing the group's text and figures", () => {

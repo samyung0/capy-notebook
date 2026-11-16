@@ -48,14 +48,20 @@ export function BackToAssignments({
   );
 }
 
+/** The member's profile an attempt was opened from, and its tab. */
+export type ProfileOrigin = { member: string; show?: 'topics' };
+
 /** One try, by its id: a running one to answer (A2), then Submitted (A4), or
  * its results (A5), a member's for the class's staff. Staff closing it while it
  * runs here goes straight to its results (Epo 2026-11-05). */
 export function AssignmentAttemptPage({
   attemptId,
+  fromProfile,
   workspaceId,
 }: {
   attemptId: string;
+  /** Opened from a member's profile: back returns there, not to Responses. */
+  fromProfile?: ProfileOrigin;
   workspaceId: string;
 }) {
   const { data, error, isError, isFetchedAfterMount, isPending, refetch } =
@@ -126,5 +132,11 @@ export function AssignmentAttemptPage({
         <SkeletonList count={8} rowHeight={36} />
       </PracticeFrame>
     );
-  return <AttemptResults assignment={assignment} attempt={data} />;
+  return (
+    <AttemptResults
+      assignment={assignment}
+      attempt={data}
+      fromProfile={fromProfile}
+    />
+  );
 }

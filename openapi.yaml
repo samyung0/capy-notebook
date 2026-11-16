@@ -923,6 +923,9 @@ components:
           type: string
         quizTitle:
           type: string
+        quizUpdatedAt:
+          format: date-time
+          type: string
         showAnswers:
           enum:
             - closed

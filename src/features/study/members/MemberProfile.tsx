@@ -137,6 +137,9 @@ export function MemberProfilePage({
         ? {
             assignment: a.id,
             attempt: a.attemptId,
+            // Its back link returns to this profile (Epo 2026-11-16).
+            member: memberId,
+            show,
             study: 'assignments' as const,
           }
         : { assignment: a.id, study: 'assignments' as const, tab: 'members' },
@@ -176,8 +179,11 @@ export function MemberProfilePage({
           <p className="text-fg-muted">{m.member_not_started_body()}</p>
         </div>
       ) : (
-        <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-12 xl:gap-16">
-          <div className="flex min-w-0 flex-col gap-8.5 lg:w-158 lg:shrink">
+        // The left side takes the room the right's 380px leaves, up to
+        // 1000px, so its names get the width (Epo 2026-11-16); the gap
+        // between them grows with the screen.
+        <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-12 xl:gap-16 2xl:gap-24">
+          <div className="flex min-w-0 flex-col gap-8.5 lg:max-w-250 lg:flex-1">
             <section>
               <h2 className="t-subtitle">{m.study_panel_assignments()}</h2>
               {data.assignments.length === 0 ? (
@@ -300,9 +306,10 @@ const Empty = ({ children }: { children: ReactNode }) => (
 
 const ROW =
   'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-divider border-b py-2 md:min-h-9 md:py-1';
-/** Board G2's columns; a topic's squares take up to ten (topicSquares). */
-const ASSIGNMENT_COLS = 'md:grid-cols-[minmax(0,1fr)_140px_120px_64px]';
-const TOPIC_COLS = 'md:grid-cols-[minmax(0,1fr)_140px_120px_110px]';
+/** Board G2's columns, one grid for both lists so they line up (Epo
+ * 2026-11-16): an assignment's title spans the first two, its status and date
+ * sit over a topic's count and squares (up to ten, topicSquares). */
+const COLS = 'md:grid-cols-[minmax(0,1fr)_140px_120px_130px]';
 
 const CHIP =
   't-meta inline-flex h-5.5 items-center whitespace-nowrap rounded-md px-1.75 font-semibold';
@@ -362,15 +369,17 @@ function AssignmentRow({
       <button
         className={cn(
           ROW,
-          ASSIGNMENT_COLS,
+          COLS,
           'w-full text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset'
         )}
         onClick={onOpen}
         type="button"
       >
-        <span className="line-clamp-2 font-semibold">{a.title}</span>
+        <span className="line-clamp-2 font-semibold md:col-span-2">
+          {a.title}
+        </span>
         <span className="justify-self-end md:justify-self-start">{status}</span>
-        <span className="t-meta col-span-2 text-fg-muted md:font-semibold md:text-sm">
+        <span className="t-meta col-span-2 text-fg-muted md:col-span-1 md:font-semibold md:text-sm">
           {meta}
         </span>
       </button>
@@ -380,7 +389,7 @@ function AssignmentRow({
 
 function TopicRow({ topic }: { topic: SummaryTopic }) {
   return (
-    <li className={cn(ROW, TOPIC_COLS)}>
+    <li className={cn(ROW, COLS)}>
       <span className="line-clamp-2 font-semibold">{topicName(topic)}</span>
       <span className="justify-self-end md:justify-self-start">
         <LabelChip label={topic.label} />

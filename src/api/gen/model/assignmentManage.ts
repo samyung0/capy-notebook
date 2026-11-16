@@ -21,6 +21,7 @@ export interface AssignmentManage {
   quizChanged?: boolean;
   quizId?: string;
   quizTitle?: string;
+  quizUpdatedAt?: string;
   showAnswers: AssignmentManageShowAnswers;
   showGrades: AssignmentManageShowGrades;
   shuffle: boolean;

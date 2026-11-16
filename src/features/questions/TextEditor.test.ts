@@ -9,6 +9,11 @@ it('retains display equations, inline equations and escaped dollars when edited'
   expect(value.some((node) => node.type === 'equation')).toBe(true);
 });
 
+it('reads display formulas on consecutive lines as no paragraph between them', () => {
+  const value = mathTextToValue('**Method**\n\n$$a=1$$\n$$b=2$$');
+  expect(value.map((node) => node.type)).toEqual(['p', 'equation', 'equation']);
+});
+
 it('reads blanks as chips in a gaps part and writes them numbered from its start', () => {
   const value = mathTextToValue(
     'Water boils at (1) ______ and freezes at (2) ______.',
@@ -111,4 +116,24 @@ it('writes an underline inside a word', () => {
       paragraph({ text: '中文' }, { text: '重點', underline: true })
     )
   ).toBe('中文__重點__');
+});
+
+it('writes nothing for an empty formula, joining the text around it', () => {
+  const value: Value = [
+    { children: [{ text: 'Before' }], type: 'p' },
+    { children: [{ text: '' }], texExpression: '', type: 'equation' },
+    {
+      children: [
+        { text: 'After ' },
+        {
+          children: [{ text: '' }],
+          texExpression: '',
+          type: 'inline_equation',
+        },
+        { text: '' },
+      ],
+      type: 'p',
+    },
+  ];
+  expect(valueToMathText(value)).toBe('Before\nAfter ');
 });

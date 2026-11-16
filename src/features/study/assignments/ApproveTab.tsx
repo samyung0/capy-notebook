@@ -888,15 +888,15 @@ function MarkForm({
                 value={text as Answer}
               />
             ) : (
-              <p className="whitespace-pre-wrap border-line-strong border-l-3 py-0.5 pl-4">
+              <div className="border-line-strong border-l-3 py-0.5 pl-4">
                 {typeof text === 'string' && text ? (
-                  text
+                  <TextView marks text={text} />
                 ) : (
                   <span className="text-fg-muted">
                     {m.assignment_not_answered()}
                   </span>
                 )}
-              </p>
+              </div>
             )}
             {part.aiComment && (
               <AiWarning

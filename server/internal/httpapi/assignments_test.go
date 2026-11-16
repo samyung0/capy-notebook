@@ -102,6 +102,11 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	if err := json.Unmarshal(quiz.Body.Bytes(), &made); err != nil {
 		t.Fatal(err)
 	}
+	// A new quiz starts hidden (Epo 2026-11-16): shown, so the viewer below
+	// meets the role refusal, not a quiz it cannot read.
+	if rec := doReq(t, h, http.MethodPut, "/api/materials/"+made.ID+"/hidden", "u_editor", map[string]any{"hidden": false}); rec.Code != http.StatusOK && rec.Code != http.StatusNoContent {
+		t.Fatalf("show quiz: status = %d body=%s", rec.Code, rec.Body.String())
+	}
 	gradedPending(t, made.ID)
 	t.Cleanup(func() {
 		doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_editor", nil)

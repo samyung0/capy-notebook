@@ -77,7 +77,7 @@ export function FileListItem({
       <div
         {...(failed && !file.indexed ? addSourceIntent : undefined)}
         className={cn(
-          'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+          'group relative flex min-h-7.5 items-center rounded-button pr-1 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
           indent ? 'pl-7' : 'pl-2',
           active && 'bg-surface-hover-bg'
         )}
@@ -107,7 +107,8 @@ export function FileListItem({
           >
             {file.name}
           </span>
-          {file.hidden && <HiddenMark />}
+          {/* In the ⋮'s 28px column, centred under it (Epo 2026-11-16). */}
+          {file.hidden && <HiddenMark className="w-7 justify-center" />}
         </Link>
         {hoverMenu && (
           <ContentActions

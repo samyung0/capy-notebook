@@ -2563,6 +2563,10 @@ func TestAssignmentSaysItsQuizChanged(t *testing.T) {
 	if !got.Manage.QuizChanged {
 		t.Fatal("a quiz saved after publishing doesn't read as changed")
 	}
+	// Its Settings' Last edited: the quiz's last save.
+	if got.Manage.QuizUpdatedAt == nil || !got.Manage.QuizUpdatedAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("quizUpdatedAt = %v, want %v", got.Manage.QuizUpdatedAt, now.Add(time.Minute))
+	}
 }
 
 // Answers shown after it closes (Epo 2026-11-08, mock C3): a member's results

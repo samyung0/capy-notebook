@@ -98,15 +98,12 @@ export function ErrorAction({
   );
 }
 
-/** A page header's action (New workspace, Add task, Upload, New assignment,
- * Add practice): md, 4px shorter than the controls (Epo 2026-11-12). */
+/** A page or file header's action (New workspace, Add task, Upload, New
+ * assignment, Add practice, a file's Preview and Practice): 36px in every
+ * style and on every screen (Epo 2026-11-16, from md 4px shorter than the
+ * controls on 2026-11-12). */
 export function PageButton({ className, ...props }: ButtonProps) {
-  return (
-    <Button
-      className={cn('h-[calc(var(--control-h)-4px)]', className)}
-      {...props}
-    />
-  );
+  return <Button className={cn('h-9', className)} {...props} />;
 }
 
 /** Icon's default 18px at every button size, the smallest icon a button carries. */

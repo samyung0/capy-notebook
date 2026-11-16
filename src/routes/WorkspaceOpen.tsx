@@ -51,7 +51,6 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/Resizable';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { followMoves } from '@/features/files/fileMoved';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import {
@@ -109,19 +108,10 @@ import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 const WorkspaceCanvas = lazy(() => import('@/routes/WorkspaceCanvas'));
-const HistoryPage = lazy(() =>
-  import('@/features/study/practice/HistoryPage').then((mod) => ({
-    default: mod.HistoryPage,
-  }))
-);
-const WorkspaceBankPage = lazy(() =>
-  import('@/features/itemBanks/WorkspaceBankPage').then((mod) => ({
-    default: mod.WorkspaceBankPage,
-  }))
-);
-const SummaryPage = lazy(() =>
-  import('@/features/study/practice/SummaryPage').then((mod) => ({
-    default: mod.SummaryPage,
+// Study's tabs load as one page (Epo 2026-11-16).
+const StudyTabsPage = lazy(() =>
+  import('@/features/study/practice/StudyTabsPage').then((mod) => ({
+    default: mod.StudyTabsPage,
   }))
 );
 const AddPracticeDialog = lazy(() =>
@@ -145,11 +135,6 @@ const MembersPage = lazy(() =>
 const AssignmentsPage = lazy(() =>
   import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
     default: mod.AssignmentsPage,
-  }))
-);
-const PracticePage = lazy(() =>
-  import('@/features/study/practice/PracticePage').then((mod) => ({
-    default: mod.PracticePage,
   }))
 );
 
@@ -897,22 +882,7 @@ function WorkspaceOpen() {
   // P2); one column keeps its header for the Files dropdown and ⋮.
   const studyContent =
     studyPage &&
-    (studyPage === 'summary' ? (
-      <Suspense fallback={null}>
-        <SummaryPage
-          search={{ member: search.member, show: search.show }}
-          workspaceId={workspaceId}
-        />
-      </Suspense>
-    ) : studyPage === 'history' ? (
-      <Suspense fallback={null}>
-        <HistoryPage workspaceId={workspaceId} />
-      </Suspense>
-    ) : studyPage === 'bank' ? (
-      <Suspense fallback={null}>
-        <WorkspaceBankPage workspaceId={workspaceId} />
-      </Suspense>
-    ) : studyPage === 'members' ? (
+    (studyPage === 'members' ? (
       <Suspense fallback={null}>
         <MembersPage workspaceId={workspaceId} />
       </Suspense>
@@ -926,6 +896,7 @@ function WorkspaceOpen() {
             member: search.member,
             own: search.own,
             question: search.question,
+            show: search.show,
             tab: search.tab,
           }}
           workspaceId={workspaceId}
@@ -933,13 +904,9 @@ function WorkspaceOpen() {
       </Suspense>
     ) : (
       <Suspense fallback={null}>
-        <PracticePage
-          search={{
-            group: search.group,
-            review: search.review,
-            reviewMode: search.reviewMode,
-            topicId: search.topicId,
-          }}
+        <StudyTabsPage
+          page={studyPage}
+          search={search}
           workspaceId={workspaceId}
         />
       </Suspense>
@@ -955,8 +922,6 @@ function WorkspaceOpen() {
     step: NonNullable<typeof search.make>
   ): ComponentProps<typeof MakeQuizDialog> => ({
     file: search.quizFile,
-    // Study's quiz is for the members; elsewhere it starts hidden.
-    hiddenAtFirst: search.makeFrom !== 'practice',
     initial: {
       answers: splitIds(search.answers),
       paper: splitIds(search.paper),
@@ -1097,16 +1062,15 @@ function WorkspaceOpen() {
             // back to the tree; its list pages leave the workspace.
             leading={
               railShown ? null : openItem ? (
-                <UnderlineLink
-                  className="text-fg"
-                  iconLeft="navigationBack"
-                  noArrow
+                // The arrow alone (Epo 2026-11-16), named for screen readers.
+                <ToolbarButton
+                  label={m.workspace_tab_files()}
                   onClick={() =>
                     void navigate({ search: { view: 'files' }, to: '.' })
                   }
                 >
-                  {m.workspace_tab_files()}
-                </UnderlineLink>
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
               ) : (
                 <ToolbarButton
                   label={m.workspace_back_to()}

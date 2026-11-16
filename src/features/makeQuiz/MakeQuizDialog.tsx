@@ -290,7 +290,6 @@ function UploadInput({
 export function MakeQuizDialog({
   file,
   graded,
-  hiddenAtFirst,
   initial,
   onClose,
   onConfirmed,
@@ -312,9 +311,6 @@ export function MakeQuizDialog({
    * the quiz switch, and the dialog stays open while its files upload and
    * read, since the graded quiz's Settings step follows the run. */
   graded?: boolean;
-  /** Hide the quiz starts on: off from Study's Add practice,
-   * whose quiz is for the members (Epo 2026-11-11). */
-  hiddenAtFirst: boolean;
   /** From the address, for a link or a reload. */
   initial: MakeQuizChoice;
   onClose: () => void;
@@ -360,7 +356,9 @@ export function MakeQuizDialog({
   const onPages = stepName === 'pages';
   // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11). A
   // reload on a later step starts from the default again.
-  const [hidden, setHidden] = useState(graded || hiddenAtFirst);
+  // Hide the quiz starts on wherever the dialog opens, Practice's Add
+  // practice too (Epo 2026-11-16, every quiz an editor makes starts hidden).
+  const [hidden, setHidden] = useState(true);
   // A link opens before the files arrive.
   const seeded = useRef(!!files);
   useEffect(() => {

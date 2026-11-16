@@ -35,7 +35,7 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { questionLine } from '../practice/practiceText';
 import { PracticeFrame } from '../practice/studyPage';
-import { BackToAssignments } from './AssignmentAttemptPage';
+import { BackToAssignments, type ProfileOrigin } from './AssignmentAttemptPage';
 import {
   dayLabel,
   markSteps,
@@ -82,13 +82,21 @@ function ItemChip({ awarded, marks }: { awarded: number; marks: number }) {
 export function AttemptResults({
   assignment,
   attempt,
+  fromProfile,
 }: {
   assignment: Assignment;
   attempt: AssignmentAttempt;
+  fromProfile?: ProfileOrigin;
 }) {
   if (attempt.gradesHidden)
     return <HiddenResults attempt={attempt} postedBy={assignment.postedBy} />;
-  return <MarkedResults assignment={assignment} attempt={attempt} />;
+  return (
+    <MarkedResults
+      assignment={assignment}
+      attempt={attempt}
+      fromProfile={fromProfile}
+    />
+  );
 }
 
 /** Results while grades wait for release (S7): the questions with whether
@@ -151,9 +159,11 @@ function HiddenResults({
 function MarkedResults({
   assignment,
   attempt,
+  fromProfile,
 }: {
   assignment: Assignment;
   attempt: AssignmentAttempt;
+  fromProfile?: ProfileOrigin;
 }) {
   const staff = !!assignment.manage;
   // A task's maker runs it and takes it: the attempt here is their own.
@@ -184,15 +194,29 @@ function MarkedResults({
     <PracticeFrame>
       <div className="flex w-full flex-col">
         <BackToAssignments
-          label={staff ? m.assignment_tab_responses() : undefined}
+          // From a member's profile, back to it by their name (Epo
+          // 2026-11-16); else staff go to the report's Responses.
+          label={
+            staff && fromProfile
+              ? attempt.userName
+              : staff
+                ? m.assignment_tab_responses()
+                : undefined
+          }
           search={
-            staff
+            staff && fromProfile
               ? {
-                  assignment: assignment.id,
-                  study: 'assignments' as const,
-                  tab: 'responses' as const,
+                  member: fromProfile.member,
+                  show: fromProfile.show,
+                  study: 'summary' as const,
                 }
-              : undefined
+              : staff
+                ? {
+                    assignment: assignment.id,
+                    study: 'assignments' as const,
+                    tab: 'responses' as const,
+                  }
+                : undefined
           }
         />
         <div className="mt-3 flex items-start justify-between gap-4">
@@ -601,8 +625,10 @@ function OpenPart({
             )}
           </div>
         ) : (
-          <div className="mt-1.5 whitespace-pre-wrap rounded-lg border border-line px-3 py-2">
-            {text || (
+          <div className="mt-1.5 rounded-lg border border-line px-3 py-2">
+            {text ? (
+              <TextView marks text={text} />
+            ) : (
               <span className="text-fg-muted">
                 {m.assignment_not_answered()}
               </span>
@@ -642,7 +668,7 @@ function OpenPart({
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,1fr)_64px_100px]"
                 key={i}
               >
-                <TextView text={item.text} />
+                <TextView marks text={item.text} />
                 <span className="max-sm:hidden">
                   {items[i] !== null && items[i] !== undefined && (
                     <ItemChip awarded={items[i]} marks={item.marks} />

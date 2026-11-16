@@ -221,6 +221,9 @@ func (a *api) createBankQuiz(ctx context.Context, in *createBankQuizInput) (*mat
 	res, err := a.s.CreateQuizFromBank(ctx, store.BankQuiz{
 		ActorID: userID(ctx), Bank: in.Bank, WorkspaceID: ws.ID, WorkspaceName: ws.Name,
 		QuestionIDs: in.Body.QuestionIDs, Title: string(in.Body.Title), GradedPending: in.Body.GradedQuiz,
+		// Hidden from members until shown (Epo 2026-11-16, every quiz an
+		// editor makes).
+		Hidden: true,
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())

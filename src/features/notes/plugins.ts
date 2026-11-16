@@ -119,6 +119,7 @@ import {
   InlineEquationPlugin,
   inlineEquationRule,
 } from './equationPlugins';
+import { FormulaCaretPlugin } from './formulaCaret';
 import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
@@ -601,6 +602,7 @@ export const MaterialKit: AnyPlugin[] = [
   ColumnItemPlugin,
   InlineEquationPlugin.configure({ inputRules: [inlineEquationRule] }),
   EquationPlugin.configure({ inputRules: [equationRule] }),
+  FormulaCaretPlugin,
   MentionPlugin.configure({
     options: { triggerPreviousCharPattern: /^$|^[\s"']$/ },
   }),

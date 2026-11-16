@@ -80,7 +80,9 @@ export type AddableBlock = Exclude<QuestionBlock['type'], 'plot'>;
 export function newQuestionBlock(type: AddableBlock): QuestionBlock {
   switch (type) {
     case 'text':
-      return { text: m.question_default_text(), type };
+      // Empty, its placeholder showing (Epo 2026-11-16): empty text is
+      // dropped before a question is checked, so it is never an issue.
+      return { text: '', type };
     case 'chart':
       return {
         kind: 'bar',

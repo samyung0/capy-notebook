@@ -200,7 +200,9 @@ unused and reused options survive generation, editing and rendering. The
 editor keeps the pool in the author's order, which readers and index text see
 too: the card's Rows and Columns lists (board Matching) reorder by whole-row
 drag with an accent drop line and no handles, as the ordering items do
-(Epo 2026-11-15, as Google Forms' grid rows and columns; `useRowDrag`), and
+(Epo 2026-11-15, as Google Forms' grid rows and columns; `useRowDrag`: since
+2026-11-16 the dragged row at half opacity and a straight 2px line over the
+landing row's edge, as a note's block drag draws them), and
 Alt+ArrowUp or Alt+ArrowDown moves the focused row with focus following it. A
 row carries its pair, its `right` with it (`moveRow`); a column move remaps
 every pair's `right` to its column's new place, so each prompt keeps its
@@ -398,21 +400,29 @@ stays where it is, as wide as the widest label with its step. A multi-part
 question's part shows its marks in words ("2 marks"), as the board does, not
 `[2]`, and once checked the header totals them ("6 / 8 marks", `QuestionReview`).
 
-In the question card (board Parts, Epo 2026-11-15) the footer's Add part is a
-dropdown of Part and Group (in the card's ⋮ on phones, and in a one-part quiz
-card's ⋮). Both add at the end, and a group starts with an empty text and its
-first part. The shared text and figures sit at the card's top, then each part
+In the question card (board Parts, Epo 2026-11-15) the footer's Add part adds a
+part at the end (in the card's ⋮ on phones, and in a one-part quiz card's ⋮).
+There is no separate Group item (Epo 2026-11-16): a top-level part's ⋮ has Add
+sub-part, which turns it into a group (`splitPart`): it stays (i) with its
+text, answer, marking points and explanation (every part needs text of its
+own), a new (ii) opens under it, and the group's shared text above starts
+empty for the teacher to fill. The shared text and figures sit at the card's top, then each part
 as one line (label, first words, answer type, marks) until clicked, with no
 dividers between them; the open part, unoutlined, keeps its label and text
-where its line had them and adds its own type menu, answer, Solution button, marks and ⋮
-(Move up, Move down, Shuffle options, Remove part). A group shows
+where its line had them and adds its own type menu, answer, Explanation button, marks and ⋮
+(Move up, Move down, Add sub-part on a top-level part, Shuffle options, Remove
+part or Remove sub-part). Sub-parts go one level deep, so a sub-part's ⋮ has no
+Add sub-part. A group shows
 its label and text with its parts under it, and its ⋮ holds Move up, Move down,
 Add sub-part, Ungroup and Remove. A group moves as a whole among the top-level
 items, past a part or another group, and a sub-part only among its group's
 parts, so nothing moves in or out of a group. Ungroup turns its
 parts into top-level parts where they are, its filled blocks joining its first
 part's top (off when they would not fit there), and Remove takes the group and
-its parts (off when they are all the question has). A group's last part cannot be
+its parts (off when they are all the question has). Removing a sub-part that
+leaves one turns the group back into a plain part, as Ungroup does
+(`removePart`), so Add sub-part then Remove sub-part on (ii) gives the part
+back as it was. A group's last part cannot be
 removed on its own; its Ungroup or Remove takes it.
 
 Group text counts where stem text does: the grading text (below), the review hash
@@ -501,7 +511,8 @@ it as Add quiz (Epo 2026-11-14): its files step is the Convert to quiz tab, firs
 open by default, beside Create quiz and Generate quiz (`tabs`, [study
 progress](study-progress.md)); a new assignment's Make a quiz from a file opens it
 alone. The files step's footer holds a switch, Hide the quiz (Epo
-2026-11-11), on by default and off from Study's Add practice (`hiddenAtFirst`): `CreateExtractionReq.hidden` goes with the run, `question_extractions.hidden`
+2026-11-11), on by default wherever the dialog opens (Epo 2026-11-16; it was off from
+Study's Add practice until then): `CreateExtractionReq.hidden` goes with the run, `question_extractions.hidden`
 (migration 0169) keeps it and the saved quiz takes it. From a graded quiz's
 dialog the run also sends `gradedQuiz` (`question_extractions.graded_quiz`), so
 its quiz is saved waiting for the graded quiz. The dialog holds the choice,
@@ -607,8 +618,12 @@ Main and Phone; rail, Epo 2026-11-15, boards ListA and ListA2): a 60px rail of
 question numbers on the left as Canvas's Build page has it (`QuestionRail`: the
 open one dark, one with an issue dotted; its ≡ opens the outline of number, type
 icon, first words, an issue's warning and marks, as Canvas's Question
-Navigator; the numbers scroll between ≡ and a + that adds a question at the
-end, faded at an edge with more and no scrollbar), and the questions as Google Forms cards on the right
+Navigator; the numbers scroll between ≡ and, at the foot, + and From the bank,
+which add after the open question, else at the end, as the floating bar does
+(Epo 2026-11-16), faded at an edge with more and no scrollbar; a number drags
+to reorder, `useRowDrag` into `moveQuestion`, and any reorder slides each
+number from its old place to its new one in 200ms, none with reduced motion,
+Epo 2026-11-16), and the questions as Google Forms cards on the right
 (`QuestionPane`), the AI-marked count and Sources under them. Answering and
 studying keep the full question list. No card opens with the page (Epo
 2026-11-15): the keys arriving after the opening paint shift nothing open,
@@ -630,8 +645,21 @@ True / False; Short answer, Long answer, Fill in the blanks; Matching,
 Ordering, Drawing), the answer, marking points and Solution, then a footer of
 Solution, Topic, Marks, Duplicate, Delete and ⋮ (Add to bank, Move up, Move
 down, Shuffle options for a choice part, Layout, Part labels). Tables, charts, graphs and
-plots show as figures with hover Move up, Move down and Remove; a click edits
-one in `BlockDialog`, staged until its Save. A table there is drawn as a
+plots show as figures with hover Insert below (+, the open text's Insert menu,
+adding under the figure; Epo 2026-11-16), Move up, Move down and Remove; a click edits
+one in `BlockDialog`, staged until its Save. The dialog's Remove block is
+pulled left by its padding to line up with the content, and on phones the
+title's zoom tools take no more height than the title so the header stays
+level (Epo 2026-11-16). An open text's formatting row ends
+in Move up and Move down for the paragraph or display formula holding the
+caret (`TextEditor`'s `moves`): it moves within the text, and at the text's
+edge it moves past the next block as a text of its own; a text of one line
+moves whole. It stays open where it went, and a gaps part's blanks keep their
+answers and renumber (`gapListsByBlock`, `withGapsBlocks`). Taking a display
+formula out from between two paragraphs (Delete or Backspace, or closing one
+left empty) joins them back as one (`formulaJoin.ts`): directly where the seam
+has a space, else with a line break; an empty formula is never written as `$$$$`.
+A table there is drawn as a
 note's table (Epo 2026-11-15, `TableBlockEditor` in `BlockEditor.tsx`, the
 pills shared through `src/features/notes/blockMenu.tsx`): a row's pill drags the
 row and opens Insert above, Insert below and Delete; a column's pill over its
@@ -639,8 +667,10 @@ first cell opens Insert left, Insert right and Delete; + bars along the right
 edge and under the last row add one at the end; Header row toggles beside the
 cell's formula tools in the dialog's heading row. The other cards are drawn in the
 open card's own layout (`QuestionCardView`, Epo 2026-11-15, as Google Forms'
-closed cards are): the number row with marks, the text at the open card's
-width, each answer type as its editor draws it with the controls' room kept
+closed cards are): the number row with marks, the first text beside the
+number where the card is 32rem wide or more (Epo 2026-11-16; opening moves it
+under the number, a shift Epo accepted; a gaps part's text stays under it),
+the rest at the open card's width, each answer type as its editor draws it with the controls' room kept
 (`PartKey`): choice rows with "Correct", ordering's numbered rows, short
 answer's Accepted answers pills and Unit, the blanks' pills, matching's Rows
 and Columns lists (their Add rows' room kept) above the Correct answers grid,
@@ -1056,7 +1086,24 @@ asked Jev, which no longer grades (Epo 2026-11-15).
 User quizzes (not the bank) are bounded so a whole quiz stays within one
 grading budget: at most 150 parts per quiz (Epo 2026-11-08, from 100), 7 per question, 5 marking items per part
 and 100 open parts per quiz, and a sample answer of at most 5,000 characters;
-learners' open answers have the same 5,000-character cap. Open parts are called
+learners' open answers have the same 5,000-character cap, counted on the
+written text with its formulas as `$…$` LaTeX. A learner writes a long answer
+in `TextEditor` with `answer` (Epo 2026-11-16, mock B at
+claude.ai/artifact/Ldhc6HwtzkHbXbTEp2zQ7Z): text on ruled lines, one
+Formula button (it opens the Σ templates: Formula, Sum, Integral, Limit, Nth
+root, Logarithm, Vector), the formula keyboard and the formula menu beside it,
+the character count at the right; an inline formula on the ruled lines is
+marked by an accent underline on its line while edited or selected, not an
+outline the line would clip (`FormulaUnderline` in `TextEditor.tsx`,
+`underline` on `MathField` and `FormulaButton`); a click beside an inline formula,
+not on it, puts the caret on the side clicked (`FormulaCaretPlugin` in `src/features/notes/formulaCaret.ts`, notes too: Chrome lands it in
+the formula's hidden spacer, where typing wrote nothing); the editor loads lazily, and a read-only or checked answer is a
+`TextView` on the same lines. Results, Approve and the report draw the answer
+with its formulas (`TextView marks`). A marking point is edited in place as
+the Solution's text is (`BlocksColumn` with `inline`: bold, italic,
+underline and inline formulas, no display formulas), and every place that
+shows points draws them with `TextView marks`. The grading model receives the
+answer and points as written, LaTeX included. Open parts are called
 "AI-marked parts" in the UI and in errors; the cap was 20 until Epo raised it
 for every quiz on 2026-11-03 (a full HKDSE Paper 1 has about 45), and the
 quiz editor shows the count under its cards ("34 of 100 AI-marked parts").
@@ -1070,7 +1117,8 @@ Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
 question dialog preview) use `QuestionRunner`. In the app a quiz has one layout in
 view, study and an assignment (`QuizSplit`, Epo 2026-11-06): the question list on
 the left, one question on the right (editing has the rail and cards instead); a phone shows the list, then the question with a way
-back. Taking an assignment on a phone has a strip of numbers instead, with answered,
+back. A row ends with its marks or state icons, each centred in its own 20px column so
+numbers and icons share one centre line. Taking an assignment on a phone has a strip of numbers instead, with answered,
 flagged and left on each, no header or chat button, a way out beside the strip, and the
 clock and Submit along the bottom. Study has Previous, Check (the review session's dark 36px Check, Epo 2026-10-25,
 which grades it and shows its key in place) and Next, the list marks what's been checked,

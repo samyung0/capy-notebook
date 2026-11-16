@@ -235,6 +235,19 @@ export function assignAsMockOwner(wsId: string, body: AssignmentFormReq) {
   return addRow(wsId, body, false).id;
 }
 
+/** A member's submitted attempt at an assignment: the Members mock's profile
+ * links its rows to the attempts seeded here. */
+export function submittedAttemptId(assignmentId: string, userId: string) {
+  seed();
+  for (const attempt of attempts.values())
+    if (
+      attempt.assignmentId === assignmentId &&
+      attempt.userId === userId &&
+      attempt.submittedAt
+    )
+      return attempt.id;
+}
+
 /** For a spec: hands the Member scenario's attempts at an assignment to one of
  * the class's members, so the owner's report shows them
  * (e2e/editor/drawing-answer.spec.ts). */
@@ -1033,6 +1046,9 @@ function seed() {
       kind: 'marked',
       postedAt: at(0, 9),
       questions: worksheet(9),
+      // Every graded quiz owns a quiz to edit (migration 0174); the seeded
+      // ones borrow the workspace's.
+      quizId: quizzes[1]?.id,
       title: 'Inheritance worksheet',
     },
     // Members hand in files with Hand in (Epo 2026-11-08, S3/T2).
@@ -1077,6 +1093,7 @@ function seed() {
       moreTopicIds: ['ch_2', 'ch_1', 'ch_3'],
       postedAt: at(-7, 9),
       questions: worksheet(10),
+      quizId: quizzes[0]?.id,
       title: 'Osmosis check',
     },
     {
@@ -1606,6 +1623,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             quizChanged: row.quizChanged,
             quizId: row.quizId,
             quizTitle: material?.title,
+            quizUpdatedAt: material?.updatedAt,
             showAnswers: row.showAnswers,
             showGrades: row.showGrades,
             shuffle: row.shuffle,

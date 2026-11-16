@@ -21,7 +21,13 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
-import { PracticeFrame, Td, Th, TopicsCell } from '../practice/studyPage';
+import {
+  ListRow,
+  PracticeFrame,
+  Td,
+  Th,
+  TopicsCell,
+} from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
@@ -57,6 +63,8 @@ export type AssignmentsSearch = {
   own?: true;
   question?: string;
   by?: 'question';
+  /** Beside `attempt` and `member`: the profile's Topics tab to return to. */
+  show?: 'topics';
   tab?: ReportTab;
 };
 
@@ -76,6 +84,11 @@ export function AssignmentsPage({
     return (
       <AssignmentAttemptPage
         attemptId={search.attempt}
+        fromProfile={
+          search.member
+            ? { member: search.member, show: search.show }
+            : undefined
+        }
         key={search.attempt}
         workspaceId={workspaceId}
       />
@@ -319,38 +332,28 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
           {/* Phones and narrow panes: one row per assignment. */}
           <ul className="@4xl:hidden">
             {rows.map((row) => (
-              <li className="border-divider border-b" key={row.id}>
-                <button
-                  className={cn(
-                    'flex min-h-14 w-full items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
-                    row.closed && 'opacity-55'
-                  )}
-                  onClick={() => void open(row.id)}
-                  type="button"
-                >
-                  <div className="min-w-0 flex-1">
-                    <StaffTitle row={row} />
-                    <div className="t-meta mt-0.5 truncate text-fg-muted">
-                      {[
-                        kindLabel(row),
-                        row.dueAt
-                          ? m.assignment_due({ date: dayLabel(row.dueAt) })
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </div>
-                    <div className="mt-1">
-                      <Progress bar row={row} />
-                    </div>
+              <ListRow
+                className={cn(row.closed && 'opacity-55')}
+                key={row.id}
+                onOpen={() => void open(row.id)}
+              >
+                <div className="min-w-0 flex-1">
+                  <StaffTitle row={row} />
+                  <div className="t-meta mt-0.5 truncate text-fg-muted">
+                    {kindLabel(row)}
                   </div>
-                  {row.manage?.average !== undefined && (
-                    <span className="font-bold">
-                      {percentText(row.manage.average)}
-                    </span>
-                  )}
-                </button>
-              </li>
+                  <div className="mt-1">
+                    <Progress bar row={row} />
+                  </div>
+                </div>
+                {/* The due date at the row's end, not the average (Epo
+                      2026-11-16); the wide table keeps both columns. */}
+                {row.dueAt && (
+                  <span className="t-meta shrink-0 text-fg-muted">
+                    {m.assignment_due({ date: dayLabel(row.dueAt) })}
+                  </span>
+                )}
+              </ListRow>
             ))}
           </ul>
           {/* Scrolling near the end reads the next page. */}
@@ -619,11 +622,8 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
           </table>
           <ul className="@2xl:hidden">
             {rows.map((row) => (
-              <li
-                className={cn(
-                  'flex min-h-14 cursor-pointer items-center gap-3 border-divider border-b py-2',
-                  row.closed && 'opacity-55'
-                )}
+              <ListRow
+                className={cn('cursor-pointer', row.closed && 'opacity-55')}
                 key={row.id}
                 onClick={() => void open(row)}
               >
@@ -641,7 +641,7 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
                   </div>
                 </div>
                 {action(row)}
-              </li>
+              </ListRow>
             ))}
           </ul>
           {/* Scrolling near the end reads the next page. */}

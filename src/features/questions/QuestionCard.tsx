@@ -42,7 +42,6 @@ import {
 } from './editorFields';
 import {
   addSubPart,
-  appendGroup,
   canMoveItem,
   canRemoveGroup,
   canRemovePart,
@@ -52,9 +51,12 @@ import {
   moveItem,
   questionItems,
   removeGroup,
+  removePart,
+  splitPart,
   ungroup,
 } from './groups';
 import { IssueSummary } from './IssueViews';
+import { mathTextToValue, valueToMathText } from './mathTextValue';
 import { type BlockSection, QuestionBlockView } from './QuestionView';
 import {
   type AddableBlock,
@@ -71,12 +73,14 @@ import { clickPoint, TextEditor } from './TextEditor';
 import { TextView } from './TextView';
 import {
   GAP_MARKER,
+  gapListsByBlock,
   gapNumbers,
   modelMarked,
   type Question,
   type QuestionBlock,
   type QuestionPart,
   questionMarks,
+  withGapsBlocks,
   withGapsText,
 } from './types';
 
@@ -159,6 +163,7 @@ function BlocksColumn({
   blocks,
   gaps,
   imageButton,
+  inline,
   lead,
   maxLength = limits.QUESTION_TEXT_MAX,
   onChange,
@@ -180,6 +185,8 @@ function BlocksColumn({
   gaps?: { onChange: (part: QuestionPart) => void; part: QuestionPart };
   /** Add image beside `aside` (a lone part's, board Main). */
   imageButton?: boolean;
+  /** Inline formulas only, no display ones (a marking point). */
+  inline?: boolean;
   /** A part's label before it: (a), (b). */
   lead?: string;
   maxLength?: number;
@@ -198,6 +205,7 @@ function BlocksColumn({
     null
   );
   const [tools, setTools] = useState<HTMLDivElement | null>(null);
+  const [moveTarget, setMoveTarget] = useState<HTMLSpanElement | null>(null);
   // An image on its way: added at the end of the open text, or replacing the
   // image at `at`.
   const [uploading, setUploading] = useState<{
@@ -209,6 +217,8 @@ function BlocksColumn({
   const file = useRef<HTMLInputElement>(null);
   // The image the file picker replaces; none adds one.
   const replaceAt = useRef<number | null>(null);
+  // Where a picked image goes when it is inserted, not replacing one.
+  const insertTo = useRef(0);
   const pickReplacement = (index: number) => {
     replaceAt.current = index;
     file.current?.click();
@@ -264,8 +274,11 @@ function BlocksColumn({
       document.removeEventListener('click', leave, true);
     };
   }, [open]);
-  const edit = (index: number, at: (() => { x: number; y: number }) | null) => {
-    const block = blocks[index];
+  const edit = (
+    index: number,
+    at: (() => { x: number; y: number }) | null,
+    block = blocks[index]
+  ) => {
     blankIds.current =
       block?.type === 'text' ? gapNumbers([block]).map((_, i) => `g${i}`) : [];
     setCaret(() => at);
@@ -274,32 +287,133 @@ function BlocksColumn({
   // Where Insert puts a block: after the open text, else at the end.
   const insertAt = editing === null ? blocks.length : editing + 1;
   const full = blocks.length >= limits.QUESTION_BLOCKS_MAX;
-  const insert = (type: AddableBlock) => {
+  const insert = (type: AddableBlock, at = insertAt) => {
     if (type === 'image') {
       replaceAt.current = null;
+      insertTo.current = at;
       file.current?.click();
       return;
     }
     const block = newQuestionBlock(type);
     if (type === 'text') {
-      grow([...blocks.slice(0, insertAt), block, ...blocks.slice(insertAt)]);
-      edit(insertAt, null);
+      grow([...blocks.slice(0, at), block, ...blocks.slice(at)]);
+      edit(at, null);
       return;
     }
     onFigure({
-      before: blocks[insertAt - 1],
+      before: blocks[at - 1],
       block,
-      index: insertAt,
+      index: at,
       isNew: true,
       section,
     });
   };
-  // Moving or removing a figure closes the open text, whose place changes.
+  // Insert's choices, the new block going in at `at`.
+  const insertMenu = (at: number) => (
+    <ToolbarPopoverContent align="start" className="w-44">
+      {(
+        [
+          'text',
+          'table',
+          'chart',
+          'graph',
+          ...(uploadAsset ? ['image' as const] : []),
+        ] as const
+      ).map((type) => (
+        <MenuItem
+          icon={<Icon name={insertIcons[type]} />}
+          key={type}
+          label={blockLabels[type]()}
+          onClick={() => insert(type, at)}
+        />
+      ))}
+    </ToolbarPopoverContent>
+  );
+  // Each block's blanks' answers in a gaps part, else none.
+  const blockLists = () =>
+    gaps ? gapListsByBlock(gaps.part) : blocks.map(() => []);
+  /** `next` in place of the blocks, `lists` their blanks' answers block by
+   * block; the open text reopens as block `open`, else closes. */
+  const rearrange = (
+    next: QuestionBlock[],
+    lists: string[][][],
+    open?: number
+  ) => {
+    if (next.length !== blocks.length) ownLength.current = next.length;
+    if (gaps) gaps.onChange(withGapsBlocks(gaps.part, next, lists));
+    else onChange(next);
+    if (open === undefined) setEditing(null);
+    else edit(open, null, next[open]);
+  };
+  // A moved text stays open at its new place; moving a figure closes the
+  // open text, whose place may change. Blanks keep their answers.
   const move = (index: number, to: number) => {
     const next = [...blocks];
+    const lists = blockLists();
     [next[index], next[to]] = [next[to], next[index]];
-    setEditing(null);
-    onChange(next);
+    [lists[index], lists[to]] = [lists[to], lists[index]];
+    rearrange(next, lists, editing === index ? to : undefined);
+  };
+  // The open text's paragraph or formula at its edge moves past the next
+  // block as a text of its own (each line moves as a block would); a text
+  // of one line moves whole.
+  const leave = (direction: -1 | 1, line: number) => {
+    const index = editing;
+    const block = index === null ? undefined : blocks[index];
+    if (index === null || block?.type !== 'text') return;
+    const nodes = mathTextToValue(block.text, { gaps: !!gaps });
+    if (nodes.length === 1) return move(index, index + direction);
+    const lines = nodes.map((node) => valueToMathText([node]));
+    const own = blockLists()[index];
+    let at = 0;
+    const lineLists = lines.map((text) => {
+      const count = gapNumbers([{ text, type: 'text' }]).length;
+      at += count;
+      return own.slice(at - count, at);
+    });
+    const moved: QuestionBlock = { text: lines[line], type: 'text' };
+    const rest: QuestionBlock = {
+      text: lines.filter((_, j) => j !== line).join('\n\n'),
+      type: 'text',
+    };
+    const restLists = lineLists.filter((_, j) => j !== line).flat();
+    const lists = blockLists();
+    if (direction < 0)
+      rearrange(
+        [
+          ...blocks.slice(0, index - 1),
+          moved,
+          blocks[index - 1],
+          rest,
+          ...blocks.slice(index + 1),
+        ],
+        [
+          ...lists.slice(0, index - 1),
+          lineLists[line],
+          lists[index - 1],
+          restLists,
+          ...lists.slice(index + 1),
+        ],
+        index - 1
+      );
+    else
+      rearrange(
+        [
+          ...blocks.slice(0, index),
+          rest,
+          blocks[index + 1],
+          moved,
+          ...blocks.slice(index + 2),
+        ],
+        [
+          ...lists.slice(0, index),
+          restLists,
+          lists[index + 1],
+          lineLists[line],
+          ...lists.slice(index + 2),
+        ],
+        index + 2
+      );
   };
   const remove = (index: number) => {
     setEditing(null);
@@ -327,8 +441,16 @@ function BlocksColumn({
           <TextEditor
             caretAt={caret}
             compact
+            display={!inline}
             gapStart={start}
             maxLength={maxLength}
+            moves={{
+              down: i < blocks.length - 1,
+              onLeave: leave,
+              split: !full,
+              target: moveTarget,
+              up: i > 0,
+            }}
             onChange={(text, ids) => {
               if (!gaps) {
                 onChange(
@@ -422,6 +544,16 @@ function BlocksColumn({
         </button>
       )}
       <div className="absolute top-1 right-0 flex rounded-button bg-overlay shadow-pop max-md:static max-md:mt-1 max-md:ml-auto max-md:w-fit md:opacity-0 md:group-hover/figure:opacity-100 md:focus-within:opacity-100">
+        {/* A block under it, as the open text's + adds one under the text
+            (Epo 2026-11-16). */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <ToolbarButton disabled={full} label={m.question_ui_insert_below()}>
+              <Icon name="plus" />
+            </ToolbarButton>
+          </PopoverTrigger>
+          {insertMenu(i + 1)}
+        </Popover>
         {block.type === 'image' && uploadAsset && (
           <ToolbarButton
             disabled={!!uploading}
@@ -473,26 +605,15 @@ function BlocksColumn({
               <Icon name="plus" />
             </ToolbarButton>
           </PopoverTrigger>
-          <ToolbarPopoverContent align="start" className="w-44">
-            {(
-              [
-                'text',
-                'table',
-                'chart',
-                'graph',
-                ...(uploadAsset ? ['image' as const] : []),
-              ] as const
-            ).map((type) => (
-              <MenuItem
-                icon={<Icon name={insertIcons[type]} />}
-                key={type}
-                label={blockLabels[type]()}
-                onClick={() => insert(type)}
-              />
-            ))}
-          </ToolbarPopoverContent>
+          {insertMenu(insertAt)}
         </Popover>
       )}
+      {/* Move up and Move down for the caret's paragraph or formula, as a
+          figure's hover tools have (`TextEditor`'s `moves`). */}
+      <span
+        className="ml-auto flex shrink-0 items-center"
+        ref={setMoveTarget}
+      />
     </div>
   );
   return (
@@ -529,17 +650,18 @@ function BlocksColumn({
               const picked = event.target.files?.[0];
               if (file.current) file.current.value = '';
               const at = replaceAt.current;
+              const to = insertTo.current;
               replaceAt.current = null;
               if (!(picked && uploadAsset)) return;
-              setUploading({ at: at ?? insertAt, replace: at !== null });
+              setUploading({ at: at ?? to, replace: at !== null });
               setError('');
               try {
                 const image = await uploadImage(picked, uploadAsset);
                 if (at === null)
                   grow([
-                    ...blocks.slice(0, insertAt),
+                    ...blocks.slice(0, to),
                     { description: '', type: 'image', ...image },
-                    ...blocks.slice(insertAt),
+                    ...blocks.slice(to),
                   ]);
                 else
                   onChange(
@@ -733,11 +855,36 @@ export function QuestionCardView({
 }) {
   const lone = isLonePart(question);
   const first = question.parts[0];
+  // Its first text sits beside the number where the card has room (Epo
+  // 2026-11-16); the open card puts it under the number, a shift Epo
+  // accepted. A gaps part's text stays put, its blanks numbered in place.
+  const own =
+    question.stem.length > 0 ? question.stem : lone ? first.blocks : [];
+  const head =
+    own[0]?.type === 'text' &&
+    own[0].text.trim() &&
+    !(own === first.blocks && first.answer.type === 'gaps')
+      ? own[0]
+      : undefined;
+  const stem =
+    head && own === question.stem ? question.stem.slice(1) : question.stem;
+  const firstBlocks =
+    head && own === first.blocks ? first.blocks.slice(1) : first.blocks;
   return (
     <div className="@container flex min-w-0 flex-col">
-      <div className="mb-1.5 flex min-h-10 items-center gap-2">
-        <span className="font-bold">{number}.</span>
-        <span className="t-meta ml-auto flex items-center gap-2 text-fg-muted">
+      <div
+        className={cn(
+          'grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2',
+          !head && 'mb-1.5'
+        )}
+      >
+        <span className="flex h-10 items-center font-bold">{number}.</span>
+        {head && (
+          <div className="@min-[32rem]:col-span-1 col-span-full @min-[32rem]:col-start-2 @min-[32rem]:row-start-1 row-start-2 border-transparent border-b py-2 leading-[1.7]">
+            <TextView marks text={head.text} />
+          </div>
+        )}
+        <span className="t-meta col-start-3 row-start-1 flex h-10 items-center gap-2 justify-self-end text-fg-muted">
           {issue}
           {lone
             ? marksLabel(questionMarks(question))
@@ -749,10 +896,11 @@ export function QuestionCardView({
       </div>
       {lone ? (
         <>
-          {question.stem.length > 0 && <BlocksView blocks={question.stem} />}
-          {(first.blocks.length > 0 || question.stem.length === 0) && (
+          {stem.length > 0 && <BlocksView blocks={stem} />}
+          {(firstBlocks.length > 0 ||
+            (question.stem.length === 0 && !head)) && (
             <BlocksView
-              blocks={first.blocks}
+              blocks={firstBlocks}
               gaps={first.answer.type === 'gaps'}
             />
           )}
@@ -760,11 +908,12 @@ export function QuestionCardView({
         </>
       ) : (
         <>
-          {question.stem.length > 0 && (
+          {stem.length > 0 && (
             <div className="pb-3.5">
-              <BlocksView blocks={question.stem} />
+              <BlocksView blocks={stem} />
             </div>
           )}
+          {head && stem.length === 0 && <div className="pb-3.5" />}
           {questionItems(question).map((item) =>
             item.kind === 'part' ? (
               <div
@@ -902,18 +1051,6 @@ export function QuestionCard({
     write({ ...question, parts: [...question.parts, part] });
     setOpenPart(part.id);
   };
-  // A group has at least one part, so it starts with its first.
-  const addGroup = () => {
-    const part = newPart();
-    write(
-      appendGroup(
-        question,
-        { blocks: [newQuestionBlock('text')], id: crypto.randomUUID() },
-        part
-      )
-    );
-    setOpenPart(part.id);
-  };
   const addSolution = (part: QuestionPart) => {
     changePart({ ...part, solution: [newQuestionBlock('text')] });
     setSolutionFor(part.id);
@@ -956,27 +1093,16 @@ export function QuestionCard({
       />
     );
   };
-  const addMenu = (
-    <ToolbarPopoverContent align="start" className="w-44">
-      <MenuItem
-        disabled={partsFull}
-        label={m.question_ui_part()}
-        onClick={addPart}
-      />
-      <MenuItem
-        disabled={partsFull}
-        label={m.question_ui_group()}
-        onClick={addGroup}
-      />
-    </ToolbarPopoverContent>
-  );
+  // Borderless (Epo 2026-11-16), the row pulled left by their padding so
+  // the first one's icon lines up with the text above.
   const footerButton = (label: string, onClick: () => void) => (
     <Button
+      className="px-2.5"
       iconLeft="plus"
       onClick={onClick}
       size="sm"
       type="button"
-      variant="outline"
+      variant="ghost-hover"
     >
       {label}
     </Button>
@@ -986,13 +1112,10 @@ export function QuestionCard({
       <span className="t-meta font-semibold text-fg-secondary">
         {m.question_ui_part_marks()}
       </span>
+      {/* A long answer's marks are its marking points' total: the number
+          alone, in the input's text (Epo 2026-11-16). */}
       {modelMarked(part.answer.type) ? (
-        <>
-          <span className="font-semibold">{part.marks}</span>
-          <span className="text-[13px] text-fg-muted">
-            {m.question_ui_from_mark_scheme()}
-          </span>
-        </>
+        <span className="text-fg">{part.marks}</span>
       ) : (
         <MarksInput
           label={m.question_ui_part_marks()}
@@ -1070,6 +1193,21 @@ export function QuestionCard({
         <AnswerEditor answer={answer} onChange={setAnswer} />
         {modelMarked(answer.type) && (
           <MarkSchemeRows
+            field={(text, onText, added) => (
+              <BlocksColumn
+                autoFocus={added}
+                blocks={[{ text, type: 'text' }]}
+                inline
+                maxLength={limits.QUESTION_MARK_ITEM_MAX}
+                onChange={([block]) =>
+                  onText(block?.type === 'text' ? block.text : '')
+                }
+                onFigure={setFigure}
+                placeholder={m.question_default_marking_point()}
+                section={{ partId: part.id }}
+                textOnly
+              />
+            )}
             items={part.markscheme ?? []}
             max={
               bank ? limits.QUESTION_MARKSCHEME_MAX : limits.QUIZ_MARKSCHEME_MAX
@@ -1086,7 +1224,7 @@ export function QuestionCard({
                 {m.question_ui_sample_answer_heading()}
               </h4>
               <ToolbarButton
-                className="ml-auto"
+                className="ml-auto -translate-y-px"
                 label={m.question_ui_remove_sample()}
                 onClick={removeSample}
                 variant="danger-light"
@@ -1102,7 +1240,7 @@ export function QuestionCard({
             <div className="mb-1 flex items-center gap-2">
               <h4 className="font-bold">{m.quiz_editor_worked_solution()}</h4>
               <ToolbarButton
-                className="ml-auto"
+                className="ml-auto -translate-y-px"
                 label={m.question_ui_remove_solution()}
                 onClick={() => changePart({ ...part, solution: [] })}
                 variant="danger-light"
@@ -1185,7 +1323,9 @@ export function QuestionCard({
         {partColumn(part, label)}
         <div className="mt-3 @min-[36rem]:pl-9">
           {answerArea(part)}
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
+          {/* Pulled left by the borderless buttons' padding, as the card's
+              footer is. */}
+          <div className="mt-3 -ml-2.5 flex flex-wrap items-center gap-2.5">
             {solutionButtons(part)}
             <span className="flex-1" />
             {marksControl(part)}
@@ -1208,18 +1348,32 @@ export function QuestionCard({
                   label={m.question_ui_move_down()}
                   onClick={() => write(moveItem(question, ref, 1))}
                 />
+                {/* Sub-parts go one level deep (Epo 2026-11-16). */}
+                {part.group === undefined && (
+                  <MenuItem
+                    disabled={partsFull}
+                    icon={<Icon name="indentIncrease" />}
+                    label={m.question_ui_add_sub_part()}
+                    onClick={() => {
+                      const next = newPart();
+                      write(
+                        splitPart(question, part.id, crypto.randomUUID(), next)
+                      );
+                      setOpenPart(next.id);
+                    }}
+                  />
+                )}
                 {shuffleItem(part)}
                 <MenuItem
                   disabled={!canRemovePart(question, part.id)}
                   icon={<Icon name="trash" />}
-                  label={m.question_ui_remove_part()}
+                  label={
+                    part.group === undefined
+                      ? m.question_ui_remove_part()
+                      : m.question_ui_remove_sub_part()
+                  }
                   onClick={() => {
-                    write({
-                      ...question,
-                      parts: question.parts.filter(
-                        (item) => item.id !== part.id
-                      ),
-                    });
+                    write(removePart(question, part.id));
                     setOpenPart(undefined);
                   }}
                 />
@@ -1237,6 +1391,11 @@ export function QuestionCard({
     parts: { label: string; part: QuestionPart }[]
   ) => {
     const ref: ItemRef = { group: group.id };
+    const addSub = () => {
+      const part = newPart();
+      write(addSubPart(question, group.id, part));
+      setOpenPart(part.id);
+    };
     return (
       <div className="pt-3.5" data-group-id={group.id} key={group.id}>
         <BlocksColumn
@@ -1261,11 +1420,7 @@ export function QuestionCard({
                 <MenuItem
                   disabled={partsFull}
                   label={m.question_ui_add_sub_part()}
-                  onClick={() => {
-                    const part = newPart();
-                    write(addSubPart(question, group.id, part));
-                    setOpenPart(part.id);
-                  }}
+                  onClick={addSub}
                 />
                 <MenuItem
                   disabled={!canUngroup(question, group.id)}
@@ -1290,6 +1445,20 @@ export function QuestionCard({
         />
         <div className="@min-[36rem]:pl-4">
           {parts.map((sub) => partBlock(sub.part, sub.label))}
+          {/* Under its sub-parts, as the card's Add part is under its parts. */}
+          <div className="-ml-2.5 flex">
+            <Button
+              className="px-2.5"
+              disabled={partsFull}
+              iconLeft="plus"
+              onClick={addSub}
+              size="sm"
+              type="button"
+              variant="ghost-hover"
+            >
+              {m.question_ui_add_sub_part()}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -1302,20 +1471,17 @@ export function QuestionCard({
     lone && first.blocks.length === 0 && question.stem.length > 0;
   const showStem = !lone || (!headInStem && question.stem.length > 0);
   const addPartButton = (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          disabled={partsFull}
-          iconLeft="plus"
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {m.question_ui_add_part()}
-        </Button>
-      </PopoverTrigger>
-      {addMenu}
-    </Popover>
+    <Button
+      className="px-2.5"
+      disabled={partsFull}
+      iconLeft="plus"
+      onClick={addPart}
+      size="sm"
+      type="button"
+      variant="ghost-hover"
+    >
+      {m.question_ui_add_part()}
+    </Button>
   );
   const close = () => setMenuOpen(false);
   return (
@@ -1330,19 +1496,18 @@ export function QuestionCard({
           column), so the text keeps the closed card's width. */}
       <div className="mb-1.5 flex min-h-10 items-center gap-2">
         {number !== undefined && <span className="font-bold">{number}.</span>}
-        {lone ? (
-          <span
-            className="ml-auto flex min-w-0 items-center gap-1"
-            ref={setHead}
-          />
-        ) : (
-          <span className="t-meta ml-auto text-fg-muted">
-            {m.question_ui_marks_in_parts({
-              count: question.parts.length,
-              marks: marksLabel(questionMarks(question)),
-            })}
-          </span>
-        )}
+        {/* Kept mounted as the question gains parts: the portal into it
+            unmounts after it. */}
+        <span className="ml-auto flex min-w-0 items-center gap-1" ref={setHead}>
+          {!lone && (
+            <span className="t-meta text-fg-muted">
+              {m.question_ui_marks_in_parts({
+                count: question.parts.length,
+                marks: marksLabel(questionMarks(question)),
+              })}
+            </span>
+          )}
+        </span>
       </div>
       {showStem && (
         <div className={cn(!lone && 'pb-3.5')}>
@@ -1384,7 +1549,12 @@ export function QuestionCard({
         )
       )}
       {phone && topic && <div className="mt-4">{topic}</div>}
-      <div className="mt-5 flex flex-wrap items-center gap-2.5">
+      <div
+        className={cn(
+          'mt-5 flex flex-wrap items-center gap-2.5',
+          !phone && '-ml-2.5'
+        )}
+      >
         {!phone && lone && solutionButtons(first)}
         {!phone && (!lone || addPartInFooter) && addPartButton}
         {phone && lone && marksControl(first)}
@@ -1424,14 +1594,6 @@ export function QuestionCard({
                   icon={<Icon name="plus" />}
                   label={m.question_ui_add_part()}
                   onClick={addPart}
-                />
-              )}
-              {phone && !lone && (
-                <MenuItem
-                  disabled={partsFull}
-                  icon={<Icon name="plus" />}
-                  label={m.question_ui_group()}
-                  onClick={addGroup}
                 />
               )}
               {lone && shuffleItem(first)}

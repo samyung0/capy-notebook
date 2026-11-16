@@ -269,6 +269,9 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		ScopeFileNames: in.Body.ScopeFileNames,
 		Privacy:        "private",
 		GradedPending:  in.Body.GradedQuiz,
+		// A quiz starts hidden from members until shown (Epo 2026-11-16,
+		// every quiz an editor makes).
+		Hidden: kind == store.MaterialQuiz,
 	})
 	if err != nil {
 		return nil, hErr(err)

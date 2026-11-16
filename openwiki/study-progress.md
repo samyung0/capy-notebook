@@ -354,8 +354,12 @@ follows the workspace's kind (board U3, the map in
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md#permission-matrix)):
 `studyView` in `src/features/study/practice/studyView.ts`. Every quiz members can
 see is practice: until hidden quizzes exist, every untrashed, top-level quiz.
-The page is `src/features/study/practice/PracticePage.tsx`, lazy-loaded into
-the centre while nothing is open and the URL has `study=practice`
+The page is `src/features/study/practice/PracticePage.tsx`, loaded into
+the centre with Study's other tabs as one lazy page (`StudyTabsPage`: Overview
+and Topics, History, Question bank and Practice load together, as the Files
+page's tabs do, so a tab switch never blanks the page; Epo 2026-11-16; editors
+stay out of it, e.g. the bank's `QuestionDialog` loads when it opens) while
+nothing is open and the URL has `study=practice`
 (`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮, which with the dropdown's foot lead to the same pages as the
@@ -402,8 +406,9 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   and Practise, which starts the suggestion's session (its mode, so due
   practised questions only). Then **Topics** (`TopicsSection.tsx`, the
   former Summary): one row per topic with its marks squares and Practise.
-  Then **All practice** with the list pages' Filter (`FilterPopover`, Epo
-  2026-11-13: the topics the rows hold, any number picked, no Other files)
+  Then **All practice** with the list pages' toolbar (`ListToolbar` with
+  `inPage`, the section's title in its `before` slot for members; Epo
+  2026-11-16, Filter since Epo 2026-11-13: the topics the rows hold, any number picked, no Other files)
   and column sorts from its header (Name, Topics, Size, Your best; a class's
   staff Tried by and Group average), reading order until one is picked, a row
   without the value last: first their own
@@ -444,7 +449,8 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   `maxItems`). **Convert to quiz** is Make a quiz from a
   file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot, so
   Continue goes on to its pages and run. The step's switch, Hide the quiz,
-  starts off here, so the quiz lists on members' Practice. **From the bank**
+  starts on here too (Epo 2026-11-16, every quiz an editor makes starts
+  hidden; it was off here, so the quiz listed on members' Practice at once). **From the bank**
   (Epo 2026-11-14, `BankPicker.tsx`) copies picked item bank questions into a
   new "{workspace} quiz {n}"; Create opens it, as Create quiz does
   (`question-bank.md`, Item banks).
@@ -497,7 +503,10 @@ under the workspace's `study` key).
   due with nothing submitted. Columns sort from their headers (Epo 2026-11-13,
   `sortMembers`, not kept in the URL): Member A to Z first, Assignments by
   overall, Practice this week, Needs practice by how many topics; a member
-  without the value sorts last. The list pages' Filter has Needs attention
+  without the value sorts last. The list pages' toolbar (`ListToolbar`
+  `inPage`, as Practice's, Epo 2026-11-16: 16px under the tabs, the Filter
+  icon on the gutter, Topics' "Labels need…" note in its `after` slot) has a
+  Filter with Needs attention
   (`needsAttention`: work missing or a topic needing practice), on Topics too,
   whose topic headers sort the members by their standing there (weakest Not
   started to Mastered, then share right). A line opens the profile; there is
@@ -530,8 +539,14 @@ under the workspace's `study` key).
   inside a scrolling page).
 - **Profile** (G2, `member=<id>`, keeping `show`): back to Members, name, "Joined
   2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
-  Done or the due date; a row opens their results, or the report's Members tab
-  (a graded quiz's Responses) before a submission) with Overall, and Topics as Summary shows them. On the
+  Done or the due date; a row opens their results, whose back link then names
+  the member and returns to the profile (`member` beside `attempt` in the URL,
+  Epo 2026-11-16), or the report's Members tab
+  (a graded quiz's Responses) before a submission) with Overall score, and Topics as Summary shows them; both
+  lists share one grid, an assignment's status and date over a topic's count
+  and squares (Epo 2026-11-16). From
+  lg that side takes what the right's 380px leaves, up to 1000px, and the gap
+  between them grows to 96px from 2xl (Epo 2026-11-16). On the
   right: the weakest topic needing practice (lowest share right) with "Missed 3
   of 4 questions" and Assign practice; Frequently wrong (Still missing until
   Epo 2026-11-11)
@@ -556,7 +571,9 @@ under the workspace's `study` key).
   "… hasn't started here yet" (Epo 2026-11-12, mock B then A). The mocks'
   Dan Kim, Farah Ali, Gus Ito and Cara Moss show these cases.
 - Phones and narrow panes (below the `@4xl` container, where the table no
-  longer fits) get a plain list instead of either view (Epo 2026-11-08): the
+  longer fits) get a plain list instead of either view (Epo 2026-11-08; its
+  rows the Study pages' shared `ListRow`, 56px at least, its score
+  `RowScore` "88% overall", Epo 2026-11-16): the
   name, "3 of 4 done · 2 missing" under it and the
   overall on the right, with Sort but no Show. Practice and topic labels are
   left to the profile.
@@ -1027,6 +1044,10 @@ without the value last; topic sorts by the first topic the row shows (its
 quiz's, else its questions' first in topic order). `useAssignments` is an infinite query; the
 page's `ListEnd`, on the page's own scroller, reads the next page as it nears
 the end. Closed rows are muted (opacity 55%), as To do's done rows are.
+Below the `@4xl` container the staff's table becomes one row per assignment:
+its title, its kind, its progress bar, and "Due Sat 14 Nov" at the row's end
+(Epo 2026-11-16, in place of the average, which the wide table's Average
+column keeps).
 
 **Words** (Epo 2026-11-14). A class's marked assignment is a *Graded quiz*: it
 owns a quiz of its own (`materials.assignment_id`, migration
@@ -1167,7 +1188,10 @@ no Edit assignment. Under it, on its own line, "Last published {date}" (never th
 quiz file's name, which members do not know), led by "Unpublished changes" in the
 warning colour while the quiz was saved after the last publish
 (`manage.quizChanged`: the quiz's `updated_at`, which only a changed projection
-moves, past `posted_at`; Epo 2026-11-14). A quiz in the trash has no Republish
+moves, past `posted_at`; Epo 2026-11-14), then "· Last edited {date}", that
+same `updated_at` read with the assignment (`manage.quizUpdatedAt`, Epo
+2026-11-16; a draft's note carries it too). The assignment's own settings keep
+no edit time, and nothing records who edited. A quiz in the trash has no Republish
 (`manage.quizTrashed`). Below sit every field of the details dialog, in Details,
 Marking and results (marked only), and Submissions, kept until Save, with Discard
 putting back what is saved; an untouched form follows saves made elsewhere. The
@@ -1432,8 +1456,9 @@ land. There is no Practise again: the owned quiz stays held (Epo 2026-11-14). Th
 shows the mark after any late penalty, with the unpenalised mark under it.
 
 **The report** (G3, G3m, A3; `GET /api/assignments/{id}/report`, owner and editor
-members only). Chips (the time limit with a clock, due, late rule, closed,
-grades; no kind, submissions or average since Epo 2026-11-13), then its tabs,
+members only). Chips (a green Open first while published and not closed (Epo
+2026-11-16), the time limit with a clock, due, late rule, closed, grades; no
+kind, submissions or average since Epo 2026-11-13), then its tabs,
 each with its link (`reportView` in `assignmentPage.ts`). A graded quiz (Epo
 2026-11-15, boards Main and Responses of todo-question-editor.md) has
 Questions (`tab` absent), Responses (`tab=responses`) and Settings; a draft
@@ -1448,10 +1473,12 @@ only on Republish (Settings). Responses opens with a row: View, a select of By
 member (default) or By question (`by=question`), "n of m handed in · average
 x / y" (the mean of the marks and totals the members' rows show), and at the
 right Approve AI grades · n (Mark answers under manual marking, its count every
-waiting answer) as a dark button opening Approve AI grades (`tab=approve`) under
+waiting answer) as a dark button opening (the select and button 36px, as
+Preview, Epo 2026-11-16) Approve AI grades (`tab=approve`) under
 a "← Responses" link. Older links still open: a graded quiz's `tab=members` is
-Responses By member and `tab=preview` its first tab. By question shows a row
-of numbers first, Submitted
+Responses By member and `tab=preview` its first tab. By question's folded rows
+are one 36px line from md, as By member's table rows (Epo 2026-11-16). By
+question shows a row of numbers first, Submitted
 "n of m", Average, Average time (the mean of members' minutes), and Attempts
 and Uploads when allowed; per question one wording, "Average 80%" (the
 average share of its marks, partial marks counted) or for an open or drawing
@@ -1484,8 +1511,12 @@ Previous and Next but no clock, Bookmark, save state or Submit; answers stay in
 the dialog and nothing is sent. A published one shows its frozen questions (the
 report's); a draft its quiz file, read as the quiz page reads it (`useQuiz` then
 `useLiveQuizQuestions`), keeping the questions with answers that Publish freezes
-(`QuizFilePreview`). A practice quiz's header has the same Preview beside Study
-(`QuizPreviewButton`, the dialog loaded as it opens), and no tabs: its Responses
+(`QuizFilePreview`). A practice quiz's header has the same Preview
+(`QuizPreviewButton`, the dialog loaded as it opens; on phones an item in the
+header's ⋮, Epo 2026-11-16), and no tabs. Its Practice ("Study" until Epo
+2026-11-16) sits at the questions' top right beside the quiz's title, as a
+set's does (`QuizPaneTitle`: the edit view's cards, the read view's open
+question, and on phones above its question list): its Responses
 waits for an endpoint listing members' practice attempts. An unmarked
 assignment's Preview tab (`tab=preview`) shows the member's page
 (`UnmarkedView`) with Mark as done, Hand in and Add files off. The links

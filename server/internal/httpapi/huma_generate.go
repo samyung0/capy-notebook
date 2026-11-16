@@ -352,7 +352,10 @@ func (a *api) generateViaPipe(
 		ScopeTopics: topicNames, ScopeFileNames: fileNames,
 	}
 	if opts.CanEdit {
+		// An editor's quiz is the workspace's, hidden from members until
+		// they show it (Epo 2026-11-16, every quiz an editor makes).
 		draft.WorkspaceID, draft.WorkspaceName, draft.GradedPending = wsID, wsName, opts.GradedQuiz
+		draft.Hidden = true
 		if len(opts.Topics) == 1 {
 			draft.TopicID = &opts.Topics[0]
 		}

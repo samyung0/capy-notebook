@@ -6,6 +6,7 @@ import type {
   MembersTopic,
   SummaryTopic,
 } from '@/api/types';
+import { submittedAttemptId } from './assignments';
 import { mockWorkspaceMembers } from './workspaceMembers';
 
 /** Study → Members in mock mode: Biology 101's viewers with the numbers the
@@ -207,7 +208,7 @@ function fullProfile(member: MemberProgress) {
     assigned: member.assigned,
     assignments: [
       {
-        attemptId: 'at_cells',
+        attemptId: submittedAttemptId('as_cells', member.userId),
         doneAt: daysAgo(11),
         id: 'as_cells',
         kind: 'marked',
@@ -228,7 +229,7 @@ function fullProfile(member: MemberProgress) {
         waitingMarks: 0,
       },
       {
-        attemptId: 'at_paper',
+        attemptId: submittedAttemptId('as_paper', member.userId),
         doneAt: daysAgo(1),
         id: 'as_paper',
         kind: 'marked',

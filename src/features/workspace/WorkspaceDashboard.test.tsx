@@ -118,7 +118,7 @@ it('marks a hidden item on its activity row', () => {
     members: 7,
     ownerName: 'Ms Wong',
   };
-  expect(render()).toContain(m.content_hidden_from_members());
+  expect(render()).toContain(m.content_hidden());
 });
 
 // Epo 2026-11-10: To do stays, and the empty state stands where Recent files would.

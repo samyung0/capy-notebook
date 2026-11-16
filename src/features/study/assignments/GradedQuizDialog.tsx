@@ -113,7 +113,6 @@ export function GradedQuizDialog({
       key={round}
       make={{
         file: make.file,
-        hiddenAtFirst: true,
         initial: make.choice,
         onClose: cancel,
         // The run goes on here, and its quiz opens the Settings step.

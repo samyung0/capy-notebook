@@ -334,7 +334,7 @@ it('opens a trashed set read-only, under a strip offering Restore', async () => 
     />
   );
   expect(set).toContain('Card front');
-  expect(set).not.toContain(m.action_study());
+  expect(set).not.toContain(m.action_practice());
   const strip = await render(
     <TrashBanner
       item={{ id: 'cards', kind: 'material' }}

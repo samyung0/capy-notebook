@@ -364,6 +364,37 @@ export function withoutGapsBlock(
   };
 }
 
+/** Each block's blanks' accepted answers, block by block. */
+export function gapListsByBlock(part: QuestionPart): string[][][] {
+  const accepted = part.answer.type === 'gaps' ? part.answer.accepted : [];
+  let at = 0;
+  return part.blocks.map((block) => {
+    const count = gapNumbers([block]).length;
+    at += count;
+    return accepted.slice(at - count, at);
+  });
+}
+
+/** A gaps part with `blocks` in place of its own and `lists` their blanks'
+ * answers block by block (`gapListsByBlock`), renumbered in reading order:
+ * blocks moved or split keep their blanks' answers. */
+export function withGapsBlocks(
+  part: QuestionPart,
+  blocks: QuestionBlock[],
+  lists: string[][][]
+): QuestionPart {
+  if (part.answer.type !== 'gaps') return { ...part, blocks };
+  const used = gapListsByBlock(part).flat().length;
+  return {
+    ...part,
+    answer: {
+      ...part.answer,
+      accepted: [...lists.flat(), ...part.answer.accepted.slice(used)],
+    },
+    blocks: renumberGaps(blocks),
+  };
+}
+
 /** Whether an mcq has several correct options, read from its key or, for a
  * learner, the `multiple` flag: one is a single choice, several are checkboxes
  * under a hint (Epo 2026-11-08). */

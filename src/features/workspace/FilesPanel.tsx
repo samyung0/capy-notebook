@@ -545,6 +545,8 @@ export function FilesPanel({
                       {!readOnly && (
                         <HoverActions
                           className="absolute top-1/2 right-1 -translate-y-1/2"
+                          // 28px as a file row's ⋮, so both centre on the count.
+                          iconContainerClassName="p-1"
                           items={[
                             {
                               icon: 'write',
@@ -661,7 +663,9 @@ function GroupToggle({
         size={16}
       />
       <span className="line-clamp-1 translate-y-px truncate">{name}</span>
-      <span className="ml-auto translate-y-px font-semibold text-fg-muted text-xs">
+      {/* In the ⋮'s 28px column, 4px from the row's end, centred as the
+          files' eyes are (Epo 2026-11-16). */}
+      <span className="-mr-0.5 ml-auto w-7 shrink-0 translate-y-px text-center font-semibold text-fg-muted text-xs">
         {count}
       </span>
     </button>

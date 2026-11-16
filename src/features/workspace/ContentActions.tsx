@@ -154,7 +154,8 @@ export function ContentActions({
   const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
-  const toggleHidden = useToggleHidden(workspaceId);
+  const { dialog: unhideDialog, toggle: toggleHidden } =
+    useToggleHidden(workspaceId);
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
@@ -384,6 +385,8 @@ export function ContentActions({
             onClose={() => setPropertiesOpen(false)}
             open={propertiesOpen}
           />
+
+          {unhideDialog}
 
           {!confirmInMenu && (
             <TrashConfirmDialog

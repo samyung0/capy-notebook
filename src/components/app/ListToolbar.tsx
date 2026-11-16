@@ -59,6 +59,10 @@ export interface SortMenuProps<V extends string> {
 }
 
 export function ListToolbar<V extends string>({
+  after,
+  before,
+  className,
+  inPage,
   sortMenu,
   filters,
   onResetFilters,
@@ -67,6 +71,14 @@ export function ListToolbar<V extends string>({
   action,
   selection,
 }: {
+  /** In the row after Filter, e.g. a note on the list. */
+  after?: ReactNode;
+  /** In the row before the controls, e.g. a section's title. */
+  before?: ReactNode;
+  /** Margins only, e.g. a section's own. */
+  className?: string;
+  /** Inside a page whose scroller has the gutter already (Study's pages). */
+  inPage?: boolean;
   /** Left out where every sort lives in the table's header. */
   sortMenu?: SortMenuProps<V>;
   filters: FilterSection[];
@@ -83,21 +95,32 @@ export function ListToolbar<V extends string>({
   // last deselect does not rebuild its menus.
   return (
     <>
-      {selection && <div className="page-px -mb-3 flex">{selection}</div>}
+      {selection && (
+        <div className={cn('-mb-3 flex', !inPage && 'page-px')}>
+          {selection}
+        </div>
+      )}
       {/* Phones: icon-only sort and filter with the action on one row, the
           view toggle on its own row at the right (or on the first, without
           an action). From sm, one labelled row. */}
       <div
         className={cn(
           '-mb-3 flex flex-wrap items-center gap-x-3',
-          'page-px',
-          selection && 'hidden'
+          !inPage && 'page-px',
+          selection && 'hidden',
+          className
         )}
       >
-        <div className="flex min-h-10 items-center sm:min-h-11.5 sm:py-2">
+        <div className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 sm:min-h-11.5 sm:py-2">
+          {before}
           {/* -ml-1 with the buttons' -mx-1 puts the first icon on the
               gutter, over the list's first column. */}
-          <div className="-ml-1 flex flex-wrap items-center gap-2">
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-2',
+              !before && '-ml-1'
+            )}
+          >
             {/* Hidden whole, so its wrapper leaves no gap before Filter. */}
             {sortMenu && (
               <div
@@ -108,6 +131,7 @@ export function ListToolbar<V extends string>({
             )}
             <FilterPopover filters={filters} onResetFilters={onResetFilters} />
           </div>
+          {after}
         </div>
         {action && (
           <div className="ml-auto flex min-h-10 items-center gap-2 sm:min-h-11.5">

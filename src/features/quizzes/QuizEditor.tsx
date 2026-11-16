@@ -85,6 +85,7 @@ type BankOpen = { after: string | null; open: boolean };
  * keys add as they come shifts nothing open. */
 function QuizEditorBody({
   content,
+  head,
   keys,
   keysPending,
   opening,
@@ -96,6 +97,7 @@ function QuizEditorBody({
   workspaceId,
 }: {
   content: Y.Doc;
+  head?: ReactNode;
   keys: Y.Doc;
   keysPending?: boolean;
   /** The paint before the rooms sync (`QuizOpeningPaint`). */
@@ -150,13 +152,23 @@ function QuizEditorBody({
       {sources}
     </>
   );
+  // The rail's + and From the bank add after the open question, else at the
+  // end, as the floating bar does (Epo 2026-11-16).
+  const openIndex = questions.findIndex(
+    (question) => question.id === current?.id
+  );
+  const after = openIndex < 0 ? questions.length - 1 : openIndex;
   return (
     // The rail, not the list, while editing (Epo 2026-11-15, Canvas's Build
     // page): the cards have the room beside the file tree.
     <div className="flex min-h-0 flex-1">
       <QuestionRail
         current={current?.id}
-        onAdd={() => addQuestion(questions.length - 1)}
+        onAdd={() => addQuestion(after)}
+        onBank={() =>
+          setBank({ after: questions[after]?.id ?? null, open: true })
+        }
+        onMove={(id, index) => moveQuestion(content, id, index)}
         onOpen={open}
         opening={opening}
         questions={questions}
@@ -166,6 +178,7 @@ function QuizEditorBody({
           <QuestionPane
             foot={foot}
             fresh={fresh}
+            head={head}
             keysPending={keysPending}
             onAdd={addQuestion}
             onBank={(index) =>
@@ -207,12 +220,30 @@ function QuizEditorBody({
   );
 }
 
+/** A quiz's title with Practice at its pane's top right, as a set's
+ * (`PaintedCards`; Epo 2026-11-16): the page's h1. */
+export function QuizPaneTitle({
+  action,
+  title,
+}: {
+  action: ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+      {action}
+    </div>
+  );
+}
+
 const NO_ANSWERS = {};
 
 /** The questions as they read, in the quiz's layout: a room that turned read-only
  * or refused, and anyone who only views the quiz. */
 export function QuizReadSplit({
   banner,
+  head,
   paneClassName,
   questions,
   showAnswerKey,
@@ -220,6 +251,8 @@ export function QuizReadSplit({
   target,
 }: {
   banner?: ReactNode;
+  /** Above the open question: the quiz's title and Practice. */
+  head?: ReactNode;
   paneClassName?: string;
   questions: (Question | LearnerQuestion)[];
   showAnswerKey?: boolean;
@@ -242,6 +275,7 @@ export function QuizReadSplit({
         onOpen={open}
         onQuestion={onQuestion}
         paneClassName={paneClassName}
+        phoneHead={head}
         questions={questions}
         rowEnd={questionMarks}
       >
@@ -251,6 +285,7 @@ export function QuizReadSplit({
             data-question-id={question.id}
             key={question.id}
           >
+            {head}
             <QuestionRunner
               answers={NO_ANSWERS}
               disabled
@@ -270,6 +305,7 @@ export function QuizReadSplit({
  * the device's copy, keys and all, else the read, showing no key it doesn't know. */
 function QuizOpeningPaint({
   contentSeed,
+  head,
   keysSeed,
   pick,
   quizId,
@@ -278,6 +314,7 @@ function QuizOpeningPaint({
   topics,
 }: {
   contentSeed: Y.Doc | null;
+  head?: ReactNode;
   keysSeed: Y.Doc | null;
   pick: ReturnType<typeof useQuizPick>;
   quizId: string;
@@ -309,6 +346,7 @@ function QuizOpeningPaint({
     <div className="flex h-full min-h-0 flex-col" data-quiz-opening="">
       <QuizEditorBody
         content={docs.content}
+        head={head}
         keys={docs.keys}
         keysPending={!keysSeed}
         opening
@@ -336,6 +374,7 @@ export function QuizEditor({
   quizId,
   title,
   action,
+  practice,
   copy,
   onPresenceChange,
   onStatusChange,
@@ -359,6 +398,9 @@ export function QuizEditor({
   title: string;
   /** Beside Undo and Redo in the header. */
   action?: ReactNode;
+  /** Practice, at the questions' top right beside the title, as a set's
+   * (Epo 2026-11-16). */
+  practice?: ReactNode;
   /** Under the question list, or at the end of the column. */
   sources?: ReactNode;
   /** The room's other editors, for the header's avatar group. */
@@ -409,29 +451,34 @@ export function QuizEditor({
 
   // Its room refused this person: the page stays as it is, read-only.
   const refused = rooms.status === 'unavailable';
+  const head = practice && <QuizPaneTitle action={practice} title={title} />;
   return (
     <>
       {/* The header names it for the eye; the page's one h1 stays its title. */}
-      <h1 className="sr-only">{title}</h1>
+      {!head && <h1 className="sr-only">{title}</h1>}
       {headerActions &&
         createPortal(
           <>
             {rooms.undo && !refused && !itemEditingStopped(rooms) && (
               <UndoButtons header manager={rooms.undo} />
             )}
-            {action && <span className="ml-2">{action}</span>}
+            {/* 4px past Redo's own 7px inset: about the 10px between the
+                header's buttons (Epo 2026-11-16). */}
+            {action && <span className="sm:ml-1">{action}</span>}
           </>,
           headerActions
         )}
       {rooms.recovery ? (
         <div className="h-full overflow-y-auto px-4 py-6 sm:px-10">
           <div className="mx-auto flex max-w-205 flex-col gap-6">
+            {head}
             <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
           </div>
         </div>
       ) : refused ? (
         <QuizReadSplit
           banner={<FileBanner message={m.editor_access_lost()} />}
+          head={head}
           questions={questions.length ? questions : stored}
           sources={sources}
           target={target}
@@ -451,6 +498,7 @@ export function QuizEditor({
               {rooms.offline && <SaveBanner state={rooms.offline} />}
             </>
           }
+          head={head}
           questions={questions}
           showAnswerKey={rooms.access === 'write'}
           sources={sources}
@@ -462,6 +510,7 @@ export function QuizEditor({
           <CollaborationHold className="flex min-h-0 flex-1 flex-col">
             <QuizEditorBody
               content={rooms.content.doc}
+              head={head}
               keys={rooms.keys.doc}
               pick={pick}
               questions={questions}
@@ -478,6 +527,7 @@ export function QuizEditor({
           {copy.seed !== undefined && rooms.keysSeed !== undefined && (
             <QuizOpeningPaint
               contentSeed={copy.seed?.doc ?? null}
+              head={head}
               keysSeed={copy.seed ? (rooms.keysSeed?.doc ?? null) : null}
               pick={pick}
               quizId={quizId}
