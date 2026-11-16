@@ -5,8 +5,8 @@ import {
   functionOf,
   type GraphRow,
   parseRow,
+  reconcileRows,
   rowsFromElements,
-  syncRows,
 } from './graphSyntax';
 import type { GraphElement } from './types';
 import { validGraphTerm } from './validation';
@@ -186,26 +186,41 @@ describe('rows and elements', () => {
   });
 });
 
-describe('syncRows', () => {
+describe('reconcileRows', () => {
   const point = (id: string, x: number): GraphElement => ({
     coords: [x, 0],
     id,
     name: id.toUpperCase(),
     type: 'point',
   });
+  const reconcile = (
+    rows: GraphRow[],
+    elements: GraphElement[],
+    typing: string[] = []
+  ) =>
+    reconcileRows(
+      rows,
+      elements,
+      new Map(buildElements(rows).elements.map((e) => [e.id, e])),
+      (key) => typing.includes(key)
+    );
 
   it('keeps the same rows when the elements are the ones they give', () => {
     const rows = rowsFromElements([point('a', 0), point('b', 1)]);
-    expect(syncRows(rows, buildElements(rows).elements)).toBe(rows);
+    expect(reconcile(rows, buildElements(rows).elements)).toBe(rows);
   });
 
-  it('takes a peer’s elements and keeps a row still being typed', () => {
+  it('takes a co-editor’s elements and keeps a row still being typed', () => {
     const rows: GraphRow[] = [
       ...rowsFromElements([point('a', 0), point('b', 1)]),
       { key: 'typing', kind: 'expression', latex: 'segment(', style: {} },
     ];
     const [a] = rows;
-    const next = syncRows(rows, [point('a', 0), point('b', 5), point('c', 2)]);
+    const next = reconcile(
+      rows,
+      [point('a', 0), point('b', 5), point('c', 2)],
+      ['typing']
+    );
     expect(next[0]).toBe(a);
     expect(next.map((row) => row.key)).toEqual(['a', 'b', 'typing', 'c']);
     expect(buildElements(next).elements).toEqual([
@@ -213,6 +228,28 @@ describe('syncRows', () => {
       point('b', 5),
       point('c', 2),
     ]);
+  });
+
+  it('keeps a row typed here over a co-editor’s change to its element', () => {
+    const rows = rowsFromElements([point('a', 0), point('b', 1)]);
+    const typed: GraphRow[] = rows.map((row) =>
+      row.key === 'b' && row.kind === 'expression'
+        ? { ...row, latex: 'B=(1,', parsed: undefined }
+        : row
+    );
+    const next = reconcile(typed, [point('a', 3), point('b', 9)], ['b']);
+    expect(next[1]).toBe(typed[1]);
+    expect(buildElements(next).elements).toEqual([point('a', 3)]);
+  });
+
+  it('drops a row a co-editor removed unless it is being typed', () => {
+    const rows = rowsFromElements([point('a', 0), point('b', 1)]);
+    expect(reconcile(rows, [point('b', 1)]).map((row) => row.key)).toEqual([
+      'b',
+    ]);
+    expect(
+      reconcile(rows, [point('b', 1)], ['a']).map((row) => row.key)
+    ).toEqual(['a', 'b']);
   });
 });
 

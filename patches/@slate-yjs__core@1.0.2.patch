@@ -1,24 +1,48 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b94899725096b3b 100644
+index 58cc95c5d4bce70787d260033194e60cdadf9009..a0e81a0832008cccefb8e73d7b12f2e1598b1d7d 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -210,10 +210,143 @@ function getProperties(node) {
+@@ -56,6 +56,7 @@ __export(src_exports, {
+   YjsEditor: () => YjsEditor,
+   relativePositionToSlatePoint: () => relativePositionToSlatePoint,
+   relativeRangeToSlateRange: () => relativeRangeToSlateRange,
++  setFigureCodec: () => setFigureCodec,
+   slateNodesToInsertDelta: () => slateNodesToInsertDelta,
+   slatePointToRelativePosition: () => slatePointToRelativePosition,
+   slateRangeToRelativeRange: () => slateRangeToRelativeRange,
+@@ -210,10 +211,165 @@ function getProperties(node) {
  }
  
  // src/utils/convert.ts
-+// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17): an
-+// element key the embed catalog shares is a nested Yjs type that Slate holds
-+// as its plain value: a `mermaid` element's `source` is a Y.Text (typing
-+// merges per character); a chart's, plot's, graph's or table view's `block`
-+// is a Y.Map whose list keys (series, graph elements, a table view's columns,
-+// rows and views) are Y.Arrays of Y.Maps, each entry replaced whole on its
-+// own, so edits to different fields or entries merge. Remote edits inside one
-+// become one `set_node` of the key's whole value, a local `set_node` edits it
-+// minimally, and inserts and clones create one. The tables are held to the
-+// embed catalog by src/features/collaboration/liveCatalog.test.ts.
++// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17;
++// figure maps, Epo 2026-11-16): an element key the embed catalog shares is a
++// nested Yjs type that Slate holds as its plain value: a `mermaid` element's
++// `source` is a Y.Text (typing merges per character); a table view's `block`
++// is a Y.Map whose list keys (columns, rows, views) are Y.Arrays of Y.Maps,
++// each entry replaced whole on its own; a chart's, plot's or graph's `block`
++// is the figure map a quiz room holds too, converted by the app's figure
++// codec (src/features/figures/figureMap.ts, registered by
++// src/features/notes/figureBinding.ts), so one reader and one diffing writer
++// serve both. Edits to different fields or entries merge. Remote edits
++// inside one become one `set_node` of the key's whole value, a local
++// `set_node` edits it minimally, and inserts and clones create one. The
++// tables are held to the embed catalog by
++// src/features/collaboration/liveCatalog.test.ts.
 +var SHARED_TEXT = /* @__PURE__ */ new Map([["mermaid", ["source"]]]);
 +var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]], ["table_view", ["block"]]]);
-+var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]], ["table_view", ["columns", "rows", "views"]]]);
++var SHARED_LISTS = /* @__PURE__ */ new Map([["table_view", ["columns", "rows", "views"]]]);
++var FIGURE_TYPES = /* @__PURE__ */ new Set(["chart", "plot", "graph"]);
++var figureCodec = null;
++// codec: { read(type, map), create(type, block), edit(type, map, block) }.
++function setFigureCodec(codec) {
++  figureCodec = codec;
++}
++// Without the codec a figure fails loudly rather than taking another layout.
++function figureCodecOf(type, key) {
++  if (!FIGURE_TYPES.has(type) || !isSharedMapKey(type, key)) return null;
++  if (!figureCodec) throw new Error(`@slate-yjs/core (Capy patch): a ${type}'s ${key} needs the figure codec (setFigureCodec)`);
++  return figureCodec;
++}
 +function isSharedTextKey(type, key) {
 +  return (SHARED_TEXT.get(type) || []).includes(key);
 +}
@@ -32,13 +56,18 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
 +function isMapList(value) {
 +  return Array.isArray(value) && value.every(isPlainObject);
 +}
-+function toSlateValue(value) {
++function toSlateValue(type, key, value) {
++  const codec = value instanceof Y.Map ? figureCodecOf(type, key) : null;
++  if (codec) return codec.read(type, value);
 +  if (value instanceof Y.Map || value instanceof Y.Array) return value.toJSON();
 +  return value instanceof Y.AbstractType ? value.toString() : value;
 +}
 +function toSharedValue(type, key, value) {
 +  if (isSharedTextKey(type, key) && typeof value === "string") return newSharedText(value);
-+  if (isSharedMapKey(type, key) && isPlainObject(value)) return newSharedMap(value, sharedLists(type));
++  if (isSharedMapKey(type, key) && isPlainObject(value)) {
++    const codec = figureCodecOf(type, key);
++    return codec ? codec.create(type, value) : newSharedMap(value, sharedLists(type));
++  }
 +  return value;
 +}
 +function newSharedMap(value, lists) {
@@ -118,7 +147,8 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
 +}
 +function slateAttributes(yText) {
 +  const out = {};
-+  for (const [key, value] of Object.entries(yText.getAttributes())) out[key] = toSlateValue(value);
++  const attributes = yText.getAttributes();
++  for (const [key, value] of Object.entries(attributes)) out[key] = toSlateValue(attributes.type, key, value);
 +  return out;
 +}
 +function newSharedText(text) {
@@ -147,7 +177,7 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
  }
  function deltaInsertToSlateNode(insert) {
    if (typeof insert.insert === "string") {
-@@ -237,7 +370,7 @@ function slateElementToYText(_a) {
+@@ -237,7 +393,7 @@ function slateElementToYText(_a) {
    ]);
    const yElement = new Y.XmlText();
    Object.entries(attributes).forEach(([key, value]) => {
@@ -156,16 +186,16 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
    });
    yElement.applyDelta(slateNodesToInsertDelta(children), { sanitize: false });
    return yElement;
-@@ -504,7 +637,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
+@@ -504,7 +660,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
    if (slatePath.length > 0 && keyChanges.length > 0) {
      const newProperties = Object.fromEntries(keyChanges.map(([key, info]) => [
        key,
 -      info.action === "delete" ? null : target.getAttribute(key)
-+      info.action === "delete" ? null : toSlateValue(target.getAttribute(key))
++      info.action === "delete" ? null : toSlateValue(target.getAttribute("type"), key, target.getAttribute(key))
      ]));
      const properties = Object.fromEntries(keyChanges.map(([key]) => [key, targetElement[key]]));
      ops.push({ type: "set_node", newProperties, properties, path: slatePath });
-@@ -516,7 +649,32 @@ function translateYTextEvent(sharedRoot, editor, event) {
+@@ -516,7 +672,32 @@ function translateYTextEvent(sharedRoot, editor, event) {
  }
  
  // src/applyToSlate/index.ts
@@ -189,7 +219,7 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
 +  seen.add(owner);
 +  const path = getSlatePath(sharedRoot, editor, owner);
 +  const element = import_slate5.Node.get(editor, path);
-+  return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: toSlateValue(owner.getAttribute(key)) } }];
++  return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: toSlateValue(owner.getAttribute("type"), key, owner.getAttribute(key)) } }];
 +}
  function translateYjsEvent(sharedRoot, editor, event) {
 +  if (!(event.target instanceof Y.XmlText)) {
@@ -198,16 +228,16 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
    if (event instanceof Y4.YTextEvent) {
      return translateYTextEvent(sharedRoot, editor, event);
    }
-@@ -559,7 +717,7 @@ function cloneDeep(yText) {
+@@ -559,7 +740,7 @@ function cloneDeep(yText) {
    const clone = new Y5.XmlText();
    const attributes = yText.getAttributes();
    Object.entries(attributes).forEach(([key, value]) => {
 -    clone.setAttribute(key, value);
-+    clone.setAttribute(key, value instanceof Y5.AbstractType ? toSharedValue(attributes.type, key, toSlateValue(value)) : value);
++    clone.setAttribute(key, value instanceof Y5.AbstractType ? toSharedValue(attributes.type, key, toSlateValue(attributes.type, key, value)) : value);
    });
    clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
      sanitize: false
-@@ -602,7 +760,16 @@ function absolutePositionToSlatePoint(sharedRoot, slateRoot, { type, index, asso
+@@ -602,7 +783,16 @@ function absolutePositionToSlatePoint(sharedRoot, slateRoot, { type, index, asso
    });
    const target = parent.children[pathOffset];
    if (!import_slate10.Text.isText(target)) {
@@ -225,7 +255,7 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
    }
    return { path: [...parentPath, pathOffset], offset: textOffset };
  }
-@@ -783,7 +950,15 @@ function setNode(sharedRoot, slateRoot, op) {
+@@ -783,7 +973,16 @@ function setNode(sharedRoot, slateRoot, op) {
        if (value === null) {
          return yTarget.removeAttribute(key);
        }
@@ -236,13 +266,14 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
 +      }
 +      const type = op.newProperties.type != null ? op.newProperties.type : yTarget.getAttribute("type");
 +      if (held instanceof Y.Map && isPlainObject(value)) {
-+        return editSharedMap(held, value, sharedLists(type));
++        const codec = figureCodecOf(type, key);
++        return codec ? codec.edit(type, held, value) : editSharedMap(held, value, sharedLists(type));
 +      }
-+      yTarget.setAttribute(key, isSharedMapKey(type, key) && isPlainObject(value) ? newSharedMap(value, sharedLists(type)) : value);
++      yTarget.setAttribute(key, isSharedMapKey(type, key) && isPlainObject(value) ? toSharedValue(type, key, value) : value);
      });
      return Object.entries(op.properties).forEach(([key]) => {
        if (!op.newProperties.hasOwnProperty(key)) {
-@@ -1094,7 +1269,12 @@ function withYHistory(editor, _a = {}) {
+@@ -1094,7 +1293,12 @@ function withYHistory(editor, _a = {}) {
    const { onChange, isLocalOrigin } = e;
    e.onChange = () => {
      onChange();
@@ -256,27 +287,62 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..c35541b3900e624133f2a9477b948997
    };
    e.isLocalOrigin = (origin) => origin === e.withoutSavingOrigin || isLocalOrigin(origin);
    const handleStackItemAdded = ({
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 77a5fc4991662ab6b799ad81d42e0af15bae68d5..3417cbf42fd4b39a8649b780000966d79c3b09a3 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -2,5 +2,13 @@ import { RelativeRange } from './model/types';
+ import { CursorEditor, CursorState, CursorStateChangeEvent, RemoteCursorChangeEventListener, withCursors, WithCursorsOptions, withYHistory, WithYHistoryOptions, withYjs, WithYjsOptions, YHistoryEditor, YjsEditor } from './plugins';
+ import { slateNodesToInsertDelta, yTextToSlateElement } from './utils/convert';
+ import { relativePositionToSlatePoint, relativeRangeToSlateRange, slatePointToRelativePosition, slateRangeToRelativeRange } from './utils/position';
++/** Capy patch: the codec a chart's, plot's or graph's `block` map is read,
++ * created and edited with (src/features/notes/figureBinding.ts). */
++export type FigureCodec = {
++    read(type: string, map: import('yjs').Map<unknown>): unknown;
++    create(type: string, block: Record<string, unknown>): import('yjs').Map<unknown>;
++    edit(type: string, map: import('yjs').Map<unknown>, block: Record<string, unknown>): void;
++};
++export declare function setFigureCodec(codec: FigureCodec): void;
+ export { withYjs, WithYjsOptions, YjsEditor, withYHistory, WithYHistoryOptions, YHistoryEditor, CursorEditor, WithCursorsOptions, withCursors, CursorState, RemoteCursorChangeEventListener, CursorStateChangeEvent, RelativeRange, yTextToSlateElement, slateNodesToInsertDelta, slateRangeToRelativeRange, relativeRangeToSlateRange, slatePointToRelativePosition, relativePositionToSlatePoint, };
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
 diff --git a/dist/index.js b/dist/index.js
-index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38baf00997 100644
+index c1ab93571a0668b519b00e27dfd35a39e0cabd25..b48becf831e42d879b6bc827e4d81ca6bfa7a899 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -174,10 +174,143 @@ function getProperties(node) {
+@@ -174,10 +174,165 @@ function getProperties(node) {
  }
  
  // src/utils/convert.ts
-+// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17): an
-+// element key the embed catalog shares is a nested Yjs type that Slate holds
-+// as its plain value: a `mermaid` element's `source` is a Y.Text (typing
-+// merges per character); a chart's, plot's, graph's or table view's `block`
-+// is a Y.Map whose list keys (series, graph elements, a table view's columns,
-+// rows and views) are Y.Arrays of Y.Maps, each entry replaced whole on its
-+// own, so edits to different fields or entries merge. Remote edits inside one
-+// become one `set_node` of the key's whole value, a local `set_node` edits it
-+// minimally, and inserts and clones create one. The tables are held to the
-+// embed catalog by src/features/collaboration/liveCatalog.test.ts.
++// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17;
++// figure maps, Epo 2026-11-16): an element key the embed catalog shares is a
++// nested Yjs type that Slate holds as its plain value: a `mermaid` element's
++// `source` is a Y.Text (typing merges per character); a table view's `block`
++// is a Y.Map whose list keys (columns, rows, views) are Y.Arrays of Y.Maps,
++// each entry replaced whole on its own; a chart's, plot's or graph's `block`
++// is the figure map a quiz room holds too, converted by the app's figure
++// codec (src/features/figures/figureMap.ts, registered by
++// src/features/notes/figureBinding.ts), so one reader and one diffing writer
++// serve both. Edits to different fields or entries merge. Remote edits
++// inside one become one `set_node` of the key's whole value, a local
++// `set_node` edits it minimally, and inserts and clones create one. The
++// tables are held to the embed catalog by
++// src/features/collaboration/liveCatalog.test.ts.
 +var SHARED_TEXT = /* @__PURE__ */ new Map([["mermaid", ["source"]]]);
 +var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]], ["table_view", ["block"]]]);
-+var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]], ["table_view", ["columns", "rows", "views"]]]);
++var SHARED_LISTS = /* @__PURE__ */ new Map([["table_view", ["columns", "rows", "views"]]]);
++var FIGURE_TYPES = /* @__PURE__ */ new Set(["chart", "plot", "graph"]);
++var figureCodec = null;
++// codec: { read(type, map), create(type, block), edit(type, map, block) }.
++function setFigureCodec(codec) {
++  figureCodec = codec;
++}
++// Without the codec a figure fails loudly rather than taking another layout.
++function figureCodecOf(type, key) {
++  if (!FIGURE_TYPES.has(type) || !isSharedMapKey(type, key)) return null;
++  if (!figureCodec) throw new Error(`@slate-yjs/core (Capy patch): a ${type}'s ${key} needs the figure codec (setFigureCodec)`);
++  return figureCodec;
++}
 +function isSharedTextKey(type, key) {
 +  return (SHARED_TEXT.get(type) || []).includes(key);
 +}
@@ -290,13 +356,18 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
 +function isMapList(value) {
 +  return Array.isArray(value) && value.every(isPlainObject);
 +}
-+function toSlateValue(value) {
++function toSlateValue(type, key, value) {
++  const codec = value instanceof Y.Map ? figureCodecOf(type, key) : null;
++  if (codec) return codec.read(type, value);
 +  if (value instanceof Y.Map || value instanceof Y.Array) return value.toJSON();
 +  return value instanceof Y.AbstractType ? value.toString() : value;
 +}
 +function toSharedValue(type, key, value) {
 +  if (isSharedTextKey(type, key) && typeof value === "string") return newSharedText(value);
-+  if (isSharedMapKey(type, key) && isPlainObject(value)) return newSharedMap(value, sharedLists(type));
++  if (isSharedMapKey(type, key) && isPlainObject(value)) {
++    const codec = figureCodecOf(type, key);
++    return codec ? codec.create(type, value) : newSharedMap(value, sharedLists(type));
++  }
 +  return value;
 +}
 +function newSharedMap(value, lists) {
@@ -376,7 +447,8 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
 +}
 +function slateAttributes(yText) {
 +  const out = {};
-+  for (const [key, value] of Object.entries(yText.getAttributes())) out[key] = toSlateValue(value);
++  const attributes = yText.getAttributes();
++  for (const [key, value] of Object.entries(attributes)) out[key] = toSlateValue(attributes.type, key, value);
 +  return out;
 +}
 +function newSharedText(text) {
@@ -405,7 +477,7 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
  }
  function deltaInsertToSlateNode(insert) {
    if (typeof insert.insert === "string") {
-@@ -201,7 +334,7 @@ function slateElementToYText(_a) {
+@@ -201,7 +356,7 @@ function slateElementToYText(_a) {
    ]);
    const yElement = new Y.XmlText();
    Object.entries(attributes).forEach(([key, value]) => {
@@ -414,16 +486,16 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
    });
    yElement.applyDelta(slateNodesToInsertDelta(children), { sanitize: false });
    return yElement;
-@@ -468,7 +601,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
+@@ -468,7 +623,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
    if (slatePath.length > 0 && keyChanges.length > 0) {
      const newProperties = Object.fromEntries(keyChanges.map(([key, info]) => [
        key,
 -      info.action === "delete" ? null : target.getAttribute(key)
-+      info.action === "delete" ? null : toSlateValue(target.getAttribute(key))
++      info.action === "delete" ? null : toSlateValue(target.getAttribute("type"), key, target.getAttribute(key))
      ]));
      const properties = Object.fromEntries(keyChanges.map(([key]) => [key, targetElement[key]]));
      ops.push({ type: "set_node", newProperties, properties, path: slatePath });
-@@ -480,7 +613,32 @@ function translateYTextEvent(sharedRoot, editor, event) {
+@@ -480,7 +635,32 @@ function translateYTextEvent(sharedRoot, editor, event) {
  }
  
  // src/applyToSlate/index.ts
@@ -447,7 +519,7 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
 +  seen.add(owner);
 +  const path = getSlatePath(sharedRoot, editor, owner);
 +  const element = Node3.get(editor, path);
-+  return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: toSlateValue(owner.getAttribute(key)) } }];
++  return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: toSlateValue(owner.getAttribute("type"), key, owner.getAttribute(key)) } }];
 +}
  function translateYjsEvent(sharedRoot, editor, event) {
 +  if (!(event.target instanceof Y.XmlText)) {
@@ -456,16 +528,16 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
    if (event instanceof Y4.YTextEvent) {
      return translateYTextEvent(sharedRoot, editor, event);
    }
-@@ -523,7 +681,7 @@ function cloneDeep(yText) {
+@@ -523,7 +703,7 @@ function cloneDeep(yText) {
    const clone = new Y5.XmlText();
    const attributes = yText.getAttributes();
    Object.entries(attributes).forEach(([key, value]) => {
 -    clone.setAttribute(key, value);
-+    clone.setAttribute(key, value instanceof Y5.AbstractType ? toSharedValue(attributes.type, key, toSlateValue(value)) : value);
++    clone.setAttribute(key, value instanceof Y5.AbstractType ? toSharedValue(attributes.type, key, toSlateValue(attributes.type, key, value)) : value);
    });
    clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
      sanitize: false
-@@ -566,7 +724,16 @@ function absolutePositionToSlatePoint(sharedRoot, slateRoot, { type, index, asso
+@@ -566,7 +746,16 @@ function absolutePositionToSlatePoint(sharedRoot, slateRoot, { type, index, asso
    });
    const target = parent.children[pathOffset];
    if (!Text6.isText(target)) {
@@ -483,7 +555,7 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
    }
    return { path: [...parentPath, pathOffset], offset: textOffset };
  }
-@@ -747,7 +914,15 @@ function setNode(sharedRoot, slateRoot, op) {
+@@ -747,7 +936,16 @@ function setNode(sharedRoot, slateRoot, op) {
        if (value === null) {
          return yTarget.removeAttribute(key);
        }
@@ -494,13 +566,14 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
 +      }
 +      const type = op.newProperties.type != null ? op.newProperties.type : yTarget.getAttribute("type");
 +      if (held instanceof Y.Map && isPlainObject(value)) {
-+        return editSharedMap(held, value, sharedLists(type));
++        const codec = figureCodecOf(type, key);
++        return codec ? codec.edit(type, held, value) : editSharedMap(held, value, sharedLists(type));
 +      }
-+      yTarget.setAttribute(key, isSharedMapKey(type, key) && isPlainObject(value) ? newSharedMap(value, sharedLists(type)) : value);
++      yTarget.setAttribute(key, isSharedMapKey(type, key) && isPlainObject(value) ? toSharedValue(type, key, value) : value);
      });
      return Object.entries(op.properties).forEach(([key]) => {
        if (!op.newProperties.hasOwnProperty(key)) {
-@@ -1058,7 +1233,12 @@ function withYHistory(editor, _a = {}) {
+@@ -1058,7 +1256,12 @@ function withYHistory(editor, _a = {}) {
    const { onChange, isLocalOrigin } = e;
    e.onChange = () => {
      onChange();
@@ -514,3 +587,11 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..d71141aa1a015eaf4f3963b624931b38
    };
    e.isLocalOrigin = (origin) => origin === e.withoutSavingOrigin || isLocalOrigin(origin);
    const handleStackItemAdded = ({
+@@ -1265,6 +1468,7 @@ export {
+   YjsEditor,
+   relativePositionToSlatePoint,
+   relativeRangeToSlateRange,
++  setFigureCodec,
+   slateNodesToInsertDelta,
+   slatePointToRelativePosition,
+   slateRangeToRelativeRange,

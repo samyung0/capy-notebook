@@ -82,8 +82,9 @@ const (
 	// ClassLiveSource keeps its source in a shared text, so typing merges.
 	ClassLiveSource Class = "live_source"
 	// ClassLiveMap keeps its value in a shared map (Element.SharedMap): each
-	// field, list entry and entry field is replaced whole on its own, so edits
-	// to different ones merge and the same one takes the last writer.
+	// field and each entry of its inner maps (a chart's cells, a graph's
+	// elements) is replaced whole on its own, so edits to different ones merge
+	// and the same one takes the last writer.
 	ClassLiveMap Class = "live_map"
 	// ClassItem is a child material row with its own rooms, referenced from a
 	// note by a material_ref node.
@@ -146,11 +147,14 @@ type Element struct {
 	// SharedText keys are held as shared text in a room, so typing merges.
 	SharedText []string `json:"sharedText,omitempty"`
 	// SharedMap keys are held as a shared map in a room (a Y.Map), each entry
-	// replaced whole on its own, so edits to different fields merge.
+	// replaced whole on its own, so edits to different fields merge. A chart's,
+	// plot's or graph's is the figure map a quiz room holds too (Epo
+	// 2026-11-16; openwiki/embeds.md, Live figures).
 	SharedMap []string `json:"sharedMap,omitempty"`
 	// SharedLists are the keys of a SharedMap value held as a list of maps
 	// (a Y.Array of Y.Map), each entry's fields replaced whole on their own;
-	// entries carrying an `id` are matched by it, others by index.
+	// entries carrying an `id` are matched by it, others by index (a table
+	// view's columns, rows and views).
 	SharedLists []string `json:"sharedLists,omitempty"`
 	// Assets are the paths naming editor assets ([] walks a list); the
 	// children pass, asset pruning and clone rewrites follow them.
@@ -261,15 +265,15 @@ func media(typ string, resizable bool) Element {
 }
 
 // figure is a chart, plot or graph: one question block under `block`, held
-// live in rooms with its `list` (series, graph elements) entry by entry
-// (Epo 2026-10-17).
-func figure(typ, list string) Element {
+// live in rooms as the figure map a quiz room's block entry is (Epo
+// 2026-10-17, 2026-11-16): its fields, a graph's board and elements by id, a
+// chart's series, labels, names and values entry by entry.
+func figure(typ string) Element {
 	e := void(typ, IndexFigure)
 	e.TopLevel = true
 	e.Required = []string{"id", "block"}
 	e.Fields = []string{"type", "id", "block", "children", "width"}
 	e.SharedMap = []string{"block"}
-	e.SharedLists = []string{list}
 	e.Resizable = true
 	return e
 }
@@ -396,7 +400,7 @@ func elementTypes() []Element {
 		canvas,
 		// An upload in progress holds nothing yet.
 		void("placeholder", IndexNone),
-		figure("chart", "series"), figure("plot", "series"), figure("graph", "elements"),
+		figure("chart"), figure("plot"), figure("graph"),
 		tableView,
 		html,
 		mermaid, plain("mermaid_caption", IndexText),

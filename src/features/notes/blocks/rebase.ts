@@ -1,4 +1,3 @@
-import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { sameJson } from '@/lib/sameJson';
 
 type Fields = Record<string, unknown>;
@@ -37,12 +36,12 @@ function fields(
   return out;
 }
 
-/** An entry present in all three merges field by field; one the user added,
- * changed or deleted keeps the user's say, one only the peer touched follows
- * the peer. */
+/** An entry present in all three merges field by field (a chart series'
+ * values cell by cell); one the user added, changed or deleted keeps the
+ * user's say, one only the peer touched follows the peer. */
 function entry(base: unknown, draft: unknown, peer: unknown): unknown {
   if (isRecord(base) && isRecord(draft) && isRecord(peer))
-    return fields(base, draft, peer, []);
+    return fields(base, draft, peer, ['values']);
   return pick(base, draft, peer);
 }
 
@@ -51,7 +50,7 @@ function list(base: unknown[], draft: unknown[], peer: unknown[]): unknown[] {
     isRecord(item) && typeof item.id === 'string' ? item.id : undefined;
   const all = [...base, ...draft, ...peer];
   if (!all.every((item) => idOf(item) !== undefined)) {
-    // By index: series.
+    // By index: series, labels, a series' values.
     const out: unknown[] = [];
     for (let i = 0; i < Math.max(draft.length, peer.length); i++) {
       const value = entry(base[i], draft[i], peer[i]);
@@ -87,29 +86,38 @@ function list(base: unknown[], draft: unknown[], peer: unknown[]): unknown[] {
   return out;
 }
 
+/** The lists a figure's draft follows entry by entry, as its room merges
+ * them (figures/figureMap.ts): a graph's elements by id, a chart's series and
+ * labels by index; a plot's series by index too, finer than its room, which
+ * holds them as one value. */
+const LISTS: Record<string, readonly string[]> = {
+  chart: ['series', 'labels'],
+  graph: ['elements'],
+  plot: ['series'],
+};
+
 /**
  * A figure dialog's draft on a peer's newer block (Epo 2026-10-17): what the
  * user changed since `base` keeps the user's value, the rest follows `peer`.
- * Fields are the block's keys; its lists (the catalog's `sharedLists`: a
- * chart's or plot's series by index, a graph's elements by their id) go entry
- * by entry, each entry's fields on their own, as the room merges them.
+ * Fields are the block's keys, a graph's board field by field; its lists go
+ * entry by entry, each entry's fields on their own, so Save writes the
+ * figure's map only where the user changed it.
  */
 export function rebaseBlock<T extends { type: string }>(
   base: T,
   draft: T,
   peer: T
 ): T {
-  const element = EMBED_CATALOG.elements.find(
-    (item) => item.type === peer.type
-  );
-  const lists =
-    element && 'sharedLists' in element
-      ? (element.sharedLists as readonly string[])
-      : [];
-  return fields(
+  const merged = fields(
     base as unknown as Fields,
     draft as unknown as Fields,
     peer as unknown as Fields,
-    lists
-  ) as unknown as T;
+    LISTS[peer.type] ?? []
+  );
+  const [b, d, p] = [base, draft, peer].map(
+    (block) => (block as unknown as Fields).board
+  );
+  if (isRecord(b) && isRecord(d) && isRecord(p))
+    merged.board = fields(b, d, p, []);
+  return merged as unknown as T;
 }

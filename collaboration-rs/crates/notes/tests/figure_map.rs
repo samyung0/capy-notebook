@@ -1,24 +1,52 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken fixture.
-//! A chart's, plot's or graph's `block` as a live map (Epo 2026-10-17): the
-//! bootstrap and an agent's insert write it as a Y.Map with its series or
-//! elements as Y.Arrays of Y.Maps, it reads as its value repaired on read
-//! (the shared fixtures in server/internal/questions/testdata/repairs), two
-//! writers' changes to different entries merge, the projection stores the
-//! repaired merge, and admission refuses a crafted update that puts an
-//! unknown key, a wrong type, an oversize value or another shape into it.
-//! Each refusal fails if its check is reverted.
+//! A chart's, plot's or graph's `block` as the figure map a quiz room's
+//! block entry is (Epo 2026-10-17, 2026-11-16 D15; `notes::figure_map`): the
+//! bootstrap and an agent's insert write its fields, a graph's board and
+//! elements keyed by id, a chart's series, labels, names and values as maps,
+//! with no list anywhere; it reads as its value repaired on read (the shared
+//! fixtures in server/internal/questions/testdata/repairs), two writers'
+//! changes to different entries merge, the projection stores the repaired
+//! merge, and admission refuses a crafted update that puts an unknown key, a
+//! wrong type, an oversize value or another shape into it. Each refusal
+//! fails if its check is reverted.
 
 mod common;
 
 use common::AdmitBytes;
 use notes::limits::{self, Admission, Refusal, Validator};
 use notes::slate::{Operation, Root};
-use notes::{material, plate, questions, slate_yjs};
+use notes::{material, order, plate, questions, slate_yjs};
 use serde_json::{Value, json};
 use yrs::{
     Any, Array, ArrayPrelim, ArrayRef, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, Text, Transact,
     Xml, XmlTextRef,
 };
+
+/// A figure map's own map under `key` (a graph's board or elements, a
+/// chart's series, labels, names or values).
+fn inner(doc: &Doc, map: &MapRef, key: &str) -> MapRef {
+    match map.get(&doc.transact(), key) {
+        Some(Out::YMap(inner)) => inner,
+        other => panic!("{key} is not a map: {other:?}"),
+    }
+}
+
+/// Whether a map holds a list anywhere below it.
+fn holds_list(doc: &Doc, map: &MapRef) -> bool {
+    let txn = doc.transact();
+    let values: Vec<Out> = map.iter(&txn).map(|(_, value)| value).collect();
+    drop(txn);
+    values.into_iter().any(|value| match value {
+        Out::YArray(_) => true,
+        Out::YMap(inner) => holds_list(doc, &inner),
+        _ => false,
+    })
+}
+
+/// A graph element's entry as the room holds it.
+fn element_entry(element: Value, order: &str) -> Any {
+    json_any(&json!({ "element": element, "order": order }))
+}
 
 fn read_json(path: &str) -> Value {
     let path = format!("{}/../../../{path}", env!("CARGO_MANIFEST_DIR"));
@@ -82,20 +110,6 @@ fn block_map(doc: &Doc, index: usize) -> MapRef {
     }
 }
 
-fn list(doc: &Doc, map: &MapRef, key: &str) -> ArrayRef {
-    match map.get(&doc.transact(), key) {
-        Some(Out::YArray(list)) => list,
-        other => panic!("{key} is not a list: {other:?}"),
-    }
-}
-
-fn entry(doc: &Doc, list: &ArrayRef, index: u32) -> MapRef {
-    match list.get(&doc.transact(), index) {
-        Some(Out::YMap(map)) => map,
-        other => panic!("entry {index} is not a map: {other:?}"),
-    }
-}
-
 fn projected(doc: &Doc) -> Vec<Value> {
     plate::value(&doc.transact()).unwrap()
 }
@@ -126,15 +140,21 @@ fn refused(result: Result<Admission, Refusal>, reason: &str) {
 fn a_bootstrapped_figure_holds_its_block_as_maps_read_as_its_value() {
     let value = [figure(chart()), figure(graph()), paragraph("after")];
     let doc = room(&value);
-    let block = block_map(&doc, 0);
-    let series = list(&doc, &block, "series");
-    assert_eq!(series.len(&doc.transact()), 2);
-    entry(&doc, &series, 1);
-    let elements = list(&doc, &block_map(&doc, 1), "elements");
-    assert_eq!(
-        entry(&doc, &elements, 2).get(&doc.transact(), "id"),
-        Some(Out::Any(Any::String("s1".into())))
-    );
+    let chart = block_map(&doc, 0);
+    assert_eq!(inner(&doc, &chart, "series").len(&doc.transact()), 2);
+    assert_eq!(inner(&doc, &chart, "values").len(&doc.transact()), 4);
+    assert!(!holds_list(&doc, &chart));
+    let graph = block_map(&doc, 1);
+    assert!(!holds_list(&doc, &graph));
+    match inner(&doc, &graph, "elements").get(&doc.transact(), "s1") {
+        Some(Out::Any(Any::Map(entry))) => {
+            assert_eq!(
+                notes::figure_map::any_json(&entry["element"]),
+                self::graph()["elements"][2]
+            );
+        }
+        other => panic!("s1 is not an element entry: {other:?}"),
+    }
     assert_eq!(projected(&doc), value);
     material::assert_canonical(&projected(&doc), "note").unwrap();
 }
@@ -181,38 +201,34 @@ fn two_writers_changes_to_different_entries_merge() {
     assert_eq!(projected(&room), [figure(merged)]);
 }
 
-/// A merge the validators would refuse (one writer adds a label while
-/// another rewrites a series) is admitted, and the projection stores it
-/// repaired: the series padded with an empty cell.
+/// A merge the validators would refuse (one writer removes a point while
+/// another draws a segment to it) is admitted, and the projection stores it
+/// repaired: the segment naming the gone point is skipped.
 #[test]
 fn the_projection_stores_a_merge_repaired() {
-    let room = room(&[figure(chart())]);
-    let labels = edit(&room, 3, |peer| {
-        let block = block_map(peer, 0);
-        block.insert(
+    let room = room(&[figure(graph())]);
+    let removed = edit(&room, 3, |peer| {
+        let elements = inner(peer, &block_map(peer, 0), "elements");
+        let mut txn = peer.transact_mut();
+        elements.remove(&mut txn, "p2");
+        elements.remove(&mut txn, "s1");
+    });
+    let drawn = edit(&room, 4, |peer| {
+        let elements = inner(peer, &block_map(peer, 0), "elements");
+        let segment = json!({ "type": "segment", "id": "s2", "points": ["p1", "p2"] });
+        let order = order::after(Some("a5"));
+        elements.insert(
             &mut peer.transact_mut(),
-            "labels",
-            Any::from(vec![Any::from("Jan"), Any::from("Feb"), Any::from("Mar")]),
+            "s2",
+            element_entry(segment, &order),
         );
-        let series = list(peer, &block, "series");
-        for index in 0..2 {
-            let entry = entry(peer, &series, index);
-            let values = Any::from(vec![Any::from(1.0), Any::from(2.0), Any::from(3.0)]);
-            entry.insert(&mut peer.transact_mut(), "values", values);
-        }
     });
-    let values = edit(&room, 4, |peer| {
-        let series = list(peer, &block_map(peer, 0), "series");
-        let entry = entry(peer, &series, 0);
-        let values = Any::from(vec![Any::from(7.0), Any::from(8.0)]);
-        entry.insert(&mut peer.transact_mut(), "values", values);
-    });
-    assert_eq!(admit(&room, &labels).unwrap(), Admission::Accepted);
-    assert_eq!(admit(&room, &values).unwrap(), Admission::Accepted);
+    assert_eq!(admit(&room, &removed).unwrap(), Admission::Accepted);
+    assert_eq!(admit(&room, &drawn).unwrap(), Admission::Accepted);
     let value = projected(&room);
     assert_eq!(
-        value[0]["block"]["series"],
-        json!([{ "name": "A", "values": [7, 8, null] }, { "name": "B", "values": [1, 2, 3] }])
+        value[0]["block"]["elements"],
+        json!([graph()["elements"][0]])
     );
     material::assert_canonical(&value, "note").unwrap();
 }
@@ -242,34 +258,37 @@ fn admission_refuses_what_the_store_would_inside_a_block_map() {
         admit(&room, &set(5, "title", Any::from(long))),
         limits::BAD_VALUE,
     );
-    // A series entry given an unknown key; the series list removed.
-    let series_key = edit(&room, 6, |peer| {
-        let series = list(peer, &block_map(peer, 0), "series");
-        entry(peer, &series, 0).insert(&mut peer.transact_mut(), "colour", "red");
+    // A value that is no number, a series keyed by no id; the series map
+    // removed.
+    let text_value = edit(&room, 6, |peer| {
+        let values = inner(peer, &block_map(peer, 0), "values");
+        values.insert(&mut peer.transact_mut(), "s0/l0", "one");
     });
-    refused(admit(&room, &series_key), limits::BAD_VALUE);
+    refused(admit(&room, &text_value), limits::BAD_VALUE);
+    let bad_id = edit(&room, 18, |peer| {
+        let series = inner(peer, &block_map(peer, 0), "series");
+        series.insert(&mut peer.transact_mut(), "a b", order::after(None).as_str());
+    });
+    refused(admit(&room, &bad_id), limits::BAD_VALUE);
     let no_series = edit(&room, 7, |peer| {
         block_map(peer, 0).remove(&mut peer.transact_mut(), "series");
     });
     refused(admit(&room, &no_series), limits::BAD_VALUE);
-    // Other shapes: a map in a series entry, a plain value in the list, a
-    // list of maps under a list entry.
+    // Other shapes: a map in an inner map's entry, a list where a map is
+    // held, a map under a key no figure holds as one.
     let nested = edit(&room, 8, |peer| {
-        let series = list(peer, &block_map(peer, 0), "series");
-        entry(peer, &series, 0).insert(&mut peer.transact_mut(), "name", MapPrelim::default());
+        let names = inner(peer, &block_map(peer, 0), "names");
+        names.insert(&mut peer.transact_mut(), "s0", MapPrelim::default());
     });
     refused(admit(&room, &nested), limits::FIGURE_SHAPE);
-    let plain_item = edit(&room, 10, |peer| {
-        let series = list(peer, &block_map(peer, 0), "series");
-        series.push_back(&mut peer.transact_mut(), Any::from("S"));
+    let list = edit(&room, 10, |peer| {
+        block_map(peer, 0).insert(&mut peer.transact_mut(), "series", ArrayPrelim::default());
     });
-    refused(admit(&room, &plain_item), limits::FIGURE_SHAPE);
-    let deep = edit(&room, 11, |peer| {
-        let series = list(peer, &block_map(peer, 0), "series");
-        let entry = entry(peer, &series, 0);
-        entry.insert(&mut peer.transact_mut(), "values", ArrayPrelim::default());
+    refused(admit(&room, &list), limits::FIGURE_SHAPE);
+    let stray_inner = edit(&room, 11, |peer| {
+        block_map(peer, 0).insert(&mut peer.transact_mut(), "colour", MapPrelim::default());
     });
-    refused(admit(&room, &deep), limits::FIGURE_SHAPE);
+    refused(admit(&room, &stray_inner), limits::FIGURE_SHAPE);
     // A block map on a paragraph, a chart retyped to a paragraph keeping its
     // map, and a map under a key the catalog does not share.
     let stray = edit(&room, 12, |peer| {
@@ -332,24 +351,28 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
     let mut bar = figure(chart());
     bar["id"] = json!("f_bar");
     let room = room(&[figure(pie.clone()), figure(plot), bar]);
-    let series = |peer: &Doc, index: usize| list(peer, &block_map(peer, index), "series");
+    // The bootstrap's ids: labels l0, l1 and series s0, s1.
     let second = edit(&room, 3, |peer| {
-        let series = series(peer, 0);
-        let entry = series.push_back(&mut peer.transact_mut(), MapPrelim::default());
-        let mut txn = peer.transact_mut();
-        entry.insert(&mut txn, "name", "B");
-        entry.insert(
-            &mut txn,
-            "values",
-            Any::from(vec![Any::from(3.0), Any::from(4.0)]),
+        let pie = block_map(peer, 0);
+        let (series, names, values) = (
+            inner(peer, &pie, "series"),
+            inner(peer, &pie, "names"),
+            inner(peer, &pie, "values"),
         );
+        let mut txn = peer.transact_mut();
+        series.insert(&mut txn, "s9", order::after(Some("a5")).as_str());
+        names.insert(&mut txn, "s9", "B");
+        values.insert(&mut txn, "s9/l0", 3.0);
+        values.insert(&mut txn, "s9/l1", 4.0);
     });
     assert_eq!(admit(&room, &second).unwrap(), Admission::Accepted);
     assert_eq!(projected(&room)[0]["block"]["series"], pie["series"]);
     let one_point = edit(&room, 4, |peer| {
-        let entry = entry(peer, &series(peer, 1), 0);
-        let point = Any::from(vec![Any::from(0.0), Any::from(0.0)]);
-        entry.insert(&mut peer.transact_mut(), "points", Any::from(vec![point]));
+        let series = json!([
+            { "name": "A", "points": [[0, 0]] },
+            { "name": "B", "points": [[0, 1], [1, 2]] },
+        ]);
+        block_map(peer, 1).insert(&mut peer.transact_mut(), "series", json_any(&series));
     });
     assert_eq!(admit(&room, &one_point).unwrap(), Admission::Accepted);
     assert_eq!(
@@ -357,17 +380,22 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
         json!([{ "name": "B", "points": [[0, 1], [1, 2]] }])
     );
     let no_total = edit(&room, 5, |peer| {
-        let entry = entry(peer, &series(peer, 0), 0);
-        entry.insert(
-            &mut peer.transact_mut(),
-            "values",
-            Any::from(vec![Any::from(0.0), Any::Null]),
-        );
+        let values = inner(peer, &block_map(peer, 0), "values");
+        let mut txn = peer.transact_mut();
+        values.insert(&mut txn, "s0/l0", 0.0);
+        values.remove(&mut txn, "s0/l1");
     });
     assert_eq!(admit(&room, &no_total).unwrap(), Admission::Accepted);
     let no_series = edit(&room, 6, |peer| {
-        let series = series(peer, 2);
-        series.remove_range(&mut peer.transact_mut(), 0, 2);
+        let bar = block_map(peer, 2);
+        let (series, values) = (inner(peer, &bar, "series"), inner(peer, &bar, "values"));
+        let mut txn = peer.transact_mut();
+        for id in ["s0", "s1"] {
+            series.remove(&mut txn, id);
+            for label in ["l0", "l1"] {
+                values.remove(&mut txn, &format!("{id}/{label}"));
+            }
+        }
     });
     assert_eq!(admit(&room, &no_series).unwrap(), Admission::Accepted);
     let value = projected(&room);
@@ -399,51 +427,61 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
     });
     refused(admit(&room, &bad_kind), limits::BAD_VALUE);
     let long_name = edit(&room, 9, |peer| {
-        let entry = entry(peer, &series(peer, 0), 1);
-        entry.insert(&mut peer.transact_mut(), "name", "x".repeat(1_000));
+        let names = inner(peer, &block_map(peer, 0), "names");
+        names.insert(&mut peer.transact_mut(), "s9", "x".repeat(1_000));
     });
     refused(admit(&room, &long_name), limits::BAD_VALUE);
 }
 
-/// A live figure's lists hold up to twice their cap (Epo 2026-10-18): a
-/// merge to one past the cap goes in and reads the first ones, one past
-/// twice the cap is refused, for a chart's and a plot's series and a graph's
-/// elements; the room's size measure counts what the map holds, the entries
-/// a read drops included. Fails with either reverted.
+/// A live chart's series and a graph's elements hold up to twice their cap
+/// (Epo 2026-10-18): a merge to one past the cap goes in and reads the first
+/// ones, one past twice the cap is refused; the room's size measure counts
+/// what the map holds, the entries a read drops included. A plot's series is
+/// one plain value, held to its cap as a writer writes it. Fails with either
+/// reverted.
 #[test]
-fn a_figure_list_holds_up_to_twice_its_cap_and_counts_as_held() {
-    use notes::catalog::{
-        QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX, QUESTION_PLOT_SERIES_MAX,
-    };
-    let plot = json!({
-        "type": "plot", "title": "P", "xTitle": "x", "yTitle": "y",
-        "series": [{ "name": "A", "points": [[0, 0], [1, 1]] }],
-    });
+fn a_figure_map_holds_up_to_twice_its_cap_and_counts_as_held() {
+    use notes::catalog::{QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX};
     let entry_of = |kind: &str, n: u32| -> Value {
         match kind {
             "chart" => json!({ "name": format!("S{n}"), "values": [1, 2] }),
-            "plot" => json!({ "name": format!("S{n}"), "points": [[0, 0], [1, 1]] }),
             _ => json!({ "type": "point", "id": format!("q{n}"), "coords": [0, 0] }),
         }
     };
     let figures = [
         ("chart", "series", QUESTION_CHART_SERIES_MAX, chart()),
-        ("plot", "series", QUESTION_PLOT_SERIES_MAX, plot),
         ("graph", "elements", QUESTION_GRAPH_ELEMENTS_MAX, graph()),
     ];
     for (kind, key, cap, block) in figures {
-        // Grows the figure's list to `to` entries in one writer's update.
+        // Grows the figure to `to` series or elements in one writer's update.
         let grow = |room: &Doc, to: usize| {
             edit(room, 7, |peer| {
-                let list = list(peer, &block_map(peer, 0), key);
-                let held = list.len(&peer.transact());
+                let map = block_map(peer, 0);
+                let held = inner(peer, &map, key).len(&peer.transact());
+                let mut last = order::after(Some("a9"));
                 for n in held..to as u32 {
-                    let entry: MapRef =
-                        list.push_back(&mut peer.transact_mut(), MapPrelim::default());
-                    let mut txn = peer.transact_mut();
-                    for (field, value) in entry_of(kind, n).as_object().unwrap() {
-                        entry.insert(&mut txn, field.as_str(), json_any(value));
+                    last = order::after(Some(&last));
+                    let entry = entry_of(kind, n);
+                    if kind == "graph" {
+                        let id = format!("q{n}");
+                        inner(peer, &map, key).insert(
+                            &mut peer.transact_mut(),
+                            id.as_str(),
+                            element_entry(entry, &last),
+                        );
+                        continue;
                     }
+                    let id = format!("n{n}");
+                    let (series, names, values) = (
+                        inner(peer, &map, "series"),
+                        inner(peer, &map, "names"),
+                        inner(peer, &map, "values"),
+                    );
+                    let mut txn = peer.transact_mut();
+                    series.insert(&mut txn, id.as_str(), last.as_str());
+                    names.insert(&mut txn, id.as_str(), format!("S{n}"));
+                    values.insert(&mut txn, format!("{id}/l0"), 1.0);
+                    values.insert(&mut txn, format!("{id}/l1"), 2.0);
                 }
             })
         };

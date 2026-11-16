@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { heldBlock, isFigureType } from '@/features/figures/figureMap';
 import {
   type MaterialElement,
   type MaterialValue,
@@ -34,20 +35,25 @@ function slateEquals(a: Attributes, b: Attributes): boolean {
 /**
  * `yTextToSlateElement` of @slate-yjs/core 1.0.2 with Capy's patch (a
  * Mermaid source text reads as its string, a figure's block map as its plain
- * value, Epo 2026-10-17), without loading slate: the
+ * block, `heldBlock` as the patch's figure codec reads it, Epo 2026-11-16, a
+ * table view's as its JSON), without loading slate: the
  * element's attributes, then its delta as children, empty strings dropped and
  * neighbouring strings of equal attributes merged; no children reads as the
  * placeholder leaf.
  */
 export function yTextElement(yText: Y.XmlText): Attributes {
   const node: Attributes = {};
-  for (const [key, value] of Object.entries(yText.getAttributes()))
+  const attributes = yText.getAttributes();
+  const type = attributes.type;
+  for (const [key, value] of Object.entries(attributes))
     node[key] =
-      value instanceof Y.Map || value instanceof Y.Array
-        ? value.toJSON()
-        : value instanceof Y.AbstractType
-          ? value.toString()
-          : value;
+      value instanceof Y.Map && key === 'block' && isFigureType(type)
+        ? heldBlock(value, type)
+        : value instanceof Y.Map || value instanceof Y.Array
+          ? value.toJSON()
+          : value instanceof Y.AbstractType
+            ? value.toString()
+            : value;
   const children: Attributes[] = [];
   let run: { attributes?: Attributes; leaf: Attributes } | null = null;
   for (const op of yText.toDelta() as {

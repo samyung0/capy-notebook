@@ -195,7 +195,7 @@ fn chart_text(value: &Value, max: usize, what: &str) -> Check {
 }
 
 /// A chart value: a finite number within ±QUESTION_CHART_VALUE_MAX.
-fn chart_value(value: &Value, what: &str) -> Result<f64, String> {
+pub(crate) fn chart_value(value: &Value, what: &str) -> Result<f64, String> {
     let n = number(value, what)?;
     // 1e12 is exact as an f64.
     #[allow(clippy::cast_precision_loss)]
@@ -431,6 +431,12 @@ struct GraphElement {
     points: Vec<String>,
     center: Option<String>,
     domain: Option<(f64, f64)>,
+}
+
+/// One graph element as a writer writes it (a live figure's entry,
+/// `figure_map::check_entry`).
+pub(crate) fn graph_element_shape(value: &Value) -> Check {
+    graph_element(value).map(|_| ())
 }
 
 fn graph_element(value: &Value) -> Result<GraphElement, String> {
@@ -1165,56 +1171,6 @@ pub fn repair_figure(block: &mut Value) {
                 .all(|id| points.contains(id))
         });
     }
-}
-
-/// Each entry of a live figure's list as the room holds it, before the
-/// repair drops any (Epo 2026-10-18): a chart's or plot's series and a
-/// graph's elements are each one a writer could write, as [block] checks
-/// them, so nothing the repair leaves out of a read (a pie's second series,
-/// a series or element past the cap, a line's one-point series) holds what
-/// no editor writes, and a list holds at most twice its cap (a merge past
-/// the cap reads its first ones). The repair and [live_block] decide the
-/// rest.
-pub fn figure_entries(block: &Value) -> Check {
-    let what = "block";
-    let Some(map) = block.as_object() else {
-        return Ok(());
-    };
-    let list = |key: &str, cap: usize| match map.get(key) {
-        Some(items @ Value::Array(_)) => array(items, what, 0, 2 * cap),
-        _ => Ok(&[][..]),
-    };
-    match map.get("type").and_then(Value::as_str) {
-        Some("chart") => {
-            for entry in list("series", QUESTION_CHART_SERIES_MAX)? {
-                let entry = object(entry, what)?;
-                strict(entry, what, &["name", "values"], &[])?;
-                chart_text(&entry["name"], QUESTION_CHART_SERIES_NAME_MAX, what)?;
-                for value in array(&entry["values"], what, 0, QUESTION_CHART_LABELS_MAX)? {
-                    if !value.is_null() {
-                        chart_value(value, what)?;
-                    }
-                }
-            }
-        }
-        Some("plot") => {
-            for entry in list("series", QUESTION_PLOT_SERIES_MAX)? {
-                let entry = object(entry, what)?;
-                strict(entry, what, &["name", "points"], &[])?;
-                chart_text(&entry["name"], QUESTION_PLOT_LABEL_MAX, what)?;
-                for point in array(&entry["points"], what, 1, QUESTION_PLOT_POINTS_MAX)? {
-                    coords(point, what)?;
-                }
-            }
-        }
-        Some("graph") => {
-            for entry in list("elements", QUESTION_GRAPH_ELEMENTS_MAX)? {
-                graph_element(entry)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 /// One part as the schema leaves it.

@@ -595,9 +595,6 @@ export const EMBED_CATALOG = {
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -632,9 +629,6 @@ export const EMBED_CATALOG = {
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -668,9 +662,6 @@ export const EMBED_CATALOG = {
       ],
       "sharedMap": [
         "block"
-      ],
-      "sharedLists": [
-        "elements"
       ],
       "resizable": true,
       "materials": [

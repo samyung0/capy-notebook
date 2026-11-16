@@ -40,6 +40,7 @@ import {
   COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
 } from '@/features/notes/collaborationEvents';
+import '@/features/notes/figureBinding';
 import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {

@@ -822,24 +822,29 @@ function parsedOf(
   }
 }
 
-/** The rows for elements a peer's change rebased into the dialog's draft
- * (Epo 2026-10-17): a row whose element is unchanged stays as typed, a row
- * giving no element yet (unfinished, or not drawable) stays where it was, and
- * the rest come from the elements. The same rows when nothing changed. */
-export function syncRows(
+/** The rows following a figure's elements (Epo 2026-11-16, live figures): a
+ * row whose element is unchanged stays as typed, and a row holding what the
+ * figure does not have yet (`typing`) stays as it is, where the elements put
+ * it or, lacking one, where it was; the rest come from the elements, and a
+ * row whose element went goes. `built` is the rows' own elements by id. The
+ * same rows when nothing changed. */
+export function reconcileRows(
   rows: GraphRow[],
-  elements: GraphElement[]
+  elements: GraphElement[],
+  built: ReadonlyMap<string, GraphElement>,
+  typing: (key: string) => boolean
 ): GraphRow[] {
-  const built = new Map(
-    buildElements(rows).elements.map((element) => [element.id, element])
-  );
+  const held = new Map(rows.map((row) => [row.key, row]));
   const ids = new Set(elements.map((element) => element.id));
   const next = rowsFromElements(elements).map((row, i) => {
-    const held = rows.find((item) => item.key === row.key);
-    return held && sameJson(built.get(row.key), elements[i]) ? held : row;
+    const local = held.get(row.key);
+    return local &&
+      (typing(row.key) || sameJson(built.get(row.key), elements[i]))
+      ? local
+      : row;
   });
   rows.forEach((row, at) => {
-    if (!(built.has(row.key) || ids.has(row.key)))
+    if (!ids.has(row.key) && typing(row.key))
       next.splice(Math.min(at, next.length), 0, row);
   });
   return next.length === rows.length && next.every((row, i) => row === rows[i])

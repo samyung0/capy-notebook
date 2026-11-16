@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import { repairGroups } from '@/features/questions/groups';
-import type { FigureRoom } from '@/features/questions/questionEdits';
+import type { FigureAt, FigureRoom } from '@/features/questions/questionEdits';
 import {
   gapNumbers,
   type LearnerAnswer,
@@ -44,6 +44,7 @@ import {
   text,
   type YMap,
 } from './liveMaps';
+import { roomFigureBinding } from './roomFigureBinding';
 
 /* A quiz's two live documents (live-items DESIGN.md 1.2, 1.3; Epo
  * 2026-10-10). The content document, which readers join too, holds
@@ -963,12 +964,19 @@ export function insertQuestions(
 }
 
 /** A quiz's blocks written by their room entries (Epo 2026-11-16): the
- * question card's figure dialogs (a table, chart, plot or graph) save and
- * remove the entry the block was read from, writing only what differs, so a
- * figure a co-editor changed meanwhile stays one figure. Each call is one
- * undoable step. */
+ * question card's figure dialogs write the entry the block was read from (a
+ * chart or graph a change at a time through `bind`, a table at its Save,
+ * writing only what differs) and remove it, so a figure a co-editor changed
+ * meanwhile stays one figure. Each call is one undoable step. */
 export function figureRoom(docs: QuizDocs): FigureRoom & { docs: QuizDocs } {
+  const remove = (at: FigureAt) => {
+    const { doc, map } = sectionMap(docs, at.question, at.section);
+    if (!map?.has(at.entry)) return false;
+    doc.transact(() => map.delete(at.entry), LOCAL_EDIT);
+    return true;
+  };
   return {
+    bind: (at) => roomFigureBinding(docs, at, () => remove(at)),
     docs,
     insert: (place, block) => {
       const { doc, map } = sectionMap(docs, place.question, place.section);
@@ -987,12 +995,7 @@ export function figureRoom(docs: QuizDocs): FigureRoom & { docs: QuizDocs } {
       return key;
     },
     key: blockKey,
-    remove: (at) => {
-      const { doc, map } = sectionMap(docs, at.question, at.section);
-      if (!map?.has(at.entry)) return false;
-      doc.transact(() => map.delete(at.entry), LOCAL_EDIT);
-      return true;
-    },
+    remove,
     replace: (at, block) => {
       const { doc, map } = sectionMap(docs, at.question, at.section);
       const entry = mapAt(map, at.entry);

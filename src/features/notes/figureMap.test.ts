@@ -9,16 +9,17 @@ import {
 import { createSlateEditor } from 'platejs';
 import { afterEach, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { rebaseBlock } from './blocks/rebase';
+import './figureBinding';
 import { setCell } from './tableView/edit';
 import type { TableViewBlock } from './tableView/model';
 import { tracker } from './tableView/testFixtures';
 
-/* A chart's, plot's or graph's `block` as a live Y.Map (Epo 2026-10-17),
- * through the pnpm patch of @slate-yjs/core 1.0.2: Slate holds the plain
- * block, each field, series and graph element is replaced on its own, so two
- * editors' changes to different ones merge. Each case fails on the stock
- * package. */
-
+/* A chart's, plot's or graph's `block` as the figure map quiz rooms hold
+ * (Epo 2026-11-16, D15; figures/figureMap.ts), through the pnpm patch of
+ * @slate-yjs/core 1.0.2 and its figure codec: Slate holds the plain block,
+ * each field, chart cell and graph element is its own entry, so two editors'
+ * changes to different ones merge. */
 const chart = {
   kind: 'bar',
   labels: ['Jan', 'Feb'],
@@ -110,71 +111,103 @@ function save(editor: Editor, change: (block: typeof chart) => object) {
   YjsEditor.flushLocalChanges(editor);
 }
 
-it('inserts a block as a map with its series as maps, read as the plain block', () => {
+/** Whether `map` holds a Y.Array anywhere below it. */
+const holdsArray = (map: Y.Map<unknown>): boolean =>
+  [...map.values()].some(
+    (value) =>
+      value instanceof Y.Array || (value instanceof Y.Map && holdsArray(value))
+  );
+
+it('inserts a chart as the figure map, read as the plain block', () => {
   const room = roomOf([figure(chart)]);
   const map = blockMap(room);
-  expect(map).toBeInstanceOf(Y.Map);
-  const series = map.get('series') as Y.Array<Y.Map<unknown>>;
-  expect(series).toBeInstanceOf(Y.Array);
-  expect(series.get(1)).toBeInstanceOf(Y.Map);
-  expect(map.get('labels')).toEqual(['Jan', 'Feb']);
+  for (const key of ['series', 'labels', 'names', 'values'])
+    expect(map.get(key)).toBeInstanceOf(Y.Map);
+  expect(holdsArray(map)).toBe(false);
+  expect([...(map.get('values') as Y.Map<unknown>).values()]).toEqual([
+    1, 2, 3, 4,
+  ]);
   const { editor } = editorOn(room);
   expect(blockOf(editor)).toEqual(chart);
+});
+
+it('inserts a graph with its elements keyed by id, each with an order key', () => {
+  const room = roomOf([figure(graph)]);
+  const map = blockMap(room);
+  expect(holdsArray(map)).toBe(false);
+  const elements = map.get('elements') as Y.Map<{
+    element: unknown;
+    order: string;
+  }>;
+  expect([...elements.keys()].sort()).toEqual(['p1', 'p2', 's1']);
+  expect(elements.get('s1')?.element).toEqual(graph.elements[2]);
+  expect((map.get('board') as Y.Map<unknown>).toJSON()).toEqual(graph.board);
+  const { editor } = editorOn(room);
+  expect(blockOf(editor)).toEqual(graph);
 });
 
 it('takes a peer change inside the block as one set_node of the whole block', () => {
   const room = roomOf([figure(chart)]);
   const { doc, editor, ops } = editorOn(room);
   room.transact(() => {
-    blockMap(room).set('title', 'Revenue');
-    (
-      (blockMap(room).get('series') as Y.Array<Y.Map<unknown>>).get(
-        0
-      ) as Y.Map<unknown>
-    ).set('values', [5, 6]);
+    const map = blockMap(room);
+    map.set('title', 'Revenue');
+    const values = map.get('values') as Y.Map<number>;
+    const first = [...values.keys()].find((key) => values.get(key) === 2);
+    values.set(first as string, 5);
   });
   sync(room, doc);
   expect(ops).toEqual(['set_node']);
   expect(blockOf(editor)).toEqual({
     ...chart,
-    series: [{ name: 'A', values: [5, 6] }, chart.series[1]],
+    series: [{ name: 'A', values: [1, 5] }, chart.series[1]],
     title: 'Revenue',
   });
 });
 
-it('merges two editors changing different fields and series', () => {
+it('merges two editors changing different cells and fields of one chart', () => {
   const room = roomOf([figure(chart)]);
   const a = editorOn(room);
   const b = editorOn(room);
-  save(a.editor, (block) => ({ ...block, title: 'Revenue' }));
+  save(a.editor, (block) => ({
+    ...block,
+    series: [{ name: 'A', values: [1, 20] }, block.series[1]],
+    title: 'Revenue',
+  }));
   save(b.editor, (block) => ({
     ...block,
-    series: [block.series[0], { name: 'B', values: [30, 40] }],
+    series: [block.series[0], { name: 'B', values: [30, 4] }],
   }));
   sync(room, a.doc, b.doc);
   const merged = {
     ...chart,
-    series: [chart.series[0], { name: 'B', values: [30, 40] }],
+    series: [
+      { name: 'A', values: [1, 20] },
+      { name: 'B', values: [30, 4] },
+    ],
     title: 'Revenue',
   };
   expect(blockOf(a.editor)).toEqual(merged);
   expect(blockOf(b.editor)).toEqual(merged);
 });
 
-it('matches graph elements by id: one editor moves a point while another adds and removes elements', () => {
+type Graph = typeof graph;
+const editGraph = (editor: Editor, change: (block: Graph) => Graph) =>
+  save(editor, (block) => change(block as unknown as Graph));
+const elementsOf = (editor: Editor) =>
+  (blockOf(editor) as unknown as Graph).elements;
+
+it('merges two editors on different elements: one moves a point, the other adds and removes elements', () => {
   const room = roomOf([figure(graph)]);
   const a = editorOn(room);
   const b = editorOn(room);
-  type Graph = typeof graph;
-  const edit = (editor: Editor, change: (block: Graph) => Graph) =>
-    save(editor, (block) => change(block as unknown as Graph));
-  edit(a.editor, (block) => ({
+  editGraph(a.editor, (block) => ({
     ...block,
     elements: block.elements.map((element) =>
       element.id === 'p1' ? { ...element, coords: [2, 2] } : element
     ),
   }));
-  edit(b.editor, (block) => ({
+  editGraph(b.editor, (block) => ({
     ...block,
     elements: [
       ...block.elements.filter((element) => element.id !== 's1'),
@@ -187,21 +220,83 @@ it('matches graph elements by id: one editor moves a point while another adds an
     graph.elements[1],
     { coords: [3, 3], id: 'p3', type: 'point' },
   ];
-  expect((blockOf(a.editor) as unknown as Graph).elements).toEqual(want);
-  expect((blockOf(b.editor) as unknown as Graph).elements).toEqual(want);
+  expect(elementsOf(a.editor)).toEqual(want);
+  expect(elementsOf(b.editor)).toEqual(want);
 });
 
-it('writes only the changed entries', () => {
+it('merges a reorder with an edit of another element, each element once', () => {
+  const room = roomOf([figure(graph)]);
+  const a = editorOn(room);
+  const b = editorOn(room);
+  // A moves p1 last; B renames p2.
+  editGraph(a.editor, (block) => ({
+    ...block,
+    elements: [block.elements[1], block.elements[2], block.elements[0]],
+  }));
+  editGraph(b.editor, (block) => ({
+    ...block,
+    elements: block.elements.map((element) =>
+      element.id === 'p2' ? { ...element, name: 'Q' } : element
+    ),
+  }));
+  sync(room, a.doc, b.doc);
+  const want = [
+    { ...graph.elements[1], name: 'Q' },
+    graph.elements[2],
+    graph.elements[0],
+  ];
+  expect(elementsOf(a.editor)).toEqual(want);
+  expect(elementsOf(b.editor)).toEqual(want);
+});
+
+it('writes only the changed entry', () => {
   const room = roomOf([figure(chart)]);
   const { doc, editor } = editorOn(room);
   const before = Y.encodeStateVector(doc);
-  const series = blockMap(doc).get('series');
-  save(editor, (block) => ({ ...block, title: 'Revenue' }));
-  // One new entry, the title; the series list is the same list.
+  const values = blockMap(doc).get('values');
+  save(editor, (block) => ({
+    ...block,
+    series: [block.series[0], { name: 'B', values: [3, 40] }],
+  }));
+  // One new entry, the cell; the values map is the same map.
   expect(
     Y.decodeUpdate(Y.encodeStateAsUpdate(doc, before)).structs
   ).toHaveLength(1);
-  expect(blockMap(doc).get('series')).toBe(series);
+  expect(blockMap(doc).get('values')).toBe(values);
+});
+
+it("saves a dialog's draft as a diff, keeping a peer's change to another element", () => {
+  const room = roomOf([figure(graph)]);
+  const a = editorOn(room);
+  const b = editorOn(room);
+  const base = structuredClone(blockOf(a.editor)) as unknown as Graph;
+  // The dialog on A moves p1 while B renames p2.
+  const draft = {
+    ...base,
+    elements: base.elements.map((element) =>
+      element.id === 'p1' ? { ...element, coords: [4, 4] } : element
+    ),
+  };
+  editGraph(b.editor, (block) => ({
+    ...block,
+    elements: block.elements.map((element) =>
+      element.id === 'p2' ? { ...element, name: 'Q' } : element
+    ),
+  }));
+  sync(room, a.doc, b.doc);
+  const before = Y.encodeStateVector(a.doc);
+  editGraph(a.editor, (current) => rebaseBlock(base, draft, current));
+  expect(
+    Y.decodeUpdate(Y.encodeStateAsUpdate(a.doc, before)).structs
+  ).toHaveLength(1);
+  sync(room, a.doc, b.doc);
+  const want = [
+    { ...graph.elements[0], coords: [4, 4] },
+    { ...graph.elements[1], name: 'Q' },
+    graph.elements[2],
+  ];
+  expect(elementsOf(a.editor)).toEqual(want);
+  expect(elementsOf(b.editor)).toEqual(want);
 });
 
 it('undoes a saved change through the Yjs undo manager', () => {
@@ -223,9 +318,9 @@ it('undoes a saved change through the Yjs undo manager', () => {
   });
 });
 
-it('keeps a moved block a map', () => {
+it('keeps a moved block the figure map', () => {
   const room = roomOf([
-    figure(chart),
+    figure(graph),
     { children: [{ text: 'after' }], id: 'p1', type: 'p' },
   ]);
   const { doc, editor } = editorOn(room);
@@ -234,9 +329,11 @@ it('keeps a moved block a map', () => {
   const moved = (
     doc.get('content', Y.XmlText).toDelta() as { insert: Y.XmlText }[]
   )[1].insert.getAttribute('block') as unknown as Y.Map<unknown>;
-  expect(moved).toBeInstanceOf(Y.Map);
-  expect(moved.get('series')).toBeInstanceOf(Y.Array);
-  expect(moved.toJSON()).toEqual(chart);
+  expect(moved.get('elements')).toBeInstanceOf(Y.Map);
+  expect(holdsArray(moved)).toBe(false);
+  expect((editor.children[1] as unknown as { block: Graph }).block).toEqual(
+    graph
+  );
 });
 
 it('merges two editors writing different cells of one table view row (revision 2.1)', () => {

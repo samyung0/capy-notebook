@@ -6,6 +6,7 @@ import type {
   MaterialElement,
   MaterialValue,
 } from '@/features/materials/document';
+import '@/features/notes/figureBinding';
 import { DRAFT_EXPIRY_MS } from '@/lib/editDrafts';
 import { toastCopyMergeFailed } from '../saveFailure';
 import {

@@ -8,8 +8,8 @@
 -- again from materials.content (whose shape is unchanged) on its next open,
 -- agent edit or command (note_store.rs bootstrap).
 --
--- As 0080 does for notes: AI edit Undo over the old rows is released, and
--- trash_restores rises to the dropped room_schema, so the new room's name
+-- As 0080 does for notes (AI edit Undo is live in the loaded room since 0106
+-- and stores nothing, so it goes with the room): trash_restores rises to the dropped room_schema, so the new room's name
 -- (1 + trash_restores, store.MaterialRoom) is past the old one; old tokens and
 -- browser drafts of the old lineage open copy-only recovery. The deploy stops
 -- collaboration before migrate, so no room writes meanwhile. Refused while a
@@ -22,13 +22,6 @@ DO $$ BEGIN
     RAISE EXCEPTION 'Quiz figure maps reset refused: a quiz''s projection is behind its stored Yjs state; wait for the projection or fix its projection_error (openwiki/deployment-runbook.md, "Quiz figure maps reset")';
   END IF;
 END $$;
-
-UPDATE agent_edit_inverses i
-SET undo_status = 'unavailable', undo_reason = 'compacted', inverse = '[]'::jsonb,
-    guards = '[]'::jsonb, inverse_bytes = 0, updated_at = now()
-FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
-WHERE m.kind = 'quiz'
-  AND i.resource_kind = 'material' AND i.resource_id = d.material_id AND i.undo_status = 'available';
 
 UPDATE materials m SET trash_restores = GREATEST(m.trash_restores, d.room_schema)
 FROM material_yjs_documents d

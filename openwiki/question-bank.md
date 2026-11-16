@@ -631,7 +631,10 @@ Ordering, Drawing), the answer, marking points and Solution, then a footer of
 Solution, Topic, Marks, Duplicate, Delete and ⋮ (Add to bank, Move up, Move
 down, Shuffle options for a choice part, Layout, Part labels). Tables, charts, graphs and
 plots show as figures with hover Move up, Move down and Remove; a click edits
-one in `BlockDialog`, staged until its Save. A table there is drawn as a
+one in `BlockDialog`: a chart or graph live, each change written as it is
+made and Done only closing (Epo 2026-11-16, D13; see
+[plate-editor.md](frontend/plate-editor.md), the bank's draft takes each
+change at once too), a table staged until its Save. A table there is drawn as a
 note's table (Epo 2026-11-15, `TableBlockEditor` in `BlockEditor.tsx`, the
 pills shared through `src/features/notes/blockMenu.tsx`): a row's pill drags the
 row and opens Insert above, Insert below and Delete; a column's pill over its
@@ -713,7 +716,7 @@ a part's and a group's ⋮, graph element actions) are the note toolbar's popove
 `ToolbarPopoverItem`), and block editors use `FieldInput` and `SelectField`,
 the compact underline style of the answer options. It reuses
 `ToolbarGroup`, `ToolbarButton` and `SimpleDialog`; `BlockDialog` keeps
-Remove block beside Save. English and Chinese labels use
+Remove block beside Save (a table, a plot) or Done (a chart, a graph). English and Chinese labels use
 Paraglide. MathLive renders formulas in both viewing and editing, including
 question-editing previews. Read-only previews use the shared `MathPreview`
 component with matching fonts/layout and no keyboard or menu controls. `BlockToolbar`
@@ -796,7 +799,8 @@ row's style menu. A row's point names are its references; a saved point another
 element uses but whose label is not a name gets the row name `P_n`. Issues read
 like the question dialog's: the first one (with "+n more") above the editor, a
 warning icon on each row that cannot be drawn and beside Advanced when its size
-or bounds are invalid; the dialog holds Save until they are fixed. The editor
+or bounds are invalid; such a row or field is not written until it is fixed
+(the note dialog holds its Save meanwhile). The editor
 takes the canvas plane's gestures (D4): the wheel or a two-finger scroll pans,
 Ctrl/⌘-wheel and pinch zoom about the pointer, the middle button pans, a
 primary drag moves a point or label under it and pans on empty paper; moves

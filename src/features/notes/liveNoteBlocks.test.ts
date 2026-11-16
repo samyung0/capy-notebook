@@ -5,6 +5,7 @@ import {
   type MaterialValue,
   normalizeMaterialValue,
 } from '@/features/materials/document';
+import './figureBinding';
 import { NoteBlocks, yTextElement } from './liveNoteBlocks';
 
 /* A live note View's value (live-items DESIGN.md 3): handed over from the
@@ -177,7 +178,10 @@ it('reads a live figure block as its value, repaired, and again when a peer chan
     block: {
       kind: 'bar',
       labels: ['Jan', 'Feb'],
-      series: [{ name: 'Rain', values: [1, 2] }],
+      series: [
+        { name: 'Rain', values: [1, 2] },
+        { name: 'Snow', values: [3, 4] },
+      ],
       title: 'Sales',
       type: 'chart',
     },
@@ -189,14 +193,14 @@ it('reads a live figure block as its value, repaired, and again when a peer chan
   const painted = normalizeMaterialValue([p('a', 'one'), chart] as never);
   const value = blocks.handOver(painted);
   expect(value[1]).toBe(painted[1]);
-  // A merge left a series longer than its labels: read cut to them.
-  const series = (
-    block(1).getAttribute('block') as unknown as Y.Map<unknown>
-  ).get('series') as Y.Array<Y.Map<unknown>>;
-  series.get(0).set('values', [5, 6, 7]);
+  // A peer made it a pie, which draws its first series only.
+  (block(1).getAttribute('block') as unknown as Y.Map<unknown>).set(
+    'kind',
+    'pie'
+  );
   send();
   expect(blocks.value[0]).toBe(value[0]);
   expect(blocks.value[1]).toMatchObject({
-    block: { ...chart.block, series: [{ name: 'Rain', values: [5, 6] }] },
+    block: { ...chart.block, kind: 'pie', series: [chart.block.series[0]] },
   });
 });

@@ -23,13 +23,12 @@
 //! from them and nothing in either document is written by the server alone.
 //!
 //! A block entry holds its fields (D8 superseded by Epo 2026-11-16, D2, D3
-//! and D9): a chart, plot or graph is a map of plain fields, each replaced
-//! whole. A graph's `board` is a map of its fields and its `elements` a map
-//! of element id to `{element, order}` (the browser's graph/keyed.ts); a
-//! chart's `series` and `labels` are held as a table's rows and columns (id
-//! to order key), with `names` (id to name) and `values` (`series/label` to a
-//! number, none for an empty cell). Each read is repaired
-//! (`q::repair_figure`), as a merge may leave what no editor wrote.
+//! and D9): a chart, plot or graph entry is the figure map a note figure's
+//! `block` is too (D15), beside its `order`, read, written and admitted by
+//! `notes::figure_map`: plain fields each replaced whole, a graph's `board`
+//! and its `elements` keyed by element id, a chart's series and labels held
+//! as a table's rows and columns with their names and values. Each read is
+//! repaired (`q::repair_figure`), as a merge may leave what no editor wrote.
 //!
 //! The projection is today's quiz block with only the questions that pass
 //! the strict validator (D4), so grading and fresh reads see what a Save
@@ -47,6 +46,9 @@ use yrs::{
 };
 
 use notes::edit::{DocumentCommand, EditError, EditErrorCode};
+use notes::figure_map::{self, any_json, json_any};
+/// Ids a writer mints (map keys): `[A-Za-z0-9_-]`, at most [MAX_ID] long.
+pub use notes::figure_map::{MAX_ID, valid_id};
 use notes::questions::{self as q, Policy, model_marked};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
@@ -58,8 +60,6 @@ pub const QUESTIONS_ROOT: &str = "questions";
 pub const KEYS_ROOT: &str = "keys";
 /// The projected `quiz` block's id (one block per quiz document).
 pub const BLOCK_ID: &str = "quiz";
-/// Ids a writer mints (map keys): `[A-Za-z0-9_-]`, at most this long.
-pub const MAX_ID: usize = 128;
 
 const ANSWER_TYPES: &[&str] = &[
     "mcq", "boolean", "short", "matching", "ordering", "open", "gaps", "drawing",
@@ -71,14 +71,6 @@ pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "g
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
 /// An open part's sample answers: at most one, optional (Epo 2026-10-15).
 const OPEN_ACCEPTED_MAX: usize = 1;
-
-pub fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= MAX_ID
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-}
 
 /// A question's own topics: 1 to QUESTION_TOPICS_MAX distinct ids, each as
 /// `q::identifier` holds it.
@@ -198,46 +190,6 @@ fn ordered_keys<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<String> {
         .collect()
 }
 
-/// JSON of a plain value: whole numbers print as integers, as the JSON the
-/// stored questions came from.
-fn any_json(value: &Any) -> Value {
-    match value {
-        Any::Null | Any::Undefined => Value::Null,
-        Any::Bool(value) => json!(value),
-        Any::Number(value) => {
-            if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
-                json!(*value as i64)
-            } else {
-                json!(value)
-            }
-        }
-        Any::BigInt(value) => json!(value),
-        Any::String(value) => json!(value.as_ref()),
-        Any::Buffer(_) => Value::Null,
-        Any::Array(items) => Value::Array(items.iter().map(any_json).collect()),
-        Any::Map(map) => Value::Object(
-            map.iter()
-                .map(|(key, value)| (key.clone(), any_json(value)))
-                .collect(),
-        ),
-    }
-}
-
-fn json_any(value: &Value) -> Any {
-    match value {
-        Value::Null => Any::Null,
-        Value::Bool(value) => Any::Bool(*value),
-        Value::Number(value) => Any::Number(value.as_f64().unwrap_or(0.0)),
-        Value::String(value) => Any::String(Arc::from(value.as_str())),
-        Value::Array(items) => Any::Array(items.iter().map(json_any).collect()),
-        Value::Object(map) => Any::Map(Arc::new(
-            map.iter()
-                .map(|(key, value)| (key.clone(), json_any(value)))
-                .collect(),
-        )),
-    }
-}
-
 fn number(value: f64) -> Value {
     any_json(&Any::Number(value))
 }
@@ -279,118 +231,9 @@ fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
             }
             Some(block)
         }
-        "chart" | "plot" | "graph" => read_figure(txn, map, &kind),
+        "chart" | "plot" | "graph" => figure_map::read(map.as_ref(), &kind),
         _ => None,
     }
-}
-
-/// The keys a figure entry holds as maps, never as its plain fields.
-fn figure_maps(kind: &str) -> &'static [&'static str] {
-    match kind {
-        "chart" => &["series", "labels", "names", "values"],
-        "graph" => &["board", "elements"],
-        _ => &[],
-    }
-}
-
-/// A figure entry's plain fields, its type among them.
-fn figure_fields<T: ReadTxn>(txn: &T, map: &MapRef, kind: &str) -> serde_json::Map<String, Value> {
-    let maps = figure_maps(kind);
-    let mut out = serde_json::Map::new();
-    for (key, value) in map.iter(txn) {
-        step(Walk::Exact);
-        if key == "order" || key == "type" || maps.contains(&key) {
-            continue;
-        }
-        if let Out::Any(value) = value {
-            out.insert(key.to_owned(), any_json(&value));
-        }
-    }
-    out.insert("type".into(), json!(kind));
-    out
-}
-
-/// A graph's element entries as held, by order key then id (graph/keyed.ts),
-/// as `(id, order, element)`; one not `{element, order}` under its own id is
-/// left out.
-fn element_entries<T: ReadTxn>(txn: &T, map: &MapRef) -> Vec<(String, String, Any)> {
-    let mut out: Vec<(String, String, Any)> = map
-        .iter(txn)
-        .filter_map(|(id, value)| {
-            step(Walk::Exact);
-            let Out::Any(Any::Map(entry)) = value else {
-                return None;
-            };
-            let Some(Any::String(order)) = entry.get("order") else {
-                return None;
-            };
-            let element = entry.get("element")?;
-            match element {
-                Any::Map(inner) if matches!(inner.get("id"), Some(Any::String(own)) if own.as_ref() == id) => {
-                    Some((id.to_owned(), order.to_string(), element.clone()))
-                }
-                _ => None,
-            }
-        })
-        .collect();
-    out.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-    out
-}
-
-/// A chart's, plot's or graph's entry as its block, repaired; none while it
-/// lacks the maps its type writes.
-fn read_figure<T: ReadTxn>(txn: &T, map: &MapRef, kind: &str) -> Option<Value> {
-    let mut block = figure_fields(txn, map, kind);
-    match kind {
-        "graph" => {
-            let board = map_at(txn, map, "board")?;
-            let elements = map_at(txn, map, "elements")?;
-            block.insert("board".into(), any_json(&board.to_json(txn)));
-            let elements = element_entries(txn, &elements)
-                .iter()
-                .map(|(_, _, element)| any_json(element))
-                .collect();
-            block.insert("elements".into(), Value::Array(elements));
-        }
-        "chart" => {
-            let labels = ordered_keys(txn, Some(&map_at(txn, map, "labels")?));
-            let series = ordered_keys(txn, Some(&map_at(txn, map, "series")?));
-            let names = map_at(txn, map, "names");
-            let values = map_at(txn, map, "values");
-            let name = |id: &str| {
-                names
-                    .as_ref()
-                    .and_then(|names| str_at(txn, names, id))
-                    .unwrap_or_default()
-            };
-            let value = |series: &str, label: &str| {
-                values
-                    .as_ref()
-                    .and_then(|values| num_at(txn, values, &format!("{series}/{label}")))
-                    .map_or(Value::Null, number)
-            };
-            block.insert(
-                "labels".into(),
-                labels.iter().map(|label| json!(name(label))).collect(),
-            );
-            block.insert(
-                "series".into(),
-                series
-                    .iter()
-                    .map(|id| {
-                        json!({
-                            "name": name(id),
-                            "values": labels.iter().map(|label| value(id, label)).collect::<Vec<_>>(),
-                        })
-                    })
-                    .collect(),
-            );
-        }
-        _ => {}
-    }
-    let mut block = Value::Object(block);
-    q::repair_figure(&mut block);
-    Some(block)
 }
 
 /// Whether a quiz document (content or keys) holds a question block of a
@@ -1053,15 +896,6 @@ fn fresh_id<T: ReadTxn>(txn: &T, map: &MapRef, prefix: &str, n: &mut usize) -> S
     }
 }
 
-/// An order key after `last` for an entry whose key is `held`: the held one
-/// while it still sorts after `last`.
-fn next_order(held: Option<&str>, last: Option<&str>) -> String {
-    match held {
-        Some(held) if !held.is_empty() && last.is_none_or(|last| last < held) => held.to_owned(),
-        _ => order::after(last),
-    }
-}
-
 /// The list of entries under `key` holds one entry per item afterwards, by
 /// position: the i-th entry is filled from the i-th item, extra items get
 /// fresh entries after the last, extra entries go. The entry ids, in order.
@@ -1091,7 +925,7 @@ fn sync_entries<I>(
             }
         };
         let held_order = held.get(i).map(|entry| entry.order.as_str());
-        let order = next_order(held_order, last.as_deref());
+        let order = figure_map::next_order(held_order, last.as_deref());
         sync_plain(txn, &entry, "order", Some(order_any(&order)));
         last = Some(order);
         fill(txn, &entry, item);
@@ -1106,37 +940,6 @@ fn sync_entries<I>(
 #[allow(clippy::ptr_arg)]
 fn text_fill(txn: &mut TransactionMut, entry: &MapRef, text: &String) {
     sync_text(txn, entry, "text", text);
-}
-
-/// A table's row or column ids (id to order key) for `count` of them, by
-/// position, in order.
-fn sync_keys(
-    txn: &mut TransactionMut,
-    parent: &MapRef,
-    key: &str,
-    prefix: &str,
-    count: usize,
-) -> Vec<String> {
-    let map = child_map(txn, parent, key);
-    let held = ordered_pairs(txn, Some(&map));
-    let mut ids = Vec::with_capacity(count);
-    let mut last: Option<String> = None;
-    let mut n = 0;
-    for i in 0..count {
-        let id = match held.get(i) {
-            Some((id, _)) => id.clone(),
-            None => fresh_id(txn, &map, prefix, &mut n),
-        };
-        let held_order = held.get(i).map(|(_, order)| order.as_str());
-        let order = next_order(held_order, last.as_deref());
-        sync_plain(txn, &map, &id, Some(order_any(&order)));
-        last = Some(order);
-        ids.push(id);
-    }
-    for (id, _) in held.iter().skip(count) {
-        map.remove(txn, id);
-    }
-    ids
 }
 
 fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
@@ -1159,8 +962,8 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
                 .map(|row| row.as_array().map_or(0, Vec::len))
                 .max()
                 .unwrap_or(0);
-            let columns = sync_keys(txn, map, "columns", "c", width);
-            let rows = sync_keys(txn, map, "rows", "r", grid.len());
+            let columns = figure_map::sync_keys(txn, map, "columns", "c", width);
+            let rows = figure_map::sync_keys(txn, map, "rows", "r", grid.len());
             let cells = child_map(txn, map, "cells");
             let mut kept = HashSet::new();
             for (row, row_id) in grid.iter().zip(&rows) {
@@ -1189,104 +992,8 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
             sync_text(txn, map, "description", str_of(block, "description"));
             sync_plain(txn, map, "attribution", plain_str("attribution"));
         }
-        _ => sync_figure(txn, map, kind, block),
+        _ => figure_map::sync(txn, map, kind, block),
     }
-}
-
-/// A chart's, plot's or graph's entry made to hold `block`, writing only what
-/// differs: its plain fields, a graph's board fields and elements by id, a
-/// chart's series and labels as a table's rows and columns (by position) with
-/// their names and values. Nothing is written whole, so a client's edit to
-/// another field, element or value meanwhile survives.
-fn sync_figure(txn: &mut TransactionMut, map: &MapRef, kind: &str, block: &Value) {
-    let maps = figure_maps(kind);
-    let empty = serde_json::Map::new();
-    let fields = block.as_object().unwrap_or(&empty);
-    for (key, value) in fields {
-        if key != "type" && !maps.contains(&key.as_str()) {
-            sync_plain(txn, map, key, (!value.is_null()).then(|| json_any(value)));
-        }
-    }
-    remove_keys(txn, map, |key| {
-        key == "order" || key == "type" || maps.contains(&key) || fields.contains_key(key)
-    });
-    match kind {
-        "graph" => {
-            let board = child_map(txn, map, "board");
-            let wanted = block
-                .get("board")
-                .and_then(Value::as_object)
-                .unwrap_or(&empty);
-            for (key, value) in wanted {
-                sync_plain(txn, &board, key, Some(json_any(value)));
-            }
-            remove_keys(txn, &board, |key| wanted.contains_key(key));
-            let elements = child_map(txn, map, "elements");
-            sync_elements(txn, &elements, array_of(block, "elements"));
-        }
-        "chart" => sync_chart(txn, map, block),
-        _ => {}
-    }
-}
-
-/// A graph's elements as `elements`, by id: an equal one keeps its entry, a
-/// changed or moved one is set again, a gone one goes.
-fn sync_elements(txn: &mut TransactionMut, map: &MapRef, elements: &[Value]) {
-    let held: HashMap<String, (String, Any)> = element_entries(txn, map)
-        .into_iter()
-        .map(|(id, order, element)| (id, (order, element)))
-        .collect();
-    let mut kept = HashSet::new();
-    let mut last: Option<String> = None;
-    for element in elements {
-        let Some(id) = element.get("id").and_then(Value::as_str) else {
-            continue;
-        };
-        let held = held.get(id);
-        let order = next_order(held.map(|(order, _)| order.as_str()), last.as_deref());
-        let wanted = json_any(element);
-        if held.is_none_or(|(at, was)| *at != order || *was != wanted) {
-            let entry = HashMap::from([
-                ("element".to_owned(), wanted),
-                ("order".to_owned(), order_any(&order)),
-            ]);
-            map.insert(txn, id, Any::Map(Arc::new(entry)));
-        }
-        kept.insert(id.to_owned());
-        last = Some(order);
-    }
-    remove_keys(txn, map, |id| kept.contains(id));
-}
-
-/// A chart's labels and series as a table's columns and rows ([sync_keys]),
-/// their names, and each value (none for an empty cell).
-fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
-    let labels = array_of(block, "labels");
-    let series = array_of(block, "series");
-    let label_ids = sync_keys(txn, map, "labels", "l", labels.len());
-    let series_ids = sync_keys(txn, map, "series", "s", series.len());
-    let names = child_map(txn, map, "names");
-    let values = child_map(txn, map, "values");
-    let mut named = HashSet::new();
-    let mut held = HashSet::new();
-    for (id, label) in label_ids.iter().zip(labels) {
-        let label = label.as_str().unwrap_or_default();
-        sync_plain(txn, &names, id, Some(string_any(label)));
-        named.insert(id.clone());
-    }
-    for (id, entry) in series_ids.iter().zip(series) {
-        sync_plain(txn, &names, id, Some(string_any(str_of(entry, "name"))));
-        named.insert(id.clone());
-        let cells = array_of(entry, "values");
-        for (l, label) in label_ids.iter().enumerate() {
-            let key = format!("{id}/{label}");
-            let value = cells.get(l).and_then(Value::as_f64).map(Any::Number);
-            sync_plain(txn, &values, &key, value);
-            held.insert(key);
-        }
-    }
-    remove_keys(txn, &names, |id| named.contains(id));
-    remove_keys(txn, &values, |key| held.contains(key));
 }
 
 fn sync_blocks(txn: &mut TransactionMut, parent: &MapRef, key: &str, blocks: &[Value]) {
@@ -1539,7 +1246,7 @@ fn sync_question(
     for part in parts {
         let entry = child_map(content, &parts_map, str_of(part, "id"));
         let held = str_at(content, &entry, "order");
-        let order = next_order(held.as_deref(), last.as_deref());
+        let order = figure_map::next_order(held.as_deref(), last.as_deref());
         sync_plain(content, &entry, "order", Some(order_any(&order)));
         last = Some(order);
         let marks = part.get("marks").and_then(Value::as_f64).map(Any::Number);
@@ -1864,66 +1571,8 @@ fn a_meta(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::String(value)) if value.encode_utf16().count() <= q::QUESTION_METADATA_MAX)
 }
 
-/// An image's width or height: whole pixels, 1 to the image bound.
-fn image_size(content: &ItemContent) -> bool {
-    matches!(one_any(content), Some(Any::Number(value))
-        if value.fract() == 0.0 && (1.0..=q::QUESTION_IMAGE_DIMENSION_MAX).contains(value))
-}
-
 fn a_bool(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::Bool(_)))
-}
-
-fn finite(value: &Any) -> bool {
-    matches!(value, Any::Number(n) if n.is_finite()) || matches!(value, Any::BigInt(_))
-}
-
-/// A chart value: a finite number.
-fn a_number(content: &ItemContent) -> bool {
-    one_any(content).is_some_and(finite)
-}
-
-/// A graph's view: four finite numbers.
-fn a_bbox(content: &ItemContent) -> bool {
-    matches!(one_any(content), Some(Any::Array(items)) if items.len() == 4 && items.iter().all(finite))
-}
-
-const fn larger(a: usize, b: usize) -> usize {
-    if a > b { a } else { b }
-}
-
-/// A chart's or plot's kind: a short name (the validators know the kinds).
-const FIGURE_KIND_MAX: usize = 16;
-/// A chart's or plot's title, axis title or unit.
-const FIGURE_TITLE_MAX: usize = larger(q::QUESTION_CHART_TITLE_MAX, q::QUESTION_PLOT_TITLE_MAX);
-/// A chart series' or label's name.
-const CHART_NAME_MAX: usize = larger(
-    q::QUESTION_CHART_LABEL_MAX,
-    q::QUESTION_CHART_SERIES_NAME_MAX,
-);
-
-/// A graph element's entry: `{element, order}` under the element's own id
-/// (graph/keyed.ts), the element held to the graph's caps; its form is the
-/// validators', so a kind they admit passes through unchanged.
-fn element_entry(id: &str, content: &ItemContent) -> Result<(), String> {
-    let element = match one_any(content) {
-        Some(Any::Map(entry))
-            if entry.len() == 2
-                && matches!(entry.get("order"), Some(Any::String(order)) if order::valid(order)) =>
-        {
-            entry.get("element")
-        }
-        _ => None,
-    };
-    match element {
-        Some(element @ Any::Map(inner))
-            if matches!(inner.get("id"), Some(Any::String(own)) if own.as_ref() == id)
-                && q::identifier(&json!(id), "id").is_ok() =>
-        {
-            q::figure_caps("graph", &json!({ "elements": [any_json(element)] })).or_else(refuse)
-        }
-        _ => refuse("a graph element that is not {element, order} under its id"),
-    }
 }
 
 /// Whole marks a part or a marking item may carry (the store's caps, REVIEW1
@@ -1984,7 +1633,6 @@ fn block_shape(
         ([], Some("type")) if one_of(content, BLOCK_TYPES) => tally.value(content),
         ([], Some("attribution")) if a_meta(content) => tally.value(content),
         ([], Some("header")) if a_bool(content) => tally.value(content),
-        ([], Some("width" | "height")) if image_size(content) => tally.value(content),
         // An image waiting for its upload is structure, not a refused value
         // (D4, REVIEW1 M3): blank, it only leaves the question incomplete.
         ([], Some("image")) => match one_any(content) {
@@ -1997,65 +1645,37 @@ fn block_shape(
             }
             _ => return refuse("an image that is not {assetId} or a hosted {url}"),
         },
-        // A chart's, plot's or graph's plain fields (Epo 2026-11-16), each
-        // held to its cap here; their form is the validators'. A figure is
-        // never one value (the layout before it is refused).
-        ([], Some("kind")) if a_string(content, FIGURE_KIND_MAX) => tally.value(content),
-        ([], Some("title" | "xTitle" | "yTitle" | "unit"))
-            if a_string(content, FIGURE_TITLE_MAX) =>
-        {
-            tally.value(content)
-        }
-        ([], Some("gridlines")) if one_of(content, &["normal", "fine"]) => tally.value(content),
-        ([], Some("description")) if a_string(content, q::QUESTION_DESCRIPTION_MAX) => {
-            tally.value(content)
-        }
-        // A plot's lists are plain values, held to the plot's caps.
-        ([], Some(list @ ("series" | "lines" | "marks"))) if !is_map(content) => {
-            match one_any(content) {
-                Some(value @ Any::Array(_)) => {
-                    q::figure_caps("plot", &json!({ list: any_json(value) })).or_else(refuse)?;
-                    tally.value(content);
-                }
-                _ => return refuse("a plot list that is not a list"),
-            }
-        }
         ([], Some("text" | "description")) if is_text(content) => tally.structure(32),
-        (
-            [],
-            Some(
-                "rows" | "columns" | "cells" | "series" | "labels" | "names" | "values" | "board"
-                | "elements",
-            ),
-        ) if is_map(content) => tally.structure(8),
-        (["rows" | "columns" | "series" | "labels"], Some(id))
-            if valid_id(id) && order_key(content) =>
-        {
+        ([], Some("rows" | "columns" | "cells")) if is_map(content) => tally.structure(8),
+        ([], Some(key)) if figure_map::is_map_key(key) && is_map(content) => tally.structure(8),
+        // An image's size and a chart's, plot's or graph's plain fields (Epo
+        // 2026-11-16), each held to its cap as a note figure's are
+        // (`figure_map`); their form is the validators'. A figure is never
+        // one value (the layout before it is refused).
+        ([], Some(key)) => match one_any(content) {
+            Some(value) => {
+                figure_map::check_field(key, value).or_else(refuse)?;
+                tally.value(content);
+            }
+            None => return refuse("a struct outside its shape"),
+        },
+        (["rows" | "columns"], Some(id)) if valid_id(id) && order_key(content) => {
             tally.entry(path, 8);
         }
-        (["names"], Some(id)) if valid_id(id) && a_string(content, CHART_NAME_MAX) => {
-            tally.entry(path, 8);
-            tally.value(content);
-        }
-        (["values"], Some(cell)) => {
-            let mut ids = cell.split('/');
-            match (ids.next(), ids.next(), ids.next()) {
-                (Some(series), Some(label), None)
-                    if valid_id(series) && valid_id(label) && a_number(content) =>
-                {
+        // An entry of a figure's maps: a series' or label's order key, a
+        // name, a value, a board field, a graph element by its id.
+        ([inner], Some(key)) if figure_map::is_map_key(inner) => match one_any(content) {
+            Some(value) => {
+                figure_map::check_entry(inner, key, value).or_else(refuse)?;
+                if *inner != "board" {
                     tally.entry(path, 8);
+                }
+                if !matches!(*inner, "series" | "labels") {
                     tally.value(content);
                 }
-                _ => return refuse("a chart value that is not a number keyed series/label"),
             }
-        }
-        (["board"], Some("bbox")) if a_bbox(content) => tally.value(content),
-        (["board"], Some("axis" | "grid" | "polar")) if a_bool(content) => tally.value(content),
-        (["elements"], Some(id)) => {
-            element_entry(id, content)?;
-            tally.entry(path, 8);
-            tally.value(content);
-        }
+            None => return refuse("a figure entry that is not plain"),
+        },
         (["cells"], Some(cell)) if is_text(content) => {
             let mut ids = cell.split('/');
             match (ids.next(), ids.next(), ids.next()) {
@@ -2347,24 +1967,14 @@ fn text_cap(path: &[&str], open_part: bool) -> usize {
 }
 
 /// A block's own list's cap by its field: a table's axes and cells; a
-/// chart's series, labels, names and values and a graph's elements at twice
-/// their caps, as a merge may pass a cap and its read keeps the first ones
-/// (`q::repair_figure`; as a note figure's lists, `q::figure_entries`).
+/// figure's maps at twice their caps, as a note figure's
+/// (`figure_map::map_cap`).
 fn block_list_cap(field: &str) -> Option<usize> {
-    let (series, labels) = (
-        2 * q::QUESTION_CHART_SERIES_MAX,
-        2 * q::QUESTION_CHART_LABELS_MAX,
-    );
     Some(match field {
         "rows" => q::QUESTION_TABLE_ROWS_MAX,
         "columns" => q::QUESTION_TABLE_COLUMNS_MAX,
         "cells" => q::QUESTION_TABLE_ROWS_MAX * q::QUESTION_TABLE_COLUMNS_MAX,
-        "series" => series,
-        "labels" => labels,
-        "names" => series + labels,
-        "values" => series * labels,
-        "elements" => 2 * q::QUESTION_GRAPH_ELEMENTS_MAX,
-        _ => return None,
+        _ => return figure_map::map_cap(field),
     })
 }
 

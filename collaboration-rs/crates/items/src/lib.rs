@@ -12,10 +12,10 @@
 
 pub mod flashcards;
 pub mod locate;
-pub mod order;
 pub mod quiz;
 pub mod validator;
 
+pub use notes::order;
 pub use validator::{Admission, Refusal, Validator};
 
 /// What one update may add to an item's projection, read from its structs.

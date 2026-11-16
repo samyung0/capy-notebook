@@ -39,9 +39,10 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   editor writes on text only; the read-only and editor kits inject them on
   leaves only), `sharedText` keys (held as a Y.Text so typing merges;
   only `mermaid.source`), `sharedMap` keys (held as a Y.Map, each entry
-  replaced whole; a chart's, plot's, graph's and table view's `block`) and their
-  `sharedLists` (keys of that value held as a Y.Array of Y.Maps: `series`,
-  graph `elements`, a table view's `columns`, `rows` and `views`), `assets` (paths naming editor assets, `[]` walking a
+  replaced whole; a chart's, plot's, graph's and table view's `block`, a
+  figure's as the figure map of [Live figures](#live-figures)) and their
+  `sharedLists` (keys of that value held as a Y.Array of Y.Maps: a table
+  view's `columns`, `rows` and `views`), `assets` (paths naming editor assets, `[]` walking a
   list), `resizable` (a width of `MEDIA_WIDTH_MIN`–`MEDIA_WIDTH_MAX` %),
   fixed `children`, and the `materials` kinds whose documents may hold it.
   A type the catalog does not list is refused by every write: a stored
@@ -148,10 +149,9 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   [plate-editor](frontend/plate-editor.md)).
 
   In a live quiz room a chart, plot or graph question block is a live map
-  too, the block entry itself rather than a `block` key: its plain fields, a
-  graph's `board` and its `elements` keyed by element id, a chart's series,
-  labels and values held as a table's rows, columns and cells (Epo
-  2026-11-16; the layout is in [plate-editor](frontend/plate-editor.md)).
+  too, the block entry itself rather than a `block` key, in the same layout
+  a note figure's `block` has ([Live figures](#live-figures); Epo
+  2026-11-16, D15).
 
   A **value** is an attribute of its node, replaced whole. A **live map**
   keeps its value in a shared map (below, [Live figures](#live-figures)). A
@@ -282,23 +282,43 @@ shows unless the rule is `none`.
 
 ## Live figures
 
-A chart's, plot's or graph's `block` is a live map in rooms (Epo 2026-10-17):
-a Y.Map whose entries are the block's fields, each replaced whole on its
-own, with its `sharedLists` key (a chart's or plot's `series`, a graph's
-`elements`) a Y.Array of Y.Maps whose fields are replaced whole too. So two
-editors' changes to different fields, series or graph elements merge, and
-the same field takes the last writer. Slate, the projection, Go, markdown,
-exports and share pages see the plain block. How the browser and the editors
-work with it is in [plate-editor](frontend/plate-editor.md) (Mermaid and
-figures).
+A chart, plot or graph is one figure map wherever a room holds it (Epo
+2026-10-17; one layout for notes and quizzes, Epo 2026-11-16, D9, D15): a
+note figure's `block` and a live quiz's block entry (beside its `order`) are
+the same Y.Map of the block's fields, each a plain value replaced whole, with
+no list anywhere:
 
-- **Writes.** The slate-yjs patch and the Rust server (`slate_yjs.rs`:
-  `ElementPrelim`, `edit_map`) make the map on an insert, a bootstrap and a
-  clone, and a `set_node` of `block` writes only its changed entries: a
-  list's entries by index (series) or, when every entry has an `id`, by that
-  id (graph elements; one out of place is removed and inserted anew). Rooms
+- graph: `type`, `width`, `height`, `description?`, `board` (a map of
+  `bbox`, `axis`, `grid`, `polar?`) and `elements` (a map of element id to
+  `{element, order}`);
+- chart: `type`, `kind`, `title`, `xTitle?`, `yTitle?`, `gridlines?`,
+  `description?`, `series` and `labels` (maps of id to order key, a table's
+  rows and columns), `names` (id to name) and `values` (`series/label` to a
+  number; no entry is an empty cell);
+- plot: `type` and its fields as plain values (its `series` one value).
+
+Order keys sort as strings, a tie broken by id. So two editors' changes to
+different fields, board fields, graph elements, chart cells or names merge,
+and the same one takes the last writer (two moving one element at once: one
+order wins, the element shows once). Slate, the projection, Go, markdown,
+exports and share pages see the plain block. One reader, one diffing writer
+and one admission check serve both containers: `src/features/figures/
+figureMap.ts` in the browser (`heldBlock`, `readFigure`, `writeFigure`,
+`newFigureMap` and the one-entry edits) and `notes::figure_map` in the
+collaboration server (`read`, `block`, `held_block`, `sync`, `check_field`,
+`check_entry`, `check_held`). How the browser and the editors work with it
+is in [plate-editor](frontend/plate-editor.md) (Mermaid and figures).
+
+- **Writes.** The slate-yjs patch (through the figure codec
+  `src/features/notes/figureBinding.ts` registers) and the Rust server
+  (`slate_yjs.rs`: `ElementPrelim`, `set_node`) make the map on an insert, a
+  bootstrap and a clone, and a `set_node` of `block` writes only the entries
+  that differ (`writeFigure`, `figure_map::sync`); the content API's
+  `replace-block` of a figure keeping its keys is such a `set_node`. Rooms
   hold `block` as its map only (Epo 2026-10-18): admission refuses one
-  written as a plain value (`PLAIN_BLOCK`), new or replacing a map. The
+  written as a plain value (`PLAIN_BLOCK`), new or replacing a map. Rooms
+  stored in the list layout before were reset (migration 0179,
+  [deployment-runbook](deployment-runbook.md#note-figure-maps-reset-migration-0179)). The
   Node-era parity corpus (`collaboration-rs/crates/notes/tests/corpus`),
   whose writers wrote plain blocks, counts those updates as tightened and
   still applies them as Node took them, so later steps compare.
@@ -357,18 +377,22 @@ figures).
     `ValidateKind` for other material kinds; the browser's
     `createMaterialDocument` (imports, saves).
   A crafted update gets nothing more from the live check: room admission
-  also checks every list entry the room holds, those a read drops included
-  (`questions::figure_entries`), and the relaxed check takes only the kept
-  states, everything else (keys, types, lengths, the labels) as before.
+  also checks every entry the figure map holds, those a read drops included
+  (`figure_map::check_held`, the checks a quiz room runs on each figure
+  entry as it arrives), and the relaxed check takes only the kept states,
+  everything else (keys, types, lengths, the labels) as before.
 - **Admission.** An update writing into a figure's map is checked on a copy
   of the room, measured exactly (a repair can make a deletion grow the
   value): the map sits on a chart, plot or graph only, holds plain entries
-  and lists of maps of plain entries only (`FIGURE_SHAPE`, `STRAY_MAP`), and
-  its block read as above must be one the room's store takes (`BAD_VALUE`:
-  an unknown key, a wrong type, an oversize value); a merge's kept states go
-  in. A list holds at most twice its cap (12 chart series, 8 plot series,
-  200 graph elements), so a merge past the cap goes in and an update holding
-  more is refused (`BAD_VALUE`); the room's size limits (`limits::measure`)
+  and its kind's maps of plain entries only (`FIGURE_SHAPE`, `STRAY_MAP`),
+  each entry one a writer writes (a graph element as the validators hold one
+  element), and its block read as above must be one the room's store takes
+  (`BAD_VALUE`: an unknown key, a wrong type, an oversize value); a merge's
+  kept states go in. A chart's series and labels and a graph's elements hold
+  at most twice their cap (12 chart series, 200 graph elements; names and
+  values to match), so a merge past the cap goes in and an update holding
+  more is refused (`BAD_VALUE`); a plot's series is one value, held to its
+  cap as written. The room's size limits (`limits::measure`)
   count the block as the map holds it, the entries a read drops included
   (Epo 2026-10-18). Typing elsewhere in the note stays on the bound with no
   copy.

@@ -594,9 +594,6 @@
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -631,9 +628,6 @@
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -667,9 +661,6 @@
       ],
       "sharedMap": [
         "block"
-      ],
-      "sharedLists": [
-        "elements"
       ],
       "resizable": true,
       "materials": [

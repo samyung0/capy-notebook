@@ -15,7 +15,7 @@ use yrs::updates::encoder::Encode;
 use yrs::{Any, ReadTxn, Update};
 
 use crate::plate::{self, Insert, ProjectionError};
-use crate::{catalog, json};
+use crate::{catalog, figure_map, json};
 
 // IMPORTANT: keep in sync with src/lib/const.ts and Go materialdoc.
 pub const MAX_CONTENT_BYTES: u64 = 2 * 1024 * 1024;
@@ -640,16 +640,21 @@ fn plain_content<T: ReadTxn>(
         let parent = match &at {
             Place::Entry(_, parent) | Place::Sequence(parent) => parent,
         };
-        // Inside a figure's block: plain entries in the block and its list
-        // entries, lists of maps under the block, nothing else.
+        // Inside a block map: plain entries in the block, its inner maps and
+        // its list entries; a figure's maps (Epo 2026-11-16) and a table
+        // view's lists of maps under the block; nothing else.
         if let Some(part) = parts.of_parent(parent) {
             let fits = match (&at, part, item.content()) {
                 (_, _, ItemContent::Deleted(_)) => true,
-                (Place::Entry(..), Part::Block(_) | Part::Entry(_), ItemContent::Any(values)) => {
-                    values.iter().all(plain)
-                }
+                (
+                    Place::Entry(..),
+                    Part::Block(_) | Part::Inner(_) | Part::Entry(_),
+                    ItemContent::Any(values),
+                ) => values.iter().all(plain),
                 (Place::Entry(key, _), Part::Block(_), ItemContent::Type(branch)) => {
-                    matches!(branch.type_ref(), TypeRef::Array) && plate::list_key(key)
+                    (matches!(branch.type_ref(), TypeRef::Array) && plate::list_key(key))
+                        || (matches!(branch.type_ref(), TypeRef::Map)
+                            && figure_map::is_map_key(key))
                 }
                 (Place::Sequence(_), Part::List(_), ItemContent::Type(branch)) => {
                     matches!(branch.type_ref(), TypeRef::Map)
@@ -981,7 +986,10 @@ fn held_figure(branch: yrs::branch::BranchPtr) -> Option<BranchID> {
 enum Part {
     /// The block map (`block` of the element).
     Block(yrs::ID),
-    /// A list of maps under the block (series, graph elements).
+    /// One of a figure's maps under the block (its board, elements, series,
+    /// labels, names, values).
+    Inner(yrs::ID),
+    /// A list of maps under the block (a table view's columns, rows, views).
     List(yrs::ID),
     /// One map of such a list.
     Entry(yrs::ID),
@@ -990,9 +998,10 @@ enum Part {
 impl Part {
     fn owner(self) -> BranchID {
         match self {
-            Part::Block(element) | Part::List(element) | Part::Entry(element) => {
-                BranchID::Nested(element)
-            }
+            Part::Block(element)
+            | Part::Inner(element)
+            | Part::List(element)
+            | Part::Entry(element) => BranchID::Nested(element),
         }
     }
 }
@@ -1062,6 +1071,11 @@ impl<T: ReadTxn> Parts<'_, T> {
                 self.list_of(&list).map(Part::Entry)
             }
             Some((TypeRef::Array, _)) => self.list_of(id).map(Part::List),
+            Some((TypeRef::Map, Some(Place::Entry(key, Some(BranchID::Nested(block))))))
+                if figure_map::is_map_key(&key) && self.block_of(&block).is_some() =>
+            {
+                self.block_of(&block).map(Part::Inner)
+            }
             Some((TypeRef::Map, _)) => self.block_of(id).map(Part::Block),
             _ => None,
         };
@@ -1438,24 +1452,32 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
         if branch.item().is_some_and(|item| item.is_deleted()) {
             continue;
         }
-        let attributes: HashMap<Arc<str>, Any> = plate::properties(&branch)?.into_iter().collect();
-        let kind = match attributes.get("type") {
+        let kind = match entry_of(branch, "type").and_then(live_value) {
             Some(Any::String(kind)) => kind.to_string(),
             _ => String::new(),
         };
-        // A live block map sits on a figure only, and holds a block its store
-        // takes, read as the projection reads it (repaired, Epo 2026-10-17).
-        // Only a shared-map key may hold one ([plain_content]).
-        for key in MAP_KEYS.iter().copied() {
-            let map = entry_of(branch, key).is_some_and(|item| {
+        // A live block map sits on a figure or a table view only, which the
+        // element's type decides before its map is read (a figure's map reads
+        // as its kind's layout, Epo 2026-11-16). Only a shared-map key may
+        // hold one ([plain_content]).
+        let held = |key: &str| {
+            entry_of(branch, key).is_some_and(|item| {
                 !item.is_deleted()
                     && matches!(item.content(), ItemContent::Type(map) if matches!(map.type_ref(), TypeRef::Map))
-            });
-            if !map {
+            })
+        };
+        if MAP_KEYS
+            .iter()
+            .any(|key| held(key) && !plate::holds_map(&kind, key))
+        {
+            return Err(Refusal::Content(STRAY_MAP));
+        }
+        let attributes: HashMap<Arc<str>, Any> = plate::properties(&branch)?.into_iter().collect();
+        // The map holds a block its store takes, read as the projection reads
+        // it (repaired, Epo 2026-10-17).
+        for key in MAP_KEYS.iter().copied() {
+            if !held(key) {
                 continue;
-            }
-            if !plate::holds_map(&kind, key) {
-                return Err(Refusal::Content(STRAY_MAP));
             }
             let block = attributes
                 .get(key)
@@ -1473,11 +1495,15 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
                 }
                 continue;
             }
-            // Every held list entry is one a writer could write, the ones a
-            // read leaves out too (Epo 2026-10-18); the repaired block is one
-            // the room's store takes.
-            let held = plate::held_block_value(branch)?.unwrap_or(Value::Null);
-            if crate::questions::figure_entries(&held).is_err()
+            // Every held entry is one a writer could write, the ones a read
+            // leaves out too (Epo 2026-10-18), checked as a quiz room checks
+            // its figures (`figure_map`); the repaired block is one the
+            // room's store takes.
+            let held = entry_of(branch, key).and_then(|item| match item.content() {
+                ItemContent::Type(map) => Some(BranchPtr::from(map.as_ref())),
+                _ => None,
+            });
+            if held.is_none_or(|map| figure_map::check_held(&map).is_err())
                 || crate::material::live_figure_block(&kind, &block).is_err()
             {
                 return Err(Refusal::Content(BAD_VALUE));

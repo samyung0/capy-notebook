@@ -1,4 +1,6 @@
 import { m } from '@/i18n';
+import type { FigureBinding } from './figureBinding';
+import { localFigureBinding } from './localFigureBinding';
 import type { BlockSection } from './QuestionView';
 import {
   blankQuestion,
@@ -165,11 +167,14 @@ export type FigureAt = {
 };
 
 /** A live quiz's figures by their room entries (Epo 2026-11-16, D2): a block
- * read from the room knows its entry's key, and a figure dialog's Save and
- * Remove write that entry, so a figure a co-editor changed meanwhile stays
- * one figure. A draft (the bank's question dialog) has none: its figures
- * save by place ([saveFigure]). */
+ * read from the room knows its entry's key, and a figure dialog writes that
+ * entry (a chart or graph each change as it is made, a table at its Save) and
+ * removes it, so a figure a co-editor changed meanwhile stays one figure. A
+ * draft (the bank's question dialog) has none: its figures save by place
+ * ([saveFigure]). */
 export type FigureRoom = {
+  /** The figure at `at` as a chart or graph dialog edits it, live. */
+  bind(at: FigureAt): FigureBinding;
   /** A new figure after the block keyed `after`, else (none, or a key that
    * went) at `index`; its entry key, or none when the section went. */
   insert(
@@ -228,6 +233,86 @@ export function saveFigure(
   const place =
     before >= 0 ? before + 1 : Math.min(figure.index, blocks.length);
   return [...blocks.slice(0, place), block, ...blocks.slice(place)];
+}
+
+/** A figure as its card opens it: its block, place and the block before it
+ * then; `isNew` when just added from Insert. */
+export type FigureOpening = {
+  before?: QuestionBlock;
+  block: QuestionBlock;
+  index: number;
+  isNew?: boolean;
+  section: BlockSection;
+};
+
+/** A chart's or graph's dialog bound to the figure where it lives (Epo
+ * 2026-11-16, D2/D3/D13): a live quiz's room entry, or the question draft the
+ * card writes through `writeBlocks`, each change written as it is made. A
+ * figure just added goes in first, where Insert put it, so the dialog has it
+ * to edit and Remove takes it out. Its place in the section (a draft's
+ * figure is found by content near it); none when the section or the figure
+ * went. */
+export function bindFigure(
+  opened: FigureOpening,
+  {
+    figures,
+    question,
+    writeBlocks,
+  }: {
+    figures?: FigureRoom;
+    question: string;
+    writeBlocks: (
+      section: BlockSection,
+      change: (blocks: QuestionBlock[]) => QuestionBlock[]
+    ) => Question;
+  }
+): { binding: FigureBinding; index: number } | null {
+  const { block, section } = opened;
+  if (block.type !== 'chart' && block.type !== 'graph')
+    throw new Error('Only charts and graphs are edited live');
+  if (figures) {
+    const entry = opened.isNew
+      ? figures.insert(
+          {
+            after: opened.before && figures.key(opened.before),
+            index: opened.index,
+            question,
+            section,
+          },
+          block
+        )
+      : figures.key(block);
+    return entry
+      ? {
+          binding: figures.bind({ entry, question, section }),
+          index: opened.index,
+        }
+      : null;
+  }
+  const index = opened.isNew
+    ? sectionBlocks(
+        writeBlocks(section, (blocks) => saveFigure(blocks, opened, block)),
+        section
+      ).indexOf(block)
+    : opened.index;
+  return {
+    binding: localFigureBinding(block, {
+      remove: (held) =>
+        writeBlocks(section, (blocks) => {
+          const at = findBlock(blocks, held, index);
+          return at < 0 ? blocks : blocks.filter((_, i) => i !== at);
+        }),
+      write: (next, previous) =>
+        writeBlocks(section, (blocks) =>
+          saveFigure(
+            blocks,
+            { before: opened.before, block: previous, index },
+            next
+          )
+        ),
+    }),
+    index,
+  };
 }
 
 /** A new part: a short answer with an empty text. */

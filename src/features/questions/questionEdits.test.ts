@@ -1,5 +1,13 @@
 import { expect, it } from 'vitest';
-import { duplicateQuestion, saveFigure, withAnswer } from './questionEdits';
+import {
+  bindFigure,
+  changeBlocks,
+  duplicateQuestion,
+  newQuestionBlock,
+  saveFigure,
+  sectionBlocks,
+  withAnswer,
+} from './questionEdits';
 import { blankQuestion, type Question, type QuestionBlock } from './types';
 
 it('duplicates a question with new ids, its parts still in their group', () => {
@@ -59,4 +67,42 @@ it('saves a figure where it is now, never over another block', () => {
       saved
     )
   ).toEqual([text('B'), text('A'), saved, chart]);
+});
+
+// A draft has no room: a chart just added goes into the question at once,
+// each dialog change is written to the question, and Remove takes it out.
+it('edits a draft’s new chart in the question as it is made', () => {
+  const [part] = blankQuestion().parts;
+  const text: QuestionBlock = { text: 'A', type: 'text' };
+  let question: Question = {
+    ...blankQuestion(),
+    parts: [{ ...part, blocks: [text] }],
+  };
+  const section = { partId: part.id };
+  const block = newQuestionBlock('chart');
+  const opened = bindFigure(
+    { before: text, block, index: 1, isNew: true, section },
+    {
+      question: question.id,
+      writeBlocks: (at, change) => {
+        question = changeBlocks(
+          question,
+          at,
+          change(sectionBlocks(question, at))
+        );
+        return question;
+      },
+    }
+  );
+  if (!opened) throw new Error('not added');
+  expect(opened.index).toBe(1);
+  expect(question.parts[0].blocks).toEqual([text, block]);
+  opened.binding.setFields({ title: 'Rain' });
+  opened.binding.setChartCell('s0', 'l0', 4);
+  expect(question.parts[0].blocks).toEqual([
+    text,
+    { ...block, series: [{ name: '', values: [4] }], title: 'Rain' },
+  ]);
+  opened.binding.remove();
+  expect(question.parts[0].blocks).toEqual([text]);
 });

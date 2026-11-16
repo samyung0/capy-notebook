@@ -9,7 +9,10 @@ const partAnswers = (dialog: Locator) =>
     .getByRole('button', { name: m.question_ui_select_answer() })
     .and(dialog.locator('[data-row-key^="part:"]'));
 
-test('undoing the add of a chart still open in its editor goes back to the question', async ({
+// A chart or graph is edited where it lives (Epo 2026-11-16, D13): added
+// from Insert it is in the question at once, the dialog has Done and no Save
+// or Cancel, and Done only closes it.
+test('a chart added from Insert is in the question at once and Done keeps it', async ({
   page,
 }) => {
   await page.goto('/materials/qz_2');
@@ -19,15 +22,29 @@ test('undoing the add of a chart still open in its editor goes back to the quest
   await page
     .getByRole('button', { exact: true, name: m.question_ui_chart() })
     .click();
-  const chartEditor = dialog.getByRole('heading', {
-    exact: true,
+  const chartEditor = page.getByRole('dialog', {
     name: m.question_ui_chart(),
   });
   await expect(chartEditor).toBeVisible();
-  // The chart's edits stay staged until Done, so Undo takes back its add.
-  await dialog.getByRole('button', { name: m.editor_undo() }).click();
+  await expect(
+    chartEditor.getByRole('button', { name: m.question_ui_save() })
+  ).toHaveCount(0);
+  await expect(
+    chartEditor.getByRole('button', { name: m.action_cancel() })
+  ).toHaveCount(0);
+  await chartEditor
+    .getByRole('textbox', { name: m.question_ui_title() })
+    .fill('Rainfall');
+  await chartEditor
+    .getByRole('button', { name: m.drawing_board_done() })
+    .click();
   await expect(chartEditor).toBeHidden();
-  await expect(partAnswers(dialog)).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: m.question_ui_edit_block({ type: m.question_ui_chart() }),
+    })
+  ).toHaveCount(1);
+  await expect(page.getByText('Rainfall').first()).toBeVisible();
 });
 
 test('a block keeps its toolbar after Back from its editor', async ({

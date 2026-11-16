@@ -1,8 +1,8 @@
 import type { MathfieldElement } from 'mathlive';
 import { Collapsible } from 'radix-ui';
 import {
+  memo,
   type Ref,
-  startTransition,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -41,7 +41,14 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { useTheme } from '@/theme/theme';
-import { Field, FieldInput, MenuItem, SelectField } from './editorFields';
+import {
+  CommitField,
+  Field,
+  FieldInput,
+  MenuItem,
+  SelectField,
+} from './editorFields';
+import { type FigureBinding, useBoundFigure } from './figureBinding';
 import { GraphRowField } from './GraphRowField';
 import { GraphError, validateGraphRecipe } from './graph';
 import {
@@ -53,10 +60,11 @@ import {
   pointLatex,
   RowError,
   type RowStyle,
+  reconcileRows,
   rowsFromElements,
   styleKeys,
-  syncRows,
 } from './graphSyntax';
+import { graphWriter } from './graphWriter';
 import { IssueIcon, IssueSummary } from './IssueViews';
 import type { GraphBlock } from './types';
 
@@ -92,47 +100,75 @@ const sameBox = (a: number[], b: number[]) =>
 
 /** Desmos-style graph editor: typed rows on the left, the live graph on the
  * right; phones stack the graph on top. The graph frames what every view draws.
+ * It edits the graph where `binding` holds it (Epo 2026-11-16, live figures),
+ * each change written as it is made: rows through `graphWriter`, the view
+ * once a pan or zoom settles, the Advanced fields once typed in and left.
  * Rows stay here: a keystroke parses its row once and the canvas redraws on
- * the next frame, while the dialog hears the new value in a transition. */
-export function GraphEditor({
+ * the next frame; a co-editor's change reaches every row but one being typed. */
+export const GraphEditor = memo(function GraphEditor({
+  binding,
   descriptionMax,
-  value,
-  onChange,
   onInvalidChange,
   toolbarTarget,
 }: {
+  binding: FigureBinding;
   /** The description's bound: the bank's longer one or everyone else's. */
   descriptionMax: number;
+  /** Rows that cannot be drawn (a note dialog holds its Save meanwhile). */
+  onInvalidChange?: (invalid: boolean) => void;
   /** Where the zoom tools go instead of floating over the graph. */
   toolbarTarget?: HTMLElement | null;
-  value: GraphBlock;
-  onChange: (value: GraphBlock) => void;
-  /** Rows that cannot be drawn keep the dialog from saving. */
-  onInvalidChange?: (invalid: boolean) => void;
 }) {
+  const { block } = useBoundFigure(binding);
+  if (block.type !== 'graph') throw new Error('The graph editor needs a graph');
   const [state, setState] = useState(() =>
-    withElements(rowsFromElements(value.elements))
+    withElements(rowsFromElements(block.elements))
   );
   const { rows, errors: rowErrors } = state;
   const current = useRef(state);
   current.current = state;
-  // What this editor sent; arriving back from the dialog it is no peer's change.
-  const sent = useRef(new WeakSet<object>());
-  // The newest value: ours while the dialog has yet to render it, else the dialog's.
-  const draft = useRef(value);
-  const [seen, setSeen] = useState(value);
-  if (value !== seen) {
-    setSeen(value);
-    if (!sent.current.has(value)) {
-      draft.current = value;
-      // Elements arriving that the rows did not give are a peer's change.
-      if (!sent.current.has(value.elements))
-        setState(withElements(syncRows(rows, value.elements)));
-    }
+  // Rows whose element the graph check refused: not written, named here.
+  const [refused, setRefused] = useState<ReadonlyMap<string, string>>(
+    () => new Map()
+  );
+  const [writer] = useState(() =>
+    graphWriter(binding, () => current.current.elements, setRefused)
+  );
+  // Closing the dialog writes what still waits for its frame.
+  useEffect(() => () => writer.flush(), [writer]);
+  // The figure's elements as they change (ours written back, or a
+  // co-editor's): every row follows them but one still being typed.
+  const [seen, setSeen] = useState(block.elements);
+  if (block.elements !== seen) {
+    setSeen(block.elements);
+    const next = reconcileRows(
+      rows,
+      block.elements,
+      new Map(state.elements.map((element) => [element.id, element])),
+      writer.typing
+    );
+    if (next !== rows) setState(withElements(next));
   }
+  // Size and bounds typed here that cannot be drawn: shown with their issue,
+  // not written, until they can.
+  const [pending, setPending] = useState<{
+    bbox?: Bbox;
+    height?: number;
+    width?: number;
+  }>({});
+  const drawn = useMemo(
+    (): GraphBlock => ({
+      ...block,
+      board: { ...block.board, bbox: pending.bbox ?? block.board.bbox },
+      elements: state.elements,
+      height: pending.height ?? block.height,
+      width: pending.width ?? block.width,
+    }),
+    [block, pending, state.elements]
+  );
+  const shown = useRef(drawn);
+  shown.current = drawn;
   const stage = useRef<StageHandle>(null);
-  const latest = useRef(onChange);
-  latest.current = onChange;
   const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
   // An empty graph starts in its first row.
   const [startKey] = useState(() => (rows.length ? undefined : draftKey));
@@ -143,8 +179,8 @@ export function GraphEditor({
   // each says so until the graph is back within it.
   const errors = useMemo(() => {
     const over = rows.slice(limits.QUESTION_GRAPH_ELEMENTS_MAX);
-    if (!over.length) return rowErrors;
-    const out = new Map(rowErrors);
+    if (!(over.length || refused.size)) return rowErrors;
+    const out = new Map([...refused, ...rowErrors]);
     for (const row of over)
       if (!out.has(row.key))
         out.set(
@@ -154,20 +190,20 @@ export function GraphEditor({
           })
         );
     return out;
-  }, [rowErrors, rows]);
+  }, [refused, rowErrors, rows]);
   // Issues read like the question dialog's (Epo 2026-10-15): the first one
   // above the editor, a warning icon on each affected row and on Advanced.
-  const advancedIssues = boardIssues(value);
+  const advancedIssues = boardIssues(drawn);
   // Anything else the graph refuses still reads here: checked once a change.
   const recipeIssue = useMemo(() => {
     try {
-      validateGraphRecipe(value);
+      validateGraphRecipe(drawn);
       return null;
     } catch (error) {
       if (!(error instanceof GraphError)) throw error;
       return error.message;
     }
-  }, [value]);
+  }, [drawn]);
   // Each row is one element: a full graph offers no new row.
   const full = rows.length >= limits.QUESTION_GRAPH_ELEMENTS_MAX;
   const order = [...rows.map((row) => row.key), ...(full ? [] : [draftKey])];
@@ -187,37 +223,42 @@ export function GraphEditor({
   }, [invalid, onInvalidChange]);
   useEffect(() => () => onInvalidChange?.(false), [onInvalidChange]);
 
-  /** Hands the dialog a new value: fields typed into at once, the rest
-   * (rows, gestures) in a transition, the canvas drawing it first. */
-  const emit = (next: GraphBlock, urgent = false) => {
-    draft.current = next;
-    sent.current.add(next);
-    sent.current.add(next.elements);
-    stage.current?.draw(next);
-    if (urgent) latest.current(next);
-    else startTransition(() => latest.current(next));
-  };
-  const commit = (next: GraphRow[]) => {
+  /** New rows: drawn on the next frame, `touched` rows written on it. Rows
+   * this change left unable to draw (a point they name went or was renamed)
+   * keep their text, unwritten, until they draw again. */
+  const commit = (next: GraphRow[], touched: string[]) => {
+    const before = current.current.elements;
     const built = withElements(next);
     current.current = built;
     setState(built);
-    emit({ ...draft.current, elements: built.elements });
+    stage.current?.draw({ ...shown.current, elements: built.elements });
+    const drawable = new Set(built.elements.map((element) => element.id));
+    const keys = new Set(next.map((row) => row.key));
+    writer.touch([
+      ...touched,
+      ...before.flatMap((element) =>
+        keys.has(element.id) && !drawable.has(element.id) ? [element.id] : []
+      ),
+    ]);
   };
   const edit = (key: string, latex: string, ascii: string) => {
     const now = current.current.rows;
     const index = now.findIndex((row) => row.key === key);
     if (index < 0) {
       if (!latex.trim()) return;
-      commit([
-        ...now,
-        {
-          key,
-          kind: 'expression',
-          latex,
-          style: {},
-          ...parsedRow(latex, ascii),
-        },
-      ]);
+      commit(
+        [
+          ...now,
+          {
+            key,
+            kind: 'expression',
+            latex,
+            style: {},
+            ...parsedRow(latex, ascii),
+          },
+        ],
+        [key]
+      );
       setDraftKey(crypto.randomUUID());
       return;
     }
@@ -226,17 +267,24 @@ export function GraphEditor({
         row.key === key && row.kind === 'expression'
           ? { ...row, latex, ...parsedRow(latex, ascii) }
           : row
-      )
+      ),
+      [key]
     );
   };
   const restyle = (key: string, style: RowStyle) =>
     commit(
       current.current.rows.map((row) =>
         row.key === key && row.kind === 'expression' ? { ...row, style } : row
-      )
+      ),
+      [key]
     );
-  const remove = (key: string) =>
-    commit(current.current.rows.filter((row) => row.key !== key));
+  const remove = (key: string) => {
+    commit(
+      current.current.rows.filter((row) => row.key !== key),
+      []
+    );
+    writer.remove(key);
+  };
   const focus = (key: string | undefined) => {
     if (key) fields.current.get(key)?.focus();
   };
@@ -251,8 +299,8 @@ export function GraphEditor({
 
   const hooks: StageHooks = {
     onBoundingBox: (bbox) => {
-      const now = draft.current;
-      emit({ ...now, board: { ...now.board, bbox } });
+      binding.setBoard('bbox', bbox);
+      setPending(({ bbox: _, ...rest }) => rest);
     },
     onMove: (id, coords) =>
       commit(
@@ -266,16 +314,34 @@ export function GraphEditor({
             latex: pointLatex(row.parsed.name, coords),
             parsed: { ...row.parsed, coords },
           };
-        })
+        }),
+        [id]
       ),
   };
 
-  const setBoard = (board: Partial<GraphBlock['board']>) =>
-    emit(
-      { ...draft.current, board: { ...draft.current.board, ...board } },
-      true
-    );
-  const shown = [
+  const { min: sizeMin, max: sizeMax } = {
+    max: limits.QUESTION_GRAPH_DIMENSION_MAX,
+    min: limits.QUESTION_GRAPH_DIMENSION_MIN,
+  };
+  /** A typed width or height: written once it can be drawn. */
+  const commitSize = (key: 'width' | 'height', text: string) => {
+    const size = typedNumber(text);
+    if (Number.isInteger(size) && size >= sizeMin && size <= sizeMax) {
+      binding.setFields(key === 'width' ? { width: size } : { height: size });
+      setPending(({ [key]: _, ...rest }) => rest);
+    } else setPending((now) => ({ ...now, [key]: size }));
+  };
+  /** A typed bound: the view written once its four bounds can be drawn. */
+  const commitBound = (i: number, text: string) => {
+    const bbox = [...(pending.bbox ?? block.board.bbox)] as Bbox;
+    bbox[i] = typedNumber(text);
+    const [left, top, right, bottom] = bbox;
+    if (bbox.every(Number.isFinite) && left < right && bottom < top) {
+      binding.setBoard('bbox', bbox);
+      setPending(({ bbox: _, ...rest }) => rest);
+    } else setPending((now) => ({ ...now, bbox }));
+  };
+  const shownChoices = [
     { label: m.question_ui_graph_shown(), value: 'shown' },
     { label: m.question_ui_graph_hidden(), value: 'hidden' },
   ];
@@ -292,7 +358,7 @@ export function GraphEditor({
       <div className="grid min-w-0 @3xl:grid-cols-[20rem_minmax(0,1fr)] items-start gap-7">
         <GraphStage
           drawable={advancedIssues.length === 0}
-          graph={draft.current}
+          graph={drawn}
           handle={stage}
           hooks={hooks}
           toolbarTarget={toolbarTarget}
@@ -311,7 +377,10 @@ export function GraphEditor({
                     key={key}
                     onChange={(next) =>
                       commit(
-                        rows.map((item) => (item.key === key ? next : item))
+                        current.current.rows.map((item) =>
+                          item.key === key ? next : item
+                        ),
+                        [key]
                       )
                     }
                     onRemove={() => remove(key)}
@@ -355,21 +424,24 @@ export function GraphEditor({
               disabled={full}
               iconLeft="plus"
               onClick={() => {
-                const [left, top, right, bottom] = draft.current.board.bbox;
+                const [left, top, right, bottom] = drawn.board.bbox;
                 const key = crypto.randomUUID();
                 setFreshLabel(key);
-                commit([
-                  ...rows,
-                  {
-                    coords: [
-                      Number(((left + right) / 2).toPrecision(12)),
-                      Number(((top + bottom) / 2).toPrecision(12)),
-                    ],
-                    key,
-                    kind: 'label',
-                    text: m.question_ui_label(),
-                  },
-                ]);
+                commit(
+                  [
+                    ...current.current.rows,
+                    {
+                      coords: [
+                        Number(((left + right) / 2).toPrecision(12)),
+                        Number(((top + bottom) / 2).toPrecision(12)),
+                      ],
+                      key,
+                      kind: 'label',
+                      text: m.question_ui_label(),
+                    },
+                  ],
+                  [key]
+                );
               }}
               size="sm"
               type="button"
@@ -383,7 +455,7 @@ export function GraphEditor({
             />
           </div>
           {/* Opens on its own when the graph already has a description. */}
-          <Collapsible.Root defaultOpen={Boolean(value.description)}>
+          <Collapsible.Root defaultOpen={Boolean(block.description)}>
             <div className="flex items-center gap-1">
               <Collapsible.Trigger asChild>
                 <Button
@@ -402,87 +474,70 @@ export function GraphEditor({
             <Collapsible.Content className="translate-x-0.5 space-y-3 pt-3">
               <div className="grid grid-cols-2 gap-3">
                 {(['width', 'height'] as const).map((key) => (
-                  <Field
+                  <CommitField
                     key={key}
                     label={
                       key === 'width'
                         ? m.question_ui_graph_width()
                         : m.question_ui_graph_height()
                     }
-                  >
-                    <FieldInput
-                      max={limits.QUESTION_GRAPH_DIMENSION_MAX}
-                      min={limits.QUESTION_GRAPH_DIMENSION_MIN}
-                      onChange={(event) =>
-                        emit(
-                          {
-                            ...draft.current,
-                            [key]: event.target.valueAsNumber,
-                          },
-                          true
-                        )
-                      }
-                      type="number"
-                      value={Number.isFinite(value[key]) ? value[key] : ''}
-                    />
-                  </Field>
+                    max={sizeMax}
+                    min={sizeMin}
+                    onCommit={(text) => commitSize(key, text)}
+                    type="number"
+                    value={numberText(drawn[key])}
+                  />
                 ))}
                 <SelectField
                   label={m.question_ui_axes()}
-                  onChange={(next) => setBoard({ axis: next === 'shown' })}
-                  options={shown}
-                  value={value.board.axis ? 'shown' : 'hidden'}
+                  onChange={(next) =>
+                    binding.setBoard('axis', next === 'shown')
+                  }
+                  options={shownChoices}
+                  value={block.board.axis ? 'shown' : 'hidden'}
                 />
                 <SelectField
                   label={m.question_ui_grid()}
-                  onChange={(next) => setBoard({ grid: next === 'shown' })}
-                  options={shown}
-                  value={value.board.grid ? 'shown' : 'hidden'}
+                  onChange={(next) =>
+                    binding.setBoard('grid', next === 'shown')
+                  }
+                  options={shownChoices}
+                  value={block.board.grid ? 'shown' : 'hidden'}
                 />
                 {[0, 2, 3, 1].map((i) => (
-                  <Field key={i} label={bboxLabels[i]}>
-                    <FieldInput
-                      onChange={(event) => {
-                        const bbox = [...draft.current.board.bbox] as Bbox;
-                        bbox[i] = event.target.valueAsNumber;
-                        setBoard({ bbox });
-                      }}
-                      type="number"
-                      // Enough digits to tell a zoomed-in minimum from its maximum.
-                      value={
-                        Number.isFinite(value.board.bbox[i])
-                          ? Number(value.board.bbox[i].toPrecision(12))
-                          : ''
-                      }
-                    />
-                  </Field>
+                  <CommitField
+                    key={i}
+                    label={bboxLabels[i]}
+                    onCommit={(text) => commitBound(i, text)}
+                    type="number"
+                    // Enough digits to tell a zoomed-in minimum from its maximum.
+                    value={numberText(drawn.board.bbox[i], 12)}
+                  />
                 ))}
               </div>
-              <Field
-                count={{
-                  max: descriptionMax,
-                  value: textLength(value.description),
-                }}
+              <CommitField
+                count={descriptionMax}
                 label={m.question_ui_description()}
-              >
-                <FieldInput
-                  maxLength={descriptionMax}
-                  onChange={(event) =>
-                    emit(
-                      { ...draft.current, description: event.target.value },
-                      true
-                    )
-                  }
-                  value={value.description ?? ''}
-                />
-              </Field>
+                maxLength={descriptionMax}
+                onCommit={(description) => binding.setFields({ description })}
+                value={block.description ?? ''}
+              />
             </Collapsible.Content>
           </Collapsible.Root>
         </div>
       </div>
     </div>
   );
-}
+});
+
+/** A typed number: an empty field is NaN, which the issues name. */
+const typedNumber = (text: string) => (text.trim() ? Number(text) : Number.NaN);
+
+/** A number as its field shows it; empty when it is not one. */
+const numberText = (value: number, digits?: number) =>
+  Number.isFinite(value)
+    ? String(digits ? Number(value.toPrecision(digits)) : value)
+    : '';
 
 /** What keeps the Advanced fields from drawing. */
 function boardIssues({ width, height, board }: GraphBlock) {
@@ -569,6 +624,8 @@ function GraphStage({
   const live = useRef({
     drag: null as { coords: Vec; id: string } | null,
     frame: 0,
+    // A pan, zoom or drag under way: a co-editor's view waits for it.
+    gesture: false,
     graph,
     hooks,
     paper: PAPER.light,
@@ -641,14 +698,15 @@ function GraphStage({
       redraw();
     },
   }));
-  // A graph from the dialog (a peer's, or ours rendered): drawn; bounds typed
-  // elsewhere, a new size or the first drawable value set the view.
+  // A graph from the editor (a co-editor's, or ours rendered): drawn; bounds
+  // typed or a co-editor's view (once our own gesture ends, which then writes
+  // ours), a new size or the first drawable value set the view.
   const { bbox } = graph.board;
   useEffect(() => {
     live.current.graph = graph;
     if (!drawable) return;
-    const { view } = live.current;
-    if (!view || !sameBox(bboxOf(view, width, height), bbox))
+    const { gesture, view } = live.current;
+    if (!view || (!gesture && !sameBox(bboxOf(view, width, height), bbox)))
       live.current.view = viewOf(bbox, width, height);
     redraw();
   });
@@ -685,6 +743,7 @@ function GraphStage({
         pan: (dx, dy) => {
           const { view } = live.current;
           if (!view) return;
+          live.current.gesture = true;
           live.current.view = panned(view, dx, dy);
           redraw();
         },
@@ -693,10 +752,12 @@ function GraphStage({
           if (!grabbed) return null;
           const { element, offset } = grabbed;
           target.style.cursor = 'grabbing';
+          live.current.gesture = true;
           return {
             end: () => {
               const { drag, view } = live.current;
               live.current.drag = null;
+              live.current.gesture = false;
               target.style.cursor = '';
               if (!(drag && view)) return;
               const coords = snapped(view, drag.coords);
@@ -718,10 +779,14 @@ function GraphStage({
             },
           };
         },
-        settle: report,
+        settle: () => {
+          live.current.gesture = false;
+          report();
+        },
         zoom: (factor, at) => {
           const { view } = live.current;
           if (!view) return;
+          live.current.gesture = true;
           live.current.view = zoomedAt(view, factor, at, QUESTION_ZOOM);
           redraw();
         },

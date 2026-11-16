@@ -4460,7 +4460,7 @@ graph's elements keyed by id;
 [`0178_quiz_figure_maps.sql`](../server/migrations/0178_quiz_figure_maps.sql).
 A room stored before holds each figure as one plain value, which the new room
 reads as no figure, and no reader for that layout is kept (no legacy data).
-It releases the quizzes' AI edit Undo, raises `materials.trash_restores` to
+AI edit Undo lives in the loaded room (0106) and goes with it. It raises `materials.trash_restores` to
 each dropped `room_schema` (as 0080 does for notes, so old tokens and browser
 drafts of the old lineage open copy-only recovery), and deletes each quiz's
 `material_yjs_documents` row; its keys row and both update logs go with it.
@@ -4508,3 +4508,70 @@ step 1 says, then rerun `deploy-uat` at the same SHA. Locally, the compose
 gateway runs the migration at start and refuses the same way; project or
 accept the listed rows, or recreate the local database (`docker compose down
 -v`).
+
+## Note figure maps reset (migration 0179)
+
+The same release holds a note's chart, plot or graph `block` as the figure
+map a quiz room holds (Epo 2026-11-16, D15: its fields, a graph's elements
+keyed by id, a chart's series, labels, names and values as maps;
+[embeds](embeds.md#live-figures)), and drops the Yjs rows of every note,
+mindmap and diagram whose saved content holds a chart, plot or graph with
+[`0179_note_figure_maps.sql`](../server/migrations/0179_note_figure_maps.sql).
+A room stored before holds a graph's elements and a chart's series as lists,
+which the new room reads as no elements or series, and no reader for that
+layout is kept (no legacy data). As 0178 does, it raises
+`materials.trash_restores` to each dropped `room_schema`
+(old tokens and browser drafts of the old lineage open copy-only recovery)
+and deletes the `material_yjs_documents` row; its update log, client ids and
+collection windows go with it. Each document seeds again from
+`materials.content` (the plain block, unchanged) on its next open, agent edit
+or command. Documents without a figure keep their rooms. A database with no
+note room holding a figure (production today) passes.
+
+What a reset costs a note that it did not cost a quiz:
+
+- Undo: the room's history goes, so no tab can undo past the reset (tabs
+  reload anyway on the protocol change), and the chat's Undo of an AI edit
+  to a reset note, live only in the loaded room, goes with it.
+- Comment anchors: a thread's Yjs relative positions name items of the old
+  lineage, which the reseeded room does not hold. Threads keep their block
+  (block ids come from the saved content) and show their quoted text, with no
+  highlight of the exact range.
+- Drafts: an old tab's unsent edits and a device copy of the old lineage
+  open copy-only recovery instead of merging.
+- Notes keep no browsable version history beyond the room, so none is lost.
+
+It refuses, and the deploy stops at `migrate`, while such a document's
+projection is behind its stored Yjs state (`materials.content` would miss
+those edits).
+
+Steps on UAT:
+
+1. Before the deploy, list the documents holding a figure whose projection is
+   behind:
+
+   ```sql
+   SELECT d.material_id, m.kind, m.owner_user_id, m.trashed_at, d.stored_version,
+          d.projected_version, d.projection_error
+   FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind IN ('note', 'mindmap', 'diagram')
+     AND jsonb_path_exists(m.content, 'strict $.value.** ? (@.type == "chart" || @.type == "plot" || @.type == "graph")')
+     AND d.projected_version < d.stored_version;
+   ```
+
+   Wait until it is empty, handling a row that stays as 0178's step 1 says.
+2. Deploy (`deploy-uat`) with 0178 in the same release.
+3. Check that no such room from before the reset was recreated:
+
+   ```sql
+   SELECT count(*) FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind IN ('note', 'mindmap', 'diagram') AND d.room_schema <= m.trash_restores
+     AND jsonb_path_exists(m.content, 'strict $.value.** ? (@.type == "chart" || @.type == "plot" || @.type == "graph")');
+   ```
+
+   It prints 0. Open a note holding a chart and a graph in Edit (both show),
+   change one graph point and one chart value in their dialogs, Save, reload:
+   each shows its change once.
+
+If 0179 refuses, handle the rows of step 1 and rerun `deploy-uat` at the same
+SHA; locally, project or accept them, or recreate the local database.

@@ -10,6 +10,7 @@ import {
   type TRange,
 } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
+import './figureBinding';
 import { blockPoint, pointIn } from './roomSwap';
 
 const synced = new WeakSet<object>();
