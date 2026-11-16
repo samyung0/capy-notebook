@@ -81,7 +81,7 @@ self.onmessage = (event: MessageEvent<Request>) => {
           [
             ...new Set([
               ...faces.map((face) => face.bytes),
-              ...sliced.flatMap((face) => [face.bytes, ...face.files.values()]),
+              ...sliced.map((face) => face.bytes),
             ]),
           ]
         );

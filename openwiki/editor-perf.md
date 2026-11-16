@@ -193,7 +193,8 @@ Per file it reports:
   timing, and a revalidation (vite preview sends ETags) only its headers. The
   test's context starts cold and keeps no disk cache, so `docx_edit` downloads
   twice per DOCX View to Edit here (harness `2026-11-11-q691/REPORT.md`,
-  section 7). The web server stages the build with
+  section 7), and Edit, a frame of its own, asks again for the CJK slices
+  the View loaded, which the cache answers with headers only. The web server stages the build with
   `workers/office/stage.mjs` into `.results/office-stage` for those sizes,
   which adds about a minute before the tests. Each realm raises its
   resource-timing buffer and sends its resource and navigation entries to

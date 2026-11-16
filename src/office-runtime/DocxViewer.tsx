@@ -21,7 +21,6 @@ import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
 import { takeDocxViewerWorker } from './docxViewerWorker';
 import {
-  keepSliceFiles,
   type OfficeFace,
   registerOfficeFaces,
   registerSlicedFaces,
@@ -271,8 +270,6 @@ export function DocxViewer({
           for (const [stage, epoch] of Object.entries(marks))
             officeMarkAt(stage, epoch);
         }
-        // Edit opens the same sliced faces from these files.
-        keepSliceFiles(sliced);
         // Paint with the faces the worker measured, under their Office
         // names, from the bytes it fetched.
         officeMark('fonts:start', { faces: faces.length });

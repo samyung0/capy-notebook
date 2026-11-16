@@ -33,15 +33,12 @@ export interface OfficeFamily {
  * A sliced (CJK) face the viewer worker measured with: its bytes hold the
  * outline of every glyph the pages draw, under the families the pages paint
  * it with (the Office families it was resolved for, and the private family
- * list markers and watermarks name it by); `files` are its decoded slice
- * files, which Edit's open of the same face takes instead of fetching them.
+ * list markers and watermarks name it by). Edit runs in a frame of its own,
+ * so it opens the face again from the immutable HTTP cache.
  */
 export interface SlicedOfficeFace {
   bytes: ArrayBuffer;
   families: OfficeFamily[];
-  files: Map<string, ArrayBuffer>;
-  /** The face's slice index, which names it in every realm. */
-  index: string;
 }
 
 const failures = new Set<(error: Error) => void>();
@@ -51,8 +48,6 @@ const used = new Map<string, OfficeFace>();
 // families each was resolved for are recorded by slice index instead (viewer
 // worker only, as `used`).
 const slicedFamilies = new Map<string, Map<string, OfficeFace['face']>>();
-// The View's decoded slice files by slice index, for Edit (the frame only).
-const sliceFiles = new Map<string, Map<string, ArrayBuffer>>();
 let keepBytes = false;
 
 /** Reports a bundled face that failed to load; returns the unsubscribe. */
@@ -134,10 +129,10 @@ export function slicedOfficeFaces(
   displayList: unknown
 ): SlicedOfficeFace[] {
   const painted = paintedFamilies(displayList);
-  return sliced.map(({ bytes, family, files, slices }) => {
+  return sliced.map(({ bytes, family, slices }) => {
+    const families: OfficeFamily[] = [{ family }];
     // Opaque to DOCX: the fonts package's location.
     const index = (slices as SliceLocation).ref.index;
-    const families: OfficeFamily[] = [{ family }];
     for (const [name, face] of slicedFamilies.get(index) ?? [])
       families.push({
         family: name,
@@ -149,15 +144,8 @@ export function slicedOfficeFaces(
       families: families.filter(({ family }) =>
         painted.has(family.toLowerCase())
       ),
-      files,
-      index,
     };
   });
-}
-
-/** Keeps the View's decoded slice files, which Edit's open takes. */
-export function keepSliceFiles(faces: readonly SlicedOfficeFace[]) {
-  for (const { files, index } of faces) sliceFiles.set(index, files);
 }
 
 /**
@@ -238,7 +226,7 @@ type FaceRuntime = { decoder?: FontDecoder; retain: false };
 /**
  * A face's loader. A face shipped in slices also carries where they are, so
  * DOCX opens it from its skeleton and loads only the outline chunks its
- * glyphs need, taking the View's decoded files when Edit opens it.
+ * glyphs need.
  */
 function loader(
   face: BundledFontFace,
@@ -249,14 +237,13 @@ function loader(
   const load = wholeFaceLoader(face, family, options, runtime);
   const slices = bundledFontSlices(face, options, runtime);
   if (!slices) return load;
-  const index = slices.ref.index;
   if (keepBytes) {
+    const index = slices.ref.index;
     const families = slicedFamilies.get(index) ?? new Map();
     slicedFamilies.set(index, families);
     if (!families.has(family)) families.set(family, face);
   }
-  const files = sliceFiles.get(index);
-  return Object.assign(load, { slices: files ? { ...slices, files } : slices });
+  return Object.assign(load, { slices });
 }
 
 function wholeFaceLoader(

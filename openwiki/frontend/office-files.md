@@ -2247,11 +2247,13 @@ Chinese). The viewer worker posts each sliced face's bytes (every outline its
 pages draw) with the Office families the layout resolved it for and the
 private family (`BetterOffice Sliced <open>.<n>`) its list markers and
 watermarks name it by; the frame registers them as `FontFace`s for that
-layout only, deleting them when the layout goes, and keeps the decoded slice
-files for Edit, whose open takes them instead of fetching and decoding them
-again (`SliceLocation.files`, checked against the index by length and
-SHA-256). In Edit the fork registers its own faces in whichever thread
-paints. A slice that fails while the DOCX opens fails the open naming the
+layout only, deleting them when the layout goes. View and Edit run in
+separate frames, so Edit opens its sliced faces again and decodes the
+chunks its pages draw once more, from the immutable HTTP cache (no network
+after the View); within Edit the page hands its decoded files to the engine
+worker (the fork's `SliceLocation.files`, checked against the index by
+length and SHA-256), and the fork registers its own faces in whichever
+thread paints. A slice that fails while the DOCX opens fails the open naming the
 file. One that fails while the document is edited (offline, say) keeps the
 editor running with its characters drawn blank (Q752 B):
 `DocxEditorHost`'s `onError` takes the fork's `FontSliceUnavailableError`

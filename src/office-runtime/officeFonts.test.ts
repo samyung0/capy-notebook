@@ -8,7 +8,6 @@ import {
 import { expect, onTestFinished, test, vi } from 'vitest';
 import {
   keepOfficeFontBytes,
-  keepSliceFiles,
   type OfficeFace,
   officeFonts,
   officeViewerFonts,
@@ -114,26 +113,6 @@ test('DOCX layout gets the CJK faces it measures and paints with, as slices', ()
   expect(provider.resolve('Calibri', false, false)?.slices).toBeUndefined();
 });
 
-test("Edit opens a sliced face from the View's decoded files", () => {
-  const files = new Map([['NotoSansJP-Regular/c093.zst', new ArrayBuffer(4)]]);
-  keepSliceFiles([
-    {
-      bytes: new ArrayBuffer(1),
-      families: [],
-      files,
-      index: 'NotoSansJP-Regular/slices.json',
-    },
-  ]);
-  const provider = officeFonts.createFontProvider();
-  expect(provider.resolve('MS Gothic', false, false)?.slices?.files).toBe(
-    files
-  );
-  // Another face fetches its own.
-  expect(
-    provider.resolve('Microsoft YaHei', false, false)?.slices?.files
-  ).toBeUndefined();
-});
-
 test('the viewer frame gets each sliced face under the families its pages paint it with', () => {
   keepOfficeFontBytes();
   const provider = officeViewerFonts.createFontProvider();
@@ -172,7 +151,9 @@ test('the viewer frame gets each sliced face under the families its pages paint 
     ],
     displayList
   );
-  // Noto Sans JP (the script fallback) paints nothing here, so it is left out.
+  // Noto Sans JP (the script fallback) paints nothing here, so it is left
+  // out. The decoded files stay in the worker: Edit opens in a frame of its
+  // own, which reads the slices from the HTTP cache.
   expect(sliced).toEqual([
     {
       bytes,
@@ -180,8 +161,6 @@ test('the viewer frame gets each sliced face under the families its pages paint 
         { family: 'BetterOffice Sliced 1.0' },
         { family: 'MS Gothic', style: 'normal', weight: '400' },
       ],
-      files,
-      index,
     },
   ]);
 });
@@ -214,8 +193,6 @@ test("a layout's sliced faces are registered for it and deleted with it", async 
         { family: 'BetterOffice Sliced 1.0' },
         { family: 'MS Gothic', style: 'normal', weight: '400' },
       ],
-      files: new Map(),
-      index: 'NotoSansJP-Regular/slices.json',
     },
   ]);
   expect([...fonts].map((face) => (face as { family: string }).family)).toEqual(
