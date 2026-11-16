@@ -14,11 +14,11 @@ use items::{Admission, Kind, Refusal, Validator};
 use notes::edit::DocumentCommand;
 use notes::questions::Policy;
 use serde_json::{Value, json};
-use yrs::branch::BranchPtr;
+use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim, TextRef,
-    Transact, UndoManager, Update,
+    Any, Doc, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim,
+    TextRef, Transact, UndoManager, Update,
 };
 
 /// Every quiz-policy fixture the Go validator accepts, ids made unique.
@@ -1214,6 +1214,166 @@ fn a_save_inserting_a_table_row_keeps_the_held_ids() {
     assert_eq!(read[at]["stem"][index]["rows"], json!(wanted));
 }
 
+const OPTIONS: [&str; 4] = ["Alpha", "Beta", "Gamma", "Delta"];
+
+/// The fixtures with the first mcq question's stem as three texts and its
+/// options as [OPTIONS] (the first correct); that question's index.
+fn mcq_quiz() -> (Vec<Value>, usize) {
+    let mut questions = fixtures();
+    let at = questions
+        .iter()
+        .position(|q| q["parts"][0]["answer"]["type"] == json!("mcq"))
+        .unwrap();
+    questions[at]["stem"] = json!([
+        { "type": "text", "text": "First" },
+        { "type": "text", "text": "Second" },
+        { "type": "text", "text": "Third" },
+    ]);
+    questions[at]["parts"][0]["answer"] =
+        json!({ "type": "mcq", "options": OPTIONS, "correct": [0] });
+    (questions, at)
+}
+
+/// A list's entries as (id, order, text).
+type Entries = Vec<(String, String, String)>;
+
+/// The entries of the list at `path`, in order.
+fn entries(doc: &Doc, path: &[&str]) -> Entries {
+    let map = map_in(doc, path);
+    let txn = doc.transact();
+    let mut out: Vec<_> = map
+        .iter(&txn)
+        .map(|(id, value)| {
+            let Out::YMap(entry) = value else {
+                panic!("{id} is no entry: {value:?}");
+            };
+            let Some(Out::Any(Any::String(order))) = entry.get(&txn, "order") else {
+                panic!("{id} has no order");
+            };
+            let text = match entry.get(&txn, "text") {
+                Some(Out::YText(text)) => text.get_string(&txn),
+                _ => String::new(),
+            };
+            (id.to_owned(), order.to_string(), text)
+        })
+        .collect();
+    out.sort_by(|a, b| (&a.1, &a.0).cmp(&(&b.1, &b.0)));
+    out
+}
+
+/// `path` with `key` after it.
+fn under<'a>(path: &[&'a str], key: &'a str) -> Vec<&'a str> {
+    [path, &[key]].concat()
+}
+
+/// The branch of an entry's text: the same one while nothing rewrote it.
+fn text_branch(doc: &Doc, path: &[&str]) -> BranchID {
+    let text = text_in(doc, path, "text");
+    BranchPtr::from(AsRef::<Branch>::as_ref(&text)).id()
+}
+
+/// A save writing an mcq's options as `options` (the option at `correct`
+/// ticked) into a room seeded with [mcq_quiz]: the options' entries before
+/// and after, and the ticked ids.
+fn save_options(options: &[&str], correct: usize) -> (Entries, Entries, Vec<String>) {
+    let (questions, at) = mcq_quiz();
+    let (content, keys, _, _) = rooms(&questions);
+    let (question, part) = part_of(&questions, "mcq");
+    let path = ["questions", &question, "parts", &part, "answer", "options"];
+    let before = entries(&content, &path);
+    let mut next = questions.clone();
+    next[at]["parts"][0]["answer"] =
+        json!({ "type": "mcq", "options": options, "correct": [correct] });
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    assert_eq!(projected(&content, &keys)[at], next[at]);
+    let ticks = map_in(&keys, &["keys", &part, "correct"]);
+    let ticked = ticks.keys(&keys.transact()).map(str::to_owned).collect();
+    (before, entries(&content, &path), ticked)
+}
+
+/// A save inserting a block mid-stem (the browser's rule, Epo 2026-11-17)
+/// adds one entry between its neighbours and leaves the held ones as they
+/// were, so a peer typing in the last block meanwhile keeps every character.
+#[test]
+fn a_save_inserting_a_stem_block_keeps_the_held_entries() {
+    let (questions, at) = mcq_quiz();
+    let (content, keys, client, _) = rooms(&questions);
+    let id = questions[at]["id"].as_str().unwrap();
+    let stem = ["questions", id, "stem"];
+    let held = entries(&content, &stem);
+    let branches: Vec<_> = held
+        .iter()
+        .map(|(entry, _, _)| text_branch(&content, &under(&stem, entry)))
+        .collect();
+    let last = held[2].0.clone();
+    text_in(&client, &under(&stem, &last), "text").insert(&mut client.transact_mut(), 0, "typed ");
+    let mut next = questions.clone();
+    next[at]["stem"]
+        .as_array_mut()
+        .unwrap()
+        .insert(1, json!({ "type": "text", "text": "Inserted" }));
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let now = entries(&content, &stem);
+    assert_eq!(
+        [&now[..1], &now[2..]].concat(),
+        held,
+        "the held entries stay"
+    );
+    assert_eq!(now[1].2, "Inserted");
+    for ((entry, _, _), branch) in held.iter().zip(&branches) {
+        assert_eq!(text_branch(&content, &under(&stem, entry)), *branch);
+    }
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    let update = Update::decode_v1(&diff(&content, &client)).unwrap();
+    client.transact_mut().apply_update(update).unwrap();
+    for doc in [&content, &client] {
+        let texts: Vec<String> = entries(doc, &stem).into_iter().map(|(_, _, t)| t).collect();
+        assert_eq!(texts, ["First", "Inserted", "Second", "typed Third"]);
+    }
+}
+
+#[test]
+fn a_save_removing_a_middle_option_keeps_the_others_ids() {
+    let (before, after, ticked) = save_options(&["Alpha", "Gamma", "Delta"], 2);
+    let kept = [&before[..1], &before[2..]].concat();
+    assert_eq!(after, kept);
+    assert_eq!(ticked, [before[3].0.clone()], "the tick follows Delta's id");
+}
+
+#[test]
+fn a_save_moving_an_option_changes_only_order_keys() {
+    let (before, after, ticked) = save_options(&["Alpha", "Delta", "Beta", "Gamma"], 1);
+    let ids =
+        |list: &Entries| -> Vec<String> { list.iter().map(|(id, _, _)| id.clone()).collect() };
+    let by_id = |list: &Entries| -> HashMap<String, String> {
+        list.iter()
+            .map(|(id, _, text)| (id.clone(), text.clone()))
+            .collect()
+    };
+    assert_eq!(by_id(&after), by_id(&before), "each id keeps its text");
+    let from = [0, 3, 1, 2];
+    assert_eq!(ids(&after), from.map(|i| before[i].0.clone()));
+    // The longest rising run of keys stays: only Delta's key changes.
+    for i in [0, 2, 3] {
+        assert_eq!(after[i].1, before[from[i]].1);
+    }
+    assert_ne!(after[1].1, before[3].1);
+    assert_eq!(ticked, [before[3].0.clone()], "the tick follows Delta's id");
+}
+
+#[test]
+fn a_save_editing_one_option_keeps_every_id() {
+    let (before, after, ticked) = save_options(&["Alpha", "Bravo", "Gamma", "Delta"], 0);
+    assert_eq!(after.len(), 4);
+    for (i, ((id, order, text), (was_id, was_order, _))) in after.iter().zip(&before).enumerate() {
+        assert_eq!((id, order), (was_id, was_order));
+        let wanted = if i == 1 { "Bravo" } else { OPTIONS[i] };
+        assert_eq!(text, wanted);
+    }
+    assert_eq!(ticked, [before[0].0.clone()]);
+}
+
 /// A merge that leaves an element naming a gone point reads repaired (the
 /// element skipped), in both the read and the projection.
 #[test]
@@ -1696,8 +1856,9 @@ fn the_readers_lists_never_follow_typing_order() {
 }
 
 /// Security regression (REVIEW2 M2): a server write (the save API, the
-/// agent's `replace_question`, bank copy) fills lists by position, so a
-/// reorder keeps the item ids and moves texts between them. The readers'
+/// agent's `replace_question`, bank copy) that reorders and edits at once is
+/// not a move, so it changes the list by position: the item ids stay and
+/// texts move between them. The readers'
 /// list must then be a fresh shuffle, not the last list with each text
 /// replaced by its new neighbour, which would show a reader old position to
 /// new. Fails if the list keeps its order whenever the ids stay.
@@ -1733,6 +1894,7 @@ fn a_server_reorder_reshuffles_the_readers_list() {
         .entries;
     let mut reversed = periods;
     reversed.reverse();
+    reversed[4] = "Late Permian";
     next[at]["parts"][0]["answer"]["items"] = json!(reversed);
     quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
     let ids_after: Vec<(String, String)> = quiz::item_parts(&keys.transact())
@@ -1743,7 +1905,7 @@ fn a_server_reorder_reshuffles_the_readers_list() {
     assert_eq!(
         ids_before.iter().map(|(id, _)| id).collect::<Vec<_>>(),
         ids_after.iter().map(|(id, _)| id).collect::<Vec<_>>(),
-        "the server write kept the ids (it fills by position)"
+        "the server write kept the ids (it changes the middle by position)"
     );
     let text_of = |id: &str| ids_after.iter().find(|(i, _)| i == id).unwrap().1.clone();
     let id_of = |text: &str| {
@@ -1764,7 +1926,7 @@ fn a_server_reorder_reshuffles_the_readers_list() {
         .items;
     let mut sorted = after.clone();
     sorted.sort();
-    let mut want: Vec<String> = periods.iter().map(|p| (*p).to_owned()).collect();
+    let mut want: Vec<String> = reversed.iter().map(|p| (*p).to_owned()).collect();
     want.sort();
     assert_eq!(sorted, want);
     assert_ne!(after, leaky, "the push maps old positions to new");

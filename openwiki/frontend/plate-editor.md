@@ -3817,7 +3817,8 @@ message, `{type, full, parts: {<part id>: {kind, items} | null}}`, the whole
 set to a channel that joins (`full`) and the parts that changed otherwise. A
 part whose entries change as a set is shuffled afresh (a uniform
 permutation); a single text edit keeps the order, and a change of several
-texts at once (a server write reorders lists by position) shuffles too, so a
+texts at once (a write that reorders and edits at once changes the list's
+middle by position) shuffles too, so a
 reader never sees which text replaced which. So does a text retyped into one
 another entry shows, so two retypes in separate windows show no swap. No ids and no history reach a
 reader, and neither document holds anything the server writes alone, so an
@@ -3952,10 +3953,19 @@ the rest are checked, and the score, which matches the attempt the server keeps
 counts in those on the page, and the result waits for it. Shared pages and review
 sessions read stored questions, so they never show one.
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
-content write is gone). Agent question commands write what differs in the
-questions that differ, texts as the fewest changes and lists by position, so
-an editor typing in the same question keeps their characters; their Undo is
-the durable Undo of every agent edit.
+content write is gone). The server's whole-question writes, the content save
+API (`set_questions`) and agent question commands (`replace_child`), go
+through `sync_question`: only the questions that differ, texts as the fewest
+changes, and every list (blocks, options, items, accepted answers, mark
+scheme rows) by the browser's rule in `sync_entries`, ported from
+`writeList` and `writeBlocks` (Epo 2026-11-17). Entries alike at the head and
+tail (a block compared by its JSON as the room reads it back, a text item by
+its text) stay untouched, a middle holding the same items in another order
+only takes new order keys, and anything else changes the middle by position:
+new items come between their neighbours, missing ones go, a block of another
+type takes a fresh entry. So an editor typing in the same question, even in a
+block after one the write inserted, keeps their characters. The agent's
+commands' Undo is the durable Undo of every agent edit.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo

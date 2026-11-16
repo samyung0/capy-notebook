@@ -366,17 +366,10 @@ pub fn next_order(held: Option<&str>, last: Option<&str>) -> String {
     }
 }
 
-/// How `held` entries (an axis's ids) line up with `count` wanted ones as one
-/// editor action leaves them, as the browser's `alignPlaces`
-/// (`src/features/figures/align.ts`): entries alike at the head and tail
-/// (`same(held index, wanted index)`) keep their place, a changed middle keeps
-/// as many as it can by position, and the rest go or come. For each wanted
-/// index, the held index it keeps, or none for a new entry.
-fn align_places(
-    held: usize,
-    count: usize,
-    same: impl Fn(usize, usize) -> bool,
-) -> Vec<Option<usize>> {
+/// How many of `held` entries and `count` wanted ones are alike
+/// (`same(held index, wanted index)`) at the head, then at the tail of what
+/// is left.
+pub fn ends(held: usize, count: usize, same: impl Fn(usize, usize) -> bool) -> (usize, usize) {
     let mut head = 0;
     while head < held && head < count && same(head, head) {
         head += 1;
@@ -385,6 +378,21 @@ fn align_places(
     while tail < held - head && tail < count - head && same(held - 1 - tail, count - 1 - tail) {
         tail += 1;
     }
+    (head, tail)
+}
+
+/// How `held` entries (an axis's ids) line up with `count` wanted ones as one
+/// editor action leaves them, as the browser's `alignPlaces`
+/// (`src/features/figures/align.ts`): entries alike at the head and tail
+/// (`same(held index, wanted index)`) keep their place, a changed middle keeps
+/// as many as it can by position, and the rest go or come. For each wanted
+/// index, the held index it keeps, or none for a new entry.
+pub fn align_places(
+    held: usize,
+    count: usize,
+    same: impl Fn(usize, usize) -> bool,
+) -> Vec<Option<usize>> {
+    let (head, tail) = ends(held, count, same);
     let keep = (held - head - tail).min(count - head - tail);
     (0..count)
         .map(|w| {
