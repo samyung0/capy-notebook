@@ -1,4 +1,4 @@
-import { tickStep } from '@/features/questions/graphTicks';
+import { tickStep } from '@/features/graph/view';
 import { m } from '@/i18n';
 import { fromBase64 } from './base64';
 import {

@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { InputError } from '@/components/ui/Input';
+import { graphSvg } from '@/features/graph/svg';
 import { BlockEditor } from '@/features/questions/BlockEditor';
-import { renderGraphSvg } from '@/features/questions/graph';
 import { IssueSummary } from '@/features/questions/IssueViews';
 import { blockIssues } from '@/features/questions/issues';
 import {
@@ -48,7 +48,6 @@ export default function VisualBlockDialog({
   ) => void | Promise<void>;
   onClose: () => void;
 }) {
-  const exportHost = useRef<HTMLDivElement>(null);
   const [invalid, setInvalid] = useState(false);
   const base = useRef(block);
   const {
@@ -87,13 +86,9 @@ export default function VisualBlockDialog({
         draft.type !== 'plot'
       )
         throw new Error('Unsupported note block');
-      if (!exportHost.current) return;
       const next =
         draft.type === 'graph'
-          ? {
-              ...draft,
-              image: { svg: await renderGraphSvg(exportHost.current, draft) },
-            }
+          ? { ...draft, image: { svg: graphSvg(draft) } }
           : draft;
       questionBlockSchema.parse(next);
       await onSave(next, base.current);
@@ -141,11 +136,6 @@ export default function VisualBlockDialog({
         />
       </fieldset>
       {errors.root?.message && <InputError>{errors.root.message}</InputError>}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed top-0 -left-[20000px]"
-        ref={exportHost}
-      />
     </SimpleDialog>
   );
 }

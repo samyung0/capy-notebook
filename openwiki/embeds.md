@@ -364,9 +364,14 @@ figures).
   count the block as the map holds it, the entries a read drops included
   (Epo 2026-10-18). Typing elsewhere in the note stays on the bound with no
   copy.
-- **Graph SVG.** Saving draws the graph's SVG; an editor in Edit mode that
+- **Graph SVG.** Saving draws the graph's SVG with the graph engine's
+  `graphSvg` (`src/features/graph/`, the one drawing every graph surface
+  shares; [question-bank](question-bank.md)); an editor in Edit mode that
   sees a graph's recipe change redraws it once in an idle callback and writes
-  `image` only when it differs, outside Undo; readers keep the stored SVG.
+  `image` only when it differs, outside Undo; a recipe the validators refuse
+  keeps its stored SVG, and readers keep the stored SVG. The SVG passes the
+  same `validGraphSvg` check on every server (`svg-engine.json` in the shared
+  question fixtures is an engine drawing).
 
 ## Table views
 

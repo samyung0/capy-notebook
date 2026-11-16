@@ -11,13 +11,12 @@ import { html, render } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
 import type { MathfieldElement } from 'mathlive';
-import { axisNumber } from '@/features/questions/graph';
+import { axisNumber, tickStep } from '@/features/graph/view';
 import {
   type ParsedRow,
   parseRow,
   RowError,
 } from '@/features/questions/graphSyntax';
-import { tickStep } from '@/features/questions/graphTicks';
 import mathFieldStyles from '@/features/questions/mathField.css?inline';
 import { getLocale, m } from '@/i18n';
 import {

@@ -121,8 +121,9 @@ export function nearLimitPlot(): PlotBlock {
   };
 }
 
-/** The graph's recipe; its SVG is drawn from it by
- * `renderGraphSvg` into fixtures/near-limit-graph.svg. */
+/** The graph's recipe. fixtures/near-limit-graph.svg is still the JSXGraph
+ * drawing of it; `graphSvg` redraws it once the engine's fixture sheet is
+ * approved. */
 export function nearLimitGraphRecipe(): Omit<GraphBlock, 'image'> {
   const points = 30;
   const name = (i: number) => filled(`P${i} `, limits.QUESTION_GRAPH_NAME_MAX);

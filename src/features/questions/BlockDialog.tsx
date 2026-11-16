@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { graphSvg } from '@/features/graph/svg';
 import { m } from '@/i18n';
 import { CopyError, errorCopy } from '@/lib/errors';
 import { BlockEditor, type UploadQuestionAsset } from './BlockEditor';
-import { renderGraphSvg } from './graph';
 import type { QuestionBlock } from './types';
 
 export const blockLabels: Record<QuestionBlock['type'], () => string> = {
@@ -16,23 +16,15 @@ export const blockLabels: Record<QuestionBlock['type'], () => string> = {
   text: m.question_ui_text,
 };
 
-/** A graph drawn to SVG off screen: a bank question uploads it (the bank
- * serves public images), a quiz keeps it inline. */
+/** A graph drawn to SVG: a bank question uploads it (the bank serves public
+ * images), a quiz keeps it inline. */
 async function withGraphImage(
   block: QuestionBlock,
   bank: boolean,
   uploadAsset?: UploadQuestionAsset
 ): Promise<QuestionBlock> {
   if (block.type !== 'graph') return block;
-  const stage = document.createElement('div');
-  stage.style.cssText = 'position:fixed;left:-20000px;top:0;';
-  document.body.append(stage);
-  let svg: string;
-  try {
-    svg = await renderGraphSvg(stage, block);
-  } finally {
-    stage.remove();
-  }
+  const svg = graphSvg(block);
   if (!bank) return { ...block, image: { svg } };
   if (!uploadAsset)
     throw new CopyError(m.question_ui_bank_image_uploads_are_unavailable());

@@ -6,7 +6,6 @@ import {
   type GraphRow,
   parseRow,
   rowsFromElements,
-  runtimeTerm,
   syncRows,
 } from './graphSyntax';
 import type { GraphElement } from './types';
@@ -197,11 +196,6 @@ describe('syncRows', () => {
       point('c', 2),
     ]);
   });
-});
-
-it('spells constants the way JessieCode defines them at draw time', () => {
-  expect(runtimeTerm('2*pi*x+e')).toBe('2*PI*x+EULER');
-  expect(runtimeTerm('2x')).toBe('2*x');
 });
 
 describe('scientific numbers', () => {

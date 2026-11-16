@@ -617,12 +617,9 @@ test('in a plane, selected points move together, and the eraser takes what its r
   const [dropped] = (await planePoints(page, true)).points;
   expect(dropped.at).not.toEqual(placed.at);
   const step = await page.evaluate(async (scale) => {
-    const { tickStep } = (await import(
-      '/src/features/questions/graphTicks.ts' as string
-    )) as { tickStep(ppu: number): number };
-    const { minorStep } = (await import(
-      '/src/features/blocksuite/boardGeometry.ts' as string
-    )) as { minorStep(step: number): number };
+    const { minorStep, tickStep } = (await import(
+      '/src/features/graph/view.ts' as string
+    )) as { minorStep(step: number): number; tickStep(ppu: number): number };
     return minorStep(tickStep(scale));
   }, ppu);
   const rings = Math.hypot(...dropped.at) / step;

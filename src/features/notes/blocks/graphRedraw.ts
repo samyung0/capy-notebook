@@ -1,8 +1,9 @@
 import type { TElement } from 'platejs';
 import { useEditorRef } from 'platejs/react';
 import { useEffect, useRef } from 'react';
+import { graphSvg } from '@/features/graph/svg';
 import type { QuestionFigureElement } from '@/features/materials/document';
-import { GraphError, renderGraphSvg } from '@/features/questions/graph';
+import { GraphError, validateGraphRecipe } from '@/features/questions/graph';
 import { repairFigureBlock } from '@/features/questions/repair';
 import type { GraphBlock } from '@/features/questions/types';
 import { writeNoEdit } from '../roomBinding';
@@ -38,45 +39,36 @@ export function useGraphRedraw(element: TElement, readOnly: boolean) {
     if (readOnly || recipe === null || recipe === drawn.current) return;
     drawn.current = recipe;
     let cancelled = false;
-    const redraw = async () => {
+    const redraw = () => {
       const found = figureAt(editor.children, id);
       if (cancelled || !found || found[1].type !== 'graph') return;
       const [, held] = found;
-      const host = document.createElement('div');
-      host.setAttribute('aria-hidden', 'true');
-      host.className = 'pointer-events-none fixed top-0 -left-[20000px]';
-      document.body.append(host);
-      let svg: string;
+      const repaired = repairFigureBlock(held) as GraphBlock;
       try {
-        svg = await renderGraphSvg(host, repairFigureBlock(held) as GraphBlock);
+        validateGraphRecipe(repaired);
       } catch (error) {
-        // A merge the board cannot draw keeps its stored SVG.
+        // A merge that cannot be drawn keeps its stored SVG.
         if (error instanceof GraphError) return;
         throw error;
-      } finally {
-        host.remove();
       }
-      const now = figureAt(editor.children, id);
-      // A newer change redraws on its own.
-      if (cancelled || !now || now[1] !== held) return;
+      const svg = graphSvg(repaired);
       if ('svg' in held.image && held.image.svg === svg) return;
       writeNoEdit(editor, () =>
         editor.tf.withoutSaving(() =>
           editor.tf.setNodes({ block: { ...held, image: { svg } } } as never, {
-            at: [now[0]],
+            at: [found[0]],
           })
         )
       );
     };
-    const run = () => void redraw();
     if (typeof requestIdleCallback === 'function') {
-      const handle = requestIdleCallback(run);
+      const handle = requestIdleCallback(redraw);
       return () => {
         cancelled = true;
         cancelIdleCallback(handle);
       };
     }
-    const handle = setTimeout(run, 0);
+    const handle = setTimeout(redraw, 0);
     return () => {
       cancelled = true;
       clearTimeout(handle);

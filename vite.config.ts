@@ -19,7 +19,7 @@ const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
  * gets an empty module instead, keeping the site Worker small. Matched on the
  * import as written, relative or not. */
 const BROWSER_ONLY =
-  /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|DrawingBoardScreen|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
+  /^(katex|mathlive|mermaid)$|\/(AppEmbed|DrawingBoardScreen|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
 /** The markdown parser's entity decoder without a DOM. Under the `browser`
  * condition it decodes through a DOM element, which the markdown preview
  * worker (files/MarkdownPreview.worker.ts) does not have; Node's resolution

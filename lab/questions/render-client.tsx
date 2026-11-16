@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { QuestionView } from '../../src/features/questions/QuestionView';
-import { renderGraphSvg } from '../../src/features/questions/graph';
+import { graphSvg } from '../../src/features/graph/svg';
 import type { Question } from '../../src/features/questions/types';
 import { questionBlockSchema } from '../../src/features/questions/validation';
 import '../../src/styles/tailwind.css';
@@ -93,27 +93,16 @@ window.renderBankQuestion = async (input) => {
   ]) {
     for (const block of blocks) {
       if (block.type !== 'graph') continue;
-      const host = document.createElement('div');
-      host.style.width = `${block.width}px`;
-      host.style.height = `${block.height}px`;
-      document.body.append(host);
-      try {
-        const svg = await renderGraphSvg(host, block);
-        const hash = Array.from(
-          new Uint8Array(
-            await crypto.subtle.digest(
-              'SHA-256',
-              new TextEncoder().encode(svg),
-            ),
-          ),
-          (v) => v.toString(16).padStart(2, '0'),
-        ).join('');
-        assets[`${hash}.svg`] = svg;
-        block.image = { svg };
-        questionBlockSchema.parse(block);
-      } finally {
-        host.remove();
-      }
+      const svg = graphSvg(block);
+      const hash = Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest('SHA-256', new TextEncoder().encode(svg)),
+        ),
+        (v) => v.toString(16).padStart(2, '0'),
+      ).join('');
+      assets[`${hash}.svg`] = svg;
+      block.image = { svg };
+      questionBlockSchema.parse(block);
     }
   }
   await display(question, true);

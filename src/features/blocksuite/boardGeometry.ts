@@ -1,23 +1,8 @@
-export type Vec = [number, number];
+import type { Vec } from '@/features/graph/model';
 
-/** Finer squares between a plane's numbered lines: 1 and 5 split in five, 2 in four. */
-export function minorStep(step: number) {
-  const power = 10 ** Math.floor(Math.log10(step));
-  return Math.round(step / power) === 2 ? step / 4 : step / 5;
-}
-
-/** Most lines one direction of a plane's grid draws. */
-const TICKS_MAX = 1000;
-
-/** The multiples of `every` from `from` to `to`, by index, so a step too small to move
- * a large number can't loop for ever. None past the cap: the grid goes, the tab stays. */
-export function ticks(from: number, to: number, every: number) {
-  const first = Math.ceil(from / every);
-  const last = Math.floor(to / every);
-  const count = last - first + 1;
-  if (!Number.isFinite(count) || count < 1 || count > TICKS_MAX) return [];
-  return Array.from({ length: count }, (_, i) => (first + i) * every);
-}
+export { curvePieces } from '@/features/graph/curves';
+export type { Vec } from '@/features/graph/model';
+export { minorStep, ticks } from '@/features/graph/view';
 
 /** The nearest multiple of `step`, without the float dust that would show in a label. */
 /** A number without float dust (0.30000000000000004 is 0.3). */
@@ -31,37 +16,6 @@ export function snapTo(value: number, step: number) {
 export function clockAngle([cx, cy]: Vec, [x, y]: Vec) {
   const degrees = (Math.atan2(x - cx, y - cy) * 180) / Math.PI;
   return Math.round((degrees + 360) % 360);
-}
-
-/** The four points a Catmull-Rom segment from `points[i]` to the next reads. A curve
- * that ends on its first point is a loop, so its ends read across the join. */
-function around(points: Vec[], i: number): [Vec, Vec, Vec, Vec] {
-  const first = points[0];
-  const end = points.at(-1);
-  const loop =
-    points.length > 3 && end?.[0] === first[0] && end[1] === first[1];
-  const p1 = points[i];
-  const p2 = points[i + 1];
-  return [
-    points[i - 1] ?? ((loop && points.at(-2)) || p1),
-    p1,
-    p2,
-    points[i + 2] ?? (loop ? points[1] : p2),
-  ];
-}
-
-/** The same curve as cubic Bézier pieces, `[from, control, control, to]`, which a
- * canvas draws smooth at any zoom. */
-export function curvePieces(points: Vec[]): [Vec, Vec, Vec, Vec][] {
-  return points.slice(0, -1).map((_, i) => {
-    const [p0, p1, p2, p3] = around(points, i);
-    return [
-      p1,
-      [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6],
-      [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6],
-      p2,
-    ];
-  });
 }
 
 export type Box = { h: number; w: number; x: number; y: number };

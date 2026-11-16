@@ -1078,11 +1078,13 @@ editors show a merge's raw block with its issues: a chart's rows past its
 labels and series past the cap, a pie's other series (Remove last series
 shows for it), its negative or missing positive value, no series (Add series
 shows even on a pie), and a graph's rows past the cap or naming a gone point,
-each marked, Save held until they are fixed. A graph's SVG is drawn on Save; an editor in Edit mode that
-sees a graph's recipe change (elements, board, size) redraws it in an idle
-callback (`graphRedraw.ts`) and writes `image`, outside Undo, only when the
-SVG differs, so its own write never redraws again; readers keep the stored
-SVG. The Rust server writes the same maps on bootstrap and an agent's insert
+each marked, Save held until they are fixed. A graph's SVG is drawn on Save by the
+graph engine's `graphSvg` (`src/features/graph/svg.ts`, the canvas plane's look on
+white paper); an editor in Edit mode that sees a graph's recipe change (elements,
+board, size) redraws it in an idle callback (`graphRedraw.ts`, synchronous `graphSvg`
+once the recipe validates; a recipe the validators refuse keeps its stored SVG) and
+writes `image`, outside Undo, only when the SVG differs, so its own write never
+redraws again; readers keep the stored SVG. The Rust server writes the same maps on bootstrap and an agent's insert
 and reads them in one place (`plate::map_value`, behind
 `plate::block_value`); room admission takes a block as its map only and
 refuses a crafted update that puts an unknown key, a wrong type, an oversize
@@ -4866,7 +4868,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   and ends. Point, Line and Curve snap to the
   fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
-  and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
+  and `axisNumber` in `src/features/graph/view.ts`; the plane still draws with its own code, plan
+  step 1 moved only the shared curve, formula, paper and tick helpers into
+  `src/features/graph/`). Numbers leave with their axis and
   marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
   fine to draw goes blank. Each click is written at once, one undo step, and undo
   shortens a line or curve still taking clicks. While a plane or chart is open, undo and
@@ -4895,8 +4899,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 - **Functions and the objects list** (Epo 2026-11-13, L2, workspace canvases only): a
   `function` mark holds the typed LaTeX and the graph dialog's `term` (and an optional
   domain from `{a <= x <= b}`), read with `functionOf` in `graphSyntax.ts` (natural
-  log, as the dialog; a command such as `line(x)` is refused) and drawn across whatever
-  is shown by `functionRuns`: a sample every 2 px, at most 4000, breaking where the
+  log, as every graph surface; a command such as `line(x)` is refused) and drawn across
+  whatever is shown by `functionRuns` (`src/features/graph/curves.ts`): a sample every 2 px, at most 4000, breaking where the
   value isn't finite or jumps (a leap past the canvas height whose middle isn't between,
   as at tan's asymptote; a steep line keeps drawing). It can't be dragged; its row edits
   it, and `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
@@ -5343,7 +5347,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
-  limits and chart geometry, `boardGeometry.ts` the framing, `graphTicks.ts` the grid
+  limits and chart geometry, `boardGeometry.ts` the framing, `src/features/graph/view.ts` the grid
   step), 12.7 KB minified on its own. Framed as the marking image is (everything, far
   groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
   at the same index. Strokes are plain lines thinned to one point per preview pixel and

@@ -19,22 +19,20 @@ import {
   GfxPrimitiveElementModel,
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
-import { axisNumber } from '@/features/questions/graph';
-import { tickStep } from '@/features/questions/graphTicks';
+import { formulaAt, formulaBox, replay } from '@/features/graph/formula';
+import { axisNumber, tickStep } from '@/features/graph/view';
 import {
   cardPaper,
   curveSegments,
-  FORMULA_SIZE,
   type FunctionMark,
   functionRuns,
   LABEL_SIZE,
-  LATEX_MAX,
   type Mark,
   type Paper,
   type PathMark,
   pointsOf,
 } from './boardData';
-import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
+import { laidOut } from './boardFormulaDraw';
 import { minorStep, ticks, type Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -401,13 +399,11 @@ function drawMarks(
 
 const NONE: ReadonlySet<string> = new Set();
 
+export { formulaAt, formulaBox } from '@/features/graph/formula';
+
 /** A vector's arrowhead, in screen pixels: a mark keeps its size as the plane zooms. */
 const ARROW_LENGTH = 12;
 const ARROW_SPREAD = Math.PI / 7;
-
-/** KaTeX lays a formula out at 24 px; a plane draws it at its size (18 px unless set),
- * so it reads beside a label's 15 px text. */
-const FORMULA_LAYOUT = 24;
 
 /** A plane label's font at its size. */
 export const labelFont = (size = LABEL_SIZE) => `${size}px Arial, sans-serif`;
@@ -425,28 +421,6 @@ export function labelBox(
   ctx.restore();
   const h = size * 1.2;
   return { h, w, x: x - w / 2, y: y - h / 2 };
-}
-
-/** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
- * KaTeX can't read stays undrawn. */
-export function formulaAt(latex: string, refresh: () => void) {
-  if (latex.length > LATEX_MAX) return;
-  const drawn = laidOut(latex);
-  if (!drawn) drawing(latex).then(refresh, () => undefined);
-  return drawn;
-}
-
-/** Where a formula's laid-out box sits on screen at its size, centred on its point. */
-export function formulaBox(
-  drawn: Drawn,
-  x: number,
-  y: number,
-  size = FORMULA_SIZE
-) {
-  const scale = size / FORMULA_LAYOUT;
-  const w = drawn.w * scale;
-  const h = drawn.h * scale;
-  return { h, scale, w, x: x - w / 2, y: y - h / 2 };
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{

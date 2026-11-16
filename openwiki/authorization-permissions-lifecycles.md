@@ -273,7 +273,7 @@ preview their items in the app.
 The renderer (`src/share/server.tsx`) is built by Vite as its own bundle (`vite build --ssr` into `dist/_ssr`,
 kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as `capy-share-render`), so the page
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
-editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
+editor, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
 again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Nothing on these pages counts, signed in or out, and they read no session (Epo 2026-11-05, Q640 B; 2026-11-06, Q663 A):
 a quiz's check takes the share route, which marks what has one right answer and leaves an answered open part Not marked

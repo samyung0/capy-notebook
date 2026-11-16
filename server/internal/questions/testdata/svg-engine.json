@@ -1,0 +1,150 @@
+{
+  "name": "svg-engine",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "labels": "letters",
+    "layout": "paper",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Read the graph."
+      },
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-6, 6, 6, -6],
+          "axis": true,
+          "grid": true
+        },
+        "width": 480,
+        "height": 480,
+        "elements": [
+          {
+            "type": "point",
+            "id": "A",
+            "name": "A",
+            "coords": [-4, -3]
+          },
+          {
+            "type": "point",
+            "id": "B",
+            "name": "B",
+            "coords": [-1, -3]
+          },
+          {
+            "type": "point",
+            "id": "C",
+            "name": "C",
+            "coords": [-4, 1]
+          },
+          {
+            "type": "point",
+            "id": "O",
+            "name": "O",
+            "coords": [3, 3]
+          },
+          {
+            "type": "point",
+            "id": "P",
+            "name": "P",
+            "coords": [5, 3]
+          },
+          {
+            "type": "point",
+            "id": "Q",
+            "name": "Q",
+            "coords": [3, 5]
+          },
+          {
+            "type": "point",
+            "id": "D",
+            "coords": [2, -2]
+          },
+          {
+            "type": "point",
+            "id": "E",
+            "name": "E",
+            "coords": [4, -4]
+          },
+          {
+            "type": "functiongraph",
+            "id": "f",
+            "term": "0.2*x^2-3"
+          },
+          {
+            "type": "line",
+            "id": "l",
+            "points": ["D", "E"]
+          },
+          {
+            "type": "segment",
+            "id": "s1",
+            "points": ["A", "B"]
+          },
+          {
+            "type": "segment",
+            "id": "s2",
+            "points": ["A", "C"]
+          },
+          {
+            "type": "polygon",
+            "id": "poly",
+            "points": ["A", "B", "C"]
+          },
+          {
+            "type": "circle",
+            "id": "c",
+            "center": "D",
+            "radius": 1.2
+          },
+          {
+            "type": "angle",
+            "id": "ang",
+            "points": ["B", "A", "C"]
+          },
+          {
+            "type": "arc",
+            "id": "arc",
+            "center": "O",
+            "points": ["P", "Q"]
+          },
+          {
+            "type": "sector",
+            "id": "sec",
+            "center": "O",
+            "points": ["Q", "P"]
+          },
+          {
+            "type": "text",
+            "id": "t",
+            "coords": [-5, 5],
+            "text": "A label"
+          }
+        ],
+        "image": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"480\" height=\"480\" viewBox=\"0 0 480 480\"><defs><clipPath id=\"clip1\"><path d=\"M0 0H480V480H0Z\"/></clipPath></defs><path d=\"M0 0H480V480H0Z\" fill=\"#fff\"/><g clip-path=\"url(#clip1)\"><path d=\"M0 0L0 480M20 0L20 480M40 0L40 480M60 0L60 480M80 0L80 480M100 0L100 480M120 0L120 480M140 0L140 480M160 0L160 480M180 0L180 480M200 0L200 480M220 0L220 480M240 0L240 480M260 0L260 480M280 0L280 480M300 0L300 480M320 0L320 480M340 0L340 480M360 0L360 480M380 0L380 480M400 0L400 480M420 0L420 480M440 0L440 480M460 0L460 480M480 0L480 480M0 480L480 480M0 460L480 460M0 440L480 440M0 420L480 420M0 400L480 400M0 380L480 380M0 360L480 360M0 340L480 340M0 320L480 320M0 300L480 300M0 280L480 280M0 260L480 260M0 240L480 240M0 220L480 220M0 200L480 200M0 180L480 180M0 160L480 160M0 140L480 140M0 120L480 120M0 100L480 100M0 80L480 80M0 60L480 60M0 40L480 40M0 20L480 20M0 0L480 0\" fill=\"none\" stroke=\"#f1f1ef\" stroke-width=\"1\"/><path d=\"M0 0L0 480M80 0L80 480M160 0L160 480M240 0L240 480M320 0L320 480M400 0L400 480M480 0L480 480M0 480L480 480M0 400L480 400M0 320L480 320M0 240L480 240M0 160L480 160M0 80L480 80M0 0L480 0\" fill=\"none\" stroke=\"#dededb\" stroke-width=\"1\"/><path d=\"M240 0L240 480M0 240L480 240\" fill=\"none\" stroke=\"#6f6f6c\" stroke-width=\"1.5\"/><text x=\"0\" y=\"254\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">–6</text><text x=\"80\" y=\"254\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">–4</text><text x=\"160\" y=\"254\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">–2</text><text x=\"320\" y=\"254\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">2</text><text x=\"400\" y=\"254\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">4</text><text x=\"480\" y=\"254\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">6</text><text x=\"233\" y=\"480\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"end\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">–6</text><text x=\"233\" y=\"400\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"end\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">–4</text><text x=\"233\" y=\"320\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"end\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">–2</text><text x=\"233\" y=\"160\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"end\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">2</text><text x=\"233\" y=\"80\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"end\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">4</text><text x=\"233\" y=\"0\" font-family=\"Arial, sans-serif\" font-size=\"12\" text-anchor=\"end\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" fill=\"#55555b\" paint-order=\"stroke\">6</text><path d=\"M0 72L12 100.1 22 122.4 32 143.7 42 164 52 183.3 62 201.6 72 218.9 82 235.2 92 250.5 102 264.8 112 278.1 122 290.4 132 301.7 138 308 148 317.7 158 326.4 162 329.6 168 334.1 172 336.9 178 340.8 182 343.2 188 346.5 192 348.5 198 351.2 202 352.8 208 354.9 212 356.1 218 357.6 222 358.4 228 359.3 232 359.7 238 360 242 360 248 359.7 252 359.3 258 358.4 262 357.6 268 356.1 272 354.9 278 352.8 282 351.2 288 348.5 292 346.5 298 343.2 302 340.8 308 336.9 312 334.1 318 329.6 322 326.4 328 321.3 338 312 348 301.7 358 290.4 368 278.1 378 264.8 388 250.5 398 235.2 408 218.9 418 201.6 428 183.3 438 164 448 143.7 462 113.6 472 90.9 480 72\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M-1 -1L481 481\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M80 360L200 360\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M80 360L80 200\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M80 360L200 360 80 200Z\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M368 320A48 48 0 0 1 272 320A48 48 0 0 1 368 320\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M96.8 360L96.8 343.2 80 343.2\" fill=\"none\" stroke=\"#000\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M440 120A80 80 0 0 0 360 40\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M360 120L360 40A80 80 0 1 0 440 120Z\" fill=\"none\" stroke=\"#000\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M84.5 360A4.5 4.5 0 0 1 75.5 360A4.5 4.5 0 0 1 84.5 360\" fill=\"#000\"/><path d=\"M204.5 360A4.5 4.5 0 0 1 195.5 360A4.5 4.5 0 0 1 204.5 360\" fill=\"#000\"/><path d=\"M84.5 200A4.5 4.5 0 0 1 75.5 200A4.5 4.5 0 0 1 84.5 200\" fill=\"#000\"/><path d=\"M364.5 120A4.5 4.5 0 0 1 355.5 120A4.5 4.5 0 0 1 364.5 120\" fill=\"#000\"/><path d=\"M444.5 120A4.5 4.5 0 0 1 435.5 120A4.5 4.5 0 0 1 444.5 120\" fill=\"#000\"/><path d=\"M364.5 40A4.5 4.5 0 0 1 355.5 40A4.5 4.5 0 0 1 364.5 40\" fill=\"#000\"/><path d=\"M324.5 320A4.5 4.5 0 0 1 315.5 320A4.5 4.5 0 0 1 324.5 320\" fill=\"#000\"/><path d=\"M404.5 400A4.5 4.5 0 0 1 395.5 400A4.5 4.5 0 0 1 404.5 400\" fill=\"#000\"/><text x=\"40\" y=\"40\" font-family=\"Arial, sans-serif\" font-size=\"15\" text-anchor=\"middle\" dominant-baseline=\"central\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">A label</text><text x=\"73.4\" y=\"364.5\" font-family=\"Arial, sans-serif\" font-size=\"15\" text-anchor=\"end\" dominant-baseline=\"text-before-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">A</text><text x=\"196.1\" y=\"367\" font-family=\"Arial, sans-serif\" font-size=\"15\" text-anchor=\"end\" dominant-baseline=\"text-before-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">B</text><text x=\"72.1\" y=\"198.8\" font-family=\"Arial, sans-serif\" font-size=\"15\" text-anchor=\"end\" dominant-baseline=\"text-after-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">C</text><text x=\"365\" y=\"113.7\" font-family=\"Arial, sans-serif\" font-size=\"15\" dominant-baseline=\"text-after-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">O</text><text x=\"446.7\" y=\"115.6\" font-family=\"Arial, sans-serif\" font-size=\"15\" dominant-baseline=\"text-after-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">P</text><text x=\"363.3\" y=\"32.7\" font-family=\"Arial, sans-serif\" font-size=\"15\" dominant-baseline=\"text-after-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">Q</text><text x=\"404.7\" y=\"406.5\" font-family=\"Arial, sans-serif\" font-size=\"15\" dominant-baseline=\"text-before-edge\" stroke=\"#fff\" stroke-width=\"3\" stroke-linejoin=\"round\" fill=\"#1d1d1f\" paint-order=\"stroke\">E</text></g><rect x=\"0\" y=\"0\" width=\"480\" height=\"480\" fill=\"none\" stroke=\"#d9d9d6\" stroke-width=\"1\"/></svg>"
+        },
+        "description": "Every graph element kind, drawn by the graph engine"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  }
+}

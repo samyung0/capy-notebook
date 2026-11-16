@@ -1,7 +1,8 @@
 /* Desmos-style graph rows: text typed in the editor ↔ recipe elements.
  * Rows arrive as ASCII-math (MathLive's `ascii-math` output, or plain text)
- * and leave as LaTeX for the row's math field. Stored function terms stay
- * JessieCode with explicit `*`, which `validGraphTerm` checks. */
+ * and leave as LaTeX for the row's math field. Stored function terms keep
+ * JessieCode's syntax with explicit `*`, which `validGraphTerm` checks on
+ * every server; `functionOf` evaluates them. */
 import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { sameJson } from '@/lib/sameJson';
@@ -275,19 +276,16 @@ function checkArity(node: Extract<Node, { t: 'call' }>) {
     throw new RowError(m.question_ui_graph_row_unreadable());
 }
 
-/** JessieCode with explicit operators. `runtime` spells the constants the
- * way JessieCode defines them (`PI`, `EULER`); stored terms keep `pi`/`e`. */
-function jessie(node: Node, runtime = false): string {
+/** The stored term: JessieCode's syntax with explicit operators. */
+function jessie(node: Node): string {
   const wrap = (child: Node, min: number) => {
-    const text = jessie(child, runtime);
+    const text = jessie(child);
     return precedence(child) < min ? `(${text})` : text;
   };
   switch (node.t) {
     case 'num':
       return String(node.v);
     case 'name':
-      if (runtime && node.v === 'pi') return 'PI';
-      if (runtime && node.v === 'e') return 'EULER';
       return node.v;
     case 'neg':
       return `-${wrap(node.a, 4)}`;
@@ -295,7 +293,7 @@ function jessie(node: Node, runtime = false): string {
       throw new RowError(m.question_ui_graph_row_unreadable());
     case 'call':
       checkArity(node);
-      return `${node.fn}(${node.args.map((arg) => jessie(arg, runtime)).join(',')})`;
+      return `${node.fn}(${node.args.map((arg) => jessie(arg)).join(',')})`;
     case 'bin': {
       const p = precedence(node);
       if (node.op === '^') return `${wrap(node.a, 5)}^${wrap(node.b, 5)}`;
@@ -559,9 +557,8 @@ function commandRow(command: Command, args: Node[]): ParsedRow {
   return { command, kind: 'command', points };
 }
 
-/** A stored function term (`functionRow`'s) as a function of x, for the drawing
- * board's plane, which draws it without JSXGraph. Throws `RowError` on a term
- * that isn't one. */
+/** A stored function term (`functionRow`'s) as a function of x, as every graph
+ * draws it. Throws `RowError` on a term that isn't one. */
 export function functionOf(term: string): (x: number) => number {
   const node = parse(normalize(term));
   for (const name of names(node))
@@ -596,7 +593,7 @@ export function functionOf(term: string): (x: number) => number {
         const args = node.args.map(at);
         if (node.fn === 'ln') return (x) => Math.log(args[0](x));
         if (node.fn === 'log')
-          // As `evaluate` and the graph dialog's board read it.
+          // As `evaluate` reads it.
           return (x) =>
             Math.log(args[0](x)) / (args[1] ? Math.log(args[1](x)) : 1);
         const fn = Math[node.fn as 'sin'] as (...values: number[]) => number;
@@ -607,16 +604,6 @@ export function functionOf(term: string): (x: number) => number {
     }
   };
   return at(node);
-}
-
-/** The term as the board's JessieCode compiler reads it: explicit products and
- * JessieCode's own names for π and e (it leaves `pi` and `e` undefined). */
-export function runtimeTerm(term: string) {
-  try {
-    return jessie(parse(normalize(term)), true);
-  } catch {
-    return term;
-  }
 }
 
 /** LaTeX for a row's math field. `nameOf` gives each point id's row name. */

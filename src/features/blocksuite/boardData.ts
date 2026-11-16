@@ -1,6 +1,13 @@
 import { BOARD_CATALOG } from '@/api/board.generated';
-import { functionOf } from '@/features/questions/graphSyntax';
-import { type Box, curvePieces, tidy, type Vec } from './boardGeometry';
+import {
+  curvePieces,
+  curveSegments as segmentsOf,
+} from '@/features/graph/curves';
+import { EXPORT_PAPER, PAPER, type Paper } from '@/features/graph/paper';
+import { type Box, tidy, type Vec } from './boardGeometry';
+
+export { functionRuns, markFunction } from '@/features/graph/curves';
+export { INK, NUMBER, PAPER, type Paper, TEXT } from '@/features/graph/paper';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the
  * board's check and its preview read them without loading BlockSuite. */
@@ -67,13 +74,8 @@ export function smoothHandles(points: Vec[]): [Vec, Vec][] {
 }
 
 /** A curve's pieces as cubic Béziers: from, its two controls, to. */
-export function curveSegments(mark: PathMark): [Vec, Vec, Vec, Vec][] {
-  const { handles, points } = mark;
-  if (!handles) return curvePieces(points);
-  return points
-    .slice(0, -1)
-    .map((from, i) => [from, handles[i][1], handles[i + 1][0], points[i + 1]]);
-}
+export const curveSegments = (mark: PathMark) =>
+  segmentsOf(mark.points, mark.handles);
 
 /** A point along a cubic Bézier piece, `t` from 0 to 1. */
 export const bezier = ([a, b, c, d]: [Vec, Vec, Vec, Vec], t: number): Vec => {
@@ -86,59 +88,6 @@ export const bezier = ([a, b, c, d]: [Vec, Vec, Vec, Vec], t: number): Vec => {
       t ** 3 * d[k]
   ) as Vec;
 };
-
-const functions = new Map<string, ((x: number) => number) | null>();
-/** A function mark's function of x, or null for a term it can't read. */
-export function markFunction(term: string) {
-  if (!functions.has(term)) {
-    let fn: ((x: number) => number) | null = null;
-    try {
-      fn = functionOf(term);
-    } catch {
-      fn = null;
-    }
-    functions.set(term, fn);
-  }
-  return functions.get(term) ?? null;
-}
-
-/** Where a function is drawn between two x, as runs of points: a run breaks where
- * it isn't defined or leaps more than `leap` (an asymptote, say). */
-export function functionRuns(
-  mark: FunctionMark,
-  from: number,
-  to: number,
-  step: number,
-  leap: number
-): Vec[][] {
-  const fn = markFunction(mark.term);
-  if (!fn) return [];
-  const [low, high] = mark.domain
-    ? [Math.max(from, mark.domain[0]), Math.min(to, mark.domain[1])]
-    : [from, to];
-  const runs: Vec[][] = [];
-  let run: Vec[] = [];
-  const count = Math.min(4000, Math.ceil((high - low) / step));
-  const gap = (high - low) / Math.max(count, 1);
-  // A leap past `leap` breaks the run only where the value between isn't between,
-  // as at tan's or 1/x's asymptote; a steep line keeps drawing.
-  const jumps = ([x0, y0]: Vec, x: number, y: number) => {
-    if (Math.abs(y - y0) <= leap) return false;
-    const middle = fn((x0 + x) / 2);
-    return !(middle >= Math.min(y0, y) && middle <= Math.max(y0, y));
-  };
-  for (let i = 0; i <= count; i++) {
-    const x = i === count ? high : low + i * gap;
-    const y = fn(x);
-    const last = run.at(-1);
-    if (!Number.isFinite(y) || (last && jumps(last, x, y))) {
-      if (run.length > 1) runs.push(run);
-      run = Number.isFinite(y) ? [[x, y]] : [];
-    } else run.push([x, y]);
-  }
-  if (run.length > 1) runs.push(run);
-  return runs;
-}
 
 /** An upright ellipse's handles from its box: right, top, left, bottom. */
 export const ellipseIn = (
@@ -253,8 +202,7 @@ export const { AXIS_MAX, BARS_MAX, LABEL_LENGTH_MAX, LABELS_MAX, SPOKES_MAX } =
 
 /** Text sizes in pixels: a plane label's and formula's, and a chart's text, until a
  * frame's corner sets one (Epo 2026-11-13); and the range a corner sets. */
-export const LABEL_SIZE = 15;
-export const FORMULA_SIZE = 18;
+export { FORMULA_SIZE, LABEL_SIZE } from '@/features/graph/model';
 export const CHART_TEXT = 12;
 export const { TEXT_SIZE_MAX, TEXT_SIZE_MIN } = BOARD_CATALOG.limits;
 export const isTextSize = (size: unknown) =>
@@ -271,60 +219,11 @@ export const CARD_PADS: Record<ChartKind, Pads> = {
   pie: { bottom: 14, left: 14, right: 14, top: 14 },
 };
 
-export const INK = '#000';
-export const TEXT = '#1d1d1f';
-export const NUMBER = '#55555b';
-
-/** A plane or chart card's colours, with the board's light or dark: paper, grid,
- * axes and ink. Dark paper is a dark note's. The paper is half see-through, on the
- * board and open for editing alike, so the panel's frost shows (Epo 2026-11-08). The
- * marking image is always light, its paper opaque (`cardPaper`). */
-export type Paper = {
-  axis: string;
-  /** Dark paper: black ink drawn from elsewhere (a formula) is turned light. */
-  dark: boolean;
-  edge: string;
-  ink: string;
-  major: string;
-  minor: string;
-  number: string;
-  paper: string;
-  rule: string;
-  text: string;
-};
-export const PAPER: Record<'dark' | 'light', Paper> = {
-  dark: {
-    axis: '#9a9a9a',
-    dark: true,
-    edge: '#3a3a3a',
-    ink: '#fff',
-    major: '#3a3a3a',
-    minor: '#2e2e2e',
-    number: '#a6a6ab',
-    paper: 'rgba(37, 37, 37, 0.5)',
-    rule: '#363636',
-    text: '#eaeaea',
-  },
-  light: {
-    axis: '#6f6f6c',
-    dark: false,
-    edge: '#d9d9d6',
-    ink: INK,
-    major: '#dededb',
-    minor: '#f1f1ef',
-    number: NUMBER,
-    paper: 'rgba(255, 255, 255, 0.5)',
-    rule: '#e4e4e2',
-    text: TEXT,
-  },
-};
-
 /** The marking image draws card paper opaque, as previews do, so a stroke under a card
  * stays covered there; `asImage` turns it on while the image draws. */
-const IMAGE_PAPER: Paper = { ...PAPER.light, paper: '#fff' };
 let imaging = false;
-export const cardPaper = (scheme: 'dark' | 'light') =>
-  imaging ? IMAGE_PAPER : PAPER[scheme];
+export const cardPaper = (scheme: 'dark' | 'light'): Paper =>
+  imaging ? EXPORT_PAPER : PAPER[scheme];
 export function asImage<T>(draw: () => T) {
   imaging = true;
   try {
