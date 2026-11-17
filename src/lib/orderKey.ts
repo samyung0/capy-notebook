@@ -100,3 +100,60 @@ export function keyBetween(a: string | null, b: string | null): string {
   if (i === null) throw new Error('cannot increment any more');
   return i < b ? i : ia + midpoint(fa, null);
 }
+
+/** Order keys for `count` new entries between two existing ones. */
+export function keysBetween(
+  after: string | null,
+  before: string | null,
+  count: number
+) {
+  const out: string[] = [];
+  let last = after;
+  for (let i = 0; i < count; i++) {
+    last = keyBetween(last, before);
+    out.push(last);
+  }
+  return out;
+}
+
+/** Order keys for entries wanted in the given order, from the keys they hold
+ * ('' for one with none yet). The most held keys that already rise in that
+ * order stay (the longest rising run), so an untouched entry keeps its key and
+ * entries appended after held ones re-key nothing; every other entry (a moved
+ * or a new one) takes a key between its neighbours. */
+export function risingOrders(held: string[]): string[] {
+  // Longest strictly rising subsequence (patience sorting): `tails[n]` is the
+  // entry ending the best run of length n + 1 so far, `previous` links runs.
+  const tails: number[] = [];
+  const previous = held.map(() => -1);
+  held.forEach((order, i) => {
+    if (order === '') return;
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (held[tails[mid]] < order) low = mid + 1;
+      else high = mid;
+    }
+    if (low > 0) previous[i] = tails[low - 1];
+    tails[low] = i;
+  });
+  const kept = new Set<number>();
+  for (let i = tails.at(-1) ?? -1; i >= 0; i = previous[i]) kept.add(i);
+  const orders = [...held];
+  for (let i = 0; i < orders.length; i++) {
+    if (kept.has(i)) continue;
+    let end = i;
+    while (end < orders.length && !kept.has(end)) end++;
+    const keys = keysBetween(
+      i > 0 ? orders[i - 1] : null,
+      end < orders.length ? orders[end] : null,
+      end - i
+    );
+    keys.forEach((key, k) => {
+      orders[i + k] = key;
+    });
+    i = end;
+  }
+  return orders;
+}

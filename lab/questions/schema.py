@@ -137,14 +137,11 @@ BLOCK = {
             {
                 "board": obj({"bbox": array(NUMBER, 4, 4), "axis": BOOL, "grid": BOOL}),
                 "elements": array(ELEMENT, 1, 60),
-                "image": {
-                    "oneOf": [obj({"url": TEXT}), obj({"svg": {"type": "string"}})]
-                },
                 "width": NUMBER,
                 "height": NUMBER,
                 "description": TEXT,
             },
-            ["board", "elements", "image", "width", "height", "description"],
+            ["board", "elements", "width", "height", "description"],
         ),
         tagged(
             "image",

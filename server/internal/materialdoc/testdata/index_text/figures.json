@@ -1150,12 +1150,92 @@
               "term": "59*x-7.375"
             }
           ],
-          "image": {
-            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"></svg>"
-          },
           "width": 320,
           "height": 190,
           "description": "Every graph element"
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "graph",
+        "id": "graph_marks",
+        "block": {
+          "type": "graph",
+          "board": {
+            "bbox": [-5, 5, 5, -5],
+            "axis": true,
+            "grid": false,
+            "polar": true
+          },
+          "elements": [
+            {
+              "type": "point",
+              "id": "a",
+              "coords": [0, 0],
+              "name": "A"
+            },
+            {
+              "type": "point",
+              "id": "b",
+              "coords": [2, 0]
+            },
+            {
+              "type": "segment",
+              "id": "ab",
+              "points": ["a", "b"],
+              "arrow": true
+            },
+            {
+              "type": "text",
+              "id": "t",
+              "coords": [1, 3],
+              "text": "Area",
+              "size": 20
+            },
+            {
+              "type": "polyline",
+              "id": "v",
+              "coords": [[0, 0], [1, 2]],
+              "arrow": true
+            },
+            {
+              "type": "curve",
+              "id": "c",
+              "coords": [[-3, 0], [-2, 1], [-1, 0]],
+              "handles": [
+                [[-3, 0], [-3, 1]],
+                [[-2.5, 1], [-1.5, 1]],
+                [[-1, 1], [-1, 0]]
+              ]
+            },
+            {
+              "type": "ellipse",
+              "id": "e",
+              "center": [3, -2],
+              "radii": [1, 0.5]
+            },
+            {
+              "type": "formula",
+              "id": "f",
+              "coords": [-3, 3],
+              "latex": "\\frac12",
+              "size": 24
+            },
+            {
+              "type": "formula",
+              "id": "g",
+              "coords": [3, 3],
+              "latex": "x^2",
+              "hidden": true
+            }
+          ],
+          "width": 320,
+          "height": 240,
+          "description": "Free marks"
         },
         "children": [
           {
@@ -1181,9 +1261,6 @@
               "hidden": true
             }
           ],
-          "image": {
-            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"></svg>"
-          },
           "width": 120,
           "height": 120
         },
@@ -1216,6 +1293,10 @@
     {
       "id": "graph_full",
       "text": "Every graph element\npoint P0: (-12, -4)\npoint: (-11, -3.6667)\npoint P2: (-10, -3.3333)\npoint: (-9, -3)\npoint P4: (-8, -2.6667)\npoint P6: (-6, -2)\npoint: (-5, -1.6667)\npoint P8: (-4, -1.3333)\npoint: (-3, -1)\npoint P10: (-2, -0.6667)\npoint: (-1, -0.3333)\npoint P12: (0, 0)\npoint: (1, 0.3333)\npoint P14: (2, 0.6667)\npoint: (3, 1)\npoint P16: (4, 1.3333)\npoint: (5, 1.6667)\npoint P18: (6, 2)\npoint: (7, 2.3333)\npoint P20: (8, 2.6667)\npoint: (9, 3)\npoint P22: (10, 3.3333)\npoint: (11, 3.6667)\nfunctiongraph: 0.5*x^2-3\nfunctiongraph: sin(x)+cos(2*x) on [-3.5, 2]\nline: P0, (-11, -3.6667)\nline: (-7, -2.3333), P6\nsegment: P2, (-9, -3)\ncircle: center P8, radius 2.75\ncircle: center (-3, -1), radius 1000000000000\ntext: Region R\nangle θ: P10, (-1, -0.3333), P12\nangle: (1, 0.3333), P14, (3, 1)\narc: center P16, (5, 1.6667), P18\nsector: center (7, 2.3333), P20, (9, 3)\npolygon: P0, (-11, -3.6667), P2, (-9, -3), P4, (-7, -2.3333), P6, (-5, -1.6667), P8, (-3, -1), P10, (-1, -0.3333)\npolygon: P22, (11, 3.6667), (-11, -3.6667)\nfunctiongraph: 41*x-5.125\nfunctiongraph: 42*x-5.25\nfunctiongraph: 43*x-5.375\nfunctiongraph: 44*x-5.5\nfunctiongraph: 45*x-5.625\nfunctiongraph: 46*x-5.75\nfunctiongraph: 47*x-5.875\nfunctiongraph: 48*x-6.0\nfunctiongraph: 49*x-6.125\nfunctiongraph: 50*x-6.25\nfunctiongraph: 51*x-6.375\nfunctiongraph: 52*x-6.5\nfunctiongraph: 53*x-6.625\nfunctiongraph: 54*x-6.75\nfunctiongraph: 55*x-6.875\nfunctiongraph: 56*x-7.0\nfunctiongraph: 57*x-7.125\nfunctiongraph: 58*x-7.25\nfunctiongraph: 59*x-7.375"
+    },
+    {
+      "id": "graph_marks",
+      "text": "Free marks\npoint A: (0, 0)\npoint: (2, 0)\nsegment: A, (2, 0)\ntext: Area\nformula: \\frac12"
     }
   ]
 }

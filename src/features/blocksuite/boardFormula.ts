@@ -22,10 +22,11 @@ import {
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
 import { html, render } from 'lit';
+import { SYMBOLS, symbolLabel } from '@/features/graph/tools';
 import { inertTex } from '@/features/materials/inertTex';
 import mathFieldStyles from '@/features/questions/mathField.css?inline';
 import { getLocale, m } from '@/i18n';
-import { LATEX_MAX, type Mark } from './boardData';
+import { LATEX_MAX } from './boardData';
 import {
   type Drawn,
   drawing,
@@ -34,6 +35,7 @@ import {
   loadKatex,
   replay,
 } from './boardFormulaDraw';
+import type { PlaneElementModel } from './boardPlane';
 import { type FormulaStart, setFormulaOpener } from './boardTools';
 
 export class FormulaElementModel extends GfxPrimitiveElementModel<{
@@ -141,9 +143,9 @@ export async function formulasDrawn(gfx: GfxController) {
     if (element.type === 'formula')
       return [(element as FormulaElementModel).latex];
     // A plane's formulas too.
-    const marks = (element as { marks?: Mark[] }).marks ?? [];
-    return marks.flatMap((mark) =>
-      mark.kind === 'formula' ? [mark.latex] : []
+    if (element.type !== 'plane') return [];
+    return (element as PlaneElementModel).elementList.flatMap((mark) =>
+      mark.type === 'formula' ? [mark.latex] : []
     );
   });
   await Promise.allSettled(
@@ -332,11 +334,6 @@ async function placeFormula(gfx: GfxController, start: FormulaStart) {
 setFormulaOpener(
   (gfx, start) => void (start ? placeFormula(gfx, start) : openEditor(gfx))
 );
-
-const SYMBOLS = ['²', '³', '√', 'π', 'θ', '±', '≤', '≥', '≠', '∞', '→', '°'];
-/** Superscripts read better with something under them on the button. */
-const symbolLabel = (symbol: string) =>
-  '²³'.includes(symbol) ? `x${symbol}` : symbol;
 
 /** The symbol row's buttons; a press keeps the caret in the field typed in. */
 export const symbolButtons = (insert: (symbol: string) => void) =>

@@ -68,6 +68,7 @@ import { FigureView } from '@/features/materials/staticViews';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { repairFigureBlock } from '@/features/questions/repair';
+import type { PlotBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
@@ -87,10 +88,9 @@ import {
   ToolbarPopoverRow,
 } from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
-import { useGraphRedraw } from './graphRedraw';
 import { mermaidSourceText, setMermaidCaption } from './mermaidBlock';
-import { rebaseBlock } from './rebase';
-import type { NoteVisualBlock } from './VisualBlockDialog';
+import { openedOnMount, opensOnMount } from './openFigure';
+import { rebasePlot } from './rebase';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
@@ -414,7 +414,16 @@ export function MaterialRefElement(props: PlateElementProps) {
 
 const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
 const HtmlEmbedSourceDialog = lazy(() => import('./HtmlEmbedSourceDialog'));
-const VisualBlockDialog = lazy(() => import('./VisualBlockDialog'));
+const LiveFigureDialog = lazy(() =>
+  import('./VisualBlockDialog').then((module) => ({
+    default: module.LiveFigureDialog,
+  }))
+);
+const PlotDialog = lazy(() =>
+  import('./VisualBlockDialog').then((module) => ({
+    default: module.PlotDialog,
+  }))
+);
 
 /**
  * Copies one block exactly as Cmd+C would: a real copy event the editor fills.
@@ -522,23 +531,27 @@ export function VisualBlockElement(props: PlateElementProps) {
   // The room holds the block as merged; readers draw it repaired, the
   // dialog edits it as held (Epo 2026-10-17).
   const shown = useMemo(() => repairFigureBlock(block), [block]);
-  const [editing, setEditing] = useState(false);
+  // A chart or graph just inserted opens its dialog (openFigure.ts).
+  const [editing, setEditing] = useState(
+    () => !readOnly && opensOnMount(element.id)
+  );
+  useEffect(() => {
+    if (editing) openedOnMount(element.id);
+  }, [editing, element.id]);
   const onMouseDown = useSelectOnMouseDown(props.element);
-  useGraphRedraw(props.element, readOnly);
   const update = (patch: Partial<QuestionFigureNode>) => {
     const at = editor.api.findPath(props.element);
     if (at) editor.tf.setNodes(patch, { at });
   };
-  // The dialog's draft on the block as it is now: only what the user changed
+  // A plot's draft on the plot as it is now: only what the user changed
   // since `base` is written, so a peer's change meanwhile stays.
-  const save = (next: NoteVisualBlock, base: NoteVisualBlock) => {
+  const savePlot = (next: PlotBlock, base: PlotBlock) => {
     const at = editor.children.findIndex((node) => node.id === element.id);
-    if (at < 0) throw new Error('The block was removed');
-    const current = (editor.children[at] as unknown as QuestionFigureNode)
-      .block as NoteVisualBlock;
+    const current = editor.children[at] as unknown as QuestionFigureNode;
+    if (current?.block.type !== 'plot') throw new Error('The plot was removed');
     editor.tf.setNodes(
       {
-        block: rebaseBlock(base, next, current),
+        block: rebasePlot(base, next, current.block),
       } as Partial<QuestionFigureNode>,
       { at: [at] }
     );
@@ -563,14 +576,29 @@ export function VisualBlockElement(props: PlateElementProps) {
       {/* Slate's void spacer is already invisible; display:none would leave
        * the caret without a position, so focusing scrolled the page away. */}
       <span className="absolute top-0 left-0">{props.children}</span>
-      {editing && (
-        <Suspense fallback={null}>
-          <VisualBlockDialog
-            block={block}
-            onClose={() => setEditing(false)}
-            onSave={save}
-          />
-        </Suspense>
+      {/* A viewer, or a note that turned read-only, has no dialog. Its
+       * fields keep their own undo: a field's `input` (a `historyUndo` too)
+       * would bubble out of the portal to slate-react, which runs the
+       * note's Undo on it. */}
+      {editing && !readOnly && (
+        <span onInput={(event) => event.stopPropagation()}>
+          <Suspense fallback={null}>
+            {block.type === 'plot' ? (
+              <PlotDialog
+                block={block}
+                onClose={() => setEditing(false)}
+                onSave={savePlot}
+              />
+            ) : (
+              <LiveFigureDialog
+                block={block}
+                editor={editor}
+                id={element.id}
+                onClose={() => setEditing(false)}
+              />
+            )}
+          </Suspense>
+        </span>
       )}
     </PlateElement>
   );

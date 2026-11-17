@@ -20,6 +20,7 @@ import {
   GfxPrimitiveElementModel,
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
+import type { Frame } from '@/features/graph/model';
 import {
   BAR_SHARE,
   barPlot,
@@ -37,7 +38,6 @@ import {
   type SliceFill,
 } from './boardData';
 import { ticks } from './boardGeometry';
-import type { Frame } from './boardPlane';
 
 export function drawChart(
   ctx: CanvasRenderingContext2D,

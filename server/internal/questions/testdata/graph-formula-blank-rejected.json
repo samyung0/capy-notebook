@@ -1,0 +1,48 @@
+{
+  "name": "graph-formula-blank-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "formula",
+            "id": "f",
+            "coords": [0, 0],
+            "latex": "  "
+          }
+        ],
+        "width": 480,
+        "height": 360,
+        "description": "A formula with no LaTeX"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

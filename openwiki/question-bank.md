@@ -646,8 +646,11 @@ Ordering, Drawing), the answer, marking points and Solution, then a footer of
 Solution, Topic, Marks, Duplicate, Delete and ⋮ (Add to bank, Move up, Move
 down, Shuffle options for a choice part, Layout, Part labels). Tables, charts, graphs and
 plots show as figures with hover Insert below (+, the open text's Insert menu,
-adding under the figure; Epo 2026-11-16), Move up, Move down and Remove; a click edits
-one in `BlockDialog`, staged until its Save. The dialog's Remove block is
+adding under the figure; Epo 2026-11-16), Move up, Move down and Remove; a click
+edits one in `BlockDialog`: a chart or graph live, each change written as it is
+made and Done only closing (Epo 2026-11-16, D13; see
+[plate-editor.md](frontend/plate-editor.md), the bank's draft takes each
+change at once too), a table staged until its Save. The dialog's Remove block is
 pulled left by its padding to line up with the content, and on phones the
 title's zoom tools take no more height than the title so the header stays
 level (Epo 2026-11-16). An open text's formatting row ends
@@ -691,7 +694,7 @@ keeps the text, each numbered blank becoming a plain line, and drops only the
 untouched sample sentence (`withAnswer`). A text block open in its editor
 closes when its column's figures move or go, or when anyone else adds or
 removes a block in that column, since rows are keyed by place. A figure's Save
-writes into the question as it stands when its graph image resolves. It sits under
+writes into the question as it stands. It sits under
 the normal header, beside the workspace's left panel: the quiz with its chip, ⋮
 and save state, then Undo, Redo and Study. Until its rooms sync the same page shows
 with a working rail and a question that takes no input: drawn from the device's copy
@@ -743,7 +746,7 @@ a part's and a group's ⋮, graph element actions) are the note toolbar's popove
 `ToolbarPopoverItem`), and block editors use `FieldInput` and `SelectField`,
 the compact underline style of the answer options. It reuses
 `ToolbarGroup`, `ToolbarButton` and `SimpleDialog`; `BlockDialog` keeps
-Remove block beside Save. English and Chinese labels use
+Remove block beside Save (a table, a plot) or Done (a chart, a graph). English and Chinese labels use
 Paraglide. MathLive renders formulas in both viewing and editing, including
 question-editing previews. Read-only previews use the shared `MathPreview`
 component with matching fonts/layout and no keyboard or menu controls. `BlockToolbar`
@@ -794,47 +797,113 @@ credit (a library figure's caption); graphs, charts and plots have none
 `QUESTION_MARKS_MAX` (`schemeMarks`, live and staged alike): items past the
 cap stay as entered, so the live room admits the edit and the dialog names
 the mismatch. Graphs store a bounded
-JSXGraph recipe and a static rendering. Recipe elements are function graphs,
+recipe and a static rendering. Recipe elements are function graphs,
 points, lines, segments, circles, labels, angles (three points with the vertex
 in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
 (counterclockwise from the first point around a centre) and polygons (3–12
 points); sectors and polygons can be shaded. A segment's `ticks` (1–3) draws
-JSXGraph hatch marks, so equal sides carry the same count. The graph editor
-(`GraphEditor.tsx`, the same in quizzes and notes) is Desmos-style: one typeset
-MathLive row per element on the left, a live board at the export's pixel size on
-the right (stacked on phones). `graphSyntax.ts` turns rows into recipe elements
-and back: Desmos input (`y = 0.5x^2 - 3`, `{0 ≤ x ≤ 4}` restrictions,
+hatch marks, so equal sides carry the same count. Every graph surface draws
+with one engine, `src/features/graph/` (no React, no BlockSuite, plan step 1,
+Epo 2026-11-16): `model.ts` holds the one element model every surface stores
+(quiz, note and bank graphs and the canvas plane; `questions/types.ts`
+re-exports it), the ten constructions above plus the free marks below,
+`view.ts` the camera (`{left, top, ppuX, ppuY}`, zoom clamped to 10⁻¹⁵–10¹⁵
+pixels per unit in the question editor and 10⁻⁶–10⁶ on the canvas plane), the
+tick rules and the Fit bounds, `draw.ts` one `drawGraph` onto a canvas 2D
+context, `svg.ts` the same calls recorded as SVG (`graphSvg`: coordinates to
+0.1 px, clipped groups, haloed labels as one `paint-order="stroke"` text;
+a formula's stretched signs as KaTeX's own paths), and
+`gestures.ts` the plane's gestures. The look is the canvas plane's everywhere
+(D5/D14): 2 px round-capped ink, 4.5 px points with their names, 15 px labels
+centred on their position and wrapped at 200 px, a fixed 24 px angle mark,
+light or dark paper in the editor and white paper in every export. The graph
+editor (`GraphEditor.tsx`, the same in quizzes and notes) is Desmos-style: one
+typeset MathLive row per element on the left, a canvas at the graph's stored
+pixel size on the right (stacked on phones). `graphSyntax.ts` turns rows into recipe
+elements and back: Desmos input (`y = 0.5x^2 - 3`, `{0 ≤ x ≤ 4}` restrictions,
 `A = (1, 2)`, `segment(A, B)`, `polygon(…)`, `circle(A, 3)`, `angle(…)`,
-`arc(O, A, B)`, `sector(…)`) with implicit products, stored as JessieCode with
-explicit `*`; style (dash, equal-side marks, shading, labels, hide) sits in each
+`arc(O, A, B)`, `sector(…)`) with implicit products, stored with JessieCode's
+syntax and explicit `*`, and evaluated by `functionOf` (natural `log`) on every
+surface; style (dash, equal-side marks, shading, labels, hide) sits in each
 row's style menu. A row's point names are its references; a saved point another
 element uses but whose label is not a name gets the row name `P_n`. Issues read
 like the question dialog's: the first one (with "+n more") above the editor, a
 warning icon on each row that cannot be drawn and beside Advanced when its size
-or bounds are invalid; the dialog holds Save until they are fixed. Dragging,
-wheel or pinch zoom around the pointer, double-click and Fit move the board, and
-the visible area is the saved `bbox`, reported once a gesture settles (wheel
-events zoom once per frame); dragged points round to the board's precision (0.1
-at the default zoom). Full screen opens the live board in the note figure
-preview. The board compiles `pi` and `e` as JessieCode's `PI` and `EULER`.
+or bounds are invalid; such a row or field is not written until it is fixed
+(a cleared description is sent as none). The editor
+takes the canvas plane's gestures (D4): the wheel or a two-finger scroll pans,
+Ctrl/⌘-wheel and pinch zoom about the pointer, the middle button pans; moves
+apply once per animation frame and the visible area is the saved `bbox`,
+reported once a gesture settles (150 ms after the last wheel event, or the last
+pointer up). It also takes the plane's tools (Epo 2026-11-16, D12), in a strip
+with the plane's icons, labels and letter keys, centred in its own row under
+the graph and wrapping on a narrow dialog (Epo 2026-11-17: the graph is the
+figure's real size, so a strip over its foot hid the x-axis title and numbers;
+the plane keeps its floating strip; Finish sits at the graph's foot while a
+line or curve is drawn) (V P L A C O T F E, once the canvas is pressed): Select (a click
+picks a mark, Shift adds, a drag on empty paper draws a selection box, as on
+the plane, so a primary drag no longer pans; handles, curve bends, label and
+formula frames whose corner sizes the text, 8–96 px), Point (each point takes
+the first name no point in the graph has, A … Z, then A_1 … Z_1, A_2 …
+(`freePointName`, Epo 2026-11-17), so `segment(A, B)` can use it; on the plane
+too, where it draws beside the point), Line, Vector,
+Curve (Finish, or the last point clicked again; at most 100 points), Ellipse
+(not on polar paper), Label (with the plane's symbol row), Formula (a card with
+KaTeX's check) and Erase. The tools are `graphTools` in
+`src/features/graph/tools.ts`, shared with the plane; points and marks snap to
+the grid's small step (polar paper: rings and spokes), labels and formulas to a
+tenth of it. Each tool write becomes rows (`rowsAfterEdit`): a moved named point
+keeps its name, a new point is a named `A = (a, b)` row, a line or vector a
+`(a, b) to (c, d)` row typed in place, a curve, ellipse or formula a row with
+its kind's name, as the plane lists them; erasing or deleting a point takes what
+is built on it too. A tool at 100 elements is refused and the cap's issue shows.
+Advanced's Paper chooses square or polar paper (`board.polar`). Zoom in, Zoom
+out and Fit sit in the toolbar. Full screen
+opens the graph as shown in the note figure preview. A graph stores no picture
+(D16, D11, Epo 2026-11-16): the block is its elements, board, size and
+description, the same in quizzes, notes and the bank, and every view (the
+question view, the runner, results, note figures, previews, share pages)
+draws it with the engine through `GraphView` (a canvas at the block's size,
+at most its column's width, redrawn at the screen's density and on a theme
+change; `graphPaint.ts` is loaded in an effect, so share pages' Worker HTML
+holds only the sized box). `graphSvg` runs only for the note export.
 Numbers follow GeoGebra (Epo 2026-10-17): ticks every 1, 2 or 5 × 10ⁿ from
-100px of units rounded down, a minor tick halfway, grid lines on the numbered
-ticks, tick numbers plain (`0.25`, `2010`) or scientific (`5E8`) when the step
-is under 10⁻⁵ or over 10⁷, an en dash for minus; an axis whose 0 is off the
-view sticks to the nearer edge with its numbers inside (JSXGraph's `sticky`
-position, inset in board units because JSXGraph converts a pixel inset with
-the other axis's scale); zoom spans 10⁻¹⁵ to 10¹⁵ pixels per unit. A graph is
+100px of units rounded down, finer grid lines between them, tick numbers plain
+(`0.25`, `2010`) or scientific (`5E8`) when the step is under 10⁻⁵ or over
+10⁷, an en dash for minus; an axis's numbers leave with the axis when its 0 is
+off the view (the plane's rule). A graph is
 120–1200 px wide and tall (120 keeps the bank's 150 px box plots) (`QUESTION_GRAPH_DIMENSION_MIN/MAX`, every server);
 a size outside that is an issue, not clamped, and the row count shows the
-x/60 counter beside Add label from 90%.
+x/100 counter beside Add label from 90%.
 Rows and label positions write e-notation as `6.02·10²³` (LaTeX `\cdot 10^{23}`).
-JSXGraph treats anything under 10⁻⁶ as zero and its grid breaks far from the
-origin, so the board draws in a local frame (`origin + unit × board`, one unit
-for both axes, origins on a multiple of every tick step) and redraws in a new
-frame whenever the view jumps or the tick step changes.
+The engine draws in plain doubles from the view's corner, so it has no small
+number cut-off and its grid holds far from the origin; a grid direction with
+more than 1000 lines is left out.
 Label text holds at most 60 characters (`QUESTION_GRAPH_LABEL_MAX`) and wraps at
-200 board pixels into one SVG `tspan` per line; point names and angle labels hold
-at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server. Implicit curves and inequalities are planned (the central todo list). Question charts sit
+200 px into one SVG `text` per line; point names and angle labels hold
+at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server.
+A graph holds at most 100 elements on every surface (`QUESTION_GRAPH_ELEMENTS_MAX`,
+D7, Epo 2026-11-16; a point a construction names counts) and takes the canvas
+plane's free marks, which hold their own coordinates (D1): a `polyline` (one
+point while it is drawn, at most `QUESTION_GRAPH_PATH_MAX` 100; `arrow` puts a
+head on its last point), a `curve` through its points with optional [in, out]
+Bézier `handles`, one pair a point, an upright `ellipse` (`center`, `radii`)
+and a `formula` (non-blank LaTeX up to `QUESTION_GRAPH_LATEX_MAX` 2000 code
+points at `coords`, D6). A segment takes `arrow`, a label and a formula a
+whole-pixel `size` of 8–96 (`QUESTION_GRAPH_TEXT_SIZE_MIN/MAX`), the board
+`polar`. One element check serves every surface: `graphElementSchema` and
+`graphElementsIssue` (`validation.ts`) in the browser, run by the graph
+dialog's `validateGraphRecipe`, the question schema and the canvas plane's
+load check, with Go `questions.graph` and Rust `questions::graph_element` on
+the same shared fixtures (`graph-*.json`). All graph limits are question
+bounds in `fieldlimits.go`; the board catalog reads the formula card's LaTeX
+and the text sizes from them. The graph dialog has no rows for free marks yet:
+it keeps each one in its place (a `mark` row) and a segment's arrow and a
+label's size as they are. In the note export (`exportGraphSvg`) a formula
+waits for KaTeX's layout and its faces, read lazily from KaTeX's own TTFs
+with opentype.js (`glyphOutlines.ts`, out of the share Worker's build), and
+each glyph is written as its outline, so the SVG in its `<img>` needs no
+fonts; a graph without one takes the synchronous `graphSvg`. Implicit curves and inequalities are planned (the central todo list). Question charts sit
 at about a graph's width with a centred title and never show a values table.
 A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
 the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
@@ -865,15 +934,20 @@ remove it, and its add menu does not offer one. Go and the browser
 validate it, and so does the Rust collaboration server (`questions.rs`,
 `material.rs`: a live quiz question holding a plot and a note's `plot` embed,
 with Go's bounds; Node's validator never knew it, Epo 2026-10-12). A live quiz
-room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
-`liveQuiz.ts`; before 2026-10-13 the room's reader dropped it, so an agent's
-plot vanished from the projection). Valid plots are in the shared fixtures
+room keeps a plot as a map of its fields, as it keeps a chart and a graph
+(`items/src/quiz.rs`, `liveFigures.ts`; the layout is in
+[plate-editor](frontend/plate-editor.md); before 2026-10-13 the room's reader
+dropped it, so an agent's plot vanished from the projection). Valid plots are in the shared fixtures
 (`plot.json`, `plot-at-limits.json`), so the live quiz round trip and the
 browser/server parity corpus carry them; refused plot cases are tested in each
-validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
-SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
-database and the SVG in the public bucket. Image and graph blocks both keep
-their source under `image`: bank images use `{ url }`, a public content-hashed
+validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. Graphs keep no
+picture anywhere (Epo 2026-11-16): a bank graph is its recipe in the database,
+uploads no SVG and the bank's render script makes none; published bank
+questions whose graphs still name an SVG file are rewritten without it by
+`go run ./cmd/bank graphs` (a dry run listing them) and `graphs --write`, and
+the old files stay in the public bucket. Bank assets are raster figures only
+(PNG, JPEG, GIF, WebP; the browser draws an SVG upload as a PNG first). Image
+blocks keep their source under `image`: bank images use `{ url }`, a public content-hashed
 URL, and quiz images use `{ assetId }`, a private editor asset of the quiz
 (see [backend-storage-quota.md](backend-storage-quota.md)). Quiz images are
 resolved to signed URLs at render and export time and follow editor-asset
@@ -894,7 +968,7 @@ options stay plain strings; no images or rich content go inside them.
 
 `POST /api/bank/assets` checks the editor grant, validates the bytes and uses
 server environment credentials. The local publisher has the same validation.
-Figures are capped at a flat 4 MiB (SVG 256 KiB), with no plan because the
+Figures are PNG, JPEG, GIF or WebP, capped at a flat 4 MiB, with no plan because the
 platform pays; the bank editor shrinks a larger raster image in the browser
 first (`uploadBankAsset`, `src/lib/fitImage.ts`).
 `BANK_ASSETS_URL` is the allowed public base URL for stored bank asset references;
@@ -1592,7 +1666,7 @@ The Biology 101 MSW quiz and both note-embedded quizzes share
 answer types, fixed-unit quantities, multipart questions, grouped parts (board
 U2's, `q_blood`), both layouts, formulas, tables, an editable graph and all six
 chart styles. Every part has a worked
-solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded
+solution. The graph is drawn from its elements wherever it shows. The seeded
 `at_1` attempt includes correct, incorrect, blank and partially credited answers
 for inspecting review states; the seeded attempts are graded by the mock scorer
 from text-shaped answers, as the server stores them. Image examples are

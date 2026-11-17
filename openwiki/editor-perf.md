@@ -65,7 +65,7 @@ opened in 6.2 s after a restart and 4.1 s warm, both ways. `drawing-board.spec.t
 one worker takes 2.0 min from an empty cache and 1.8 min warm, against 8.6 min on the
 dev setup before both MSW's pass-through and this.
 
-`axisNumber` (`src/features/questions/graph.ts`) keeps one `Intl.NumberFormat` per
+`axisNumber` (`src/features/graph/view.ts`) keeps one `Intl.NumberFormat` per
 decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
 cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
 blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input

@@ -1,6 +1,10 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
+import type { Board, GraphElement } from '@/features/graph/model';
 import { m } from '@/i18n';
+
+/** A graph's elements: the one graph model (src/features/graph/model.ts). */
+export type { GraphElement } from '@/features/graph/model';
 
 export const QUESTION_TYPES = [
   'mcq',
@@ -60,96 +64,12 @@ export type PlotBlock = {
   /** A caption in notes and the accessible label (optional). */
   description?: string;
 };
-export type GraphElement =
-  | {
-      type: 'functiongraph';
-      id: string;
-      term: string;
-      domain?: [number, number];
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'point';
-      id: string;
-      name?: string;
-      coords: [number, number];
-      hidden?: boolean;
-    }
-  | {
-      type: 'line';
-      id: string;
-      points: [string, string];
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'segment';
-      id: string;
-      points: [string, string];
-      dash?: boolean;
-      /** 1 to 3 hatch marks; segments with the same count are equal in length. */
-      ticks?: number;
-      hidden?: boolean;
-    }
-  | {
-      type: 'circle';
-      id: string;
-      center: string;
-      radius: number;
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'text';
-      id: string;
-      coords: [number, number];
-      text: string;
-      hidden?: boolean;
-    }
-  | {
-      /** The non-reflex angle at the middle point; 90° draws the square mark. */
-      type: 'angle';
-      id: string;
-      points: [string, string, string];
-      label?: string;
-      hidden?: boolean;
-    }
-  | {
-      /** Counterclockwise from the first point to the second around `center`. */
-      type: 'arc';
-      id: string;
-      center: string;
-      points: [string, string];
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'sector';
-      id: string;
-      center: string;
-      points: [string, string];
-      dash?: boolean;
-      shade?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'polygon';
-      id: string;
-      points: string[];
-      dash?: boolean;
-      shade?: boolean;
-      hidden?: boolean;
-    };
 export type GraphBlock = {
   type: 'graph';
-  board: {
-    bbox: [number, number, number, number];
-    axis: boolean;
-    grid: boolean;
-  };
+  board: Board;
   elements: GraphElement[];
-  image: { url: string } | { svg: string };
+  /** The size it is drawn at; no picture is stored, every view draws the
+   * elements (Epo 2026-11-16). */
   width: number;
   height: number;
   /** Alt text and grading text (optional). */

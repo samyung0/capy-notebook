@@ -44,6 +44,30 @@ fn fixtures() -> Vec<Value> {
         }
         out.push(question);
     }
+    // A solution's figures live in the keys document: one question holds a
+    // graph, a chart and a plot in its stem, its part and its solution.
+    let figure = |kind: &str| {
+        out.iter()
+            .flat_map(|q| q["stem"].as_array().into_iter().flatten())
+            .find(|block| block["type"] == json!(kind))
+            .unwrap()
+            .clone()
+    };
+    let n = out.len();
+    let figures = json!({
+        "id": format!("q{n}"),
+        "layout": "paper",
+        "labels": "letters",
+        "stem": [figure("graph")],
+        "parts": [{
+            "id": format!("q{n}-p"),
+            "answer": { "type": "short", "accepted": ["4"] },
+            "blocks": [figure("chart")],
+            "marks": 1,
+            "solution": [figure("plot"), figure("graph"), figure("chart")],
+        }],
+    });
+    out.push(figures);
     out
 }
 
@@ -96,16 +120,27 @@ fn set_value(cards: &Value) -> Vec<Value> {
 }
 
 /// A document's roots as JSON: what a writer put there, whatever order its
-/// structs (or a value's map keys) were encoded in.
+/// structs (or a value's map keys) were encoded in. Every root of a quiz's
+/// documents and of a set is a map; a loaded root reads as nothing until it
+/// is asked for as one.
 fn roots(state: &str) -> Value {
     let doc = load(state);
+    let names: Vec<String> = doc
+        .transact()
+        .root_refs()
+        .map(|(name, _)| name.to_owned())
+        .collect();
+    assert!(!names.is_empty(), "a document with no roots");
+    let maps: Vec<_> = names
+        .iter()
+        .map(|name| doc.get_or_insert_map(name.as_str()))
+        .collect();
     let txn = doc.transact();
     let mut out = serde_json::Map::new();
-    for (name, root) in txn.root_refs() {
-        out.insert(
-            name.to_owned(),
-            serde_json::to_value(root.to_json(&txn)).unwrap(),
-        );
+    for (name, map) in names.into_iter().zip(maps) {
+        let held = serde_json::to_value(map.to_json(&txn)).unwrap();
+        assert!(held.is_object(), "root {name} did not read as a map");
+        out.insert(name, held);
     }
     Value::Object(out)
 }

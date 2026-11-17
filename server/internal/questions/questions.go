@@ -37,19 +37,8 @@ type Policy struct {
 // workspace. Empty refuses such links.
 var QuizBankAssetsURL string
 
-const MaxSVGBytes = fieldlimits.QuestionSVGBytes
-
 var termTokens = regexp.MustCompile(`(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[A-Za-z]+|[+\-*/^(),]`)
 var whitespace = regexp.MustCompile(`\s`)
-var svgRoot = regexp.MustCompile(`^\s*<svg[\s>]`)
-var svgEnd = regexp.MustCompile(`</svg>\s*$`)
-var svgUnsafe = regexp.MustCompile(`(?i)<!|<\?|\bon\w+\s*=|javascript:|data:|<\s*/?\s*(?:script|foreignObject|style|image|use|a|animate\w*|set)\b`)
-var svgReference = regexp.MustCompile(`(?i)(?:[a-z]+:)?(?:href|src)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
-var svgLocalReference = regexp.MustCompile(`^["']#[A-Za-z0-9_-]+["']$`)
-var svgURL = regexp.MustCompile(`(?i)url\s*\([^)]*\)`)
-var svgLocalURL = regexp.MustCompile(`(?i)^url\s*\(\s*["']?#[A-Za-z0-9_-]+["']?\s*\)$`)
-var svgEscapedStyle = regexp.MustCompile(`(?i)style\s*=\s*(?:"[^"<>]*\\|'[^'<>]*\\)`)
-var svgTags = regexp.MustCompile(`<\/?([A-Za-z][\w:-]*)\b`)
 
 func validTerm(term string) bool {
 	tokens := termTokens.FindAllString(term, -1)
@@ -66,28 +55,6 @@ func validTerm(term string) bool {
 	return true
 }
 
-// ValidSVG permits the static subset rendered through an img, never active SVG.
-func ValidSVG(svg string) bool {
-	if len(svg) > MaxSVGBytes || !svgRoot.MatchString(svg) || !svgEnd.MatchString(svg) || svgUnsafe.MatchString(svg) || svgEscapedStyle.MatchString(svg) {
-		return false
-	}
-	for _, ref := range svgReference.FindAllStringSubmatch(svg, -1) {
-		if !svgLocalReference.MatchString(ref[1]) {
-			return false
-		}
-	}
-	for _, ref := range svgURL.FindAllString(svg, -1) {
-		if !svgLocalURL.MatchString(ref) {
-			return false
-		}
-	}
-	for _, tag := range svgTags.FindAllStringSubmatch(svg, -1) {
-		if !enum(tag[1], "svg g path rect circle ellipse line polyline polygon text tspan defs marker clipPath title desc") {
-			return false
-		}
-	}
-	return true
-}
 func tableCells(value any) bool {
 	cells, ok := array(value, 1, fieldlimits.QuestionTableColumns)
 	if !ok {
@@ -692,7 +659,9 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "graph":
-		if err := keys(b, "type board elements image width height", "description"); err != nil {
+		// Elements alone: every view draws them, no picture is stored (Epo
+		// 2026-11-16).
+		if err := keys(b, "type board elements width height", "description"); err != nil {
 			return err
 		}
 		if err := imageFields(b, policy); err != nil {
@@ -705,26 +674,6 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		}
 		if err := graph(b); err != nil {
 			return err
-		}
-		im, err := obj(b["image"])
-		if err != nil {
-			return err
-		}
-		if policy.Bank || im["url"] != nil {
-			if err := keys(im, "url", ""); err != nil {
-				return err
-			}
-			if !assetURL(im["url"], bankBase(policy)) {
-				return fail("invalid bank graph URL")
-			}
-		} else {
-			if err := keys(im, "svg", ""); err != nil {
-				return err
-			}
-			svg, ok := im["svg"].(string)
-			if !ok || len(svg) > MaxSVGBytes || !ValidSVG(svg) {
-				return fail("invalid graph SVG")
-			}
 		}
 	default:
 		return fail("unsupported block type")
@@ -792,7 +741,8 @@ func graph(b map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if err := keys(board, "bbox axis grid", ""); err != nil {
+	// polar: rings and spokes in place of the square grid.
+	if err := keys(board, "bbox axis grid", "polar"); err != nil {
 		return err
 	}
 	bbox, ok := tuple(board["bbox"], 4)
@@ -803,6 +753,9 @@ func graph(b map[string]any) error {
 		if _, ok := board[key].(bool); !ok {
 			return fail("invalid board flag")
 		}
+	}
+	if !optionalBool(board, "polar") {
+		return fail("invalid board flag")
 	}
 	elems, ok := array(b["elements"], 0, fieldlimits.QuestionGraphElements)
 	if !ok {
@@ -840,14 +793,31 @@ func graph(b map[string]any) error {
 			required += " points"
 			optional += " dash"
 		case "segment":
-			// ticks: 1 to 3 hatch marks showing equal lengths.
+			// ticks: 1 to 3 hatch marks showing equal lengths; arrow: an
+			// arrowhead at the second point.
 			required += " points"
-			optional += " dash ticks"
+			optional += " dash ticks arrow"
 		case "circle":
 			required += " center radius"
 			optional += " dash"
 		case "text":
 			required += " coords text"
+			optional += " size"
+		// The free marks hold their own coordinates (Epo 2026-11-16, D1): a
+		// stroke, a curve with optional [in, out] Bézier handles per point, an
+		// upright ellipse and a LaTeX formula centred on its point (D6).
+		case "polyline":
+			required += " coords"
+			optional += " dash arrow"
+		case "curve":
+			required += " coords"
+			optional += " dash handles"
+		case "ellipse":
+			required += " center radii"
+			optional += " dash"
+		case "formula":
+			required += " coords latex"
+			optional += " size"
 		case "angle":
 			required += " points"
 			optional += " label"
@@ -866,8 +836,13 @@ func graph(b map[string]any) error {
 		if err := keys(e, required, optional); err != nil {
 			return err
 		}
-		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") || !optionalBool(e, "shade") {
+		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") || !optionalBool(e, "shade") || !optionalBool(e, "arrow") {
 			return fail("invalid graph flag")
+		}
+		if size, exists := e["size"]; exists {
+			if n, ok := num(size); !ok || n != math.Trunc(n) || n < fieldlimits.QuestionGraphTextSizeMin || n > fieldlimits.QuestionGraphTextSizeMax {
+				return fail("invalid text size")
+			}
 		}
 		if t, exists := e["ticks"]; exists {
 			if n, ok := num(t); !ok || n < 1 || n > 3 || n != math.Trunc(n) {
@@ -935,6 +910,47 @@ func graph(b map[string]any) error {
 			radius, valid := num(e["radius"])
 			if !ok || !points[center] || !valid || radius <= 0 {
 				return fail("invalid circle")
+			}
+		case "polyline", "curve":
+			// One point while a stroke is being drawn on the canvas plane.
+			coords, ok := array(e["coords"], 1, fieldlimits.QuestionGraphPath)
+			if !ok {
+				return fail("invalid stroke points")
+			}
+			for _, pair := range coords {
+				if _, ok := tuple(pair, 2); !ok {
+					return fail("invalid coordinates")
+				}
+			}
+			if handles, exists := e["handles"]; exists {
+				pairs, ok := array(handles, len(coords), len(coords))
+				if !ok {
+					return fail("invalid curve handles")
+				}
+				for _, raw := range pairs {
+					pair, ok := array(raw, 2, 2)
+					if !ok {
+						return fail("invalid curve handles")
+					}
+					for _, handle := range pair {
+						if _, ok := tuple(handle, 2); !ok {
+							return fail("invalid curve handles")
+						}
+					}
+				}
+			}
+		case "ellipse":
+			_, center := tuple(e["center"], 2)
+			_, radii := tuple(e["radii"], 2)
+			if !center || !radii {
+				return fail("invalid ellipse")
+			}
+		case "formula":
+			if _, ok := tuple(e["coords"], 2); !ok {
+				return fail("invalid coordinates")
+			}
+			if !str(e["latex"], fieldlimits.QuestionGraphLatex, true) {
+				return fail("invalid formula")
 			}
 		}
 	}

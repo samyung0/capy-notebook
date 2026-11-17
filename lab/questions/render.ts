@@ -1,4 +1,4 @@
-/** Render real question components locally; export graph SVGs without uploading. */
+/** Render real question components locally: review and learner screenshots. */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -20,16 +20,6 @@ const relative = path.relative(
 );
 if (relative.startsWith('..') || path.isAbsolute(relative))
   throw new Error('Topic must be under data/question-bank.');
-let assetBase = process.env.BANK_ASSETS_URL;
-if (!assetBase) {
-  const env = await readFile(path.join(root, '.env.local'), 'utf8');
-  assetBase = env
-    .split(/\r?\n/)
-    .find((line) => line.startsWith('BANK_ASSETS_URL='))
-    ?.slice('BANK_ASSETS_URL='.length)
-    .trim()
-    .replace(/^["']|["']$/g, '');
-}
 // Optional question ids re-render only those, keeping the other manifest entries.
 const only = new Set(process.argv.slice(3));
 const files = (await readdir(path.join(topic, 'questions')))
@@ -46,7 +36,6 @@ const previous = async (name: string) =>
     ? JSON.parse(await readFile(path.join(topic, 'render', name), 'utf8'))
     : {};
 await mkdir(path.join(topic, 'render'), { recursive: true });
-await mkdir(path.join(topic, 'assets'), { recursive: true });
 const server = await createServer({
   root,
   cacheDir: path.join(root, 'node_modules/.vite-question-render'),
@@ -113,48 +102,20 @@ try {
   for (const [index, name] of files.entries()) {
     errors.length = 0;
     const file = path.join(topic, 'questions', name);
-    const question: Question = JSON.parse(await readFile(file, 'utf8'));
-    const rendered = await page.evaluate(
-      (q) => window.renderBankQuestion(q),
-      question,
-    );
+    const content = await readFile(file, 'utf8');
+    const question: Question = JSON.parse(content);
+    await page.evaluate((q) => window.renderBankQuestion(q), question);
     if (errors.length) throw new Error(errors.join('\n'));
     await page.screenshot({
       path: path.join(topic, 'render', `${question.id}.png`),
       fullPage: true,
     });
-    await page.evaluate(
-      (q) => window.renderBankLearner(q),
-      rendered.question,
-    );
+    await page.evaluate((q) => window.renderBankLearner(q), question);
     if (errors.length) throw new Error(errors.join('\n'));
     const learnerPng = await page.screenshot({
       path: path.join(topic, 'render', `${question.id}.learner.png`),
       fullPage: true,
     });
-    for (const [key, svg] of Object.entries(rendered.assets))
-      await writeFile(path.join(topic, 'assets', key), svg);
-    for (const blocks of [
-      rendered.question.stem,
-      ...rendered.question.parts.flatMap((part) => [
-        part.blocks,
-        part.solution,
-      ]),
-    ]) {
-      for (const block of blocks) {
-        if (block.type !== 'graph' || !('svg' in block.image)) continue;
-        if (!assetBase || new URL(assetBase).protocol !== 'https:')
-          throw new Error('Graph export requires BANK_ASSETS_URL.');
-        const key = `${createHash('sha256').update(block.image.svg).digest('hex')}.svg`;
-        block.image = { url: `${assetBase.replace(/\/$/, '')}/${key}` };
-      }
-    }
-    const original = await readFile(file, 'utf8');
-    const content =
-      JSON.stringify(rendered.question) === JSON.stringify(question)
-        ? original
-        : `${JSON.stringify(rendered.question, null, 2)}\n`;
-    if (content !== original) await writeFile(file, content);
     manifest[question.id] = createHash('sha256')
       .update(content)
       .digest('hex');

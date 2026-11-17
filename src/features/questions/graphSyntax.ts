@@ -1,8 +1,14 @@
 /* Desmos-style graph rows: text typed in the editor ↔ recipe elements.
  * Rows arrive as ASCII-math (MathLive's `ascii-math` output, or plain text)
- * and leave as LaTeX for the row's math field. Stored function terms stay
- * JessieCode with explicit `*`, which `validGraphTerm` checks. */
+ * and leave as LaTeX for the row's math field. Stored function terms keep
+ * JessieCode's syntax with explicit `*`, which `validGraphTerm` checks on
+ * every server; `functionOf` evaluates them. */
 import * as limits from '@/api/limits.generated';
+import {
+  type FreeMark,
+  isFreeMark,
+  type RowElement,
+} from '@/features/graph/model';
 import { m } from '@/i18n';
 import { sameJson } from '@/lib/sameJson';
 import type { GraphElement } from './types';
@@ -275,19 +281,16 @@ function checkArity(node: Extract<Node, { t: 'call' }>) {
     throw new RowError(m.question_ui_graph_row_unreadable());
 }
 
-/** JessieCode with explicit operators. `runtime` spells the constants the
- * way JessieCode defines them (`PI`, `EULER`); stored terms keep `pi`/`e`. */
-function jessie(node: Node, runtime = false): string {
+/** The stored term: JessieCode's syntax with explicit operators. */
+function jessie(node: Node): string {
   const wrap = (child: Node, min: number) => {
-    const text = jessie(child, runtime);
+    const text = jessie(child);
     return precedence(child) < min ? `(${text})` : text;
   };
   switch (node.t) {
     case 'num':
       return String(node.v);
     case 'name':
-      if (runtime && node.v === 'pi') return 'PI';
-      if (runtime && node.v === 'e') return 'EULER';
       return node.v;
     case 'neg':
       return `-${wrap(node.a, 4)}`;
@@ -295,7 +298,7 @@ function jessie(node: Node, runtime = false): string {
       throw new RowError(m.question_ui_graph_row_unreadable());
     case 'call':
       checkArity(node);
-      return `${node.fn}(${node.args.map((arg) => jessie(arg, runtime)).join(',')})`;
+      return `${node.fn}(${node.args.map((arg) => jessie(arg)).join(',')})`;
     case 'bin': {
       const p = precedence(node);
       if (node.op === '^') return `${wrap(node.a, 5)}^${wrap(node.b, 5)}`;
@@ -438,7 +441,7 @@ function functionTerm(node: Node) {
 }
 
 /** A point's row name: one letter with an optional subscript (`A`, `P_1`). */
-export const POINT_NAME = /^[A-Za-z](?:_[A-Za-z0-9]+)?$/;
+const POINT_NAME = /^[A-Za-z](?:_[A-Za-z0-9]+)?$/;
 const RESERVED = new Set(['x', 'y', 'e']);
 
 /** What a row parses to, before the editor adds its id and style. */
@@ -559,9 +562,8 @@ function commandRow(command: Command, args: Node[]): ParsedRow {
   return { command, kind: 'command', points };
 }
 
-/** A stored function term (`functionRow`'s) as a function of x, for the drawing
- * board's plane, which draws it without JSXGraph. Throws `RowError` on a term
- * that isn't one. */
+/** A stored function term (`functionRow`'s) as a function of x, as every graph
+ * draws it. Throws `RowError` on a term that isn't one. */
 export function functionOf(term: string): (x: number) => number {
   const node = parse(normalize(term));
   for (const name of names(node))
@@ -596,7 +598,7 @@ export function functionOf(term: string): (x: number) => number {
         const args = node.args.map(at);
         if (node.fn === 'ln') return (x) => Math.log(args[0](x));
         if (node.fn === 'log')
-          // As `evaluate` and the graph dialog's board read it.
+          // As `evaluate` reads it.
           return (x) =>
             Math.log(args[0](x)) / (args[1] ? Math.log(args[1](x)) : 1);
         const fn = Math[node.fn as 'sin'] as (...values: number[]) => number;
@@ -609,21 +611,8 @@ export function functionOf(term: string): (x: number) => number {
   return at(node);
 }
 
-/** The term as the board's JessieCode compiler reads it: explicit products and
- * JessieCode's own names for π and e (it leaves `pi` and `e` undefined). */
-export function runtimeTerm(term: string) {
-  try {
-    return jessie(parse(normalize(term)), true);
-  } catch {
-    return term;
-  }
-}
-
 /** LaTeX for a row's math field. `nameOf` gives each point id's row name. */
-export function rowLatex(
-  element: GraphElement,
-  nameOf: (id: string) => string
-): string {
+function rowLatex(element: RowElement, nameOf: (id: string) => string): string {
   const points = (ids: string[]) =>
     `\\left(${ids.map(nameOf).map(subscript).join(',')}\\right)`;
   switch (element.type) {
@@ -654,7 +643,7 @@ export function rowLatex(
 }
 
 /** A point row, e.g. after the point is dragged on the board. */
-export function pointLatex(name: string | undefined, [x, y]: [number, number]) {
+function pointLatex(name: string | undefined, [x, y]: [number, number]) {
   const coords = `\\left(${formatNumber(x)},${formatNumber(y)}\\right)`;
   return name ? `${subscript(name)}=${coords}` : coords;
 }
@@ -669,6 +658,8 @@ export const COMMAND_SHORTCUTS = Object.fromEntries(
 export type RowStyle = {
   dash?: boolean;
   ticks?: number;
+  /** A segment's arrowhead, kept: no row writes one yet. */
+  arrow?: boolean;
   shade?: boolean;
   hidden?: boolean;
   label?: string;
@@ -688,10 +679,19 @@ export type GraphRow =
       key: string;
       text: string;
       coords: [number, number];
+      /** Its text size, kept: no row sets one yet. */
+      size?: number;
       hidden?: boolean;
+    }
+  | {
+      /** A free mark (a stroke, curve, ellipse or formula), kept as it is in
+       * its place: no row writes one yet. */
+      kind: 'mark';
+      key: string;
+      element: FreeMark;
     };
 
-const STYLE_KEYS: Record<GraphElement['type'], (keyof RowStyle)[]> = {
+const STYLE_KEYS: Record<RowElement['type'], (keyof RowStyle)[]> = {
   angle: ['hidden', 'label'],
   arc: ['dash', 'hidden'],
   circle: ['dash', 'hidden'],
@@ -700,14 +700,14 @@ const STYLE_KEYS: Record<GraphElement['type'], (keyof RowStyle)[]> = {
   point: ['hidden'],
   polygon: ['dash', 'shade', 'hidden'],
   sector: ['dash', 'shade', 'hidden'],
-  segment: ['dash', 'ticks', 'hidden'],
+  segment: ['dash', 'ticks', 'arrow', 'hidden'],
   text: ['hidden'],
 };
 
 /** The style keys a row's element takes, for its style menu. */
-export const styleKeys = (type: GraphElement['type']) => STYLE_KEYS[type];
+export const styleKeys = (type: RowElement['type']) => STYLE_KEYS[type];
 
-function styled<T extends GraphElement>(element: T, style: RowStyle): T {
+function styled<T extends RowElement>(element: T, style: RowStyle): T {
   const out: Record<string, unknown> = { ...element };
   for (const key of STYLE_KEYS[element.type])
     if (key !== 'label' && style[key]) out[key] = style[key];
@@ -721,7 +721,11 @@ export function rowsFromElements(elements: GraphElement[]): GraphRow[] {
   const used = new Set(
     elements.flatMap((element) => [
       ...('points' in element ? element.points : []),
-      ...('center' in element ? [element.center] : []),
+      ...(element.type === 'circle' ||
+      element.type === 'arc' ||
+      element.type === 'sector'
+        ? [element.center]
+        : []),
     ])
   );
   const rowNames = new Map<string, string>();
@@ -750,12 +754,14 @@ export function rowsFromElements(elements: GraphElement[]): GraphRow[] {
     }
   const nameOf = (id: string) => rowNames.get(id) ?? '';
   return elements.map((element): GraphRow => {
+    if (isFreeMark(element)) return { element, key: element.id, kind: 'mark' };
     if (element.type === 'text')
       return {
         coords: element.coords,
         hidden: element.hidden,
         key: element.id,
         kind: 'label',
+        size: element.size,
         text: element.text,
       };
     const style: RowStyle = {};
@@ -778,7 +784,7 @@ export function rowsFromElements(elements: GraphElement[]): GraphRow[] {
 }
 
 function parsedOf(
-  element: Exclude<GraphElement, { type: 'text' }>,
+  element: Exclude<RowElement, { type: 'text' }>,
   nameOf: (id: string) => string
 ): ParsedRow {
   switch (element.type) {
@@ -813,24 +819,29 @@ function parsedOf(
   }
 }
 
-/** The rows for elements a peer's change rebased into the dialog's draft
- * (Epo 2026-10-17): a row whose element is unchanged stays as typed, a row
- * giving no element yet (unfinished, or not drawable) stays where it was, and
- * the rest come from the elements. The same rows when nothing changed. */
-export function syncRows(
+/** The rows following a figure's elements (Epo 2026-11-16, live figures): a
+ * row whose element is unchanged stays as typed, and a row holding what the
+ * figure does not have yet (`typing`) stays as it is, where the elements put
+ * it or, lacking one, where it was; the rest come from the elements, and a
+ * row whose element went goes. `built` is the rows' own elements by id. The
+ * same rows when nothing changed. */
+export function reconcileRows(
   rows: GraphRow[],
-  elements: GraphElement[]
+  elements: GraphElement[],
+  built: ReadonlyMap<string, GraphElement>,
+  typing: (key: string) => boolean
 ): GraphRow[] {
-  const built = new Map(
-    buildElements(rows).elements.map((element) => [element.id, element])
-  );
+  const held = new Map(rows.map((row) => [row.key, row]));
   const ids = new Set(elements.map((element) => element.id));
   const next = rowsFromElements(elements).map((row, i) => {
-    const held = rows.find((item) => item.key === row.key);
-    return held && sameJson(built.get(row.key), elements[i]) ? held : row;
+    const local = held.get(row.key);
+    return local &&
+      (typing(row.key) || sameJson(built.get(row.key), elements[i]))
+      ? local
+      : row;
   });
   rows.forEach((row, at) => {
-    if (!(built.has(row.key) || ids.has(row.key)))
+    if (!ids.has(row.key) && typing(row.key))
       next.splice(Math.min(at, next.length), 0, row);
   });
   return next.length === rows.length && next.every((row, i) => row === rows[i])
@@ -856,6 +867,10 @@ export function buildElements(rows: GraphRow[]): {
   }
   const elements: GraphElement[] = [];
   for (const row of rows) {
+    if (row.kind === 'mark') {
+      elements.push(row.element);
+      continue;
+    }
     if (row.kind === 'label') {
       if (!row.text.trim()) {
         errors.set(row.key, m.question_ui_graph_row_unfinished());
@@ -866,6 +881,7 @@ export function buildElements(rows: GraphRow[]): {
         id: row.key,
         text: row.text,
         type: 'text',
+        ...(row.size && { size: row.size }),
         ...(row.hidden && { hidden: true }),
       });
       continue;
@@ -888,7 +904,7 @@ function toElement(
   parsed: ParsedRow,
   style: RowStyle,
   ids: Map<string, string>
-): GraphElement {
+): RowElement {
   if (parsed.kind === 'point') {
     const label = style.label === undefined ? parsed.name : style.label;
     return {
@@ -939,4 +955,134 @@ function toElement(
     default:
       return { id, points: points as [string, string], type: parsed.command };
   }
+}
+
+/** A row for an element a tool made or changed (Epo 2026-11-16, each editor
+ * gains the other's tools): a point keeps its row's name and style, or a new
+ * one the name the Point tool gave it; a label its row's hidden flag; a free
+ * mark's row holds it as it is. */
+function toolRow(element: GraphElement, row?: GraphRow): GraphRow {
+  if (isFreeMark(element)) return { element, key: element.id, kind: 'mark' };
+  if (element.type === 'text')
+    return {
+      coords: element.coords,
+      key: element.id,
+      kind: 'label',
+      text: element.text,
+      ...(element.size && { size: element.size }),
+      ...(element.hidden && { hidden: true }),
+    };
+  if (element.type === 'point') {
+    const expression = row?.kind === 'expression' ? row : undefined;
+    const name = expression
+      ? expression.parsed?.kind === 'point'
+        ? expression.parsed.name
+        : undefined
+      : element.name;
+    return {
+      key: element.id,
+      kind: 'expression',
+      latex: pointLatex(name, element.coords),
+      parsed: { coords: element.coords, kind: 'point', name },
+      style: expression?.style ?? {},
+    };
+  }
+  // Tools move a function or construction only by its points.
+  if (row) return row;
+  throw new Error(`No tool makes a ${element.type}`);
+}
+
+/** The rows after a tool changed the elements they give: `before` is what the
+ * tool saw (the rows' elements) and `next` what it made of them. A row whose
+ * element is the same object stays as typed, a changed one follows it, a new
+ * element gets a row at the end and a gone one loses its row. Rows that give
+ * no element (an error) stay. */
+export function rowsAfterEdit(
+  rows: GraphRow[],
+  before: readonly GraphElement[],
+  next: readonly GraphElement[]
+): GraphRow[] {
+  const was = new Map(before.map((element) => [element.id, element]));
+  const now = new Map(next.map((element) => [element.id, element]));
+  const out = rows.flatMap((row): GraphRow[] => {
+    const element = now.get(row.key);
+    if (!element) return was.has(row.key) ? [] : [row];
+    return [element === was.get(row.key) ? row : toolRow(element, row)];
+  });
+  const keys = new Set(rows.map((row) => row.key));
+  for (const element of next)
+    if (!keys.has(element.id)) out.push(toolRow(element));
+  return out;
+}
+
+const coordinate = (value: number) =>
+  String(Number(value.toPrecision(12))).replace('-', '−');
+const pairText = ([x, y]: [number, number]) =>
+  `(${coordinate(x)}, ${coordinate(y)})`;
+
+/** The points typed in a line's row: `(2, 1)`, with either minus. */
+const typedPairs = (text: string): [number, number][] =>
+  [
+    ...text
+      .replace(/[−–]/g, '-')
+      .matchAll(/\(\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\)/g),
+  ].map((match) => [Number(match[1]), Number(match[2])]);
+
+/** A free mark's row as both editors list it (Epo 2026-11-13, L2): a line or
+ * vector from one point to the other, typed in place; a curve, ellipse or
+ * formula, shaped on the graph, only by its kind's name (`typed` false). */
+export function markRow(mark: FreeMark): { text: string; typed: boolean } {
+  if (mark.type === 'polyline' && mark.coords.length === 2)
+    return {
+      text: m.drawing_board_plane_from_to({
+        from: pairText(mark.coords[0]),
+        to: pairText(mark.coords[1]),
+      }),
+      typed: true,
+    };
+  return {
+    text:
+      mark.type === 'curve'
+        ? m.chrome_curve()
+        : mark.type === 'ellipse'
+          ? m.drawing_board_ellipse()
+          : mark.type === 'formula'
+            ? m.drawing_board_plane_formula()
+            : mark.arrow
+              ? m.drawing_board_vector()
+              : m.drawing_board_line(),
+    typed: false,
+  };
+}
+
+/** A line's row typed in place: the line through its two typed points, or
+ * null when the text does not hold two. */
+export function typedLine(mark: FreeMark, text: string): FreeMark | null {
+  const pairs = typedPairs(text);
+  return mark.type === 'polyline' && pairs.length === 2
+    ? { ...mark, coords: pairs }
+    : null;
+}
+
+/** What a row's typing reads as: nothing while empty, else its parse or the
+ * error its row shows. `ascii` is the field's ASCII-math. */
+export function readRow(latex: string, ascii: string) {
+  if (!latex.trim()) return { error: undefined, parsed: undefined };
+  try {
+    return { error: undefined, parsed: parseRow(ascii) };
+  } catch (error) {
+    if (!(error instanceof RowError)) throw error;
+    return { error: error.message, parsed: undefined };
+  }
+}
+
+/** The icon (`TOOL_ICONS`) of a row that gives no element yet: its parse's. */
+export function parsedKind(parsed: ParsedRow) {
+  return parsed.kind === 'point'
+    ? 'point'
+    : parsed.kind === 'function'
+      ? 'function'
+      : parsed.command === 'line'
+        ? 'through'
+        : parsed.command;
 }

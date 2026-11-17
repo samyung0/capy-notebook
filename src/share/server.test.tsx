@@ -18,6 +18,8 @@ const STATE = /id="share-state">(.*?)<\/script>/;
 const EVIL_IN_ATTRIBUTE =
   /(?:style|src|srcset|href|poster|background)="[^"]*evil\.test/i;
 const EVENT_HANDLER = /<[^>]*\son[a-z]+\s*=/i;
+const GRAPH_BOX =
+  /<canvas aria-label="A line" role="img" class="[^"]*" style="--graph-width:400px;aspect-ratio:400 \/ 300"><\/canvas>/;
 const JSON_LD = /<script type="application\/ld\+json">(.*?)<\/script>/;
 const IMAGE_PRELOAD = /<link rel="preload" as="image"[^>]*\/>/g;
 const REACT_ID = /_(?:s\d+-)?R_[0-9a-z]+_/g;
@@ -70,9 +72,6 @@ const note: AnonymousNote = {
           description: 'A line',
           elements: [],
           height: 300,
-          image: {
-            svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"></svg>',
-          },
           type: 'graph',
           width: 400,
         },
@@ -131,6 +130,10 @@ describe('renderSharePage', () => {
     expect(html).toContain('data-island="html"');
     // Visitors don't get an interactive block's View source.
     expect(html).not.toContain('View source');
+  });
+
+  it('holds a graph at its size for the browser to draw into', () => {
+    expect(html).toMatch(GRAPH_BOX);
   });
 
   it('describes the note for search and link previews, without an image', () => {

@@ -258,9 +258,6 @@
           { "type": "point", "id": "b", "coords": [1, 1] },
           { "type": "line", "id": "line", "points": ["a", "b"] }
         ],
-        "image": {
-          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"><rect width=\"320\" height=\"190\" fill=\"#eeeeee\"/></svg>"
-        },
         "width": 320,
         "height": 190,
         "description": "A line through two points"

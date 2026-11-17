@@ -8,6 +8,7 @@ import {
 } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { GraphView } from './GraphView';
 import { isLonePart, questionItems } from './groups';
 import { MatchingGrid } from './MatchingGrid';
 import { hasSample, SampleView } from './SampleBlock';
@@ -16,7 +17,6 @@ import { TextView } from './TextView';
 export { TextView } from './TextView';
 
 import {
-  type GraphBlock,
   type ImageBlock,
   isAuthoredPart,
   type LearnerPart,
@@ -84,19 +84,16 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
         </div>
       );
     case 'graph':
+      // At most as wide as an image figure.
+      return (
+        <figure className="mx-auto w-fit max-w-[min(100%,36rem)]">
+          <GraphView block={block} />
+        </figure>
+      );
     case 'image':
       if ('assetId' in block.image)
         return <AssetFigure assetId={block.image.assetId} block={block} />;
-      return (
-        <Figure
-          block={block}
-          src={
-            'url' in block.image
-              ? block.image.url
-              : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`
-          }
-        />
-      );
+      return <Figure block={block} src={block.image.url} />;
   }
 }
 
@@ -107,7 +104,7 @@ function AssetFigure({
   block,
 }: {
   assetId: string;
-  block: ImageBlock | GraphBlock;
+  block: ImageBlock;
 }) {
   const [asset, , onImageError] = useResolvedAsset(assetId);
   if (asset.status === 'error' && asset.kind === 'removed')
@@ -126,7 +123,7 @@ function Figure({
   onError,
   src,
 }: {
-  block: ImageBlock | GraphBlock;
+  block: ImageBlock;
   onError?: () => void;
   src: string | undefined;
 }) {
@@ -137,16 +134,13 @@ function Figure({
     <figure className="mx-auto w-fit max-w-[min(100%,36rem)]">
       <img
         alt={block.description ?? ''}
-        className={cn(
-          'h-auto max-w-full',
-          block.type === 'graph' && 'bg-white'
-        )}
+        className="h-auto max-w-full"
         height={block.height}
         onError={onError}
         src={src}
         width={block.width}
       />
-      {block.type === 'image' && block.attribution && (
+      {block.attribution && (
         <figcaption className="mt-1 text-fg-muted text-xs">
           {block.attribution}
         </figcaption>

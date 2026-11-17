@@ -595,9 +595,6 @@ export const EMBED_CATALOG = {
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -632,9 +629,6 @@ export const EMBED_CATALOG = {
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -668,9 +662,6 @@ export const EMBED_CATALOG = {
       ],
       "sharedMap": [
         "block"
-      ],
-      "sharedLists": [
-        "elements"
       ],
       "resizable": true,
       "materials": [
@@ -1420,11 +1411,15 @@ export const EMBED_CATALOG = {
     "QUESTION_DESCRIPTION_MAX": 500,
     "QUESTION_GRAPH_DIMENSION_MAX": 1200,
     "QUESTION_GRAPH_DIMENSION_MIN": 120,
-    "QUESTION_GRAPH_ELEMENTS_MAX": 60,
+    "QUESTION_GRAPH_ELEMENTS_MAX": 100,
     "QUESTION_GRAPH_LABEL_MAX": 60,
+    "QUESTION_GRAPH_LATEX_MAX": 2000,
     "QUESTION_GRAPH_NAME_MAX": 20,
+    "QUESTION_GRAPH_PATH_MAX": 100,
     "QUESTION_GRAPH_POLYGON_MAX": 12,
     "QUESTION_GRAPH_TERM_MAX": 200,
+    "QUESTION_GRAPH_TEXT_SIZE_MAX": 96,
+    "QUESTION_GRAPH_TEXT_SIZE_MIN": 8,
     "QUESTION_ID_MAX": 128,
     "QUESTION_IMAGE_DIMENSION_MAX": 10000,
     "QUESTION_MARKSCHEME_MAX": 20,
@@ -1437,7 +1432,6 @@ export const EMBED_CATALOG = {
     "QUESTION_PLOT_POINTS_MAX": 60,
     "QUESTION_PLOT_SERIES_MAX": 4,
     "QUESTION_PLOT_TITLE_MAX": 100,
-    "QUESTION_SVG_BYTES_MAX": 262144,
     "QUESTION_TABLE_COLUMNS_MAX": 10,
     "QUESTION_TABLE_ROWS_MAX": 30,
     "QUESTION_TEXT_MAX": 12000,

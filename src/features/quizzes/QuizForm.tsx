@@ -1,4 +1,4 @@
-import { lazy, Suspense, useContext, useState } from 'react';
+import { lazy, Suspense, useContext, useMemo, useState } from 'react';
 import type * as Y from 'yjs';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
@@ -15,7 +15,12 @@ import { duplicateQuestion } from '@/features/questions/questionEdits';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { quizSampleUpload } from './drawing/DrawnSample';
-import { moveQuestion, removeQuestion, writeQuestion } from './liveQuiz';
+import {
+  figureRoom,
+  moveQuestion,
+  removeQuestion,
+  writeQuestion,
+} from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
 
@@ -71,6 +76,7 @@ export function QuizForm({
   undo: UndoTarget | null;
 }) {
   const [picked, setPicked] = useState<string>();
+  const figures = useMemo(() => figureRoom({ content, keys }), [content, keys]);
   const hosted = useContext(UndoSink) !== null;
   // A question just added, whose text opens in its editor.
   const [fresh, setFresh] = useState<string>();
@@ -99,6 +105,7 @@ export function QuizForm({
       <Suspense fallback={<Skeleton className="h-64" />}>
         <QuestionPane
           embedded
+          figures={figures}
           fresh={fresh}
           onAdd={add}
           onDuplicate={(question, index) =>

@@ -78,20 +78,20 @@ func Get() Catalog {
 			{Flavour: "affine:embed-capy-material", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
 		},
 		Limits: map[string]int64{
-			// A plane's marks, and a label's characters (plane labels, chart labels).
-			"MARKS_MAX":        500,
+			// A chart's label characters (bar and pie labels). A plane holds a graph,
+			// whose limits are the question bounds (fieldlimits, QUESTION_GRAPH_*).
 			"LABEL_LENGTH_MAX": 24,
-			// A formula's LaTeX, as a card or a plane mark.
-			"LATEX_MAX": 2000,
+			// A formula card's LaTeX, as a graph's formula.
+			"LATEX_MAX": fieldlimits.QuestionGraphLatex,
 			// A bar chart's bars and its axis top; a pie's lines and labels.
 			"BARS_MAX":   24,
 			"AXIS_MAX":   1_000_000_000,
 			"SPOKES_MAX": 60,
 			"LABELS_MAX": 60,
-			// A label's or formula's text size in pixels, as its frame's corners set it
-			// (plane labels and formulas, pie labels).
-			"TEXT_SIZE_MIN": 8,
-			"TEXT_SIZE_MAX": 96,
+			// A pie label's text size in pixels, as its frame's corners set it, as a
+			// graph label's.
+			"TEXT_SIZE_MIN": fieldlimits.QuestionGraphTextSizeMin,
+			"TEXT_SIZE_MAX": fieldlimits.QuestionGraphTextSizeMax,
 			// A picture's label (an emoji, a GIF's title) and its link.
 			"PICTURE_LABEL_MAX": 120,
 			"PICTURE_REF_MAX":   2048,

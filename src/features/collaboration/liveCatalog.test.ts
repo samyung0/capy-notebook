@@ -1,12 +1,14 @@
 /* The live layer against the embed catalog (openwiki/embeds.md): the one
    shared-text key the slate-yjs patch and live Mermaid hold as a Y.Text, the
-   figure blocks it holds as a Y.Map with their lists as Y.Arrays of Y.Maps,
-   and the read each item kind's embed gets in a note's footer. A kind or key
-   the catalog adds fails here until this layer handles it. */
+   blocks it holds as a Y.Map (a figure as the figure map quiz rooms hold, a
+   table view with its lists as Y.Arrays of Y.Maps), and the read each item
+   kind's embed gets in a note's footer. A kind or key the catalog adds fails
+   here until this layer handles it. */
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
+import { FIGURE_MAPS, isFigureType } from '@/features/figures/figureMap';
 import { MATERIAL_REF_TYPE } from '@/features/materials/document';
 import {
   readMermaid,
@@ -14,6 +16,7 @@ import {
   SHARED_TEXT_KEY,
 } from '@/features/materials/liveMermaid';
 import { EMBED_READ_KEYS, embedKey } from '@/features/materials/useNoteFooter';
+import '@/features/notes/figureBinding';
 
 const sharedText = (element: (typeof EMBED_CATALOG.elements)[number]) =>
   'sharedText' in element ? (element.sharedText as readonly string[]) : [];
@@ -49,7 +52,7 @@ describe('shared text', () => {
 });
 
 describe('shared maps', () => {
-  const lists = ['elements', 'series', 'columns', 'rows', 'views'];
+  const lists = ['columns', 'rows', 'views'];
   const keys = (
     element: (typeof EMBED_CATALOG.elements)[number],
     name: 'sharedLists' | 'sharedMap'
@@ -68,11 +71,31 @@ describe('shared maps', () => {
   it.each(
     EMBED_CATALOG.elements.map((element) => [element.type, element] as const)
   )('are what the slate-yjs patch makes a map on a %s', (type, element) => {
-    const block = {
+    const figures: Record<string, object> = {
+      chart: {
+        kind: 'bar',
+        labels: ['L'],
+        series: [{ name: 'S', values: [1] }],
+        title: 'T',
+        type,
+      },
+      graph: {
+        board: { axis: true, bbox: [-1, 1, 1, -1], grid: false },
+        elements: [{ coords: [0, 0], id: 'e1', type: 'point' }],
+        height: 100,
+        type,
+        width: 100,
+      },
+      plot: {
+        kind: 'line',
+        series: [{ name: 'S', points: [[0, 0]] }],
+        title: 'T',
+        type,
+      },
+    };
+    const block = figures[type] ?? {
       columns: [{ id: 'c1', kind: 'title', name: 'Name' }],
-      elements: [{ id: 'e1', type: 'point' }],
       rows: [{ c1: 'A', id: 'r1' }],
-      series: [{ name: 'S', values: [1] }],
       title: 'T',
       type,
       views: [{ id: 'v1', kind: 'table', name: 'Table' }],
@@ -89,11 +112,15 @@ describe('shared maps', () => {
     const held = node.getAttribute('block') as unknown;
     const shared = keys(element, 'sharedMap').includes('block');
     expect(held instanceof Y.Map).toBe(shared);
-    if (held instanceof Y.Map)
+    if (held instanceof Y.Map) {
       for (const list of lists)
         expect(held.get(list) instanceof Y.Array).toBe(
           keys(element, 'sharedLists').includes(list)
         );
+      if (isFigureType(type))
+        for (const key of FIGURE_MAPS[type])
+          expect(held.get(key)).toBeInstanceOf(Y.Map);
+    }
     expect(yTextToSlateElement(node)).toMatchObject({ block });
   });
 });

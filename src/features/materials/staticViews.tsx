@@ -197,7 +197,7 @@ export function FigureView({
         width={frameWidth}
       >
         {/* The figure fills the frame so the handles scale it. */}
-        <div className="[&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none [&_img]:w-full">
+        <div className="[&_canvas]:w-full [&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none">
           <QuestionBlockView block={block} />
         </div>
       </MediaFrame>
@@ -246,8 +246,9 @@ export function FigurePreview({
         }
       >
         {block.type === 'graph' ? (
+          // Its paper is see-through, as in a note: it sits on the page colour.
           <div
-            className="[&_img]:h-(--preview-height) [&_img]:w-auto"
+            className="w-fit rounded-card bg-surface [&_canvas]:h-(--preview-height) [&_canvas]:w-auto [&_figure]:max-w-none"
             style={
               {
                 '--preview-height': previewHeight(block.width, block.height),

@@ -76,13 +76,23 @@ const (
 	QuestionChartSeriesName = 60
 	QuestionChartLabel      = 60
 	QuestionChartValue      = 1_000_000_000_000
-	QuestionGraphElements   = 60
-	QuestionGraphTerm       = 200
-	QuestionGraphPolygon    = 12
+	// A graph's elements on every surface: quiz and note graphs and the
+	// canvas plane (Epo 2026-11-16, D7). Every graph limit lives here; the
+	// board catalog reads the ones its cards share.
+	QuestionGraphElements = 100
+	QuestionGraphTerm     = 200
+	QuestionGraphPolygon  = 12
 	// A graph's label text (wrapped on the board) and its point names and
 	// angle labels (Epo 2026-10-17).
 	QuestionGraphLabel = 60
 	QuestionGraphName  = 20
+	// Points in a stroke (polyline) or a curve, a formula's LaTeX (a formula
+	// card's too), and a label's or formula's text size in pixels as a frame's
+	// corners set it (the canvas plane's, Epo 2026-11-13).
+	QuestionGraphPath        = 100
+	QuestionGraphLatex       = 2_000
+	QuestionGraphTextSizeMin = 8
+	QuestionGraphTextSizeMax = 96
 	// A graph's width and height in pixels: its text is drawn at 12px, so a
 	// larger board shrinks it past reading in a note column; 120 keeps short
 	// box plots (Epo 2026-10-17).
@@ -97,7 +107,6 @@ const (
 	// mark label, bounded as a chart's (Epo 2026-10-17).
 	QuestionPlotTitle      = QuestionChartTitle
 	QuestionPlotLabel      = QuestionChartSeriesName
-	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
 	// User quizzes (not the question bank) are bounded tighter: 150 parts,
@@ -175,6 +184,10 @@ var QuestionBounds = map[string]int{
 	"QUESTION_GRAPH_POLYGON_MAX":     QuestionGraphPolygon,
 	"QUESTION_GRAPH_LABEL_MAX":       QuestionGraphLabel,
 	"QUESTION_GRAPH_NAME_MAX":        QuestionGraphName,
+	"QUESTION_GRAPH_PATH_MAX":        QuestionGraphPath,
+	"QUESTION_GRAPH_LATEX_MAX":       QuestionGraphLatex,
+	"QUESTION_GRAPH_TEXT_SIZE_MIN":   QuestionGraphTextSizeMin,
+	"QUESTION_GRAPH_TEXT_SIZE_MAX":   QuestionGraphTextSizeMax,
 	"QUESTION_GRAPH_DIMENSION_MIN":   QuestionGraphDimensionMin,
 	"QUESTION_GRAPH_DIMENSION_MAX":   QuestionGraphDimensionMax,
 	"QUESTION_PLOT_SERIES_MAX":       QuestionPlotSeries,
@@ -182,7 +195,6 @@ var QuestionBounds = map[string]int{
 	"QUESTION_PLOT_MARKS_MAX":        QuestionPlotMarks,
 	"QUESTION_PLOT_TITLE_MAX":        QuestionPlotTitle,
 	"QUESTION_PLOT_LABEL_MAX":        QuestionPlotLabel,
-	"QUESTION_SVG_BYTES_MAX":         QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX":   QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":         QuestionAssetURL,
 	"QUIZ_PARTS_MAX":                 QuizParts,

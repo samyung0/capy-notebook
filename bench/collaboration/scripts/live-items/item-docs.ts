@@ -134,7 +134,9 @@ function blockMap(block: Json): YT.Map<unknown> {
       type: 'table',
     });
   }
-  return map({ type: block.type, value: block });
+  // Its questions hold texts only; a figure's entry is a map of its fields
+  // (src/features/quizzes/liveFigures.ts), which this bench does not build.
+  throw new Error(`item-docs builds text and table blocks, not ${block.type}`);
 }
 
 const textEntries = (values: string[], ordered = true) =>

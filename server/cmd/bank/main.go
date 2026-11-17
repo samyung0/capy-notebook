@@ -1,4 +1,5 @@
-// Local owner-only bank migration, exam catalogs, insert-only publication and status.
+// Local owner-only bank migration, exam catalogs, insert-only publication,
+// status and the graph-picture rewrite.
 package main
 
 import (
@@ -13,6 +14,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -234,28 +236,6 @@ func publish(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	private, err := b2("BANK_PRIVATE_B2_")
 	if err != nil {
 		return err
-	}
-	// Assets have already been rendered locally. Verify their content-addressed names before upload.
-	assets, err := filepath.Glob(filepath.Join(dir, "assets", "*"))
-	if err != nil {
-		return err
-	}
-	for _, path := range assets {
-		data, e := os.ReadFile(path)
-		if e != nil {
-			return e
-		}
-		kind, ext, e := bank.ValidateAsset(data)
-		if e != nil {
-			return e
-		}
-		key := digest(data) + ext
-		if filepath.Base(path) != key {
-			return errors.New("asset filename must match its content hash")
-		}
-		if e = uploadOnce(ctx, public, key, data, kind, bank.ImmutableCache); e != nil {
-			return e
-		}
 	}
 	// Confirm every referenced asset exists; never insert dangling local placeholders.
 	var inspect func(any) error
@@ -483,7 +463,7 @@ func upsertExams(ctx context.Context, pool *pgxpool.Pool, exams []examRecord) er
 
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: bank migrate | exams <syllabi-dir> | validate <topic-dir> | publish <topic-dir> | status")
+		return errors.New("usage: bank migrate | exams <syllabi-dir> | validate <topic-dir> | publish <topic-dir> | status | graphs [--write]")
 	}
 	if err := loadEnv(); err != nil {
 		return err
@@ -526,6 +506,12 @@ func run() error {
 			return errors.New("publish requires topic directory")
 		}
 		return publish(ctx, pool, os.Args[2])
+	case "graphs":
+		write := len(os.Args) == 3 && os.Args[2] == "--write"
+		if len(os.Args) > 3 || (len(os.Args) == 3 && !write) {
+			return errors.New("graphs takes only --write")
+		}
+		return dropGraphPictures(ctx, pool, write)
 	case "status":
 		rows, e := pool.Query(ctx, "SELECT t.id,t.label,count(q.id),count(q.reviewed_at),max(q.created_at) FROM topics t LEFT JOIN questions q ON q.topic_id=t.id GROUP BY t.id,t.label ORDER BY t.id")
 		if e != nil {
@@ -545,6 +531,80 @@ func run() error {
 	default:
 		return errors.New("unknown command")
 	}
+}
+
+// dropGraphPictures lists the published questions whose graphs still carry a
+// picture (`image`, an uploaded SVG's address) and, with write, stores them
+// without it in one transaction: a graph is its elements alone, drawn wherever
+// it shows (Epo 2026-11-16). Every rewritten question must pass the bank
+// validator. The SVG files stay in the public bucket.
+func dropGraphPictures(ctx context.Context, pool *pgxpool.Pool, write bool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, "SELECT id, content FROM questions WHERE content::text LIKE '%\"graph\"%' ORDER BY id FOR UPDATE")
+	if err != nil {
+		return err
+	}
+	changed := map[string]map[string]any{}
+	for rows.Next() {
+		var id string
+		var content map[string]any
+		if err = rows.Scan(&id, &content); err != nil {
+			rows.Close()
+			return err
+		}
+		if dropGraphImages(content) {
+			changed[id] = content
+		}
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(changed))
+	policy := questions.Policy{Bank: true, BankAssetsURL: os.Getenv("BANK_ASSETS_URL")}
+	for id, content := range changed {
+		if e := questions.Validate(content, policy); e != nil {
+			return fmt.Errorf("question %s: %w", id, e)
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	if !write {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"wouldRewrite": ids})
+	}
+	for _, id := range ids {
+		if _, err = tx.Exec(ctx, "UPDATE questions SET content=$2, updated_at=clock_timestamp() WHERE id=$1", id, changed[id]); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{"rewritten": ids})
+}
+
+// dropGraphImages removes `image` from every graph block under value.
+func dropGraphImages(value any) bool {
+	changed := false
+	switch v := value.(type) {
+	case map[string]any:
+		if _, ok := v["image"]; ok && v["type"] == "graph" {
+			delete(v, "image")
+			changed = true
+		}
+		for _, item := range v {
+			changed = dropGraphImages(item) || changed
+		}
+	case []any:
+		for _, item := range v {
+			changed = dropGraphImages(item) || changed
+		}
+	}
+	return changed
 }
 
 // Validate rendered questions before spending calls on blind solving; no remote access.

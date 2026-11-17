@@ -18,24 +18,23 @@ import {
   GfxElementModelView,
   GfxPrimitiveElementModel,
   GfxViewInteractionExtension,
+  observe,
 } from '@blocksuite/affine/std/gfx';
-import { axisNumber } from '@/features/questions/graph';
-import { tickStep } from '@/features/questions/graphTicks';
+import * as Y from 'yjs';
+import { drawGraph, textBox } from '@/features/graph/draw';
+import { formulaBox } from '@/features/graph/formula';
 import {
-  cardPaper,
-  curveSegments,
-  FORMULA_SIZE,
-  type FunctionMark,
-  functionRuns,
-  LABEL_SIZE,
-  LATEX_MAX,
-  type Mark,
-  type Paper,
-  type PathMark,
-  pointsOf,
-} from './boardData';
-import { type Drawn, drawing, laidOut, replay } from './boardFormulaDraw';
-import { minorStep, ticks, type Vec } from './boardGeometry';
+  type ElementEntry,
+  keyedElements,
+  readElements,
+  writeElements,
+} from '@/features/graph/keyed';
+import { pointsById, pointsOf } from '@/features/graph/marks';
+import type { Frame, Graph, GraphElement } from '@/features/graph/model';
+import { bboxOf, type View } from '@/features/graph/view';
+import { cardPaper, LABEL_SIZE, type Paper } from './boardData';
+import { laidOut } from './boardFormulaDraw';
+import type { Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
  * plane draws rings and spokes round its origin instead of squares (Epo 2026-11-08). */
@@ -46,11 +45,14 @@ export type PlaneView = {
   y0: number;
 };
 
-/** A polar plane's spokes: a light one every 15°, a darker one every 30°. */
-export const POLAR_SPOKE = 15;
-export type Frame = { h: number; w: number; x: number; y: number };
+/** The engine's camera for a plane's view: one scale on both axes. */
+export const viewOfPlane = ({ ppu, x0, y0 }: PlaneView): View => ({
+  left: x0,
+  ppuX: ppu,
+  ppuY: ppu,
+  top: y0,
+});
 
-const DOT_RADIUS = 4.5;
 const CARD_WIDTH_MIN = 120;
 const CARD_HEIGHT_MIN = 80;
 const CARD_SIDE_MAX = 4000;
@@ -61,398 +63,67 @@ const FIT_SIDE_MAX = 1600;
 const clamp = (value: number, low: number, high: number) =>
   Math.max(low, Math.min(high, value));
 
+/** A plane seen through `view` in `frame`, drawn by the graph engine as every graph
+ * is (Epo 2026-11-16, D5/D14): always its grid and axes. */
 export function drawPlane(
   ctx: CanvasRenderingContext2D,
   frame: Frame,
   view: PlaneView,
-  marks: Mark[],
+  elements: GraphElement[],
   paper: Paper,
-  /** Marks whose points show (the editor's, under the pointer). */
-  shown: ReadonlySet<string> = NONE,
   /** Draws again once a formula on it is laid out. */
   refresh: () => void = () => undefined
 ) {
-  const X = (x: number) => frame.x + (x - view.x0) * view.ppu;
-  const Y = (y: number) => frame.y + (view.y0 - y) * view.ppu;
-  const left = view.x0;
-  const right = view.x0 + frame.w / view.ppu;
-  const top = view.y0;
-  const bottom = view.y0 - frame.h / view.ppu;
-  const span: Span = { height: frame.h, left, ppu: view.ppu, right };
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(frame.x, frame.y, frame.w, frame.h);
-  ctx.fillStyle = paper.paper;
-  ctx.fill();
-  ctx.clip();
-
-  const step = tickStep(view.ppu);
-  const minor = minorStep(step);
-  if (view.polar) {
-    drawPolarGrid(ctx, frame, view, X, Y, step, minor, paper);
-    drawMarks(ctx, X, Y, marks, paper, shown, refresh, span);
-    ctx.restore();
-    ctx.strokeStyle = paper.edge;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
-    return;
-  }
-  const grid = (every: number, color: string) => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const x of ticks(left, right, every)) {
-      ctx.moveTo(X(x), frame.y);
-      ctx.lineTo(X(x), frame.y + frame.h);
-    }
-    for (const y of ticks(bottom, top, every)) {
-      ctx.moveTo(frame.x, Y(y));
-      ctx.lineTo(frame.x + frame.w, Y(y));
-    }
-    ctx.stroke();
+  const camera = viewOfPlane(view);
+  const graph: Graph = {
+    board: {
+      axis: true,
+      bbox: bboxOf(camera, frame.w, frame.h),
+      grid: true,
+      polar: Boolean(view.polar),
+    },
+    elements,
   };
-  grid(minor, paper.minor);
-  grid(step, paper.major);
-
-  // Numbers sit by their axis and leave with it (Epo 2026-11-06).
-  const axisX = X(0);
-  const axisY = Y(0);
-  ctx.strokeStyle = paper.axis;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(axisX, frame.y);
-  ctx.lineTo(axisX, frame.y + frame.h);
-  ctx.moveTo(frame.x, axisY);
-  ctx.lineTo(frame.x + frame.w, axisY);
-  ctx.stroke();
-  ctx.font = '12px Arial, sans-serif';
-  ctx.fillStyle = paper.number;
-  ctx.textBaseline = 'middle';
-  const label = (text: string, x: number, y: number, align: CanvasTextAlign) =>
-    haloText(ctx, text, x, y, align, paper);
-  for (const x of ticks(left, right, step))
-    label(axisNumber(x, step), X(x), axisY + 14, 'center');
-  for (const y of ticks(bottom, top, step))
-    label(axisNumber(y, step), axisX - 7, Y(y), 'right');
-
-  drawMarks(ctx, X, Y, marks, paper, shown, refresh, span);
-  ctx.restore();
-  ctx.strokeStyle = paper.edge;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+  drawGraph(ctx, frame, camera, graph, paper, refresh);
 }
 
-/** Text with a halo of the paper, so grid lines don't cross it. */
-function haloText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  align: CanvasTextAlign,
-  paper: Paper
-) {
-  if (!text) return;
-  ctx.textAlign = align;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = paper.paper;
-  ctx.strokeText(text, x, y);
-  ctx.fillText(text, x, y);
-}
-
-/** Rings at the grid's steps round the origin, numbered along 0°, and spokes with their
- * angles where they leave the card. */
-function drawPolarGrid(
-  ctx: CanvasRenderingContext2D,
-  frame: Frame,
-  view: PlaneView,
-  X: (x: number) => number,
-  Y: (y: number) => number,
-  step: number,
-  minor: number,
-  paper: Paper
-) {
-  const ox = X(0);
-  const oy = Y(0);
-  // Out to the card's farthest corner, in plane units.
-  const reach =
-    Math.max(
-      Math.hypot(frame.x - ox, frame.y - oy),
-      Math.hypot(frame.x + frame.w - ox, frame.y - oy),
-      Math.hypot(frame.x - ox, frame.y + frame.h - oy),
-      Math.hypot(frame.x + frame.w - ox, frame.y + frame.h - oy)
-    ) / view.ppu;
-  const rings = (every: number, color: string) => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let r = every; r <= reach; r += every) {
-      ctx.moveTo(ox + r * view.ppu, oy);
-      ctx.arc(ox, oy, r * view.ppu, 0, Math.PI * 2);
-    }
-    ctx.stroke();
-  };
-  rings(minor, paper.minor);
-  const far = reach * view.ppu;
-  for (let a = 0; a < 360; a += POLAR_SPOKE) {
-    const t = (a * Math.PI) / 180;
-    ctx.strokeStyle =
-      a % 90 === 0 ? paper.axis : a % 30 === 0 ? paper.major : paper.minor;
-    ctx.lineWidth = a % 90 === 0 ? 1.5 : 1;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.lineTo(ox + far * Math.cos(t), oy - far * Math.sin(t));
-    ctx.stroke();
-  }
-  rings(step, paper.major);
-  ctx.font = '12px Arial, sans-serif';
-  ctx.fillStyle = paper.number;
-  ctx.textBaseline = 'middle';
-  for (let r = step; r <= reach; r += step)
-    haloText(
-      ctx,
-      axisNumber(r, step),
-      ox + r * view.ppu,
-      oy + 14,
-      'center',
-      paper
-    );
-  // Each 30° spoke's angle, just inside where it leaves the card.
-  const inset = 16;
-  const [left, right] = [frame.x + inset, frame.x + frame.w - inset];
-  const [top, bottom] = [frame.y + inset, frame.y + frame.h - inset];
-  for (let a = 30; a < 360; a += 30) {
-    if (a % 90 === 0 && a !== 90 && a !== 270) continue;
-    const t = (a * Math.PI) / 180;
-    const [dx, dy] = [Math.cos(t), -Math.sin(t)];
-    const hits = [
-      dx > 0
-        ? (right - ox) / dx
-        : dx < 0
-          ? (left - ox) / dx
-          : Number.POSITIVE_INFINITY,
-      dy > 0
-        ? (bottom - oy) / dy
-        : dy < 0
-          ? (top - oy) / dy
-          : Number.POSITIVE_INFINITY,
-    ];
-    const k = Math.min(...hits);
-    if (!(k > 24)) continue;
-    haloText(ctx, `${a}°`, ox + dx * k, oy + dy * k, 'center', paper);
-  }
-}
-
-/** Dots, lines and curves; marks keep their thickness whatever the plane's zoom. */
-/** A line, curve or ellipse as a canvas path, smooth at any zoom; the caller strokes
- * it. */
-export function traceMark(
-  ctx: CanvasRenderingContext2D,
-  mark: PathMark,
-  X: (x: number) => number,
-  Y: (y: number) => number
-) {
-  ctx.beginPath();
-  if (mark.kind === 'ellipse') {
-    const [[right, cy], [cx, top]] = mark.points;
-    ctx.ellipse(
-      X(cx),
-      Y(cy),
-      Math.abs(X(right) - X(cx)),
-      Math.abs(Y(top) - Y(cy)),
-      0,
-      0,
-      Math.PI * 2
-    );
-    return;
-  }
-  const [first] = mark.points;
-  ctx.moveTo(X(first[0]), Y(first[1]));
-  if (mark.kind === 'curve')
-    for (const [, c1, c2, to] of curveSegments(mark))
-      ctx.bezierCurveTo(
-        X(c1[0]),
-        Y(c1[1]),
-        X(c2[0]),
-        Y(c2[1]),
-        X(to[0]),
-        Y(to[1])
-      );
-  else {
-    const rest = mark.points.slice(1).map(([x, y]): Vec => [X(x), Y(y)]);
-    const tip = rest.at(-1);
-    if (mark.kind === 'vector' && tip) {
-      // The line stops halfway into the arrowhead, so its round end doesn't show
-      // past the point (Epo 2026-11-13).
-      const [px, py] = rest.at(-2) ?? [X(first[0]), Y(first[1])];
-      const length = Math.hypot(tip[0] - px, tip[1] - py);
-      const back = Math.min(
-        length,
-        (ARROW_LENGTH * Math.cos(ARROW_SPREAD)) / 2
-      );
-      if (length)
-        rest[rest.length - 1] = [
-          tip[0] - ((tip[0] - px) / length) * back,
-          tip[1] - ((tip[1] - py) / length) * back,
-        ];
-    }
-    for (const [x, y] of rest) ctx.lineTo(x, y);
-  }
-}
-
-/** What a canvas shows of the plane: x from `left` to `right`, `height` tall, at
- * `ppu` pixels a unit. A function is drawn across it. */
-export type Span = { height: number; left: number; ppu: number; right: number };
-
-/** A function as a canvas path across what's shown, a step every 2 px; it breaks
- * where it isn't defined or leaps past the canvas's height. */
-export function traceFunction(
-  ctx: CanvasRenderingContext2D,
-  mark: FunctionMark,
-  X: (x: number) => number,
-  Y: (y: number) => number,
-  { height, left, ppu, right }: Span
-) {
-  ctx.beginPath();
-  for (const run of functionRuns(mark, left, right, 2 / ppu, height / ppu)) {
-    ctx.moveTo(X(run[0][0]), Y(run[0][1]));
-    for (const [x, y] of run.slice(1)) ctx.lineTo(X(x), Y(y));
-  }
-}
-
-/** A vector's arrowhead, filled with the context's fill, at its second point. */
-export function arrowHead(
-  ctx: CanvasRenderingContext2D,
-  mark: Extract<Mark, { points: Vec[] }>,
-  X: (x: number) => number,
-  Y: (y: number) => number
-) {
-  const [from, to] = mark.points.slice(-2);
-  if (!(from && to)) return;
-  const [x, y] = [X(to[0]), Y(to[1])];
-  const turn = Math.atan2(y - Y(from[1]), x - X(from[0]));
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  for (const side of [-1, 1])
-    ctx.lineTo(
-      x - ARROW_LENGTH * Math.cos(turn + side * ARROW_SPREAD),
-      y - ARROW_LENGTH * Math.sin(turn + side * ARROW_SPREAD)
-    );
-  ctx.closePath();
-  ctx.fill();
-}
-
-/** The marks; a line's, curve's or ellipse's points only where `shown` names it (Epo
- * 2026-11-08: the editor shows them under the pointer), a single point always. */
-function drawMarks(
-  ctx: CanvasRenderingContext2D,
-  X: (x: number) => number,
-  Y: (y: number) => number,
-  marks: Mark[],
-  paper: Paper,
-  shown: ReadonlySet<string>,
-  refresh: () => void,
-  span: Span
-) {
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  const dot = ([x, y]: Vec) => {
-    ctx.fillStyle = paper.ink;
-    ctx.beginPath();
-    ctx.arc(X(x), Y(y), DOT_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  for (const mark of marks) {
-    if (mark.kind === 'dot') dot(mark.at);
-    else if (mark.kind === 'label') {
-      ctx.font = labelFont(mark.size);
-      ctx.fillStyle = paper.text;
-      ctx.textBaseline = 'middle';
-      haloText(ctx, mark.text, X(mark.at[0]), Y(mark.at[1]), 'center', paper);
-    } else if (mark.kind === 'formula') {
-      const drawn = formulaAt(mark.latex, refresh);
-      if (!drawn) continue;
-      const box = formulaBox(drawn, X(mark.at[0]), Y(mark.at[1]), mark.size);
-      ctx.save();
-      // KaTeX's ink is black; dark paper turns it light, its colours about kept.
-      if (paper.dark) ctx.filter = 'invert(1) hue-rotate(180deg)';
-      ctx.translate(box.x, box.y);
-      ctx.scale(box.scale, box.scale);
-      replay(ctx, drawn);
-      ctx.restore();
-    } else if (mark.kind === 'function') {
-      ctx.strokeStyle = paper.ink;
-      ctx.lineWidth = 2;
-      traceFunction(ctx, mark, X, Y, span);
-      ctx.stroke();
-    } else {
-      // Set per mark: a label's halo before it leaves the paper's colour behind.
-      ctx.strokeStyle = paper.ink;
-      ctx.lineWidth = 2;
-      traceMark(ctx, mark, X, Y);
-      ctx.stroke();
-      if (mark.kind === 'vector') {
-        ctx.fillStyle = paper.ink;
-        arrowHead(ctx, mark, X, Y);
-      }
-      if (shown.has(mark.id)) for (const point of mark.points) dot(point);
-    }
-  }
-}
-
-const NONE: ReadonlySet<string> = new Set();
-
-/** A vector's arrowhead, in screen pixels: a mark keeps its size as the plane zooms. */
-const ARROW_LENGTH = 12;
-const ARROW_SPREAD = Math.PI / 7;
-
-/** KaTeX lays a formula out at 24 px; a plane draws it at its size (18 px unless set),
- * so it reads beside a label's 15 px text. */
-const FORMULA_LAYOUT = 24;
-
-/** A plane label's font at its size. */
-export const labelFont = (size = LABEL_SIZE) => `${size}px Arial, sans-serif`;
-
-/** Where a label's text sits on screen, centred on (x, y): its width by a line. */
-export function labelBox(
+/** A plane label's text box on screen, centred on (x, y), wrapped as it's drawn. */
+export const labelBox = (
   ctx: CanvasRenderingContext2D,
   { size = LABEL_SIZE, text }: { size?: number; text: string },
   x: number,
   y: number
-) {
-  ctx.save();
-  ctx.font = labelFont(size);
-  const w = ctx.measureText(text).width;
-  ctx.restore();
-  const h = size * 1.2;
-  return { h, w, x: x - w / 2, y: y - h / 2 };
-}
+) => textBox(ctx, text, size, x, y);
 
-/** A formula laid out, or nothing yet: it's laid out and `refresh` draws again. One
- * KaTeX can't read stays undrawn. */
-export function formulaAt(latex: string, refresh: () => void) {
-  if (latex.length > LATEX_MAX) return;
-  const drawn = laidOut(latex);
-  if (!drawn) drawing(latex).then(refresh, () => undefined);
-  return drawn;
-}
+/** The plane's elements as stored: one entry per element id, each the element and
+ * its order key (Epo 2026-11-16, D10), kept as BlockSuite's mind map keeps its nodes.
+ * A plane holds every kind a graph holds (D16): what its tools draw (points, lines
+ * and vectors as `polyline`, curves with their handles, ellipses, labels and
+ * formulas) and what its objects list types (functions, named points and the
+ * constructions built on them). */
+type Entries = Y.Map<ElementEntry<GraphElement>>;
 
-/** Where a formula's laid-out box sits on screen at its size, centred on its point. */
-export function formulaBox(
-  drawn: Drawn,
-  x: number,
-  y: number,
-  size = FORMULA_SIZE
+/** A change to the plane's elements reaches no field, so the plane says so itself:
+ * the renderer and an open editor draw again. */
+function observeElements(
+  event: Y.YEvent<Entries> | null,
+  plane: PlaneElementModel,
+  transaction: Y.Transaction | null
 ) {
-  const scale = size / FORMULA_LAYOUT;
-  const w = drawn.w * scale;
-  const h = drawn.h * scale;
-  return { h, scale, w, x: x - w / 2, y: y - h / 2 };
+  plane.forgetList();
+  if (!(event && transaction)) return;
+  plane.surface.elementUpdated.next({
+    id: plane.id,
+    local: transaction.local,
+    oldValues: {},
+    props: { elements: plane.elements },
+  });
 }
 
 export class PlaneElementModel extends GfxPrimitiveElementModel<{
   fit: boolean;
+  elements: Entries;
   index: string;
-  marks: Mark[];
   polar: boolean;
   ppu: number;
   rotate: number;
@@ -463,6 +134,34 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
 }> {
   get type() {
     return 'plane';
+  }
+
+  /** A pasted or new card's elements, plain (`keyedElements`) or as the clipboard
+   * serialized them, become the stored map, as the mind map's nodes do. */
+  static propsToY(props: Record<string, unknown>) {
+    if (props.elements && !(props.elements instanceof Y.Map)) {
+      const entries: Entries = new Y.Map();
+      for (const [id, entry] of Object.entries(
+        props.elements as Record<string, ElementEntry<GraphElement>>
+      ))
+        entries.set(id, entry);
+      props.elements = entries;
+    }
+    return props;
+  }
+
+  /** The elements in order, read once per change to the map. */
+  #list: GraphElement[] | null = null;
+  get elementList() {
+    this.#list ??= readElements(this.elements.entries());
+    return this.#list;
+  }
+  forgetList() {
+    this.#list = null;
+  }
+  /** Makes the plane hold `next`, writing only the elements that changed. */
+  writeList(next: GraphElement[]) {
+    this.surface.store.transact(() => writeElements(this.elements, next));
   }
 
   /** A turned card (Epo 2026-11-13) answers by its turned corners, as a formula's. */
@@ -502,8 +201,9 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
   @field()
   accessor fit = true;
 
+  @observe(observeElements)
   @field()
-  accessor marks: Mark[] = [];
+  accessor elements: Entries = new Y.Map();
 
   @field()
   accessor polar = false;
@@ -545,9 +245,8 @@ const planeRenderer: ElementRenderer<PlaneElementModel> = (
     ctx,
     { h, w, x: 0, y: 0 },
     model,
-    model.marks,
+    model.elementList,
     cardPaper(renderer.getColorScheme()),
-    undefined,
     () => renderer.refresh()
   );
 };
@@ -561,15 +260,26 @@ export function setPlaneEditor(open: typeof openEditor) {
 export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
   openEditor(gfx, model);
 
-/** Every point a plane's marks reach (a curve's handles too), and its origin, so the
- * axes stay in view. A function reaches none: it runs across whatever is shown. */
-export function markPoints(marks: Mark[]) {
+/** Every point a plane's marks reach (a curve's handles too, a circle round its
+ * centre), and its origin, so the axes stay in view. A function reaches none: it
+ * runs across whatever is shown. */
+export function markPoints(marks: readonly GraphElement[]) {
+  const centres = pointsById(marks);
   return [
     [0, 0] as Vec,
-    ...marks.flatMap((mark) => [
-      ...pointsOf(mark),
-      ...('handles' in mark && mark.handles ? mark.handles.flat() : []),
-    ]),
+    ...marks.flatMap((mark): Vec[] => {
+      const centre = mark.type === 'circle' && centres.get(mark.center);
+      return [
+        ...pointsOf(mark),
+        ...(mark.type === 'curve' && mark.handles ? mark.handles.flat() : []),
+        ...(centre && mark.type === 'circle'
+          ? ([
+              [centre[0] - mark.radius, centre[1] - mark.radius],
+              [centre[0] + mark.radius, centre[1] + mark.radius],
+            ] as Vec[])
+          : []),
+      ];
+    }),
   ];
 }
 
@@ -587,17 +297,17 @@ let measurer: CanvasRenderingContext2D | null = null;
 /** How far each label's and formula's text reaches past its point, in pixels: as
  * much at any scale, so Fit to size keeps sized text on the card (Epo 2026-11-13). A
  * formula not laid out yet counts as its point. */
-function textReach(marks: Mark[]) {
+function textReach(marks: readonly GraphElement[]) {
   measurer ??= document.createElement('canvas').getContext('2d');
   return marks.flatMap((mark) => {
-    if (mark.kind === 'label' && measurer) {
+    if (mark.type === 'text' && measurer) {
       const { h, w } = labelBox(measurer, mark, 0, 0);
-      return [{ at: mark.at, x: w / 2, y: h / 2 }];
+      return [{ at: mark.coords, x: w / 2, y: h / 2 }];
     }
-    const drawn = mark.kind === 'formula' && laidOut(mark.latex);
-    if (!drawn || mark.kind !== 'formula') return [];
+    const drawn = mark.type === 'formula' && laidOut(mark.latex);
+    if (!drawn || mark.type !== 'formula') return [];
     const { h, w } = formulaBox(drawn, 0, 0, mark.size);
-    return [{ at: mark.at, x: w / 2, y: h / 2 }];
+    return [{ at: mark.coords, x: w / 2, y: h / 2 }];
   });
 }
 
@@ -605,7 +315,7 @@ function textReach(marks: Mark[]) {
  * side it zooms out instead. An empty card keeps its size. Not in the undo history,
  * like the view. */
 export function fitCard(model: PlaneElementModel) {
-  const seen = markPoints(model.marks);
+  const seen = markPoints(model.elementList);
   // Nothing but the origin (no marks, or only functions): the card keeps its size.
   if (seen.length < 2) return;
   const xs = seen.map(([x]) => x);
@@ -617,7 +327,7 @@ export function fitCard(model: PlaneElementModel) {
     room / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6)
   );
   // The plane's pixels at that scale: the points, and the text round its own.
-  const texts = textReach(model.marks);
+  const texts = textReach(model.elementList);
   const [left, right, bottom, top] = [
     Math.min(
       ...xs.map((x) => x * ppu),
@@ -765,8 +475,8 @@ export function addPlane(
   polar: boolean
 ) {
   return gfx.surface?.addElement({
+    elements: keyedElements([]),
     fit: true,
-    marks: [],
     polar,
     ppu,
     type: 'plane',
@@ -780,7 +490,8 @@ export function planeMarks(gfx: GfxController) {
   return gfx.layer.canvasElements
     .filter((element) => element.type === 'plane')
     .reduce(
-      (count, element) => count + (element as PlaneElementModel).marks.length,
+      (count, element) =>
+        count + (element as PlaneElementModel).elementList.length,
       0
     );
 }

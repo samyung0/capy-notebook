@@ -32,6 +32,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverItem } from '@/components/ui/ToolbarPopover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import { MatchingGrid } from './MatchingGrid';
 import {
   type MarkItem,
@@ -40,6 +41,7 @@ import {
   type QuestionType,
   schemeMarks,
 } from './types';
+import { useCommitted } from './useCommitted';
 
 const NOT_DIGITS = /\D/g;
 
@@ -51,6 +53,36 @@ export function FieldInput({ wrapperClassName, ...props }: InputProps) {
       wrapperClassName={cn('h-9 w-full min-w-0 px-0.5', wrapperClassName)}
       {...props}
     />
+  );
+}
+
+/** A live figure's typed field (Epo 2026-11-16): its own text while typed
+ * in, handed to `onCommit` once left, on Enter or when the dialog closes
+ * (`useCommitted`). `count` is its character bound, counted as typed. */
+export function CommitField({
+  count,
+  label,
+  onCommit,
+  value,
+  ...props
+}: Omit<InputProps, 'value' | 'onChange' | 'onBlur' | 'onKeyDown'> & {
+  count?: number;
+  label: string;
+  onCommit: (text: string) => void;
+  value: string;
+}) {
+  const { input, text } = useCommitted(value, onCommit);
+  return (
+    <Field
+      count={
+        count === undefined
+          ? undefined
+          : { max: count, value: textLength(text) }
+      }
+      label={label}
+    >
+      <FieldInput {...props} {...input} />
+    </Field>
   );
 }
 

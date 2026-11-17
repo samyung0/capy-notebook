@@ -93,9 +93,9 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 	if err := ValidateKind(encoded, "note"); err != nil {
 		t.Fatal(err)
 	}
-	// The figures' text is in testdata/index_text; never the graph's SVG.
+	// The figures' text is in testdata/index_text.
 	text, err := ExtractIndexText(encoded, nil)
-	if err != nil || strings.Contains(text, "svg") || !strings.HasPrefix(text, "A graph\n") {
+	if err != nil || !strings.HasPrefix(text, "A graph\n") {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
 	doc.Value = []map[string]any{{"type": "callout", "id": "container", "children": []any{graph}}}
@@ -1206,38 +1206,6 @@ func TestMediaBlocksNameTheirAsset(t *testing.T) {
 				t.Fatalf("%s with %s: %v", typ, key, err)
 			}
 		}
-	}
-}
-
-// A note's graph draws from inline SVG; a URL image belongs to questions.
-func TestNoteGraphRequiresInlineSVG(t *testing.T) {
-	raw, err := os.ReadFile("../questions/testdata/rich-blocks.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fixture struct{ Question map[string]any }
-	if err := json.Unmarshal(raw, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	graph := func(image map[string]any) map[string]any {
-		block := map[string]any{}
-		for key, value := range fixture.Question["stem"].([]any)[1].(map[string]any) {
-			block[key] = value
-		}
-		block["image"] = image
-		return map[string]any{"type": "graph", "id": "g", "block": block, "children": []any{textLeaf("")}}
-	}
-	if err := validateNote(graph(map[string]any{"svg": `<svg xmlns="http://www.w3.org/2000/svg"></svg>`})); err != nil {
-		t.Fatalf("svg graph: %v", err)
-	}
-	// A copied bank figure's URL passes the question check; a note still
-	// refuses it.
-	previous := questions.QuizBankAssetsURL
-	questions.QuizBankAssetsURL = "https://bank.example/assets"
-	t.Cleanup(func() { questions.QuizBankAssetsURL = previous })
-	if err := validateNote(graph(map[string]any{"url": "https://bank.example/assets/g.png"})); err == nil ||
-		!strings.Contains(err.Error(), "note graphs require inline SVG") {
-		t.Fatalf("url graph: %v", err)
 	}
 }
 

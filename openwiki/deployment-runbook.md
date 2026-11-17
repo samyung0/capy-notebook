@@ -4450,3 +4450,134 @@ pause, unprocessed text edits or a lagging projection, and the gateway does
 not boot. Run `cd server && go run ./cmd/office-maintenance pause`, then
 process or accept the listed rows with the `UPDATE`s above, or recreate the
 local database (`docker compose down -v`; there is no backward compatibility).
+
+## Quiz figure maps reset (migration 0178)
+
+The release that holds live quiz figures as maps (client protocol 30, Epo
+2026-11-16: a chart, plot or graph in a quiz room is a map of its fields, a
+graph's elements keyed by id;
+[plate-editor](frontend/plate-editor.md)) drops every quiz's Yjs rows with
+[`0178_quiz_figure_maps.sql`](../server/migrations/0178_quiz_figure_maps.sql).
+A room stored before holds each figure as one plain value, which the new room
+reads as no figure, and no reader for that layout is kept (no legacy data).
+AI edit Undo lives in the loaded room (0106) and goes with it. It raises `materials.trash_restores` to
+each dropped `room_schema` (as 0080 does for notes, so old tokens and browser
+drafts of the old lineage open copy-only recovery), and deletes each quiz's
+`material_yjs_documents` row; its keys row and both update logs go with it.
+Each quiz seeds both documents again from `materials.content` on its next
+open, agent edit or command, losing its undo history. Flashcard sets and
+notes are untouched. A database with no quiz rooms (production today) passes.
+
+Neither 0178 nor 0179 rewrites `materials.content`. A quiz or note graph saved
+before this release still holds the `image` field every validator now refuses,
+so that question may drop out of its quiz at the next projection and that note
+may fail to save (Epo 2026-11-17: old UAT data is not worth migrating). Remake
+such a figure by hand if one matters.
+
+It refuses, and the deploy stops at `migrate`, while a quiz's projection is
+behind its stored Yjs state (`materials.content` would miss those edits). The
+deploy stops collaboration before `migrate`, and its 60 s grace flushes and
+projects every loaded room, so a refusal means a stuck projection.
+
+Steps on UAT:
+
+1. Before the deploy, list quizzes whose projection is behind:
+
+   ```sql
+   SELECT d.material_id, m.owner_user_id, m.trashed_at, d.stored_version,
+          d.projected_version, d.projection_error
+   FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind = 'quiz' AND d.projected_version < d.stored_version;
+   ```
+
+   Wait until it is empty. A row that keeps a `projection_error` (or a trashed
+   quiz, which never projects) needs the quiz fixed or restored on the old
+   release, or, once Epo has approved losing that quiz's unprojected edits,
+   `UPDATE material_yjs_documents SET projected_version = stored_version
+   WHERE material_id = '<id>'`.
+2. Deploy (`deploy-uat`); the deploy request names "client protocol 29 -> 30,
+   material 29 -> 30". Open quiz, note and set tabs read the outdated prompt
+   and reload; a quiz tab's unsent edits open in recovery.
+3. Check that no quiz room from before the reset was recreated:
+
+   ```sql
+   SELECT count(*) FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind = 'quiz' AND d.room_schema <= m.trash_restores;
+   ```
+
+   It prints 0. Open a quiz holding a chart and a graph in Edit (its figures
+   show), change a graph point in its dialog, Save, reload: the graph shows
+   the change once, with no copy beside it.
+
+If 0178 refuses, read the rows with the query of step 1 and handle each as
+step 1 says, then rerun `deploy-uat` at the same SHA. Locally, the compose
+gateway runs the migration at start and refuses the same way; project or
+accept the listed rows, or recreate the local database (`docker compose down
+-v`).
+
+## Note figure maps reset (migration 0179)
+
+The same release holds a note's chart, plot or graph `block` as the figure
+map a quiz room holds (Epo 2026-11-16, D15: its fields, a graph's elements
+keyed by id, a chart's series, labels, names and values as maps;
+[embeds](embeds.md#live-figures)), and drops the Yjs rows of every note,
+mindmap and diagram whose saved content holds a chart, plot or graph with
+[`0179_note_figure_maps.sql`](../server/migrations/0179_note_figure_maps.sql).
+A room stored before holds a graph's elements and a chart's series as lists,
+which the new room reads as no elements or series, and no reader for that
+layout is kept (no legacy data). As 0178 does, it raises
+`materials.trash_restores` to each dropped `room_schema`
+(old tokens and browser drafts of the old lineage open copy-only recovery)
+and deletes the `material_yjs_documents` row; its update log, client ids and
+collection windows go with it. Each document seeds again from
+`materials.content` (the plain block, unchanged) on its next open, agent edit
+or command. Documents without a figure keep their rooms. A database with no
+note room holding a figure (production today) passes.
+
+What a reset costs a note that it did not cost a quiz:
+
+- Undo: the room's history goes, so no tab can undo past the reset (tabs
+  reload anyway on the protocol change), and the chat's Undo of an AI edit
+  to a reset note, live only in the loaded room, goes with it.
+- Comment anchors: a thread's Yjs relative positions name items of the old
+  lineage, which the reseeded room does not hold. Threads keep their block
+  (block ids come from the saved content) and show their quoted text, with no
+  highlight of the exact range.
+- Drafts: an old tab's unsent edits and a device copy of the old lineage
+  open copy-only recovery instead of merging.
+- Notes keep no browsable version history beyond the room, so none is lost.
+
+It refuses, and the deploy stops at `migrate`, while such a document's
+projection is behind its stored Yjs state (`materials.content` would miss
+those edits).
+
+Steps on UAT:
+
+1. Before the deploy, list the documents holding a figure whose projection is
+   behind:
+
+   ```sql
+   SELECT d.material_id, m.kind, m.owner_user_id, m.trashed_at, d.stored_version,
+          d.projected_version, d.projection_error
+   FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind IN ('note', 'mindmap', 'diagram')
+     AND jsonb_path_exists(m.content, 'strict $.value.** ? (@.type == "chart" || @.type == "plot" || @.type == "graph")')
+     AND d.projected_version < d.stored_version;
+   ```
+
+   Wait until it is empty, handling a row that stays as 0178's step 1 says.
+2. Deploy (`deploy-uat`) with 0178 in the same release.
+3. Check that no such room from before the reset was recreated:
+
+   ```sql
+   SELECT count(*) FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE m.kind IN ('note', 'mindmap', 'diagram') AND d.room_schema <= m.trash_restores
+     AND jsonb_path_exists(m.content, 'strict $.value.** ? (@.type == "chart" || @.type == "plot" || @.type == "graph")');
+   ```
+
+   It prints 0. Open a note holding a chart and a graph in Edit (both show),
+   change one graph point and one chart value in their dialogs, Save, reload:
+   each shows its change once.
+
+If 0179 refuses, handle the rows of step 1 and rerun `deploy-uat` at the same
+SHA; locally, project or accept them, or recreate the local database.

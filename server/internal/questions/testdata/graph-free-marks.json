@@ -1,0 +1,116 @@
+{
+  "name": "graph-free-marks",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": true,
+          "polar": true
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "A",
+            "name": "A",
+            "coords": [-3, -2]
+          },
+          {
+            "type": "point",
+            "id": "B",
+            "name": "B",
+            "coords": [2, -2]
+          },
+          {
+            "type": "segment",
+            "id": "AB",
+            "points": ["A", "B"],
+            "arrow": true
+          },
+          {
+            "type": "text",
+            "id": "t",
+            "coords": [0, 4],
+            "text": "Area",
+            "size": 20
+          },
+          {
+            "type": "polyline",
+            "id": "v",
+            "coords": [[-4, 0], [-1, 3]],
+            "arrow": true,
+            "dash": true
+          },
+          {
+            "type": "polyline",
+            "id": "open",
+            "coords": [[4, 4]]
+          },
+          {
+            "type": "curve",
+            "id": "c",
+            "coords": [[-4, -4], [0, -1], [4, -4]],
+            "handles": [
+              [[-4, -4], [-3, -2]],
+              [[-1, -1], [1, -1]],
+              [[3, -2], [4, -4]]
+            ]
+          },
+          {
+            "type": "curve",
+            "id": "smooth",
+            "coords": [[1, 1], [2, 3], [3, 1]],
+            "hidden": true
+          },
+          {
+            "type": "ellipse",
+            "id": "e",
+            "center": [2, 2],
+            "radii": [1.5, 0.75],
+            "dash": true
+          },
+          {
+            "type": "formula",
+            "id": "f",
+            "coords": [-3, 3],
+            "latex": "\\frac{1}{2}x^2",
+            "size": 24
+          },
+          {
+            "type": "formula",
+            "id": "g",
+            "coords": [3, -4],
+            "latex": "\\sqrt{x}"
+          }
+        ],
+        "width": 480,
+        "height": 360,
+        "description": "Every free mark and style the canvas plane draws"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

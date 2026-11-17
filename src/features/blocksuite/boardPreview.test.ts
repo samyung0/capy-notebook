@@ -3,7 +3,12 @@ import { expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { m } from '@/i18n';
 import { fromBase64, toBase64 } from './base64';
-import { SAVED, withCanvasBlock, withElements } from './boardFixture';
+import {
+  planeElements,
+  SAVED,
+  withCanvasBlock,
+  withElements,
+} from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview, POLYGON_CORNERS } from './boardPreview';
 
@@ -14,6 +19,8 @@ const BLUE_POLYGON =
 const RED_STROKE = /<path d="([^"]*)" stroke="#e03131"/;
 const INLINE_NOTE_TEXT = /<tspan x="0" [^>]*>Osmosis/;
 const TURNED_NOTE = /transform="rotate\(30 100 20\)"/;
+const PLANE_CARD = /<svg x="0" y="600" width="300" height="200" viewBox="/;
+const INK_STROKE = /<path d="M[^"]*" fill="none" stroke="#000"/;
 const CARD_NOTE_BOX =
   /<rect [^>]*rx="16" fill="#fff" fill-opacity="0.5" stroke="#e6e6e6"/;
 
@@ -21,6 +28,35 @@ it('draws the plane card, its marks and its axes', () => {
   const svg = drawBoardPreview(SAVED, SIZE, 'question');
   expect(svg).toMatch(SVG_HEAD);
   expect(svg).toContain('stroke="#6f6f6c"');
+});
+
+it("draws a plane's elements as the graph engine does, in the card's place", () => {
+  const svg = drawBoardPreview(
+    toBase64(
+      withElements({
+        elements: planeElements([
+          {
+            coords: [
+              [0, 0],
+              [2, 2],
+            ],
+            id: 'l',
+            type: 'polyline',
+          },
+          { coords: [1, 0], id: 'p', type: 'point' },
+        ]),
+        ppu: 30,
+        type: 'plane',
+        x0: -5,
+        xywh: '[0,600,300,200]',
+        y0: 5,
+      })
+    ),
+    SIZE,
+    'question'
+  );
+  expect(svg).toMatch(PLANE_CARD);
+  expect(svg).toMatch(INK_STROKE);
 });
 
 it('keeps a long stroke to what the preview can show', () => {

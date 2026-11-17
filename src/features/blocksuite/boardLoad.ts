@@ -1,16 +1,15 @@
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
-import { QUESTION_GRAPH_TERM_MAX } from '@/api/limits.generated';
 import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
+import { graphElementSchema } from '@/features/questions/validation';
 import {
   AXIS_MAX,
   BARS_MAX,
+  ELEMENTS_MAX,
   isTextSize,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
   LATEX_MAX,
-  MARKS_MAX,
-  markFunction,
   SPOKES_MAX,
 } from './boardData';
 import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
@@ -77,6 +76,30 @@ const connection = (value: unknown) => {
   );
 };
 
+/** One of a plane's elements, of any kind a graph holds, checked as every graph's
+ * (the graph model's one element check, Epo 2026-11-16). */
+const planeElementFits = (element: Fields) =>
+  graphElementSchema.safeParse(element).success;
+
+/** A plane's elements: a map of element id to the element and its order key (Epo
+ * 2026-11-16, D10), at most ELEMENTS_MAX of them. */
+function planeElementsFit(elements: unknown) {
+  if (!elements || typeof elements !== 'object' || Array.isArray(elements))
+    return false;
+  const entries = Object.entries(elements as Record<string, Fields>);
+  return (
+    entries.length <= ELEMENTS_MAX &&
+    entries.every(
+      ([id, entry]) =>
+        typeof entry?.order === 'string' &&
+        typeof entry.element === 'object' &&
+        entry.element !== null &&
+        (entry.element as Fields).id === id &&
+        planeElementFits(entry.element as Fields)
+    )
+  );
+}
+
 /** The checks a card's own renderer relies on. */
 function elementProblem(
   fields: Fields,
@@ -116,63 +139,7 @@ function elementProblem(
       finite(fields.y0) &&
       (fields.polar === undefined || typeof fields.polar === 'boolean') &&
       (fields.rotate === undefined || finite(fields.rotate)) &&
-      listUpTo(fields.marks, MARKS_MAX) &&
-      (fields.marks as Fields[]).every(
-        (mark) =>
-          (mark?.kind !== 'label' ||
-            (typeof mark.text === 'string' &&
-              mark.text.length <= LABEL_LENGTH_MAX &&
-              isTextSize(mark.size))) &&
-          // A formula is text KaTeX lays out, within the formula card's limit.
-          (mark?.kind !== 'formula' ||
-            (typeof mark.latex === 'string' &&
-              mark.latex.length <= LATEX_MAX &&
-              isTextSize(mark.size))) &&
-          // A function is a term the plane can read, in the graph dialog's limits.
-          (mark?.kind !== 'function' ||
-            (typeof mark.term === 'string' &&
-              mark.term.length <= QUESTION_GRAPH_TERM_MAX &&
-              markFunction(mark.term) !== null &&
-              typeof mark.latex === 'string' &&
-              mark.latex.length <= LATEX_MAX &&
-              (mark.domain === undefined ||
-                (listUpTo(mark.domain, 2) &&
-                  (mark.domain as unknown[]).length === 2 &&
-                  (mark.domain as unknown[]).every(finite) &&
-                  (mark.domain as number[])[0] <
-                    (mark.domain as number[])[1])))) &&
-          // A curve's handles are a pair of points for each of its points.
-          (mark?.handles === undefined ||
-            (mark.kind === 'curve' &&
-              Array.isArray(mark.handles) &&
-              Array.isArray(mark.points) &&
-              (mark.handles as unknown[]).length === mark.points.length &&
-              (mark.handles as unknown[]).every(
-                (pair) =>
-                  Array.isArray(pair) &&
-                  pair.length === 2 &&
-                  pair.every(
-                    (point) =>
-                      Array.isArray(point) &&
-                      point.length === 2 &&
-                      point.every(finite)
-                  )
-              ))) &&
-          // A vector runs from one point to one other.
-          (mark?.kind !== 'vector' ||
-            (listUpTo(mark.points, 2) &&
-              (mark.points as unknown[]).length === 2)) &&
-          // An ellipse is drawn from exactly its four handles.
-          (mark?.kind !== 'ellipse' ||
-            (listUpTo(mark.points, 4) &&
-              (mark.points as unknown[]).length === 4 &&
-              (mark.points as unknown[]).every(
-                (point) =>
-                  Array.isArray(point) &&
-                  point.length === 2 &&
-                  point.every(finite)
-              )))
-      )
+      planeElementsFit(fields.elements)
       ? null
       : 'plane fields';
   if (type === 'chart') {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { blockIssues } from '@/features/questions/issues';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
+import { opensOnMount } from './blocks/openFigure';
 import {
   columnGroupFromWidths,
   EDITOR_COMMANDS,
@@ -9,53 +10,58 @@ import {
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 
 describe('editor insertion command catalog', () => {
-  it.each(['chart', 'plot', 'graph'])(
-    'inserts a %s only after its block dialog saves',
+  const dialogs = (openPlot = vi.fn<NoteBlockDialogsApi['openPlot']>()) => ({
+    createEmbedded: vi.fn(),
+    insertEmbedded: vi.fn(),
+    noteId: 'note',
+    openPlot,
+    openYouTube: vi.fn(),
+  });
+  const editor = () => ({
+    api: { block: () => undefined },
+    selection: null,
+    tf: { focus: vi.fn(), insertNodes: vi.fn() },
+  });
+
+  it.each(['chart', 'graph'])(
+    'inserts a %s at once and opens its live dialog on it',
     (kind) => {
-      const openVisual = vi.fn<NoteBlockDialogsApi['openVisual']>();
-      const editor = {
-        api: { block: () => undefined },
-        selection: null,
-        tf: { focus: vi.fn(), insertNodes: vi.fn() },
-      };
-      const command = EDITOR_COMMANDS.find((item) => item.id === kind)!;
-      command.run(editor, {
-        createEmbedded: vi.fn(),
-        insertEmbedded: vi.fn(),
-        noteId: 'note',
-        openVisual,
-        openYouTube: vi.fn(),
-      });
-      expect(editor.tf.insertNodes).not.toHaveBeenCalled();
-      const [draft, save] = openVisual.mock.calls[0];
-      save(draft);
-      expect(editor.tf.insertNodes).toHaveBeenCalledWith(
-        expect.objectContaining({
-          block: draft,
-          children: [{ text: '' }],
-          type: kind,
-        }),
-        { select: true }
-      );
+      const target = editor();
+      EDITOR_COMMANDS.find((item) => item.id === kind)!.run(target, dialogs());
+      const [node] = target.tf.insertNodes.mock.calls[0];
+      expect(node).toMatchObject({ children: [{ text: '' }], type: kind });
+      expect(node.block.type).toBe(kind);
+      expect(opensOnMount(node.id)).toBe(true);
     }
   );
-  it('opens a new plot on a line through (0, 0) and (1, 1) that saves as it is', () => {
-    const openVisual = vi.fn<NoteBlockDialogsApi['openVisual']>();
+
+  it('inserts a plot only after its dialog saves', () => {
+    const target = editor();
+    const openPlot = vi.fn<NoteBlockDialogsApi['openPlot']>();
     EDITOR_COMMANDS.find((item) => item.id === 'plot')!.run(
-      {
-        api: { block: () => undefined },
-        selection: null,
-        tf: { focus: vi.fn(), insertNodes: vi.fn() },
-      },
-      {
-        createEmbedded: vi.fn(),
-        insertEmbedded: vi.fn(),
-        noteId: 'note',
-        openVisual,
-        openYouTube: vi.fn(),
-      }
+      target,
+      dialogs(openPlot)
     );
-    const [draft] = openVisual.mock.calls[0];
+    expect(target.tf.insertNodes).not.toHaveBeenCalled();
+    const [draft, save] = openPlot.mock.calls[0];
+    save(draft);
+    expect(target.tf.insertNodes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block: draft,
+        children: [{ text: '' }],
+        type: 'plot',
+      }),
+      { select: true }
+    );
+  });
+
+  it('opens a new plot on a line through (0, 0) and (1, 1) that saves as it is', () => {
+    const openPlot = vi.fn<NoteBlockDialogsApi['openPlot']>();
+    EDITOR_COMMANDS.find((item) => item.id === 'plot')!.run(
+      editor(),
+      dialogs(openPlot)
+    );
+    const [draft] = openPlot.mock.calls[0];
     expect(draft).toMatchObject({
       kind: 'line',
       series: [

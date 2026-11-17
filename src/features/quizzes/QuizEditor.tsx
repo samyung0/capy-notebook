@@ -4,6 +4,7 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -40,6 +41,7 @@ import { quizBounds } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { quizSampleUpload } from './drawing/DrawnSample';
 import {
+  figureRoom,
   insertQuestions,
   moveQuestion,
   readQuestions,
@@ -112,6 +114,7 @@ function QuizEditorBody({
   workspaceId: string;
 }) {
   const { picked, setPicked } = pick;
+  const figures = useMemo(() => figureRoom({ content, keys }), [content, keys]);
   const [bank, setBank] = useState<BankOpen | null>(null);
   const current = questions.find((question) => question.id === picked);
   // A question just added, whose text opens in its editor.
@@ -176,6 +179,7 @@ function QuizEditorBody({
       <div className="min-h-0 min-w-0 flex-1" data-quiz-pane="">
         <Suspense fallback={<Skeleton className="m-4 h-64" />}>
           <QuestionPane
+            figures={figures}
             foot={foot}
             fresh={fresh}
             head={head}

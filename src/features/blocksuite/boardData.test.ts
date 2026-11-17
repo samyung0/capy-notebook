@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ellipseIn, filledSlices, pullEllipse } from './boardData';
+import { filledSlices } from './boardData';
 
 describe('filledSlices', () => {
   it('fills each slice clockwise from its line to the next, past 360 at the end', () => {
@@ -25,20 +25,5 @@ describe('filledSlices', () => {
 
   it('draws no fills for a pie saved before it had any', () => {
     expect(filledSlices({ spokes: [0, 120] })).toEqual([]);
-  });
-});
-
-describe('pullEllipse', () => {
-  const circle = ellipseIn(-2, 2, -2, 2);
-
-  it('sizes about its middle, staying upright and on the grid', () => {
-    expect(pullEllipse(circle, 0, [3, 1])).toEqual(ellipseIn(-3, 3, -2, 2));
-    expect(pullEllipse(circle, 3, [0, -1])).toEqual(ellipseIn(-2, 2, -1, 1));
-  });
-
-  it('keeps its shape when uniform', () => {
-    expect(pullEllipse(ellipseIn(-2, 2, -1, 1), 2, [-4, 0], true)).toEqual(
-      ellipseIn(-4, 4, -2, 2)
-    );
   });
 });

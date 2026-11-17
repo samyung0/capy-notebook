@@ -14,11 +14,11 @@ use items::{Admission, Kind, Refusal, Validator};
 use notes::edit::DocumentCommand;
 use notes::questions::Policy;
 use serde_json::{Value, json};
-use yrs::branch::BranchPtr;
+use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim, TextRef,
-    Transact, UndoManager, Update,
+    Any, Doc, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim,
+    TextRef, Transact, UndoManager, Update,
 };
 
 /// Every quiz-policy fixture the Go validator accepts, ids made unique.
@@ -864,93 +864,558 @@ fn shuffle_options_and_locks_are_admitted() {
     accepted(&mut check, &content, &client);
 }
 
-/// A chart, plot or graph past its kind's caps is refused as it arrives,
-/// whether the update writes its value, its type or both; an unfinished one
-/// (D4) is admitted.
+/// The question and stem block id of the first fixture whose stem holds a
+/// `kind` figure (the server names stem blocks `b0`, `b1`, ...).
+fn stem_figure(questions: &[Value], kind: &str) -> (String, String) {
+    for question in questions {
+        if let Some(at) = question["stem"]
+            .as_array()
+            .and_then(|stem| stem.iter().position(|block| block["type"] == json!(kind)))
+        {
+            return (
+                question["id"].as_str().unwrap().to_owned(),
+                format!("b{at}"),
+            );
+        }
+    }
+    panic!("no {kind} in a fixture's stem")
+}
+
+/// A graph element's entry as the browser writes it (graph/keyed.ts).
+fn element(value: Value, order: &str) -> Any {
+    serde_json::from_value(json!({ "element": value, "order": order })).unwrap()
+}
+
+/// A new figure entry `b9` in a stem, its plain fields set from `fields`.
+fn new_figure(doc: &Doc, question: &str, kind: &str, fields: Value) -> MapRef {
+    let stem = map_in(doc, &["questions", question, "stem"]);
+    let mut txn = doc.transact_mut();
+    let block = stem.insert(&mut txn, "b9", MapPrelim::default());
+    block.insert(&mut txn, "order", "a5");
+    block.insert(&mut txn, "type", kind);
+    for (key, value) in fields.as_object().unwrap() {
+        let value: Any = serde_json::from_value(value.clone()).unwrap();
+        block.insert(&mut txn, key.as_str(), value);
+    }
+    block
+}
+
+/// A chart, plot or graph is held as a map of fields (Epo 2026-11-16): each
+/// field, graph element and chart value is held to its cap as it arrives, a
+/// figure written as one value (the layout before) is refused, and an
+/// unfinished one (D4) is admitted.
 #[test]
-fn figures_past_their_caps_are_refused_at_admission() {
+fn figure_fields_past_their_caps_are_refused_at_admission() {
     let questions = fixtures();
     let (question, _) = part_of(&questions, "boolean");
-    let figure = |doc: &Doc, kind: &str, value: Value| {
-        let stem = map_in(doc, &["questions", &question, "stem"]);
-        let block = stem.insert(&mut doc.transact_mut(), "b9", MapPrelim::default());
-        block.insert(&mut doc.transact_mut(), "order", "a5");
-        block.insert(&mut doc.transact_mut(), "type", kind);
-        let value: Any = serde_json::from_value(value).unwrap();
-        block.insert(&mut doc.transact_mut(), "value", value);
-    };
+    let (graph_q, graph) = stem_figure(&questions, "graph");
     refused(
         Kind::Quiz,
-        |doc| figure(doc, "chart", json!({ "title": "t".repeat(1_001) })),
-        "title too long",
-    );
-    refused(
-        Kind::Quiz,
-        |doc| figure(doc, "chart", json!({ "labels": vec!["a"; 51] })),
-        "too many items",
-    );
-    refused(
-        Kind::Quiz,
-        |doc| figure(doc, "plot", json!({ "series": vec![json!({}); 5] })),
-        "too many items",
-    );
-    refused(
-        Kind::Quiz,
-        |doc| figure(doc, "graph", json!({ "description": "d".repeat(501) })),
-        "description too long",
+        |doc| {
+            new_figure(
+                doc,
+                &question,
+                "chart",
+                json!({ "value": { "title": "t" } }),
+            );
+        },
+        "a struct outside its shape",
     );
     refused(
         Kind::Quiz,
         |doc| {
-            let stem = map_in(doc, &["questions", &question, "stem"]);
-            let block = stem.insert(&mut doc.transact_mut(), "b8", MapPrelim::default());
-            block.insert(&mut doc.transact_mut(), "order", "a6");
-            block.insert(&mut doc.transact_mut(), "type", "image");
-            block.insert(
-                &mut doc.transact_mut(),
-                "description",
-                TextPrelim::new("d".repeat(501)),
+            new_figure(doc, &question, "chart", json!({ "title": "t".repeat(101) }));
+        },
+        "a struct outside its shape",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            new_figure(
+                doc,
+                &question,
+                "plot",
+                json!({ "series": vec![json!({}); 5] }),
             );
         },
-        "a description holds at most 500",
+        "too many items",
     );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            new_figure(
+                doc,
+                &question,
+                "graph",
+                json!({ "description": "d".repeat(501) }),
+            );
+        },
+        "a struct outside its shape",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let block = new_figure(doc, &question, "chart", json!({}));
+            let values = block.insert(&mut doc.transact_mut(), "values", MapPrelim::default());
+            values.insert(&mut doc.transact_mut(), "ser0/lab0", "7");
+        },
+        "a chart value that is not a number",
+    );
+    let elements = ["questions", &graph_q, "stem", &graph, "elements"];
     refused(
         Kind::Quiz,
         |doc| {
             let term = "x+".repeat(100) + "x";
-            figure(
-                doc,
-                "graph",
-                json!({ "elements": [{ "type": "functiongraph", "term": term }] }),
-            )
+            map_in(doc, &elements).insert(
+                &mut doc.transact_mut(),
+                "f9",
+                element(
+                    json!({ "type": "functiongraph", "id": "f9", "term": term }),
+                    "b00",
+                ),
+            );
         },
         "supported mathematical expression",
     );
-    // A chart's value retyped as a plot is checked as a plot.
-    let (content, _, client, _) = rooms(&questions);
-    figure(&client, "chart", json!({ "series": vec![json!({}); 6] }));
-    let mut check = validator(Kind::Quiz, &content);
-    accepted(&mut check, &content, &client);
-    map_in(&client, &["questions", &question, "stem", "b9"]).insert(
-        &mut client.transact_mut(),
-        "type",
-        "plot",
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(doc, &elements).insert(
+                &mut doc.transact_mut(),
+                "f9",
+                element(
+                    json!({ "type": "functiongraph", "id": "other", "term": "x" }),
+                    "b00",
+                ),
+            );
+        },
+        "under its id",
     );
-    let (result, _) = admit(&mut check, &content, &diff(&client, &content));
-    assert!(
-        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("too many items")),
-        "{result:?}"
+    // Past twice the cap, the exact check refuses the count.
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let map = map_in(doc, &elements);
+            let mut txn = doc.transact_mut();
+            let mut order = items::order::after(Some("b00"));
+            for i in 0..2 * notes::questions::QUESTION_GRAPH_ELEMENTS_MAX {
+                let id = format!("p{i}");
+                let point = json!({ "type": "point", "id": id, "coords": [i, 0] });
+                map.insert(&mut txn, id.as_str(), element(point, &order));
+                order = items::order::after(Some(&order));
+            }
+        },
+        "a figure's elements",
     );
     // Unfinished, admitted and kept by the store's caps.
     let (content, _, client, _) = rooms(&questions);
-    figure(
-        &client,
-        "chart",
-        json!({ "title": "", "labels": [], "series": [] }),
-    );
+    let block = new_figure(&client, &question, "chart", json!({ "title": "" }));
+    for map in ["labels", "series", "names", "values"] {
+        block.insert(&mut client.transact_mut(), map, MapPrelim::default());
+    }
     let mut check = validator(Kind::Quiz, &content);
     accepted(&mut check, &content, &client);
     assert!(items::quiz::check_content_caps(&content.transact()).is_ok());
+}
+
+/// Two editors change different elements of one graph and different values
+/// of one chart: every change lands, in either order (D9).
+#[test]
+fn two_editors_merge_different_elements_and_values_of_one_figure() {
+    let questions = fixtures();
+    let (content, keys, _, _) = rooms(&questions);
+    let (graph_q, graph) = stem_figure(&questions, "graph");
+    let (chart_q, chart) = stem_figure(&questions, "chart");
+    let elements = ["questions", &graph_q, "stem", &graph, "elements"];
+    let ids: Vec<String> = {
+        let read = projected(&content, &keys);
+        let block = &read.iter().find(|q| q["id"] == json!(graph_q)).unwrap()["stem"]
+            [graph[1..].parse::<usize>().unwrap()];
+        block["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["type"] == json!("point"))
+            .map(|e| e["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let order = |doc: &Doc, id: &str| match map_in(doc, &elements).get(&doc.transact(), id) {
+        Some(Out::Any(Any::Map(entry))) => match entry.get("order") {
+            Some(Any::String(order)) => order.to_string(),
+            _ => panic!("no order"),
+        },
+        other => panic!("no element {id}: {other:?}"),
+    };
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    let moved = |doc: &Doc, id: &str, x: f64| {
+        let held = order(doc, id);
+        map_in(doc, &elements).insert(
+            &mut doc.transact_mut(),
+            id,
+            element(
+                json!({ "type": "point", "id": id, "coords": [x, 9] }),
+                &held,
+            ),
+        );
+    };
+    moved(&a, &ids[0], 1.0);
+    moved(&b, &ids[1], 2.0);
+    let values = ["questions", &chart_q, "stem", &chart, "values"];
+    map_in(&a, &values).insert(&mut a.transact_mut(), "ser0/lab0", 41.0);
+    map_in(&b, &values).insert(&mut b.transact_mut(), "ser0/lab1", 42.0);
+    converge(&content, Kind::Quiz, &a, &b);
+    let read = quiz::questions_json(
+        &content.transact(),
+        Some(&quiz::KeysRead::new(&keys.transact())),
+    );
+    let block = |q: &str, b: &str| {
+        read.iter().find(|x| x["id"] == json!(q)).unwrap()["stem"][b[1..].parse::<usize>().unwrap()]
+            .clone()
+    };
+    let points = block(&graph_q, &graph)["elements"].clone();
+    let coords = |id: &str| {
+        points
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == json!(id))
+            .unwrap()["coords"]
+            .clone()
+    };
+    assert_eq!(coords(&ids[0]), json!([1, 9]));
+    assert_eq!(coords(&ids[1]), json!([2, 9]));
+    let series = block(&chart_q, &chart)["series"][0]["values"].clone();
+    assert_eq!(
+        (series[0].clone(), series[1].clone()),
+        (json!(41), json!(42))
+    );
+}
+
+/// The save API writes a figure entry by entry: it sets only the element
+/// that changed, and an editor's edit to another element meanwhile lands.
+#[test]
+fn the_save_api_writes_a_graph_element_by_element() {
+    let questions = fixtures();
+    let (content, keys, client, _) = rooms(&questions);
+    let (graph_q, graph) = stem_figure(&questions, "graph");
+    let at = questions
+        .iter()
+        .position(|q| q["id"] == json!(graph_q))
+        .unwrap();
+    let index: usize = graph[1..].parse().unwrap();
+    let held = questions[at]["stem"][index]["elements"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let points: Vec<usize> = (0..held.len())
+        .filter(|&i| held[i]["type"] == json!("point"))
+        .collect();
+    let (first, second) = (points[0], points[1]);
+    // The editor moves the first point.
+    let elements = ["questions", &graph_q, "stem", &graph, "elements"];
+    let mut moved = held[first].clone();
+    moved["coords"] = json!([7, 7]);
+    let id = moved["id"].as_str().unwrap().to_owned();
+    let order = match map_in(&client, &elements).get(&client.transact(), &id) {
+        Some(Out::Any(Any::Map(entry))) => match entry.get("order") {
+            Some(Any::String(order)) => order.to_string(),
+            _ => panic!("no order"),
+        },
+        other => panic!("{other:?}"),
+    };
+    map_in(&client, &elements).insert(
+        &mut client.transact_mut(),
+        id.as_str(),
+        element(moved.clone(), &order),
+    );
+    // The save API moves the second one.
+    let mut next = questions.clone();
+    next[at]["stem"][index]["elements"][second]["coords"] = json!([8, 8]);
+    let before = content.transact().state_vector();
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let written = content.transact().encode_state_as_update_v1(&before);
+    assert_eq!(
+        Update::decode_v1(&written).unwrap().blocks().count(),
+        1,
+        "one element entry written"
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    let read = quiz::questions_json(
+        &content.transact(),
+        Some(&quiz::KeysRead::new(&keys.transact())),
+    );
+    let elements = read[at]["stem"][index]["elements"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(elements[first], moved);
+    assert_eq!(elements[second]["coords"], json!([8, 8]));
+}
+
+/// A table's row or column ids, in order.
+fn axis_ids(doc: &Doc, path: &[&str]) -> Vec<String> {
+    let map = map_in(doc, path);
+    let txn = doc.transact();
+    let mut held: Vec<(String, String)> = map
+        .iter(&txn)
+        .map(|(id, order)| (order.to_string(&txn), id.to_owned()))
+        .collect();
+    held.sort();
+    held.into_iter().map(|(_, id)| id).collect()
+}
+
+/// A save inserting a table row mid-table aligns the rows as the browser's
+/// `writeTable`: the held rows and the columns keep their ids, and a peer's
+/// cell edit in the last row meanwhile stays in that row.
+#[test]
+fn a_save_inserting_a_table_row_keeps_the_held_ids() {
+    let questions = fixtures();
+    let (content, keys, client, _) = rooms(&questions);
+    let (table_q, table) = stem_figure(&questions, "table");
+    let at = questions
+        .iter()
+        .position(|q| q["id"] == json!(table_q))
+        .unwrap();
+    let index: usize = table[1..].parse().unwrap();
+    let path = |key| ["questions", table_q.as_str(), "stem", table.as_str(), key];
+    let (rows, columns) = (
+        axis_ids(&content, &path("rows")),
+        axis_ids(&content, &path("columns")),
+    );
+    // A peer edits the first cell of the last row.
+    let last = format!("{}/{}", rows[rows.len() - 1], columns[0]);
+    let cell = map_in(&client, &path("cells")).get(&client.transact(), &last);
+    let Some(Out::YText(text)) = cell else {
+        panic!("no cell {last}: {cell:?}");
+    };
+    text.insert(&mut client.transact_mut(), 0, "edited ");
+    let mut next = questions.clone();
+    let width = columns.len();
+    next[at]["stem"][index]["rows"]
+        .as_array_mut()
+        .unwrap()
+        .insert(1, json!(vec!["new"; width]));
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let now = axis_ids(&content, &path("rows"));
+    assert_eq!([&now[..1], &now[2..]].concat(), rows);
+    assert_eq!(axis_ids(&content, &path("columns")), columns);
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    let read = quiz::questions_json(
+        &content.transact(),
+        Some(&quiz::KeysRead::new(&keys.transact())),
+    );
+    let mut wanted = next[at]["stem"][index]["rows"].as_array().unwrap().clone();
+    let first = wanted.last().unwrap()[0].as_str().unwrap();
+    let last_row = wanted.len() - 1;
+    wanted[last_row][0] = json!(format!("edited {first}"));
+    assert_eq!(read[at]["stem"][index]["rows"], json!(wanted));
+}
+
+const OPTIONS: [&str; 4] = ["Alpha", "Beta", "Gamma", "Delta"];
+
+/// The fixtures with the first mcq question's stem as three texts and its
+/// options as [OPTIONS] (the first correct); that question's index.
+fn mcq_quiz() -> (Vec<Value>, usize) {
+    let mut questions = fixtures();
+    let at = questions
+        .iter()
+        .position(|q| q["parts"][0]["answer"]["type"] == json!("mcq"))
+        .unwrap();
+    questions[at]["stem"] = json!([
+        { "type": "text", "text": "First" },
+        { "type": "text", "text": "Second" },
+        { "type": "text", "text": "Third" },
+    ]);
+    questions[at]["parts"][0]["answer"] =
+        json!({ "type": "mcq", "options": OPTIONS, "correct": [0] });
+    (questions, at)
+}
+
+/// A list's entries as (id, order, text).
+type Entries = Vec<(String, String, String)>;
+
+/// The entries of the list at `path`, in order.
+fn entries(doc: &Doc, path: &[&str]) -> Entries {
+    let map = map_in(doc, path);
+    let txn = doc.transact();
+    let mut out: Vec<_> = map
+        .iter(&txn)
+        .map(|(id, value)| {
+            let Out::YMap(entry) = value else {
+                panic!("{id} is no entry: {value:?}");
+            };
+            let Some(Out::Any(Any::String(order))) = entry.get(&txn, "order") else {
+                panic!("{id} has no order");
+            };
+            let text = match entry.get(&txn, "text") {
+                Some(Out::YText(text)) => text.get_string(&txn),
+                _ => String::new(),
+            };
+            (id.to_owned(), order.to_string(), text)
+        })
+        .collect();
+    out.sort_by(|a, b| (&a.1, &a.0).cmp(&(&b.1, &b.0)));
+    out
+}
+
+/// `path` with `key` after it.
+fn under<'a>(path: &[&'a str], key: &'a str) -> Vec<&'a str> {
+    [path, &[key]].concat()
+}
+
+/// The branch of an entry's text: the same one while nothing rewrote it.
+fn text_branch(doc: &Doc, path: &[&str]) -> BranchID {
+    let text = text_in(doc, path, "text");
+    BranchPtr::from(AsRef::<Branch>::as_ref(&text)).id()
+}
+
+/// A save writing an mcq's options as `options` (the option at `correct`
+/// ticked) into a room seeded with [mcq_quiz]: the options' entries before
+/// and after, and the ticked ids.
+fn save_options(options: &[&str], correct: usize) -> (Entries, Entries, Vec<String>) {
+    let (questions, at) = mcq_quiz();
+    let (content, keys, _, _) = rooms(&questions);
+    let (question, part) = part_of(&questions, "mcq");
+    let path = ["questions", &question, "parts", &part, "answer", "options"];
+    let before = entries(&content, &path);
+    let mut next = questions.clone();
+    next[at]["parts"][0]["answer"] =
+        json!({ "type": "mcq", "options": options, "correct": [correct] });
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    assert_eq!(projected(&content, &keys)[at], next[at]);
+    let ticks = map_in(&keys, &["keys", &part, "correct"]);
+    let ticked = ticks.keys(&keys.transact()).map(str::to_owned).collect();
+    (before, entries(&content, &path), ticked)
+}
+
+/// A save inserting a block mid-stem (the browser's rule, Epo 2026-11-17)
+/// adds one entry between its neighbours and leaves the held ones as they
+/// were, so a peer typing in the last block meanwhile keeps every character.
+#[test]
+fn a_save_inserting_a_stem_block_keeps_the_held_entries() {
+    let (questions, at) = mcq_quiz();
+    let (content, keys, client, _) = rooms(&questions);
+    let id = questions[at]["id"].as_str().unwrap();
+    let stem = ["questions", id, "stem"];
+    let held = entries(&content, &stem);
+    let branches: Vec<_> = held
+        .iter()
+        .map(|(entry, _, _)| text_branch(&content, &under(&stem, entry)))
+        .collect();
+    let last = held[2].0.clone();
+    text_in(&client, &under(&stem, &last), "text").insert(&mut client.transact_mut(), 0, "typed ");
+    let mut next = questions.clone();
+    next[at]["stem"]
+        .as_array_mut()
+        .unwrap()
+        .insert(1, json!({ "type": "text", "text": "Inserted" }));
+    quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
+    let now = entries(&content, &stem);
+    assert_eq!(
+        [&now[..1], &now[2..]].concat(),
+        held,
+        "the held entries stay"
+    );
+    assert_eq!(now[1].2, "Inserted");
+    for ((entry, _, _), branch) in held.iter().zip(&branches) {
+        assert_eq!(text_branch(&content, &under(&stem, entry)), *branch);
+    }
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    let update = Update::decode_v1(&diff(&content, &client)).unwrap();
+    client.transact_mut().apply_update(update).unwrap();
+    for doc in [&content, &client] {
+        let texts: Vec<String> = entries(doc, &stem).into_iter().map(|(_, _, t)| t).collect();
+        assert_eq!(texts, ["First", "Inserted", "Second", "typed Third"]);
+    }
+}
+
+#[test]
+fn a_save_removing_a_middle_option_keeps_the_others_ids() {
+    let (before, after, ticked) = save_options(&["Alpha", "Gamma", "Delta"], 2);
+    let kept = [&before[..1], &before[2..]].concat();
+    assert_eq!(after, kept);
+    assert_eq!(ticked, [before[3].0.clone()], "the tick follows Delta's id");
+}
+
+#[test]
+fn a_save_moving_an_option_changes_only_order_keys() {
+    let (before, after, ticked) = save_options(&["Alpha", "Delta", "Beta", "Gamma"], 1);
+    let ids =
+        |list: &Entries| -> Vec<String> { list.iter().map(|(id, _, _)| id.clone()).collect() };
+    let by_id = |list: &Entries| -> HashMap<String, String> {
+        list.iter()
+            .map(|(id, _, text)| (id.clone(), text.clone()))
+            .collect()
+    };
+    assert_eq!(by_id(&after), by_id(&before), "each id keeps its text");
+    let from = [0, 3, 1, 2];
+    assert_eq!(ids(&after), from.map(|i| before[i].0.clone()));
+    // The longest rising run of keys stays: only Delta's key changes.
+    for i in [0, 2, 3] {
+        assert_eq!(after[i].1, before[from[i]].1);
+    }
+    assert_ne!(after[1].1, before[3].1);
+    assert_eq!(ticked, [before[3].0.clone()], "the tick follows Delta's id");
+}
+
+#[test]
+fn a_save_editing_one_option_keeps_every_id() {
+    let (before, after, ticked) = save_options(&["Alpha", "Bravo", "Gamma", "Delta"], 0);
+    assert_eq!(after.len(), 4);
+    for (i, ((id, order, text), (was_id, was_order, _))) in after.iter().zip(&before).enumerate() {
+        assert_eq!((id, order), (was_id, was_order));
+        let wanted = if i == 1 { "Bravo" } else { OPTIONS[i] };
+        assert_eq!(text, wanted);
+    }
+    assert_eq!(ticked, [before[0].0.clone()]);
+}
+
+/// A merge that leaves an element naming a gone point reads repaired (the
+/// element skipped), in both the read and the projection.
+#[test]
+fn a_figure_merge_reads_repaired() {
+    let questions = fixtures();
+    let (content, keys, _, _) = rooms(&questions);
+    let (graph_q, graph) = stem_figure(&questions, "graph");
+    let elements = ["questions", &graph_q, "stem", &graph, "elements"];
+    let read = |content: &Doc| {
+        let all = quiz::questions_json(
+            &content.transact(),
+            Some(&quiz::KeysRead::new(&keys.transact())),
+        );
+        all.iter().find(|q| q["id"] == json!(graph_q)).unwrap()["stem"]
+            [graph[1..].parse::<usize>().unwrap()]["elements"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    let held = read(&content);
+    let point = held.iter().find(|e| e["type"] == json!("point")).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let a = copy_of(&content, 3);
+    let b = copy_of(&content, 4);
+    map_in(&a, &elements).remove(&mut a.transact_mut(), &point);
+    map_in(&b, &elements).insert(
+        &mut b.transact_mut(),
+        "seg9",
+        element(
+            json!({ "type": "segment", "id": "seg9", "points": [point, point] }),
+            "a9",
+        ),
+    );
+    converge(&content, Kind::Quiz, &a, &b);
+    let after = read(&content);
+    assert!(
+        after
+            .iter()
+            .all(|e| e["id"] != json!("seg9") && e["id"] != json!(point))
+    );
 }
 
 /// Accepted answers turned open are held to the open bound in the update
@@ -1077,8 +1542,8 @@ fn a_blank_image_block_is_admitted_and_leaves_its_question_incomplete() {
 }
 
 /// Live quiz rooms accept only hosted question images, as a stored question
-/// keeps them: with the quiz figure host set (`BANK_ASSETS_URL`), an image or
-/// a graph linking a URL under it is admitted, one linking anywhere else is
+/// keeps them: with the quiz figure host set (`BANK_ASSETS_URL`), an image
+/// linking a URL under it is admitted, one linking anywhere else is
 /// refused at admission, and an uploaded asset and the blank image waiting
 /// for its upload are admitted. Fails if admission takes any URL again, or
 /// none under the host.
@@ -1106,7 +1571,6 @@ fn a_live_quiz_admits_only_hosted_question_images() {
         };
         admit(&mut check, &content, &diff(&client, &content)).0
     };
-    let graph = |url: &str| json!({ "image": { "url": url }, "width": 10, "height": 10 });
     for image in [
         json!({ "assetId": "ea_upload" }),
         json!({ "url": "" }),
@@ -1118,28 +1582,11 @@ fn a_live_quiz_admits_only_hosted_question_images() {
             "{image}: {result:?}"
         );
     }
-    let result = admitted("graph", "value", graph(hosted));
-    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
-    for (kind, key, value, reason) in [
-        (
-            "image",
-            "image",
-            json!({ "url": elsewhere }),
-            "an image that is not {assetId} or a hosted {url}",
-        ),
-        (
-            "graph",
-            "value",
-            graph(elsewhere),
-            "a graph image that is not a hosted {url}",
-        ),
-    ] {
-        let result = admitted(kind, key, value);
-        assert!(
-            matches!(&result, Err(Refusal::Shape(m)) if m.contains(reason)),
-            "{kind}: {result:?}"
-        );
-    }
+    let result = admitted("image", "image", json!({ "url": elsewhere }));
+    assert!(
+        matches!(&result, Err(Refusal::Shape(m)) if m.contains("an image that is not {assetId} or a hosted {url}")),
+        "{result:?}"
+    );
 }
 
 /// REVIEW1 S2: a structural edit (Add option) on a large quiz takes the
@@ -1409,8 +1856,9 @@ fn the_readers_lists_never_follow_typing_order() {
 }
 
 /// Security regression (REVIEW2 M2): a server write (the save API, the
-/// agent's `replace_question`, bank copy) fills lists by position, so a
-/// reorder keeps the item ids and moves texts between them. The readers'
+/// agent's `replace_question`, bank copy) that reorders and edits at once is
+/// not a move, so it changes the list by position: the item ids stay and
+/// texts move between them. The readers'
 /// list must then be a fresh shuffle, not the last list with each text
 /// replaced by its new neighbour, which would show a reader old position to
 /// new. Fails if the list keeps its order whenever the ids stay.
@@ -1446,6 +1894,7 @@ fn a_server_reorder_reshuffles_the_readers_list() {
         .entries;
     let mut reversed = periods;
     reversed.reverse();
+    reversed[4] = "Late Permian";
     next[at]["parts"][0]["answer"]["items"] = json!(reversed);
     quiz::set_questions(&mut content.transact_mut(), &mut keys.transact_mut(), &next).unwrap();
     let ids_after: Vec<(String, String)> = quiz::item_parts(&keys.transact())
@@ -1456,7 +1905,7 @@ fn a_server_reorder_reshuffles_the_readers_list() {
     assert_eq!(
         ids_before.iter().map(|(id, _)| id).collect::<Vec<_>>(),
         ids_after.iter().map(|(id, _)| id).collect::<Vec<_>>(),
-        "the server write kept the ids (it fills by position)"
+        "the server write kept the ids (it changes the middle by position)"
     );
     let text_of = |id: &str| ids_after.iter().find(|(i, _)| i == id).unwrap().1.clone();
     let id_of = |text: &str| {
@@ -1477,7 +1926,7 @@ fn a_server_reorder_reshuffles_the_readers_list() {
         .items;
     let mut sorted = after.clone();
     sorted.sort();
-    let mut want: Vec<String> = periods.iter().map(|p| (*p).to_owned()).collect();
+    let mut want: Vec<String> = reversed.iter().map(|p| (*p).to_owned()).collect();
     want.sort();
     assert_eq!(sorted, want);
     assert_ne!(after, leaky, "the push maps old positions to new");
@@ -1892,10 +2341,11 @@ fn a_server_write_syncs_groups_as_what_differs() {
     assert!(!held.contains_key(&plain.transact(), "groups"));
 }
 
-/// Every grouped question the browser writes (tests/parity/ts.json) passes
-/// admission into a room that holds nothing yet, in both documents.
+/// Every question the browser writes (tests/parity/ts.json: groups, and
+/// figures as maps in a stem, a part and a solution) passes admission into a
+/// room that holds nothing yet, in both documents.
 #[test]
-fn a_room_admits_the_groups_the_browser_writes() {
+fn a_room_admits_the_questions_the_browser_writes() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/parity/ts.json");
     let browser: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let unhex = |text: &str| -> Vec<u8> {
@@ -1906,10 +2356,9 @@ fn a_room_admits_the_groups_the_browser_writes() {
     };
     let mut seen = 0;
     for entry in browser["questions"].as_array().unwrap() {
-        if entry["question"].get("groups").is_none() {
-            continue;
+        if entry["question"].get("groups").is_some() {
+            seen += 1;
         }
-        seen += 1;
         for (kind, name) in [(Kind::Quiz, "content"), (Kind::QuizKeys, "keys")] {
             let room = Doc::with_options(ydoc::doc_options(1));
             let mut check = validator(kind, &room);

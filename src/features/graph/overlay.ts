@@ -1,5 +1,7 @@
-import { TEXT_SIZE_MAX, TEXT_SIZE_MIN } from './boardData';
-import type { Vec } from './boardGeometry';
+/* What an editor draws over a graph or chart while it is edited: the value chip
+ * beside the pointer and the frame of a picked label or formula. Shared by the
+ * canvas plane's and chart's editors and the question graph editor. */
+import type { Vec } from './model';
 
 /** A text's box on screen: a plane label or formula, or a pie label. */
 export type TextBox = { h: number; w: number; x: number; y: number };
@@ -75,10 +77,37 @@ export const CORNER_CURSOR = [
 ] as const;
 
 /** The size a corner dragged from `from` to `to` gives text of `size` round `middle`:
- * as much bigger as the corner went further out, a whole pixel within the limits. */
-export function draggedSize(size: number, middle: Vec, from: Vec, to: Vec) {
+ * as much bigger as the corner went further out, a whole pixel within `[min, max]`,
+ * the bounds of what holds it. */
+export function draggedSize(
+  size: number,
+  middle: Vec,
+  from: Vec,
+  to: Vec,
+  [min, max]: [number, number]
+) {
   const before = Math.hypot(from[0] - middle[0], from[1] - middle[1]);
   const after = Math.hypot(to[0] - middle[0], to[1] - middle[1]);
   const scaled = before ? (size * after) / before : size;
-  return Math.round(Math.min(TEXT_SIZE_MAX, Math.max(TEXT_SIZE_MIN, scaled)));
+  return Math.round(Math.min(max, Math.max(min, scaled)));
+}
+
+/** The dark value chip beside the pointer, kept inside `width`. */
+export function drawChip(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  width: number
+) {
+  ctx.font = '13px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const textWidth = ctx.measureText(text).width + 14;
+  const chipX = Math.min(width - textWidth - 4, x + 10);
+  const chipY = Math.max(4, y - 30);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(chipX, chipY, textWidth, 22);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, chipX + 7, chipY + 11);
 }

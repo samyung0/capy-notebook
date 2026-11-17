@@ -4,10 +4,13 @@ import {
   displayNumber,
   functionOf,
   type GraphRow,
+  markRow,
   parseRow,
+  readRow,
+  reconcileRows,
+  rowsAfterEdit,
   rowsFromElements,
-  runtimeTerm,
-  syncRows,
+  typedLine,
 } from './graphSyntax';
 import type { GraphElement } from './types';
 import { validGraphTerm } from './validation';
@@ -103,7 +106,13 @@ describe('rows and elements', () => {
   it('round-trips a saved recipe, naming an unlabelled point others use', () => {
     const rows = rowsFromElements(elements);
     expect(
-      rows.map((row) => (row.kind === 'expression' ? row.latex : row.text))
+      rows.map((row) =>
+        row.kind === 'expression'
+          ? row.latex
+          : row.kind === 'label'
+            ? row.text
+            : row.key
+      )
     ).toEqual([
       'A=\\left(1,1\\right)',
       'B=\\left(9,1\\right)',
@@ -114,6 +123,18 @@ describe('rows and elements', () => {
       '8 cm',
     ]);
     expect(buildElements(rows)).toEqual({ elements, errors: new Map() });
+  });
+
+  it('keeps free marks, an arrow and a label size it has no row for', () => {
+    const kept: GraphElement[] = [
+      { coords: [0, 0], id: 'A', name: 'A', type: 'point' },
+      { coords: [2, 0], id: 'B', name: 'B', type: 'point' },
+      { arrow: true, id: 's', points: ['A', 'B'], type: 'segment' },
+      { coords: [1, 1], id: 't', size: 24, text: 'Area', type: 'text' },
+      { coords: [-1, 2], id: 'f', latex: '\\frac12', type: 'formula' },
+      { center: [0, 0], id: 'e', radii: [2, 1], type: 'ellipse' },
+    ];
+    expect(buildElements(rowsFromElements(kept)).elements).toEqual(kept);
   });
 
   it('marks rows that use a missing or repeated name', () => {
@@ -169,26 +190,41 @@ describe('rows and elements', () => {
   });
 });
 
-describe('syncRows', () => {
+describe('reconcileRows', () => {
   const point = (id: string, x: number): GraphElement => ({
     coords: [x, 0],
     id,
     name: id.toUpperCase(),
     type: 'point',
   });
+  const reconcile = (
+    rows: GraphRow[],
+    elements: GraphElement[],
+    typing: string[] = []
+  ) =>
+    reconcileRows(
+      rows,
+      elements,
+      new Map(buildElements(rows).elements.map((e) => [e.id, e])),
+      (key) => typing.includes(key)
+    );
 
   it('keeps the same rows when the elements are the ones they give', () => {
     const rows = rowsFromElements([point('a', 0), point('b', 1)]);
-    expect(syncRows(rows, buildElements(rows).elements)).toBe(rows);
+    expect(reconcile(rows, buildElements(rows).elements)).toBe(rows);
   });
 
-  it('takes a peer’s elements and keeps a row still being typed', () => {
+  it('takes a co-editor’s elements and keeps a row still being typed', () => {
     const rows: GraphRow[] = [
       ...rowsFromElements([point('a', 0), point('b', 1)]),
       { key: 'typing', kind: 'expression', latex: 'segment(', style: {} },
     ];
     const [a] = rows;
-    const next = syncRows(rows, [point('a', 0), point('b', 5), point('c', 2)]);
+    const next = reconcile(
+      rows,
+      [point('a', 0), point('b', 5), point('c', 2)],
+      ['typing']
+    );
     expect(next[0]).toBe(a);
     expect(next.map((row) => row.key)).toEqual(['a', 'b', 'typing', 'c']);
     expect(buildElements(next).elements).toEqual([
@@ -197,11 +233,28 @@ describe('syncRows', () => {
       point('c', 2),
     ]);
   });
-});
 
-it('spells constants the way JessieCode defines them at draw time', () => {
-  expect(runtimeTerm('2*pi*x+e')).toBe('2*PI*x+EULER');
-  expect(runtimeTerm('2x')).toBe('2*x');
+  it('keeps a row typed here over a co-editor’s change to its element', () => {
+    const rows = rowsFromElements([point('a', 0), point('b', 1)]);
+    const typed: GraphRow[] = rows.map((row) =>
+      row.key === 'b' && row.kind === 'expression'
+        ? { ...row, latex: 'B=(1,', parsed: undefined }
+        : row
+    );
+    const next = reconcile(typed, [point('a', 3), point('b', 9)], ['b']);
+    expect(next[1]).toBe(typed[1]);
+    expect(buildElements(next).elements).toEqual([point('a', 3)]);
+  });
+
+  it('drops a row a co-editor removed unless it is being typed', () => {
+    const rows = rowsFromElements([point('a', 0), point('b', 1)]);
+    expect(reconcile(rows, [point('b', 1)]).map((row) => row.key)).toEqual([
+      'b',
+    ]);
+    expect(
+      reconcile(rows, [point('b', 1)], ['a']).map((row) => row.key)
+    ).toEqual(['a', 'b']);
+  });
 });
 
 describe('scientific numbers', () => {
@@ -231,5 +284,87 @@ describe('functionOf', () => {
       2 + Math.log(Math.PI / 2)
     );
     expect(functionOf('x^2/4 - 3')(2)).toBeCloseTo(-2);
+  });
+});
+
+describe('rows after a tool', () => {
+  const typed = (key: string, latex: string): GraphRow => ({
+    key,
+    kind: 'expression',
+    latex,
+    style: {},
+    ...readRow(latex, latex),
+  });
+  const rows = [
+    typed('A', 'A=(1,2)'),
+    typed('B', 'B=(4,3)'),
+    typed('s', 'segment(A,B)'),
+  ];
+  const { elements } = buildElements(rows);
+
+  it('moves a named point in its row, adds a drawn mark and drops an erased one', () => {
+    const line: GraphElement = {
+      coords: [
+        [0, 0],
+        [1, 1],
+      ],
+      id: 'l',
+      type: 'polyline',
+    };
+    const moved = elements.map((element) =>
+      element.id === 'A' && element.type === 'point'
+        ? { ...element, coords: [2, 2] as [number, number] }
+        : element
+    );
+    const next = rowsAfterEdit(rows, elements, [...moved, line]);
+    expect(next[0]).toMatchObject({ latex: 'A=\\left(2,2\\right)' });
+    expect(next.slice(1, 3)).toEqual(rows.slice(1, 3));
+    expect(next[3]).toEqual({ element: line, key: 'l', kind: 'mark' });
+    expect(buildElements(next).elements).toEqual([...moved, line]);
+    const erased = rowsAfterEdit(next, buildElements(next).elements, [
+      ...moved.slice(0, 2),
+    ]);
+    expect(erased.map((row) => row.key)).toEqual(['A', 'B']);
+  });
+
+  it('gives a placed point a named row that a typed segment can use', () => {
+    const placed: GraphElement = {
+      coords: [3, -1],
+      id: 'p',
+      name: 'C',
+      type: 'point',
+    };
+    const next = rowsAfterEdit(rows, elements, [...elements, placed]);
+    expect(next[3]).toMatchObject({ latex: 'C=\\left(3,-1\\right)' });
+    const built = buildElements([...next, typed('t', 'segment(A,C)')]);
+    expect(built.elements.at(-2)).toEqual(placed);
+    expect(built.elements.at(-1)).toEqual({
+      id: 't',
+      points: ['A', 'p'],
+      type: 'segment',
+    });
+  });
+
+  it("lists a free mark as the plane does, a line's two points typed in place", () => {
+    const line: GraphElement = {
+      coords: [
+        [0, -1],
+        [2.5, 1],
+      ],
+      id: 'l',
+      type: 'polyline',
+    };
+    expect(markRow(line)).toEqual({ text: '(0, −1) to (2.5, 1)', typed: true });
+    expect(typedLine(line, '(1, 1) to (-3, 4)')).toEqual({
+      ...line,
+      coords: [
+        [1, 1],
+        [-3, 4],
+      ],
+    });
+    expect(typedLine(line, '(1, 1)')).toBeNull();
+    expect(
+      markRow({ center: [0, 0], id: 'e', radii: [1, 1], type: 'ellipse' })
+    ).toEqual({ text: 'Ellipse', typed: false });
   });
 });

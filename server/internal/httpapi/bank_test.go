@@ -192,8 +192,8 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	}
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
-	file, _ := form.CreateFormFile("file", "graph.svg")
-	_, _ = file.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>`))
+	file, _ := form.CreateFormFile("file", "figure.png")
+	_, _ = file.Write(pngSized(10, 10))
 	_ = form.Close()
 	uploadBytes := append([]byte(nil), body.Bytes()...)
 	upload := httptest.NewRequest("POST", "/api/bank/assets", &body)

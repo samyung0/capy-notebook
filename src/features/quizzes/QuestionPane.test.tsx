@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import type { Question } from '@/features/questions/types';
 import { blankQuestion } from '@/features/questions/types';
 import { getLocale } from '@/i18n';
-import { seedQuiz, writeQuestion } from './liveQuiz';
+import { figureRoom, seedQuiz, writeQuestion } from './liveQuiz';
 
 /* Typing in the open card re-renders it alone: the closed cards keep their
    question objects and skip the render. */
@@ -57,6 +57,7 @@ function Pane() {
   const read = useQuizQuestions(content, keys);
   return (
     <QuestionPane
+      figures={figureRoom({ content, keys })}
       onAdd={() => {}}
       onBank={() => {}}
       onDuplicate={() => {}}

@@ -278,7 +278,6 @@ it('words each issue, names parts and points at rows and titles', () => {
         board: { axis: true, bbox: [5, 5, -5, -5], grid: false },
         elements: [],
         height: 400,
-        image: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' },
         type: 'graph',
         width: 600,
       },

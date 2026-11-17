@@ -38,11 +38,15 @@ pub const QUESTION_COUNT_MAX: usize = 200;
 pub const QUESTION_DESCRIPTION_MAX: usize = 500;
 pub const QUESTION_GRAPH_DIMENSION_MAX: f64 = 1200.0;
 pub const QUESTION_GRAPH_DIMENSION_MIN: f64 = 120.0;
-pub const QUESTION_GRAPH_ELEMENTS_MAX: usize = 60;
+pub const QUESTION_GRAPH_ELEMENTS_MAX: usize = 100;
 pub const QUESTION_GRAPH_LABEL_MAX: usize = 60;
+pub const QUESTION_GRAPH_LATEX_MAX: usize = 2000;
 pub const QUESTION_GRAPH_NAME_MAX: usize = 20;
+pub const QUESTION_GRAPH_PATH_MAX: usize = 100;
 pub const QUESTION_GRAPH_POLYGON_MAX: usize = 12;
 pub const QUESTION_GRAPH_TERM_MAX: usize = 200;
+pub const QUESTION_GRAPH_TEXT_SIZE_MAX: usize = 96;
+pub const QUESTION_GRAPH_TEXT_SIZE_MIN: usize = 8;
 pub const QUESTION_ID_MAX: usize = 128;
 pub const QUESTION_IMAGE_DIMENSION_MAX: f64 = 10000.0;
 pub const QUESTION_MARKSCHEME_MAX: usize = 20;
@@ -55,7 +59,6 @@ pub const QUESTION_PLOT_MARKS_MAX: usize = 8;
 pub const QUESTION_PLOT_POINTS_MAX: usize = 60;
 pub const QUESTION_PLOT_SERIES_MAX: usize = 4;
 pub const QUESTION_PLOT_TITLE_MAX: usize = 100;
-pub const QUESTION_SVG_BYTES_MAX: usize = 262144;
 pub const QUESTION_TABLE_COLUMNS_MAX: usize = 10;
 pub const QUESTION_TABLE_ROWS_MAX: usize = 30;
 pub const QUESTION_TEXT_MAX: usize = 12000;
@@ -658,7 +661,7 @@ pub const ELEMENTS: &[Element] = &[
         forbidden: &["color", "backgroundColor", "fontSize", "fontFamily"],
         shared_text: &[],
         shared_map: &["block"],
-        shared_lists: &["series"],
+        shared_lists: &[],
         assets: &[],
         resizable: true,
         children: &[],
@@ -675,7 +678,7 @@ pub const ELEMENTS: &[Element] = &[
         forbidden: &["color", "backgroundColor", "fontSize", "fontFamily"],
         shared_text: &[],
         shared_map: &["block"],
-        shared_lists: &["series"],
+        shared_lists: &[],
         assets: &[],
         resizable: true,
         children: &[],
@@ -692,7 +695,7 @@ pub const ELEMENTS: &[Element] = &[
         forbidden: &["color", "backgroundColor", "fontSize", "fontFamily"],
         shared_text: &[],
         shared_map: &["block"],
-        shared_lists: &["elements"],
+        shared_lists: &[],
         assets: &[],
         resizable: true,
         children: &[],

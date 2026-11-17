@@ -110,7 +110,11 @@ async function planePoints(page: Page, polar = false) {
         layer: {
           canvasElements: {
             h: number;
-            marks: { at?: Vec; points?: Vec[] }[];
+            elementList: {
+              center?: Vec;
+              coords?: Vec | Vec[];
+              radii?: Vec;
+            }[];
             polar: boolean;
             ppu: number;
             type: string;
@@ -130,7 +134,12 @@ async function planePoints(page: Page, polar = false) {
         card.x0 + card.w / 2 / card.ppu,
         card.y0 - card.h / 2 / card.ppu,
       ],
-      points: card.marks.map((mark) => mark.at ?? mark.points?.[0] ?? [0, 0]),
+      // Each mark's first point; an ellipse's is its right handle.
+      points: card.elementList.map(({ center, coords, radii }): Vec => {
+        if (center && radii) return [center[0] + radii[0], center[1]];
+        if (Array.isArray(coords?.[0])) return coords[0] as Vec;
+        return (coords as Vec | undefined) ?? [0, 0];
+      }),
       ppu: card.ppu,
     };
   }, polar);
@@ -617,12 +626,9 @@ test('in a plane, selected points move together, and the eraser takes what its r
   const [dropped] = (await planePoints(page, true)).points;
   expect(dropped.at).not.toEqual(placed.at);
   const step = await page.evaluate(async (scale) => {
-    const { tickStep } = (await import(
-      '/src/features/questions/graphTicks.ts' as string
-    )) as { tickStep(ppu: number): number };
-    const { minorStep } = (await import(
-      '/src/features/blocksuite/boardGeometry.ts' as string
-    )) as { minorStep(step: number): number };
+    const { minorStep, tickStep } = (await import(
+      '/src/features/graph/view.ts' as string
+    )) as { minorStep(step: number): number; tickStep(ppu: number): number };
     return minorStep(tickStep(scale));
   }, ppu);
   const rings = Math.hypot(...dropped.at) / step;
@@ -695,7 +701,7 @@ test("a label picked alone wears the board's frame, whose corner sizes it, and t
           layer: {
             canvasElements: {
               id: string;
-              marks: { size?: number }[];
+              elementList: { size?: number }[];
               rotate: number;
               type: string;
             }[];
@@ -708,7 +714,7 @@ test("a label picked alone wears the board's frame, whose corner sizes it, and t
       return {
         id: card?.id ?? '',
         rotate: card?.rotate ?? 0,
-        size: card?.marks[0]?.size,
+        size: card?.elementList[0]?.size,
       };
     });
 
@@ -761,7 +767,7 @@ test("a selected line's point still moves alone, and Fit shows ten units of an e
         gfx: {
           layer: {
             canvasElements: {
-              marks: { points?: Vec[] }[];
+              elementList: { coords?: Vec[] }[];
               ppu: number;
               type: string;
             }[];
@@ -771,7 +777,10 @@ test("a selected line's point still moves alone, and Fit shows ten units of an e
       const plane = root.gfx.layer.canvasElements.find(
         ({ type }) => type === 'plane'
       );
-      return { ends: plane?.marks[0]?.points ?? [], ppu: plane?.ppu ?? 0 };
+      return {
+        ends: plane?.elementList[0]?.coords ?? [],
+        ppu: plane?.ppu ?? 0,
+      };
     });
 
   // Epo 2026-11-13: Fit on nothing showed one unit across the screen.
@@ -959,7 +968,7 @@ test('the image stacks as the screen does, and many formulas settle', async ({
       xywh: '[1000,300,300,200]' }); }`);
   const grey = await inkIn(page, await toImage(page), [100, 160]);
   await add(`{ ${prelude}
-    gfx.surface.addElement({ type: 'plane', fit: false, marks: [], polar: false,
+    gfx.surface.addElement({ type: 'plane', fit: false, elements: {}, polar: false,
       ppu: 41, x0: 100, y0: 100, xywh: '[1000,300,300,200]' }); }`);
   expect(
     (await inkIn(page, await toImage(page), [100, 160])) - grey
@@ -1801,11 +1810,11 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
         gfx: {
           layer: {
             canvasElements: {
-              marks: {
+              elementList: {
+                coords?: Vec[];
                 handles?: [Vec, Vec][];
-                kind: string;
-                points?: Vec[];
                 term?: string;
+                type: string;
               }[];
               type: string;
             }[];
@@ -1814,7 +1823,7 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
       };
       return (
         root.gfx.layer.canvasElements.find(({ type }) => type === 'plane')
-          ?.marks ?? []
+          ?.elementList ?? []
       );
     });
 
@@ -1833,7 +1842,7 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
   await page.mouse.move(...at(0.65, 0.3), { steps: 6 });
   await page.mouse.up();
   await expect.poll(async () => (await marks())[0].handles).toHaveLength(2);
-  expect((await marks())[0].points).toEqual(curve.points);
+  expect((await marks())[0].coords).toEqual(curve.coords);
 
   // K1: a double click on a point makes it a corner, its handles on it.
   const [end] = (await planePoints(page)).points;
@@ -1847,12 +1856,22 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
     'aria-pressed',
     'true'
   );
-  await page.locator('.capy-plane-list li[data-row="new"] math-field').click();
-  await page.keyboard.type('sin(x)');
-  await page.keyboard.press('Enter');
+  // MathLive takes the keyboard a moment after the click.
+  const typeRow = async (text: string) => {
+    await page.locator('.capy-plane-list li[data-new] math-field').click();
+    await page.waitForTimeout(250);
+    await page.keyboard.type(text);
+    await page.keyboard.press('Enter');
+  };
+  await typeRow('sin(x)');
   await expect
     .poll(async () => (await marks()).map(({ term }) => term))
     .toContain('sin(x)');
+  // It takes the graph dialog's rows too: named points and what's built on them.
+  for (const row of ['A=(1,2)', 'B=(4,3)', 'segment(A,B)']) await typeRow(row);
+  await expect
+    .poll(async () => (await marks()).map(({ type }) => type))
+    .toEqual(expect.arrayContaining(['point', 'point', 'segment']));
 
   // The answer board has no list, so an answer is drawn rather than typed.
   await openBoard(page);
@@ -2300,21 +2319,23 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
 }) => {
   test.slow();
   await openBoard(page);
-  // 200 points plotted one undo step at a time, as clicks on the plane add them.
+  // A point moved 200 times, one undo step each, as dragging it on the plane does;
+  // it ends at (10, 5), on the card, so the image shows it.
   await page.evaluate(() => {
     const root = document.querySelector('affine-edgeless-root') as unknown as {
       gfx: {
         doc: { captureSync(): void };
-        layer: { canvasElements: { marks: object[] }[] };
+        layer: {
+          canvasElements: { writeList(elements: object[]): void }[];
+        };
       };
     };
     const [card] = root.gfx.layer.canvasElements;
     for (let i = 0; i < 200; i++) {
       root.gfx.doc.captureSync();
-      card.marks = [
-        ...card.marks,
-        { at: [i / 10, i / 20], id: `m${i}`, kind: 'dot' },
-      ];
+      card.writeList([
+        { coords: [(i + 1) / 20, (i + 1) / 40], id: 'm', type: 'point' },
+      ]);
     }
   });
   const live = (await stats(page)) as Stats & { bytes: number };
@@ -2377,7 +2398,11 @@ test('a preview draws every kind on the board from its data, framed as the image
   test.slow();
   await openBoard(page);
   await page.evaluate(() => {
-    type Model = { deserializedXYWH: number[]; marks: unknown[]; type: string };
+    type Model = {
+      deserializedXYWH: number[];
+      type: string;
+      writeList(elements: object[]): void;
+    };
     const root = document.querySelector('affine-edgeless-root') as unknown as {
       gfx: {
         layer: { canvasElements: Model[] };
@@ -2415,27 +2440,27 @@ test('a preview draws every kind on the board from its data, framed as the image
     const plane = gfx.layer.canvasElements.find(
       ({ type }) => type === 'plane'
     ) as Model;
-    plane.marks = [
-      { at: [2, 3], id: 'a', kind: 'dot' },
+    plane.writeList([
+      { coords: [2, 3], id: 'a', type: 'point' },
       {
-        id: 'b',
-        kind: 'line',
-        points: [
+        coords: [
           [-1, -1],
           [4, 2],
         ],
+        id: 'b',
+        type: 'polyline',
       },
       {
-        id: 'c',
-        kind: 'curve',
-        points: [
+        coords: [
           [0, 0],
           [1, 2],
           [3, 1],
           [5, 4],
         ],
+        id: 'c',
+        type: 'curve',
       },
-    ];
+    ]);
     const [x, y, w, h] = plane.deserializedXYWH;
     add({
       color: '#e03131',

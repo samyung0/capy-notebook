@@ -22,6 +22,14 @@
 //! D3 as revised 2026-10-10), so the content document holds nothing derived
 //! from them and nothing in either document is written by the server alone.
 //!
+//! A block entry holds its fields (D8 superseded by Epo 2026-11-16, D2, D3
+//! and D9): a chart, plot or graph entry is the figure map a note figure's
+//! `block` is too (D15), beside its `order`, read, written and admitted by
+//! `notes::figure_map`: plain fields each replaced whole, a graph's `board`
+//! and its `elements` keyed by element id, a chart's series and labels held
+//! as a table's rows and columns with their names and values. Each read is
+//! repaired (`q::repair_figure`), as a merge may leave what no editor wrote.
+//!
 //! The projection is today's quiz block with only the questions that pass
 //! the strict validator (D4), so grading and fresh reads see what a Save
 //! would have stored.
@@ -38,6 +46,9 @@ use yrs::{
 };
 
 use notes::edit::{DocumentCommand, EditError, EditErrorCode};
+use notes::figure_map::{self, any_json, json_any};
+/// Ids a writer mints (map keys): `[A-Za-z0-9_-]`, at most [MAX_ID] long.
+pub use notes::figure_map::{MAX_ID, valid_id};
 use notes::questions::{self as q, Policy, model_marked};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
@@ -49,8 +60,6 @@ pub const QUESTIONS_ROOT: &str = "questions";
 pub const KEYS_ROOT: &str = "keys";
 /// The projected `quiz` block's id (one block per quiz document).
 pub const BLOCK_ID: &str = "quiz";
-/// Ids a writer mints (map keys): `[A-Za-z0-9_-]`, at most this long.
-pub const MAX_ID: usize = 128;
 
 const ANSWER_TYPES: &[&str] = &[
     "mcq", "boolean", "short", "matching", "ordering", "open", "gaps", "drawing",
@@ -62,14 +71,6 @@ pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "g
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
 /// An open part's sample answers: at most one, optional (Epo 2026-10-15).
 const OPEN_ACCEPTED_MAX: usize = 1;
-
-pub fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= MAX_ID
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-}
 
 /// A question's own topics: 1 to QUESTION_TOPICS_MAX distinct ids, each as
 /// `q::identifier` holds it.
@@ -189,46 +190,6 @@ fn ordered_keys<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<String> {
         .collect()
 }
 
-/// JSON of a plain value: whole numbers print as integers, as the JSON the
-/// stored questions came from.
-fn any_json(value: &Any) -> Value {
-    match value {
-        Any::Null | Any::Undefined => Value::Null,
-        Any::Bool(value) => json!(value),
-        Any::Number(value) => {
-            if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
-                json!(*value as i64)
-            } else {
-                json!(value)
-            }
-        }
-        Any::BigInt(value) => json!(value),
-        Any::String(value) => json!(value.as_ref()),
-        Any::Buffer(_) => Value::Null,
-        Any::Array(items) => Value::Array(items.iter().map(any_json).collect()),
-        Any::Map(map) => Value::Object(
-            map.iter()
-                .map(|(key, value)| (key.clone(), any_json(value)))
-                .collect(),
-        ),
-    }
-}
-
-fn json_any(value: &Value) -> Any {
-    match value {
-        Value::Null => Any::Null,
-        Value::Bool(value) => Any::Bool(*value),
-        Value::Number(value) => Any::Number(value.as_f64().unwrap_or(0.0)),
-        Value::String(value) => Any::String(Arc::from(value.as_str())),
-        Value::Array(items) => Any::Array(items.iter().map(json_any).collect()),
-        Value::Object(map) => Any::Map(Arc::new(
-            map.iter()
-                .map(|(key, value)| (key.clone(), json_any(value)))
-                .collect(),
-        )),
-    }
-}
-
 fn number(value: f64) -> Value {
     any_json(&Any::Number(value))
 }
@@ -270,14 +231,7 @@ fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
             }
             Some(block)
         }
-        "chart" | "plot" | "graph" => match any_at(txn, map, "value") {
-            Some(value @ Any::Map(_)) => {
-                let mut block = any_json(&value);
-                block["type"] = json!(kind);
-                Some(block)
-            }
-            _ => None,
-        },
+        "chart" | "plot" | "graph" => figure_map::read(map.as_ref(), &kind),
         _ => None,
     }
 }
@@ -873,9 +827,9 @@ pub fn assert_keys_roots<T: ReadTxn>(txn: &T) -> Result<(), String> {
 // Every server write of a question (the first open, the save API, the
 // agent's commands) goes through `sync_question`: it writes only what
 // differs from what the documents hold, texts as the fewest changes and
-// lists by position, so an editor typing into the same question keeps every
-// character (D7: no revision check; REVIEW1 S6). On empty documents it
-// writes the question whole.
+// lists by the browser's rule ([sync_entries]), so an editor typing into
+// the same question keeps every character (D7: no revision check; REVIEW1
+// S6). On empty documents it writes the question whole.
 
 fn order_any(key: &str) -> Any {
     Any::String(Arc::from(key))
@@ -942,98 +896,133 @@ fn fresh_id<T: ReadTxn>(txn: &T, map: &MapRef, prefix: &str, n: &mut usize) -> S
     }
 }
 
-/// An order key after `last` for an entry whose key is `held`: the held one
-/// while it still sorts after `last`.
-fn next_order(held: Option<&str>, last: Option<&str>) -> String {
-    match held {
-        Some(held) if !held.is_empty() && last.is_none_or(|last| last < held) => held.to_owned(),
-        _ => order::after(last),
-    }
-}
-
-/// The list of entries under `key` holds one entry per item afterwards, by
-/// position: the i-th entry is filled from the i-th item, extra items get
-/// fresh entries after the last, extra entries go. The entry ids, in order.
-fn sync_entries<I>(
+/// A list of entries (`list`) holds one entry per item afterwards,
+/// written as the browser's `writeList` and `writeBlocks` (liveQuiz.ts)
+/// write it, assuming one editor action. Entries that read as their item
+/// (`read`) at the head and tail stay untouched; a middle that is a
+/// permutation of the held one only moves (order keys change, entries keep
+/// their contents); otherwise the middle is changed in place by position
+/// (`fill`; an entry that cannot hold its item, `fits`, gives way to a fresh
+/// one under its order key), extra items get fresh entries between their
+/// neighbours and extra entries go. Order keys are [order::rising], so an
+/// empty list takes ids `prefix0..` under keys `a0..`. The ids, in order.
+fn sync_entries<I: PartialEq>(
     txn: &mut TransactionMut,
-    parent: &MapRef,
-    key: &str,
+    list: &MapRef,
     prefix: &str,
     items: &[I],
+    read: impl Fn(&TransactionMut, &MapRef) -> Option<I>,
+    fits: impl Fn(Option<&I>, &I) -> bool,
     mut fill: impl FnMut(&mut TransactionMut, &MapRef, &I),
 ) -> Vec<String> {
-    let list = child_map(txn, parent, key);
-    let held = ordered(txn, Some(&list));
+    let held = ordered(txn, Some(list));
+    let reads: Vec<Option<I>> = held.iter().map(|entry| read(txn, &entry.map)).collect();
+    let same = |h: usize, w: usize| reads[h].as_ref() == Some(&items[w]);
+    let places = moved(held.len(), items.len(), same)
+        .unwrap_or_else(|| figure_map::align_places(held.len(), items.len(), same));
+    let offered: Vec<String> = places
+        .iter()
+        .map(|at| at.map_or_else(String::new, |h| held[h].order.clone()))
+        .collect();
     let mut ids = Vec::with_capacity(items.len());
-    let mut last: Option<String> = None;
     let mut n = 0;
-    for (i, item) in items.iter().enumerate() {
-        let entry = match held.get(i) {
-            Some(entry) => {
-                ids.push(entry.id.clone());
-                entry.map.clone()
-            }
+    let orders = order::rising(&offered);
+    for (w, (item, order)) in items.iter().zip(orders).enumerate() {
+        let kept = places[w].filter(|&h| fits(reads[h].as_ref(), item));
+        let (id, entry) = match kept {
+            Some(h) => (held[h].id.clone(), held[h].map.clone()),
             None => {
-                let id = fresh_id(txn, &list, prefix, &mut n);
-                ids.push(id.clone());
-                list.insert(txn, id, MapPrelim::default())
+                let id = fresh_id(txn, list, prefix, &mut n);
+                let entry = list.insert(txn, id.clone(), MapPrelim::default());
+                (id, entry)
             }
         };
-        let held_order = held.get(i).map(|entry| entry.order.as_str());
-        let order = next_order(held_order, last.as_deref());
         sync_plain(txn, &entry, "order", Some(order_any(&order)));
-        last = Some(order);
-        fill(txn, &entry, item);
+        if kept.is_none_or(|h| !same(h, w)) {
+            fill(txn, &entry, item);
+        }
+        ids.push(id);
     }
-    for entry in held.iter().skip(items.len()) {
-        list.remove(txn, &entry.id);
+    // Last, so a fresh id never takes one this write let go.
+    let kept: HashSet<&str> = ids.iter().map(String::as_str).collect();
+    for entry in &held {
+        if !kept.contains(entry.id.as_str()) {
+            list.remove(txn, &entry.id);
+        }
     }
     ids
 }
 
-// `sync_entries` hands each item by reference; a list of texts is Strings.
-#[allow(clippy::ptr_arg)]
-fn text_fill(txn: &mut TransactionMut, entry: &MapRef, text: &String) {
-    sync_text(txn, entry, "text", text);
+/// The held index each of `count` wanted entries keeps when, past the alike
+/// head and tail, the held middle is a permutation of the wanted one (a
+/// move: entries are matched by `same`, first alike first); none otherwise.
+fn moved(
+    held: usize,
+    count: usize,
+    same: impl Fn(usize, usize) -> bool + Copy,
+) -> Option<Vec<Option<usize>>> {
+    if held != count {
+        return None;
+    }
+    let (head, tail) = figure_map::ends(held, count, same);
+    let mut pool: Vec<usize> = (head..held - tail).collect();
+    if pool.len() < 2 {
+        return None;
+    }
+    (0..count)
+        .map(|w| {
+            if w < head || w >= count - tail {
+                return Some(Some(w));
+            }
+            let at = pool.iter().position(|&h| same(h, w))?;
+            Some(Some(pool.remove(at)))
+        })
+        .collect()
 }
 
-/// A table's row or column ids (id to order key) for `count` of them, by
-/// position, in order.
-fn sync_keys(
+/// A list of `{order, text}` entries holding `items` ([sync_entries],
+/// compared by text). The ids, in order.
+fn sync_texts(
     txn: &mut TransactionMut,
     parent: &MapRef,
     key: &str,
     prefix: &str,
-    count: usize,
+    items: &[String],
 ) -> Vec<String> {
-    let map = child_map(txn, parent, key);
-    let held = ordered_pairs(txn, Some(&map));
-    let mut ids = Vec::with_capacity(count);
-    let mut last: Option<String> = None;
-    let mut n = 0;
-    for i in 0..count {
-        let id = match held.get(i) {
-            Some((id, _)) => id.clone(),
-            None => fresh_id(txn, &map, prefix, &mut n),
-        };
-        let held_order = held.get(i).map(|(_, order)| order.as_str());
-        let order = next_order(held_order, last.as_deref());
-        sync_plain(txn, &map, &id, Some(order_any(&order)));
-        last = Some(order);
-        ids.push(id);
-    }
-    for (id, _) in held.iter().skip(count) {
-        map.remove(txn, id);
-    }
-    ids
+    let list = child_map(txn, parent, key);
+    sync_entries(
+        txn,
+        &list,
+        prefix,
+        items,
+        |txn, entry| Some(text_at(txn, entry, "text")),
+        |_, _| true,
+        |txn, entry, text| sync_text(txn, entry, "text", text),
+    )
 }
 
+/// A block list holding `blocks` ([sync_entries]): a block is the same as
+/// an entry that reads back as it ([read_block], the room's read), changed
+/// in place while its type stays (a block of another type, or one that
+/// cannot be read, gives way to a fresh entry).
+fn sync_blocks(txn: &mut TransactionMut, parent: &MapRef, key: &str, blocks: &[Value]) {
+    let list = child_map(txn, parent, key);
+    sync_entries(
+        txn,
+        &list,
+        "b",
+        blocks,
+        |txn, entry| read_block(txn, entry),
+        |held, block| held.is_some_and(|held| held["type"] == block["type"]),
+        sync_block,
+    );
+}
+
+/// A block entry (of the block's type, or fresh) made to hold `block`,
+/// writing only what differs.
 fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
     let kind = str_of(block, "type");
-    if str_at(txn, map, "type").as_deref() != Some(kind) {
-        clear(txn, map);
-        map.insert(txn, "type", string_any(kind));
-    }
+    sync_plain(txn, map, "type", Some(string_any(kind)));
     let plain_str = |key: &str| block.get(key).and_then(Value::as_str).map(string_any);
     match kind {
         "text" => {
@@ -1048,8 +1037,7 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
                 .map(|row| row.as_array().map_or(0, Vec::len))
                 .max()
                 .unwrap_or(0);
-            let columns = sync_keys(txn, map, "columns", "c", width);
-            let rows = sync_keys(txn, map, "rows", "r", grid.len());
+            let (columns, rows) = align_table(txn, map, grid, width);
             let cells = child_map(txn, map, "cells");
             let mut kept = HashSet::new();
             for (row, row_id) in grid.iter().zip(&rows) {
@@ -1078,18 +1066,71 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
             sync_text(txn, map, "description", str_of(block, "description"));
             sync_plain(txn, map, "attribution", plain_str("attribution"));
         }
-        _ => {
-            let mut value = block.clone();
-            if let Some(object) = value.as_object_mut() {
-                object.remove("type");
-            }
-            sync_plain(txn, map, "value", Some(json_any(&value)));
-        }
+        _ => figure_map::sync(txn, map, kind, block),
     }
 }
 
-fn sync_blocks(txn: &mut TransactionMut, parent: &MapRef, key: &str, blocks: &[Value]) {
-    sync_entries(txn, parent, key, "b", blocks, sync_block);
+/// A table's columns and rows aligned by `figure_map::align_axis` as the
+/// browser's `writeTable` does: columns first (one added or removed shifts
+/// every row alike), then rows, each compared by its cells' texts. The
+/// column and row ids, in order.
+fn align_table(
+    txn: &mut TransactionMut,
+    map: &MapRef,
+    grid: &[Value],
+    width: usize,
+) -> (Vec<String>, Vec<String>) {
+    let row_map = child_map(txn, map, "rows");
+    let column_map = child_map(txn, map, "columns");
+    let cells = child_map(txn, map, "cells");
+    let held_rows = ordered_keys(txn, Some(&row_map));
+    let held_columns = ordered_keys(txn, Some(&column_map));
+    let cell = |txn: &TransactionMut, row: &str, column: &str| {
+        text_at(txn, &cells, &format!("{row}/{column}"))
+    };
+    let wanted = |row: &Value, c: usize| {
+        row.get(c)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    // As the browser compares: the texts joined.
+    let joined = |texts: Vec<String>| texts.join("\u{0}");
+    let columns = figure_map::align_axis(
+        txn,
+        &column_map,
+        width,
+        |txn, h, w| {
+            let held = held_rows.iter().map(|row| cell(txn, row, &held_columns[h]));
+            let rows = grid.iter().take(held_rows.len());
+            joined(held.collect()) == joined(rows.map(|row| wanted(row, w)).collect())
+        },
+        "col",
+        |txn, column| {
+            for row in &held_rows {
+                cells.remove(txn, &format!("{row}/{column}"));
+            }
+        },
+    );
+    let rows = figure_map::align_axis(
+        txn,
+        &row_map,
+        grid.len(),
+        |txn, h, w| {
+            let held = columns
+                .iter()
+                .map(|column| cell(txn, &held_rows[h], column));
+            let wanted = (0..columns.len()).map(|c| wanted(&grid[w], c));
+            joined(held.collect()) == joined(wanted.collect())
+        },
+        "row",
+        |txn, row| {
+            for column in &columns {
+                cells.remove(txn, &format!("{row}/{column}"));
+            }
+        },
+    );
+    (columns, rows)
 }
 
 fn str_of<'v>(value: &'v Value, key: &str) -> &'v str {
@@ -1152,7 +1193,7 @@ fn sync_answer(
     match kind.as_str() {
         "mcq" => {
             let options = strings(&answer, "options");
-            let ids = sync_entries(content, &answer_map, "options", "o", &options, text_fill);
+            let ids = sync_texts(content, &answer_map, "options", "o", &options);
             let flag = answer.get("multiple") == Some(&Value::Bool(true));
             let multiple = (flag || indexes.len() > 1).then_some(Any::Bool(true));
             sync_plain(content, &answer_map, "multiple", multiple);
@@ -1196,14 +1237,7 @@ fn sync_answer(
         "short" => {
             let unit = answer.get("unit").and_then(Value::as_str).map(string_any);
             sync_plain(content, &answer_map, "unit", unit);
-            sync_entries(
-                keys,
-                &key,
-                "accepted",
-                "a",
-                &strings(&answer, "accepted"),
-                text_fill,
-            );
+            sync_texts(keys, &key, "accepted", "a", &strings(&answer, "accepted"));
         }
         "open" | "drawing" => {
             if kind == "drawing" {
@@ -1218,27 +1252,22 @@ fn sync_answer(
                 sync_plain(keys, &key, "sampleImage", id("image"));
             }
             if kind == "open" {
-                sync_entries(
-                    keys,
-                    &key,
-                    "accepted",
-                    "a",
-                    &strings(&answer, "accepted"),
-                    text_fill,
-                );
+                sync_texts(keys, &key, "accepted", "a", &strings(&answer, "accepted"));
             }
-            sync_entries(
-                keys,
-                &key,
-                "markscheme",
-                "m",
-                array_of(part, "markscheme"),
-                |txn, entry, item| {
-                    sync_text(txn, entry, "text", str_of(item, "text"));
+            // Matched by text, as the browser's; the marks follow the ids.
+            let items = array_of(part, "markscheme");
+            let texts: Vec<String> = items
+                .iter()
+                .map(|item| str_of(item, "text").to_owned())
+                .collect();
+            let ids = sync_texts(keys, &key, "markscheme", "m", &texts);
+            let list = child_map(keys, &key, "markscheme");
+            for (id, item) in ids.iter().zip(items) {
+                if let Some(entry) = map_at(keys, &list, id) {
                     let marks = item.get("marks").and_then(Value::as_f64).unwrap_or(1.0);
-                    sync_plain(txn, entry, "marks", Some(Any::Number(marks)));
-                },
-            );
+                    sync_plain(keys, &entry, "marks", Some(Any::Number(marks)));
+                }
+            }
         }
         "gaps" => {
             let gaps = child_map(keys, &key, "gaps");
@@ -1253,7 +1282,7 @@ fn sync_answer(
                             .collect()
                     })
                     .unwrap_or_default();
-                sync_entries(keys, &gaps, &(n + 1).to_string(), "g", &items, text_fill);
+                sync_texts(keys, &gaps, &(n + 1).to_string(), "g", &items);
             }
             let count = accepted.len();
             remove_keys(keys, &gaps, |number| {
@@ -1268,9 +1297,9 @@ fn sync_answer(
                 .iter()
                 .map(|pair| str_of(pair, "left").to_owned())
                 .collect();
-            let left_ids = sync_entries(content, &answer_map, "left", "l", &left, text_fill);
+            let left_ids = sync_texts(content, &answer_map, "left", "l", &left);
             let options = strings(&answer, "options");
-            let option_ids = sync_entries(keys, &key, "options", "o", &options, text_fill);
+            let option_ids = sync_texts(keys, &key, "options", "o", &options);
             let pairs = child_map(keys, &key, "pairs");
             for (pair, left_id) in pairs_json.iter().zip(&left_ids) {
                 let option = pair
@@ -1284,14 +1313,7 @@ fn sync_answer(
             remove_keys(keys, &pairs, |left| kept.contains(left));
         }
         "ordering" => {
-            sync_entries(
-                keys,
-                &key,
-                "items",
-                "i",
-                &strings(&answer, "items"),
-                text_fill,
-            );
+            sync_texts(keys, &key, "items", "i", &strings(&answer, "items"));
         }
         _ => {}
     }
@@ -1338,7 +1360,7 @@ fn sync_question(
     for part in parts {
         let entry = child_map(content, &parts_map, str_of(part, "id"));
         let held = str_at(content, &entry, "order");
-        let order = next_order(held.as_deref(), last.as_deref());
+        let order = figure_map::next_order(held.as_deref(), last.as_deref());
         sync_plain(content, &entry, "order", Some(order_any(&order)));
         last = Some(order);
         let marks = part.get("marks").and_then(Value::as_f64).map(Any::Number);
@@ -1468,8 +1490,9 @@ pub struct ReaderList {
 /// Epo 2026-10-10): not Yjs, which keeps every deleted struct, but a plain
 /// list of texts per part that the content room pushes over its channels
 /// whenever the keys change, keeping no history. A part whose entries
-/// changed as a set, or changed more than one text at once (a server write
-/// reordering by position), or took a text another entry shows, is
+/// changed as a set, or changed more than one text at once (a write that
+/// reorders and edits at once changes its middle by position), or took a
+/// text another entry shows, is
 /// shuffled afresh (a uniform permutation, so the list says nothing about
 /// the order the keys hold or were typed in or which text replaced which);
 /// one where a single text changed in place keeps its order.
@@ -1507,9 +1530,10 @@ impl ReaderLists {
                 .collect();
             let held = self.parts.get(&part.part);
             // The order stays only for one entry's text changing in place
-            // (typing). A server write fills lists by position, so a
-            // reorder changes several texts under the same ids: keeping the
-            // order would show readers which old text each new one replaced
+            // (typing). A write that reorders and edits at once is not a
+            // move, so it changes the middle by position: several texts
+            // under the same ids. Keeping the order would show readers which
+            // old text each new one replaced
             // (REVIEW2 M2), so that, too, shuffles afresh. So does a text
             // retyped into one another entry shows: two retypes in separate
             // windows would otherwise show a swap (REVIEW3 N1).
@@ -1617,7 +1641,7 @@ fn refuse<T>(what: impl Into<String>) -> Result<T, String> {
     Err(format!("a quiz cannot hold {}", what.into()))
 }
 
-/// A figure link (an image's or a graph's `{url}`) a live quiz room admits:
+/// An image's `{url}` a live quiz room admits:
 /// blank while its upload is pending, else one a stored question keeps
 /// (hosted under the policy's figure host, `BANK_ASSETS_URL`).
 fn figure_url(url: &str, policy: &Policy) -> bool {
@@ -1663,12 +1687,6 @@ fn a_meta(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::String(value)) if value.encode_utf16().count() <= q::QUESTION_METADATA_MAX)
 }
 
-/// An image's width or height: whole pixels, 1 to the image bound.
-fn image_size(content: &ItemContent) -> bool {
-    matches!(one_any(content), Some(Any::Number(value))
-        if value.fract() == 0.0 && (1.0..=q::QUESTION_IMAGE_DIMENSION_MAX).contains(value))
-}
-
 fn a_bool(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::Bool(_)))
 }
@@ -1691,13 +1709,7 @@ struct Tally<'a> {
     added: HashMap<Vec<Arc<str>>, u64>,
     /// Answer types the update sets to `open`.
     open: u64,
-    /// A block's type and figure value the update writes, by the block's
-    /// path: a chart, plot or graph is checked against its kind's caps.
-    figures: HashMap<Vec<Arc<str>>, Figure>,
 }
-
-/// A block's type and its figure value, as an update writes them.
-type Figure = (Option<String>, Option<Any>);
 
 impl Tally<'_> {
     fn structure(&mut self, bytes: u64) {
@@ -1734,15 +1746,9 @@ fn block_shape(
 ) -> Result<(), String> {
     match (rest, key) {
         ([], Some("order")) if order_key(content) => tally.value(content),
-        ([], Some("type")) if one_of(content, BLOCK_TYPES) => {
-            if let Some(Any::String(kind)) = one_any(content) {
-                tally.figures.entry(path.to_vec()).or_default().0 = Some(kind.to_string());
-            }
-            tally.value(content);
-        }
+        ([], Some("type")) if one_of(content, BLOCK_TYPES) => tally.value(content),
         ([], Some("attribution")) if a_meta(content) => tally.value(content),
         ([], Some("header")) if a_bool(content) => tally.value(content),
-        ([], Some("width" | "height")) if image_size(content) => tally.value(content),
         // An image waiting for its upload is structure, not a refused value
         // (D4, REVIEW1 M3): blank, it only leaves the question incomplete.
         ([], Some("image")) => match one_any(content) {
@@ -1755,20 +1761,37 @@ fn block_shape(
             }
             _ => return refuse("an image that is not {assetId} or a hosted {url}"),
         },
-        // A chart, plot or graph is one value, written at its dialog's Done
-        // (D8); its caps depend on the block's type, read after the walk.
-        ([], Some("value")) => match one_any(content) {
-            Some(value @ Any::Map(_)) => {
-                tally.figures.entry(path.to_vec()).or_default().1 = Some(value.clone());
-                tally.value(content);
-            }
-            _ => return refuse("a chart, plot or graph that is not one value"),
-        },
         ([], Some("text" | "description")) if is_text(content) => tally.structure(32),
         ([], Some("rows" | "columns" | "cells")) if is_map(content) => tally.structure(8),
+        ([], Some(key)) if figure_map::is_map_key(key) && is_map(content) => tally.structure(8),
+        // An image's size and a chart's, plot's or graph's plain fields (Epo
+        // 2026-11-16), each held to its cap as a note figure's are
+        // (`figure_map`); their form is the validators'. A figure is never
+        // one value (the layout before it is refused).
+        ([], Some(key)) => match one_any(content) {
+            Some(value) => {
+                figure_map::check_field(key, value).or_else(refuse)?;
+                tally.value(content);
+            }
+            None => return refuse("a struct outside its shape"),
+        },
         (["rows" | "columns"], Some(id)) if valid_id(id) && order_key(content) => {
             tally.entry(path, 8);
         }
+        // An entry of a figure's maps: a series' or label's order key, a
+        // name, a value, a board field, a graph element by its id.
+        ([inner], Some(key)) if figure_map::is_map_key(inner) => match one_any(content) {
+            Some(value) => {
+                figure_map::check_entry(inner, key, value).or_else(refuse)?;
+                if *inner != "board" {
+                    tally.entry(path, 8);
+                }
+                if !matches!(*inner, "series" | "labels") {
+                    tally.value(content);
+                }
+            }
+            None => return refuse("a figure entry that is not plain"),
+        },
         (["cells"], Some(cell)) if is_text(content) => {
             let mut ids = cell.split('/');
             match (ids.next(), ids.next(), ids.next()) {
@@ -2059,6 +2082,18 @@ fn text_cap(path: &[&str], open_part: bool) -> usize {
     }
 }
 
+/// A block's own list's cap by its field: a table's axes and cells; a
+/// figure's maps at twice their caps, as a note figure's
+/// (`figure_map::map_cap`).
+fn block_list_cap(field: &str) -> Option<usize> {
+    Some(match field {
+        "rows" => q::QUESTION_TABLE_ROWS_MAX,
+        "columns" => q::QUESTION_TABLE_COLUMNS_MAX,
+        "cells" => q::QUESTION_TABLE_ROWS_MAX * q::QUESTION_TABLE_COLUMNS_MAX,
+        _ => return figure_map::map_cap(field),
+    })
+}
+
 /// A list's (or table axis's) cap by its path, as the exact check counts it.
 fn list_cap(path: &[&str]) -> Option<usize> {
     const R: &str = QUESTIONS_ROOT;
@@ -2071,12 +2106,7 @@ fn list_cap(path: &[&str]) -> Option<usize> {
         _ => None,
     };
     if let Some(field) = table {
-        return match field {
-            "rows" => Some(q::QUESTION_TABLE_ROWS_MAX),
-            "columns" => Some(q::QUESTION_TABLE_COLUMNS_MAX),
-            "cells" => Some(q::QUESTION_TABLE_ROWS_MAX * q::QUESTION_TABLE_COLUMNS_MAX),
-            _ => None,
-        };
+        return block_list_cap(field);
     }
     Some(match path {
         [R, _, "stem"]
@@ -2176,7 +2206,6 @@ fn admit<T: ReadTxn>(
         typed: HashMap::new(),
         added: HashMap::new(),
         open: 0,
-        figures: HashMap::new(),
     };
     for item in incoming.items() {
         step(Walk::Content);
@@ -2195,28 +2224,6 @@ fn admit<T: ReadTxn>(
         };
         let keys: Vec<&str> = path.iter().map(|k| &**k).collect();
         shape(&keys, key.as_deref(), content, &path, &mut tally)?;
-    }
-    // A figure is checked whole, its type or value read from the block when
-    // the update writes only the other.
-    for (path, (kind, value)) in &tally.figures {
-        let held = map_by_path(txn, path);
-        let kind = kind
-            .clone()
-            .or_else(|| held.as_ref().and_then(|block| str_at(txn, block, "type")));
-        let value = value
-            .clone()
-            .or_else(|| held.as_ref().and_then(|block| any_at(txn, block, "value")));
-        if let (Some(kind), Some(value @ Any::Map(_))) = (kind, value) {
-            let value = any_json(&value);
-            notes::questions::figure_caps(&kind, &value).or_else(refuse)?;
-            if kind == "graph"
-                && value["image"]["url"]
-                    .as_str()
-                    .is_some_and(|url| !figure_url(url, policy))
-            {
-                return refuse("a graph image that is not a hosted {url}");
-            }
-        }
     }
     // A text, a list or the quiz's part counts that may pass a cap send the
     // update to the exact check; the held count is read only for what the
@@ -2335,22 +2342,25 @@ fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String>
                 return Err(format!("an image's {field} is out of range"));
             }
         }
-        if let (Some(kind), Some(value @ Any::Map(_))) = (
-            str_at(txn, &block.map, "type"),
-            any_at(txn, &block.map, "value"),
-        ) {
-            notes::questions::figure_caps(&kind, &any_json(&value))?;
+        // A figure's description is plain; its other fields were held to
+        // their caps as they came.
+        if let Some(description) = str_at(txn, &block.map, "description") {
+            check_text(&description, q::QUESTION_DESCRIPTION_MAX, "a description")?;
         }
-        let rows = map_at(txn, &block.map, "rows").map_or(0, |m| m.len(txn) as usize);
-        let columns = map_at(txn, &block.map, "columns").map_or(0, |m| m.len(txn) as usize);
-        check_count(rows, q::QUESTION_TABLE_ROWS_MAX, "a table's rows")?;
-        check_count(columns, q::QUESTION_TABLE_COLUMNS_MAX, "a table's columns")?;
+        for field in [
+            "rows", "columns", "cells", "series", "labels", "names", "values", "elements",
+        ] {
+            if let (Some(map), Some(cap)) = (map_at(txn, &block.map, field), block_list_cap(field))
+            {
+                let owner = if matches!(field, "rows" | "columns" | "cells") {
+                    "a table"
+                } else {
+                    "a figure"
+                };
+                check_count(map.len(txn) as usize, cap, &format!("{owner}'s {field}"))?;
+            }
+        }
         if let Some(cells) = map_at(txn, &block.map, "cells") {
-            check_count(
-                cells.len(txn) as usize,
-                q::QUESTION_TABLE_ROWS_MAX * q::QUESTION_TABLE_COLUMNS_MAX,
-                "a table's cells",
-            )?;
             for (_, value) in cells.iter(txn) {
                 if let Out::YText(text) = value {
                     check_text(&text.get_string(txn), q::QUESTION_TEXT_MAX, "a table cell")?;

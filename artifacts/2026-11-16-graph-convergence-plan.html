@@ -1,0 +1,471 @@
+<title>Graph Convergence Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: one reading column on graph paper; decisions as ruled cards, layers as scrollable tables. */
+:root {
+  --bg: #fbfbf8;
+  --paper-line: #ecece4;
+  --fg: #1d1f24;
+  --muted: #5c6068;
+  --rule: #dcdcd3;
+  --card: #ffffff;
+  --accent: #1e6fd0;
+  --accent-soft: #e6effb;
+  --pick: #1f7a4a;
+  --pick-soft: #e4f3ea;
+  --warn: #9a5b00;
+  --warn-soft: #fbf0dc;
+  --code-bg: #f1f1ec;
+  --display: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b; --paper-line: #1e2127; --fg: #e8e9ec; --muted: #a1a6b0; --rule: #2f333b;
+    --card: #1c1f25; --accent: #6aa7ff; --accent-soft: #1d2a3d; --pick: #6cd39a; --pick-soft: #18301f;
+    --warn: #f0b860; --warn-soft: #33270f; --code-bg: #23272e; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b; --paper-line: #1e2127; --fg: #e8e9ec; --muted: #a1a6b0; --rule: #2f333b;
+  --card: #1c1f25; --accent: #6aa7ff; --accent-soft: #1d2a3d; --pick: #6cd39a; --pick-soft: #18301f;
+  --warn: #f0b860; --warn-soft: #33270f; --code-bg: #23272e; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  background-image:
+    linear-gradient(var(--paper-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--fg);
+  font: 15.5px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+section { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 28px clamp(18px, 4vw, 36px); display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+header { display: flex; flex-direction: column; gap: 10px; padding-inline: 4px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h2 { font: 600 24px/1.2 var(--display); margin: 0; text-wrap: balance; }
+h3 { font: 600 17px/1.3 var(--display); margin: 10px 0 0; }
+p, ul, ol { margin: 0; max-width: 68ch; }
+ul, ol { padding-left: 1.25em; display: flex; flex-direction: column; gap: 6px; }
+.lede { font-size: 17px; color: var(--muted); max-width: 64ch; }
+code, .mono { font-family: var(--mono); font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 13.5px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 620px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { font: 600 12px/1.3 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: var(--code-bg); }
+tr:last-child td { border-bottom: 0; }
+td.new { color: var(--pick); font-weight: 600; }
+.diagram { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.box { border: 1px solid var(--rule); border-radius: 4px; padding: 12px; font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; background: var(--bg); min-width: 0; }
+.box b { font-family: var(--display); font-size: 14.5px; }
+.box.core { grid-column: 1 / -1; border-color: var(--accent); background: var(--accent-soft); }
+.box.out { border-style: dashed; }
+.arrow { grid-column: 1 / -1; text-align: center; color: var(--muted); font: 500 12px/1 var(--mono); letter-spacing: .06em; }
+.decision { border: 1px solid var(--rule); border-radius: 5px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; background: var(--bg); }
+.decision h3 { margin: 0; }
+.decision .q { font: 600 12px/1 var(--mono); color: var(--accent); letter-spacing: .06em; }
+.options { display: flex; flex-direction: column; gap: 8px; padding: 0; list-style: none; }
+.options li { border: 1px solid var(--rule); border-radius: 4px; padding: 9px 12px; background: var(--card); }
+.options li.rec { border-color: var(--pick); background: var(--pick-soft); }
+.options li .tag { font: 600 11px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--pick); margin-left: 6px; }
+.others { font-size: 13.5px; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 12px; }
+.others b { color: var(--fg); font-weight: 600; }
+.step { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 14px; }
+.step .n { font: 600 28px/1 var(--display); color: var(--accent); }
+.step > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 500 12px/1 var(--mono); padding: 5px 8px; border-radius: 3px; background: var(--code-bg); color: var(--muted); }
+.chip.size { background: var(--accent-soft); color: var(--accent); }
+.note { background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); color: var(--fg); border-radius: 4px; padding: 10px 14px; font-size: 14px; }
+.note b { color: var(--warn); }
+@media (max-width: 640px) {
+  .diagram { grid-template-columns: minmax(0, 1fr); }
+  .step { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+
+<main>
+<header>
+  <span class="eyebrow">Capy Notebook · plan for Epo · 16 Nov 2026</span>
+  <h1>One graph: model, Yjs layout and engine</h1>
+  <p class="lede">The quiz graph block, the note's graph figure and the canvas plane card become one element model, edited through Yjs maps element by element, and drawn by one Canvas 2D engine with the plane's gestures. SVG export comes from the same drawing code.</p>
+  <div class="meta"><span>Branch <code>claude/graph-collab-a96650</code></span><span>Based on <code>claude/ui-tweaks-5</code> @ 850d53403</span><span>Nothing built yet</span><span>Revised after review, 16 Nov</span></div>
+</header>
+
+<section id="review">
+  <h2>What the review changed</h2>
+  <p>A second session checked every claim in this plan against the code on this branch. The direction stands. These parts changed:</p>
+  <ul>
+    <li><b>Step 1</b> gains three checks before it lands: function values match JSXGraph's, a stored SVG over the size cap has a decided outcome (D11), and each surface keeps its own zoom range.</li>
+    <li><b>Step 2</b> is larger. Quiz blocks have no id, so a dialog has nothing to rebase on until the room entry's key reaches it. Quiz rooms hold no Y.Array, which opens a layout choice (D9). The server's own writes, solution figures and stored UAT rooms were missing.</li>
+    <li><b>Step 3</b> is reordered (D12): the tools mock comes first. The plane's elements were first planned as a list of maps, which BlockSuite does not watch; a map keyed by id is watched, as the mind map's nodes are (D10).</li>
+    <li><b>D3</b> has a narrower recommendation. <b>D9 to D16</b> are new.</li>
+  </ul>
+</section>
+
+<section id="answers">
+  <h2>Your answers so far</h2>
+  <ul>
+    <li><b>D1, 16 Nov:</b> no preference, so the layout that merges most simply in the Rust room decides. That is the two families, with every element one entry keyed by its id (D9).</li>
+    <li><b>D2, 16 Nov:</b> a quiz is collaborative, so a quiz graph is edited live: each change reaches the room as it is made, with no draft held until Done.</li>
+    <li><b>Canvas, 16 Nov:</b> no room yet, but its storage is planned for one now. D10's recommendation changed to match.</li>
+    <li><b>D13, 16 Nov:</b> no Cancel. Done only closes the dialog.</li>
+    <li><b>D3, 16 Nov:</b> charts go live too, built beside the graph work (see What can be built at the same time).</li>
+    <li><b>D4, 16 Nov:</b> the question editor takes the canvas plane's gestures as they are.</li>
+    <li><b>D5, 16 Nov:</b> quiz and note graphs take the plane's look now, from one renderer.</li>
+    <li><b>D8, 16 Nov:</b> JSXGraph is removed; it has no use once the engine draws everything.</li>
+    <li><b>D7, 16 Nov:</b> at most 100 elements in a graph everywhere (quiz and note graphs were 60, the plane 500).</li>
+    <li><b>D6, 16 Nov:</b> quiz and note graphs take formulas. They are stored as LaTeX with a place and a size, and an exported SVG carries them as glyph outlines.</li>
+    <li><b>D16, 16 Nov:</b> one data model everywhere, "if they can be unified nicely". A quiz or note graph stores its elements and no picture, as a plane card does, and is drawn wherever it shows.</li>
+    <li><b>D15, 16 Nov:</b> by the same rule, note graphs take the keyed layout (step 4), and the note figure dialog goes live too: keeping Done would be the extra code.</li>
+    <li><b>D14, 16 Nov:</b> one renderer with no switches. Quiz and note graphs are drawn exactly as the plane is, so numbers leave with their axis and a graph follows the app's theme.</li>
+    <li><b>D11, 16 Nov:</b> bank graphs drop their stored SVG file too. A graph block is the same in quizzes, notes, the canvas and the bank, and no SVG is stored anywhere.</li>
+    <li><b>D12, 16 Nov:</b> no new mock. The two editors gain each other's tools on the screens they have.</li>
+  </ul>
+  <p>Every decision, D1 to D16, is answered and recorded in <code>human/question-bank.md</code> (D6) and <code>human/frontend/plate-editor.md</code> on this branch, not yet committed.</p>
+  <p>Why keyed entries merge most simply: a Y.Map merges key by key. Two editors on different elements both keep their work, two on the same element get one of them whole, and nothing has a position, so nothing interleaves or appears twice. The Rust room checks an update by the keys it touched, as it does for table rows today. A Y.Array merges positions: inserts made at the same time interleave, and a move is a delete and an insert, so two moves can leave an element twice. The Rust room would also have to learn to place list entries first.</p>
+</section>
+
+<section>
+  <h2>What exists today</h2>
+  <ul>
+    <li><b>Quiz and note graph</b> (<code>GraphBlock</code>, <code>questions/types.ts</code>): <code>board {bbox, axis, grid}</code>, at most 60 <code>elements</code> that name points by id, the stored <code>image</code> SVG, <code>width</code>, <code>height</code>, <code>description</code>. JSXGraph draws the editor and exports the SVG.</li>
+    <li><b>Quiz rooms</b> hold a chart, plot or graph as one plain <code>value</code> (<code>liveQuiz.ts</code> readBlock/writeBlockFields), in the content document and, for a solution's figures, in the keys document. A quiz room holds no Y.Array: a table's rows and columns are Y.Maps of id to order key. The dialog stages a draft and hands the whole block over at Done (your 2026-10-10 decision that the last save wins).</li>
+    <li><b>Quiz blocks have no id.</b> At Done, <code>saveFigure</code> (<code>questionEdits.ts</code>) finds the figure by its content as it was when the dialog opened. If a peer saved it meanwhile, nothing matches and the second save goes in as a second figure beside the first. Only two saves at the same moment overwrite each other. Quiz reads repair nothing: a figure the reader can't read is dropped.</li>
+    <li><b>Note rooms</b> already hold a figure's <code>block</code> as a Y.Map, with graph <code>elements</code> as a Y.Array of Y.Maps merged by id. <code>rebase.ts</code> merges a dialog draft with peer edits; <code>graphRedraw.ts</code> redraws the SVG after a merge. Only the top list is shared: a series' values and a chart's labels are replaced whole.</li>
+    <li><b>Canvas plane</b> (<code>PlaneElementModel</code>): card fields <code>xywh rotate index seed fit</code>, view <code>x0 y0 ppu polar</code>, and up to 500 <code>marks</code> (dot, label, formula, line, vector, curve with handles, ellipse, function) holding coordinates. <code>marks</code> is one field, rewritten whole on every edit. A canvas is personal and opens no room, and the server checks a saved canvas's type and size only, never what it holds. <code>boardPreview.ts</code> writes its own SVG of a plane by hand.</li>
+    <li><b>Lag in the question editor:</b> each keystroke parses the row, builds elements twice, re-renders the whole dialog, validates the graph three times, and JSXGraph clears and rebuilds every object (<code>graph.ts</code> <code>update()</code>).</li>
+    <li><b>Two function readers and two zoom ranges:</b> the question editor's board evaluates a term with JSXGraph's JessieCode, the plane with our own <code>functionOf</code> (<code>graphSyntax.ts</code>). The question editor zooms from 10⁻¹⁵ to 10¹⁵ pixels per unit, the plane from 10⁻⁶ to 10⁶.</li>
+  </ul>
+  <div class="note"><b>Branch base.</b> The plane's curves with handles, typed functions and objects list are on <code>claude/ui-tweaks-4/5</code>, not on main. This work starts from ui-tweaks-5's last commit, so it lands after ui-tweaks-5. That session's uncommitted edits in <code>BlockDialog.tsx</code>, <code>types.ts</code> and <code>QuestionCard.tsx</code> stay theirs: step 1 changes one import and one call in <code>BlockDialog.tsx</code>, nothing else there.</div>
+</section>
+
+<section>
+  <h2>1 · The model</h2>
+  <p>One element list for every surface. It keeps today's <code>GraphElement</code> as it is, adds the canvas marks as element kinds of their own, and adds a few styles both sides can use. Elements fall into two families:</p>
+  <ul>
+    <li><b>Constructions</b> name their points by id, as quiz graphs do. Dragging a named point moves everything built on it.</li>
+    <li><b>Free marks</b> hold their own coordinates, as canvas marks do: a stroke, a curve with handles, an ellipse, a formula.</li>
+  </ul>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Kind</th><th>Stored fields</th><th>Quiz/note today</th><th>Canvas today</th></tr></thead>
+    <tbody>
+      <tr><td><code>point</code></td><td>coords, name?</td><td>point</td><td>dot</td></tr>
+      <tr><td><code>functiongraph</code></td><td>term, domain?</td><td>functiongraph</td><td>function (its <code>latex</code> is rebuilt from <code>term</code>, as the question rows already are)</td></tr>
+      <tr><td><code>line</code> / <code>segment</code></td><td>points [id, id]; segment: ticks?, <b>arrow?</b></td><td>line, segment</td><td>gains them</td></tr>
+      <tr><td><code>circle</code></td><td>center id, radius</td><td>circle</td><td>gains it</td></tr>
+      <tr><td><code>arc</code> / <code>sector</code></td><td>center id, points [id, id]; sector: shade?</td><td>arc, sector</td><td>gains them</td></tr>
+      <tr><td><code>angle</code></td><td>points [id, id, id], label?</td><td>angle</td><td>gains it</td></tr>
+      <tr><td><code>polygon</code></td><td>points id[3–12], shade?</td><td>polygon</td><td>gains it</td></tr>
+      <tr><td><code>text</code></td><td>coords, text, <b>size?</b></td><td>text</td><td>label</td></tr>
+      <tr><td class="new">polyline</td><td>coords [x, y][], arrow?</td><td>gains it</td><td>line, and vector (a two-point polyline with <code>arrow</code>)</td></tr>
+      <tr><td class="new">curve</td><td>coords [x, y][], handles? [[in], [out]][]</td><td>gains it</td><td>curve</td></tr>
+      <tr><td class="new">ellipse</td><td>center [x, y], radii [rx, ry]</td><td>gains it</td><td>ellipse (its four handles come from center and radii)</td></tr>
+      <tr><td class="new">formula</td><td>coords, latex, size?</td><td>gains it, written into the SVG as glyph outlines (D6)</td><td>formula</td></tr>
+    </tbody>
+  </table></div>
+  <p>Every element keeps <code>id</code>, <code>hidden?</code> and <code>dash?</code>. The board gains <code>polar?</code> beside <code>bbox</code>, <code>axis</code> and <code>grid</code>.</p>
+  <h3>Around the model</h3>
+  <div class="diagram">
+    <div class="box core"><b>Graph: board {bbox, axis, grid, polar} + elements[]</b><span>One TypeScript model. Go and Rust check quiz and note graphs only, since no server reads a canvas; they take the new kinds, formulas included (D6), in step 3. A graph holds at most 100 elements on every surface (D7). Repaired on read as note figures are now (an element naming a gone point is skipped); quiz reads gain the repair in step 2.</span></div>
+    <div class="box"><b>Quiz block entry</b><span>The entry's own Y.Map holds the fields, plus <code>width</code>, <code>height</code> and <code>description</code>, and no stored picture (D16). <code>elements</code> is a Y.Map keyed by element id, each element with an order key (D9).</span></div>
+    <div class="box"><b>Note figure</b><span><code>block</code> is a Y.Map already. In step 4 <code>elements</code> moves from a list of maps to the same map keyed by id, and the stored picture goes (D15, D16).</span></div>
+    <div class="box"><b>Canvas plane element</b><span>Card fields <code>xywh rotate index seed fit</code> and the view <code>x0 y0 ppu</code> stay BlockSuite fields. <code>polar</code> joins the board. <code>marks</code> becomes <code>elements</code>, a Y.Map keyed by element id as in a quiz room (D10), kept the way the mind map keeps its nodes.</span></div>
+    <div class="arrow">↓ drawn by ↓</div>
+    <div class="box out"><b>Live Canvas 2D</b><span>Editors, every view of a quiz or note graph, plane cards, previews, the marking image.</span></div>
+    <div class="box out"><b>SVG export</b><span>The same draw calls replayed into an SVG recorder, only for the note export (D11, D16).</span></div>
+    <div class="box out"><b>View</b><span>The quiz's <code>bbox</code> + size and the plane's <code>x0 y0 ppu</code> are the same camera: left, top and pixels per unit (x and y may differ on a quiz graph).</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>2 · Yjs layout</h2>
+  <p>A quiz figure becomes a map of fields, each replaced whole, with a graph's elements held one by one. Two editors changing different fields or different elements both keep their changes; two changing the same one get the later. A merge that leaves something the validators refuse is repaired on read, never refused.</p>
+  <p>The same three levels hold a graph on every surface. The quiz entry or the canvas card is a Y.Map of fields. Its <code>elements</code> field is a Y.Map keyed by element id. Each element under it is one plain value, replaced whole. Note figures hold a list of maps today, merged by id; they would move to this layout in a step 4 (D15).</p>
+  <h3>Quiz (step 2)</h3>
+  <p>A chart, plot or graph entry stops being <code>entry.value</code>. Its fields sit on the entry itself, as an image's already do, in both of a quiz's documents (a solution's figures live in the keys document). The writer writes only the fields that changed.</p>
+  <ul>
+    <li><b>A block the dialog can follow.</b> The room entry's key travels with the block to <code>QuestionCard</code> and the dialog, which reads and writes that entry. <code>saveFigure</code>'s match by content goes, and with it the second figure a late save leaves today.</li>
+    <li><b>Live edits (D2).</b> The graph dialog holds no draft. A row writes its element once it parses, coalesced while typing; a dragged point or label writes when the drag ends; a pan or zoom writes the view when it settles. A row that does not parse yet stays local with its error. A new graph joins the question at its first valid change, so opening and closing the dialog adds nothing. Peers with the same dialog open see each element change, and <code>rebaseBlock</code> is not needed here.</li>
+    <li><b>No stored picture (D16).</b> The graph block drops its <code>image</code> field. Every view draws the graph from its elements with the engine: the quiz editor, attempts, results and share pages. Nothing has to be redrawn or kept in step with the elements. On a share page the Worker's HTML holds a box of the graph's size and the browser draws into it once its script runs; <code>pnpm bench:share-pages</code> is run before and after. An SVG is made only for the note export.</li>
+    <li><b>A graph's elements</b> are a Y.Map keyed by element id, each element one plain value with an order key, as a table's rows are held (D9). The Rust room already places entries of that shape. The projected block keeps <code>elements</code> as an ordered list, so the validators, <code>rebaseBlock</code>, the bank and every reader of the plain block see no change.</li>
+    <li><b>Charts go live too (D3).</b> A chart's fields sit on the entry, and its data is held as a quiz table's cells already are: series and labels keyed by id with an order key, one entry per cell. The data pane writes a cell when it is committed, so two editors in different cells both keep their numbers. The projected block keeps its series list. <b>Plots</b> can't be edited in the quiz dialog, so they get their fields on the entry and nothing more.</li>
+    <li><b>Server writes.</b> Seeding a room from stored questions, the save API and the agent's commands all write blocks through <code>sync_block</code> (<code>quiz.rs</code>); it writes the new shape.</li>
+    <li><b>Repair on read</b> is new for quizzes, in <code>readBlock</code> and Rust's <code>read_block</code>.</li>
+    <li><b>Stored rooms.</b> An old plain <code>value</code> would not be refused: it would read as nothing, and the next save would store the question without its figure. UAT quiz rooms are dropped at this deploy and seed again from their stored questions (a room with no Yjs row seeds from its projection). There is no reader for the old shape.</li>
+  </ul>
+  <h3>Canvas (step 3)</h3>
+  <p>A plane card is already a Y.Map of its fields. <code>marks</code> is one of those fields and holds a plain list, rewritten whole on every edit. Only that field changes, and nothing changes in how the plane is used. The plane's <code>elements</code> becomes a Y.Map keyed by element id inside its BlockSuite element, each element one plain value with an order key. This is the quiz layout, written by the same writer, which sets only the entries that changed (D10). BlockSuite supports it as it is: the mind map keeps its nodes in a field the same way, watched with <code>@observe</code>, built from plain values by <code>propsToY</code> on create and paste, and carried through snapshots by the surface transformer. A canvas still opens no room. When one is planned, two people drawing on one plane merge element by element with no change to what is stored. The canvas around the card is BlockSuite's own document and is Yjs maps all the way up already (a flat map of blocks, and the surface's map of elements); it is saved whole as one compressed file with its history removed, at most 2 MiB. What a canvas room still needs is on the server: a room that admits BlockSuite documents, which the earlier BlockSuite notes plan described and which was not built. The 256 KiB SVG cap (D11) does not touch the canvas, since a plane card stores no SVG. A list of maps, as first written, would not work: BlockSuite watches a field one level deep.</p>
+  <h3>Every layer that changes</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Layer</th><th>Where</th><th>Change</th><th>Step</th></tr></thead>
+    <tbody>
+      <tr><td>Quiz read/write</td><td><code>src/features/quizzes/liveQuiz.ts</code> (readBlock 115, writeBlockFields 724, insertBlock, writeBlocks, seedQuiz, the keys document's <code>solution</code>), <code>liveQuizReads.ts</code></td><td>Read and write figure fields and a graph's elements by id, in both documents, repaired on read (<code>repairFigureBlock</code>)</td><td>2</td></tr>
+      <tr><td>Block identity</td><td><code>questions/QuestionCard.tsx</code>, <code>questionEdits.ts</code> (saveFigure, findBlock)</td><td>The room entry's key reaches the dialog and Done writes to that entry; the match by content goes</td><td>2</td></tr>
+      <tr><td>Quiz dialog</td><td><code>questions/BlockDialog.tsx</code>, <code>GraphEditor.tsx</code></td><td>No draft in the graph dialog: it reads the live entry and writes each element as it changes (D2). The chart dialog does the same: fields as they change, data cells as they are committed (D3). Neither has Cancel (D13)</td><td>2</td></tr>
+      <tr><td>Views draw from elements</td><td><code>questions/QuestionView.tsx</code>, <code>src/share</code>, <code>notes/export/render.ts</code>, <code>materials/document.ts</code></td><td>A graph is drawn from its elements by the engine wherever it shows. The share pages' Worker HTML holds a sized box filled once the script runs. The note export calls <code>graphSvg</code>. The <code>image</code> field and its checks leave the TS, Go and Rust validators, the catalog and the fixtures (D16)</td><td>2</td></tr>
+      <tr><td>Rust quiz room</td><td><code>collaboration-rs/crates/items/src/quiz.rs</code> (read_block 273, sync_block 1081, the admitted shape 1758, figure caps 2201 and 2338)</td><td>Read the entry as a map and write it as one from <code>sync_block</code> (seeding, the save API, agent commands); refuse a figure written as one plain value; cap elements at twice their limit; repair with <code>notes::questions::repair_figure</code> (the block's <code>type</code> added back first); project the plain block</td><td>2</td></tr>
+      <tr><td>Stored quiz rooms</td><td><code>material_yjs_documents</code> and <code>material_yjs_keys</code> on UAT</td><td>Quiz rows dropped at the deploy; each room seeds again from its stored questions (<code>note_store.rs</code> bootstrap)</td><td>2</td></tr>
+      <tr><td>Client protocol</td><td><code>collaboration-rs/crates/server/src/protocol.rs</code> (CLIENT_PROTOCOL, now 29), <code>src/features/collaboration/protocol.ts</code></td><td>Bumped, so tabs on the old shape are refused as outdated</td><td>2</td></tr>
+      <tr><td>Rust parity</td><td><code>items/tests/parity/*.json</code>, <code>items/tests/quiz.rs</code></td><td>Regenerate the TS↔Rust corpus for the new shape (<code>ts.json</code> from <code>parity.test.ts</code>, <code>rust.json</code> from <code>tests/parity.rs</code>, each with <code>PARITY_WRITE=1</code>); add merge cases (two editors, different elements)</td><td>2</td></tr>
+      <tr><td>Rust note store and admission</td><td><code>notes/src/questions.rs</code>, <code>material.rs</code>, <code>limits.rs</code>, <code>slate_yjs.rs</code></td><td>New element kinds in <code>graph</code> validation and repair; no shape change (notes already use maps)</td><td>3</td></tr>
+      <tr><td>Go validation</td><td><code>server/internal/questions/questions.go</code> <code>graph()</code>, <code>fieldlimits</code></td><td>New kinds and styles, with limits; projection stores the plain block as now</td><td>3</td></tr>
+      <tr><td>Embed catalog</td><td><code>server/internal/embeds/embeds.go</code> → <code>embeds.generated.ts</code>, <code>catalog.rs</code>, <code>embeds.json</code></td><td>Quiz figure entries listed with their fields and the element map; schema of new kinds</td><td>2, 3</td></tr>
+      <tr><td>Board catalog and load check</td><td><code>server/internal/boardcatalog</code>, <code>boardData.ts</code>, <code>boardLoad.ts</code>, <code>boardPreview.ts</code></td><td>The catalog holds only the plane's limits; its shape lives in <code>boardData.ts</code>, where <code>elements</code> replaces <code>marks</code>; the load check runs the shared graph validator; previews and the marking image draw with the engine</td><td>3</td></tr>
+      <tr><td>Index text</td><td>Go <code>materialdoc/index_text.go</code>, Rust <code>notes/src/index_text.rs</code>, golden fixtures</td><td>Lines for new kinds: <code>polyline: (0, 0), (1, 2)</code>, <code>curve: …</code>, <code>ellipse: center (0, 0), radii 2, 1</code>, <code>formula: \frac12</code></td><td>3</td></tr>
+      <tr><td>Notes merge and redraw</td><td><code>notes/blocks/rebase.ts</code>, <code>graphRedraw.ts</code></td><td>Step 1: graphRedraw calls the engine's SVG. Step 4: note figures take the keyed layout and drop the stored picture, so <code>graphRedraw.ts</code> goes; the slate-yjs patch and the Rust notes reader (<code>plate.rs</code>) follow, and UAT note rooms are reset</td><td>1, 4</td></tr>
+      <tr><td>Bank</td><td><code>server/internal/bank</code>, <code>questions/bank.ts</code>, <code>lab/questions/render*.ts</code></td><td>Stays plain JSON with whole-question saves (optimistic <code>updatedAt</code>); a bank graph drops its <code>image</code> file and is drawn from its elements (D11). The upload in <code>BlockDialog.tsx</code> and the graph render in <code>lab/questions/render.ts</code> go, and published questions are rewritten without the file's address</td><td>1, 3</td></tr>
+      <tr><td>Other copies of the kinds</td><td><code>lab/questions/schema.py</code>, <code>bench/grading/scripts/jev_contract.py</code>, <code>materialdoc/note_effects.go</code>, <code>document.go</code></td><td>New kinds and styles where each lists them</td><td>3</td></tr>
+      <tr><td>Hand-built quiz documents</td><td><code>bench/collaboration/scripts/live-items/item-docs.ts</code>, <code>src/mocks/collaboration.ts</code>, <code>collaboration/expiredDrafts.ts</code></td><td>Build, read or dump the new entry shape</td><td>2</td></tr>
+      <tr><td>Share Worker build</td><td><code>vite.config.ts</code></td><td>The engine is stubbed out of the Worker build, as JSXGraph is now (it measures text with a canvas)</td><td>1</td></tr>
+      <tr><td>Tests and docs</td><td>Vitest, <code>pnpm test:go</code>, the Rust crates; <code>openwiki/embeds.md</code>, <code>question-bank.md</code>, <code>frontend/plate-editor.md</code>, <code>test-catalog.md</code></td><td>Each step updates its own</td><td>all</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>3 · The engine</h2>
+  <p>A new <code>src/features/graph/</code> module with no BlockSuite or React dependency:</p>
+  <ul>
+    <li><code>view.ts</code>: the camera (left, top, pixels per unit on x and y), plane↔screen, zoom about a point, pan, fit to elements. <code>tickStep</code> and <code>axisNumber</code> move here. Each surface passes its own zoom range, unchanged: 10⁻¹⁵ to 10¹⁵ pixels per unit for the question editor, 10⁻⁶ to 10⁶ for the plane. Drawing is tested at both ends of each.</li>
+    <li><code>draw.ts</code>: <code>drawGraph(ctx, frame, view, graph, paper)</code> draws the grid (square or polar), the axes and every element kind with its styles (dash, shade, ticks, arrow, hidden), names and labels. It starts from <code>drawPlane</code>, <code>traceMark</code>, <code>traceFunction</code> and <code>arrowHead</code>, and adds infinite lines, circles, arcs, sectors, angles with their square mark, polygons, hatch marks and wrapped labels.</li>
+    <li><code>svg.ts</code>: a recorder that takes the Canvas 2D calls <code>draw.ts</code> makes (paths, arcs, Béziers, text, clip, dash, alpha) and writes SVG made only of the tags <code>validGraphSvg</code> allows. <code>graphSvg(graph)</code> is synchronous and needs no container on the page. It measures label text with a canvas, so it runs in a browser; the bank's render script already runs in headless Chromium. Coordinates are rounded to 0.1 px and straight runs thinned. That alone does not keep every SVG under the 256 KiB cap: 100 curved functions on a 1200 px graph, sampled every 2 px, come to about 650 KB by estimate. With no SVG stored anywhere (D11, D16) the cap no longer applies to graphs; an export is a file the user takes away.</li>
+    <li><b>Formulas in the SVG (D6, step 3).</b> On the canvas a formula keeps drawing as it does now: KaTeX lays it out once, then its glyphs are replayed as text in KaTeX's fonts, its bars as rectangles and its stretched signs (roots, tall brackets) as small pictures. Views of a quiz or note graph draw formulas the same way. An exported SVG (the note export) shows inside an <code>&lt;img&gt;</code>, which loads no fonts, so there the recorder writes each glyph as its outline. A font reader (opentype.js, loaded only when a graph with a formula is exported) takes each shape from KaTeX's own TTF files, 54 KB for the main face and 31 KB for the italic. Bars become <code>&lt;rect&gt;</code>, and stretched signs are copied as the paths KaTeX already holds. The export waits for KaTeX's layout, so it is not synchronous for a graph with a formula. A label-sized formula adds a few KB by estimate.</li>
+    <li><code>gestures.ts</code>: the plane's gestures for any canvas: the wheel or two-finger scroll pans, pinch and Ctrl/⌘-wheel zoom about the pointer (applied once per frame), the middle button drags to pan, and a <code>settle</code> callback once a gesture ends.</li>
+  </ul>
+  <h3>The question editor on the engine</h3>
+  <ul>
+    <li>Functions are read by <code>functionOf</code>, which the plane uses now, in place of JSXGraph's JessieCode. A test runs both over the allowed function names and the operator cases (<code>-x^2</code>, <code>2^3^2</code>, implied products) before JSXGraph is removed. Any difference is listed for you, not settled in code.</li>
+    <li>JSXGraph goes (the package, its lazy chunk entry in <code>vite.config.ts</code> and <code>graph.ts</code>'s board). The stage is a canvas at the export's pixel size with the toolbar it has now (zoom in, zoom out, Fit, full screen).</li>
+    <li>Rows stay local to <code>GraphEditor</code>. Each keystroke parses one row once and redraws the canvas on the next frame, with no rebuild. The dialog hears the new value in a React transition, so typing never waits on a dialog render. The graph is validated once per change.</li>
+    <li>Points and labels drag as they do now, landing on the view's precision. The bbox reaches the dialog once a gesture settles.</li>
+    <li>Save, the note dialog, <code>graphRedraw</code> and the bank's render script call <code>graphSvg</code> in step 1. Steps 2 and 4 then drop the stored picture (D16) and step 3 drops the bank's file (D11), leaving the note export.</li>
+  </ul>
+  <h3>The canvas plane on the engine</h3>
+  <p><code>boardPlane.ts</code> draws through <code>drawGraph</code>, and <code>boardPlaneEditor.ts</code> takes its wheel, pinch and middle-button pan from <code>gestures.ts</code>. Until step 3 the plane still stores <code>marks</code>; a small adapter turns them into elements when they change, cached on the array, not every frame. Selection, handles, bends, the eraser and the objects list stay in the plane editor.</p>
+  <p>Implicit curves and inequalities are marked as planned in <code>openwiki/question-bank.md</code> and not built. They are outside this plan; <code>draw.ts</code> draws each kind as its own path, so a kind can be added later.</p>
+</section>
+
+<section>
+  <h2>4 · Order</h2>
+  <p>Each step lands and works on its own.</p>
+  <div class="step"><span class="n">1</span><div>
+    <h3>Engine, gestures and SVG export</h3>
+    <p>The engine as above; the question editor (quizzes, notes, bank) and the canvas plane draw with it; JSXGraph is removed. Storage does not change. Quiz and note graphs take the plane's look (D5): its grid with minor lines, its axes, haloed numbers and ink, with numbers leaving with their axis (D14). On screen a graph follows the app's theme as a plane card does; exports use the light paper the marking image uses. The number rules (tick steps, scientific form, en-dash minus) are already shared. The kinds the plane has never drawn (infinite lines, circles, arcs, sectors, angle marks, shaded polygons, hatch marks, point names) get that style for the first time, so you approve the old-and-new fixture sheet before any stored SVG is redrawn. Checked by drawing every shared graph fixture both ways and comparing them side by side. It lands only with the function test passing, D11 answered and both zoom ranges tested.</p>
+    <div class="chips"><span class="chip size">L · about 2.5k lines</span><span class="chip">TS only</span><span class="chip">no protocol bump</span></div>
+  </div></div>
+  <div class="step"><span class="n">2</span><div>
+    <h3>Quiz rooms hold figures as maps</h3>
+    <p>Chart, plot and graph entries become Y.Maps in both quiz documents, a graph's elements keyed by id (D3, D9); the entry key carried to the dialog, <code>liveQuiz.ts</code>, live writes from the graph dialog (D2), graphs drawn from their elements in every view with the stored picture dropped (D16), the Rust quiz room with its server writes, repair on read, both parity corpora, the catalog, a client protocol bump and a reset of UAT quiz rooms.</p>
+    <div class="chips"><span class="chip size">XL · about 2.5k lines</span><span class="chip">TS + Rust</span><span class="chip">protocol bump</span></div>
+  </div></div>
+  <div class="step"><span class="n">3</span><div>
+    <h3>The richer model everywhere, and the canvas on it</h3>
+    <p>3a, on the screens we have, with no new mock (D12): each editor gains the other's tools. The plane's objects list takes every row the question editor takes (<code>segment(A, B)</code>, <code>circle(A, 3)</code>, …) and the question editor gets the plane's drawing tools. 3b, built with 3a: the new kinds and styles in the TS, Go and Rust validators, repair, index text, limits (the cap of 100, D7) and the other copies of the kinds, with the formula outline export (D6); bank graphs drop their stored file (D11). You review the built screens at phone, tablet and desktop widths. 3c: the plane stores <code>elements</code> in the shared model as a Y.Map keyed by id (D10); the load check, previews and marking image follow.</p>
+    <div class="chips"><span class="chip size">XL · about 3k+ lines</span><span class="chip">TS + Go + Rust</span><span class="chip">no new mock</span></div>
+  </div></div>
+  <div class="step"><span class="n">4</span><div>
+    <h3>Note graphs on the same model</h3>
+    <p>Note figures take the keyed layout (D15) and drop the stored picture (D16): the slate-yjs patch, the Rust notes reader and validators, the note view and its export, and a reset of UAT note rooms. The note figure dialog goes live as the quiz's does, for graphs and charts, through the note's own room connection, so its draft, <code>rebase.ts</code> and <code>graphRedraw.ts</code> all go.</p>
+    <div class="chips"><span class="chip size">L · about 1.5k lines</span><span class="chip">TS + Go + Rust</span><span class="chip">protocol bump</span></div>
+  </div></div>
+  <h3>What can be built at the same time</h3>
+  <p>Agents work in parallel only on files no other agent touches, each in its own worktree. The graph and chart dialogs both sit on the same room code, so that comes first from one writer.</p>
+  <ul>
+    <li><b>First, one writer:</b> the engine (<code>src/features/graph/</code>), then the room shape for step 2: <code>liveQuiz.ts</code>, the entry key reaching the dialog, <code>quiz.rs</code> with <code>sync_block</code>, the catalog and the protocol bump.</li>
+    <li><b>Then side by side:</b> the graph dialog going live (<code>GraphEditor.tsx</code> and its rows); the chart dialog going live (the chart editor and its data pane); the canvas plane drawing with the engine (<code>blocksuite/boardPlane*.ts</code>); the bank dropping its graph file.</li>
+    <li><b>Last, one reviewer</b> that wrote none of it, then the fixes.</li>
+  </ul>
+  <h3>Risks</h3>
+  <ul>
+    <li><b>A new look for stored graphs (D5).</b> Quiz, note and bank graphs take the plane's look everywhere at once, since each is drawn from its elements. The engine's SVG will not match JSXGraph's byte for byte; small offsets in tick numbers and label placement are likely. There is no production data; seeds and fixtures lose their stored pictures.</li>
+    <li><b>Text width.</b> Labels wrap by canvas <code>measureText</code> while the SVG shows in an <code>&lt;img&gt;</code> with Arial or a fallback. JSXGraph had the same gap.</li>
+    <li><b>Bank questions already published.</b> Each carries a file address for its graphs; they are rewritten without it when step 3 lands, and the old files stay in the bucket until cleaned up. <b>SVG size</b> now matters only for the note export. Function paths are the bulk; rounding and thinning are tested at 100 functions against the 256 KiB cap.</li>
+    <li><b>Merge races in step 2.</b> With elements keyed by id (D9) an element cannot appear twice. Two editors reordering at once can give two elements the same order key; read breaks the tie by id.</li>
+    <li><b>Function values.</b> Our reader and JessieCode may disagree on an edge case; the step 1 test finds it before any stored graph is redrawn.</li>
+    <li><b>Order of landing.</b> Steps 2 and 3 touch <code>types.ts</code>, <code>BlockDialog.tsx</code> and <code>QuestionCard.tsx</code>, which ui-tweaks-5 is editing; they wait for it to land.</li>
+    <li><b>UAT quiz rooms.</b> Step 2 drops stored quiz rooms on UAT. They seed again from their stored questions, losing undo history and anything typed in the seconds before the deploy.</li>
+    <li><b>Room growth from live edits.</b> Every write to a key leaves a small trace in the room's history. Writes are coalesced and no picture is stored; <code>pnpm bench:rates</code> measures what one editor sends before step 2 lands.</li>
+    <li><b>Share page paint.</b> A graph on a share page draws after the page's script runs instead of arriving in the Worker's HTML. Its box is sized ahead, so nothing shifts. Measured with <code>pnpm bench:share-pages</code> before and after.</li>
+    <li><b>UAT canvases.</b> Boards saved with <code>marks</code> fail the load check after step 3 (no production data, no shim, per the no-legacy-data rule).</li>
+  </ul>
+</section>
+
+<section id="decisions">
+  <h2>Decisions for you</h2>
+  <p>Each has a recommendation first. D2, D4 and D8 supersede earlier decisions or requests of yours, named below; nothing is recorded until you answer. D3 changed after the review, and D9 to D12 are new.</p>
+
+  <div class="decision"><span class="q">D1 · MODEL</span><h3>How elements hold their points</h3>
+    <ul class="options">
+      <li class="rec">Two families: constructions name points by id, free marks hold coordinates (the table above).<span class="tag">decided 16 Nov</span><br><small>Existing quiz kinds and validators stay as they are, new kinds are additive, canvas strokes stay one element each. You had no preference, so the simpler merge decided: each object is one entry in the room.</small></li>
+      <li>Everything by reference: only <code>point</code> holds coordinates; a 30-point curve becomes 31 elements.<br><small>One rule and connected constructions, but the 60 and 500 caps and the number of Y.Maps per stroke grow a lot.</small></li>
+      <li>Mixed slots: any vertex is a point id or <code>[x, y]</code>.<br><small>Canvas marks map one to one, but every layer validates a union per slot and there are two ways to say the same thing.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> GeoGebra stores a construction as objects whose commands name their inputs by label (<a href="https://geogebra.github.io/docs/reference/en/Common_XML_tags_and_types/">XML reference</a>); Desmos keys expressions by id (<a href="https://www.desmos.com/api/v1.11/docs/index.html">API</a>); tldraw and Excalidraw keep free coordinates per shape (<a href="https://tldraw.dev/sdk-features/collaboration">tldraw</a>, <a href="https://plus.excalidraw.com/blog/building-excalidraw-p2p-collaboration-feature">Excalidraw</a>). Two families is GeoGebra's rule for geometry and the whiteboards' rule for strokes.</p>
+  </div>
+
+  <div class="decision"><span class="q">D2 · QUIZ WRITES</span><h3>When the quiz graph dialog writes</h3>
+    <ul class="options">
+      <li>At Done, element by element, with the draft rebased on peers' changes while it is open, as the note figure dialog does.</li>
+      <li class="rec">Live: every row edit writes its element while the dialog is open, so peers see it as it is made.<span class="tag">decided 16 Nov</span><br><small>Supersedes your 2026-10-10 decision that chart and graph blocks in live items are one last-write-wins value written at Done. It needs the room entry's key carried to the dialog. Writes are coalesced, no picture is stored (D16), and Cancel is D13.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> Canvas Classic Quizzes advise one editor at a time, since overlapping edits are lost (<a href="https://community.canvaslms.com/t5/Canvas-Question-Forum/Multiple-People-Editing-a-Quiz-legacy-quizzes/m-p/512175">community</a>); Moodle saves a new question version on every save (<a href="https://tracker-old.moodle.org/browse/MDL-80057">MDL-80057</a>); Google Forms allows several editors, live grain not documented (<a href="https://support.google.com/docs/answer/2917111">help</a>). GeoGebra's live sync sends one object at a time by label (<a href="https://github.com/geogebra/geogebra/blob/master/source/web/web/src/main/resources/org/geogebra/web/resources/war/geogebra-live.js">geogebra-live.js</a>). No quiz tool found co-edits a figure live.</p>
+  </div>
+
+  <div class="decision"><span class="q">D3 · CHARTS AND PLOTS</span><h3>Do quiz charts and plots follow?</h3>
+    <ul class="options">
+      <li>Fields only, in step 2: a chart's or plot's fields sit on the entry and each is replaced whole, so a title and the data changed by two editors both stay. The series list stays one value.<br><small>A plot can't be edited in the quiz dialog (only the server writes one), and a chart's series have no ids to merge by. The chart dialog keeps its draft and Done in step 2; a live chart needs its series and cells keyed first and comes as its own step if you want it.</small></li>
+      <li class="rec">Live charts now, built beside the graph work.<span class="tag">decided 16 Nov</span><br><small>A chart's data is held as a quiz table's cells are, so two editors in different cells both keep their numbers. Plots stay fields only. How the work splits is under Order.</small></li>
+      <li>Shared lists too: series merged by index, as in notes.</li>
+      <li>No: only graphs become maps; charts and plots stay one value.</li>
+    </ul>
+  </div>
+
+  <div class="decision"><span class="q">D4 · GESTURES</span><h3>The question editor takes the plane's gestures</h3>
+    <ul class="options">
+      <li class="rec">Wheel and two-finger scroll pan; pinch and Ctrl/⌘-wheel zoom about the pointer; the middle button pans; a drag on empty paper pans (it has no selection box); double-click zoom goes.<span class="tag">decided 16 Nov</span><br><small>Supersedes the wheel-zoom part of your 2026-10-17 graph editor fixes.</small></li>
+      <li>Keep the wheel zooming in the question editor (as Desmos does) and use the plane's gestures for the rest.</li>
+    </ul>
+    <p class="others"><b>Others:</b> Desmos zooms with the wheel or a pinch and pans by dragging (<a href="https://math.libretexts.org/Courses/OliveHarvey_College/Math_140%3A_College_Algebra_(Zenati)/09%3A_Appendix/9.03%3A_Desmos_User_Guide">guide</a>), and its <code>cooperative</code> mode leaves page scroll alone unless a modifier or two fingers are used (<a href="https://www.desmos.com/api/v1.13/docs/index.html">API</a>). The plane's set matches the canvas around it, where the wheel already pans; the question dialog has no canvas around it. One difference stays until the question editor gets the plane's Select tool (3a): a drag on empty paper pans there, where the plane draws a selection box.</p>
+  </div>
+
+  <div class="decision"><span class="q">D5 · LOOK</span><h3>What step 1 draws</h3>
+    <ul class="options">
+      <li>Each surface keeps its look as an engine style: quiz graphs keep GeoGebra-style axes, sticky numbers and optional grid; the plane keeps its grid and numbers. One look for both comes later, as a mock.</li>
+      <li class="rec">Quiz and note graphs take the plane's look now.<span class="tag">decided 16 Nov</span><br><small>One style in the engine, which is less to build than two. The old-and-new fixture sheet in step 1 stands in for the mock. One point is open: numbers when an axis is off the view (D14).</small></li>
+    </ul>
+  </div>
+
+  <div class="decision"><span class="q">D6 · FORMULAS</span><h3>Formulas in stored SVG</h3>
+    <p>The SVG check allows no <code>&lt;image&gt;</code> or <code>&lt;foreignObject&gt;</code>, and KaTeX's fonts don't load inside an <code>&lt;img&gt;</code>, so a formula can't go into a quiz or note SVG as it is drawn on the canvas.</p>
+    <ul class="options">
+      <li>Formulas stay on the canvas until the SVG export can write glyph outlines; quiz and note graphs use labels.</li>
+      <li class="rec">Allow formulas in quiz and note graphs, written into the SVG as glyph outlines.<span class="tag">decided 16 Nov</span><br><small>Sharp at any size, and it passes the SVG check as it is. Needs a font reader at save time. The canvas keeps drawing formulas as it does now.</small></li>
+      <li>As a picture inside the SVG (<code>&lt;image&gt;</code> with a data address).<br><small>The SVG check refuses both in TS, Go and Rust, on purpose. A bitmap blurs when the figure is enlarged or printed, and an SVG picture inside still loads no fonts.</small></li>
+      <li>As text in KaTeX's fonts.<br><small>An <code>&lt;img&gt;</code> loads no web fonts, so the formula falls back to another font and its spacing breaks.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> MathJax's SVG output draws each character as a path, so the picture needs no font files (<a href="https://docs.mathjax.org/en/v4.0/options/output/svg.html">MathJax docs</a>). GeoGebra Classic's SVG export offers text as editable text or as shapes (<a href="https://wiki.geogebra.org/en/Export_Graphics_Dialog">manual</a>). Canvas puts equations in as images (<a href="https://community.instructure.com/en/kb/articles/662928-how-do-i-use-the-math-equation-editor-in-the-rich-content-editor">equation editor</a>).</p>
+  </div>
+
+  <div class="decision"><span class="q">D7 · LIMITS</span><h3>Element caps</h3>
+    <ul class="options">
+      <li>One model, a cap per surface: quiz and note graphs stay at 60 elements (the SVG cap), the plane at 500.</li>
+      <li class="rec">One cap everywhere: 100 elements.<span class="tag">decided 16 Nov</span><br><small>Quiz and note graphs go from 60 to 100, the plane from 500 to 100. A point that a construction names counts as an element. A UAT canvas with more than 100 marks on one plane stops loading.</small></li>
+    </ul>
+  </div>
+
+  <div class="decision"><span class="q">D8 · JSXGRAPH</span><h3>Replace JSXGraph</h3>
+    <ul class="options">
+      <li class="rec">The engine draws the editor and every stored SVG, bank SVGs at publish included; JSXGraph is removed.<span class="tag">decided 16 Nov</span><br><small>Supersedes your 2026-09-25 decision that graphs are JSXGraph blocks with bank SVGs rendered by the same JSXGraph version. The recipe and its SVG stay as stored now. It lands only once step 1's function test passes.</small></li>
+      <li>Keep JSXGraph for stored SVGs and use the engine only while editing (two renderers, so the saved image can differ from the editor).</li>
+    </ul>
+  </div>
+
+  <div class="decision"><span class="q">D9 · QUIZ LISTS</span><h3>How a graph's elements are held, on every surface</h3>
+    <ul class="options">
+      <li class="rec">A Y.Map keyed by element id, each element one plain value with an order key, as a table's rows are held.<span class="tag">decided 16 Nov</span><br><small>Follows from your D1 answer: a Y.Map merges key by key, so nothing interleaves and an element can't appear twice, and the Rust room places this shape already. Two editors on the same element get the later whole element. The canvas uses the same layout (D10).</small></li>
+      <li>A Y.Array of Y.Maps, as note figures are held.<br><small>One layout for notes and quizzes, and two editors can change different fields of one element. The quiz room's Rust admission must learn lists of maps (<code>locate.rs</code> refuses them today), and a moved element can appear twice.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> tldraw syncs records keyed by id and Excalidraw merges whole elements by version (<a href="https://tldraw.dev/sdk-features/collaboration">tldraw</a>, <a href="https://plus.excalidraw.com/blog/building-excalidraw-p2p-collaboration-feature">Excalidraw</a>); GeoGebra's live sync sends one whole object at a time by label (<a href="https://github.com/geogebra/geogebra/blob/master/source/web/web/src/main/resources/org/geogebra/web/resources/war/geogebra-live.js">geogebra-live.js</a>). None found merges inside one object.</p>
+  </div>
+
+  <div class="decision"><span class="q">D10 · CANVAS STORAGE</span><h3>How the plane stores its elements</h3>
+    <ul class="options">
+      <li class="rec">A Y.Map keyed by element id now, the quiz layout.<span class="tag">decided 16 Nov, with D1</span><br><small>Follows your answer that canvas collaboration is planned for now. BlockSuite keeps the mind map's nodes this way, so the vendored code stays as it is, and a later canvas room needs no change to what is stored.</small></li>
+      <li>One plain field, written whole, as <code>marks</code> is now.<br><small>Least work today. A canvas room would then need a storage change and another reset of saved canvases.</small></li>
+      <li>A list of maps (Y.Array of Y.Maps), as first written.<br><small>BlockSuite watches a field one level deep, so this needs changes to the vendored surface model.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> BlockSuite's own elements (the mind map, groups) keep one Y.Map of plain values in a field; none nests maps inside a list (<code>vendor/blocksuite</code>, <code>mindmap.ts</code>). Excalidraw replaces a whole element by version (linked under D9).</p>
+  </div>
+
+  <div class="decision"><span class="q">D11 · SVG SIZE</span><h3>A graph whose SVG is over 256 KiB</h3>
+    <p>With D16 this is left only for the bank. A bank graph keeps its picture as a public file: the browser uploads the SVG when a teacher saves the graph, generated questions are rendered headlessly at publish, and the question stores the file's address beside its elements. A bank question is plain JSON saved whole, with no room. The one-model rule could drop that file as well.</p>
+    <ul class="options">
+      <li class="rec">Bank graphs drop the stored file too: a bank graph is its elements alone and is drawn like any other, so nothing is capped.<span class="tag">decided 16 Nov</span><br><small>Graph blocks become the same in quizzes, notes, the canvas and the bank. The bank's graph upload and the render at publish go. Supersedes "bank SVGs are rendered headlessly at publish".</small></li>
+      <li>Keep the bank's file. The export samples functions more coarsely (every 4 px, then 8 px) until the SVG fits; if it still doesn't, Save is refused with a message.<br><small>On a graph with dozens of curved functions the saved picture can be slightly less smooth than the editor's.</small></li>
+      <li>Refuse the save with a message; the teacher removes functions or makes the graph smaller.</li>
+      <li>Raise the cap in the TS, Go and Rust limits.</li>
+    </ul>
+    <p class="others"><b>Others:</b> not comparable; the cap is our own storage rule. What JSXGraph's export does at this size today was not measured.</p>
+  </div>
+
+  <div class="decision"><span class="q">D12 · STEP 3 ORDER</span><h3>Mock first, or validators first</h3>
+    <ul class="options">
+      <li>The tools mock first; the validators and the plane's storage follow as its build.</li>
+      <li class="rec">No new mock: both editors gain each other's tools on the screens they have, built together with the validators and the storage.<span class="tag">decided 16 Nov</span></li>
+      <li>As first written: validators, then storage, then the mock.<br><small>The new kinds would sit in three validators with nothing able to make them, and UAT canvases would stop loading for no change anyone can see.</small></li>
+    </ul>
+  </div>
+
+  <div class="decision"><span class="q">D13 · CLOSING A LIVE DIALOG</span><h3>Cancel in the graph dialog</h3>
+    <ul class="options">
+      <li class="rec">No Cancel. The dialog has Done, which closes it, and Undo takes back your own edits one at a time.<span class="tag">decided 16 Nov</span><br><small>Your edits are already in the room and a peer may have built on them.</small></li>
+      <li>Keep Cancel: it takes back everything you changed since the dialog opened.<br><small>Needs its own undo scope, and can remove a point a peer has since drawn a line to.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> Google Forms lets several people edit a form at once, saves every change automatically and offers undo and redo, with no Cancel (<a href="https://drive.googleblog.com/2013/01/google-forms-refreshed.html">Google Drive blog</a>, <a href="https://support.google.com/a/users/answer/9308647">help</a>). Canvas Classic Quizzes are not live: two editors overwrite each other without warning (<a href="https://community.canvaslms.com/t5/Canvas-Question-Forum/Multiple-People-Editing-a-Quiz-legacy-quizzes/m-p/512175">community</a>). Excalidraw keeps the higher version of each element and has no Cancel (<a href="https://plus.excalidraw.com/blog/building-excalidraw-p2p-collaboration-feature">Excalidraw</a>).</p>
+  </div>
+
+  <div class="decision"><span class="q">D14 · AXIS OFF THE VIEW</span><h3>Numbers on a quiz graph whose axis is out of view</h3>
+    <p>Today a quiz or note graph keeps an axis that is off the view pinned to the nearer edge with its numbers. On the plane, numbers leave with their axis (your 2026-11-06 decision). A stored picture of x from 100 to 110 would carry no numbers under the plane's rule.</p>
+    <ul class="options">
+      <li>Quiz and note graphs keep the numbers at the nearer edge, drawn in the plane's style; the plane stays as it is.<br><small>One renderer with one switch. A stored figure is always readable.</small></li>
+      <li class="rec">Exactly as the plane: numbers leave with their axis everywhere.<span class="tag">decided 16 Nov</span><br><small>One renderer with no switches. A graph whose view leaves out an axis shows no numbers. A graph also follows the app's theme as a plane card does, with exports staying light.</small></li>
+      <li>Both pin numbers to the edge, which changes the plane's 2026-11-06 rule.</li>
+    </ul>
+    <p class="others"><b>Others:</b> GeoGebra has a per-axis Stick to edge option that keeps the axis line near the bottom or left border (<a href="https://geogebra.github.io/docs/manual/en/Customizing_the_Graphics_View">manual</a>); JSXGraph, which draws quiz graphs today, has a sticky axis position (<a href="https://jsxgraph.uni-bayreuth.de/docs/symbols/Axis.html">Axis docs</a>). Desmos's behaviour here was not found in its help pages.</p>
+  </div>
+
+  <div class="decision"><span class="q">D15 · NOTE GRAPHS</span><h3>Do note graphs move to the same layout?</h3>
+    <p>A note figure holds its elements as a list of maps today, merged by id, and its dialog stages a draft that is rebased and written at Done. To a user the merging is close to the keyed layout already. One case differs: a moved element can appear twice, which read drops.</p>
+    <ul class="options">
+      <li class="rec">Yes, as a step 4 after quizzes and the canvas: note figures take the keyed layout and the note graph dialog goes live with no Cancel, as in quizzes.<span class="tag">decided 16 Nov</span><br><small>One layout and one writer for all three, and the same dialog behaves the same in a note and a quiz. Needs the slate-yjs patch, the Rust notes reader and a reset of UAT note rooms.</small></li>
+      <li>The layout only; the note dialog keeps Done and Cancel with its rebase.</li>
+      <li>Leave notes as they are.</li>
+    </ul>
+    <p class="others"><b>Others:</b> Google Docs, Sheets and Slides apply every editor's change live with no Cancel (<a href="https://workspace.google.com/resources/real-time-editing">Google Workspace</a>). Excalidraw and tldraw keep one layout for every shape whichever document holds it (linked under D9).</p>
+  </div>
+
+  <div class="decision"><span class="q">D16 · STORED SVG</span><h3>Keep a stored SVG with each quiz and note graph?</h3>
+    <p>Today the SVG is made in the browser when the dialog saves (<code>BlockDialog.tsx</code>) and is kept inside the block. Every view shows that stored picture and draws nothing: questions wherever they appear (<code>QuestionView.tsx</code>), share pages in the Worker's HTML, the note export. The bank differs: its SVG is made at publish and kept as a file.</p>
+    <ul class="options">
+      <li class="rec">No stored SVG. A graph is drawn from its elements wherever it shows; an SVG is made only on export and at bank publish.<span class="tag">decided 16 Nov</span><br><small>Removes D11 for quizzes and notes, the write at close, the redraw after a merge, the presence hold and up to 256 KiB a graph from each room. An agent could write a graph without a browser to draw it. Cost: every view loads the engine, and KaTeX when a graph holds a formula. On share pages the Worker's HTML leaves a sized box that the browser fills once its script runs, so the graph paints a moment later and is missing without scripts. Supersedes "viewers load only the SVG".</small></li>
+      <li>Keep it, as the plan has it now: written when the dialog closes and redrawn after a merge; D11 decides what happens over the cap.<br><small>The share page shows the graph in its first HTML with no script.</small></li>
+    </ul>
+    <p class="others"><b>Others:</b> Desmos stores a graph as JSON state and makes a picture only through its screenshot call. GeoGebra stores the construction and exports SVG on request. Moodle's STACK stores a JSXGraph script and draws it at view. tldraw and Excalidraw draw from their records and export on request. Links are under How other apps do it.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Done for step 1</h2>
+  <ul>
+    <li>Unit tests through the root scripts: engine view math, gestures, each element kind's path, SVG passing <code>validGraphSvg</code>, the size cap at 100 functions on a 1200 px graph, function values against JessieCode, both zoom ranges.</li>
+    <li>An engine-drawn SVG fixture added to the shared fixtures, so Go's and Rust's SVG checks accept it (<code>pnpm test:go</code>, the notes and items crates).</li>
+    <li>A browser check of the quiz graph dialog (typing, dragging, gestures, Save) and the canvas plane (cards, editor, gestures).</li>
+    <li><code>openwiki/question-bank.md</code>, <code>frontend/plate-editor.md</code>, <code>embeds.md</code> and <code>test-catalog.md</code> updated; your decisions recorded in <code>human/</code>.</li>
+  </ul>
+</section>
+
+<section id="sources">
+  <h2>How other apps do it</h2>
+  <ul>
+    <li><b>Desmos</b> stores state as JSON with expressions keyed by id; <code>asyncScreenshot</code> exports PNG or SVG; no live co-editing of one graph found. <a href="https://www.desmos.com/api/v1.11/docs/index.html">API</a>, <a href="https://cl.desmos.com/t/sharing-graphs-among-students/36">forum</a></li>
+    <li><b>GeoGebra</b> stores a construction as XML of labelled objects and commands; its live client syncs object by object by label, renaming a clashing label to <code>label_1</code>; <code>exportSVG</code> renders the graphics view. Commercial use needs a special licence. <a href="https://geogebra.github.io/docs/reference/en/GeoGebra_Apps_API/">Apps API</a>, <a href="https://github.com/geogebra/geogebra/blob/master/source/web/web/src/main/resources/org/geogebra/web/resources/war/geogebra-live.js">geogebra-live.js</a>, <a href="https://www.geogebra.org/license">licence</a></li>
+    <li><b>Canvas LMS</b> has no graphing question; Hot Spot clicks on an uploaded image, and equations go in as images. <a href="https://www.humboldt.edu/ctl/new-quizzes-set-and-question-types">question types</a>, <a href="https://community.instructure.com/en/kb/articles/662928-how-do-i-use-the-math-equation-editor-in-the-rich-content-editor">equation editor</a></li>
+    <li><b>Google Forms</b> takes images on questions and choices only. <a href="https://workspaceupdates.googleblog.com/2016/08/add-images-to-questions-and-answers-in.html">update</a></li>
+    <li><b>Moodle</b> stores figures as recipes: STACK's <code>[[jsxgraph]]</code> script binding points to inputs, the JSXGraph filter's script, qtype_geogebra's worksheet XML. <a href="https://docs.stack-assessment.org/en/Specialist_tools/JSXGraph/Binding/">STACK</a>, <a href="https://github.com/jsxgraph/moodle-filter_jsxgraph">filter</a>, <a href="https://github.com/bycs-lp/moodle-qtype_geogebra">qtype_geogebra</a></li>
+    <li><b>tldraw</b> syncs records keyed by id and exports SVG through each shape's <code>toSvg</code>; <b>Excalidraw</b> merges per element by version and draws its SVG from the same shape cache as its canvas. <a href="https://tldraw.dev/sdk-features/image-export">tldraw export</a>, <a href="https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw/renderer">Excalidraw renderers</a></li>
+  </ul>
+  <p>The common pattern, which this plan follows: graphs are recipes of objects naming their points; live co-editing merges one object at a time; SVG comes from the product's own drawing code.</p>
+</section>
+</main>

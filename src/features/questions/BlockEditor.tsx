@@ -1,5 +1,5 @@
 import { Collapsible } from 'radix-ui';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
@@ -17,7 +17,14 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
-import { Field, FieldInput, SelectField, StringList } from './editorFields';
+import {
+  CommitField,
+  Field,
+  FieldInput,
+  SelectField,
+  StringList,
+} from './editorFields';
+import { type FigureBinding, useBoundFigure } from './figureBinding';
 import { GraphEditor } from './GraphEditor';
 import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
@@ -25,12 +32,12 @@ import { repairFigureBlock } from './repair';
 import { clickPoint, IdleFormulaTools, TextEditor } from './TextEditor';
 import {
   CHART_KINDS,
-  type ChartBlock,
   type ChartKind,
   gapNumbers,
   type PlotBlock,
   type QuestionBlock,
 } from './types';
+import { useCommitted } from './useCommitted';
 
 /** Bank uploads return a public URL; quiz uploads return a workspace editor asset. */
 /** `signal` cancels an upload the editor no longer wants (it closed). */
@@ -48,24 +55,25 @@ const chartLabels = {
   stacked: m.question_ui_stacked_chart,
 } satisfies Record<ChartKind, () => string>;
 
-function ChartEditor({
-  block,
-  onChange,
+/** A chart's editor (Epo 2026-11-16, live figures): it edits the chart where
+ * `binding` holds it, each change written as it is made: a choice at once, a
+ * typed title, name or value once left, a row or column added or removed with
+ * its values. Rows and columns are keyed by their ids, so a co-editor's
+ * change lands in place and a cell being typed in keeps its text. */
+const ChartEditor = memo(function ChartEditor({
+  binding,
   descriptionMax,
 }: {
-  block: ChartBlock;
-  onChange: (block: ChartBlock) => void;
+  binding: FigureBinding;
   /** The description's bound: the bank's longer one or everyone else's. */
   descriptionMax: number;
 }) {
+  const { block, labels: rowIds, series: seriesIds } = useBoundFigure(binding);
+  if (block.type !== 'chart') throw new Error('The chart editor needs a chart');
   const single = block.kind === 'pie' || block.kind === 'stacked';
   // A merge of two editors' changes (Epo 2026-10-17) can leave values past
-  // the labels or series past the cap: the table shows them with their
-  // issue, readers the repaired chart.
-  const rows = Math.max(
-    block.labels.length,
-    ...block.series.map((series) => series.values.length)
-  );
+  // the labels (a draft's) or series past the cap: the table shows them with
+  // their issue, readers the repaired chart.
   // A pie or stacked chart a merge left with another series, a negative or
   // no positive value (Epo 2026-10-18): its first column says which.
   const first = block.series[0]?.values ?? [];
@@ -76,10 +84,6 @@ function ChartEditor({
         ? undefined
         : m.question_issue_pie()
     : undefined;
-  const setCell = <T,>(list: T[], at: number, value: T, empty: T) =>
-    Array.from({ length: Math.max(list.length, at + 1) }, (_, i) =>
-      i === at ? value : (list[i] ?? empty)
-    );
   return (
     // Two columns only once the editor itself is wide enough for the table.
     <div className="@container min-w-0">
@@ -88,64 +92,47 @@ function ChartEditor({
           <SelectField
             className="w-44"
             label={m.question_ui_chart_type()}
-            onChange={(kind) =>
-              onChange(
-                kind === 'pie' || kind === 'stacked'
-                  ? // Parts of one whole: one series and no axes.
-                    {
-                      ...block,
-                      kind,
-                      series: block.series.slice(0, 1),
-                      xTitle: undefined,
-                      yTitle: undefined,
-                    }
-                  : { ...block, kind: kind as ChartKind }
-              )
-            }
+            onChange={(next) => {
+              const kind = next as ChartKind;
+              if (kind !== 'pie' && kind !== 'stacked')
+                return binding.setFields({ kind });
+              // Parts of one whole: one series and no axes.
+              binding.setFields({ kind, xTitle: undefined, yTitle: undefined });
+              for (const id of seriesIds.slice(1))
+                binding.removeChartItem('series', id);
+            }}
             options={CHART_KINDS.map((kind) => ({
               label: chartLabels[kind](),
               value: kind,
             }))}
             value={block.kind}
           />
-          <Field
-            count={{
-              max: limits.QUESTION_CHART_TITLE_MAX,
-              value: textLength(block.title),
-            }}
+          <CommitField
+            count={limits.QUESTION_CHART_TITLE_MAX}
             label={m.question_ui_title()}
-          >
-            <FieldInput
-              maxLength={limits.QUESTION_CHART_TITLE_MAX}
-              onChange={(event) =>
-                onChange({ ...block, title: event.target.value })
-              }
-              value={block.title}
-            />
-          </Field>
+            maxLength={limits.QUESTION_CHART_TITLE_MAX}
+            onCommit={(title) => binding.setFields({ title })}
+            value={block.title}
+          />
           {!single && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(['xTitle', 'yTitle'] as const).map((key) => (
-                <Field
-                  count={{
-                    max: limits.QUESTION_CHART_TITLE_MAX,
-                    value: textLength(block[key]),
-                  }}
+                <CommitField
+                  count={limits.QUESTION_CHART_TITLE_MAX}
                   key={key}
                   label={
                     key === 'xTitle'
                       ? m.question_ui_x_axis()
                       : m.question_ui_y_axis()
                   }
-                >
-                  <FieldInput
-                    maxLength={limits.QUESTION_CHART_TITLE_MAX}
-                    onChange={(event) =>
-                      onChange({ ...block, [key]: event.target.value })
-                    }
-                    value={block[key] ?? ''}
-                  />
-                </Field>
+                  maxLength={limits.QUESTION_CHART_TITLE_MAX}
+                  onCommit={(text) =>
+                    binding.setFields(
+                      key === 'xTitle' ? { xTitle: text } : { yTitle: text }
+                    )
+                  }
+                  value={block[key] ?? ''}
+                />
               ))}
             </div>
           )}
@@ -160,7 +147,7 @@ function ChartEditor({
                   {block.series.map((series, i) => (
                     <th
                       className="min-w-20 border border-divider bg-surface-hover-bg"
-                      key={i}
+                      key={seriesIds[i]}
                     >
                       {i >= limits.QUESTION_CHART_SERIES_MAX && (
                         <IssueIcon
@@ -177,20 +164,13 @@ function ChartEditor({
                       {i === 0 && pieIssue && (
                         <IssueIcon messages={[pieIssue]} />
                       )}
-                      <CellInput
+                      <CommitCell
                         aria-label={m.question_ui_series_name({
                           number: i + 1,
                         })}
                         maxLength={limits.QUESTION_CHART_SERIES_NAME_MAX}
-                        onChange={(event) =>
-                          onChange({
-                            ...block,
-                            series: block.series.map((item, j) =>
-                              i === j
-                                ? { ...item, name: event.target.value }
-                                : item
-                            ),
-                          })
+                        onCommit={(name) =>
+                          binding.setChartName(seriesIds[i], name)
                         }
                         placeholder={m.question_ui_chart_series_placeholder()}
                         value={series.name}
@@ -200,8 +180,8 @@ function ChartEditor({
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: rows }, (_, row) => (
-                  <tr key={row}>
+                {rowIds.map((label, row) => (
+                  <tr key={label}>
                     <td className="w-0 whitespace-nowrap pr-1">
                       {row >= block.labels.length && (
                         <IssueIcon
@@ -212,37 +192,18 @@ function ChartEditor({
                         label={m.question_ui_remove_row_number({
                           number: row + 1,
                         })}
-                        onClick={() =>
-                          onChange({
-                            ...block,
-                            labels: block.labels.filter((_, i) => row !== i),
-                            series: block.series.map((item) => ({
-                              ...item,
-                              values: item.values.filter((_, i) => row !== i),
-                            })),
-                          })
-                        }
+                        onClick={() => binding.removeChartItem('labels', label)}
                       >
                         <Icon name="trash" />
                       </ToolbarButton>
                     </td>
                     <td className="min-w-20 border border-divider">
-                      <CellInput
+                      <CommitCell
                         aria-label={m.question_ui_label_number({
                           number: row + 1,
                         })}
                         maxLength={limits.QUESTION_CHART_LABEL_MAX}
-                        onChange={(event) =>
-                          onChange({
-                            ...block,
-                            labels: setCell(
-                              block.labels,
-                              row,
-                              event.target.value,
-                              ''
-                            ),
-                          })
-                        }
+                        onCommit={(name) => binding.setChartName(label, name)}
                         placeholder={m.question_ui_chart_label_placeholder()}
                         value={block.labels[row] ?? ''}
                       />
@@ -250,9 +211,9 @@ function ChartEditor({
                     {block.series.map((series, column) => (
                       <td
                         className="min-w-20 border border-divider"
-                        key={column}
+                        key={seriesIds[column]}
                       >
-                        <CellInput
+                        <CommitCell
                           aria-label={m.question_ui_series_row({
                             name: series.name,
                             number: row + 1,
@@ -260,41 +221,29 @@ function ChartEditor({
                           max={limits.QUESTION_CHART_VALUE_MAX}
                           // Parts of a whole are never negative (Epo 2026-10-14).
                           min={single ? 0 : -limits.QUESTION_CHART_VALUE_MAX}
-                          onChange={(event) => {
+                          onCommit={(text) => {
                             // An empty cell is null and draws nothing; a value
                             // stops at the bounds as text stops at its length.
-                            const typed = event.target.valueAsNumber;
-                            const value = Number.isNaN(typed)
-                              ? null
-                              : Math.min(
-                                  limits.QUESTION_CHART_VALUE_MAX,
-                                  Math.max(
-                                    single
-                                      ? 0
-                                      : -limits.QUESTION_CHART_VALUE_MAX,
-                                    typed
+                            const typed = Number(text);
+                            binding.setChartCell(
+                              seriesIds[column],
+                              label,
+                              !text.trim() || Number.isNaN(typed)
+                                ? null
+                                : Math.min(
+                                    limits.QUESTION_CHART_VALUE_MAX,
+                                    Math.max(
+                                      single
+                                        ? 0
+                                        : -limits.QUESTION_CHART_VALUE_MAX,
+                                      typed
+                                    )
                                   )
-                                );
-                            onChange({
-                              ...block,
-                              series: block.series.map((item, i) =>
-                                column === i
-                                  ? {
-                                      ...item,
-                                      values: setCell<number | null>(
-                                        item.values,
-                                        row,
-                                        value,
-                                        null
-                                      ),
-                                    }
-                                  : item
-                              ),
-                            });
+                            );
                           }}
                           placeholder={m.question_ui_chart_value_placeholder()}
                           type="number"
-                          value={series.values[row] ?? ''}
+                          value={String(series.values[row] ?? '')}
                         />
                       </td>
                     ))}
@@ -311,14 +260,7 @@ function ChartEditor({
                 }
                 iconLeft="plus"
                 onClick={() =>
-                  onChange({
-                    ...block,
-                    labels: [...block.labels, ''],
-                    series: block.series.map((item) => ({
-                      ...item,
-                      values: [...item.values, null],
-                    })),
-                  })
+                  binding.addChartItem('labels', rowIds.length, '')
                 }
                 size="sm"
                 type="button"
@@ -335,13 +277,7 @@ function ChartEditor({
                   }
                   iconLeft="plus"
                   onClick={() =>
-                    onChange({
-                      ...block,
-                      series: [
-                        ...block.series,
-                        { name: '', values: block.labels.map(() => null) },
-                      ],
-                    })
+                    binding.addChartItem('series', seriesIds.length, '')
                   }
                   size="sm"
                   type="button"
@@ -353,9 +289,10 @@ function ChartEditor({
               {(!single || block.series.length > 1) && (
                 <Button
                   disabled={block.series.length <= 1}
-                  onClick={() =>
-                    onChange({ ...block, series: block.series.slice(0, -1) })
-                  }
+                  onClick={() => {
+                    const last = seriesIds.at(-1);
+                    if (last) binding.removeChartItem('series', last);
+                  }}
                   size="sm"
                   type="button"
                   variant="danger-light"
@@ -385,8 +322,7 @@ function ChartEditor({
                     className="w-44"
                     label={m.question_ui_gridlines()}
                     onChange={(value) =>
-                      onChange({
-                        ...block,
+                      binding.setFields({
                         gridlines: value as 'normal' | 'fine',
                       })
                     }
@@ -397,24 +333,15 @@ function ChartEditor({
                     value={block.gridlines ?? 'normal'}
                   />
                 )}
-                <Field
-                  count={{
-                    max: descriptionMax,
-                    value: textLength(block.description ?? ''),
-                  }}
+                <CommitField
+                  count={descriptionMax}
                   label={m.question_ui_description()}
-                >
-                  <FieldInput
-                    maxLength={descriptionMax}
-                    onChange={(event) =>
-                      onChange({
-                        ...block,
-                        description: event.target.value || undefined,
-                      })
-                    }
-                    value={block.description ?? ''}
-                  />
-                </Field>
+                  maxLength={descriptionMax}
+                  onCommit={(text) =>
+                    binding.setFields({ description: text || undefined })
+                  }
+                  value={block.description ?? ''}
+                />
               </Collapsible.Content>
             </Collapsible.Root>
           </div>
@@ -429,7 +356,7 @@ function ChartEditor({
       </div>
     </div>
   );
-}
+});
 
 type PlotKind = NonNullable<PlotBlock['kind']>;
 
@@ -448,6 +375,20 @@ function CellInput(props: InputProps) {
       {...props}
     />
   );
+}
+
+/** A chart's typed cell: its own text while typed in, written once left
+ * (`useCommitted`). */
+function CommitCell({
+  onCommit,
+  value,
+  ...props
+}: Omit<InputProps, 'value' | 'onChange' | 'onBlur' | 'onKeyDown'> & {
+  onCommit: (text: string) => void;
+  value: string;
+}) {
+  const { input } = useCommitted(value, onCommit);
+  return <CellInput {...props} {...input} />;
 }
 
 /** A number cell: an empty cell is NaN, which the plot's issues name, until
@@ -988,26 +929,27 @@ export function PlotEditor({
 
 export function BlockEditor({
   bank,
+  binding,
   block,
   editPlot,
   onChange,
   uploadAsset,
   onBusyChange,
-  onInvalidChange,
   textPlaceholder,
   toolbarTarget,
   gaps,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
+  /** Where a chart or graph lives, edited a change at a time (every chart
+   * and graph editor has one). */
+  binding?: FigureBinding;
   block: QuestionBlock;
   /** Notes edit a plot; quizzes show it (the catalog's plot `edit.user`). */
   editPlot?: boolean;
   onChange: (block: QuestionBlock) => void;
   uploadAsset?: UploadQuestionAsset;
   onBusyChange?: (busy: boolean) => void;
-  /** Graph rows that cannot be drawn; the dialog holds Save meanwhile. */
-  onInvalidChange?: (invalid: boolean) => void;
   /** What an empty text block shows, by where it sits. */
   textPlaceholder?: string;
   /** The block's heading row: a graph's zoom tools and a table cell's
@@ -1031,6 +973,11 @@ export function BlockEditor({
   // Closing the editor cancels a picked image still waiting to upload.
   const uploadAbort = useRef<AbortController | null>(null);
   useEffect(() => () => uploadAbort.current?.abort(), []);
+  /** The chart or graph being edited, where it lives. */
+  const figure = () => {
+    if (!binding) throw new Error('A chart or graph editor without its figure');
+    return binding;
+  };
   const descriptionMax = bank
     ? limits.QUESTION_TEXT_MAX
     : limits.QUESTION_DESCRIPTION_MAX;
@@ -1081,13 +1028,7 @@ export function BlockEditor({
       </div>
     );
   if (block.type === 'chart')
-    return (
-      <ChartEditor
-        block={block}
-        descriptionMax={descriptionMax}
-        onChange={onChange}
-      />
-    );
+    return <ChartEditor binding={figure()} descriptionMax={descriptionMax} />;
   if (block.type === 'plot')
     return editPlot ? (
       <PlotEditor
@@ -1101,11 +1042,9 @@ export function BlockEditor({
   if (block.type === 'graph')
     return (
       <GraphEditor
+        binding={figure()}
         descriptionMax={descriptionMax}
-        onChange={onChange}
-        onInvalidChange={onInvalidChange}
         toolbarTarget={toolbarTarget}
-        value={block}
       />
     );
   if (block.type === 'image')

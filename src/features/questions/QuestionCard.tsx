@@ -40,6 +40,7 @@ import {
   MenuItem,
   withShuffle,
 } from './editorFields';
+import type { FigureBinding } from './figureBinding';
 import {
   addSubPart,
   canMoveItem,
@@ -60,7 +61,9 @@ import { mathTextToValue, valueToMathText } from './mathTextValue';
 import { type BlockSection, QuestionBlockView } from './QuestionView';
 import {
   type AddableBlock,
+  bindFigure,
   changeBlocks,
+  type FigureRoom,
   findBlock,
   newPart,
   newQuestionBlock,
@@ -138,8 +141,10 @@ const insertIcons: Record<AddableBlock, IconName> = {
 /** A figure the card shows and its dialog edits. */
 type Figure = {
   block: QuestionBlock;
+  /** A chart's or graph's, edited where it lives (`QuestionCard`). */
+  binding?: FigureBinding;
   index: number;
-  /** Added from Insert: Save puts it in, Cancel leaves nothing behind. */
+  /** A table added from Insert: Save puts it in, closing leaves nothing. */
   isNew?: boolean;
   /** The block before it when the dialog opened, where Save puts it back. */
   before?: QuestionBlock;
@@ -969,6 +974,8 @@ export interface QuestionCardProps {
   addPartInFooter?: boolean;
   /** The question's text opens in its editor (a card just added). */
   autoFocus?: boolean;
+  /** A live quiz's figures, written by their room entries; none in a draft. */
+  figures?: FigureRoom;
   /** The first issue at its top. */
   issues?: string[];
   /** The read's question, whose keys are still to come: none is shown. */
@@ -1007,6 +1014,7 @@ export function QuestionCard({
   actions,
   addPartInFooter,
   autoFocus,
+  figures,
   issues = [],
   keysPending,
   menu,
@@ -1032,9 +1040,39 @@ export function QuestionCard({
   const [solutionFor, setSolutionFor] = useState<string | null>(null);
   const [figure, setFigure] = useState<Figure | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  // The question as it stands, for a write that lands after an await.
+  // The question as it stands, for a write that lands after an await, or
+  // after another write the card has yet to render.
   const latest = useRef(question);
   latest.current = question;
+  const writing = useRef(write);
+  writing.current = write;
+  /** The question with a section's blocks changed, written at once. */
+  const writeBlocks = (
+    section: BlockSection,
+    change: (blocks: QuestionBlock[]) => QuestionBlock[]
+  ) => {
+    const now = latest.current;
+    const next = changeBlocks(
+      now,
+      section,
+      change(sectionBlocks(now, section))
+    );
+    latest.current = next;
+    writing.current(next);
+    return next;
+  };
+  /** A chart's or graph's dialog opens bound to it where it lives
+   * (`bindFigure`); a table's on its block. */
+  const openFigure = (opened: Figure) => {
+    if (opened.block.type !== 'chart' && opened.block.type !== 'graph')
+      return setFigure(opened);
+    const bound = bindFigure(opened, {
+      figures,
+      question: question.id,
+      writeBlocks,
+    });
+    if (bound) setFigure({ ...opened, ...bound, isNew: false });
+  };
   const shownPart = question.parts.find((part) => part.id === openPart);
   const partsFull =
     question.parts.length >=
@@ -1158,7 +1196,7 @@ export function QuestionCard({
             const text = block?.type === 'text' ? block.text : '';
             setAnswer({ ...answer, accepted: text ? [text] : [] });
           }}
-          onFigure={setFigure}
+          onFigure={openFigure}
           placeholder={m.question_ui_sample_answer_heading()}
           section={{ partId: part.id }}
           textOnly
@@ -1252,7 +1290,7 @@ export function QuestionCard({
               autoFocus={solutionFor === part.id}
               blocks={part.solution}
               onChange={setBlocks({ partId: part.id, solution: true })}
-              onFigure={setFigure}
+              onFigure={openFigure}
               placeholder={m.question_ui_solution_placeholder()}
               section={{ partId: part.id, solution: true }}
               uploadAsset={uploadAsset}
@@ -1290,7 +1328,7 @@ export function QuestionCard({
       imageButton={lone}
       lead={label}
       onChange={setBlocks({ partId: part.id })}
-      onFigure={setFigure}
+      onFigure={openFigure}
       placeholder={m.question_ui_question_placeholder()}
       section={{ partId: part.id }}
       uploadAsset={uploadAsset}
@@ -1438,7 +1476,7 @@ export function QuestionCard({
           blocks={group.blocks}
           lead={label}
           onChange={setBlocks({ groupId: group.id })}
-          onFigure={setFigure}
+          onFigure={openFigure}
           placeholder={m.question_ui_question_placeholder()}
           section={{ groupId: group.id }}
           uploadAsset={uploadAsset}
@@ -1514,7 +1552,7 @@ export function QuestionCard({
           <BlocksColumn
             blocks={question.stem}
             onChange={setBlocks({})}
-            onFigure={setFigure}
+            onFigure={openFigure}
             placeholder={m.question_ui_question_placeholder()}
             section={{}}
             uploadAsset={uploadAsset}
@@ -1531,7 +1569,7 @@ export function QuestionCard({
               blocks={question.stem}
               imageButton
               onChange={setBlocks({})}
-              onFigure={setFigure}
+              onFigure={openFigure}
               placeholder={m.question_ui_question_placeholder()}
               section={{}}
               uploadAsset={uploadAsset}
@@ -1639,34 +1677,57 @@ export function QuestionCard({
           bank={bank}
           block={figure.block}
           onClose={() => setFigure(null)}
-          // Both read the question as it stands now and find the figure by
-          // its content, so a co-editor's change meanwhile stays.
-          onRemove={() => {
-            if (figure.isNew) return;
-            const now = latest.current;
-            const blocks = sectionBlocks(now, figure.section);
-            const at = findBlock(blocks, figure.block, figure.index);
-            if (at >= 0)
-              write(
-                changeBlocks(
-                  now,
-                  figure.section,
-                  blocks.filter((_, i) => i !== at)
-                )
-              );
-          }}
-          // After a graph's image renders and uploads.
-          onSave={(block) => {
-            const now = latest.current;
-            write(
-              changeBlocks(
-                now,
-                figure.section,
-                saveFigure(sectionBlocks(now, figure.section), figure, block)
-              )
-            );
-          }}
           uploadAsset={uploadAsset}
+          {...(figure.binding
+            ? { binding: figure.binding }
+            : {
+                // A table: a live quiz's is written by its room entry, a
+                // draft's found by its content in the question as it stands.
+                onRemove: () => {
+                  if (figure.isNew) return;
+                  if (figures) {
+                    const entry = figures.key(figure.block);
+                    if (entry)
+                      figures.remove({
+                        entry,
+                        question: question.id,
+                        section: figure.section,
+                      });
+                    return;
+                  }
+                  writeBlocks(figure.section, (blocks) => {
+                    const at = findBlock(blocks, figure.block, figure.index);
+                    return at < 0 ? blocks : blocks.filter((_, i) => i !== at);
+                  });
+                },
+                onSave: (block: QuestionBlock) => {
+                  if (figures) {
+                    const entry = figure.isNew
+                      ? undefined
+                      : figures.key(figure.block);
+                    const at = entry && {
+                      entry,
+                      question: question.id,
+                      section: figure.section,
+                    };
+                    // One a co-editor removed meanwhile goes back in its place.
+                    if (at && figures.replace(at, block)) return;
+                    figures.insert(
+                      {
+                        after: figure.before && figures.key(figure.before),
+                        index: figure.index,
+                        question: question.id,
+                        section: figure.section,
+                      },
+                      block
+                    );
+                    return;
+                  }
+                  writeBlocks(figure.section, (blocks) =>
+                    saveFigure(blocks, figure, block)
+                  );
+                },
+              })}
         />
       )}
     </div>

@@ -764,14 +764,7 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		if err := validateMediaWidth(node); err != nil {
 			return err
 		}
-		if err := questions.ValidateBlock(block, questions.Policy{Live: live}); err != nil {
-			return err
-		}
-		// A note draws a graph from its own SVG; a URL image is for questions.
-		if image, _ := block["image"].(map[string]any); typ == "graph" && image["url"] != nil {
-			return errors.New("note graphs require inline SVG")
-		}
-		return nil
+		return questions.ValidateBlock(block, questions.Policy{Live: live})
 	case HTMLEmbedType:
 		return validateHTMLEmbed(node, depth)
 	case TableViewType:

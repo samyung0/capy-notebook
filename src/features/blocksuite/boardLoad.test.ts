@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import {
+  buildElements,
+  type GraphRow,
+  readRow,
+} from '@/features/questions/graphSyntax';
 import { fromBase64 } from './base64';
 import {
+  planeElements,
   SAVED,
   withCanvasBlock,
   withElement,
@@ -60,22 +66,23 @@ describe('checkSavedBoard', () => {
     expect(
       reason(
         withElement({
-          marks: [
-            { at: [1, 1], id: 'f', kind: 'formula', latex: 'x^2' },
+          elements: planeElements([
+            { coords: [1, 1], id: 'f', latex: 'x^2', type: 'formula' },
             // Sized by their frames' corners.
-            { at: [2, 2], id: 'g', kind: 'formula', latex: 'y', size: 30 },
-            { at: [0, 2], id: 'l', kind: 'label', size: 40, text: 'A' },
+            { coords: [2, 2], id: 'g', latex: 'y', size: 30, type: 'formula' },
+            { coords: [0, 2], id: 'l', size: 40, text: 'A', type: 'text' },
+            { center: [0, 0], id: 'e', radii: [2, 1], type: 'ellipse' },
             {
-              id: 'e',
-              kind: 'ellipse',
-              points: [
-                [2, 0],
-                [0, 1],
-                [-2, 0],
-                [0, -1],
+              arrow: true,
+              coords: [
+                [0, 0],
+                [1, 2],
               ],
+              id: 'v',
+              type: 'polyline',
             },
-          ],
+            { id: 'y', term: 'x^2', type: 'functiongraph' },
+          ]),
           ppu: 30,
           type: 'plane',
           x0: -5,
@@ -126,6 +133,65 @@ describe('checkSavedBoard', () => {
         })
       )
     ).toBe('chart fields');
+  });
+
+  it("holds every row the graph dialog takes, typed in a plane's list", () => {
+    const rows = [
+      'A=(1,2)',
+      'B=(4,3)',
+      'C=(1,5)',
+      'segment(A, B)',
+      'line(A, C)',
+      'circle(A, 2)',
+      'angle(B, A, C)',
+      'arc(A, B, C)',
+      'sector(A, B, C)',
+      'polygon(A, B, C)',
+      'y=x^2 {0<=x<=2}',
+    ].map(
+      (latex, i): GraphRow => ({
+        key: `r${i}`,
+        kind: 'expression',
+        latex,
+        style: {},
+        ...readRow(latex, latex),
+      })
+    );
+    const { elements, errors } = buildElements(rows);
+    expect(errors).toEqual(new Map());
+    expect(elements).toHaveLength(rows.length);
+    expect(
+      reason(
+        withElement({
+          elements: planeElements(elements),
+          ppu: 30,
+          type: 'plane',
+          x0: -5,
+          xywh: '[0,0,300,200]',
+          y0: 5,
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('holds up to 100 elements on a plane, as every graph', () => {
+    const plane = (count: number) =>
+      withElement({
+        elements: planeElements(
+          Array.from({ length: count }, (_, i) => ({
+            coords: [i, 0] as [number, number],
+            id: `p${i}`,
+            type: 'point' as const,
+          }))
+        ),
+        ppu: 30,
+        type: 'plane',
+        x0: -5,
+        xywh: '[0,0,300,200]',
+        y0: 5,
+      });
+    expect(reason(plane(100))).toBeNull();
+    expect(reason(plane(101))).toBe('plane fields');
   });
 
   it('holds what the catalog lists for each board', () => {

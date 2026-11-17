@@ -268,6 +268,28 @@ describe('readable note exports', () => {
     expect(draw).not.toHaveBeenCalled();
   });
 
+  it('draws a graph from its elements, the one place it becomes a picture', async () => {
+    const draw = vi.fn(async () => image);
+    const block = {
+      board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
+      description: 'A line',
+      elements: [{ id: 'f', term: 'x', type: 'functiongraph' }],
+      height: 300,
+      type: 'graph',
+      width: 400,
+    };
+    const markdown = await renderExport(
+      [element('graph', [{ text: '' }], { block })],
+      'markdown',
+      labels,
+      {},
+      'https://capy.test/materials/note',
+      draw
+    );
+    expect(draw).toHaveBeenCalledWith({ block, type: 'graph' });
+    expect(markdown.content).toContain('![A line](assets/figure-1.png)');
+  });
+
   // Epo 2026-10-23: a diagram that cannot be drawn (here the renderer
   // refuses it, as for a source error or a browser without the worker)
   // exports as its source in a code block instead of failing the export.

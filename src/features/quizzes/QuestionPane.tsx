@@ -26,6 +26,7 @@ import {
   QuestionCard,
   QuestionCardView,
 } from '@/features/questions/QuestionCard';
+import type { FigureRoom } from '@/features/questions/questionEdits';
 import { TextView } from '@/features/questions/TextView';
 import { TopicField, withTopics } from '@/features/questions/TopicField';
 import {
@@ -404,6 +405,7 @@ const ClosedCard = memo(function ClosedCard({
  */
 export function QuestionPane({
   embedded,
+  figures,
   foot,
   head,
   fresh,
@@ -425,6 +427,8 @@ export function QuestionPane({
 }: {
   /** In a note: no scroller or floating bars of its own. */
   embedded?: boolean;
+  /** The quiz's figures, written by their room entries. */
+  figures: FigureRoom;
   /** Under the cards: the AI-marked count and the sources. */
   foot?: ReactNode;
   /** Above the cards: the quiz's title and Practice (`QuizPaneTitle`). */
@@ -584,6 +588,7 @@ export function QuestionPane({
             </>
           }
           autoFocus={question.id === fresh}
+          figures={figures}
           issues={opening ? [] : issueMessages(questionIssues(question))}
           key={question.id}
           keysPending={keysPending}

@@ -340,7 +340,6 @@ function validateCustomElement(
       return (
         result.success &&
         result.data.type === element.type &&
-        (result.data.type !== 'graph' || 'svg' in result.data.image) &&
         descriptionFits(result.data)
       );
     }

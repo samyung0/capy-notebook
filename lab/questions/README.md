@@ -95,13 +95,12 @@ with the current overall 0/0.5/1 part award. It does not install production Jev.
 Every packet saves frozen input/schema/prompt hashes before dispatch, then
 validated structured output and an admission receipt. Failed outputs are never
 silently admitted. Fix keeps IDs and part count, invalidates
-the old evidence, and requires solving/comparing again. Rendered graph changes
-also require fresh matching evidence when the question JSON changes. Running
-render before solve avoids that extra pass for initial graph exports.
+the old evidence, and requires solving/comparing again. Graphs are drawn
+from their elements in the screenshots; no graph file is made or uploaded.
 The renderer saves both `<id>.png` for review and `<id>.learner.png` for solving.
 `render/manifest.json` retains the question hashes used for publication;
 `render/learner-manifest.json` binds each learner image to its question hash.
-Unchanged question JSON is not rewritten on rerenders. Solve and judge refuse
+The renderer never rewrites question JSON. Solve and judge refuse
 stale learner renders. Only the learner PNG is copied into their frozen packets.
 After a fix, pass the repaired question ids to the renderer: it re-renders only
 those and merges them into both manifests, so the other questions keep their

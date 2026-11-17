@@ -82,6 +82,7 @@ import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { parsedDocument, seedValue } from '@/features/materials/NoteBody';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
 import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
+import '@/features/notes/figureBinding';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';

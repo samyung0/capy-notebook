@@ -154,7 +154,7 @@ export function youtube(videoId: string) {
   };
 }
 
-/** Chart or graph figure block; a graph carries its pre-rendered SVG. */
+/** Chart, plot or graph figure block. */
 export function figure(
   id: string,
   block: QuestionFigureElement['block']
