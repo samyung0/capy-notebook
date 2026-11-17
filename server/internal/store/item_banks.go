@@ -502,40 +502,26 @@ type BankQuiz struct {
 	WorkspaceID, WorkspaceName string
 	QuestionIDs                []string
 	Title                      string
-	// GradedPending: made for a graded quiz (Material.GradedPending).
-	GradedPending bool
+	// GradedQuiz: made with its graded quiz (Material.GradedQuiz).
+	GradedQuiz *AssignmentForm
 	// Hidden: starts hidden from members (the request handler sets it).
 	Hidden bool
 }
 
 // CreateQuizFromBank copies the picked questions, in the order given, into a
-// new quiz material in the workspace (readBankCopies, copyBankAssetsTx).
+// new quiz material in the workspace (readBankCopies, createQuizCopyTx).
 func (s *Store) CreateQuizFromBank(ctx context.Context, in BankQuiz) (Material, error) {
 	picked, err := s.readBankCopies(ctx, in.ActorID, in.Bank, in.QuestionIDs, in.WorkspaceID)
 	if err != nil {
 		return Material{}, err
 	}
-	encoded, err := json.Marshal(picked.questions)
-	if err != nil {
-		return Material{}, err
-	}
-	content, err := materialdoc.QuizDocument(encoded, nil)
-	if err != nil {
-		return Material{}, err
-	}
 	var id string
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		// The material's workspace and account locks come first, as for a
-		// pasted image (AdoptEditorAssets).
-		id, err = s.createMaterialTx(ctx, tx, Material{
+		id, _, err = s.createQuizCopyTx(ctx, tx, Material{
 			CreatedBy: in.ActorID, WorkspaceID: in.WorkspaceID, WorkspaceName: in.WorkspaceName,
-			Kind: "quiz", Title: in.Title, Content: content, Privacy: "private", GradedPending: in.GradedPending,
-			Hidden: in.Hidden,
-		})
-		if err != nil {
-			return err
-		}
-		return s.copyBankAssetsTx(ctx, tx, in.ActorID, in.WorkspaceID, id, picked)
+			Title: in.Title, GradedQuiz: in.GradedQuiz, Hidden: in.Hidden,
+		}, picked, time.Now())
+		return err
 	})
 	if err != nil {
 		return Material{}, err
@@ -543,9 +529,93 @@ func (s *Store) CreateQuizFromBank(ctx context.Context, in BankQuiz) (Material, 
 	return s.GetMaterial(ctx, id)
 }
 
+// QuizCopy makes a graded quiz from a copy of an existing quiz's questions
+// (Epo 2026-11-16: last term's graded quiz, or a practice quiz, reused).
+type QuizCopy struct {
+	ActorID                    string
+	WorkspaceID, WorkspaceName string
+	// SourceID is the quiz copied, in WorkspaceID; Questions its questions as
+	// they are now (live edits projected).
+	SourceID  string
+	Questions []map[string]any
+	Title     string
+	Form      AssignmentForm
+}
+
+// CopyQuizToGradedQuiz makes a new hidden quiz of the source's questions, with
+// fresh ids and their images copied (copyQuestions, createQuizCopyTx), owned
+// by the graded quiz its form makes, all in one transaction.
+func (s *Store) CopyQuizToGradedQuiz(ctx context.Context, in QuizCopy, now time.Time) (Assignment, error) {
+	if err := checkGradedQuizForm(in.Form); err != nil {
+		return Assignment{}, err
+	}
+	var named []string
+	for _, q := range in.Questions {
+		named = append(named, questions.AssetIDs(q)...)
+	}
+	// Each named image still there that the source quiz holds.
+	present := map[string]string{}
+	rows, err := s.pool.Query(ctx, `SELECT id FROM editor_assets
+		WHERE id=ANY($1::text[]) AND material_id=$2 AND status='ready' AND trashed_at IS NULL`, named, in.SourceID)
+	if err != nil {
+		return Assignment{}, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return Assignment{}, err
+	}
+	owners := make([]string, len(in.Questions))
+	for i := range owners {
+		owners[i] = in.SourceID
+	}
+	for _, id := range ids {
+		present[id] = in.SourceID
+	}
+	picked, err := copyQuestions(in.Questions, owners, present, true, true)
+	if err != nil {
+		return Assignment{}, err
+	}
+	form := in.Form
+	var assignmentID string
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		_, assignmentID, err = s.createQuizCopyTx(ctx, tx, Material{
+			CreatedBy: in.ActorID, WorkspaceID: in.WorkspaceID, WorkspaceName: in.WorkspaceName,
+			Title: in.Title, GradedQuiz: &form, Hidden: true,
+		}, picked, now)
+		return err
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, in.ActorID, assignmentID, now)
+}
+
+// createQuizCopyTx writes copied questions as a new quiz mt with their images,
+// and its graded quiz when mt carries one (makeGradedQuizTx).
+func (s *Store) createQuizCopyTx(ctx context.Context, tx pgx.Tx, mt Material, picked quizCopies, now time.Time) (quizID, assignmentID string, err error) {
+	encoded, err := json.Marshal(picked.questions)
+	if err != nil {
+		return "", "", err
+	}
+	mt.Kind, mt.Privacy = MaterialQuiz, "private"
+	if mt.Content, err = materialdoc.QuizDocument(encoded, nil); err != nil {
+		return "", "", err
+	}
+	// The material's workspace and account locks come first, as for a
+	// pasted image (AdoptEditorAssets).
+	if mt.ID, err = s.createMaterialTx(ctx, tx, mt); err != nil {
+		return "", "", err
+	}
+	if err := s.copyQuizAssetsTx(ctx, tx, mt.CreatedBy, mt.WorkspaceID, mt.ID, picked); err != nil {
+		return "", "", err
+	}
+	assignmentID, err = s.makeGradedQuizTx(ctx, tx, mt, now)
+	return mt.ID, assignmentID, err
+}
+
 // CopyBankQuestionsToQuiz copies the picked questions, in the order given, for
 // the quiz editor's From the bank (Epo 2026-11-15): their images become the
-// quiz's own (readBankCopies, copyBankAssetsTx), and the copies come back for
+// quiz's own (readBankCopies, copyQuizAssetsTx), and the copies come back for
 // the editor to insert through its live rooms, which own the quiz's content;
 // nothing here writes it. An image copy the editor never inserts is trashed
 // by the quiz's next save that does not name it (pruneMaterialAssetsTx), as an
@@ -568,7 +638,7 @@ func (s *Store) CopyBankQuestionsToQuiz(ctx context.Context, actorID, quizID, ba
 			if _, err := s.lockEditorAssetScopeTx(ctx, tx, quiz.WorkspaceID, quizID, actorID); err != nil {
 				return err
 			}
-			return s.copyBankAssetsTx(ctx, tx, actorID, quiz.WorkspaceID, quizID, picked)
+			return s.copyQuizAssetsTx(ctx, tx, actorID, quiz.WorkspaceID, quizID, picked)
 		})
 		if err != nil {
 			return nil, err
@@ -577,32 +647,32 @@ func (s *Store) CopyBankQuestionsToQuiz(ctx context.Context, actorID, quizID, ba
 	return picked.questions, nil
 }
 
-// bankCopies is picked bank questions rewritten for a quiz, with the images
-// to copy for it.
-type bankCopies struct {
+// quizCopies is questions rewritten for a new quiz, picked from a bank or a
+// quiz, with the images to copy for it.
+type quizCopies struct {
 	questions []map[string]any
 	assets    map[string]string // source asset id -> the quiz's copy
-	owners    map[string]string // source asset id -> its bank question
+	owners    map[string]string // source asset id -> its bank question, or its quiz
+	// fromQuiz: the sources are a quiz's images (material_id), not a bank's.
+	fromQuiz bool
 }
 
 // readBankCopies reads the picked questions, in the order given, for a quiz in
-// workspace workspaceID ("" for none). The caller must read the bank; each
-// question gets fresh question and part ids (one question may sit in a bank
-// twice), and each image or drawn sample still there is named by the quiz copy
-// copyBankAssetsTx makes, charged to the caller (uploader pays). An image no
-// longer there (its payer's account was purged) is dropped, as a re-save drops
-// it (Epo 2026-11-14); a part left with nothing in it refuses the copy. A
-// question keeps its topics only in its class's own workspace; elsewhere it
-// follows the quiz's. The copies hold within a quiz's bounds.
-func (s *Store) readBankCopies(ctx context.Context, actorID, bank string, questionIDs []string, workspaceID string) (bankCopies, error) {
+// workspace workspaceID ("" for none), rewritten by copyQuestions: one
+// question may sit in a bank twice, and each copy gets fresh ids. The caller
+// must read the bank; the image copies are charged to them (uploader pays). An
+// image no longer there is one whose payer's account was purged. A question
+// keeps its topics only in its class's own workspace; elsewhere it follows the
+// quiz's.
+func (s *Store) readBankCopies(ctx context.Context, actorID, bank string, questionIDs []string, workspaceID string) (quizCopies, error) {
 	scope, err := s.itemBankScope(ctx, s.pool, actorID, bank)
 	if err != nil {
-		return bankCopies{}, err
+		return quizCopies{}, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT id, `+bankQuestionRead+` FROM item_bank_questions q
 		WHERE id = ANY($1::text[]) AND `+scope.column+`=$2`, questionIDs, scope.value)
 	if err != nil {
-		return bankCopies{}, err
+		return quizCopies{}, err
 	}
 	byID := map[string]map[string]any{}
 	for rows.Next() {
@@ -610,18 +680,18 @@ func (s *Store) readBankCopies(ctx context.Context, actorID, bank string, questi
 		var raw []byte
 		if err := rows.Scan(&id, &raw); err != nil {
 			rows.Close()
-			return bankCopies{}, err
+			return quizCopies{}, err
 		}
 		var q map[string]any
 		if err := json.Unmarshal(raw, &q); err != nil {
 			rows.Close()
-			return bankCopies{}, err
+			return quizCopies{}, err
 		}
 		byID[id] = q
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return bankCopies{}, err
+		return quizCopies{}, err
 	}
 	var named []string
 	for _, q := range byID {
@@ -632,59 +702,76 @@ func (s *Store) readBankCopies(ctx context.Context, actorID, bank string, questi
 	rows, err = s.pool.Query(ctx, `SELECT id, bank_question_id FROM editor_assets
 		WHERE id=ANY($1::text[]) AND status='ready' AND bank_question_id IS NOT NULL`, named)
 	if err != nil {
-		return bankCopies{}, err
+		return quizCopies{}, err
 	}
 	for rows.Next() {
 		var assetID, questionID string
 		if err := rows.Scan(&assetID, &questionID); err != nil {
 			rows.Close()
-			return bankCopies{}, err
+			return quizCopies{}, err
 		}
 		present[assetID] = questionID
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return bankCopies{}, err
+		return quizCopies{}, err
 	}
-	out := bankCopies{
-		questions: make([]map[string]any, 0, len(questionIDs)),
-		assets:    map[string]string{},
-		owners:    map[string]string{},
-	}
-	for _, id := range questionIDs {
+	picked := make([]map[string]any, len(questionIDs))
+	for i, id := range questionIDs {
 		q, ok := byID[id]
 		if !ok {
-			return bankCopies{}, ErrNotFound
+			return quizCopies{}, ErrNotFound
 		}
+		picked[i] = q
+	}
+	return copyQuestions(picked, questionIDs, present, scope.column == "workspace_id" && scope.value == workspaceID, false)
+}
+
+// copyQuestions rewrites questions for a new quiz: each gets fresh question and
+// part ids, and each image still there (present: image id -> the bank
+// question or quiz holding it, which must be its question's owners[i]) is
+// named by the copy copyQuizAssetsTx makes. An image no longer there is
+// dropped, as a re-save drops it (Epo 2026-11-14); a part left with nothing
+// in it refuses the copy. keepTopics keeps each question's topics. The
+// copies hold within a quiz's bounds.
+func copyQuestions(qs []map[string]any, owners []string, present map[string]string, keepTopics, fromQuiz bool) (quizCopies, error) {
+	out := quizCopies{
+		questions: make([]map[string]any, 0, len(qs)),
+		assets:    map[string]string{},
+		owners:    map[string]string{},
+		fromQuiz:  fromQuiz,
+	}
+	for i, q := range qs {
 		q = cloneQuestion(q)
 		q["id"] = uuid.NewString()
-		if scope.column != "workspace_id" || scope.value != workspaceID {
+		if !keepTopics {
 			delete(q, "topicIds")
 		}
-		for _, raw := range q["parts"].([]any) {
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
 			raw.(map[string]any)["id"] = uuid.NewString()
 		}
 		for _, assetID := range questions.AssetIDs(q) {
-			if present[assetID] == id && out.assets[assetID] == "" {
-				out.owners[assetID] = id
+			if present[assetID] == owners[i] && out.assets[assetID] == "" {
+				out.owners[assetID] = owners[i]
 				out.assets[assetID] = uid("asset")
 			}
 		}
 		if !questions.RewriteAssetIDs(q, out.assets) {
-			return bankCopies{}, ErrBankQuestionAssets
+			return quizCopies{}, ErrBankQuestionAssets
 		}
 		out.questions = append(out.questions, q)
 	}
 	if err := questions.QuizBounds(out.questions); err != nil {
-		return bankCopies{}, fmt.Errorf("%w: %v", materialdoc.ErrInvalid, err)
+		return quizCopies{}, fmt.Errorf("%w: %v", materialdoc.ErrInvalid, err)
 	}
 	return out, nil
 }
 
-// copyBankAssetsTx makes the copies' images the quiz material's own, under ids
-// readBankCopies chose, charged to the caller after the storage gate. Call it
+// copyQuizAssetsTx makes the copies' images the quiz material's own, under ids
+// copyQuestions chose, charged to the caller after the storage gate. Call it
 // after the material's locks.
-func (s *Store) copyBankAssetsTx(ctx context.Context, tx pgx.Tx, actorID, workspaceID, materialID string, picked bankCopies) error {
+func (s *Store) copyQuizAssetsTx(ctx context.Context, tx pgx.Tx, actorID, workspaceID, materialID string, picked quizCopies) error {
 	if len(picked.assets) == 0 {
 		return nil
 	}
@@ -714,7 +801,11 @@ func (s *Store) copyBankAssetsTx(ctx context.Context, tx pgx.Tx, actorID, worksp
 	var paths []string
 	var bytes int64
 	for _, asset := range sources {
-		if asset.BankQuestionID != picked.owners[asset.ID] || asset.Status != "ready" ||
+		owner := asset.BankQuestionID
+		if picked.fromQuiz {
+			owner = asset.MaterialID
+		}
+		if owner != picked.owners[asset.ID] || asset.Status != "ready" || asset.Trashed ||
 			asset.SizeBytes > limits.EditorAssetBytes(asset.Purpose) {
 			return ErrBankQuestionAssets
 		}

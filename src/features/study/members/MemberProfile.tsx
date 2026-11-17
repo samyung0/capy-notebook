@@ -10,7 +10,7 @@ import type {
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -148,27 +148,39 @@ export function MemberProfilePage({
   return (
     <PracticeFrame className="lg:pt-6">
       <div>{back}</div>
-      <div className="mt-4 flex min-w-0 items-center gap-3.5">
-        <Avatar
-          aria-hidden
-          className="size-12 shrink-0 text-base"
-          name={data.name}
-          src={data.avatarUrl || undefined}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="t-page-title truncate">{data.name}</h1>
-            {data.storageFull && <StorageFullChip />}
+      {/* Phones: the button goes under the name, which keeps the width. */}
+      <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-3.5">
+        <div className="flex min-w-0 flex-1 items-center gap-3.5">
+          <Avatar
+            aria-hidden
+            className="size-12 shrink-0 text-base"
+            name={data.name}
+            src={data.avatarUrl || undefined}
+          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="t-page-title truncate">{data.name}</h1>
+              {data.storageFull && <StorageFullChip />}
+            </div>
+            <span className="t-meta text-fg-muted">
+              {[
+                m.member_joined({ date: dayMonth(data.joinedAt) }),
+                data.lastActiveAt ? activeText(data.lastActiveAt) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
           </div>
-          <span className="t-meta text-fg-muted">
-            {[
-              m.member_joined({ date: dayMonth(data.joinedAt) }),
-              data.lastActiveAt ? activeText(data.lastActiveAt) : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
         </div>
+        {/* Every member, needing practice or not; the weakest topic needing it
+            comes preset (Epo 2026-11-16). */}
+        <PageButton
+          className="shrink-0 self-start sm:self-auto"
+          onClick={() => setAssigning(true)}
+          variant="outline"
+        >
+          {m.member_assign_quiz()}
+        </PageButton>
       </div>
 
       {notStarted ? (
@@ -230,35 +242,6 @@ export function MemberProfilePage({
           </div>
 
           <div className="flex min-w-0 flex-col gap-7.5 lg:w-95 lg:shrink-0">
-            {focus && (
-              <section className="flex flex-col gap-1.5 rounded-xl border border-divider px-4.5 py-4">
-                <div className="flex items-center gap-2">
-                  <Icon
-                    className="shrink-0 text-tint-accent-fg"
-                    name="ai"
-                    size={18}
-                  />
-                  <h2 className="t-subtitle">
-                    {m.member_needs_practice_on({ topic: topicName(focus) })}
-                  </h2>
-                </div>
-                <p className="pl-6.5 text-fg-secondary">
-                  {m.member_missed_of({
-                    asked: focus.asked,
-                    wrong: focus.asked - focus.right,
-                  })}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2 pl-6.5">
-                  <Button
-                    onClick={() => setAssigning(true)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {m.member_assign_practice()}
-                  </Button>
-                </div>
-              </section>
-            )}
             <section>
               <h2 className="t-subtitle">{m.member_frequently_wrong()}</h2>
               {data.missed.length === 0 ? (

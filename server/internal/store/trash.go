@@ -236,10 +236,8 @@ func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materia
 		}
 		episode := uid("trash")
 		var purgeAfter time.Time
-		// A quiz made for a graded quiz stops waiting: restored, it is an
-		// ordinary hidden quiz.
 		err := tx.QueryRow(ctx, `UPDATE materials SET trashed_at=now(), trashed_by=$2, trash_episode_id=$3,
-			purge_after=now() + interval '30 days', graded_pending=false
+			purge_after=now() + interval '30 days'
 			WHERE id=$1 AND owner_user_id=$4 AND trashed_at IS NULL RETURNING purge_after`,
 			materialID, actorID, episode, ownerID).Scan(&purgeAfter)
 		if isNoRows(err) {

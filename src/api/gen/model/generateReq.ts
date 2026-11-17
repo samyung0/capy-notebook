@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentFormReq } from './assignmentFormReq.ts';
 import type { CognitiveLevel } from './cognitiveLevel.ts';
 import type { GenerateQuestionType } from './generateQuestionType.ts';
 
@@ -17,8 +18,8 @@ export interface GenerateReq {
   count: number;
   /** @maxItems 5 */
   fileIds?: string[];
-  /** Made in the New graded quiz dialog (CreateMaterialReq.gradedQuiz); only an editor's quiz is a workspace file */
-  gradedQuiz?: boolean;
+  /** The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId */
+  gradedQuiz?: AssignmentFormReq;
   levels?: CognitiveLevel[];
   /** Add the caller's answered questions to the new ones */
   mix?: boolean;

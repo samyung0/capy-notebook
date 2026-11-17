@@ -1605,8 +1605,8 @@ components:
           readOnly: true
           type: string
         gradedQuiz:
-          description: "Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day"
-          type: boolean
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: "The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz): the quiz is made with the graded quiz that owns it (assignmentId)"
         questionIds:
           description: Bank questions to copy, in this order
           items:
@@ -2437,6 +2437,21 @@ components:
       required:
         - questions
       type: object
+    CopyQuizToGradedQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CopyQuizToGradedQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: The graded quiz's settings (marked, no quizId); its title also names the new quiz
+      required:
+        - gradedQuiz
+      type: object
     Cover:
       additionalProperties: false
       properties:
@@ -2665,8 +2680,8 @@ components:
             $ref: "#/components/schemas/ExtractionFile"
           type: array
         gradedQuiz:
-          description: "Started in the New graded quiz dialog: its quiz starts hidden and waits for the graded quiz to take it; one never taken goes to the trash after a day"
-          type: boolean
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: "The New graded quiz dialog's settings, checked before the run starts: the run's quiz is made with the graded quiz that owns it (Extraction.assignmentId)"
         hidden:
           type: boolean
         paper:
@@ -2714,8 +2729,8 @@ components:
           $ref: "#/components/schemas/Envelope"
           description: Versioned Plate document
         gradedQuiz:
-          description: "Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day"
-          type: boolean
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: "The New graded quiz dialog's settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)"
         kind:
           $ref: "#/components/schemas/MaterialKind"
           description: Material kind
@@ -3345,6 +3360,8 @@ components:
         answered:
           format: int64
           type: integer
+        assignmentId:
+          type: string
         confirmed:
           format: int64
           type: integer
@@ -3838,8 +3855,8 @@ components:
           maxItems: 5
           type: array
         gradedQuiz:
-          description: Made in the New graded quiz dialog (CreateMaterialReq.gradedQuiz); only an editor's quiz is a workspace file
-          type: boolean
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
@@ -15012,6 +15029,40 @@ paths:
       summary: Get a quiz with its answers to edit it
       tags:
         - Quizzes
+  /api/quizzes/{id}/graded-copy:
+    post:
+      operationId: copyQuizToGradedQuiz
+      parameters:
+        - description: "The quiz to copy: a practice quiz, or another graded quiz's own"
+          in: path
+          name: id
+          required: true
+          schema:
+            description: "The quiz to copy: a practice quiz, or another graded quiz's own"
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyQuizToGradedQuizReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make a graded quiz from a copy of a practice quiz in the same workspace, images and all
+      tags:
+        - Assignments
   /api/quizzes/{id}/metadata:
     patch:
       operationId: updateQuizMetadata
@@ -16141,7 +16192,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Give a class an assignment, freezing its quiz
+      summary: Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
       tags:
         - Assignments
   /api/workspaces/{id}/clone:

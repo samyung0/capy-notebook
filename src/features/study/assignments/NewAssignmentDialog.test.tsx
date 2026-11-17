@@ -22,15 +22,6 @@ vi.mock('@/api/hooks', () => ({
   useFiles: () => ({ data: [] }),
   useMaterials: () => ({ data: [] }),
   useMe: () => ({ data: { id: 'owner' } }),
-  // The quiz New graded quiz's Questions step made.
-  useQuiz: (id: string) => ({
-    data: id
-      ? {
-          name: 'Mock paper',
-          questions: [{ parts: [{ marks: 1 }] }, { parts: [{ marks: 2 }] }],
-        }
-      : undefined,
-  }),
   useUpdateAssignment: () => ({ isPending: false, mutate: save }),
   useWorkspaceMembers: () => ({
     data: [
@@ -148,15 +139,6 @@ beforeEach(() => {
   save.mockReset();
 });
 
-const row = (label: string) =>
-  [...host.querySelectorAll('button')].find(
-    (button) => button.textContent === label
-  );
-const press = (button?: Element) =>
-  act(async () => {
-    button?.dispatchEvent(new window.Event('click', { bubbles: true }));
-  });
-
 it('makes a new one an Assignment, with no Kind or Quiz field', async () => {
   const root = await show();
   expect(host.querySelector('[data-value="marked"]')).toBeNull();
@@ -170,12 +152,12 @@ it('makes a new one an Assignment, with no Kind or Quiz field', async () => {
   act(() => root.unmount());
 });
 
-const graded = async (onBack = vi.fn(), own = false) => {
+const graded = async (onNext = vi.fn(), own = false) => {
   const root = createRoot(host);
   await act(async () =>
     root.render(
       <NewAssignmentDialog
-        graded={{ onBack, quizId: 'qz1', title: 'New graded quiz' }}
+        graded={{ onNext, title: 'New graded quiz' }}
         onClose={vi.fn()}
         onDone={vi.fn()}
         own={own}
@@ -186,16 +168,9 @@ const graded = async (onBack = vi.fn(), own = false) => {
   return root;
 };
 
-it("is New graded quiz's Settings step: its quiz's questions and marks, named after it", async () => {
-  const onBack = vi.fn();
-  const root = await graded(onBack);
-  expect(host.textContent).toContain(m.practice_questions({ count: 2 }));
-  expect(host.textContent).toContain(m.question_ui_marks({ count: '3' }));
-  expect(
-    host.querySelector<HTMLInputElement>(
-      `[aria-label="${m.assignment_field_title()}"]`
-    )?.value
-  ).toBe('Mock paper');
+it("is New graded quiz's first step: Next hands the settings on, saving nothing", async () => {
+  const onNext = vi.fn();
+  const root = await graded(onNext);
   // When members see grades and answers sit beside Marking.
   const values = [...host.querySelectorAll('[data-value]')].map((select) =>
     select.getAttribute('data-value')
@@ -203,14 +178,49 @@ it("is New graded quiz's Settings step: its quiz's questions and marks, named af
   expect(values).toEqual(
     expect.arrayContaining(['none', '1', 'ai_approve', 'automatic', 'closed'])
   );
-  await press(row(m.assignment_change_questions()));
-  await press(row(m.action_back()));
-  expect(onBack).toHaveBeenCalledTimes(2);
-  // A graded quiz needs its due date before it is created.
+  // A graded quiz needs its title and due date before it goes on.
   await submitForm();
-  expect(save).not.toHaveBeenCalled();
+  expect(onNext).not.toHaveBeenCalled();
   expect(host.textContent).toContain(m.assignment_due_required());
   act(() => root.unmount());
+  // Filled in, as on the way back from Questions.
+  const root2 = createRoot(host);
+  await act(async () =>
+    root2.render(
+      <NewAssignmentDialog
+        graded={{
+          initial: {
+            assignAll: true,
+            assignees: [],
+            attempts: 1,
+            draft: false,
+            dueAt: '2026-11-21T09:00:00Z',
+            files: [],
+            kind: 'marked',
+            latePenaltyPct: 0,
+            marking: 'ai_approve',
+            noLate: false,
+            showAnswers: 'closed',
+            showGrades: 'automatic',
+            shuffle: false,
+            title: 'Membranes check',
+          },
+          onNext,
+          title: 'New graded quiz',
+        }}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+        workspaceId="ws1"
+      />
+    )
+  );
+  await submitForm();
+  expect(save).not.toHaveBeenCalled();
+  expect(onNext.mock.calls[0][0]).toMatchObject({
+    kind: 'marked',
+    title: 'Membranes check',
+  });
+  act(() => root2.unmount());
 });
 
 it('sends the form once, whichever Create is pressed', async () => {

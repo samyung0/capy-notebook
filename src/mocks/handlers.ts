@@ -8,6 +8,7 @@ import {
   updateFileBodyNameMax,
 } from '@/api/gen/validators';
 import type {
+  AssignmentFormReq,
   CloneFileReq,
   CloneMaterialReq,
   CreateBlankFileReq,
@@ -70,6 +71,7 @@ import { accountChatHandlers } from './accountChat';
 import { gradeQuestions, learnerView } from './answerKeys';
 import {
   addHandInFile,
+  addMockGradedQuiz,
   addPaperFile,
   assignmentActivity,
   assignmentHandlers,
@@ -2553,6 +2555,7 @@ export const handlers = [
       kind?: Material['kind'];
       title?: string;
       content?: Material['content'];
+      gradedQuiz?: AssignmentFormReq;
       scopeTopics?: string[];
       scopeFileNames?: string[];
     };
@@ -2579,6 +2582,8 @@ export const handlers = [
       workspaceName: ws?.name ?? '',
     });
     db.materials.unshift(mt);
+    if (body.gradedQuiz)
+      mt.assignmentId = addMockGradedQuiz(wsId, body.gradedQuiz, mt.id);
     return HttpResponse.json(mt, { status: 201 });
   }),
   http.post('/api/materials/:id/embedded', async ({ params, request }) => {
@@ -3277,7 +3282,16 @@ export const handlers = [
       workspaceName: wsName,
     });
     db.materials.unshift(quizMat);
-    return HttpResponse.json({ quiz: db.quizFromMaterial(quizMat) });
+    if (opts.gradedQuiz)
+      quizMat.assignmentId = addMockGradedQuiz(
+        wsId,
+        opts.gradedQuiz,
+        quizMat.id
+      );
+    return HttpResponse.json({
+      assignmentId: quizMat.assignmentId,
+      quiz: db.quizFromMaterial(quizMat),
+    });
   }),
   /* ---------------- quizzes & attempts ---------------- */
   http.post('/api/quizzes', async ({ request }) => {

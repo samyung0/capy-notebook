@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
@@ -262,11 +264,14 @@ func assignmentClosedSQL(now string) string {
 // AssignmentForm is what the New assignment dialog sets. Questions is the
 // quiz's current content, read by the caller after projecting live edits; a
 // marked assignment freezes it unless it is a draft.
+//
+// A graded quiz's waiting form is stored as JSON with a Make a quiz run
+// (Extraction.GradedQuiz); Questions, read when it is made, is not.
 type AssignmentForm struct {
 	Kind           string
 	Title          string
 	QuizID         string
-	Questions      []map[string]any
+	Questions      []map[string]any `json:"-"`
 	DueAt          *time.Time
 	TimeLimitMin   *int
 	Attempts       int
@@ -1174,61 +1179,20 @@ func (s *Store) lockAssignmentPayerRowsTx(ctx context.Context, tx pgx.Tx, wsID, 
 // (migration 0174, Epo 2026-11-14).
 const materialHiddenSQL = `(m.hidden OR m.assignment_id IS NOT NULL)`
 
-// CreateAssignment makes an assignment, freezing a marked one's quiz unless it
-// is a draft. A marked one (a graded quiz) takes its quiz as its own
-// (migration 0174): it lists nowhere and goes with the assignment. From anyone but
-// a class's staff it makes a task for themself (Epo 2026-11-10), which with no
+// CreateAssignment makes an unmarked assignment, or a task. A marked one (a
+// graded quiz) owns its quiz and is made with it (makeGradedQuizTx, Epo
+// 2026-11-16), never from a quiz that already exists. From anyone but a
+// class's staff it makes a task for themself (Epo 2026-11-10), which with no
 // workspace (wsID empty, Epo 2026-11-11) is all anyone makes.
 func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form AssignmentForm, now time.Time) (Assignment, error) {
-	id := uid("as")
-	var own bool
+	if form.Kind == AssignmentMarked {
+		return Assignment{}, assignmentInput("make a graded quiz with its questions")
+	}
+	var id string
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		staff, err := s.lockTaskTx(ctx, tx, wsID, actorID, true)
-		if err != nil {
-			return err
-		}
-		own = !staff
-		if own {
-			if err := checkOwnTask(form, actorID); err != nil {
-				return err
-			}
-		}
-		if err := checkAssignmentForm(ctx, tx, wsID, actorID, form, own); err != nil {
-			return err
-		}
-		if own {
-			err = assertOwnTaskRoomTx(ctx, tx, wsID, actorID)
-		} else {
-			err = assertAssignmentRoomTx(ctx, tx, wsID, true, !form.Draft, now)
-		}
-		if err != nil {
-			return err
-		}
-		if form.Kind == AssignmentMarked {
-			if err := checkAssignmentQuizTx(ctx, tx, wsID, actorID, form.QuizID); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-				due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, posted_at, created_at, own, points)
-			VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$17,$17,$19,$20)`,
-			id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
-			form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-			form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own, form.Points); err != nil {
-			return err
-		}
-		if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
-			return err
-		}
-		if form.Kind == AssignmentMarked {
-			if _, err := tx.Exec(ctx, `UPDATE materials SET assignment_id=$1, hidden=true, graded_pending=false WHERE id=$2`, id, form.QuizID); err != nil {
-				return err
-			}
-		}
-		if form.Draft {
-			return nil
-		}
-		return s.publishAssignmentTx(ctx, tx, id, taskRow{wsID: wsID, own: own}, actorID, form.Kind, form.Questions, now)
+		var err error
+		id, err = s.createAssignmentTx(ctx, tx, actorID, wsID, form, now)
+		return err
 	})
 	if err != nil {
 		return Assignment{}, err
@@ -1236,20 +1200,123 @@ func (s *Store) CreateAssignment(ctx context.Context, actorID, wsID string, form
 	return s.GetAssignment(ctx, actorID, id, now)
 }
 
-// checkAssignmentQuizTx: a graded quiz takes as its own only a quiz the caller
-// made for it in the New graded quiz dialog (Epo 2026-11-14), one still
-// waiting (graded_pending) in the same workspace and not in the trash. The row
-// stays locked until the assignment owns it.
-func checkAssignmentQuizTx(ctx context.Context, tx pgx.Tx, wsID, actorID, quizID string) error {
-	var id string
-	err := tx.QueryRow(ctx, `SELECT id FROM materials WHERE id=$1 AND kind='quiz' AND graded_pending
-			AND workspace_id IS NOT DISTINCT FROM NULLIF($2::text, '') AND trashed_at IS NULL
-			AND parent_material_id IS NULL AND assignment_id IS NULL AND owner_user_id=$3
-			FOR UPDATE`, quizID, wsID, actorID).Scan(&id)
-	if isNoRows(err) {
-		return assignmentInput("make the quiz in this workspace")
+// checkNewAssignmentTx admits the form for a new assignment in the write's
+// transaction, holding the workspace (lockTaskTx): own is a task its maker
+// sets themself, anything from someone who is not a class's staff.
+func (s *Store) checkNewAssignmentTx(ctx context.Context, tx pgx.Tx, actorID, wsID string, form AssignmentForm, now time.Time) (own bool, err error) {
+	staff, err := s.lockTaskTx(ctx, tx, wsID, actorID, true)
+	if err != nil {
+		return false, err
 	}
+	own = !staff
+	if own {
+		if err := checkOwnTask(form, actorID); err != nil {
+			return false, err
+		}
+	}
+	if err := checkAssignmentForm(ctx, tx, wsID, actorID, form, own); err != nil {
+		return false, err
+	}
+	if own {
+		err = assertOwnTaskRoomTx(ctx, tx, wsID, actorID)
+	} else {
+		err = assertAssignmentRoomTx(ctx, tx, wsID, true, !form.Draft, now)
+	}
+	return own, err
+}
+
+// createAssignmentTx inserts a new assignment and publishes it unless it is a
+// draft. A marked one takes form.QuizID, a quiz written in this transaction
+// (makeGradedQuizTx), as its own (migration 0174): it lists nowhere and goes
+// with the assignment.
+func (s *Store) createAssignmentTx(ctx context.Context, tx pgx.Tx, actorID, wsID string, form AssignmentForm, now time.Time) (string, error) {
+	own, err := s.checkNewAssignmentTx(ctx, tx, actorID, wsID, form, now)
+	if err != nil {
+		return "", err
+	}
+	id := uid("as")
+	if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
+			due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, posted_at, created_at, own, points)
+		VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$17,$17,$19,$20)`,
+		id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
+		form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
+		form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own, form.Points); err != nil {
+		return "", err
+	}
+	if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
+		return "", err
+	}
+	if form.Kind == AssignmentMarked {
+		if _, err := tx.Exec(ctx, `UPDATE materials SET assignment_id=$1, hidden=true WHERE id=$2`, id, form.QuizID); err != nil {
+			return "", err
+		}
+	}
+	if form.Draft {
+		return id, nil
+	}
+	return id, s.publishAssignmentTx(ctx, tx, id, taskRow{wsID: wsID, own: own}, actorID, form.Kind, form.Questions, now)
+}
+
+// checkGradedQuizForm: a graded quiz's form is marked, and its quiz is the one
+// made with it.
+func checkGradedQuizForm(form AssignmentForm) error {
+	if form.Kind != AssignmentMarked {
+		return assignmentInput("a graded quiz is marked")
+	}
+	if form.QuizID != "" {
+		return assignmentInput("a graded quiz's quiz is made with it")
+	}
+	return nil
+}
+
+// CheckGradedQuiz admits a graded quiz's form before the work that makes its
+// quiz starts (Generate, a Make a quiz run), as makeGradedQuizTx will, and
+// writes nothing.
+func (s *Store) CheckGradedQuiz(ctx context.Context, actorID, wsID string, form AssignmentForm, now time.Time) error {
+	if err := checkGradedQuizForm(form); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	_, err = s.checkNewAssignmentTx(ctx, tx, actorID, wsID, form, now)
 	return err
+}
+
+// makeGradedQuizTx makes the graded quiz (mt.GradedQuiz) that owns mt, a
+// workspace quiz written in this transaction with its images (Epo
+// 2026-11-16: the dialog sends the settings and the questions together). A
+// published one freezes the questions as stored. Nothing to make without a form.
+func (s *Store) makeGradedQuizTx(ctx context.Context, tx pgx.Tx, mt Material, now time.Time) (string, error) {
+	if mt.GradedQuiz == nil {
+		return "", nil
+	}
+	form := *mt.GradedQuiz
+	if err := checkGradedQuizForm(form); err != nil {
+		return "", err
+	}
+	if mt.Kind != MaterialQuiz || mt.WorkspaceID == "" || mt.ParentMaterialID != "" {
+		return "", fmt.Errorf("%w: only a workspace quiz is made for a graded quiz", materialdoc.ErrInvalid)
+	}
+	form.QuizID = mt.ID
+	if !form.Draft {
+		var content string
+		if err := tx.QueryRow(ctx, `SELECT content FROM materials WHERE id=$1`, mt.ID).Scan(&content); err != nil {
+			return "", err
+		}
+		raw, _, err := materialdoc.ExtractQuiz(content)
+		if err != nil {
+			return "", err
+		}
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &form.Questions); err != nil {
+				return "", err
+			}
+		}
+	}
+	return s.createAssignmentTx(ctx, tx, mt.CreatedBy, mt.WorkspaceID, form, now)
 }
 
 // writeAssignmentLists replaces its named assignees and files.
@@ -3686,38 +3753,6 @@ func (s *Store) SweepAssignments(ctx context.Context, limit int, now time.Time) 
 		released++
 	}
 	return finished, released, nil
-}
-
-// pendingGradedQuizAge is how long a quiz made for a graded quiz waits for its
-// assignment before SweepPendingGradedQuizzes trashes it.
-const pendingGradedQuizAge = 24 * time.Hour
-
-// SweepPendingGradedQuizzes trashes the quizzes made in the New graded quiz
-// dialog that no graded quiz took within a day (Epo 2026-11-14): the dialog
-// closed during Generate or a Convert run, or the tab went. Each goes to its
-// maker's trash as their own delete would. One that fails is logged and
-// passed over; each batch is a random pick, as SweepAssignments's.
-func (s *Store) SweepPendingGradedQuizzes(ctx context.Context, limit int, now time.Time) (int, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, owner_user_id FROM materials
-		WHERE graded_pending AND trashed_at IS NULL AND created_at <= $1
-		ORDER BY random() LIMIT $2`, now.Add(-pendingGradedQuizAge), limit)
-	if err != nil {
-		return 0, err
-	}
-	type pending struct{ ID, OwnerID string }
-	due, err := pgx.CollectRows(rows, pgx.RowToStructByPos[pending])
-	if err != nil {
-		return 0, err
-	}
-	trashed := 0
-	for _, q := range due {
-		if _, err := s.TrashMaterial(ctx, q.OwnerID, q.ID, string(MaterialQuiz), AgentOperation{}); err != nil {
-			obs.Log(ctx).Warn("pending graded quiz not trashed", "material_id", q.ID, "error", err)
-			continue
-		}
-		trashed++
-	}
-	return trashed, nil
 }
 
 // SweptAttempt is an attempt the sweep submitted for its member.

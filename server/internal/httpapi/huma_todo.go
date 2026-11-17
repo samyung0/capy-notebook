@@ -60,11 +60,7 @@ func (a *api) createTodoTask(ctx context.Context, in *todoTaskInput) (*assignmen
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	form := assignmentForm(in.Body)
-	if err := a.formQuiz(ctx, &form); err != nil {
-		return nil, err
-	}
-	res, err := a.s.CreateAssignment(ctx, userID(ctx), "", form, time.Now())
+	res, err := a.s.CreateAssignment(ctx, userID(ctx), "", assignmentForm(in.Body), time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}

@@ -4,12 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentFormReq } from './assignmentFormReq.ts';
 
 export interface BankQuizReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day */
-  gradedQuiz?: boolean;
+  /** The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz): the quiz is made with the graded quiz that owns it (assignmentId) */
+  gradedQuiz?: AssignmentFormReq;
   /**
      * Bank questions to copy, in this order
      * @minItems 1

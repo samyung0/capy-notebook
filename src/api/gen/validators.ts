@@ -3031,6 +3031,7 @@ export const GetExtractionParams = zod.object({
 export const GetExtractionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
+  "assignmentId": zod.string().optional(),
   "confirmed": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "error": zod.string().optional(),
@@ -3080,6 +3081,7 @@ export const CancelExtractionParams = zod.object({
 export const CancelExtractionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
+  "assignmentId": zod.string().optional(),
   "confirmed": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "error": zod.string().optional(),
@@ -3136,6 +3138,7 @@ export const ConfirmExtractionBody = zod.object({
 export const ConfirmExtractionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
+  "assignmentId": zod.string().optional(),
   "confirmed": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "error": zod.string().optional(),
@@ -4710,6 +4713,21 @@ export const CreateBankQuizParams = zod.object({
   "bank": zod.string().max(createBankQuizPathBankMax).describe('me, or a class workspace\'s id')
 })
 
+export const createBankQuizBodyGradedQuizAssigneesMax = 500;
+
+export const createBankQuizBodyGradedQuizAttemptsMax = 10;
+
+export const createBankQuizBodyGradedQuizFilesMax = 20;
+
+export const createBankQuizBodyGradedQuizLatePenaltyPctMin = 0;
+export const createBankQuizBodyGradedQuizLatePenaltyPctMax = 50;
+
+export const createBankQuizBodyGradedQuizPointsMax = 1000;
+
+export const createBankQuizBodyGradedQuizTimeLimitMinMax = 1440;
+
+export const createBankQuizBodyGradedQuizTitleMax = 120;
+
 export const createBankQuizBodyQuestionIdsMax = 150;
 
 export const createBankQuizBodyTitleMax = 120;
@@ -4719,7 +4737,30 @@ export const createBankQuizBodyWorkspaceIdMax = 64;
 
 
 export const CreateBankQuizBody = zod.object({
-  "gradedQuiz": zod.boolean().optional().describe('Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day'),
+  "gradedQuiz": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean().optional(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(createBankQuizBodyGradedQuizAssigneesMax),
+  "attempts": zod.int().min(1).max(createBankQuizBodyGradedQuizAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(createBankQuizBodyGradedQuizFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(createBankQuizBodyGradedQuizLatePenaltyPctMin).max(createBankQuizBodyGradedQuizLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "noLate": zod.boolean(),
+  "points": zod.int().min(1).max(createBankQuizBodyGradedQuizPointsMax).optional(),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(createBankQuizBodyGradedQuizTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(createBankQuizBodyGradedQuizTitleMax)
+}).optional().describe('The New graded quiz dialog\'s settings (CreateMaterialReq.gradedQuiz): the quiz is made with the graded quiz that owns it (assignmentId)'),
   "questionIds": zod.array(zod.string()).min(1).max(createBankQuizBodyQuestionIdsMax).describe('Bank questions to copy, in this order'),
   "title": zod.string().min(1).max(createBankQuizBodyTitleMax),
   "workspaceId": zod.string().min(1).max(createBankQuizBodyWorkspaceIdMax).describe('The workspace the quiz is made in; the caller edits it')
@@ -5306,6 +5347,21 @@ export const ListOwnedMaterialsResponse = zod.object({
 /**
  * @summary Create a standalone note
  */
+export const createStandaloneMaterialBodyGradedQuizAssigneesMax = 500;
+
+export const createStandaloneMaterialBodyGradedQuizAttemptsMax = 10;
+
+export const createStandaloneMaterialBodyGradedQuizFilesMax = 20;
+
+export const createStandaloneMaterialBodyGradedQuizLatePenaltyPctMin = 0;
+export const createStandaloneMaterialBodyGradedQuizLatePenaltyPctMax = 50;
+
+export const createStandaloneMaterialBodyGradedQuizPointsMax = 1000;
+
+export const createStandaloneMaterialBodyGradedQuizTimeLimitMinMax = 1440;
+
+export const createStandaloneMaterialBodyGradedQuizTitleMax = 120;
+
 export const createStandaloneMaterialBodyTitleMax = 120;
 
 
@@ -5315,7 +5371,30 @@ export const CreateStandaloneMaterialBody = zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
 }).optional().describe('Versioned Plate document'),
-  "gradedQuiz": zod.boolean().optional().describe('Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day'),
+  "gradedQuiz": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean().optional(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(createStandaloneMaterialBodyGradedQuizAssigneesMax),
+  "attempts": zod.int().min(1).max(createStandaloneMaterialBodyGradedQuizAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(createStandaloneMaterialBodyGradedQuizFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(createStandaloneMaterialBodyGradedQuizLatePenaltyPctMin).max(createStandaloneMaterialBodyGradedQuizLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "noLate": zod.boolean(),
+  "points": zod.int().min(1).max(createStandaloneMaterialBodyGradedQuizPointsMax).optional(),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(createStandaloneMaterialBodyGradedQuizTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(createStandaloneMaterialBodyGradedQuizTitleMax)
+}).optional().describe('The New graded quiz dialog\'s settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)'),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).describe('Material kind'),
   "scopeFileNames": zod.array(zod.string()).nullish(),
   "scopeTopics": zod.array(zod.string()).nullish(),
@@ -7466,6 +7545,139 @@ export const GetQuizForEditResponse = zod.object({
 
 
 /**
+ * @summary Make a graded quiz from a copy of a practice quiz in the same workspace, images and all
+ */
+export const copyQuizToGradedQuizPathIdMax = 64;
+
+
+
+export const CopyQuizToGradedQuizParams = zod.object({
+  "id": zod.string().max(copyQuizToGradedQuizPathIdMax).describe('The quiz to copy: a practice quiz, or another graded quiz\'s own')
+})
+
+export const copyQuizToGradedQuizBodyGradedQuizAssigneesMax = 500;
+
+export const copyQuizToGradedQuizBodyGradedQuizAttemptsMax = 10;
+
+export const copyQuizToGradedQuizBodyGradedQuizFilesMax = 20;
+
+export const copyQuizToGradedQuizBodyGradedQuizLatePenaltyPctMin = 0;
+export const copyQuizToGradedQuizBodyGradedQuizLatePenaltyPctMax = 50;
+
+export const copyQuizToGradedQuizBodyGradedQuizPointsMax = 1000;
+
+export const copyQuizToGradedQuizBodyGradedQuizTimeLimitMinMax = 1440;
+
+export const copyQuizToGradedQuizBodyGradedQuizTitleMax = 120;
+
+
+
+export const CopyQuizToGradedQuizBody = zod.object({
+  "gradedQuiz": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean().optional(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(copyQuizToGradedQuizBodyGradedQuizAssigneesMax),
+  "attempts": zod.int().min(1).max(copyQuizToGradedQuizBodyGradedQuizAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(copyQuizToGradedQuizBodyGradedQuizFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(copyQuizToGradedQuizBodyGradedQuizLatePenaltyPctMin).max(copyQuizToGradedQuizBodyGradedQuizLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "noLate": zod.boolean(),
+  "points": zod.int().min(1).max(copyQuizToGradedQuizBodyGradedQuizPointsMax).optional(),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(copyQuizToGradedQuizBodyGradedQuizTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(copyQuizToGradedQuizBodyGradedQuizTitleMax)
+}).describe('The graded quiz\'s settings (marked, no quizId); its title also names the new quiz')
+})
+
+export const CopyQuizToGradedQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean(),
+  "attempts": zod.int(),
+  "closed": zod.boolean(),
+  "closedAt": zod.iso.datetime({"offset":true}).optional(),
+  "draft": zod.boolean(),
+  "drawingParts": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "kind": zod.string(),
+  "materialId": zod.string().optional(),
+  "name": zod.string(),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string().optional()
+})),
+  "gradesHidden": zod.boolean(),
+  "id": zod.string(),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int(),
+  "manage": zod.object({
+  "approvalsCheckedOff": zod.boolean(),
+  "assignAll": zod.boolean(),
+  "assigned": zod.int(),
+  "assignees": zod.array(zod.string()),
+  "average": zod.number().optional(),
+  "done": zod.int(),
+  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "notGraded": zod.int(),
+  "quizChanged": zod.boolean().optional(),
+  "quizId": zod.string().optional(),
+  "quizTitle": zod.string().optional(),
+  "quizUpdatedAt": zod.iso.datetime({"offset":true}).optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "toApprove": zod.int()
+}).optional(),
+  "marks": zod.number(),
+  "mine": zod.object({
+  "attemptsUsed": zod.int(),
+  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
+  "checkedOff": zod.boolean(),
+  "correct": zod.number().optional(),
+  "countedAttemptId": zod.string().optional(),
+  "done": zod.boolean(),
+  "doneAt": zod.iso.datetime({"offset":true}).optional(),
+  "handIn": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})).nullish(),
+  "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number().optional(),
+  "missing": zod.boolean(),
+  "runningAttemptId": zod.string().optional(),
+  "total": zod.number().optional(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+}).optional(),
+  "noLate": zod.boolean(),
+  "own": zod.boolean(),
+  "points": zod.int().optional(),
+  "postedAt": zod.iso.datetime({"offset":true}),
+  "postedBy": zod.string(),
+  "questions": zod.int(),
+  "timeLimitMin": zod.int().optional(),
+  "title": zod.string(),
+  "topicIds": zod.array(zod.string()),
+  "workspaceId": zod.string()
+})
+
+
+/**
  * @summary Update quiz metadata
  */
 export const UpdateQuizMetadataParams = zod.object({
@@ -9262,7 +9474,7 @@ export const ListAssignmentsResponse = zod.object({
 
 
 /**
- * @summary Give a class an assignment, freezing its quiz
+ * @summary Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
  */
 export const CreateAssignmentParams = zod.object({
   "id": zod.string()
@@ -9643,6 +9855,21 @@ export const CreateExtractionParams = zod.object({
 })
 
 
+export const createExtractionBodyGradedQuizAssigneesMax = 500;
+
+export const createExtractionBodyGradedQuizAttemptsMax = 10;
+
+export const createExtractionBodyGradedQuizFilesMax = 20;
+
+export const createExtractionBodyGradedQuizLatePenaltyPctMin = 0;
+export const createExtractionBodyGradedQuizLatePenaltyPctMax = 50;
+
+export const createExtractionBodyGradedQuizPointsMax = 1000;
+
+export const createExtractionBodyGradedQuizTimeLimitMinMax = 1440;
+
+export const createExtractionBodyGradedQuizTitleMax = 120;
+
 
 
 export const createExtractionBodyTitleMax = 120;
@@ -9655,7 +9882,30 @@ export const CreateExtractionBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "pages": zod.array(zod.int()).optional()
 })).optional(),
-  "gradedQuiz": zod.boolean().optional().describe('Started in the New graded quiz dialog: its quiz starts hidden and waits for the graded quiz to take it; one never taken goes to the trash after a day'),
+  "gradedQuiz": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean().optional(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(createExtractionBodyGradedQuizAssigneesMax),
+  "attempts": zod.int().min(1).max(createExtractionBodyGradedQuizAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(createExtractionBodyGradedQuizFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(createExtractionBodyGradedQuizLatePenaltyPctMin).max(createExtractionBodyGradedQuizLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "noLate": zod.boolean(),
+  "points": zod.int().min(1).max(createExtractionBodyGradedQuizPointsMax).optional(),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(createExtractionBodyGradedQuizTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(createExtractionBodyGradedQuizTitleMax)
+}).optional().describe('The New graded quiz dialog\'s settings, checked before the run starts: the run\'s quiz is made with the graded quiz that owns it (Extraction.assignmentId)'),
   "hidden": zod.boolean(),
   "paper": zod.array(zod.object({
   "fileId": zod.string().min(1),
@@ -9668,6 +9918,7 @@ export const CreateExtractionBody = zod.object({
 export const CreateExtractionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
+  "assignmentId": zod.string().optional(),
   "confirmed": zod.int().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "error": zod.string().optional(),
@@ -9913,6 +10164,21 @@ export const generateBodyCountMax = 50;
 
 export const generateBodyFileIdsMax = 5;
 
+export const generateBodyGradedQuizAssigneesMax = 500;
+
+export const generateBodyGradedQuizAttemptsMax = 10;
+
+export const generateBodyGradedQuizFilesMax = 20;
+
+export const generateBodyGradedQuizLatePenaltyPctMin = 0;
+export const generateBodyGradedQuizLatePenaltyPctMax = 50;
+
+export const generateBodyGradedQuizPointsMax = 1000;
+
+export const generateBodyGradedQuizTimeLimitMinMax = 1440;
+
+export const generateBodyGradedQuizTitleMax = 120;
+
 export const generateBodyTitleMax = 120;
 
 
@@ -9921,7 +10187,30 @@ export const generateBodyTitleMax = 120;
 export const GenerateBody = zod.object({
   "count": zod.int().min(1).max(generateBodyCountMax),
   "fileIds": zod.array(zod.string()).max(generateBodyFileIdsMax).optional(),
-  "gradedQuiz": zod.boolean().optional().describe('Made in the New graded quiz dialog (CreateMaterialReq.gradedQuiz); only an editor\'s quiz is a workspace file'),
+  "gradedQuiz": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean().optional(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(generateBodyGradedQuizAssigneesMax),
+  "attempts": zod.int().min(1).max(generateBodyGradedQuizAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(generateBodyGradedQuizFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(generateBodyGradedQuizLatePenaltyPctMin).max(generateBodyGradedQuizLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "noLate": zod.boolean(),
+  "points": zod.int().min(1).max(generateBodyGradedQuizPointsMax).optional(),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(generateBodyGradedQuizTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(generateBodyGradedQuizTitleMax)
+}).optional().describe('The New graded quiz dialog\'s settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId'),
   "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
   "mix": zod.boolean().optional().describe('Add the caller\'s answered questions to the new ones'),
   "title": zod.string().min(1).max(generateBodyTitleMax),
@@ -10053,6 +10342,21 @@ export const CreateMaterialParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialBodyGradedQuizAssigneesMax = 500;
+
+export const createMaterialBodyGradedQuizAttemptsMax = 10;
+
+export const createMaterialBodyGradedQuizFilesMax = 20;
+
+export const createMaterialBodyGradedQuizLatePenaltyPctMin = 0;
+export const createMaterialBodyGradedQuizLatePenaltyPctMax = 50;
+
+export const createMaterialBodyGradedQuizPointsMax = 1000;
+
+export const createMaterialBodyGradedQuizTimeLimitMinMax = 1440;
+
+export const createMaterialBodyGradedQuizTitleMax = 120;
+
 export const createMaterialBodyTitleMax = 120;
 
 
@@ -10062,7 +10366,30 @@ export const CreateMaterialBody = zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
 }).optional().describe('Versioned Plate document'),
-  "gradedQuiz": zod.boolean().optional().describe('Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day'),
+  "gradedQuiz": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "allowUploads": zod.boolean().optional(),
+  "assignAll": zod.boolean(),
+  "assignees": zod.array(zod.string()).max(createMaterialBodyGradedQuizAssigneesMax),
+  "attempts": zod.int().min(1).max(createMaterialBodyGradedQuizAttemptsMax),
+  "draft": zod.boolean(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "files": zod.array(zod.object({
+  "fileId": zod.string().optional(),
+  "materialId": zod.string().optional()
+})).max(createMaterialBodyGradedQuizFilesMax),
+  "kind": zod.enum(['marked', 'unmarked']),
+  "latePenaltyPct": zod.int().min(createMaterialBodyGradedQuizLatePenaltyPctMin).max(createMaterialBodyGradedQuizLatePenaltyPctMax),
+  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
+  "noLate": zod.boolean(),
+  "points": zod.int().min(1).max(createMaterialBodyGradedQuizPointsMax).optional(),
+  "quizId": zod.string().optional(),
+  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
+  "showGrades": zod.enum(['automatic', 'manual']),
+  "shuffle": zod.boolean(),
+  "timeLimitMin": zod.int().min(1).max(createMaterialBodyGradedQuizTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(createMaterialBodyGradedQuizTitleMax)
+}).optional().describe('The New graded quiz dialog\'s settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)'),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).describe('Material kind'),
   "scopeFileNames": zod.array(zod.string()).nullish(),
   "scopeTopics": zod.array(zod.string()).nullish(),

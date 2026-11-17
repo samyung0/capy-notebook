@@ -1,9 +1,8 @@
-import { type ReactNode, useEffect, useId, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
   useCreateAssignment,
   useMe,
-  useQuiz,
   useUpdateAssignment,
   useWorkspaceMembers,
 } from '@/api/hooks';
@@ -25,8 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
-import { questionMarks } from '@/features/questions/types';
-import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
@@ -46,6 +43,7 @@ import {
   Field,
   FilesField,
   GradesSelect,
+  gradedSettingsResolver,
   LatePenaltySelect,
   MarkingSelect,
   PointsField,
@@ -53,7 +51,6 @@ import {
   TimeLimitSelect,
 } from './assignmentFields';
 import { advancedStartsOpen } from './assignmentText';
-import { NoAnswersWarning } from './NoAnswersWarning';
 import { type TaskFile, TaskFilesField } from './TaskFiles';
 
 /** The Workspace field's value for a task with no workspace. */
@@ -61,9 +58,10 @@ const NO_WORKSPACE = 'none';
 
 /** New assignment and its edit (boards A1, A1b, A1d; Task, Epo 2026-11-14): a
  * new one is an Assignment (a task in a personal workspace), a title with
- * optional files; New's Graded quiz opens New graded quiz, whose Settings step
- * this is (`graded`, board Graded quiz 2 Settings). Editing keeps the kind and
- * the quiz.
+ * optional files; New's Graded quiz opens New graded quiz, whose first step,
+ * Settings, this is (`graded`, Epo 2026-11-16): Next hands its values on to the
+ * Questions step, which sends them with the questions. Editing keeps the kind
+ * and the quiz.
  *
  * It is also the form of a task one sets oneself (`own`, Epo 2026-11-10: New
  * task for anyone in a personal workspace and a class's viewer members), one
@@ -85,9 +83,13 @@ export function NewAssignmentDialog({
   workspaces,
 }: {
   existing?: Assignment;
-  /** New graded quiz's Settings step: the quiz its Questions step made, and
-   * the way back to that step. */
-  graded?: { onBack: () => void; quizId: string; title: ReactNode };
+  /** New graded quiz's Settings step: the values it starts on (when back from
+   * Questions), and Next with the form's. */
+  graded?: {
+    initial?: AssignmentFormReq;
+    onNext: (form: AssignmentFormReq) => void;
+    title: ReactNode;
+  };
   onClose: () => void;
   onDone: (assignment: Assignment) => void;
   /** A new task for oneself, where the page knows the viewer gives out no
@@ -114,9 +116,6 @@ export function NewAssignmentDialog({
   const manage = existing?.manage;
   const formId = useId();
   const { data: members } = useWorkspaceMembers(wsId, !isOwn);
-  const { data: quiz } = useQuiz(graded?.quizId ?? '', {
-    errorBoundary: false,
-  });
   const {
     clearErrors,
     control,
@@ -126,19 +125,20 @@ export function NewAssignmentDialog({
     setValue,
     watch,
   } = useForm<AssignmentFormReq>({
-    defaultValues: assignmentDefaults(
-      existing,
-      existing
-        ? {}
-        : {
-            assignAll: !presetAssignee,
-            assignees: presetAssignee ? [presetAssignee] : [],
-            kind: graded ? 'marked' : 'unmarked',
-            quizId: graded?.quizId,
-          }
-    ),
+    defaultValues:
+      graded?.initial ??
+      assignmentDefaults(
+        existing,
+        existing
+          ? {}
+          : {
+              assignAll: !presetAssignee,
+              assignees: presetAssignee ? [presetAssignee] : [],
+              kind: graded ? 'marked' : 'unmarked',
+            }
+      ),
     mode: 'onSubmit',
-    resolver: assignmentResolver,
+    resolver: graded ? gradedSettingsResolver : assignmentResolver,
   });
   const kind = watch('kind');
   const dueAt = watch('dueAt');
@@ -161,7 +161,6 @@ export function NewAssignmentDialog({
   // from its members until published.
   const hasPolicy = !!dueAt;
   const hasDraft = !isOwn && (!existing || existing.draft);
-  const [titleEdited, setTitleEdited] = useState(!!existing);
   const { mutate: create, isPending: creating } = useCreateAssignment(wsId);
   const { mutate: update, isPending: updating } = useUpdateAssignment(
     wsId,
@@ -179,11 +178,6 @@ export function NewAssignmentDialog({
     setPicked(next);
   };
   const saving = creating || updating;
-  // A graded quiz is named after its quiz until a title is typed.
-  const quizTitle = quiz?.name;
-  useEffect(() => {
-    if (quizTitle && !titleEdited) setValue('title', quizTitle);
-  }, [quizTitle, setValue, titleEdited]);
   const submit = handleSubmit((values) => {
     if (isOwn && !me) return;
     const body: AssignmentFormReq = {
@@ -195,6 +189,10 @@ export function NewAssignmentDialog({
         points: undefined,
       }),
     };
+    if (graded) {
+      graded.onNext(body);
+      return;
+    }
     const options = {
       onError: (error: unknown) =>
         setError('root', {
@@ -214,12 +212,12 @@ export function NewAssignmentDialog({
       type="submit"
       variant="accent"
     >
-      {existing ? m.action_save() : m.assignment_create()}
+      {graded
+        ? m.action_next()
+        : existing
+          ? m.action_save()
+          : m.assignment_create()}
     </Button>
-  );
-  const marks = (quiz?.questions ?? []).reduce(
-    (total, question) => total + questionMarks(question),
-    0
   );
 
   return (
@@ -231,7 +229,7 @@ export function NewAssignmentDialog({
         // New graded quiz's steps both have the corner close.
         showCloseButton={!!graded}
       >
-        <DialogTitle action={createButton} onBack={graded?.onBack}>
+        <DialogTitle action={createButton}>
           {graded
             ? graded.title
             : existing
@@ -284,57 +282,28 @@ export function NewAssignmentDialog({
               </Select>
             </Field>
           )}
-          {graded ? (
-            // What the Questions step made, and the way back to it.
-            <div className="flex flex-col gap-1.5">
-              <div className="flex min-h-11 items-center gap-2.5 border-divider border-y py-2">
+          {!graded && kind === 'marked' && (
+            <Field label={m.assignment_field_quiz()}>
+              <div className="flex min-h-7 items-center gap-2">
                 <FileIcon
-                  className="size-4.5 shrink-0"
+                  className="size-4 shrink-0"
                   name={materialIconName('quiz')}
                 />
-                <span className="truncate font-bold">
-                  {questionsLabel(quiz?.questions.length ?? 0)}
+                <span className="truncate font-semibold">
+                  {manage?.quizTitle}
                 </span>
-                <span className="shrink-0 text-fg-secondary">
-                  ·{' '}
-                  {marks === 1
-                    ? m.question_ui_one_mark()
-                    : m.question_ui_marks({ count: formatPoints(marks) })}
-                </span>
-                <button
-                  className="ml-auto shrink-0 font-semibold underline underline-offset-2 hover:text-fg-secondary"
-                  onClick={graded.onBack}
-                  type="button"
-                >
-                  {m.assignment_change_questions()}
-                </button>
-              </div>
-              <NoAnswersWarning quizId={graded.quizId} />
-            </div>
-          ) : (
-            kind === 'marked' && (
-              <Field label={m.assignment_field_quiz()}>
-                <div className="flex min-h-7 items-center gap-2">
-                  <FileIcon
-                    className="size-4 shrink-0"
-                    name={materialIconName('quiz')}
-                  />
-                  <span className="truncate font-semibold">
-                    {manage?.quizTitle}
+                {existing && (
+                  <span className="t-meta shrink-0 text-fg-muted">
+                    {questionsLabel(existing.questions)}
                   </span>
-                  {existing && (
-                    <span className="t-meta shrink-0 text-fg-muted">
-                      {questionsLabel(existing.questions)}
-                    </span>
-                  )}
-                </div>
-              </Field>
-            )
+                )}
+              </div>
+            </Field>
           )}
           <Field
             error={errors.title?.message}
             label={m.assignment_field_title()}
-            required
+            required={!graded}
           >
             <Controller
               control={control}
@@ -346,10 +315,10 @@ export function NewAssignmentDialog({
                   aria-label={m.assignment_field_title()}
                   autoComplete="off"
                   maxLength={120}
-                  onChange={(event) => {
-                    setTitleEdited(true);
-                    field.onChange(event);
-                  }}
+                  // Left empty, a graded quiz is named after its quiz.
+                  placeholder={
+                    graded ? m.assignment_title_from_quiz() : undefined
+                  }
                 />
               )}
             />
@@ -520,17 +489,6 @@ export function NewAssignmentDialog({
             <InputError>{errors.root.message}</InputError>
           )}
           <DialogFooter className="max-sm:hidden sm:pt-2.5">
-            {graded && (
-              <Button
-                className="mr-auto"
-                onClick={graded.onBack}
-                size="md"
-                type="button"
-                variant="outline"
-              >
-                {m.action_back()}
-              </Button>
-            )}
             <DialogCancel disabled={saving} size="md" />
             {createButton}
           </DialogFooter>

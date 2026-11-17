@@ -436,8 +436,12 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   opens Add quiz, one dialog with four tabs (Epo 2026-11-11, `AddPractice.tsx`,
   at `?make=files&makeFrom=practice`, so Study stays behind it and Cancel
   returns there; the Dashboard's Make a quiz opens it too, at `?make=files`).
+  The tabs run Convert to quiz, Generate quiz, From the bank, Create blank
+  (Epo 2026-11-16), and share one height (680px, at most 88dvh; phones full
+  screen): a tab's body scrolls inside it, so switching tabs or adding files
+  never resizes the dialog, and From the bank's list fills what is left.
   **Convert to quiz** comes first and opens by default (Epo 2026-11-14). **Create
-  quiz** is a gallery like Add file's Create tab: Blank quiz and one template
+  blank** (Create quiz until Epo 2026-11-16) is a gallery like Add file's Create tab: Blank quiz and one template
   per answer type (`quizTemplates.ts`), each tile picturing its example
   question; Create makes "{workspace} quiz {n}" holding that one complete
   question (none for Blank) and opens it to edit. **Generate quiz** is Make my
@@ -452,7 +456,7 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   starts on here too (Epo 2026-11-16, every quiz an editor makes starts
   hidden; it was off here, so the quiz listed on members' Practice at once). **From the bank**
   (Epo 2026-11-14, `BankPicker.tsx`) copies picked item bank questions into a
-  new "{workspace} quiz {n}"; Create opens it, as Create quiz does
+  new "{workspace} quiz {n}"; Create opens it, as Create blank does
   (`question-bank.md`, Item banks).
   Everyone else gets Make my own practice (below).
 - Below md the table becomes one row per item with its facts under the
@@ -546,9 +550,10 @@ under the workspace's `study` key).
   lists share one grid, an assignment's status and date over a topic's count
   and squares (Epo 2026-11-16). From
   lg that side takes what the right's 380px leaves, up to 1000px, and the gap
-  between them grows to 96px from 2xl (Epo 2026-11-16). On the
-  right: the weakest topic needing practice (lowest share right) with "Missed 3
-  of 4 questions" and Assign practice; Frequently wrong (Still missing until
+  between them grows to 96px from 2xl (Epo 2026-11-16). Assign quiz sits
+  at the header's end for every member, needing practice or not (under the name
+  on phones; the Needs practice card that held it was removed, Epo 2026-11-16).
+  On the right: Frequently wrong (Still missing until
   Epo 2026-11-11)
   (up to five questions whose latest check was not right, most missed first,
   from the class's own quizzes Summary counts, the prompt from
@@ -558,8 +563,10 @@ under the workspace's `study` key).
   Recent activity (the latest five: an attempt at a class practice quiz with its
   title and question count, a day's reviews in a topic, and submissions). A
   member's own practice quiz is private, so it shows as its topic, never its
-  title. Assign practice opens New assignment with the member as its only
-  assignee, and its Generate questions starts on the card's topic (Q721,
+  title. Assign quiz (Assign practice until Epo 2026-11-16) opens New graded
+  quiz with the member as its only assignee, and its Generate starts on the
+  weakest topic needing
+  practice (lowest share right), if any (Q721,
   `presetAssignee`, `presetTopicId`). A `memberId` that isn't one (a removed
   member) shows Member not found with nothing to retry. Board G2's Draft a follow-up
   quiz (F3) was removed (Epo 2026-11-08): the labels already show which topics
@@ -1059,16 +1066,29 @@ graded on points (`kindLabel` in `assignmentText.ts`). None is a file. There
 is no other state than draft or published: a draft is invisible to members, and
 publishing posts it.
 
-**The owned quiz.** The New graded quiz dialog makes its quiz with
-`gradedQuiz` (Create, Generate, Convert's run and From the bank all take it):
-the quiz starts hidden and waits (`materials.graded_pending`, Epo 2026-11-14).
-Create binds it (`CreateAssignment`, after `checkAssignmentQuizTx`: only such a
-waiting quiz, made by the caller, top level, in the same workspace and not
-trashed; any other quiz is refused as "make the quiz in this workspace") and
-sets `hidden` and clears the wait. A waiting quiz no graded quiz took goes to
-its maker's trash after a day (`SweepPendingGradedQuizzes`, on the assignment
-sweep's minute; trashing clears the wait, so a restored one is an ordinary
-hidden quiz), and the dialog trashes one Generate delivers after it closed.
+**The owned quiz.** A graded quiz and its quiz are made together (Epo
+2026-11-16; until then the quiz was made first and waited, `graded_pending`,
+for a second request to take it). Each way of getting questions carries the
+graded quiz's settings as `gradedQuiz` (an `AssignmentFormReq`, kind marked,
+no `quizId`): Create blank (`CreateMaterialReq`), From the bank (`BankQuizReq`)
+and Existing quiz (`POST /api/quizzes/{id}/graded-copy`, a copy of one of the
+workspace's practice quizzes, never another graded quiz's own, which is an
+assignment already, nor one made only for oneself; its questions given fresh
+ids and its images
+new `editor_assets` rows as From the bank's copies are) make the quiz and the
+assignment in one transaction. Generate and Convert's run check the form when
+they start and keep it with the run; the assignment is made in the transaction
+that makes the run's quiz (a form that no longer fits then fails the run), and
+the run's `assignmentId` (and the quiz's) tells the dialog; a run refused then
+says why (`graded_quiz_invalid`, or one of the assignment limits). The dialog
+sends Generate's, Convert's and Create blank's as drafts, so AI-made or empty
+questions are read before anything goes out, except a task for oneself, which
+has no draft (`checkOwnTask`). Settings may leave the title empty: each way then
+sends its quiz's name (the picked quiz's, "{workspace} quiz {n}", the
+generated or converted quiz's title). Once made, the dialog opens the graded
+quiz on its report's Questions tab (a task for oneself on its page), Epo
+2026-11-16. `POST
+/api/workspaces/{id}/assignments` no longer makes a graded quiz from a quiz id.
 An owned quiz never lists (Files, the file tree, Recent, search, Practice, Study,
 reviews and new items, pickers, Explore, a workspace clone with its images, the
 agent's outline and summary search; each list's SQL has `m.assignment_id IS
@@ -1093,7 +1113,6 @@ unique.
 | --- | --- |
 | `assignments` | `own` (migration 0168: a task a member set themself, its maker's alone, whose `workspace_id` may be null; it takes the rest of this row as a class's assignment does, but for `assign_all` and `draft`). Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its answers joined reviews, once) |
 | `materials.assignment_id` | The marked assignment that owns this quiz (migration 0174, unique, cascades on delete) |
-| `materials.graded_pending` | Made in the New graded quiz dialog and not yet taken (migration 0174) |
 | `question_extractions.graded_quiz` | A Convert run started there, whose quiz is saved waiting |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
 | `assignment_files` | An unmarked assignment's files and materials, in order; a file moved to another workspace leaves (`moveFileTx`) |
@@ -1751,8 +1770,9 @@ members, and maybe filtering files"): marked or not, time limit, attempts,
 marking, Show grades, Show answers, Allow submission with uploads and Advanced.
 There is no Draft only, since To do lists no drafts and the task would have
 nowhere to be found. A marked Task is made through New › Graded quiz (below) and
-owns its quiz as a class's graded quiz does: the store takes only a waiting quiz
-its maker made in that dialog (`checkAssignmentQuizTx`), and Republish freezes the
+owns its quiz as a class's graded quiz does: it is made with its quiz in one
+request (the quiz maker's `gradedQuiz`, or Existing quiz's copy; The owned
+quiz), and Republish freezes the
 owned quiz again (`checkFreezeTx`). `POST /api/workspaces/{id}/assignments` takes a task from any
 member who is not a class's staff, and from them only for themself
 (`checkOwnTask`: no draft, nobody else); a class's staff make assignments there
@@ -1816,19 +1836,22 @@ tells the class's staff and that member (`publishSweptTodo`).
 offers Task and Graded quiz; a class member keeps a plain New task. Assignment and
 Task open `NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked
 form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz with a
-"1 Questions › 2 Settings" stepper (hidden on a phone). Step 1 is Add quiz
-(`AddPracticeDialog` with `graded`): New quiz, Generate, Convert and From the
-bank make the quiz with `hidden` set (`CreateMaterialReq.hidden`,
-`GenerateReq.hidden`, `BankQuizReq.hidden`; From the bank's button is
-Continue), Convert's
-pages and run kept in the dialog's own state, with no Hide the quiz switch.
-Continue opens step 2, `NewAssignmentDialog` with `graded`: the marked fields under
-a "N questions · M marks · Change questions" strip, its title the quiz's name,
-with Back, Cancel and Create (or Save draft). Create binds the quiz; Cancel, or
-making questions again, trashes the quiz made and not yet owned. A member
-profile's Assign practice opens the same dialog with that member as the only
-assignee and the card's topic. Editing a graded quiz shows its quiz as a locked
-field. Making a quiz refreshes `qk.practice`.
+"1 Settings › 2 Questions" stepper (hidden on a phone; Epo 2026-11-16 put
+Settings first, as Canvas, Google Classroom and Moodle set a quiz up before its
+questions). Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
+the due date required, the title left empty to take its quiz's name ("The quiz's
+name"), and Next, which saves nothing and hands the values on. Step 2 is Add quiz (`AddPracticeDialog` with `graded`) with five tabs:
+Existing quiz first (Practice's quizzes, one picked and copied whole), then
+Convert, Generate, From the bank and Create blank, each sending the settings
+with its questions in one request (The owned quiz). Back returns to Settings
+with what was filled in (on a phone, the header's back arrow). Existing quiz
+and From the bank say Create; Generate,
+Convert and Create blank say Create draft. Convert's pages and run stay in the
+dialog's own state, with no Hide the quiz switch. Cancel leaves nothing behind.
+A member profile's Assign quiz (Epo 2026-11-16, was Assign practice) opens the
+same dialog with that member as the only assignee and Generate on their weakest
+topic. Editing a graded quiz shows its quiz as a locked field. Making a quiz
+refreshes `qk.practice`.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b) is the To do page's `TodoTable` for one
 class (Epo 2026-11-12, `single`: no group row): a box on every row, the row opening

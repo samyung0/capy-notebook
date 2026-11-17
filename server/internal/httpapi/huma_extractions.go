@@ -272,6 +272,14 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	} else if taken {
 		return nil, hErr(store.ErrTitleTaken)
 	}
+	// A graded quiz's form is checked before credits are reserved and kept
+	// with the run; its quiz is made with it (Epo 2026-11-16).
+	gradedQuiz := gradedQuizForm(in.Body.GradedQuiz)
+	if gradedQuiz != nil {
+		if err := a.s.CheckGradedQuiz(ctx, actor, wsID, *gradedQuiz, time.Now()); err != nil {
+			return nil, assignmentError(err)
+		}
+	}
 	paper, answers, unread, err := a.extractionFiles(ctx, wsID, in.Body)
 	var refused huma.StatusError
 	if errors.As(err, &refused) {
@@ -326,11 +334,11 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	// Make a quiz dialog was uploaded hidden (CreateSourceUploadReq.Hidden),
 	// so a mark scheme never reaches the students. The quiz starts hidden
 	// unless the dialog's switch said otherwise (Hidden); one made for a graded
-	// quiz waits for its assignment (GradedQuiz).
+	// quiz is made with it (GradedQuiz).
 	run, err := a.s.CreateExtraction(runCtx, store.ExtractionStart{
 		ID: runID, WorkspaceID: wsID, UserID: actor, Title: title, SpendSessionID: charge.id, UnreadAnswers: unread,
 		PaperName: paperNames, PaperPages: paperPages, AnswerFiles: len(answers), Hidden: in.Body.Hidden,
-		GradedQuiz: in.Body.GradedQuiz,
+		GradedQuiz: gradedQuiz,
 	})
 	if err != nil {
 		stream.Close()
@@ -494,6 +502,10 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		if errors.Is(err, store.ErrStorageQuotaExceeded) {
 			return fail("storage_full", "The quiz does not fit in your storage.")
 		}
+		// The graded quiz made with the quiz was refused: neither is saved.
+		if code, message, ok := gradedQuizRefusal(err); ok {
+			return fail(code, message)
+		}
 		obs.CaptureErr(ctx, err, map[string]string{"stage": stage})
 		return fail("extraction_failed", "The quiz could not be saved.")
 	}
@@ -530,7 +542,7 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	draft := store.MaterialDraft{
 		ActorUserID: actor, WorkspaceID: run.WorkspaceID, WorkspaceName: wsName,
 		Kind: store.MaterialQuiz, Title: title, Questions: complete, Assets: assets, Hidden: run.Hidden,
-		GradedPending: run.GradedQuiz, AllowNoQuestions: len(incomplete) > 0,
+		GradedQuiz: run.GradedQuiz, AllowNoQuestions: len(incomplete) > 0,
 	}
 	mt, err := a.s.CreateMaterialDraft(ctx, draft)
 	if err != nil {
@@ -573,6 +585,7 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		ev.Report = answersMissingLeftOut(ev.Report)
 		savedCount -= len(incomplete)
 	}
+	a.gradedQuizMade(ctx, mt.AssignmentID)
 	ended, err := a.s.FinishExtraction(ctx, run.ID, mt.ID, ev.Report)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_finish"})
@@ -583,6 +596,24 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "extraction_charge"})
 	}
 	return ended
+}
+
+// gradedQuizRefusal is why a run's graded quiz could not be made with its
+// quiz, as the run's error code and message: its form, or a cap reached since
+// the run started.
+func gradedQuizRefusal(err error) (code, message string, ok bool) {
+	var input *store.AssignmentInputError
+	switch {
+	case errors.As(err, &input):
+		return "graded_quiz_invalid", input.Detail, true
+	case errors.Is(err, store.ErrTooManyAssignments):
+		return "assignment_limit", err.Error(), true
+	case errors.Is(err, store.ErrTooManyOpenAssignments):
+		return "assignment_open_limit", err.Error(), true
+	case errors.Is(err, store.ErrTooManyOwnTasks):
+		return "task_limit", err.Error(), true
+	}
+	return "", "", false
 }
 
 // addIncompleteQuestions puts a run's incomplete questions in the new quiz's room,

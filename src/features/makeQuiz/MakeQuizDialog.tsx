@@ -4,7 +4,12 @@ import {
   EXTRACTION_ANSWER_FILES_MAX,
   EXTRACTION_PAPER_FILES_MAX,
 } from '@/api/limits.generated';
-import type { Extraction, SourceFile, SourceUploadPolicy } from '@/api/types';
+import type {
+  AssignmentFormReq,
+  Extraction,
+  SourceFile,
+  SourceUploadPolicy,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -307,16 +312,16 @@ export function MakeQuizDialog({
 }: {
   /** The file whose pages are on show. */
   file: string | undefined;
-  /** A graded quiz's questions (Epo 2026-11-14): always hidden, with no Hide
-   * the quiz switch, and the dialog stays open while its files upload and
-   * read, since the graded quiz's Settings step follows the run. */
-  graded?: boolean;
+  /** A graded quiz's settings (Epo 2026-11-16): the run makes the graded
+   * quiz with its quiz, so there is no Hide the quiz switch, and the dialog
+   * stays open while its files upload and read and the run goes on. */
+  graded?: AssignmentFormReq;
   /** From the address, for a link or a reload. */
   initial: MakeQuizChoice;
   onClose: () => void;
   /** The questions are confirmed: the dialog gives way to the upload panel. */
   onConfirmed: (run: Extraction, choice: MakeQuizChoice) => void;
-  onDone: (quizId: string) => void;
+  onDone: (quizId: string, assignmentId?: string) => void;
   onFile: (fileId: string | undefined) => void;
   /** A run failed or was cancelled: back to its pages, picks and all. */
   onRunBack: () => void;
@@ -331,6 +336,9 @@ export function MakeQuizDialog({
    * `strip` is its tab row and `other` the tab on show when it isn't this one,
    * in place of the files and their footer. */
   tabs?: {
+    /** A graded quiz's Back to its Settings: the footer's on wider screens,
+     * the header's arrow on phones. */
+    onBack?: () => void;
     other?: { body: React.ReactNode; footer: React.ReactNode };
     strip: React.ReactNode;
     title: React.ReactNode;
@@ -657,7 +665,19 @@ export function MakeQuizDialog({
             closable: !!tabs,
             footer: tabs?.other ? (
               tabs.other.footer
-            ) : graded ? null : (
+            ) : graded ? (
+              tabs?.onBack && (
+                <Button
+                  className="max-sm:hidden"
+                  onClick={tabs.onBack}
+                  size="md"
+                  type="button"
+                  variant="outline"
+                >
+                  {m.action_back()}
+                </Button>
+              )
+            ) : (
               <>
                 <label className="mr-auto flex min-w-0 items-center gap-2 self-center text-sm max-sm:w-full">
                   <Switch checked={hidden} onCheckedChange={setHidden} />
@@ -671,18 +691,25 @@ export function MakeQuizDialog({
                 )}
               </>
             ),
+            onBack: tabs?.onBack,
             onCloseClick: onClose,
             title: tabs?.title ?? m.make_quiz_title(),
             width: tabs ? 600 : 720,
           };
+  // The tabs share one height, so switching tabs or adding files never
+  // resizes the dialog; a tab's own body scrolls (Epo 2026-11-16).
+  const tabbed = !!tabs && stepName === 'files';
   return (
     <SimpleDialog
       action={step.action}
-      cardClassName={cn(step.framed && 'h-full')}
+      cardClassName={cn((step.framed || tabbed) && 'h-full')}
       cardScrollContainerClassName={cn(
         step.framed && 'max-sm:pb-0 sm:overflow-hidden'
       )}
-      className={cn(step.framed && 'flex h-[88dvh] flex-col gap-0')}
+      className={cn(
+        step.framed && 'flex h-[88dvh] flex-col gap-0',
+        tabbed && 'flex flex-col gap-0 sm:h-[min(680px,88dvh)]'
+      )}
       footer={step.footer}
       onBack={step.onBack}
       onClose={step.guarded ? () => undefined : onClose}
@@ -704,9 +731,17 @@ export function MakeQuizDialog({
       width={step.width}
     >
       {/* Kept mounted, so a step's pages aren't read or drawn again on return. */}
-      <div hidden={stepName !== 'files'}>
+      <div
+        className={cn(tabbed && 'flex min-h-0 flex-1 flex-col')}
+        hidden={stepName !== 'files'}
+      >
         {tabs?.strip}
-        <div hidden={!!tabs?.other}>{filesBody}</div>
+        <div
+          className={cn(tabbed && 'min-h-0 flex-1 overflow-y-auto')}
+          hidden={!!tabs?.other}
+        >
+          {filesBody}
+        </div>
         {tabs?.other?.body}
       </div>
       <div

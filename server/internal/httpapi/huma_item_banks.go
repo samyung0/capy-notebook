@@ -88,9 +88,9 @@ type itemBankQuestionOutput struct {
 type BankQuizReq struct {
 	WorkspaceID string `json:"workspaceId" minLength:"1" maxLength:"64" doc:"The workspace the quiz is made in; the caller edits it"`
 	// maxItems is fieldlimits.QuizParts: every question holds a part.
-	QuestionIDs []string               `json:"questionIds" nullable:"false" minItems:"1" maxItems:"150" uniqueItems:"true" doc:"Bank questions to copy, in this order"`
-	Title       apimodel.MaterialTitle `json:"title" minLength:"1"`
-	GradedQuiz  bool                   `json:"gradedQuiz,omitempty" doc:"Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day"`
+	QuestionIDs []string                    `json:"questionIds" nullable:"false" minItems:"1" maxItems:"150" uniqueItems:"true" doc:"Bank questions to copy, in this order"`
+	Title       apimodel.MaterialTitle      `json:"title" minLength:"1"`
+	GradedQuiz  *apimodel.AssignmentFormReq `json:"gradedQuiz,omitempty" doc:"The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz): the quiz is made with the graded quiz that owns it (assignmentId)"`
 }
 
 type createBankQuizInput struct {
@@ -220,7 +220,7 @@ func (a *api) createBankQuiz(ctx context.Context, in *createBankQuizInput) (*mat
 	}
 	res, err := a.s.CreateQuizFromBank(ctx, store.BankQuiz{
 		ActorID: userID(ctx), Bank: in.Bank, WorkspaceID: ws.ID, WorkspaceName: ws.Name,
-		QuestionIDs: in.Body.QuestionIDs, Title: string(in.Body.Title), GradedPending: in.Body.GradedQuiz,
+		QuestionIDs: in.Body.QuestionIDs, Title: string(in.Body.Title), GradedQuiz: gradedQuizForm(in.Body.GradedQuiz),
 		// Hidden from members until shown (Epo 2026-11-16, every quiz an
 		// editor makes).
 		Hidden: true,
@@ -231,6 +231,7 @@ func (a *api) createBankQuiz(ctx context.Context, in *createBankQuizInput) (*mat
 	if err != nil {
 		return nil, bankError(err)
 	}
+	a.gradedQuizMade(ctx, res.AssignmentID)
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), res.ID)
 	if err != nil {
 		return nil, hErr(err)
@@ -290,5 +291,5 @@ func bankError(err error) error {
 	case errors.Is(err, store.ErrBankQuestionAssets):
 		return huma.Error422UnprocessableEntity(err.Error())
 	}
-	return hErr(err)
+	return assignmentError(err)
 }

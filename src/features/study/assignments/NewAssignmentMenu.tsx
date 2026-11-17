@@ -17,7 +17,7 @@ export function NewAssignmentMenu({
   small = false,
   workspaceId,
 }: {
-  onCreated?: (assignment: Assignment) => void;
+  onCreated?: (created: Pick<Assignment, 'id' | 'kind'>) => void;
   /** A personal workspace's: tasks for oneself. */
   own: boolean;
   /** The Dashboard section's small outline button instead of the page's. */
@@ -26,9 +26,9 @@ export function NewAssignmentMenu({
 }) {
   const [making, setMaking] = useState<'unmarked' | 'marked' | null>(null);
   const close = () => setMaking(null);
-  const done = (assignment: Assignment) => {
+  const done = (created: Pick<Assignment, 'id' | 'kind'>) => {
     close();
-    onCreated?.(assignment);
+    onCreated?.(created);
   };
   return (
     <>

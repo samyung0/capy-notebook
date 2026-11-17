@@ -5,7 +5,12 @@ import {
   useItemBanks,
   useItemBankTags,
 } from '@/api/itemBanks';
-import type { ItemBankQuestion, Question } from '@/api/types';
+import type {
+  AssignmentFormReq,
+  ItemBank,
+  ItemBankQuestion,
+  Question,
+} from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
@@ -24,7 +29,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { useDebounced } from '@/lib/useDebounced';
-import { bankName, questionTypes } from './bankText';
+import { questionTypes } from './bankText';
 import {
   BankFilter,
   hasTopicOrTags,
@@ -58,12 +63,11 @@ export function useBankPicker({
 }: {
   /** The tab is showing. */
   active: boolean;
-  /** Made for a graded quiz: it starts hidden and waits for the graded quiz
-   * to take it. */
-  gradedQuiz: boolean;
+  /** A graded quiz's settings: the quiz is made with its graded quiz. */
+  gradedQuiz?: AssignmentFormReq;
   /** The primary button's label. */
   label: string;
-  onMade: (quizId: string) => void;
+  onMade: (quizId: string, assignmentId?: string) => void;
   /** The new quiz's title, worked out when it is made. */
   title: () => string;
   workspaceId: string;
@@ -77,17 +81,24 @@ export function useBankPicker({
   const action = (
     <Button
       disabled={creating || picked.items.length === 0 || !!tooLarge}
-      onClick={() =>
+      onClick={() => {
+        const name = title();
         create(
           {
             bank: picked.bank,
-            gradedQuiz,
+            // An untitled graded quiz is named after its quiz.
+            gradedQuiz: gradedQuiz && {
+              ...gradedQuiz,
+              title: gradedQuiz.title || name,
+            },
             questionIds: picked.items.map((item) => item.id),
-            title: title(),
+            title: name,
           },
-          { onSuccess: (material) => onMade(material.id) }
-        )
-      }
+          {
+            onSuccess: (material) => onMade(material.id, material.assignmentId),
+          }
+        );
+      }}
       type="button"
     >
       {creating ? <Spinner /> : label}
@@ -155,6 +166,8 @@ export function BankQuestionsDialog({
           )}
         </Button>
       }
+      cardClassName="h-full"
+      className="flex flex-col gap-0 sm:h-[min(680px,88dvh)]"
       footer={
         note && (
           <p className="t-meta mr-auto flex min-w-0 items-center gap-1.5 self-center text-fg-muted max-sm:w-full">
@@ -238,6 +251,11 @@ function useBankPicks({
   return { body, note, picked, tooLarge };
 }
 
+/** The switch says just "Personal" or the class's name, without "bank"
+ * (Epo 2026-11-16). */
+const switchName = (bank: ItemBank) =>
+  bank.kind === 'personal' ? m.bank_personal() : bank.name;
+
 function BankPickerBody({
   onPick,
   picked,
@@ -268,8 +286,8 @@ function BankPickerBody({
           label={m.practice_tab_bank()}
           onChange={(next) => onPick({ bank: next, items: [] })}
           options={[
-            { label: bankName(banks[0]), value: banks[0].id },
-            { label: bankName(banks[1]), value: banks[1].id },
+            { label: switchName(banks[0]), value: banks[0].id },
+            { label: switchName(banks[1]), value: banks[1].id },
           ]}
           value={bank}
         />
@@ -439,9 +457,9 @@ function BankQuestions({
           topics={topics}
         />
       </div>
-      {/* Its own scroller, as tall whatever it holds, so the dialog keeps
-          its size across banks and filters. */}
-      <div className="mt-2 h-[min(440px,50dvh)] overflow-y-auto" ref={scroller}>
+      {/* Its own scroller, filling the dialog's fixed height, so the dialog
+          keeps its size across banks and filters. */}
+      <div className="mt-2 min-h-60 flex-1 overflow-y-auto" ref={scroller}>
         {list}
       </div>
     </>

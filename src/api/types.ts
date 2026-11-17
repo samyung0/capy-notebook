@@ -28,6 +28,7 @@ import type {
   AnonymousNote as GenAnonymousNote,
   AnonymousQuiz as GenAnonymousQuiz,
   AssignmentAttempt as GenAssignmentAttempt,
+  AssignmentFormReq as GenAssignmentFormReq,
   AssignmentQuestionReport as GenAssignmentQuestionReport,
   AssignmentReportBody as GenAssignmentReport,
   AttemptDetail as GenAttemptDetail,
@@ -707,8 +708,8 @@ export type GenerateKind = Exclude<MaterialKind, 'note' | 'canvas'>;
 export interface GenerateOptions {
   count: number;
   fileIds: string[];
-  /** Made for a graded quiz (GenerateReq.gradedQuiz). */
-  gradedQuiz?: boolean;
+  /** A graded quiz's settings: made with the quiz (GenerateReq.gradedQuiz). */
+  gradedQuiz?: GenAssignmentFormReq;
   mix?: boolean;
   title: string;
   topics: string[]; // topic ids

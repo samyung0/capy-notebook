@@ -34,9 +34,11 @@ type Extraction struct {
 	SpendSessionID string `json:"-"`
 	// Hidden is the starter's choice for the quiz the run saves.
 	Hidden bool `json:"-"`
-	// GradedQuiz: started in the New graded quiz dialog, so its quiz waits for
-	// the assignment (Material.GradedPending).
-	GradedQuiz bool `json:"-"`
+	// GradedQuiz is the graded quiz the run's quiz is made with, started in
+	// the New graded quiz dialog (Epo 2026-11-16, Material.GradedQuiz).
+	GradedQuiz *AssignmentForm `json:"-"`
+	// AssignmentID is that graded quiz once the quiz is made.
+	AssignmentID *string `json:"assignmentId,omitempty"`
 }
 
 // ExtractionFoundQuestion is one line of the map: a printed question, the pages it
@@ -106,7 +108,8 @@ const KindExtractionQuestion = "extraction_question"
 
 const extractionCols = `id, workspace_id, title, status, copied, answered, confirmed,
 	found, COALESCE(found_credit_micros, 0), unread_answers, paper_name, paper_pages, answer_files,
-	report, quiz_id, error_code, error, created_at, finished_at, COALESCE(spend_session_id, ''), hidden, graded_quiz`
+	report, quiz_id, error_code, error, created_at, finished_at, COALESCE(spend_session_id, ''), hidden, graded_quiz,
+	(SELECT m.assignment_id FROM materials m WHERE m.id=question_extractions.quiz_id)`
 
 func scanExtraction(row pgx.Row) (Extraction, error) {
 	var e Extraction
@@ -116,7 +119,7 @@ func scanExtraction(row pgx.Row) (Extraction, error) {
 	var paperPages, answerFiles int
 	err := row.Scan(&e.ID, &e.WorkspaceID, &e.Title, &e.Status, &e.Recorded, &e.Answered, &e.Confirmed,
 		&found, &foundMicros, &unread, &paperName, &paperPages, &answerFiles,
-		&report, &e.QuizID, &e.ErrorCode, &e.Error, &e.CreatedAt, &e.FinishedAt, &e.SpendSessionID, &e.Hidden, &e.GradedQuiz)
+		&report, &e.QuizID, &e.ErrorCode, &e.Error, &e.CreatedAt, &e.FinishedAt, &e.SpendSessionID, &e.Hidden, &e.GradedQuiz, &e.AssignmentID)
 	if err != nil {
 		return e, err
 	}
@@ -156,8 +159,8 @@ type ExtractionStart struct {
 	AnswerFiles    int
 	// Hidden starts the run's quiz hidden from members.
 	Hidden bool
-	// GradedQuiz: the run's quiz is made for a graded quiz (Extraction.GradedQuiz).
-	GradedQuiz bool
+	// GradedQuiz: the run's quiz is made with this graded quiz (Extraction.GradedQuiz).
+	GradedQuiz *AssignmentForm
 }
 
 // CreateExtraction records a run as running.

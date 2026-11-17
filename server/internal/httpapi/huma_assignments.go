@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -95,7 +96,8 @@ type sharingNoticeOutput struct {
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an assignment, freezing its quiz", http.StatusCreated, a.createAssignment)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
+	reg(api, http.MethodPost, "/api/quizzes/{id}/graded-copy", "copyQuizToGradedQuiz", tag, "Make a graded quiz from a copy of a practice quiz in the same workspace, images and all", http.StatusCreated, a.copyQuizToGradedQuiz)
 	reg(api, http.MethodGet, "/api/assignments/{id}", "getAssignment", tag, "An assignment", http.StatusOK, a.getAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}", "updateAssignment", tag, "Change an assignment's settings", http.StatusOK, a.updateAssignment)
 	reg(api, http.MethodDelete, "/api/assignments/{id}", "deleteAssignment", tag, "Delete an assignment with its results", http.StatusNoContent, a.deleteAssignment)
@@ -192,25 +194,21 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 	}
 }
 
-// formQuiz reads a marked form's quiz to freeze, unless it is a draft. Its
-// maker must be able to open the quiz; the store then holds an assignment to
-// its class's, and a task someone sets themself to any they can open.
-func (a *api) formQuiz(ctx context.Context, form *store.AssignmentForm) error {
-	if form.Kind != store.AssignmentMarked {
+// gradedQuizForm is a question maker's graded quiz (Epo 2026-11-16): the
+// New graded quiz dialog's settings, made with the quiz. Nil: none.
+func gradedQuizForm(b *apimodel.AssignmentFormReq) *store.AssignmentForm {
+	if b == nil {
 		return nil
 	}
-	if form.QuizID == "" {
-		return huma.Error422UnprocessableEntity("choose a quiz")
+	form := assignmentForm(*b)
+	return &form
+}
+
+// gradedQuizMade tells a new graded quiz's members and staff (createAssignment).
+func (a *api) gradedQuizMade(ctx context.Context, assignmentID string) {
+	if assignmentID != "" {
+		a.publishTodo(ctx, a.todoAudience(ctx, assignmentID, false)...)
 	}
-	if form.Draft {
-		return nil
-	}
-	if _, err := a.materialRead(ctx, form.QuizID); err != nil {
-		return hErr(err)
-	}
-	qs, err := a.quizForFreezing(ctx, form.QuizID)
-	form.Questions = qs
-	return err
 }
 
 func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (*assignmentOutput, error) {
@@ -226,15 +224,63 @@ func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (
 	if role == "" {
 		return nil, hErr(store.ErrNotFound)
 	}
-	form := assignmentForm(in.Body)
-	if err := a.formQuiz(ctx, &form); err != nil {
-		return nil, err
-	}
-	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, form, time.Now())
+	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, assignmentForm(in.Body), time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
 	a.publishTodo(ctx, a.todoAudience(ctx, res.ID, false)...)
+	return &assignmentOutput{Body: res}, nil
+}
+
+type copyQuizToGradedQuizInput struct {
+	ID   string `path:"id" maxLength:"64" doc:"The quiz to copy: a practice quiz, or another graded quiz's own"`
+	Body apimodel.CopyQuizToGradedQuizReq
+}
+
+// copyQuizToGradedQuiz makes a graded quiz from a copy of a quiz of the
+// workspace the caller edits (Epo 2026-11-16): a practice quiz, hidden or not,
+// or another graded quiz's own, last term's reused. The copy is the source as
+// it is now, live edits projected.
+func (a *api) copyQuizToGradedQuiz(ctx context.Context, in *copyQuizToGradedQuizInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	source, err := a.s.GetMaterial(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	// A practice quiz of a workspace: a graded quiz's own quiz is an assignment
+	// already, not one to start another from (Epo 2026-11-16).
+	if source.Kind != store.MaterialQuiz || source.WorkspaceID == "" || source.AssignmentID != "" {
+		return nil, hErr(store.ErrNotFound)
+	}
+	if err := a.assertWorkspaceEditor(ctx, source.WorkspaceID); err != nil {
+		return nil, hErr(err)
+	}
+	ws, err := a.s.GetWorkspaceShared(ctx, source.WorkspaceID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	qs, err := a.quizForFreezing(ctx, source.ID)
+	if err != nil {
+		return nil, err
+	}
+	form := assignmentForm(in.Body.GradedQuiz)
+	title, err := a.s.DisambiguateMaterialTitle(ctx, ws.ID, form.Title)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.CopyQuizToGradedQuiz(ctx, store.QuizCopy{
+		ActorID: userID(ctx), WorkspaceID: ws.ID, WorkspaceName: ws.Name,
+		SourceID: source.ID, Questions: qs, Title: title, Form: form,
+	}, time.Now())
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err != nil {
+		return nil, bankError(err)
+	}
+	a.gradedQuizMade(ctx, res.ID)
 	return &assignmentOutput{Body: res}, nil
 }
 

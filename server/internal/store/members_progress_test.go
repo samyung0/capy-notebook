@@ -57,7 +57,7 @@ func TestMembersProgress(t *testing.T) {
 	f := newAssignmentFixture(t, "members-progress")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,13 +135,13 @@ func TestMembersStandingsMatchSummary(t *testing.T) {
 	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET practice_topic_id=$2 WHERE id=$1`, own.ID, topic); err != nil {
 		t.Fatal(err)
 	}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	held := f.form(t, now.Add(time.Hour))
 	held.ShowGrades = GradesManual
-	manual, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, held, now)
+	manual, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, held, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestMembersProgressQueriesStayFlat(t *testing.T) {
 	f := newAssignmentFixture(t, "members-queries")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
 		t.Fatal(err)
 	}
 	logPractice(t, f, f.quiz.ID, f.viewer, "pa1", "q1", 1, now)
@@ -247,7 +247,7 @@ func TestMemberProfile(t *testing.T) {
 	f := newAssignmentFixture(t, "member-profile")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestStillMissingWaitsForGrades(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}

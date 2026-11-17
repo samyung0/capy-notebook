@@ -127,6 +127,7 @@ export * from './conversation.ts';
 export * from './conversationPage.ts';
 export * from './copyBankQuestionsOutputBody.ts';
 export * from './copyBankQuestionsOutputBodyQuestionsItem.ts';
+export * from './copyQuizToGradedQuizReq.ts';
 export * from './cover.ts';
 export * from './coverKind.ts';
 export * from './coverStyle.ts';

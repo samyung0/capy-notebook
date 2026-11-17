@@ -22,7 +22,7 @@ func TestGradedAssignment(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.gradedForm(now.Add(time.Hour), 20)
 	form.LatePenaltyPct = 20
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestGradedAssignmentWaitsForRelease(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.gradedForm(now.Add(time.Hour), 10)
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,12 +139,12 @@ func TestPointsOnlyOnAnAssignment(t *testing.T) {
 	marked := f.form(t, now.Add(time.Hour))
 	marked.Points = &points
 	var input *AssignmentInputError
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, marked, now); !errors.As(err, &input) {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, marked, now); !errors.As(err, &input) {
 		t.Fatalf("a graded quiz with points = %v", err)
 	}
 	task := f.gradedForm(now.Add(time.Hour), 10)
 	task.AssignAll, task.Assignees = false, []string{f.viewer}
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, task, now); !errors.As(err, &input) {
+	if _, err := f.s.makeAssignment(ctx, f.viewer, f.ws.ID, task, now); !errors.As(err, &input) {
 		t.Fatalf("a task with points = %v", err)
 	}
 }

@@ -1,11 +1,13 @@
 import { HttpResponse, http } from 'msw';
 import type {
+  AssignmentFormReq,
   ItemBank,
   ItemBankQuestion,
   Material,
   Workspace,
 } from '@/api/types';
 import type { Question } from '@/features/questions/types';
+import { addMockGradedQuiz } from './assignments';
 import { biologyQuizQuestions } from './biologyQuiz';
 
 /** Item banks (todo-graded-quizzes.md): the caller's own (`me`) and each class
@@ -220,22 +222,26 @@ export const itemBankHandlers = (
       const bank = String(params.bank);
       if (!reaches(bank)) return notFound();
       const body = (await request.json()) as {
-        gradedQuiz?: boolean;
+        gradedQuiz?: AssignmentFormReq;
         questionIds: string[];
         title: string;
         workspaceId: string;
       };
       const questions = copies(bank, body.questionIds, body.workspaceId);
       if (!questions) return notFound();
-      return HttpResponse.json(
-        makeQuiz({
-          hidden: !!body.gradedQuiz,
-          questions,
-          title: body.title,
-          workspaceId: body.workspaceId,
-        }),
-        { status: 201 }
-      );
+      const quiz = makeQuiz({
+        hidden: true,
+        questions,
+        title: body.title,
+        workspaceId: body.workspaceId,
+      });
+      if (body.gradedQuiz)
+        quiz.assignmentId = addMockGradedQuiz(
+          body.workspaceId,
+          body.gradedQuiz,
+          quiz.id
+        );
+      return HttpResponse.json(quiz, { status: 201 });
     }),
     // The quiz editor's From the bank: the copies come back to insert.
     http.post(

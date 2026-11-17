@@ -1,9 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ReactNode, useRef, useState } from 'react';
 import { type Control, Controller } from 'react-hook-form';
+import { z } from 'zod';
 import {
   CreateAssignmentBody,
   createAssignmentBodyFilesMax,
+  createAssignmentBodyTitleMax,
 } from '@/api/gen/validators';
 import {
   useFiles,
@@ -480,25 +482,35 @@ export function assignmentDefaults(
   };
 }
 
-/** The form's rules beyond the API's: a title, and a marked one's due date
- * once published. */
-export const assignmentResolver = zodResolver(
-  CreateAssignmentBody.superRefine((v, ctx) => {
-    if (!v.title.trim())
-      ctx.addIssue({
-        code: 'custom',
-        message: m.assignment_title_required(),
-        path: ['title'],
-      });
-    if (v.kind !== 'marked') return;
-    if (!v.draft && !v.dueAt)
-      ctx.addIssue({
-        code: 'custom',
-        message: m.assignment_due_required(),
-        path: ['dueAt'],
-      });
-  })
-);
+/** The form's rules beyond the API's: a title (unless `untitled`), and a
+ * marked one's due date once published. */
+const assignmentRules = (untitled: boolean) =>
+  zodResolver(
+    (untitled
+      ? CreateAssignmentBody.extend({
+          title: z.string().max(createAssignmentBodyTitleMax),
+        })
+      : CreateAssignmentBody
+    ).superRefine((v, ctx) => {
+      if (!(untitled || v.title.trim()))
+        ctx.addIssue({
+          code: 'custom',
+          message: m.assignment_title_required(),
+          path: ['title'],
+        });
+      if (v.kind !== 'marked') return;
+      if (!v.draft && !v.dueAt)
+        ctx.addIssue({
+          code: 'custom',
+          message: m.assignment_due_required(),
+          path: ['dueAt'],
+        });
+    })
+  );
+export const assignmentResolver = assignmentRules(false);
+/** New graded quiz's Settings: an empty title takes its quiz's name, known
+ * only once the questions are picked (Epo 2026-11-16). */
+export const gradedSettingsResolver = assignmentRules(true);
 
 /** What is sent for the form's values: each kind's own fields, a late policy
  * that fits its due date, and only assignees still in the class. */

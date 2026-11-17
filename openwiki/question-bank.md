@@ -508,7 +508,7 @@ names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
 `src/features/makeQuiz`, for those who may edit the workspace (a viewer's `?make=`
 link shows the Dashboard). The Dashboard's Make a quiz and Study's Add practice open
 it as Add quiz (Epo 2026-11-14): its files step is the Convert to quiz tab, first and
-open by default, beside Create quiz and Generate quiz (`tabs`, [study
+open by default, beside Generate quiz, From the bank and Create blank (`tabs`, [study
 progress](study-progress.md)); a new assignment's Make a quiz from a file opens it
 alone. The files step's footer holds a switch, Hide the quiz (Epo
 2026-11-11), on by default wherever the dialog opens (Epo 2026-11-16; it was off from
@@ -973,9 +973,11 @@ saved with the question in one create or `PUT /api/item-banks/{bank}/questions/{
 Other callers (/qb, Make a quiz's list) show no Tags.
 
 Questions go out through Add quiz's **From the bank** tab (`BankPicker.tsx`,
-for Study's Add practice and a graded quiz's Questions step): a switch between
+for Study's Add practice and a graded quiz's Questions step, which sends the
+graded quiz's settings with the picks, Epo 2026-11-16): a switch between
 the banks the caller may use there (`GET /api/item-banks?workspaceId=`; My bank
-alone shows no switch), Search, Filter, Select all N (loads every page of the
+alone shows no switch; its options say the class's name and Personal, without
+"bank", Epo 2026-11-16), Search, Filter, Select all N (loads every page of the
 filter first) and a box per question with its text, types, marks and tags. Picks
 belong to the bank shown: switching banks starts them over; they keep the order
 picked across searches. The footer counts "N questions · M marks", or says why

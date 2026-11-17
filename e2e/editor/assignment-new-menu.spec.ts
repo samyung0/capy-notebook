@@ -3,7 +3,7 @@ import { m } from '../i18n';
 
 /** Assignments' New menu (Epo 2026-11-14): Assignment opens the form, with
  * Points and no Quiz field; Graded quiz opens New graded quiz on its
- * Questions step. */
+ * Settings step (Epo 2026-11-16: settings first, then questions). */
 
 async function pickNew(page: Page, item: string) {
   await page.goto('/workspaces/ws_bio?study=assignments');
@@ -23,13 +23,14 @@ test('Assignment opens the form with Points and no Quiz field', async ({
   await expect(dialog.getByText(m.assignment_field_quiz())).toHaveCount(0);
 });
 
-test('Graded quiz opens New graded quiz on its Questions step', async ({
+test('Graded quiz opens New graded quiz on its Settings step', async ({
   page,
 }) => {
   await pickNew(page, m.assignment_kind_marked());
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText(m.assignment_new_graded_quiz())).toBeVisible();
   await expect(
-    dialog.getByText(m.assignment_step_questions(), { exact: true })
+    dialog.getByRole('button', { name: m.action_next() })
   ).toBeVisible();
+  await expect(dialog.getByLabel(m.assignment_field_title())).toBeVisible();
 });

@@ -84,7 +84,7 @@ func TestAssignmentCaps(t *testing.T) {
 			AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
 			Files: []AssignmentFileRef{}}
 	}
-	first, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, task(false), now)
+	first, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, task(false), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,10 +101,10 @@ func TestAssignmentCaps(t *testing.T) {
 		}
 	}
 	seed("as_cap_open_", OpenAssignmentsPerClass-1, false)
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, task(false), now); !errors.Is(err, ErrTooManyOpenAssignments) {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, task(false), now); !errors.Is(err, ErrTooManyOpenAssignments) {
 		t.Fatalf("an open one past the cap: %v, want ErrTooManyOpenAssignments", err)
 	}
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, task(true), now)
+	draft, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, task(true), now)
 	if err != nil {
 		t.Fatalf("a draft with the open ones full: %v", err)
 	}
@@ -124,13 +124,13 @@ func TestAssignmentCaps(t *testing.T) {
 
 	// 101 so far; closed copies fill the class.
 	seed("as_cap_closed_", AssignmentsPerClass-OpenAssignmentsPerClass-1, true)
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, task(true), now); !errors.Is(err, ErrTooManyAssignments) {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, task(true), now); !errors.Is(err, ErrTooManyAssignments) {
 		t.Fatalf("a draft in a full class: %v, want ErrTooManyAssignments", err)
 	}
 	if err := f.s.DeleteAssignment(ctx, f.user, first.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, task(true), now); err != nil {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, task(true), now); err != nil {
 		t.Fatalf("a draft after one was deleted: %v", err)
 	}
 }

@@ -171,8 +171,9 @@ the quiz bounds.
 
 A graded quiz's own quiz (study-progress.md, The owned quiz) is charged to
 whoever made it, as any material is, and goes with their account purge (Epo
-2026-11-14); a quiz made for one that no graded quiz took goes to its maker's
-trash after a day.
+2026-11-14). It is made with its graded quiz (Epo 2026-11-16), so none is
+left waiting; an Existing quiz copy charges its images to the caller as From the
+bank's copies do.
 
 An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
 not whoever drafted it. Its images are new `editor_assets` rows of the workspace

@@ -369,7 +369,7 @@ func TestQuizCoversItsQuestionsTopics(t *testing.T) {
 	now := time.Now().UTC()
 	form := f.form(t, now.Add(24*time.Hour))
 	form.Questions[0]["topicIds"] = []any{cells}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestQuizCoversItsQuestionsTopics(t *testing.T) {
 		WHERE id=$1`, form.QuizID, genetics); err != nil {
 		t.Fatal(err)
 	}
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	draft, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}

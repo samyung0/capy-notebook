@@ -3,7 +3,13 @@ import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useFiles, useGenerate, useMaterials, useTopics } from '@/api/hooks';
 import { GENERATE_FILES_MAX } from '@/api/limits.generated';
-import type { MaterialRef, QuestionType, SourceFile, Topic } from '@/api/types';
+import type {
+  AssignmentFormReq,
+  MaterialRef,
+  QuestionType,
+  SourceFile,
+  Topic,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -271,9 +277,9 @@ export function useMakePractice({
   onlyYou,
   workspaceId,
 }: {
-  /** Made for a graded quiz: it starts hidden from members and waits for the
-   * graded quiz to take it. */
-  gradedQuiz?: boolean;
+  /** A graded quiz's settings (Epo 2026-11-16): the quiz is made with its
+   * graded quiz, saved as a draft to be read before it goes out. */
+  gradedQuiz?: AssignmentFormReq;
   /** The topic it starts on: Summary's weakest. */
   initialTopicId?: string;
   /** Off where the quiz is for the members, who have answered nothing of the
@@ -281,7 +287,7 @@ export function useMakePractice({
   mixable?: boolean;
   /** Stays on the page once the quiz is made, rather than opening it to answer:
    * a teacher making one for Add quiz or a graded quiz. */
-  onMade?: (quizId: string) => void;
+  onMade?: (quizId: string, assignmentId?: string) => void;
   onlyYou: boolean;
   workspaceId: string;
 }) {
@@ -328,20 +334,25 @@ export function useMakePractice({
   async function start() {
     setFormError(null);
     const picked = from === 'topics' ? chosenTopics : pickedFiles;
+    const title = m.practice_own_title({
+      name: nameOf(picked[0])?.slice(0, 80) ?? '',
+    });
     try {
       const made = (await generate({
         count,
         fileIds: from === 'files' ? picked : [],
-        gradedQuiz,
+        // An untitled graded quiz is named after its quiz.
+        gradedQuiz: gradedQuiz && {
+          ...gradedQuiz,
+          title: gradedQuiz.title || title,
+        },
         mix: mixable && mix,
-        title: m.practice_own_title({
-          name: nameOf(picked[0])?.slice(0, 80) ?? '',
-        }),
+        title,
         topics: from === 'topics' ? picked : [],
         types: TYPES.find((t) => t.value === types)?.types ?? [],
-      })) as { quiz?: { id: string } };
+      })) as { assignmentId?: string; quiz?: { id: string } };
       if (onMade) {
-        if (made.quiz?.id) onMade(made.quiz.id);
+        if (made.quiz?.id) onMade(made.quiz.id, made.assignmentId);
       } else if (made.quiz?.id)
         navigate({
           params: { quizId: made.quiz.id },
@@ -361,7 +372,11 @@ export function useMakePractice({
 
   const startButton = (
     <Button disabled={!ready || isPending} onClick={() => void start()}>
-      {isPending ? m.generating_quiz() : m.review_start()}
+      {isPending
+        ? m.generating_quiz()
+        : gradedQuiz
+          ? m.assignment_create_draft()
+          : m.review_start()}
     </Button>
   );
   const body = (

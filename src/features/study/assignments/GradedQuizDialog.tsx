@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { useDeleteMaterial, useWorkspace } from '@/api/hooks';
-import type { Assignment } from '@/api/types';
+import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
+import { useRefreshAssignments, useWorkspace } from '@/api/hooks';
+import type { AssignmentFormReq } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
 import { m } from '@/i18n';
@@ -10,15 +11,18 @@ import { NewAssignmentDialog } from './NewAssignmentDialog';
 
 const NO_FILES: MakeQuizChoice = { answers: [], paper: [] };
 
-/** New graded quiz (Epo 2026-11-14, boards Graded quiz 1 Questions and 2
- * Settings): Add quiz's ways of getting questions make the graded quiz's own
- * quiz, hidden from members and waiting for it (`gradedQuiz`), then Continue
- * goes to today's marked-assignment settings. Creating the assignment makes
- * the quiz its own (the server's `materials.assignment_id`); a quiz made here
- * and left behind (Cancel, questions made again, or one that arrives after the
- * dialog closed) goes to the trash, and the server trashes one no graded quiz
- * took within a day (a Convert run finishing after a reload). Convert's pages
- * and run stay in the dialog, in its own state rather than the address. */
+/** The graded quiz made, for whoever opened the dialog. */
+export type GradedQuizMade = { id: string; kind: 'marked' };
+
+/** New graded quiz (Epo 2026-11-16, reworking 2026-11-14's boards): Settings
+ * first, then Questions, whose way of getting them sends the settings with it
+ * in one request (`gradedQuiz`), so the server makes the quiz and the graded
+ * quiz together and nothing is left behind on Cancel. Existing quiz copies one
+ * the workspace has; Generate and Convert make theirs in a run, and the graded
+ * quiz arrives with its questions (saved as a draft, to be read before
+ * publishing). Made, it opens on its questions; an untitled one takes its
+ * quiz's name. Convert's pages and run stay in the dialog, in its own state
+ * rather than the address. */
 export function GradedQuizDialog({
   onClose,
   onDone,
@@ -28,19 +32,18 @@ export function GradedQuizDialog({
   workspaceId,
 }: {
   onClose: () => void;
-  onDone: (assignment: Assignment) => void;
+  onDone: (made: GradedQuizMade) => void;
   /** A personal workspace's: a task for oneself. */
   own?: boolean;
   /** Opened from a member's profile (Q721): them as the only assignee. */
   presetAssignee?: string;
-  /** The topic Generate quiz starts on: the profile card's (Q721). */
+  /** The topic Generate quiz starts on: the profile's weakest (Q721). */
   presetTopicId?: string;
   workspaceId: string;
 }) {
   const { data: ws } = useWorkspace(workspaceId, { errorBoundary: false });
-  const { mutate: trash } = useDeleteMaterial(workspaceId);
-  const [quizId, setQuizId] = useState<string>();
-  const [step, setStep] = useState<'questions' | 'settings'>('questions');
+  const [form, setForm] = useState<AssignmentFormReq>();
+  const [step, setStep] = useState<'settings' | 'questions'>('settings');
   // Convert's own steps, as the address holds them for Add quiz.
   const [make, setMake] = useState<{
     choice: MakeQuizChoice;
@@ -48,56 +51,38 @@ export function GradedQuizDialog({
     run?: string;
     step: 'files' | 'pages' | 'run';
   }>({ choice: NO_FILES, step: 'files' });
-  // A remount starts Convert over when going back for other questions.
-  const [round, setRound] = useState(0);
-  // The quiz made and not yet owned, for Cancel to take away.
-  const made = useRef<string>(undefined);
-  // Closed, a quiz Generate still delivers is left behind at once.
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  const discard = () => {
-    if (made.current) trash(made.current);
-    made.current = undefined;
-  };
-  const cancel = () => {
-    discard();
-    onClose();
-  };
-  const take = (id: string) => {
-    if (!alive.current) {
-      trash(id);
-      return;
-    }
-    if (made.current && made.current !== id) discard();
-    made.current = id;
-    setQuizId(id);
-    setStep('settings');
-  };
-  const back = () => {
-    setMake({ choice: NO_FILES, step: 'files' });
-    setRound(round + 1);
-    setStep('questions');
+  const navigate = useNavigate();
+  const refreshAssignments = useRefreshAssignments(workspaceId);
+  // Made: it opens on its questions to read or write (Epo 2026-11-16), a
+  // class's on its report's Questions tab, a task for oneself on its page.
+  const done = (id: string) => {
+    void refreshAssignments();
+    onDone({ id, kind: 'marked' });
+    void navigate({
+      params: { workspaceId },
+      search: {
+        assignment: id,
+        study: 'assignments',
+        ...(!own && { tab: 'questions' as const }),
+      },
+      to: '/workspaces/$workspaceId',
+    });
   };
 
   if (!ws) return null;
-  if (step === 'settings' && quizId)
+  if (step === 'settings' || !form)
     return (
       <NewAssignmentDialog
         graded={{
-          onBack: back,
-          quizId,
-          title: <GradedTitle step={2} />,
+          initial: form,
+          onNext: (next) => {
+            setForm(next);
+            setStep('questions');
+          },
+          title: <GradedTitle step={1} />,
         }}
-        onClose={cancel}
-        onDone={(created) => {
-          made.current = undefined;
-          onDone(created);
-        }}
+        onClose={onClose}
+        onDone={onClose}
         own={own}
         presetAssignee={presetAssignee}
         workspaceId={workspaceId}
@@ -106,18 +91,25 @@ export function GradedQuizDialog({
   return (
     <AddPracticeDialog
       graded={{
+        form,
         initialTopicId: presetTopicId,
-        onMade: take,
-        title: <GradedTitle step={1} />,
+        onBack: () => setStep('settings'),
+        onMade: done,
+        own,
+        title: <GradedTitle step={2} />,
       }}
-      key={round}
       make={{
         file: make.file,
+        // AI-read questions are read before the graded quiz goes out; a
+        // task for oneself has no draft.
+        graded: own ? form : { ...form, draft: true },
         initial: make.choice,
-        onClose: cancel,
-        // The run goes on here, and its quiz opens the Settings step.
+        onClose,
+        // The run goes on here, and its graded quiz closes the dialog.
         onConfirmed: () => undefined,
-        onDone: take,
+        onDone: (_, assignmentId) => {
+          if (assignmentId) done(assignmentId);
+        },
         onFile: (file) => setMake((current) => ({ ...current, file })),
         onRunBack: () =>
           setMake((current) => ({ ...current, run: undefined, step: 'pages' })),
@@ -133,23 +125,23 @@ export function GradedQuizDialog({
   );
 }
 
-/** "New graded quiz", then where it is: 1 Questions › 2 Settings. */
+/** "New graded quiz", then where it is: 1 Settings › 2 Questions. */
 function GradedTitle({ step }: { step: 1 | 2 }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-3">
       <span className="min-w-0 flex-1 truncate">
         {m.assignment_new_graded_quiz()}
       </span>
-      <span className="flex shrink-0 items-center gap-2 font-semibold text-sm max-sm:hidden sm:mr-9">
+      <span className="flex shrink-0 items-center gap-2 font-semibold text-sm max-sm:hidden">
         <StepLabel
           current={step === 1}
-          label={m.assignment_step_questions()}
+          label={m.assignment_step_settings()}
           n={1}
         />
         <Icon className="text-fg-muted" name="chevronRight" size={12} />
         <StepLabel
           current={step === 2}
-          label={m.assignment_step_settings()}
+          label={m.assignment_step_questions()}
           n={2}
         />
       </span>

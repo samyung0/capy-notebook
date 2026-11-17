@@ -143,8 +143,8 @@ maker still a member; when they leave or are removed, or the workspace is
 deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
 /api/todo/tasks`), and its quiz and files are any its maker can open, from any
 workspace or none (`ownTaskFileSQL`, `ownTaskMaterialSQL`), while a marked
-task's quiz is one its maker owns and the task then owns (`checkAssignmentQuizTx`,
-above): never one hidden from them (a class's quiz under an open
+task's quiz is made with it and the task owns it (`makeGradedQuizTx`, Epo
+2026-11-16): never one hidden from them (a class's quiz under an open
 assignment is held from every viewer member, and one it went to stays refused
 past the close while its keys are held), and a file they later lose access to leaves
 the task, so a task shows its maker nothing they could not open themself;
@@ -475,9 +475,9 @@ unchanged.
   Practice, Study, Explore and the pipeline's scope, outline and summary queries
   have `m.assignment_id IS NULL`), hiding it by hand and trashing it answer 404,
   and it goes when its assignment is deleted (`ON DELETE CASCADE`). A graded
-  quiz or a marked task takes only a quiz its maker made for it in the New
-  graded quiz dialog (`graded_pending`, `checkAssignmentQuizTx`); one never
-  taken goes to its maker's trash after a day. It is charged to its maker, so
+  quiz or a marked task is made with its quiz in one request (the quiz maker's
+  `gradedQuiz`, or a copy of a workspace quiz, Epo 2026-11-16), so no quiz
+  waits unowned. It is charged to its maker, so
   their account purge deletes it and the assignment keeps its frozen copy. See
   [study progress](study-progress.md#assignments), The owned quiz.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT

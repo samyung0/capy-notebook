@@ -4,14 +4,15 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentFormReq } from './assignmentFormReq.ts';
 import type { ExtractionFile } from './extractionFile.ts';
 
 export interface CreateExtractionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answers?: ExtractionFile[];
-  /** Started in the New graded quiz dialog: its quiz starts hidden and waits for the graded quiz to take it; one never taken goes to the trash after a day */
-  gradedQuiz?: boolean;
+  /** The New graded quiz dialog's settings, checked before the run starts: the run's quiz is made with the graded quiz that owns it (Extraction.assignmentId) */
+  gradedQuiz?: AssignmentFormReq;
   hidden: boolean;
   /** @minItems 1 */
   paper: ExtractionFile[];

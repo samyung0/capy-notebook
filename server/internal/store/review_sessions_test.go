@@ -454,8 +454,7 @@ func TestResumeFollowsTheReadRule(t *testing.T) {
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.QuizID = assignedLater
-	gradedPending(t, f.s, assignedLater)
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now); err != nil {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now); err != nil {
 		t.Fatal(err)
 	}
 	read([]string{"shown/q2", "ownPractice/q1"}, "shown/q1")

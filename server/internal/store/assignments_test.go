@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
@@ -308,7 +310,7 @@ func TestAssignmentListPages(t *testing.T) {
 	add := func(title string, due time.Duration) string {
 		form := f.form(t, now.Add(due))
 		form.Title = title
-		a, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+		a, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -357,19 +359,27 @@ func TestAssignmentListPages(t *testing.T) {
 	}
 }
 
-// gradedPending marks quizzes as made in the New graded quiz dialog, the only
-// ones CreateAssignment takes.
-func gradedPending(t *testing.T, s *Store, ids ...string) {
-	t.Helper()
-	if _, err := s.pool.Exec(context.Background(), `UPDATE materials SET graded_pending=true
-		WHERE id=ANY($1::text[]) AND assignment_id IS NULL`, ids); err != nil {
-		t.Fatal(err)
+// makeAssignment is CreateAssignment for any form: a marked one takes
+// form.QuizID, an existing quiz, with form.Questions to freeze, as a question
+// maker's graded quiz takes the quiz it writes (makeGradedQuizTx).
+func (s *Store) makeAssignment(ctx context.Context, actorID, wsID string, form AssignmentForm, now time.Time) (Assignment, error) {
+	if form.Kind != AssignmentMarked {
+		return s.CreateAssignment(ctx, actorID, wsID, form, now)
 	}
+	var id string
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		var err error
+		id, err = s.createAssignmentTx(ctx, tx, actorID, wsID, form, now)
+		return err
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
 }
 
 // form is a graded quiz's form on the fixture's quiz, or, once an assignment
-// owns that one (migration 0174), on a new quiz of the class's; either is
-// marked as made for it.
+// owns that one (migration 0174), on a new quiz of the class's.
 func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 	t.Helper()
 	return f.formBy(t, f.user, due)
@@ -393,7 +403,6 @@ func (f assignmentFixture) formBy(t *testing.T, maker string, due time.Time) Ass
 		}
 		quizID = quiz.ID
 	}
-	gradedPending(t, f.s, quizID)
 	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: quizID, Questions: frozenFixture(t),
 		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
 }
@@ -408,7 +417,7 @@ func TestAssignmentRun(t *testing.T) {
 	limit := 30
 	form := f.form(t, now.Add(24*time.Hour))
 	form.TimeLimitMin = &limit
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +527,7 @@ func TestAssignmentAuthorization(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.formBy(t, f.editor, due)
 	form.AssignAll, form.Assignees = false, []string{f.viewer}
-	created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +537,7 @@ func TestAssignmentAuthorization(t *testing.T) {
 			t.Fatalf("%s: err = %v", name, err)
 		}
 	}
-	_, err = f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, f.form(t, due), now)
+	_, err = f.s.makeAssignment(ctx, f.viewer, f.ws.ID, f.form(t, due), now)
 	if err == nil {
 		t.Fatal("a viewer created an assignment")
 	}
@@ -581,7 +590,7 @@ func TestAssignmentAuthorization(t *testing.T) {
 	}
 	_, err = f.s.GetAssignmentReport(ctx, sharer, created.ID, now)
 	notFound("share-role editor's report", err)
-	_, err = f.s.CreateAssignment(ctx, sharer, f.ws.ID, f.form(t, due), now)
+	_, err = f.s.makeAssignment(ctx, sharer, f.ws.ID, f.form(t, due), now)
 	notFound("share-role editor creates", err)
 
 	// A personal workspace hides them, deleting nothing.
@@ -606,7 +615,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-to")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	all, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	all, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,7 +633,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 	}
 
 	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
-	named, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	named, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +666,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	limit := 10
 	form := f.form(t, now.Add(time.Hour))
 	form.TimeLimitMin = &limit
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -743,7 +752,7 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.NoLate = true
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +814,7 @@ func TestAssignmentNoLateSweepSubmitsRunningAttempts(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.NoLate = true
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -842,7 +851,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.LatePenaltyPct = 20
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -948,7 +957,7 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.Attempts, form.LatePenaltyPct = 5, 20
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1059,7 +1068,7 @@ func TestAverageReadsTheCountedAttempts(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Attempts = 2
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1104,7 +1113,7 @@ func TestReviewsRateTheLatestSubmission(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Attempts = 2
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1157,7 +1166,7 @@ func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Draft, form.Questions = true, nil
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	draft, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1194,71 +1203,148 @@ func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	}
 }
 
-// TestGradedQuizTakesOnlyAPendingQuiz (Epo 2026-11-14): a graded quiz takes
-// only a quiz its maker made for it in the dialog, and one no graded quiz
-// took goes to its maker's trash after a day.
-func TestGradedQuizTakesOnlyAPendingQuiz(t *testing.T) {
-	f := newAssignmentFixture(t, "graded-quiz-pending")
+// gradedForm is a graded quiz's settings as the New graded quiz dialog sends
+// them with its questions (Epo 2026-11-16): no quiz named.
+func gradedForm(due time.Time) *AssignmentForm {
+	return &AssignmentForm{Kind: AssignmentMarked, Title: "Paper", DueAt: &due, Attempts: 1, AssignAll: true,
+		Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic,
+		Files: []AssignmentFileRef{}}
+}
+
+// TestGradedQuizMadeWithItsQuiz (Epo 2026-11-16): a graded quiz is made with
+// its questions in one write: the new quiz is the assignment's own, hidden,
+// and a published one froze the questions as stored; a draft freezes none.
+// createAssignment makes no graded quiz from an existing quiz, and a form
+// refused up front writes nothing.
+func TestGradedQuizMadeWithItsQuiz(t *testing.T) {
+	f := newAssignmentFixture(t, "graded-quiz-made")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	form := f.form(t, now.Add(time.Hour))
-	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET graded_pending=false WHERE id=$1`, f.quiz.ID); err != nil {
+	content, err := materialdoc.QuizDocument(json.RawMessage(assignmentQuestions), nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	var refused *AssignmentInputError
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now); !errors.As(err, &refused) {
-		t.Fatalf("took a practice quiz: %v", err)
-	}
-	gradedPending(t, f.s, f.quiz.ID)
-	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, form, now); !errors.As(err, &refused) {
-		t.Fatalf("took a colleague's quiz: %v", err)
-	}
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now); err != nil {
+	mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.editor, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Made with it", Content: content, Hidden: true, GradedQuiz: gradedForm(now.Add(time.Hour))})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if mt.AssignmentID == "" || !mt.Hidden {
+		t.Fatalf("the quiz = owner %q hidden %v", mt.AssignmentID, mt.Hidden)
+	}
+	made, err := f.s.GetAssignment(ctx, f.editor, mt.AssignmentID, now)
+	if err != nil || made.Kind != AssignmentMarked || made.Draft || made.Questions != 3 || made.Marks != 6 {
+		t.Fatalf("its graded quiz = %+v, err %v", made, err)
+	}
+	draft := gradedForm(now.Add(time.Hour))
+	draft.Draft = true
+	drafted, err := f.s.CreateMaterialDraft(ctx, MaterialDraft{ActorUserID: f.editor, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Generated", Questions: json.RawMessage(assignmentQuestions), Hidden: true, GradedQuiz: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := f.s.GetAssignment(ctx, f.editor, drafted.AssignmentID, now)
+	if err != nil || !held.Draft || held.Questions != 0 {
+		t.Fatalf("a draft graded quiz = %+v, err %v", held, err)
 	}
 
-	made := func(name string, made time.Time) string {
+	var refused *AssignmentInputError
+	named := f.form(t, now.Add(time.Hour))
+	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, named, now); !errors.As(err, &refused) {
+		t.Fatalf("createAssignment took a quiz: %v", err)
+	}
+	if err := f.s.CheckGradedQuiz(ctx, f.user, f.ws.ID, named, now); !errors.As(err, &refused) {
+		t.Fatalf("a form naming a quiz passed: %v", err)
+	}
+	if err := f.s.CheckGradedQuiz(ctx, f.user, f.ws.ID, *gradedForm(now.Add(time.Hour)), now); err != nil {
+		t.Fatal(err)
+	}
+	undated := gradedForm(now)
+	undated.DueAt = nil
+	if _, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Refused", Content: content, GradedQuiz: undated}); !errors.As(err, &refused) {
+		t.Fatalf("an undated graded quiz: %v", err)
+	}
+	if taken, err := f.s.MaterialTitleTaken(ctx, f.ws.ID, "Refused"); err != nil || taken {
+		t.Fatalf("a refused graded quiz left its quiz: %v, err %v", taken, err)
+	}
+}
+
+// TestCopyQuizToGradedQuiz (Epo 2026-11-16): a graded quiz is made from a copy
+// of a practice quiz or of another graded quiz's own, with fresh ids and the
+// images copied as the new quiz's own rows.
+func TestCopyQuizToGradedQuiz(t *testing.T) {
+	f := newAssignmentFixture(t, "graded-quiz-copy")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	assetID := uid("asset")
+	qs := frozenFixture(t)
+	qs[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": assetID}, "width": 10, "height": 10, "description": "Figure"}}
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$4,$4,'figure.png','image',$5,'image/png',10,'ready',now())`,
+		assetID, f.ws.ID, f.quiz.ID, f.user, "editor-assets/graded-copy/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	copyOf := func(source string, questions []map[string]any, title string) (Assignment, Material) {
 		t.Helper()
-		content, err := materialdoc.QuizDocument(json.RawMessage(assignmentQuestions), nil)
+		form := gradedForm(now.Add(time.Hour))
+		form.Title = title
+		made, err := f.s.CopyQuizToGradedQuiz(ctx, QuizCopy{ActorID: f.editor, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+			SourceID: source, Questions: questions, Title: title, Form: *form}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
-			Kind: MaterialQuiz, Title: name, Content: content, GradedPending: true})
-		if err != nil || !mt.Hidden {
-			t.Fatalf("made %s = %+v, err %v", name, mt, err)
-		}
-		if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET created_at=$2 WHERE id=$1`, mt.ID, made); err != nil {
+		var quizID string
+		if err := f.s.pool.QueryRow(ctx, `SELECT id FROM materials WHERE assignment_id=$1`, made.ID).Scan(&quizID); err != nil {
 			t.Fatal(err)
 		}
-		return mt.ID
+		quiz, err := f.s.GetMaterial(ctx, quizID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return made, quiz
 	}
-	old, fresh := made("Left behind", now.Add(-25*time.Hour)), made("Still going", now)
-	if _, err := f.s.SweepPendingGradedQuizzes(ctx, 100, now); err != nil {
-		t.Fatal(err)
+	imageOf := func(quizID string) EditorAsset {
+		t.Helper()
+		quiz, err := f.s.GetQuiz(ctx, quizID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []map[string]any
+		if err := json.Unmarshal(quiz.Questions, &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 3 || got[0]["id"] == "q1" {
+			t.Fatalf("copied questions = %v", got)
+		}
+		id := got[0]["stem"].([]any)[0].(map[string]any)["image"].(map[string]any)["assetId"].(string)
+		asset, err := f.s.GetEditorAsset(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return asset
 	}
-	var oldTrashed, oldPending, freshTrashed bool
-	if err := f.s.pool.QueryRow(ctx, `SELECT trashed_at IS NOT NULL, graded_pending FROM materials WHERE id=$1`, old).
-		Scan(&oldTrashed, &oldPending); err != nil {
-		t.Fatal(err)
+
+	// From the practice quiz.
+	first, firstQuiz := copyOf(f.quiz.ID, qs, "Term 1")
+	if first.Questions != 3 || firstQuiz.Title != "Term 1" || !firstQuiz.Hidden {
+		t.Fatalf("copied = %+v, quiz %+v", first, firstQuiz)
 	}
-	if err := f.s.pool.QueryRow(ctx, `SELECT trashed_at IS NOT NULL FROM materials WHERE id=$1`, fresh).Scan(&freshTrashed); err != nil {
-		t.Fatal(err)
-	}
-	if !oldTrashed || oldPending || freshTrashed {
-		t.Fatalf("old trashed %v pending %v, fresh trashed %v", oldTrashed, oldPending, freshTrashed)
+	image := imageOf(firstQuiz.ID)
+	if image.ID == assetID || image.MaterialID != firstQuiz.ID || image.UserID != f.editor {
+		t.Fatalf("the copy's image = %+v", image)
 	}
 }
 
 // TestGradedQuizOwnsItsQuiz (Epo 2026-11-14, migration 0174): creating a graded
 // quiz makes the quiz its own: it lists nowhere, for staff either, only staff
-// open it, and it can't be taken by another assignment, hidden, shown, trashed
-// or cloned on its own. Closing keeps it held.
+// open it, and it can't be shown, trashed or cloned on its own. Closing keeps it held.
 func TestGradedQuizOwnsItsQuiz(t *testing.T) {
 	f := newAssignmentFixture(t, "graded-quiz-owner")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1288,18 +1374,6 @@ func TestGradedQuizOwnsItsQuiz(t *testing.T) {
 	}
 	if !f.keepsQuiz(t, f.editor) || f.keepsQuiz(t, f.viewer) || f.keepsQuiz(t, f.other) {
 		t.Fatal("only staff open the graded quiz's quiz")
-	}
-	var refused *AssignmentInputError
-	second := f.form(t, now.Add(time.Hour))
-	second.QuizID = f.quiz.ID
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, second, now); !errors.As(err, &refused) {
-		t.Fatalf("a second assignment took the quiz: %v", err)
-	}
-	// A member's own task takes only a quiz of theirs, where the task sits.
-	classQuiz := f.form(t, now.Add(time.Hour))
-	classQuiz.Assignees = []string{f.viewer}
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, classQuiz, now); !errors.As(err, &refused) {
-		t.Fatalf("a member's task took the class's quiz: %v", err)
 	}
 	if err := f.s.SetItemHidden(ctx, f.user, agenttools.KindMaterial, f.quiz.ID, false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("showing the quiz to members: %v", err)
@@ -1346,8 +1420,7 @@ func TestAssignmentFrozenImages(t *testing.T) {
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.QuizID, form.Questions = quiz.ID, qs
-	gradedPending(t, f.s, quiz.ID)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1529,7 +1602,7 @@ func TestAssignmentSweepReachesARowBehindABadOne(t *testing.T) {
 	now := time.Now().UTC()
 	open := func() (Assignment, AssignmentAttempt) {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1571,7 +1644,7 @@ func TestAssignmentLockedPublisherLeavesStaffWritesOpen(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	publish := func() Assignment {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.formBy(t, f.editor, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, f.formBy(t, f.editor, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1602,7 +1675,7 @@ func TestFrozenStaffDeleteAnAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-frozen-staff")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.formBy(t, f.editor, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, f.formBy(t, f.editor, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1620,7 +1693,7 @@ func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 	now := time.Now().UTC()
 	open := func() (Assignment, AssignmentAttempt) {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1686,7 +1759,7 @@ func TestDepartedAssigneeLeavesTheForm(t *testing.T) {
 	now := time.Now().UTC()
 	form := f.form(t, now.Add(time.Hour))
 	form.AssignAll, form.Assignees = false, []string{f.viewer, f.other}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1713,11 +1786,11 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-personal-start")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	marked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	marked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	unmarked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -1769,7 +1842,7 @@ func TestClosingGivesTheOpenPageTheGrace(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-close-grace")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1866,7 +1939,7 @@ func TestPastedImagesFollowTheReadRule(t *testing.T) {
 	questions[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": shownAsset}, "width": 10, "height": 10, "description": "Figure"}}
 	form := f.form(t, now.Add(time.Hour))
 	form.AssignAll, form.Assignees, form.Questions = false, []string{f.viewer}, questions
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1907,7 +1980,7 @@ func TestChangedMarkCountsOnce(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-changed-mark")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1965,7 +2038,7 @@ func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
 
 	form := f.form(t, now.Add(time.Hour))
 	form.Draft, form.Questions = true, nil
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	draft, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2000,14 +2073,14 @@ func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var quota *QuotaExceededError
-	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, full, now); !errors.As(err, &quota) {
+	if _, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, full, now); !errors.As(err, &quota) {
 		t.Fatalf("publishing past the limit = %v", err)
 	}
 	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, f.editor, withQuiz); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, full, now); err != nil {
+	if _, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, full, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.DeleteWorkspace(ctx, f.user, f.ws.ID); err != nil {
@@ -2019,7 +2092,7 @@ func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
 
 	// A purge of the publisher: the paper stays, charged to nobody.
 	g := newAssignmentFixture(t, "assignment-charge-purge")
-	kept, err := g.s.CreateAssignment(ctx, g.editor, g.ws.ID, g.formBy(t, g.editor, now.Add(time.Hour)), now)
+	kept, err := g.s.makeAssignment(ctx, g.editor, g.ws.ID, g.formBy(t, g.editor, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2047,11 +2120,11 @@ func TestLockedOwnerStartsNoAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-locked-owner")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	marked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	marked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	unmarked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -2094,7 +2167,7 @@ func TestFrozenImagesPasteForNobody(t *testing.T) {
 	questions[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": source}, "width": 10, "height": 10, "description": "Figure"}}
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = questions
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2147,7 +2220,7 @@ func TestMovingAFileLeavesItsAssignments(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -2182,7 +2255,7 @@ func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-republish")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2301,7 +2374,7 @@ func TestRepublishPaysOnlyForWhatItAdds(t *testing.T) {
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = decoded()
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2393,7 +2466,7 @@ func TestCountedAttemptComparesShares(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Attempts = 2
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2431,7 +2504,7 @@ func TestRepublishDropsAnswersThatNoLongerFit(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-republish-answers")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2546,7 +2619,7 @@ func TestAssignmentSaysItsQuizChanged(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-quiz-changed")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2578,7 +2651,7 @@ func TestAnswersShownAfterClose(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowAnswers = AnswersAfterClose
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2618,7 +2691,7 @@ func TestManualGradesWaitForRelease(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}

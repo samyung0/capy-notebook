@@ -64,6 +64,7 @@ import type {
   Conversation,
   ConversationPage,
   CopyBankQuestionsOutputBody,
+  CopyQuizToGradedQuizReq,
   CreateBlankFileReq,
   CreateCanvasInputBody,
   CreateCommentReq,
@@ -10498,6 +10499,71 @@ export const getQuizForEdit = async (id: string, options?: RequestInit): Promise
 
 
 
+export type copyQuizToGradedQuizResponse201 = {
+  data: Assignment
+  status: 201
+}
+
+export type copyQuizToGradedQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type copyQuizToGradedQuizResponseSuccess = (copyQuizToGradedQuizResponse201) & {
+  headers: Headers;
+};
+export type copyQuizToGradedQuizResponseError = (copyQuizToGradedQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type copyQuizToGradedQuizResponse = (copyQuizToGradedQuizResponseSuccess | copyQuizToGradedQuizResponseError)
+
+export const getCopyQuizToGradedQuizUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/graded-copy`
+}
+
+/**
+ * @summary Make a graded quiz from a copy of a practice quiz in the same workspace, images and all
+ */
+export const copyQuizToGradedQuiz = async (id: string,
+    copyQuizToGradedQuizReq: NonReadonly<CopyQuizToGradedQuizReq>, options?: RequestInit): Promise<copyQuizToGradedQuizResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCopyQuizToGradedQuizUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(copyQuizToGradedQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: copyQuizToGradedQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as copyQuizToGradedQuizResponse
+}
+
+
+
 export type updateQuizMetadataResponse200 = {
   data: Quiz
   status: 200
@@ -12670,7 +12736,7 @@ export const getCreateAssignmentUrl = (id: string,) => {
 }
 
 /**
- * @summary Give a class an assignment, freezing its quiz
+ * @summary Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
  */
 export const createAssignment = async (id: string,
     assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createAssignmentResponse> => {

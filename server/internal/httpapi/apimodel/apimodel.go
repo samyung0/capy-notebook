@@ -501,6 +501,12 @@ type AssignmentFormReq struct {
 	Points *AssignmentPoints `json:"points,omitempty"`
 }
 
+// CopyQuizToGradedQuizReq makes a graded quiz from a copy of a quiz (Epo
+// 2026-11-16).
+type CopyQuizToGradedQuizReq struct {
+	GradedQuiz AssignmentFormReq `json:"gradedQuiz" doc:"The graded quiz's settings (marked, no quizId); its title also names the new quiz"`
+}
+
 // GradedQuestion is one checked question with its key and, on each part, the
 // awarded marks (open parts also itemAwards, the model's marks per marking item;
 // matching and gaps parts also itemResults, right or wrong per pair or gap).

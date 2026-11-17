@@ -1,6 +1,6 @@
 import { parseHTML } from 'linkedom';
 import { expect, it, vi } from 'vitest';
-import type { ItemBankQuestion } from '@/api/types';
+import type { AssignmentFormReq, ItemBankQuestion } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 
 // The locale resolves before a window exists, then linkedom's document goes
@@ -100,10 +100,12 @@ const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { BankQuestionsDialog, useBankPicker } = await import('./BankPicker');
 
+const form = { kind: 'marked', title: 'Cells check' } as AssignmentFormReq;
+
 function Harness() {
   const { action, body, note } = useBankPicker({
     active: true,
-    gradedQuiz: true,
+    gradedQuiz: form,
     label: m.action_continue(),
     onMade: () => {},
     title: () => 'Biology quiz 1',
@@ -134,10 +136,8 @@ const note = () => document.querySelector('[data-note]')?.textContent ?? '';
 it('copies the questions picked from the bank shown', async () => {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () => root.render(<Harness />));
-  expect(
-    byText('[role=group] button', m.bank_workspace_bank({ name: 'Biology' }))
-  ).toBeTruthy();
-  expect(byText('button', m.bank_my_bank())).toBeTruthy();
+  expect(byText('[role=group] button', 'Biology')).toBeTruthy();
+  expect(byText('button', m.bank_personal())).toBeTruthy();
   expect(byText('[role=checkbox]', 'Define osmosis.')?.textContent).toContain(
     'Cells'
   );
@@ -150,14 +150,14 @@ it('copies the questions picked from the bank shown', async () => {
   expect(create).toHaveBeenCalledWith(
     {
       bank: 'ws_bio',
-      gradedQuiz: true,
+      gradedQuiz: form,
       questionIds: ['bq2', 'bq1'],
       title: 'Biology quiz 1',
     },
     expect.anything()
   );
 
-  await click(byText('button', m.bank_my_bank()));
+  await click(byText('button', m.bank_personal()));
   expect(note()).toBe('');
   await click(byText('[role=checkbox]', m.bank_select_all({ count: 2 })));
   expect(note()).toContain(m.question_ui_question_count({ count: 2 }));

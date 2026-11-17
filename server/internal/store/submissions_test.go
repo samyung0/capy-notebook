@@ -29,7 +29,7 @@ func startPaper(t *testing.T, f assignmentFixture, now time.Time, edit func(*Ass
 	if edit != nil {
 		edit(&form)
 	}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestHandInFileOpensForItsMemberAndStaffOnly(t *testing.T) {
 
 func unmarkedHandIn(t *testing.T, f assignmentFixture, now time.Time, assignees ...string) Assignment {
 	t.Helper()
-	created, err := f.s.CreateAssignment(context.Background(), f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked,
+	created, err := f.s.makeAssignment(context.Background(), f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked,
 		Title: "Lab write-up", Attempts: 1, AssignAll: len(assignees) == 0, Assignees: assignees, Marking: MarkingAIApprove,
 		ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}, AllowUploads: true}, now)
 	if err != nil {
@@ -252,7 +252,7 @@ func TestClosedQuizKeepsItsKeysFromAssignees(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestManualGradesSubmitStillNeedsMarking(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}

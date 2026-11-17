@@ -7,6 +7,7 @@ import type {
   ExtractionReport,
 } from '@/api/types';
 import type { Question } from '@/features/questions/types';
+import { addMockGradedQuiz } from './assignments';
 import * as db from './db';
 import { uid } from './db';
 import { biologyOfficeFixtures } from './officeFixtures';
@@ -455,9 +456,16 @@ export function extractionHandlers(
                   workspaceId,
                   body.title,
                   kept,
-                  body.hidden
+                  body.hidden || !!body.gradedQuiz
                 );
                 draftQuizQuestions.set(run.quizId, withMissingFigure(kept));
+                // A graded quiz's run makes it with its quiz.
+                if (body.gradedQuiz)
+                  run.assignmentId = addMockGradedQuiz(
+                    workspaceId,
+                    body.gradedQuiz,
+                    run.quizId
+                  );
                 run.report = reportFor(
                   labels.slice(0, kept.length),
                   pages,

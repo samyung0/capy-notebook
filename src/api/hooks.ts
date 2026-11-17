@@ -3369,6 +3369,30 @@ export function useCreateAssignment(workspaceId: string) {
   });
 }
 
+/** Existing quiz (Epo 2026-11-16): a copy of a workspace quiz, made with the
+ * graded quiz's settings into a new graded quiz that owns it. */
+export function useCopyQuizToGradedQuiz(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: ({
+      gradedQuiz,
+      quizId,
+    }: {
+      gradedQuiz: AssignmentFormReq;
+      quizId: string;
+    }) =>
+      api.post<Assignment>(`/quizzes/${quizId}/graded-copy`, { gradedQuiz }),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+/** A graded quiz made by a quiz maker (its `gradedQuiz`): the lists it joins. */
+export function useRefreshAssignments(workspaceId: string) {
+  const qc = useQueryClient();
+  return () => refreshAssignment(qc, workspaceId);
+}
+
 export function useUpdateAssignment(workspaceId: string, id: string) {
   const qc = useQueryClient();
   return useMutation({

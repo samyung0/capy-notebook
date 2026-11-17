@@ -196,6 +196,9 @@ func (a *api) createStandaloneMaterial(ctx context.Context, in *createStandalone
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
+	if in.Body.GradedQuiz != nil {
+		return nil, huma.Error422UnprocessableEntity("a graded quiz is made in a workspace")
+	}
 	if in.Body.Kind != "note" {
 		return nil, huma.Error400BadRequest("unsupported material kind")
 	}
@@ -268,14 +271,15 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		Privacy:        "private",
-		GradedPending:  in.Body.GradedQuiz,
+		GradedQuiz:     gradedQuizForm(in.Body.GradedQuiz),
 		// A quiz starts hidden from members until shown (Epo 2026-11-16,
 		// every quiz an editor makes).
 		Hidden: kind == store.MaterialQuiz,
 	})
 	if err != nil {
-		return nil, hErr(err)
+		return nil, assignmentError(err)
 	}
+	a.gradedQuizMade(ctx, res.AssignmentID)
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), res.ID)
 	if err != nil {
 		return nil, hErr(err)

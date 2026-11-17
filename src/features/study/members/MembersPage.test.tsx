@@ -219,10 +219,7 @@ const profile = (): MemberProfile => ({
 it('assigns practice to the member alone, on their weakest topic', async () => {
   state.profile = profile();
   const root = await show({ member: 'ann' });
-  expect(host.textContent).toContain(
-    m.member_needs_practice_on({ topic: 'Osmosis' })
-  );
-  await press(button(m.member_assign_practice()));
+  await press(button(m.member_assign_quiz()));
   expect(host.querySelector('[data-new-assignment]')).not.toBeNull();
   expect(dialog).toHaveBeenLastCalledWith(
     expect.objectContaining({

@@ -148,7 +148,7 @@ type CreateMaterialReq struct {
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
 	ScopeTopics    []string              `json:"scopeTopics,omitempty"`
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
-	GradedQuiz     bool                  `json:"gradedQuiz,omitempty" doc:"Made in the New graded quiz dialog: starts hidden from members and waits for the graded quiz to take it; one never taken goes to the trash after a day"`
+	GradedQuiz     *AssignmentFormReq    `json:"gradedQuiz,omitempty" doc:"The New graded quiz dialog's settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)"`
 }
 
 // CreateEmbeddedMaterialReq is the body for POST /api/materials/{id}/embedded:
@@ -296,7 +296,7 @@ type GenerateReq struct {
 	FileIds    []string                     `json:"fileIds,omitempty" maxItems:"5" nullable:"false"` // fieldlimits.GenerateFiles
 	Title      MaterialTitle                `json:"title" minLength:"1"`
 	Mix        bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
-	GradedQuiz bool                         `json:"gradedQuiz,omitempty" doc:"Made in the New graded quiz dialog (CreateMaterialReq.gradedQuiz); only an editor's quiz is a workspace file"`
+	GradedQuiz *AssignmentFormReq           `json:"gradedQuiz,omitempty" doc:"The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId"`
 }
 
 // CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8): the
@@ -310,7 +310,7 @@ type CreateExtractionReq struct {
 	// Hidden starts the quiz hidden from members: the dialog's switch (Epo 2026-11-11).
 	Hidden bool `json:"hidden"`
 	// GradedQuiz: started in the New graded quiz dialog (CreateMaterialReq.GradedQuiz).
-	GradedQuiz bool `json:"gradedQuiz,omitempty" doc:"Started in the New graded quiz dialog: its quiz starts hidden and waits for the graded quiz to take it; one never taken goes to the trash after a day"`
+	GradedQuiz *AssignmentFormReq `json:"gradedQuiz,omitempty" doc:"The New graded quiz dialog's settings, checked before the run starts: the run's quiz is made with the graded quiz that owns it (Extraction.assignmentId)"`
 }
 
 // ConfirmExtractionReq says how many of the questions a paused run found to make, from

@@ -471,10 +471,9 @@ type Material struct {
 	// it lists nowhere, only that assignment's staff open it, and it goes
 	// with the assignment.
 	AssignmentID string `json:"assignmentId,omitempty"`
-	// GradedPending is set at creation on a quiz made in the New graded quiz
-	// dialog: it starts hidden, only its maker's CreateAssignment takes it,
-	// and one never taken goes to the trash (SweepPendingGradedQuizzes).
-	GradedPending bool `json:"-"`
+	// GradedQuiz, on a quiz being made, is the graded quiz made with it in
+	// the same transaction, which then owns it (makeGradedQuizTx). Not read back.
+	GradedQuiz *AssignmentForm `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`

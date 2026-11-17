@@ -364,7 +364,7 @@ func TestChatOpenResourceFollowsTheReadRule(t *testing.T) {
 	if !names(f.viewer, "material", f.quiz.ID) {
 		t.Fatal("a viewer's turn did not name a visible quiz")
 	}
-	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
 		t.Fatal(err)
 	}
 	if names(f.viewer, "material", f.quiz.ID) {

@@ -6,9 +6,13 @@ import { m } from '@/i18n';
 import { AddPracticeDialog } from './AddPractice';
 
 vi.mock('@/api/hooks', () => ({
+  useCopyQuizToGradedQuiz: () => ({ isPending: false, mutate: vi.fn() }),
   useCreateBankQuiz: () => ({ isPending: false, mutate: vi.fn() }),
   useCreateMaterial: () => ({ isPending: false, mutate: vi.fn() }),
   useMaterials: () => ({ data: [] }),
+  usePractice: () => ({
+    data: { items: [{ id: 'qz1', kind: 'quiz', size: 12, title: 'Osmosis' }] },
+  }),
 }));
 // Outside a dialog here, where Cancel has nothing to close.
 vi.mock('@/components/ui/Dialog', () => ({ DialogCancel: () => null }));
@@ -40,9 +44,10 @@ vi.mock('./MakePractice', () => ({
   }),
 }));
 
-const render = () =>
+const render = (graded?: ComponentProps<typeof AddPracticeDialog>['graded']) =>
   renderToStaticMarkup(
     <AddPracticeDialog
+      graded={graded}
       make={
         {
           initial: { answers: [], paper: [] },
@@ -56,18 +61,37 @@ const render = () =>
     />
   );
 
-// Epo 2026-11-14: Add quiz opens on Convert to quiz, its first tab; From the
-// bank comes last.
+// Epo 2026-11-14: Add quiz opens on Convert to quiz, its first tab; Create
+// blank comes last (Epo 2026-11-16).
 it('opens Add quiz on Convert to quiz, the first of its four tabs', () => {
   const html = render();
   expect(html).toContain(m.practice_add_quiz());
   const at = [
     m.practice_tab_convert(),
-    m.practice_tab_create(),
     m.practice_tab_generate(),
     m.practice_tab_bank(),
+    m.practice_tab_create(),
   ].map((tab) => html.indexOf(tab));
   expect(at.every((index) => index >= 0)).toBe(true);
   expect(at).toEqual([...at].sort((a, b) => a - b));
   expect(html).toContain('data-files-tab="true"');
+});
+
+// Epo 2026-11-16: New graded quiz's Questions step starts on Existing quiz,
+// a quiz the workspace already has, ahead of the four ways to make one.
+it("opens New graded quiz's Questions on Existing quiz, listing the workspace's quizzes", () => {
+  const html = render({
+    form: {} as never,
+    onBack: () => undefined,
+    onMade: () => undefined,
+    title: 'New graded quiz',
+  });
+  const at = [
+    m.assignment_tab_existing(),
+    m.practice_tab_convert(),
+    m.practice_tab_create(),
+  ].map((tab) => html.indexOf(tab));
+  expect(at).toEqual([...at].sort((a, b) => a - b));
+  expect(html).toContain('data-files-tab="false"');
+  expect(html).toContain('Osmosis');
 });

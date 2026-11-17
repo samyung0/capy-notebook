@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 )
 
 func bankQuestion(t *testing.T, id, text string, extra ...map[string]any) map[string]any {
@@ -258,13 +259,19 @@ func TestCreateQuizFromBankCopiesQuestionsAndImages(t *testing.T) {
 		WorkspaceName: f.ws.Name, QuestionIDs: []string{first.ID}, Title: "Theirs"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a viewer copies from the class bank: err %v", err)
 	}
+	// Made with its graded quiz (Epo 2026-11-16), which froze both questions.
 	made, err := f.s.CreateQuizFromBank(ctx, BankQuiz{ActorID: editor, Bank: f.ws.ID, WorkspaceID: f.ws.ID,
-		WorkspaceName: f.ws.Name, QuestionIDs: []string{second.ID, first.ID}, Title: "From the bank", GradedPending: true})
+		WorkspaceName: f.ws.Name, QuestionIDs: []string{second.ID, first.ID}, Title: "From the bank",
+		GradedQuiz: gradedForm(time.Now().Add(time.Hour)), Hidden: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !made.Hidden || made.OwnerUserID != editor || made.Kind != "quiz" {
+	if !made.Hidden || made.OwnerUserID != editor || made.Kind != "quiz" || made.AssignmentID == "" {
 		t.Fatalf("made = %+v", made)
+	}
+	graded, err := f.s.GetAssignment(ctx, editor, made.AssignmentID, time.Now())
+	if err != nil || graded.Draft || graded.Questions != 2 {
+		t.Fatalf("its graded quiz = %+v, err %v", graded, err)
 	}
 	quiz, err := f.s.GetQuiz(ctx, made.ID)
 	if err != nil {

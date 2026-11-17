@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -149,6 +150,50 @@ func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
 	}
 	if listing, err := mem.ListObjects(ctx, "editor-assets/"+assetID+"/", "", 10); err != nil || len(listing.Keys) != 1 {
 		t.Fatalf("stored objects = %+v (%v)", listing, err)
+	}
+}
+
+// A run started for a graded quiz keeps its form, and its quiz is made with
+// that graded quiz, which froze the questions (Epo 2026-11-16). In the
+// personal seeded workspace it is the starter's own task. Needs Postgres (CI).
+func TestExtractionMakesItsGradedQuiz(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a := &api{s: st, blob: blob.NewMemory()}
+	due := time.Now().Add(time.Hour)
+	form := &store.AssignmentForm{Kind: store.AssignmentMarked, Title: "Converted", DueAt: &due, Attempts: 1,
+		Assignees: []string{"u_editor"}, Marking: store.MarkingManual, ShowAnswers: store.AnswersAfterSubmit,
+		ShowGrades: store.GradesAutomatic, Files: []store.AssignmentFileRef{}}
+	run, err := st.CreateExtraction(ctx, store.ExtractionStart{ID: uuid.NewString(), WorkspaceID: "ws_e2e_private", UserID: "u_editor",
+		Title: "Graded " + uuid.NewString(), GradedQuiz: form})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := st.GetExtraction(ctx, "u_editor", run.ID)
+	if err != nil || kept.GradedQuiz == nil || kept.GradedQuiz.Title != "Converted" || !kept.GradedQuiz.DueAt.Equal(due) {
+		t.Fatalf("the run's form = %+v, err %v", kept.GradedQuiz, err)
+	}
+	question := `[{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p","blocks":[{"type":"text","text":"Find x."}],` +
+		`"answer":{"type":"short","accepted":["3"]},"marks":1,"solution":[]}]}]`
+	ended := a.finishExtraction(ctx, kept, "u_editor", "E2E Private Workspace", extractionEvent{
+		Type: "done", Questions: json.RawMessage(question), Report: json.RawMessage(`{}`),
+	})
+	if ended.Status != store.ExtractionDone || ended.QuizID == nil || ended.AssignmentID == nil {
+		t.Fatalf("run = %+v", ended)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM assignments WHERE id=$1`, *ended.AssignmentID)
+	})
+	task, err := st.GetAssignment(ctx, "u_editor", *ended.AssignmentID, time.Now())
+	if err != nil || !task.Own || task.Questions != 1 {
+		t.Fatalf("its graded quiz = %+v, err %v", task, err)
 	}
 }
 

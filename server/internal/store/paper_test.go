@@ -29,7 +29,7 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 	}
 	form.Questions = append(frozenFixture(t), ordering)
 	form.AllowUploads = true
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 	f := newAssignmentFixture(t, "handin")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
 		Attempts: 1, AssignAll: true, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
 		Files: []AssignmentFileRef{}, AllowUploads: true}, now)
 	if err != nil {
@@ -200,7 +200,7 @@ func TestUnmarkedFollowsTheLateRules(t *testing.T) {
 	after := now.Add(2 * time.Hour)
 	create := func(noLate bool) Assignment {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it",
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it",
 			Attempts: 1, AssignAll: true, DueAt: &due, NoLate: noLate, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose,
 			ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 		if err != nil {

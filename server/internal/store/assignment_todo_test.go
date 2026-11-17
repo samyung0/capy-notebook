@@ -15,7 +15,7 @@ func TestListTodo(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-todo")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestListTodo(t *testing.T) {
 	}
 
 	// Closed with nothing done, another member finds it on the Done tab.
-	other, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
+	other, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestTodoChecks(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-todo-checks")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	quiz, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	quiz, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestTodoChecks(t *testing.T) {
 	if err := f.s.SetAssignmentTodoCheck(ctx, f.viewer, quiz.ID, true, true, now); err != ErrNotFound {
 		t.Fatalf("a member's tick on the approvals: %v", err)
 	}
-	task, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	task, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
 		Files: []AssignmentFileRef{}}, now)
 	if err != nil {
@@ -211,7 +211,7 @@ func TestOwnTasks(t *testing.T) {
 	f := newAssignmentFixture(t, "own-tasks")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	given, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
+	given, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(24*time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +219,11 @@ func TestOwnTasks(t *testing.T) {
 	form.Kind, form.QuizID, form.Questions, form.Title = AssignmentUnmarked, "", nil, "Read chapter 4"
 	// A class's viewer member: only a task for themself is taken.
 	var refused *AssignmentInputError
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, form, now); !errors.As(err, &refused) {
+	if _, err := f.s.makeAssignment(ctx, f.viewer, f.ws.ID, form, now); !errors.As(err, &refused) {
 		t.Fatalf("a viewer's task for all members: %v", err)
 	}
 	form.AssignAll, form.Assignees = false, []string{f.viewer}
-	mine, err := f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, form, now)
+	mine, err := f.s.makeAssignment(ctx, f.viewer, f.ws.ID, form, now)
 	if err != nil || !mine.Own || mine.Mine == nil || mine.Manage == nil {
 		t.Fatalf("a viewer's own task = %+v, err %v", mine, err)
 	}
@@ -247,7 +247,7 @@ func TestOwnTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	form.Assignees = []string{f.editor}
-	task, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, form, now)
+	task, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, form, now)
 	if err != nil || !task.Own || task.Mine == nil || task.Manage == nil {
 		t.Fatalf("an editor's own task = %+v, err %v", task, err)
 	}
@@ -307,11 +307,11 @@ func TestTasksWithoutWorkspace(t *testing.T) {
 	// A quiz hidden from members is not a member's to pick.
 	hide(true)
 	var refused *AssignmentInputError
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, "", form, now); !errors.As(err, &refused) {
+	if _, err := f.s.makeAssignment(ctx, f.viewer, "", form, now); !errors.As(err, &refused) {
 		t.Fatalf("a task with a file its maker cannot open: %v", err)
 	}
 	hide(false)
-	task, err := f.s.CreateAssignment(ctx, f.viewer, "", form, now)
+	task, err := f.s.makeAssignment(ctx, f.viewer, "", form, now)
 	if err != nil || !task.Own || task.WorkspaceID != "" || task.Mine == nil || len(task.Files) != 2 ||
 		task.Files[0].WorkspaceID == nil || *task.Files[0].WorkspaceID != f.ws.ID || task.Files[1].WorkspaceID != nil {
 		t.Fatalf("a task with no workspace = %+v, err %v", task, err)
@@ -376,26 +376,10 @@ func TestOwnMarkedTask(t *testing.T) {
 	}
 	form := AssignmentForm{Kind: AssignmentMarked, Title: "Mock paper", QuizID: quiz.ID, Questions: qs, DueAt: &due, Attempts: 2,
 		Assignees: []string{f.viewer}, Marking: MarkingManual, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic}
-	gradedPending(t, f.s, quiz.ID)
-
-	// A quiz the class gave them and still holds back is not theirs to freeze.
-	given, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, due), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	held := form
-	held.QuizID, held.Questions = f.quiz.ID, frozenFixture(t)
-	var refused *AssignmentInputError
-	if _, err := f.s.CreateAssignment(ctx, f.viewer, "", held, now); !errors.As(err, &refused) {
-		t.Fatalf("a task from an assigned quiz: %v", err)
-	}
-	if err := f.s.DeleteAssignment(ctx, f.user, given.ID); err != nil {
-		t.Fatal(err)
-	}
 
 	// From their own quiz, which sits where the task does (no workspace,
 	// migration 0174): the class's staff do not reach it.
-	task, err := f.s.CreateAssignment(ctx, f.viewer, "", form, now)
+	task, err := f.s.makeAssignment(ctx, f.viewer, "", form, now)
 	if err != nil || !task.Own || task.Manage == nil || task.Mine == nil || task.Questions != 3 || task.Marks != 6 {
 		t.Fatalf("a marked task = %+v, err %v", task, err)
 	}

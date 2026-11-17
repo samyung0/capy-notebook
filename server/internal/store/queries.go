@@ -1385,6 +1385,10 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	if err != nil {
 		return Material{}, err
 	}
+	mt.ID = id
+	if _, err := s.makeGradedQuizTx(ctx, tx, mt, time.Now()); err != nil {
+		return Material{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err
 	}
@@ -1414,9 +1418,6 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	}
 	if mt.ParentMaterialID != "" && (mt.Kind != "quiz" && mt.Kind != "flashcards" || mt.TopicID != nil) {
 		return "", fmt.Errorf("%w: only an unfiled quiz or flashcard set can be embedded", materialdoc.ErrInvalid)
-	}
-	if mt.GradedPending && (mt.Kind != "quiz" || mt.WorkspaceID == "" || mt.ParentMaterialID != "") {
-		return "", fmt.Errorf("%w: only a workspace quiz is made for a graded quiz", materialdoc.ErrInvalid)
 	}
 	content, err := materialdoc.FromLegacyMarkdown(string(mt.Kind), mt.Content)
 	if err != nil {
@@ -1499,12 +1500,12 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 topic_id, scope_topics, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
-		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id, canvas_workspace_id, graded_pending)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21 OR $25,$22,$23,$24,$25)`,
+		 parent_material_id, index_dirty_at, preview, hidden, practice_workspace_id, practice_topic_id, canvas_workspace_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.TopicID, mt.ScopeTopics,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID), mt.GradedPending)
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID))
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1569,8 +1570,8 @@ type MaterialDraft struct {
 	// Hidden from the workspace's members from the start (a quiz made from
 	// files, Epo 2026-11-03).
 	Hidden bool
-	// GradedPending: made for a graded quiz (Material.GradedPending).
-	GradedPending bool
+	// GradedQuiz: a quiz made with its graded quiz (Material.GradedQuiz).
+	GradedQuiz *AssignmentForm
 	// A reader's generated quiz: standalone, linked to this workspace and topic
 	// for its maker's study reads (Material.PracticeWorkspaceID).
 	PracticeWorkspaceID string
@@ -1592,7 +1593,7 @@ func (d MaterialDraft) material() (Material, error) {
 		Kind: d.Kind, Title: d.Title, ScopeTopics: d.ScopeTopics, ScopeFileNames: d.ScopeFileNames,
 		Privacy: "private", Color: d.Color, Provenance: d.Provenance, TopicID: d.TopicID,
 		Hidden: d.Hidden, PracticeWorkspaceID: d.PracticeWorkspaceID, PracticeTopicID: d.PracticeTopicID,
-		GradedPending: d.GradedPending,
+		GradedQuiz: d.GradedQuiz,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -1654,13 +1655,13 @@ func decodeQuestions(raw json.RawMessage) ([]json.RawMessage, error) {
 
 // CreateMaterialDraft persists a draft without a receipt (the Generate path,
 // the bank page's copy and the starter workspace's note, with its embedded
-// rows).
+// rows), and a quiz's graded quiz with it (makeGradedQuizTx).
 func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (Material, error) {
 	mt, err := draft.material()
 	if err != nil {
 		return Material{}, err
 	}
-	if draft.TopicName == "" && len(draft.Embedded) == 0 && len(draft.Assets) == 0 {
+	if draft.TopicName == "" && len(draft.Embedded) == 0 && len(draft.Assets) == 0 && draft.GradedQuiz == nil {
 		return s.CreateMaterial(ctx, mt)
 	}
 	if draft.TopicName != "" && mt.TopicID != nil {
@@ -1690,6 +1691,9 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, draft.ActorUserID, draft.ActorUserID, draft.Assets); err != nil {
 			return Material{}, err
 		}
+	}
+	if _, err := s.makeGradedQuizTx(ctx, tx, mt, time.Now()); err != nil {
+		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err

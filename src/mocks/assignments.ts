@@ -235,6 +235,17 @@ export function assignAsMockOwner(wsId: string, body: AssignmentFormReq) {
   return addRow(wsId, body, false).id;
 }
 
+/** A quiz maker's `gradedQuiz` (Epo 2026-11-16): the graded quiz made with
+ * the quiz, which it owns; returns its id. */
+export function addMockGradedQuiz(
+  wsId: string,
+  form: AssignmentFormReq,
+  quizId: string
+) {
+  seed();
+  return addRow(wsId, { ...form, kind: 'marked', quizId }, false).id;
+}
+
 /** A member's submitted attempt at an assignment: the Members mock's profile
  * links its rows to the attempts seeded here. */
 export function submittedAttemptId(assignmentId: string, userId: string) {
@@ -2272,6 +2283,30 @@ export const assignmentHandlers = (viewer: Viewer) => {
       applyForm(row, body);
       if (row.kind === 'marked') freeze(row);
       rows.set(row.id, row);
+      return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
+    }),
+    // Existing quiz: a copy of a workspace quiz made into a new graded quiz.
+    http.post('/api/quizzes/:id/graded-copy', async ({ params, request }) => {
+      const source = db.materials.find(
+        (mt) => mt.id === params.id && mt.kind === 'quiz'
+      );
+      if (!source) return gone();
+      const { gradedQuiz } = (await request.json()) as {
+        gradedQuiz: AssignmentFormReq;
+      };
+      const copy = db.makeMaterial({
+        ...source,
+        assignmentId: undefined,
+        content: structuredClone(source.content),
+        createdAt: new Date().toISOString(),
+        hidden: true,
+        id: newId('qz'),
+        title: gradedQuiz.title || source.title,
+      });
+      db.materials.unshift(copy);
+      const id = addMockGradedQuiz(source.workspaceId, gradedQuiz, copy.id);
+      const row = rowOf(id);
+      if (!row) return gone();
       return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
     }),
     http.post(

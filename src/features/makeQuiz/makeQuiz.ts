@@ -236,6 +236,14 @@ export function extractionFailure(code: string | undefined): string {
       return m.make_quiz_failed_expired();
     case 'quiz_invalid':
       return m.make_quiz_failed_invalid();
+    // A graded quiz's run whose settings no longer fit when its quiz was
+    // made: nothing is saved.
+    case 'graded_quiz_invalid':
+      return m.make_quiz_failed_graded_invalid();
+    case 'assignment_limit':
+    case 'assignment_open_limit':
+    case 'task_limit':
+      return m.make_quiz_failed_graded_limit();
     default:
       return m.make_quiz_failed_fallback();
   }
