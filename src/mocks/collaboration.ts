@@ -1801,16 +1801,26 @@ function projectBoard(room: Room) {
   projectMockCanvas(room.target.id, room.version + 1, [...ids].sort());
 }
 
-/** A board room's stored state, kept for the tab: a reload opens it again. */
+/** A board room's stored state, kept for the tab: a reload opens it again.
+ * A tab's sessionStorage holds about 5 MB, less than a board near its cap
+ * takes as text: such a board is kept for the page's life alone, and its
+ * older copy goes so a reload cannot open a stale one. */
 function keepBoard(room: Room) {
   if (!browser) return;
-  sessionStorage.setItem(
-    BOARD_STATE + room.name,
-    JSON.stringify({
-      state: bytesToBase64(Y.encodeStateAsUpdate(room.document)),
-      version: room.version,
-    })
-  );
+  const key = BOARD_STATE + room.name;
+  try {
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        state: bytesToBase64(Y.encodeStateAsUpdate(room.document)),
+        version: room.version,
+      })
+    );
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'QuotaExceededError'))
+      throw error;
+    sessionStorage.removeItem(key);
+  }
 }
 
 function boardRoom(name: string, firstState: Uint8Array): Room {
