@@ -113,6 +113,25 @@ describe('BoardBlobSource', () => {
     await expect(set).rejects.toThrow('the board closed');
   });
 
+  it('lands nothing on a board that locked while the image was stored', async () => {
+    let stored: (to: { bytes: number; id: string }) => void = () => undefined;
+    const source = new BoardBlobSource({
+      store: () =>
+        new Promise((resolve) => {
+          stored = resolve;
+        }),
+    });
+    const set = source.set('hash', png());
+    await Promise.resolve();
+    source.readonly = true;
+    stored({ bytes: 7, id: 'asset_1' });
+    await expect(set).rejects.toThrow('the board locked');
+    // Taking edits again, the same file pasted is stored already and lands.
+    source.readonly = false;
+    expect(await source.set('hash', png())).toBe('hash');
+    expect(source.storedAs('hash')).toEqual({ bytes: 7, id: 'asset_1' });
+  });
+
   it('keeps an answer board image on the board, fitted, with nothing stored', async () => {
     const fitted = new Blob(['small'], { type: 'image/webp' });
     const source = new BoardBlobSource({

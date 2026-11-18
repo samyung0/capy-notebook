@@ -34,7 +34,8 @@ export function CanvasOpening() {
 
 /** The room's strip over the board, under the picker's row: offline, an
  * outdated build, edits open for copying, access lost. The board under it is
- * read-only whenever the strip says it takes no edits. */
+ * read-only whenever the strip says it takes no edits. A strip the person
+ * closed draws nothing, and its outline goes with it (`empty:hidden`). */
 export function CanvasBoardStrip({
   strip,
 }: {
@@ -42,7 +43,10 @@ export function CanvasBoardStrip({
 }) {
   if (!strip) return null;
   return (
-    <div className="absolute inset-x-2 top-12 z-10 overflow-hidden rounded-lg border border-line">
+    <div
+      className="absolute inset-x-2 top-12 z-10 overflow-hidden rounded-lg border border-line empty:hidden"
+      data-canvas-strip
+    >
       <SaveBanner onReload={strip.onReload} state={strip.state} />
     </div>
   );

@@ -295,6 +295,9 @@ export class EdgelessMindmapToolButton extends EdgelessToolbarToolMixin(
           const locked = gfx.viewport.locked;
           if (locked) return;
           if (gfx.selection.editing) return;
+          // Capy (local change 65): no mind map to drop on a store that takes
+          // no edits.
+          if (gfx.doc.readonly) return;
 
           if (this.readyToDrop) {
             // change the style

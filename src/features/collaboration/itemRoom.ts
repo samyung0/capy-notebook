@@ -188,6 +188,11 @@ export interface ItemRoomOptions {
    * at every join). A fresh room opens on the room's state, and this says the
    * canvas is full. */
   onFull?: () => void;
+  /** The room is going, left or replaced by a fresh one, and its document
+   * with it: called while the document still stands, for what the page has
+   * yet to write into it or take down from it. The room goes whatever this
+   * throws. */
+  onLeave?: () => void;
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
   /** A reader (a View, a study page): asks for a read channel even when the
@@ -1002,6 +1007,14 @@ export class ItemRoom {
   }
 
   destroy() {
+    try {
+      this.options.onLeave?.();
+    } finally {
+      this.tearDown();
+    }
+  }
+
+  private tearDown() {
     globalThis.document?.removeEventListener('visibilitychange', this.shown);
     this.keeper?.close();
     this.destroyed = true;
@@ -1069,6 +1082,7 @@ export function useItemRoom(
     inside,
     keep,
     onFull,
+    onLeave,
     seed,
     wake,
   }: {
@@ -1082,6 +1096,8 @@ export function useItemRoom(
     keep?: CopyLabel;
     /** `ItemRoomOptions.onFull`; the latest one is called. */
     onFull?: () => void;
+    /** `ItemRoomOptions.onLeave`; the latest one is called. */
+    onLeave?: () => void;
     /** `ItemRoomOptions.seed`, for the first room only. */
     seed?: RoomSeed | null;
     /** Bumped when an embed comes near the screen again (`ItemRoom.wake`). */
@@ -1090,8 +1106,8 @@ export function useItemRoom(
 ) {
   const [room, setRoom] = useState<ItemRoom | null>(null);
   const [generation, setGeneration] = useState(0);
-  const start = useRef({ keep, onFull, seed });
-  start.current = { keep, onFull, seed };
+  const start = useRef({ keep, onFull, onLeave, seed });
+  start.current = { keep, onFull, onLeave, seed };
   const takesFull = !!onFull;
   useEffect(() => {
     if (!(materialId && enabled)) return;
@@ -1102,6 +1118,7 @@ export function useItemRoom(
       inside,
       keep: start.current.keep,
       onFull: takesFull ? () => start.current.onFull?.() : undefined,
+      onLeave: () => start.current.onLeave?.(),
       onReplace: () => setGeneration((value) => value + 1),
       // Unusable once a room ended on it (its document went with the room).
       seed: start.current.seed?.doc.isDestroyed ? null : start.current.seed,

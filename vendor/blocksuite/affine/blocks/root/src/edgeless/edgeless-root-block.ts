@@ -388,7 +388,13 @@ export class EdgelessRootBlockComponent extends BlockComponent<
         keymap[key] = ctx => {
           const elements = selection.selectedElements;
 
-          if (isSingleMindMapNode(elements) && !selection.editing) {
+          // Capy (local change 65): a store that takes no edits keeps the
+          // node's text, and the key goes to its own handler.
+          if (
+            isSingleMindMapNode(elements) &&
+            !selection.editing &&
+            !this.store.readonly
+          ) {
             const target = gfx.getElementById(
               elements[0].id
             ) as ShapeElementModel;

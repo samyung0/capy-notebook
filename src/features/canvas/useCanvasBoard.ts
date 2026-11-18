@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { canvasById } from '@/api/canvas';
-import { useMe, useWorkspace } from '@/api/hooks';
+import { useMe } from '@/api/hooks';
 import {
   recoveryBanner,
   type SaveBannerState,
@@ -21,7 +21,7 @@ import { m } from '@/i18n';
 import { errorCopy, errorKind } from '@/lib/errors';
 import type { OpenLink } from '@/lib/openLink';
 import type { CanvasPresence } from './BoardPresenceMarks';
-import { sendBoardPresence } from './boardPresence';
+import { sendBoardPresence, sendsBoardPresence } from './boardPresence';
 import { holdsBoard } from './boardRoom';
 
 export type CanvasBoard = ReturnType<typeof mountDrawingBoard>;
@@ -74,7 +74,8 @@ export type CanvasBoardState = {
  * their pointer, selection and text caret and sees the others', also while
  * their own board is read-only for a time (a frozen account, a full one). A
  * workspace viewer sends nothing, as a note's reader does not, and the room
- * tells a viewer nothing of the others. */
+ * tells a viewer nothing of the others. Who may edit is what the page knows,
+ * never a guess (`sendsBoardPresence`). */
 export function useCanvasBoard(
   container: React.RefObject<HTMLDivElement | null>,
   id: string,
@@ -93,6 +94,10 @@ export function useCanvasBoard(
 ): CanvasBoardState {
   const { data: me } = useMe();
   const actorId = me?.id ?? null;
+  const shown = useRef<CanvasBoard | null>(null);
+  // The board's document is going (the page left, a fresh room): its closing
+  // writes are no step back in the URL.
+  const leaving = useRef(false);
   const { room, snapshot } = useItemRoom(id, !!actorId, {
     actorId,
     awareness: true,
@@ -102,6 +107,13 @@ export function useCanvasBoard(
         title: m.workspace_canvas_full(),
         variant: 'warning',
       }),
+    // A room replaced under an open plane or chart (moved, refused): what the
+    // editor writes as it closes goes into the document while it still stands.
+    // The fresh room's board opens the editor again from the URL.
+    onLeave: () => {
+      leaving.current = true;
+      shown.current?.closeEditor();
+    },
   });
   const [failed, setFailed] = useState<string | null>(null);
   const [mounted, setMounted] = useState<CanvasBoard | null>(null);
@@ -115,10 +127,9 @@ export function useCanvasBoard(
   // canvas's own is never stored again.
   const [listed, setListed] = useState<{
     id: string;
-    /** The person made the canvas: theirs whatever their workspace role. */
+    /** The person made the canvas: its owner, whatever their channel. */
     mine: boolean;
     own: readonly string[];
-    workspaceId?: string;
   } | null>(null);
   // Asked for while the device was offline: asked again (`attempt`) once it is
   // back, as the room joins again by itself.
@@ -131,12 +142,7 @@ export function useCanvasBoard(
       (canvas) => {
         if (!live) return;
         setAway(false);
-        setListed({
-          id,
-          mine: canvas.own,
-          own: canvas.ownImageAssetIds,
-          workspaceId: canvas.workspaceId,
-        });
+        setListed({ id, mine: canvas.own, own: canvas.ownImageAssetIds });
       },
       (error: unknown) => {
         if (!live) return;
@@ -161,13 +167,16 @@ export function useCanvasBoard(
   const images = useMemo(
     () =>
       listed?.id === id
-        ? assetImages(id, listed.own, (error) =>
+        ? assetImages(id, listed.own, (error) => {
+            const title = m.workspace_canvas_image_refused();
+            // Why, when the error says: its own copy, never the title again.
+            const why = errorCopy(error, title);
             userToast({
-              description: errorCopy(error, m.workspace_canvas_image_refused()),
-              title: m.workspace_canvas_image_refused(),
+              description: why === title ? undefined : why,
+              title,
               variant: 'error',
-            })
-          )
+            });
+          })
         : null,
     [id, listed]
   );
@@ -194,9 +203,6 @@ export function useCanvasBoard(
   // Where the person was looking, for a board that mounts again on this
   // canvas (a fresh room, a viewer who may now write).
   const view = useRef<BoardView | null>(null);
-  // The page is going: the board's closing writes are no step back in the URL.
-  const leaving = useRef(false);
-  const shown = useRef<CanvasBoard | null>(null);
   useEffect(() => {
     const host = container.current;
     if (!(host && doc && images)) return;
@@ -206,6 +212,7 @@ export function useCanvasBoard(
       return;
     }
     let disposed = false;
+    leaving.current = false;
     let board: CanvasBoard;
     try {
       board = mountDrawingBoard(host, {
@@ -217,7 +224,7 @@ export function useCanvasBoard(
           const before = editor.current;
           editor.current = cardId;
           const { link } = latest.current;
-          // Leaving the page closes it too: that is no step back.
+          // Its document going closes it too: that is no step back.
           if (disposed || leaving.current || !link) return;
           if (cardId) link.open(cardId);
           // Done: the URL still names it. Closed by the URL: it no longer does.
@@ -253,27 +260,30 @@ export function useCanvasBoard(
   // Leaving the page (another canvas, another page): an open plane or chart
   // writes as it closes, and that must reach the room. The room's own effect
   // is cleaned up before the board's, which would write into a document already
-  // gone; a layout effect is cleaned up before both.
-  useLayoutEffect(() => {
-    leaving.current = false;
-    return () => {
+  // gone; a layout effect is cleaned up before both, the board still on the
+  // page.
+  useLayoutEffect(
+    () => () => {
       leaving.current = true;
       shown.current?.closeEditor();
-    };
-  }, []);
+    },
+    []
+  );
 
   // Presence, between the room's awareness and the board showing its document
   // (edits open for copying show a document of their own).
   const awareness = (!copyOnly && room?.awareness) || null;
   const marks = mounted?.presence ?? null;
-  const canvas = listed?.id === id ? listed : null;
-  const { data: workspace } = useWorkspace(canvas?.workspaceId ?? '');
-  // Another member's shared canvas, held as the workspace's viewer.
-  const viewer = !canvas?.mine && workspace?.role === 'viewer';
+  // Whoever is known to edit the canvas: by the room's channel, or by having
+  // made it. Anyone else sets no state and listens for no pointer.
+  const sends = sendsBoardPresence(
+    snapshot.access,
+    listed?.id === id ? listed.mine : undefined
+  );
   useEffect(() => {
-    if (!(awareness && marks) || viewer) return;
+    if (!(awareness && marks && sends)) return;
     return sendBoardPresence(marks, awareness);
-  }, [awareness, marks, viewer]);
+  }, [awareness, marks, sends]);
   const connections = snapshot.presence;
   const presence = useMemo(
     () => (awareness && marks ? { awareness, connections, view: marks } : null),

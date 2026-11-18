@@ -4,8 +4,9 @@ import { expect, type Page, test } from '@playwright/test';
  * Other people on a canvas (Epo 2026-11-18), against the mock room
  * (src/mocks/collaboration.ts, the board room): a second person's pointer,
  * selection and text caret show for the first, follow the board, and go when
- * they leave; the first's own reach the second; a workspace viewer sends none
- * and is told of none.
+ * they leave; the first's own reach the second; a workspace viewer's tab sets
+ * no presence and is told of none; the canvas's maker narrowed to a read
+ * channel still sets theirs.
  */
 
 type Collaboration = typeof import('../../src/mocks/collaboration');
@@ -40,6 +41,17 @@ const joinBen = (page: Page, id: string) =>
     },
     [id, BEN] as const
   );
+
+/** What this person's own tab says of itself on a canvas, relayed or not:
+ * null while it has said nothing. */
+const ownPresence = (page: Page, id: string) =>
+  page.evaluate(async (canvasId) => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockBoardOwnPresence } = (await import(
+      modulePath
+    )) as Collaboration;
+    return mockBoardOwnPresence(canvasId);
+  }, id);
 
 /** What the other tabs say, as Ben hears it. */
 const heardByBen = (page: Page) =>
@@ -99,6 +111,9 @@ test("another person's pointer, selection and caret show, follow the board, and 
   await expect
     .poll(async () => (await heardByBen(page))[0]?.p)
     .toEqual([expect.any(Number), expect.any(Number)]);
+  expect(await ownPresence(page, CANVAS)).toMatchObject({
+    p: [expect.any(Number), expect.any(Number)],
+  });
 
   // Ben points at the board, with the note selected and his caret after
   // "Cells".
@@ -220,6 +235,48 @@ test('a workspace viewer sends no presence and is told of none', async ({
   await page.mouse.move(board.x + 260, board.y + 240, { steps: 4 });
   // Past the 50 ms a pointer waits at most.
   await page.waitForTimeout(300);
+  // The tab itself said nothing: the mock room relays nothing a read channel
+  // says, so Ben would hear nothing either way.
+  expect(await ownPresence(page, theirs)).toBeNull();
   expect(await heardByBen(page)).toEqual([]);
   await expect(page.locator('[data-remote-pointer]')).toHaveCount(0);
+});
+
+test("the canvas's maker still sets their presence once their channel is narrowed to read", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await boardShown(page);
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  const pointer = async () => (await ownPresence(page, CANVAS))?.p;
+  await page.mouse.move(board.x + 300, board.y + 300);
+  await expect.poll(pointer).toEqual([expect.any(Number), expect.any(Number)]);
+  const before = await pointer();
+
+  // Their account is frozen: the room closes the channel, the next token
+  // reads, and the board takes no edits.
+  await page.evaluate(async (canvasId) => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockNarrowBoard } = (await import(modulePath)) as Collaboration;
+    mockNarrowBoard(canvasId);
+  }, CANVAS);
+  await expect
+    .poll(() =>
+      page.evaluate(async (canvasId) => {
+        const modulePath = '/src/mocks/collaboration.ts';
+        const { mockBoardChannel } = (await import(
+          modulePath
+        )) as Collaboration;
+        return mockBoardChannel(canvasId);
+      }, CANVAS)
+    )
+    .toBe('read');
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+  // The tab still says where its pointer is (the mock room relays nothing a
+  // read channel says, so this is read off the tab itself).
+  await page.mouse.move(board.x + 440, board.y + 380, { steps: 4 });
+  await expect.poll(pointer).not.toEqual(before);
+  expect(await pointer()).toEqual([expect.any(Number), expect.any(Number)]);
 });

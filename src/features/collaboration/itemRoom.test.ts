@@ -976,6 +976,34 @@ it('keeps an awareness on its document and hands it to its provider', async () =
   room.destroy();
 });
 
+// A canvas's open plane or chart writes as it closes: the page hears the room
+// is going before the room's document does.
+it('tells its page it is going while its document still stands', async () => {
+  const stood: boolean[] = [];
+  const room = new ItemRoom('q', {
+    onLeave: () => stood.push(!room.doc.isDestroyed),
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  room.destroy();
+  expect(stood).toEqual([true]);
+  expect(room.doc.isDestroyed).toBe(true);
+
+  // A page whose callback throws still loses the room.
+  const failing = new ItemRoom('q', {
+    awareness: true,
+    onLeave: () => {
+      throw new Error('the page failed');
+    },
+    onReplace: vi.fn(),
+  });
+  await failing.start();
+  failing.awareness?.setLocalState({});
+  expect(() => failing.destroy()).toThrow('the page failed');
+  expect(failing.doc.isDestroyed).toBe(true);
+  expect(failing.awareness?.getLocalState()).toBeNull();
+});
+
 // Epo 2026-11-18 (the canvas's room): a board shown read-only has nothing to
 // copy from, and the same edits would be refused at every join.
 it('drops the unsent edits of a full canvas and opens afresh once they are gone', async () => {

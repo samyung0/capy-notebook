@@ -248,6 +248,8 @@ export class EdgelessToolbarShapeDraggable extends EdgelessToolbarToolMixin(
           const locked = this.gfx.viewport.locked;
           const selection = this.gfx.selection;
           if (locked || selection.editing) return;
+          // Capy (local change 65): no shape tool on a store that takes no edits.
+          if (this.gfx.doc.readonly) return;
 
           const currentTool = this.gfx.tool.currentToolName$.peek();
 

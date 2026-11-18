@@ -174,12 +174,29 @@ function selectionFields(
 }
 
 /**
+ * Whether this tab sends its presence on a canvas (Epo 2026-11-18): whoever
+ * may edit the canvas does, also while their channel is narrowed to read (a
+ * frozen account, a frozen or full payer), and a workspace viewer sends none,
+ * as the room keeps and relays them (`in_presence`, room.rs). The page knows
+ * a person may edit from a write channel, or from their having made the
+ * canvas (`made`, the canvas's own read; its maker holds it as its owner).
+ * Anyone else on a read channel is a viewer or a narrowed editor, which
+ * nothing the page reads tells apart: not known to edit, so none. Nothing is
+ * sent before the room and the canvas have answered.
+ */
+export const sendsBoardPresence = (
+  access: 'read' | 'write' | null,
+  made: boolean | undefined
+) => access === 'write' || (access === 'read' && made === true);
+
+/**
  * Sends this tab's presence on a canvas: the pointer in board units (a mouse
  * or pen only, as a note's), the selected elements, and the text caret as
  * soon as it is placed, moved or a range is selected, not only while typing
  * (Epo 2026-11-18). At most one state every 50 ms, only when a field changed.
- * The pointer goes null once it leaves the board, a card's editor fills it,
- * or the tab or window loses focus.
+ * The pointer goes null once it leaves the board, a card's editor fills it
+ * (sent as the editor opens and as it closes, not at the next move), or the
+ * tab or window loses focus.
  *
  * A pointer move costs two stored numbers and at most one timer: the send
  * converts them with the viewport's own arithmetic (no layout is read) and
@@ -237,9 +254,13 @@ export function sendBoardPresence(
   const offView = view.onView(() => {
     if (over) sender.schedule();
   });
+  // A card's editor opened or closed over a still pointer.
+  const editor = new MutationObserver(() => sender.schedule());
+  editor.observe(host, { attributeFilter: ['data-editor-open'] });
   sender.schedule();
   return () => {
     sender.cancel();
+    editor.disconnect();
     host.removeEventListener('pointermove', move);
     host.removeEventListener('pointerleave', leave);
     page.removeEventListener('visibilitychange', hidden);

@@ -4,9 +4,9 @@ import { expect, type Page, test } from '@playwright/test';
  * A canvas's room when things go wrong or change under the board (the
  * browser fix round of 2026-11-18), against the mock room
  * (src/mocks/collaboration.ts, the board room): a viewer on a board whose
- * connector has a label, another person's image, an image still being stored
- * as its board goes, an editor losing access, a full canvas, a dropped
- * socket, and a canvas opened offline.
+ * connector has a label, the keyboard on a board that takes no edits, another
+ * person's image, an image still being stored as its board goes, an editor
+ * losing access, a full canvas, a dropped socket, and a canvas opened offline.
  */
 
 type Collaboration = typeof import('../../src/mocks/collaboration');
@@ -15,10 +15,21 @@ type Peer = ReturnType<Collaboration['mockBoardPeer']>;
 type View = { centre: [number, number]; zoom: number };
 type Board = {
   images(): { id: string }[];
+  presence: {
+    boxOf(ids: string[]): { h: number; w: number; x: number; y: number } | null;
+    selected(): string[];
+    view(): { left: number; top: number; zoom: number };
+  };
+  snapshot(): string;
   stats(): { canvas: string[] };
   view(): View | null;
 };
-type Shown = { __board?: Board & { kept?: boolean }; peer?: Peer };
+type Shown = {
+  __board?: Board & { kept?: boolean };
+  peer?: Peer;
+  /** `holdUploads`: how many uploads wait, and what lets them go. */
+  uploads?: { held: number; release(): void };
+};
 
 /** A workspace's first canvas, as the mocks name it. */
 const CANVAS = 'cv_ws_bio_1';
@@ -65,17 +76,24 @@ const joinPeer = (page: Page, id: string) =>
   }, id);
 
 /** Ben's canvas in the workspace, shared, which this person holds by `role`. */
-const memberCanvas = (page: Page, role: 'editor' | 'viewer') =>
-  page.evaluate(async (held) => {
-    const modulePath = '/src/mocks/canvas.ts';
-    const { mockMemberCanvas } = (await import(modulePath)) as Canvases;
-    return mockMemberCanvas({
-      creatorName: 'Ben',
-      role: held,
-      title: 'Lab diagrams',
-      workspaceId: 'ws_bio',
-    });
-  }, role);
+const memberCanvas = (
+  page: Page,
+  role: 'editor' | 'viewer',
+  title = 'Lab diagrams'
+) =>
+  page.evaluate(
+    async ([held, name]) => {
+      const modulePath = '/src/mocks/canvas.ts';
+      const { mockMemberCanvas } = (await import(modulePath)) as Canvases;
+      return mockMemberCanvas({
+        creatorName: 'Ben',
+        role: held,
+        title: name,
+        workspaceId: 'ws_bio',
+      });
+    },
+    [role, title] as const
+  );
 
 const picker = (page: Page, title: string) =>
   page
@@ -90,6 +108,32 @@ async function switchTo(page: Page, from: string, title: string) {
     .getByRole('button', { name: title })
     .click();
 }
+
+/** The peer draws two squares, `from` and `to`. */
+const peerSquares = (page: Page) =>
+  page.evaluate(() => {
+    const peer = (window as Shown).peer;
+    if (!peer) throw new Error('no peer');
+    // Every field a tab's own shape stores: the board draws what it reads.
+    const square = (x: number) => ({
+      fillColor: '#ffffff',
+      filled: false,
+      index: 'a0',
+      radius: 0,
+      rotate: 0,
+      roughness: 1.4,
+      seed: 1,
+      shapeStyle: 'General',
+      shapeType: 'rect',
+      strokeColor: '#000000',
+      strokeStyle: 'solid',
+      strokeWidth: 2,
+      type: 'shape',
+      xywh: `[${x},0,100,100]`,
+    });
+    peer.add('from', square(0));
+    peer.add('to', square(400));
+  });
 
 /** Marks the board that shows now, to tell whether it is still the one. */
 const keep = (page: Page) =>
@@ -141,29 +185,9 @@ test("a viewer stays on a board whose connector has a label, through its maker's
 
   // Ben joins two shapes with a labelled connector, then moves one of them.
   await joinPeer(page, theirs);
+  await peerSquares(page);
   await page.evaluate(() => {
-    const peer = (window as Shown).peer;
-    if (!peer) throw new Error('no peer');
-    // Every field a tab's own shape stores: the board draws what it reads.
-    const shape = (x: number) => ({
-      fillColor: '#ffffff',
-      filled: false,
-      index: 'a0',
-      radius: 0,
-      rotate: 0,
-      roughness: 1.4,
-      seed: 1,
-      shapeStyle: 'General',
-      shapeType: 'rect',
-      strokeColor: '#000000',
-      strokeStyle: 'solid',
-      strokeWidth: 2,
-      type: 'shape',
-      xywh: `[${x},0,100,100]`,
-    });
-    peer.add('from', shape(0));
-    peer.add('to', shape(400));
-    peer.add('join', {
+    (window as Shown).peer?.add('join', {
       index: 'a1',
       labelDisplay: true,
       labelOffset: { distance: 0.5 },
@@ -198,6 +222,117 @@ test("a viewer stays on a board whose connector has a label, through its maker's
   await expect.poll(() => drawn(page)).toEqual(['shape', 'shape', 'connector']);
   await keep(page);
   await page.waitForTimeout(2500);
+  expect(await kept(page)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+/** The board's document as it stands: the same text while nothing wrote. */
+const documentOf = (page: Page) =>
+  page.evaluate(() => (window as Shown).__board?.snapshot() ?? null);
+
+/** Selects everything on the board from the keyboard and nudges it right;
+ * answers how many elements were selected. */
+async function nudgeAll(page: Page) {
+  await page.locator('.capy-board').click({ position: { x: 300, y: 200 } });
+  await page.keyboard.press('ControlOrMeta+a');
+  const selected = await page.evaluate(
+    () => (window as Shown).__board?.presence.selected().length ?? 0
+  );
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  return selected;
+}
+
+/** Picks the select tool with `key` (Escape first: nothing is selected), then
+ * presses on the element `id`, `across` and `down` of the way over its box,
+ * and drags it away; answers what is selected after. */
+async function dragElement(
+  page: Page,
+  key: 'Escape' | 'v',
+  id: string,
+  [across, down]: [number, number]
+) {
+  const [x, y] = await page.evaluate(
+    ([element, fx, fy]) => {
+      const board = (window as Shown).__board;
+      const host = document.querySelector('.capy-board');
+      const box = board?.presence.boxOf([element]);
+      if (!(board && host && box)) throw new Error(`no ${element}`);
+      const view = board.presence.view();
+      const place = host.getBoundingClientRect();
+      return [
+        place.x + view.left + (box.x + box.w * fx) * view.zoom,
+        place.y + view.top + (box.y + box.h * fy) * view.zoom,
+      ];
+    },
+    [id, across, down] as const
+  );
+  await page.keyboard.press('Escape');
+  if (key === 'v') await page.keyboard.press('v');
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 90, y + 60, { steps: 6 });
+  await page.mouse.up();
+  return page.evaluate(
+    () => (window as Shown).__board?.presence.selected() ?? []
+  );
+}
+
+test('the keyboard and a drag move nothing on a board that takes no edits', async ({
+  page,
+}) => {
+  test.slow();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openCanvas(page);
+
+  // A viewer's board, with two squares its maker drew.
+  const viewed = await memberCanvas(page, 'viewer');
+  await switchTo(page, 'Biology 101', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${viewed}`));
+  await expect.poll(() => drawn(page)).toEqual([]);
+  await joinPeer(page, viewed);
+  await peerSquares(page);
+  await expect.poll(() => drawn(page)).toEqual(['shape', 'shape']);
+  await keep(page);
+  const shown = await documentOf(page);
+  // Selecting still works; the move writes nothing.
+  expect(await nudgeAll(page)).toBe(2);
+  expect(await documentOf(page)).toBe(shown);
+  // On the select tool (`v`) a press on a square's outline selects it, and the
+  // drag moves nothing.
+  expect(await dragElement(page, 'v', 'from', [0, 0.5])).toEqual(['from']);
+  expect(await documentOf(page)).toBe(shown);
+  // A write on a read channel would close it and open the room afresh.
+  await page.waitForTimeout(2500);
+  expect(await kept(page)).toBe(true);
+  expect(await documentOf(page)).toBe(shown);
+  expect(
+    await page.evaluate(() => (window as Shown).peer?.elements().from.xywh)
+  ).toBe('[0,0,100,100]');
+
+  // An editor's board, locked once their access is taken back.
+  const edited = await memberCanvas(page, 'editor', 'Field notes');
+  await switchTo(page, 'Lab diagrams', 'Field notes');
+  await expect(page).toHaveURL(new RegExp(`c=${edited}`));
+  await expect.poll(() => drawn(page)).toEqual([]);
+  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await keep(page);
+  await room(page, 'mockRevokeBoard', edited);
+  await expect(page.getByText('You no longer have access')).toBeVisible();
+  const locked = await documentOf(page);
+  expect(await nudgeAll(page)).toBe(1);
+  expect(await documentOf(page)).toBe(locked);
+  // The toolbar's Escape puts a locked board on the select tool.
+  const [stroke] = await page.evaluate(
+    () => (window as Shown).__board?.presence.selected() ?? []
+  );
+  expect(await dragElement(page, 'Escape', stroke, [0.5, 0.5])).toEqual([
+    stroke,
+  ]);
+  expect(await documentOf(page)).toBe(locked);
   expect(await kept(page)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -238,18 +373,33 @@ async function pasteImage(page: Page, colour = '#2f7d56') {
   await pasteFile(page, colour);
 }
 
-/** Holds this page's image uploads back, as a slow line would. */
-const slowUploads = (page: Page, ms: number) =>
-  page.evaluate((wait) => {
+/** Holds this page's image uploads back from now, as a slow line would,
+ * until `releaseUploads`. */
+const holdUploads = (page: Page) =>
+  page.evaluate(() => {
     const send = window.fetch;
+    const uploads = { held: 0, release: () => {} };
+    const released = new Promise<void>((resolve) => {
+      uploads.release = resolve;
+    });
+    Object.assign(window, { uploads });
     window.fetch = async (...sent) => {
       const [to] = sent;
       const url = to instanceof Request ? to.url : String(to);
-      if (new URL(url, location.href).pathname.endsWith('/uploads'))
-        await new Promise((resolve) => setTimeout(resolve, wait));
+      if (new URL(url, location.href).pathname.endsWith('/uploads')) {
+        uploads.held += 1;
+        await released;
+      }
       return send(...sent);
     };
-  }, ms);
+  });
+
+/** Waits until an image's upload is at the hold: its file is being stored. */
+const uploadHeld = (page: Page) =>
+  page.waitForFunction(() => ((window as Shown).uploads?.held ?? 0) > 0);
+
+const releaseUploads = (page: Page) =>
+  page.evaluate(() => (window as Shown).uploads?.release());
 
 const imageIds = (page: Page) =>
   page.evaluate(
@@ -303,12 +453,15 @@ async function withSecondCanvas(page: Page) {
   await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
 }
 
-/** Leaves for the second canvas while an image is still being stored, and
- * comes back once it is: the first canvas holds only `held`. */
+/** Leaves for the second canvas while an image's upload is held, lets it go
+ * there, and comes back once it is stored: the first canvas holds only
+ * `held`. */
 async function leaveWhileStoring(page: Page, held: string[]) {
   const late = page.waitForResponse((response) => isUpload(response.url()));
+  await uploadHeld(page);
   await switchTo(page, 'Biology 101', 'Untitled canvas');
   await expect(page).toHaveURL(/c=cv_ws_bio_2/);
+  await releaseUploads(page);
   await late;
   await switchTo(page, 'Untitled canvas', 'Biology 101');
   await expect(page).toHaveURL(new RegExp(`c=${CANVAS}`));
@@ -323,14 +476,15 @@ test('an image lands once it is stored, and one still being stored as its board 
 }) => {
   test.slow();
   await withSecondCanvas(page);
-  await slowUploads(page, 1500);
+  await holdUploads(page);
 
   // Its block is not on the board while its file is stored, and is under the
   // stored id from the moment it is.
   const stored = page.waitForResponse((response) => isUpload(response.url()));
   await pasteImage(page);
-  await page.waitForTimeout(700);
+  await uploadHeld(page);
   expect(await imageIds(page)).toEqual([]);
+  await releaseUploads(page);
   await stored;
   await expect
     .poll(() => imageIds(page))
@@ -339,6 +493,7 @@ test('an image lands once it is stored, and one still being stored as its board 
 
   // Another one, and the person leaves for the other canvas before it is
   // stored: it is stored, and no block of it is left behind.
+  await holdUploads(page);
   await pasteImage(page, '#7d2f56');
   await leaveWhileStoring(page, held);
 });
@@ -356,12 +511,13 @@ test("an image pasted into a note's text is stored before it lands too, and land
     () => document.activeElement?.closest('affine-edgeless-note') != null
   );
   await page.keyboard.type('Cells divide');
-  await slowUploads(page, 1500);
+  await holdUploads(page);
 
   const stored = page.waitForResponse((response) => isUpload(response.url()));
   await pasteFile(page, '#2f7d56');
-  await page.waitForTimeout(700);
+  await uploadHeld(page);
   expect(await imageIds(page)).toEqual([]);
+  await releaseUploads(page);
   await stored;
   await expect
     .poll(() => imageIds(page))
@@ -378,6 +534,7 @@ test("an image pasted into a note's text is stored before it lands too, and land
       document.querySelectorAll('affine-edgeless-note').length === 2
   );
   await page.keyboard.type('Cells grow');
+  await holdUploads(page);
   await pasteFile(page, '#7d2f56');
   await leaveWhileStoring(page, held);
 });
@@ -424,6 +581,12 @@ test('an editor whose access is taken back keeps the board as it was, read-only,
   });
   await page.mouse.up();
   expect(await drawn(page)).toEqual(['brush']);
+  // Closed, the strip leaves nothing over the board, which stays as it is.
+  const strip = page.locator('[data-canvas-strip]');
+  await expect(strip).toBeVisible();
+  await strip.getByRole('button', { name: 'Close' }).click();
+  await expect(strip).toBeHidden();
+  await expect(pen).toBeHidden();
   expect(errors).toEqual([]);
 });
 

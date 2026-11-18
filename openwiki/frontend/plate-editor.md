@@ -5563,10 +5563,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       server and in the receiver (`readBoardPresence`), one vector list checking both.
       BlockSuite's own awareness (its `selectionV2`) stays on the page and never
       reaches the room. It is sent at most every 50 ms and only on a change; a caret is
-      sent as soon as it is placed. Whoever may edit the canvas sends and hears it,
+      sent as soon as it is placed, and the pointer goes null as a card's editor
+      opens over it. Whoever may edit the canvas sends and hears it,
       also while their own board is read-only for a time (a frozen account, a full
       payer); a workspace viewer sends nothing and the room tells a viewer nothing, as
-      in a note. `BoardPresenceMarks` draws the others with the marks a note uses
+      in a note. The page sends only for a person it knows may edit
+      (`sendsBoardPresence`): by the room's write channel, or by their having made
+      the canvas (`own` of the canvas's read). An editor narrowed to read on
+      another member's canvas is not told apart from a viewer by anything the page
+      reads (the canvas's read carries no role), so their tab sends none yet,
+      though the room would relay it. `BoardPresenceMarks` draws the others with the marks a note uses
       (`PresenceMarks.tsx`, shared with `RemoteCursors.tsx`): a pointer that glides
       120 ms in board units and follows pan and zoom, one named outline around what a
       person selected, a caret and tinted range inside a note's text, and for text

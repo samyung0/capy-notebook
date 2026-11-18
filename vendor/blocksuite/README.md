@@ -675,6 +675,48 @@ Outside this directory, for BlockSuite:
     point still moves alone" in `e2e/editor/drawing-board.spec.ts`, which closes
     an editor and opens it again at once.
 
+65. A read-only store takes no edits from the board's keys or the select tool's
+    drag (`affine/blocks/root` `edgeless/edgeless-keyboard.ts` and
+    `edgeless/edgeless-root-block.ts`, `affine/blocks/surface`
+    `tool/default-tool.ts`, `affine/gfx/shape` `draggable/shape-draggable.ts`,
+    `affine/gfx/mindmap` `toolbar/mindmap-tool-button.ts`, marked `Capy (local
+    change 65)`; found 2026-11-18, the canvas's collaboration room). The keyboard
+    manager and the tools are made for every board, and upstream guards them with
+    the viewport's lock (`service.locked`), never the store's `readonly`, while
+    an element's field, a stash's pop and a block's props write with no
+    read-only check. On a viewer's board, or an editor's locked one, select all
+    and an arrow key moved every element, and `v` (on a locked board the
+    toolbar's own Escape too) then a press-drag moved what it pressed on: a
+    viewer's tab sent on its read channel, the room closed it and the board
+    reopened each time; a locked editor moved what was stored nowhere. While
+    `store.readonly`:
+    - The select tool's `dragStart` (`default-tool.ts`) hands the drag to no view
+      (a connector's label is moved by its view) and starts no move or clone.
+      The press still selects what is under it and a drag from empty board
+      still selects by its box, so `v` and Escape may pick the tool. A press-drag
+      on a connector's label therefore selects its connector, as one on its
+      line does.
+    - The root block's `bindHotKey` wrapper (`edgeless-root-block.ts`), which
+      replaces a selected mind map node's text with a bound letter before that
+      letter's handler runs, leaves the text and calls the handler.
+    - In `edgeless-keyboard.ts` (`_readonly`) these do nothing: the tool letters
+      `t`, `c`, `n`, `p`, `Shift-p`, `e`, `f` and `Shift-s`, the note slicer
+      (`k`, `-`), `@`, group and ungroup, Delete, Backspace and `Control-d`, the
+      arrow nudge, Enter and Tab (a label's or a text's editor, a mind map's new
+      node) and a letter that is no hotkey typed over a mind map's node. `v`,
+      `h`, Space, select all, Escape, the zoom keys and walking a mind map's
+      nodes with the arrows go on.
+    - The shape piece's `s` and the mind map button's `m` pick nothing.
+    The surface's own add, remove and update, a block's add and delete, and the
+    resize handles already refused. The guard is at the tool and not at the
+    element's stash pop, because a write that is no person's edit goes through
+    it and is left as it was: a mind map lays itself out on every board when
+    its tree changes and pops its nodes' stashed `xywh` (`mindmap.ts`
+    `stashTree`, the view's layout method). Pinned by "the keyboard and a drag move nothing on a board
+    that takes no edits" in `e2e/editor/canvas-room-states.spec.ts` (select all
+    and the arrows, then `v` or Escape and a press-drag, on a viewer's board and
+    a revoked editor's).
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

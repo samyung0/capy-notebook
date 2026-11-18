@@ -1,6 +1,5 @@
 import { HttpResponse, http } from 'msw';
-import type { CanvasBody, CanvasListItem } from '@/api/gen/model';
-import type { WorkspaceRole } from '@/api/types';
+import type { CanvasBody, CanvasListItem, WorkspaceRole } from '@/api/types';
 import { mockImageAssets } from './editorAssets';
 import { mockPage } from './paging';
 
@@ -16,6 +15,9 @@ type MockCanvas = {
   id: string;
   /** The images on the board at its room's last projection. */
   imageAssetIds: string[];
+  /** The mock user's account, or the canvas's payer, is frozen or full (e2e):
+   * their channel reads, whatever their role. */
+  narrowed?: boolean;
   revision: number;
   /** The mock user's role on another member's canvas, when it is not their
    * role in the workspace (e2e: a viewer in a workspace they own). */
@@ -76,12 +78,22 @@ function roleOn(canvas: MockCanvas): WorkspaceRole | undefined {
 export const isMockCanvas = (id: string) => canvases.has(id);
 
 /** The access a room token for the canvas carries for the mock user: `write`
- * for an owner or editor, `read` for a viewer, none for anyone else. */
+ * for an owner or editor, `read` for a viewer or while narrowed, none for
+ * anyone else. */
 export function mockCanvasAccess(id: string): 'read' | 'write' | null {
   const canvas = canvases.get(id);
   const role = canvas && roleOn(canvas);
   if (!role) return null;
-  return role === 'viewer' ? 'read' : 'write';
+  return role === 'viewer' || canvas.narrowed ? 'read' : 'write';
+}
+
+/** The mock user is narrowed to reading a canvas they may edit (e2e): a
+ * frozen account, a frozen or full payer. The room closes their channel
+ * (`mockNarrowBoard`). */
+export function narrowMockCanvas(id: string) {
+  const canvas = canvases.get(id);
+  if (!canvas) throw new Error(`No mock canvas ${id}`);
+  canvas.narrowed = true;
 }
 
 /** Another member's canvas in a workspace, shared with it (e2e): the mock

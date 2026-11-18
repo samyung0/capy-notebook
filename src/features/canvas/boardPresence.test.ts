@@ -22,9 +22,26 @@ import {
   readBoardPresence,
   resolveCaret,
   sendBoardPresence,
+  sendsBoardPresence,
 } from './boardPresence';
 
 afterEach(() => vi.useRealTimers());
+
+// The page's observer of the board element's attributes: what it calls is kept
+// on the element it watches, for `board().editor` to call.
+vi.stubGlobal(
+  'MutationObserver',
+  class {
+    private readonly changed: () => void;
+    constructor(changed: () => void) {
+      this.changed = changed;
+    }
+    observe(target: { attributesChanged?: () => void }) {
+      target.attributesChanged = this.changed;
+    }
+    disconnect() {}
+  }
+);
 
 const ids = (count: number) =>
   JSON.stringify({ b: Array.from({ length: count }, () => 'a') });
@@ -69,6 +86,17 @@ describe("a board's presence field list", () => {
   });
 });
 
+it('sends for whoever is known to edit the canvas, also on a read channel', () => {
+  expect(sendsBoardPresence('write', false)).toBe(true);
+  // Its maker, narrowed to read (a frozen account, a full payer).
+  expect(sendsBoardPresence('read', true)).toBe(true);
+  // A viewer, or an editor not known to be one.
+  expect(sendsBoardPresence('read', false)).toBe(false);
+  // The canvas has not answered, or the room has not.
+  expect(sendsBoardPresence('read', undefined)).toBe(false);
+  expect(sendsBoardPresence(null, true)).toBe(false);
+});
+
 /** A board with one note's paragraph on it, as presence reads it, and this
  * tab's awareness in its room. The board is at 200%, its origin 100 px into
  * the page. */
@@ -80,10 +108,17 @@ function board() {
     defaultView: new EventTarget(),
     hidden: false,
   });
+  let editing = false;
   const host = Object.assign(new EventTarget(), {
-    hasAttribute: () => false,
+    attributesChanged: () => {},
+    hasAttribute: () => editing,
     ownerDocument: page,
   });
+  /** A card's editor opens over the board, or closes. */
+  const editor = (open: boolean) => {
+    editing = open;
+    host.attributesChanged();
+  };
   const shown = {
     caret: null as ReturnType<BoardPresenceView['caret']>,
     selected: [] as string[],
@@ -136,7 +171,19 @@ function board() {
   };
   const at = (index: number): BoardTextPoint => ({ index, text });
   const state = () => awareness.getLocalState() as BoardPresence | null;
-  return { at, awareness, doc, heard, host, move, select, state, text, view };
+  return {
+    at,
+    awareness,
+    doc,
+    editor,
+    heard,
+    host,
+    move,
+    select,
+    state,
+    text,
+    view,
+  };
 }
 
 it('sends the pointer in whole board units, at most every 50 ms, and null once it leaves', () => {
@@ -171,6 +218,22 @@ it('sends the pointer in whole board units, at most every 50 ms, and null once i
   expect(state()).toEqual({ p: null });
   stop();
   expect(state()).toBeNull();
+});
+
+it("withdraws the pointer as a card's editor opens over it, and sends it again as it closes", () => {
+  vi.useFakeTimers();
+  const { awareness, editor, move, state, view } = board();
+  sendBoardPresence(view, awareness);
+  vi.advanceTimersByTime(50);
+  move(301, 140);
+  expect(state()).toEqual({ p: [101, 20] });
+  vi.advanceTimersByTime(50);
+  // No pointer move follows either.
+  editor(true);
+  expect(state()).toEqual({ p: null });
+  vi.advanceTimersByTime(50);
+  editor(false);
+  expect(state()).toEqual({ p: [101, 20] });
 });
 
 it('sends the selected elements, and a caret as soon as it is placed', () => {

@@ -59,6 +59,7 @@ import { base64ToBytes, bytesToBase64 } from '@/lib/base64';
 import {
   isMockCanvas,
   mockCanvasAccess,
+  narrowMockCanvas,
   projectMockCanvas,
   unshareMockCanvas,
 } from './canvas';
@@ -1856,6 +1857,8 @@ const boardProviders = new Set<MockBoardProvider>();
 class MockBoardProvider implements ItemProvider {
   private readonly config: RoomProviderConfig;
   private leave: (() => void) | null = null;
+  /** The channel the tab holds in the room now; none while it is out. */
+  channel: 'read' | 'write' | null = null;
   /** Connected unless disconnected on purpose. */
   private wanted = false;
   private joining = false;
@@ -1877,6 +1880,11 @@ class MockBoardProvider implements ItemProvider {
 
   get materialId() {
     return this.config.name.split(':')[1] ?? '';
+  }
+
+  /** What the tab says of itself, relayed or not; null while it says nothing. */
+  get presence() {
+    return this.config.awareness?.getLocalState() ?? null;
   }
 
   connect() {
@@ -1908,6 +1916,7 @@ class MockBoardProvider implements ItemProvider {
         return;
       }
       const write = access === 'write';
+      this.channel = access;
       this.leave = join(boardRoom(this.config.name, firstState), {
         access,
         // A viewer sends no presence and hears none.
@@ -1981,6 +1990,7 @@ class MockBoardProvider implements ItemProvider {
     this.config.document.off('update', this.sent);
     this.leave?.();
     this.leave = null;
+    this.channel = null;
   }
 
   disconnect() {
@@ -2140,6 +2150,33 @@ export function mockFillBoard(materialId: string) {
 export function mockBoardSocket(materialId: string, up: boolean) {
   for (const provider of [...boardProviders])
     if (provider.materialId === materialId) provider.socket(up);
+}
+
+/** The mock user's tab on a canvas (e2e). */
+function boardTab(materialId: string) {
+  for (const provider of boardProviders)
+    if (provider.materialId === materialId) return provider;
+  throw new Error(`Mock board room for ${materialId} has no tab`);
+}
+
+/** What the mock user's tab says of itself on a canvas (e2e): its own presence
+ * state, null while it has set none. The room relays nothing a read channel
+ * says, so only this shows what its tab said. */
+export const mockBoardOwnPresence = (materialId: string) =>
+  boardTab(materialId).presence;
+
+/** The channel the mock user's tab holds in a canvas's room (e2e): `read`,
+ * `write`, or null while it is out of the room. */
+export const mockBoardChannel = (materialId: string) =>
+  boardTab(materialId).channel;
+
+/** The mock user's account is frozen while they are on a canvas they may edit
+ * (e2e): the service closes their channel (4403) and their next token reads. */
+export function mockNarrowBoard(materialId: string) {
+  narrowMockCanvas(materialId);
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId)
+      provider.close(4403, 'collaboration access changed');
 }
 
 /** Whether the canvas's open mock room has stored every update it took (e2e:

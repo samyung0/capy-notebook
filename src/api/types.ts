@@ -95,6 +95,8 @@ export type {
   AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
+  CanvasBody,
+  CanvasListItem,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResp as CloneWorkspaceResult,

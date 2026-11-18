@@ -29,7 +29,9 @@ function asFile(blob: Blob) {
  * pasted into a note's text, waits for `set` on a canvas too (drawingBoard.ts
  * `storedImagePaste`). So a block is never in the document under an id no one
  * can load, whatever becomes of the board meanwhile, and a refused image
- * never lands. A board that has gone (`close`) adds nothing more. */
+ * never lands. A board that has gone (`close`) or stopped taking edits
+ * (`readonly`) while an image was stored adds nothing for it: BlockSuite's
+ * add would be refused by a store that takes no edits. */
 export class BoardBlobSource implements BlobSource {
   readonly name = 'board';
   /** Set while the board takes no edits: BlockSuite then stores nothing. */
@@ -130,6 +132,8 @@ export class BoardBlobSource implements BlobSource {
     }
     const to = await storing;
     if (this.closed) throw new Error('the board closed while its image stored');
+    if (this.readonly)
+      throw new Error('the board locked while its image stored');
     return to;
   }
 
