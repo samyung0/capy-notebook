@@ -3337,11 +3337,14 @@ impl Room {
             Kindly::Note(note) if note.model == crate::model::Model::Note => {
                 notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
             }
-            Kindly::Note(_) => !ydoc::applies_inline(
-                &self.doc.transact(),
-                &ydoc::Incoming::new(&update),
-                bytes.len(),
-            ),
+            // A board near its cap may be measured exactly, as a source.
+            Kindly::Note(note) => {
+                !ydoc::applies_inline(
+                    &self.doc.transact(),
+                    &ydoc::Incoming::new(&update),
+                    bytes.len(),
+                ) || note.validator.near_cap(bytes.len())
+            }
             Kindly::Source(source) => {
                 !ydoc::applies_inline(
                     &self.doc.transact(),
@@ -3353,7 +3356,10 @@ impl Room {
         };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => {
-                match note.validator.admit(&self.doc, &update, writer.is_none()) {
+                match note
+                    .validator
+                    .admit(&self.doc, &update, bytes, writer.is_none())
+                {
                     crate::model::Admitted::Accepted => Verdict::Accept,
                     crate::model::Admitted::Unheld => Verdict::Unheld,
                     crate::model::Admitted::Hidden => Verdict::Hidden,
@@ -3477,9 +3483,11 @@ impl Room {
             self.broadcast_update(None, marker);
         }
         // A source room's estimate also takes off what the update's deletes
-        // freed (Epo 2026-10-19); a note's sessions hold what it deleted.
+        // freed (Epo 2026-10-19), and a board's (it has no seed); a note's
+        // sessions hold what it deleted.
         let seed = match &self.kind {
             Kindly::Source(source) => Some(source.seed.as_ref()),
+            Kindly::Note(note) if note.model == crate::model::Model::Board => Some(None),
             Kindly::Note(_) => None,
         };
         let sessioned = self.sessions.is_some();
@@ -3507,8 +3515,9 @@ impl Room {
             }
         };
         applied += content.len();
-        if let Kindly::Source(source) = &mut self.kind {
-            source.estimate.applied(applied as u64, freed);
+        match &mut self.kind {
+            Kindly::Source(source) => source.estimate.applied(applied as u64, freed),
+            Kindly::Note(note) => note.validator.applied(applied as u64, freed),
         }
         // A channel's own deletions are held for its session's Undo (a step
         // 2's resent delete set adds only what the room held undeleted), and
@@ -3797,10 +3806,17 @@ impl Room {
         metrics: notes::limits::Metrics,
         eviction: Option<&str>,
     ) -> String {
+        // A board's size limit is its live state's bytes.
+        let max_content_bytes = match &self.kind {
+            Kindly::Note(note) if note.model == crate::model::Model::Board => {
+                notes::catalog::CANVAS_BOARD_MAX as u64
+            }
+            _ => notes::limits::MAX_CONTENT_BYTES,
+        };
         let mut payload = json!({
             "code": code.as_str(),
             "limits": {
-                "maxContentBytes": notes::limits::MAX_CONTENT_BYTES,
+                "maxContentBytes": max_content_bytes,
                 "maxDepth": notes::limits::MAX_DEPTH,
                 "maxNodes": notes::limits::MAX_NODES,
             },
@@ -5150,7 +5166,7 @@ impl Room {
         }
         // Read here, so the content is exactly the durable state at `version`;
         // the room waits for it as for a store's validation.
-        let content = projection::content_of(self.doc.clone(), note.model).await;
+        let content = projection::content_of(self.doc.clone(), note.model, version).await;
         let Some(handle) = self
             .app
             .rooms
@@ -5481,6 +5497,11 @@ fn validate(
 ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
     let txn = doc.transact();
     model.assert_roots(&txn).map_err(StoreError::Invalid)?;
+    // Admission bounds a board's bytes: a store never refuses one for size,
+    // and the server reads no shape in it.
+    if model == crate::model::Model::Board {
+        return Ok((model.measure(&txn).map_err(StoreError::Invalid)?, None));
+    }
     if let crate::model::Model::Item(item) = model {
         item.check_caps(&txn).map_err(StoreError::Invalid)?;
     }

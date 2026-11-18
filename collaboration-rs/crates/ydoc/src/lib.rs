@@ -1094,8 +1094,11 @@ pub fn has_pending<T: ReadTxn>(txn: &T) -> bool {
     txn.store().pending_update().is_some() || txn.store().pending_ds().is_some()
 }
 
+mod estimate;
 pub mod gc;
 pub mod undo;
+
+pub use estimate::{Estimate, MEASURE_EVERY, MEASURE_GROWTH, fits_room};
 
 #[cfg(test)]
 mod tests;
