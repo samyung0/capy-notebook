@@ -16,7 +16,7 @@ limit?: number;
  */
 cursor?: string;
 /**
- * Only the canvases drawn in this workspace, latest saved first
+ * This workspace's canvases, latest saved first: the caller's and the other members' shared ones
  * @maxLength 64
  */
 workspaceId?: string;

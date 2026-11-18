@@ -39,6 +39,42 @@ func lostAccessSQL(wsCol, user string) string {
 		AND ` + liveWorkspaceSQL("la.id") + `), false)`
 }
 
+// liveAccountSQL is true when userCol names a live account, as
+// liveWorkspaceSQL reads a workspace's owner.
+func liveAccountSQL(userCol string) string {
+	return `EXISTS (SELECT 1 FROM users lu WHERE lu.id=` + userCol + `
+		AND lu.deleted_at IS NULL AND lu.deletion_requested_at IS NULL AND lu.suspended_at IS NULL)`
+}
+
+// lostCanvasSQL is lostAccessSQL for the canvas row top, which sits in no
+// workspace: true once user holds no role on it (materialAccessRow.canvasRole
+// under the creator's lifecycle, as materialEffectiveAccess reads both). An
+// editor keeps paying for the images it put on a shared canvas after the
+// canvas is taken back or it leaves the workspace.
+func lostCanvasSQL(top, user string) string {
+	return `NOT ((` + top + `.owner_user_id=` + user + ` OR (` + top + `.canvas_shared AND ` + liveAccountSQL(top+".owner_user_id") + `))
+		AND (` + top + `.canvas_workspace_id IS NULL OR EXISTS (SELECT 1 FROM workspaces lc WHERE lc.id=` + top + `.canvas_workspace_id
+			AND (lc.user_id=` + user + ` OR EXISTS (SELECT 1 FROM workspace_members lcm
+				WHERE lcm.workspace_id=lc.id AND lcm.user_id=` + user + `))
+			AND ` + liveWorkspaceSQL("lc.id") + `)))`
+}
+
+// embedHomeLostSQL is true when user can no longer open top, the note, quiz,
+// set or canvas an image or audio clip sits in.
+func embedHomeLostSQL(top, user string) string {
+	return `CASE WHEN ` + top + `.kind='canvas' THEN ` + lostCanvasSQL(top, user) + `
+		ELSE ` + lostAccessSQL(top+".workspace_id", user) + ` END`
+}
+
+// embedHomeTitleSQL is top's title as an embed's row shows it: blank once the
+// owner of its workspace (a canvas's is the one it was drawn in) is no longer
+// live, and for another member's canvas once its creator is not.
+func embedHomeTitleSQL(top, user string) string {
+	return `CASE WHEN ` + top + `.kind='canvas' AND ` + top + `.owner_user_id<>` + user + `
+			AND NOT ` + liveAccountSQL(top+".owner_user_id") + ` THEN ''
+		ELSE ` + workspaceNameSQL("COALESCE("+top+".workspace_id, "+top+".canvas_workspace_id)", top+".title") + ` END`
+}
+
 // editableWorkspaceSQL is true when user may edit wsCol's content, the rule
 // restore checks (lockTrashOwnerTx: owner, or an effective editor through
 // membership or a reached editor share), under a live owner.

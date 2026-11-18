@@ -16,8 +16,8 @@ func TestStorageLimitsUseDecimalBytes(t *testing.T) {
 }
 
 // Billing's three storage rows (Epo 2026-11-13): a set and its attachment are
-// Files, the set's image is Images, a canvas with its board and image is
-// Canvas, and the three add up to what the meter recounts.
+// Files, the set's image is Images, a canvas with its image and a drawn sample
+// answer's board are Canvas, and the three add up to what the meter recounts.
 func TestStorageBreakdownSplitsFilesImagesAndCanvas(t *testing.T) {
 	f := newStudyFixture(t, "breakdown")
 	ctx := context.Background()
@@ -25,9 +25,9 @@ func TestStorageBreakdownSplitsFilesImagesAndCanvas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readyAsset(t, f.s, canvas.ID, f.user, "board")
 	readyAsset(t, f.s, canvas.ID, f.user, "image")
 	set := f.set(t, [2]string{"Q", "A"})[0].MaterialID
+	readyAsset(t, f.s, set, f.user, "board")
 	readyAsset(t, f.s, set, f.user, "image")
 	readyAsset(t, f.s, set, f.user, "file")
 

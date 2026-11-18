@@ -2127,7 +2127,7 @@ export const BillingTopUpResponse = zod.object({
 
 
 /**
- * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'; or the ones drawn in a workspace
+ * @summary Canvases a page at a time: the caller's own, latest saved first, then the ones they drew in their workspaces; or, for a workspace, the ones they drew there and the other members' shared ones
  */
 export const listCanvasesQueryLimitDefault = 50;
 export const listCanvasesQueryLimitMax = 100;
@@ -2139,13 +2139,16 @@ export const listCanvasesQueryWorkspaceIdMax = 64;
 export const ListCanvasesQueryParams = zod.object({
   "limit": zod.int().min(1).max(listCanvasesQueryLimitMax).default(listCanvasesQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page'),
-  "workspaceId": zod.string().max(listCanvasesQueryWorkspaceIdMax).optional().describe('Only the canvases drawn in this workspace, latest saved first')
+  "workspaceId": zod.string().max(listCanvasesQueryWorkspaceIdMax).optional().describe('This workspace\'s canvases, latest saved first: the caller\'s and the other members\' shared ones')
 })
 
 export const ListCanvasesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
+  "creatorName": zod.string().optional().describe('Who made it, on another member\'s canvas; absent on the caller\'s own'),
   "id": zod.string(),
+  "own": zod.boolean().describe('The caller made it'),
+  "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceIconId": zod.string().optional(),
@@ -2157,7 +2160,7 @@ export const ListCanvasesResponse = zod.object({
 
 
 /**
- * @summary Make a canvas of the caller's, in a workspace they are a member of or in none
+ * @summary Make a private canvas of the caller's, in a workspace they are a member of or in none
  */
 export const createCanvasBodyTitleMax = 120;
 
@@ -2172,19 +2175,21 @@ export const CreateCanvasBody = zod.object({
 
 export const CreateCanvasResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
-  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
-  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
-  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "imageAssetIds": zod.array(zod.string()).describe('The images on the board at its last projection, as image editor assets'),
+  "own": zod.boolean().describe('The caller made it'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included'),
+  "revision": zod.int().describe('The material\'s revision'),
+  "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().describe('Counts the saves')
+  "version": zod.int().describe('The room\'s stored version at its last projection; 0 before the first'),
+  "workspaceId": zod.string().optional().describe('The workspace it was drawn in; none for a canvas of one\'s own')
 })
 
 
 /**
- * @summary One of the caller's canvases
+ * @summary A canvas the caller made, or one shared with a workspace they are a member of
  */
 export const getCanvasPathIdMax = 64;
 
@@ -2196,51 +2201,46 @@ export const GetCanvasParams = zod.object({
 
 export const GetCanvasResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
-  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
-  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
-  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "imageAssetIds": zod.array(zod.string()).describe('The images on the board at its last projection, as image editor assets'),
+  "own": zod.boolean().describe('The caller made it'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included'),
+  "revision": zod.int().describe('The material\'s revision'),
+  "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().describe('Counts the saves')
+  "version": zod.int().describe('The room\'s stored version at its last projection; 0 before the first'),
+  "workspaceId": zod.string().optional().describe('The workspace it was drawn in; none for a canvas of one\'s own')
 })
 
 
 /**
- * @summary Record a save of one of the caller's canvases: its new board asset and images; the server counts the version
+ * @summary Share a canvas with the workspace it was drawn in, or take it back
  */
-export const saveCanvasPathIdMax = 64;
+export const updateCanvasPathIdMax = 64;
 
 
 
-export const SaveCanvasParams = zod.object({
-  "id": zod.string().max(saveCanvasPathIdMax).describe('Canvas material id')
+export const UpdateCanvasParams = zod.object({
+  "id": zod.string().max(updateCanvasPathIdMax).describe('Canvas material id')
 })
 
-export const saveCanvasBodyBoardAssetIdMax = 64;
-
-export const saveCanvasBodyImageAssetIdsMax = 1000;
-
-
-
-
-export const SaveCanvasBody = zod.object({
-  "boardAssetId": zod.string().min(1).max(saveCanvasBodyBoardAssetIdMax).describe('The new board asset, uploaded first: a ready board asset of this canvas'),
-  "imageAssetIds": zod.array(zod.string()).max(saveCanvasBodyImageAssetIdsMax).nullable().describe('The canvas\'s images now: ready image assets of this canvas'),
-  "revision": zod.int().min(1).describe('The revision the browser read; another tab\'s save since is refused (409)')
+export const UpdateCanvasBody = zod.object({
+  "shared": zod.boolean().describe('Shared with the workspace it was drawn in: the members hold it by their workspace role')
 })
 
-export const SaveCanvasResponse = zod.object({
+export const UpdateCanvasResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "boardAssetId": zod.string().describe('The saved board\'s editor asset (gzipped Yjs update); empty before the first save'),
   "id": zod.string().describe('The canvas material'),
-  "imageAssetIds": zod.array(zod.string()).describe('The canvas\'s images, as image editor assets'),
-  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name'),
-  "revision": zod.int().describe('The material\'s revision; a save sends the one it read'),
+  "imageAssetIds": zod.array(zod.string()).describe('The images on the board at its last projection, as image editor assets'),
+  "own": zod.boolean().describe('The caller made it'),
+  "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included'),
+  "revision": zod.int().describe('The material\'s revision'),
+  "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
-  "version": zod.int().describe('Counts the saves')
+  "version": zod.int().describe('The room\'s stored version at its last projection; 0 before the first'),
+  "workspaceId": zod.string().optional().describe('The workspace it was drawn in; none for a canvas of one\'s own')
 })
 
 

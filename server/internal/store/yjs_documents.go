@@ -45,25 +45,6 @@ func (s *Store) MaterialParentID(ctx context.Context, materialID string) (string
 	return *parent, nil
 }
 
-// WorkspaceMaterialIDs returns room identities that must be evicted when
-// workspace membership or workspace lifecycle permissions change.
-func (s *Store) WorkspaceMaterialIDs(ctx context.Context, workspaceID string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM materials WHERE workspace_id=$1`, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
 // ProjectedMaterial is a material row's numbers after a projection.
 type ProjectedMaterial struct {
 	ID        string

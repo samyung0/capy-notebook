@@ -191,7 +191,6 @@ import type {
   RetryProcessingInputBody,
   ReviewResult,
   ReviewSession,
-  SaveOwnCanvasInputBody,
   SearchParams,
   SearchResult,
   SetChatPrefsReq,
@@ -237,6 +236,7 @@ import type {
   TrashPage,
   URLResp,
   UndoEditReq,
+  UpdateCanvasInputBody,
   UpdateCommentReq,
   UpdateConversationReq,
   UpdateEventReq,
@@ -3294,7 +3294,7 @@ export const getListCanvasesUrl = (params?: ListCanvasesParams,) => {
 }
 
 /**
- * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'; or the ones drawn in a workspace
+ * @summary Canvases a page at a time: the caller's own, latest saved first, then the ones they drew in their workspaces; or, for a workspace, the ones they drew there and the other members' shared ones
  */
 export const listCanvases = async (params?: ListCanvasesParams, options?: RequestInit): Promise<listCanvasesResponse> => {
 
@@ -3344,7 +3344,7 @@ export const getCreateCanvasUrl = () => {
 }
 
 /**
- * @summary Make a canvas of the caller's, in a workspace they are a member of or in none
+ * @summary Make a private canvas of the caller's, in a workspace they are a member of or in none
  */
 export const createCanvas = async (createCanvasInputBody: NonReadonly<CreateCanvasInputBody>, options?: RequestInit): Promise<createCanvasResponse> => {
 
@@ -3408,7 +3408,7 @@ export const getGetCanvasUrl = (id: string,) => {
 }
 
 /**
- * @summary One of the caller's canvases
+ * @summary A canvas the caller made, or one shared with a workspace they are a member of
  */
 export const getCanvas = async (id: string, options?: RequestInit): Promise<getCanvasResponse> => {
 
@@ -3430,26 +3430,26 @@ export const getCanvas = async (id: string, options?: RequestInit): Promise<getC
 
 
 
-export type saveCanvasResponse200 = {
+export type updateCanvasResponse200 = {
   data: CanvasBody
   status: 200
 }
 
-export type saveCanvasResponseDefault = {
+export type updateCanvasResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type saveCanvasResponseSuccess = (saveCanvasResponse200) & {
+export type updateCanvasResponseSuccess = (updateCanvasResponse200) & {
   headers: Headers;
 };
-export type saveCanvasResponseError = (saveCanvasResponseDefault) & {
+export type updateCanvasResponseError = (updateCanvasResponseDefault) & {
   headers: Headers;
 };
 
-export type saveCanvasResponse = (saveCanvasResponseSuccess | saveCanvasResponseError)
+export type updateCanvasResponse = (updateCanvasResponseSuccess | updateCanvasResponseError)
 
-export const getSaveCanvasUrl = (id: string,) => {
+export const getUpdateCanvasUrl = (id: string,) => {
 
 
 
@@ -3458,10 +3458,10 @@ export const getSaveCanvasUrl = (id: string,) => {
 }
 
 /**
- * @summary Record a save of one of the caller's canvases: its new board asset and images; the server counts the version
+ * @summary Share a canvas with the workspace it was drawn in, or take it back
  */
-export const saveCanvas = async (id: string,
-    saveOwnCanvasInputBody: NonReadonly<SaveOwnCanvasInputBody>, options?: RequestInit): Promise<saveCanvasResponse> => {
+export const updateCanvas = async (id: string,
+    updateCanvasInputBody: NonReadonly<UpdateCanvasInputBody>, options?: RequestInit): Promise<updateCanvasResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -3477,20 +3477,20 @@ export const saveCanvas = async (id: string,
     }
     return headers;
   };
-const res = await fetch(getSaveCanvasUrl(id),
+const res = await fetch(getUpdateCanvasUrl(id),
   {
     ...options,
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveOwnCanvasInputBody)
+    body: JSON.stringify(updateCanvasInputBody)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveCanvasResponse
+  const data: updateCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateCanvasResponse
 }
 
 

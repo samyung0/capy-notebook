@@ -8,18 +8,22 @@
 export interface CanvasBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** The saved board's editor asset (gzipped Yjs update); empty before the first save */
-  boardAssetId: string;
   /** The canvas material */
   id: string;
-  /** The canvas's images, as image editor assets */
+  /** The images on the board at its last projection, as image editor assets */
   imageAssetIds: string[];
-  /** Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name */
+  /** The caller made it */
+  own: boolean;
+  /** Every ready image asset of this canvas, one the pruner trashed included */
   ownImageAssetIds: string[];
-  /** The material's revision; a save sends the one it read */
+  /** The material's revision */
   revision: number;
+  /** Shared with its workspace: the members hold it by their workspace role */
+  shared: boolean;
   title: string;
   updatedAt: string;
-  /** Counts the saves */
+  /** The room's stored version at its last projection; 0 before the first */
   version: number;
+  /** The workspace it was drawn in; none for a canvas of one's own */
+  workspaceId?: string;
 }

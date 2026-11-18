@@ -525,7 +525,6 @@
       "topLevel": true,
       "required": [
         "id",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -533,7 +532,6 @@
         "type",
         "id",
         "children",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -544,7 +542,6 @@
         "fontFamily"
       ],
       "assets": [
-        "boardAssetId",
         "images[].assetId"
       ],
       "materials": [

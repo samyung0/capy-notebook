@@ -526,7 +526,6 @@ export const EMBED_CATALOG = {
       "topLevel": true,
       "required": [
         "id",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -534,7 +533,6 @@ export const EMBED_CATALOG = {
         "type",
         "id",
         "children",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -545,7 +543,6 @@ export const EMBED_CATALOG = {
         "fontFamily"
       ],
       "assets": [
-        "boardAssetId",
         "images[].assetId"
       ],
       "materials": [

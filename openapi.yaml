@@ -1926,50 +1926,66 @@ components:
           format: uri
           readOnly: true
           type: string
-        boardAssetId:
-          description: The saved board's editor asset (gzipped Yjs update); empty before the first save
-          type: string
         id:
           description: The canvas material
           type: string
         imageAssetIds:
-          description: The canvas's images, as image editor assets
+          description: The images on the board at its last projection, as image editor assets
           items:
             type: string
           type: array
+        own:
+          description: The caller made it
+          type: boolean
         ownImageAssetIds:
-          description: "Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name"
+          description: Every ready image asset of this canvas, one the pruner trashed included
           items:
             type: string
           type: array
         revision:
-          description: The material's revision; a save sends the one it read
+          description: The material's revision
           format: int64
           type: integer
+        shared:
+          description: "Shared with its workspace: the members hold it by their workspace role"
+          type: boolean
         title:
           type: string
         updatedAt:
           format: date-time
           type: string
         version:
-          description: Counts the saves
+          description: The room's stored version at its last projection; 0 before the first
           format: int64
           type: integer
+        workspaceId:
+          description: The workspace it was drawn in; none for a canvas of one's own
+          type: string
       required:
         - id
         - title
         - revision
-        - boardAssetId
         - version
         - imageAssetIds
         - ownImageAssetIds
+        - shared
+        - own
         - updatedAt
       type: object
     CanvasListItem:
       additionalProperties: false
       properties:
+        creatorName:
+          description: Who made it, on another member's canvas; absent on the caller's own
+          type: string
         id:
           type: string
+        own:
+          description: The caller made it
+          type: boolean
+        shared:
+          description: "Shared with its workspace: the members hold it by their workspace role"
+          type: boolean
         title:
           type: string
         updatedAt:
@@ -1985,6 +2001,8 @@ components:
       required:
         - id
         - title
+        - shared
+        - own
         - updatedAt
       type: object
     CanvasPage:
@@ -7253,37 +7271,6 @@ components:
         - reviewedBy
         - reviewerName
       type: object
-    SaveOwnCanvasInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SaveOwnCanvasInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        boardAssetId:
-          description: "The new board asset, uploaded first: a ready board asset of this canvas"
-          maxLength: 64
-          minLength: 1
-          type: string
-        imageAssetIds:
-          description: "The canvas's images now: ready image assets of this canvas"
-          items:
-            type: string
-          maxItems: 1000
-          nullable: true
-          type: array
-        revision:
-          description: The revision the browser read; another tab's save since is refused (409)
-          format: int64
-          minimum: 1
-          type: integer
-      required:
-        - revision
-        - boardAssetId
-        - imageAssetIds
-      type: object
     SearchKind:
       enum:
         - workspace
@@ -9083,6 +9070,21 @@ components:
         - answered
         - total
         - lastAnswerAt
+      type: object
+    UpdateCanvasInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateCanvasInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        shared:
+          description: "Shared with the workspace it was drawn in: the members hold it by their workspace role"
+          type: boolean
+      required:
+        - shared
       type: object
     UpdateCommentReq:
       additionalProperties: false
@@ -11356,12 +11358,12 @@ paths:
           schema:
             description: Opaque cursor from the previous page
             type: string
-        - description: Only the canvases drawn in this workspace, latest saved first
+        - description: "This workspace's canvases, latest saved first: the caller's and the other members' shared ones"
           explode: false
           in: query
           name: workspaceId
           schema:
-            description: Only the canvases drawn in this workspace, latest saved first
+            description: "This workspace's canvases, latest saved first: the caller's and the other members' shared ones"
             maxLength: 64
             type: string
       responses:
@@ -11377,7 +11379,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "The caller's canvases a page at a time: their own, latest saved first, then their workspaces'; or the ones drawn in a workspace"
+      summary: "Canvases a page at a time: the caller's own, latest saved first, then the ones they drew in their workspaces; or, for a workspace, the ones they drew there and the other members' shared ones"
       tags:
         - materials
     post:
@@ -11401,7 +11403,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Make a canvas of the caller's, in a workspace they are a member of or in none
+      summary: Make a private canvas of the caller's, in a workspace they are a member of or in none
       tags:
         - materials
   /api/canvases/{id}:
@@ -11429,11 +11431,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: One of the caller's canvases
+      summary: A canvas the caller made, or one shared with a workspace they are a member of
       tags:
         - materials
-    put:
-      operationId: saveCanvas
+    patch:
+      operationId: updateCanvas
       parameters:
         - description: Canvas material id
           in: path
@@ -11447,7 +11449,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SaveOwnCanvasInputBody"
+              $ref: "#/components/schemas/UpdateCanvasInputBody"
         required: true
       responses:
         "200":
@@ -11462,7 +11464,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "Record a save of one of the caller's canvases: its new board asset and images; the server counts the version"
+      summary: Share a canvas with the workspace it was drawn in, or take it back
       tags:
         - materials
   /api/chat/edit-operations/{operationId}/undo:

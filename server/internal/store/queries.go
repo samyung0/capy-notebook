@@ -1888,6 +1888,12 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			}
 			return Material{}, err
 		}
+		// A canvas's document is its room's projection alone
+		// (ProjectMaterialContent): the board lives in the room, and no command
+		// writes it.
+		if MaterialKind(contentKind) == MaterialCanvas {
+			return Material{}, fmt.Errorf("%w: a canvas's document is written by its room", materialdoc.ErrInvalid)
+		}
 		// Admitted before either write path (the collaboration command or the
 		// SQL update below): a frozen account or an owner at its storage limit
 		// makes the content view-only.
@@ -1900,19 +1906,14 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if p.ExpectedRevision != nil && (*p.ExpectedRevision < 1 || contentBaseRevision != *p.ExpectedRevision) {
 			return Material{}, ErrConflict
 		}
-		// A canvas is never a room (its drawing is its board asset, and its one
-		// block is written whole by each save), so it has no authoritative
-		// Y.Doc to command: its document is written here.
-		if MaterialKind(contentKind) != MaterialCanvas {
-			handled, err := s.applyAuthoritativeContentCommand(
-				ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
-			)
-			if err != nil {
-				return Material{}, err
-			}
-			if handled {
-				p.Content = nil
-			}
+		handled, err := s.applyAuthoritativeContentCommand(
+			ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
+		)
+		if err != nil {
+			return Material{}, err
+		}
+		if handled {
+			p.Content = nil
 		}
 	}
 	if p.Content != nil {
@@ -2024,12 +2025,18 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	defer tx.Rollback(ctx)
 	var ownerID string
 	var workspaceID *string
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&ownerID, &workspaceID); err != nil {
+	var kind MaterialKind
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&ownerID, &workspaceID, &kind); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
 		return Material{}, err
+	}
+	// A shared canvas's editors pass the routes' AssertMaterialEditor, and its
+	// name stays its creator's to change (canvasAdmin).
+	if kind == MaterialCanvas && !canvasAdmin(ownerID, p.UpdatedBy) {
+		return Material{}, ErrForbidden
 	}
 	if workspaceID != nil {
 		// The payer (ownerID) is charged by size_bytes, so its row joins the
