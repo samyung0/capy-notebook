@@ -9,18 +9,18 @@ export type OpenLink = {
   open: (key: string) => void;
   /** Back when the page opened it, else the name taken out of the URL. */
   close: () => void;
-  /** The URL names something no longer there: says so and takes it out. */
+  /** The URL names something no longer there: takes it out, silently (Epo
+   * 2026-11-18). */
   gone: () => void;
 };
 
 export const OpenLinkContext = createContext<OpenLink | null>(null);
 
 /** The page's link for `opened`, written by `write` (a new history step, or the
- * current one replaced). `onGone` says what was named is no longer there. */
+ * current one replaced). */
 export function useOpenLink(
   opened: string | undefined,
-  write: (open: string | undefined, replace: boolean) => void,
-  onGone: () => void
+  write: (open: string | undefined, replace: boolean) => void
 ): OpenLink {
   // The view this page put in the history itself: closing it goes Back, so the
   // step leaves with it. One the page opened at (a reload, a link) is replaced.
@@ -34,7 +34,6 @@ export function useOpenLink(
       } else write(undefined, true);
     },
     gone: () => {
-      onGone();
       pushed.current = null;
       write(undefined, true);
     },

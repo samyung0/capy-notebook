@@ -5693,7 +5693,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   open state from `OpenLinkContext` (`useOpenView` in `src/lib/openLink.ts`,
   scoped per card by `scopedOpenLink`), elsewhere it stays local. A link naming a
   card no longer on the canvas, a quiz no longer listed or a part the quiz no longer
-  has says "That isn't on this canvas anymore" and leaves the URL; a card off screen
+  has silently leaves the URL (no toast, Epo 2026-11-18); a card off screen
   is brought into view so its runner mounts. A nested board (the drawing answer's
   own plane) keeps its editor out of the URL.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a

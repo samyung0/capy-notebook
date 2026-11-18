@@ -3374,7 +3374,6 @@
   "drawing_picture_refused": "The picture couldn't be added.",
   "drawing_pictures_too_many": "A drawing can hold at most {max} pictures. Remove one to add another.",
   "drawing_answer_too_big": "This drawing is too big to save. Remove some of it, then press Done again.",
-  "canvas_open_gone": "That isn't on this canvas anymore",
   "canvas_none": "You have no canvas of your own yet.",
   "canvas_new": "New canvas",
   "canvas_in_workspaces": "In your workspaces",

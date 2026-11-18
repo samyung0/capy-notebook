@@ -7,7 +7,6 @@ import {
   useWorkspaces,
 } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
-import { userToast } from '@/components/ui/userToast';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { CanvasMaterialDialog } from '@/features/canvas/CanvasMaterialDialog';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
@@ -46,8 +45,7 @@ function OwnCanvas({
         replace,
         search: (previous) => ({ ...previous, open: next }),
         to: '/canvas',
-      }),
-    () => userToast({ title: m.canvas_open_gone() })
+      })
   );
   const materials = useCanvasMaterials();
   const { data: workspaces } = useWorkspaces();

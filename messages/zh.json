@@ -3374,7 +3374,6 @@
   "drawing_picture_refused": "无法添加图片。",
   "drawing_pictures_too_many": "一幅作答最多可放 {max} 张图片。请先移除一张再添加。",
   "drawing_answer_too_big": "作图太大，无法保存。请删去部分内容后再按完成。",
-  "canvas_open_gone": "它已不在这个画布上",
   "canvas_none": "你还没有自己的画布。",
   "canvas_new": "新建画布",
   "canvas_in_workspaces": "工作区中的画布",

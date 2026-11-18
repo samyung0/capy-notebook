@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { canvasById, saveCanvas } from '@/api/canvas';
 import { qk } from '@/api/client';
 import { useCreateMaterial } from '@/api/hooks';
-import { userToast } from '@/components/ui/userToast';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
@@ -107,8 +106,7 @@ function CanvasBoard({
         replace,
         search: (previous) => ({ ...previous, open: next }),
         to: '.',
-      }),
-    () => userToast({ title: m.canvas_open_gone() })
+      })
   );
   const materials = useCanvasMaterials(workspaceId);
   // The item dialog's saves go through its live room, not the cards' snapshot
