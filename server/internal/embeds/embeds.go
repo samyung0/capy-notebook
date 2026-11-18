@@ -544,6 +544,7 @@ func Limits() []Limit {
 		{"TABLE_VIEW_MAX_COUNT", TableViewMaxCount},
 		{"CARD_FRONT_MAX", fieldlimits.CardFront},
 		{"CARD_BACK_MAX", fieldlimits.CardBack},
+		{"CANVAS_BOARD_MAX", fieldlimits.CanvasBoardBytes},
 	}
 	for _, name := range fieldlimits.QuestionBoundNames() {
 		out = append(out, Limit{name, fieldlimits.QuestionBounds[name]})
