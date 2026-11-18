@@ -481,10 +481,16 @@ unchanged.
   their account purge deletes it and the assignment keeps its frozen copy. See
   [study progress](study-progress.md#assignments), The owned quiz.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
-  /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
-  file" / "Unhide file") or the chip on a hidden one's header. Unhiding, from either, asks first
-  ("Unhide this file?", everyone in the workspace will see it; Epo
-  2026-11-16); hiding does not ask. Owners and editors may switch it: the
+  /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu or the
+  chip on a hidden one's header. The menu's row is a switch, "Shared with
+  members" (mock A, Epo 2026-11-18; "Hide file" / "Unhide file" before): on
+  while members see the item, read to screen readers as a checkbox item
+  (`MenuItem.switch` in `Menu.tsx`). Switching it off hides the item without
+  asking and leaves the menu open on the switch, which moves at once (it shows
+  the value being sent until the lists have it, `useToggleHidden`'s
+  `hiddenOf`, and falls back with a toast on a refusal); switching it on, or the chip, closes the menu and asks first
+  ("Share this file with members?", everyone in the workspace will see it;
+  Epo 2026-11-16). Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
@@ -541,12 +547,13 @@ unchanged.
 An open hidden item's header shows a "Hidden" chip (the state alone, Epo
 2026-11-16; the upload dialog's choice keeps "Hidden from members") after its
 name (X2; the icon alone on phones). For owners and editors who may change the
-item the chip is a button ("Unhide file" in its tooltip) that shows it to
-members, as the ⋮ menu does (`useToggleHidden`, same request, error toast and
-confirm dialog); a visible item's header shows nothing (Epo 2026-11-16) and
-hiding stays in the menu, and a read-only editor's chip is a plain
-label. A hidden item's Files row carries the eye at its end (`HiddenMark`,
-board T3), centred in the hover ⋮'s 28px column as a topic's count is.
+item the chip is a button ("Share with members" in its tooltip and to screen
+readers) that shares it with members, as the ⋮ menu's switch does
+(`useToggleHidden`, same request, error toast and confirm dialog); a visible
+item's header shows nothing (Epo 2026-11-16) and hiding stays in the menu,
+and a read-only editor's chip is a plain label. A hidden item's Files row
+carries the eye at its end (`HiddenMark`, board T3), centred in the hover ⋮'s
+28px column as a topic's count is.
 
 Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 [routes](../server/internal/httpapi/huma_hidden.go),

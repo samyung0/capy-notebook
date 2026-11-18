@@ -154,8 +154,12 @@ export function ContentActions({
   const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
-  const { dialog: unhideDialog, toggle: toggleHidden } =
-    useToggleHidden(workspaceId);
+  const {
+    dialog: shareDialog,
+    hiddenOf,
+    toggle: toggleHidden,
+  } = useToggleHidden(workspaceId);
+  const hidden = content ? hiddenOf(content) : false;
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
@@ -171,7 +175,7 @@ export function ContentActions({
     : [];
 
   // One order on every item menu (cards, rows, the open item's header):
-  // open or view, Rename, Share, Move, Hide file, Clone, Download,
+  // open or view, Rename, Share, Move, Shared with members, Clone, Download,
   // Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
@@ -202,18 +206,19 @@ export function ContentActions({
               },
         ]
       : []),
-    // Hide file (Epo 2026-11-03, renamed 2026-11-06): a workspace item's owners and
-    // editors only; a standalone item has no members.
+    // Shared with members (Epo 2026-11-03; a switch since mock A, Epo
+    // 2026-11-18): a workspace item's owners and editors only; a standalone
+    // item has no members. Off hides the item at once, the menu left open on
+    // the switch; on closes the menu and asks first.
     ...(!readOnly && content && workspaceId
       ? [
           {
-            icon: content.hidden
-              ? ('view' as const)
-              : ('viewOffSlash' as const),
-            label: content.hidden
-              ? m.content_unhide_file()
-              : m.content_hide_file(),
-            onClick: () => toggleHidden(content, !content.hidden),
+            checked: !hidden,
+            closeOnSelect: hidden,
+            icon: 'members' as const,
+            label: m.content_shared_with_members(),
+            onClick: () => toggleHidden(content, !hidden),
+            switch: true,
           },
         ]
       : []),
@@ -386,7 +391,7 @@ export function ContentActions({
             open={propertiesOpen}
           />
 
-          {unhideDialog}
+          {shareDialog}
 
           {!confirmInMenu && (
             <TrashConfirmDialog

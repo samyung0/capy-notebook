@@ -20,8 +20,8 @@ export function HiddenMark({ className }: { className?: string }) {
 /** "Hidden" after an item's name (X2, Epo 2026-11-03; the state alone, not
  * "Hidden from members", Epo 2026-11-16): an item only the workspace's owners
  * and editors see. With onShow (an owner or editor who may change it) the chip
- * is a button that shows the item to members, as the ⋮ menu's Unhide file
- * does. Phones keep the icon alone. */
+ * is a button that shares the item with members, as the ⋮ menu's "Shared with
+ * members" switch does. Phones keep the icon alone. */
 export function HiddenChip({ onShow }: { onShow?: () => void }) {
   if (!onShow)
     return (
@@ -34,7 +34,7 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
       </span>
     );
   return (
-    <ButtonTooltip label={m.content_unhide_file()} side="bottom">
+    <ButtonTooltip label={m.content_share_with_members()} side="bottom">
       <button
         className="inline-flex h-5.5 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md bg-page-hover px-1.75 font-semibold text-[12.5px] text-fg-muted outline-none transition duration-150 ease-out hover:bg-surface-dark-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96]"
         data-testid="hidden-chip"
@@ -44,7 +44,7 @@ export function HiddenChip({ onShow }: { onShow?: () => void }) {
         <Icon name="viewOffSlash" size={16} />
         <span className="sr-only sm:not-sr-only">{m.content_hidden()}</span>
         {/* The action, for screen readers; sighted users get the tooltip. */}
-        <span className="sr-only">{m.content_unhide_file()}</span>
+        <span className="sr-only">{m.content_share_with_members()}</span>
       </button>
     </ButtonTooltip>
   );

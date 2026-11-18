@@ -14,6 +14,7 @@ import {
 } from './DropdownMenu';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
+import { Switch } from './Switch';
 
 const menuItemVariants = cva(
   cn(
@@ -42,7 +43,8 @@ const menuItemVariants = cva(
 export interface MenuItem {
   /** The item a menu leads with, in the accent colour (Invite member). */
   accent?: boolean;
-  /** The current choice of a view switcher: a check at the row's end. */
+  /** The current choice of a view switcher: a check at the row's end. On a
+   * `switch` row, whether the switch is on. */
   checked?: boolean;
   closeOnSelect?: boolean;
   /** A second click confirms: the first swaps the label for this one and
@@ -61,6 +63,9 @@ export interface MenuItem {
   onClick?: () => void;
   /** A line above the item, between two groups. */
   separated?: boolean;
+  /** A setting the row turns on and off: a small switch at the row's end
+   * shows `checked`, and screen readers hear a checkbox item with its state. */
+  switch?: boolean;
   /** Something needs the user's attention, short of danger. */
   warning?: boolean;
 }
@@ -148,6 +153,11 @@ export function Menu({
                   itemClassName
                 )}
                 disabled={it.disabled}
+                // As Radix's own checkbox item: the role and its state.
+                {...(it.switch && {
+                  'aria-checked': Boolean(it.checked),
+                  role: 'menuitemcheckbox',
+                })}
                 onSelect={(event) => {
                   if (it.confirmLabel && armed !== it.label) {
                     event.preventDefault();
@@ -193,8 +203,20 @@ export function Menu({
                     </span>
                   )}
                 </span>
-                {it.checked && (
-                  <Icon className="ml-auto -translate-y-px" name="check" />
+                {it.switch ? (
+                  // The row is the control; the switch only shows its state.
+                  <Switch
+                    aria-hidden
+                    checked={Boolean(it.checked)}
+                    className="pointer-events-none ml-auto -translate-y-px"
+                    readOnly
+                    size="sm"
+                    tabIndex={-1}
+                  />
+                ) : (
+                  it.checked && (
+                    <Icon className="ml-auto -translate-y-px" name="check" />
+                  )
                 )}
               </DropdownMenuItem>
             </Fragment>

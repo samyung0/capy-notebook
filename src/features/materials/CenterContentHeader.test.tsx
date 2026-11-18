@@ -155,17 +155,17 @@ it('marks an item hidden from members beside its name', () => {
   expect(html.indexOf('Deck.pptx')).toBeLessThan(html.indexOf(label));
 });
 
-/** Its owners and editors show it to members from the chip, as from the ⋮
- * menu's Unhide file (Epo 2026-11-03): a button, so the keyboard reaches
- * it, that says what it does, and that asks before everyone sees the file
- * (Epo 2026-11-16). */
-it('asks before showing a hidden item to members from its chip', () => {
+/** Its owners and editors share it with members from the chip, as from the ⋮
+ * menu's "Shared with members" switch (Epo 2026-11-03): a button, so the
+ * keyboard reaches it, that says what it does, and that asks before everyone
+ * sees the file (Epo 2026-11-16). */
+it('asks before sharing a hidden item with members from its chip', () => {
   header.hidden = true;
   chips.length = 0;
   const html = render(true);
   header.hidden = false;
   expect(html).toMatch(CHIP_BUTTON);
-  expect(html).toContain(m.content_unhide_file());
+  expect(html).toContain(m.content_share_with_members());
   header.setHidden.mockClear();
   chips[0]?.onShow?.();
   expect(header.setHidden).not.toHaveBeenCalled();
