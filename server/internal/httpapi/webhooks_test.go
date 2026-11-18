@@ -79,6 +79,8 @@ type fakeStore struct {
 	retryingReloads []string
 	// reloadRetryUnwanted: the reload was turned off or given a new card.
 	reloadRetryUnwanted bool
+	// reloadMethods is each user's saved auto-reload method id.
+	reloadMethods map[string]string
 }
 
 func newFakeStore() *fakeStore {
@@ -93,6 +95,7 @@ func newFakeStore() *fakeStore {
 		checkoutAllowed:    true,
 		associated:         map[string]string{},
 		redacted:           map[string]bool{},
+		reloadMethods:      map[string]string{},
 	}
 }
 
@@ -220,9 +223,14 @@ func (f *fakeStore) GrantStarterCredits(_ context.Context, userID, cardKey strin
 	return cardKey != "", nil
 }
 
-func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error {
+func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) (bool, error) {
 	f.creditCalls = append(f.creditCalls, fmt.Sprintf("method %s %s %t", userID, pm.ID, onlyIfNone))
-	return nil
+	held := f.reloadMethods[userID]
+	if held == pm.ID || (onlyIfNone && held != "") {
+		return false, nil
+	}
+	f.reloadMethods[userID] = pm.ID
+	return true, nil
 }
 
 func (f *fakeStore) MarkReloadPaid(_ context.Context, purchaseID, invoiceID, paymentIntentID string) error {

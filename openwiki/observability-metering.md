@@ -968,7 +968,13 @@ needs a saved instant method (409 `no_payment_method` /
 `payment_method_not_instant`). `POST /api/billing/payment-method` opens hosted
 Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
-reload invoice Stripe is still retrying. Turning auto-reload off voids it too,
+reload invoice Stripe is still retrying. The card is saved from the session's
+`checkout.session.completed` or from `setup_intent.succeeded` of a SetupIntent
+carrying the same `kind=reload_method` and `user_id` metadata, whose customer is
+bound to that user (Q760 A; the CI credits journeys create such SetupIntents
+through Stripe's API). Whichever arrives second finds that method already saved
+(`SavePaymentMethod` reports it unchanged) and arms, voids and publishes
+nothing more. Turning auto-reload off voids it too,
 and so does `POST /api/billing/auto-reload/cancel-retry` (Cancel retry on the
 notice and the invoice row), which leaves auto-reload on but disarmed. A
 retrying plan invoice's Cancel opens `POST
