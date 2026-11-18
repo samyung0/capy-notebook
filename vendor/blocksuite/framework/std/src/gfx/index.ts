@@ -90,12 +90,17 @@ export {
   prop,
 } from './model/surface/local-element-model.js';
 export {
+  ElementReadableIdentifier,
   SURFACE_TEXT_UNIQ_IDENTIFIER,
   SURFACE_YMAP_UNIQ_IDENTIFIER,
   SurfaceBlockModel,
   type SurfaceBlockProps,
   type SurfaceMiddleware,
 } from './model/surface/surface-model.js';
+export {
+  UNKNOWN_ELEMENT_TYPE,
+  UnknownElementModel,
+} from './model/surface/unknown-element-model.js';
 export { measureOperation } from './perf.js';
 export { createRafCoalescer, type RafCoalescer } from './raf-coalescer.js';
 export { GfxSelectionManager } from './selection.js';

@@ -610,6 +610,38 @@ Outside this directory, for BlockSuite:
     polygons after AFFiNE's five), drawn with the panel's outlines, so a selected
     shape's Switch shape type menu and a connector's next-shape panel reach them all.
 
+62. Content this editor can't read is kept and drawn as a placeholder (`framework/std`
+    `gfx/model/surface/surface-model.ts`, `unknown-element-model.ts` (new) and
+    `gfx/index.ts`; `framework/store` `schema/schema.ts`, `extension/schema.ts`,
+    `model/block/block.ts`, `sync-controller.ts`, `flat-sync-controller.ts` and
+    `model/store/store.ts`, marked `Capy (local change 62)`; Epo 2026-11-18: reject
+    nothing, delete nothing a person hasn't acknowledged). A shared board holds what
+    a peer or a newer version wrote, and none of this writes to or deletes a stored
+    map.
+    - Canvas elements: upstream threw `Invalid element type` for a type it has no
+      model for, when the surface loads and inside the Yjs observer when a peer
+      adds one. A stored entry is now built by `_storedCtor`: its own model, or an
+      `UnknownElementModel` (type `capy:unknown`: its place, order and turn, nothing
+      else read) when the type is unknown or the editor's `ElementReadableIdentifier`
+      check, registered on the store, says it can't read it. An entry with no place
+      to draw at (`hasPlace`), or that is no map, gets no model. An entry's id is its
+      key in the elements map, not the `id` field it holds. `addElement` of an
+      unknown type still throws. `_propsToY` takes a placeholder, so it can be moved.
+    - Blocks: upstream skips a block whose flavour has no schema. `Schema.standIn`,
+      set from a store's `BlockStandInExtension`, answers with the schema a stored
+      block is read with (`Schema.of`, which the block and both sync controllers
+      ask), so an editor can read one it doesn't know through a schema of its own
+      that declares no props. `getBlock`, `getBlock$`, `getParent` and `hasBlock`
+      answer for a block's own key only: a child id such as `__proto__` or
+      `toString` found something that is no block. A block under such an id is
+      still never built.
+    - Toolbar (`affine/widgets/toolbar` `src/toolbar.ts`): a selection of models
+      whose `toolbar` is `false` alone shows no floating toolbar. The placeholder
+      models set it: Lock and the rest are not for something unread.
+    - The board's side is `src/features/blocksuite/boardUnknown.ts` (what is read)
+      and `boardUnknownView.ts` (the placeholder), pinned by
+      `src/features/blocksuite/boardUnknown.test.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

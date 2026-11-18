@@ -330,6 +330,42 @@ html.dark:not([data-board-light]) .capy-board {
   --capy-handle-fill: var(--affine-background-primary-color);
 }
 
+/* What the board can't read, a peer's or a newer version's block or element (Epo
+   2026-11-18, mock A): the notes' notice in a dashed outline at its own place and
+   size, and the notice alone where the block sits in a note's text. The canvas
+   element is painted from these same values (boardUnknownView.ts). */
+.capy-board {
+  --capy-unknown-edge: rgba(0, 0, 0, 0.35);
+}
+html.dark:not([data-board-light]) .capy-board {
+  --capy-unknown-edge: var(--affine-border-color);
+}
+.capy-unknown-card {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--text-muted);
+  text-align: center;
+  border: 1px dashed var(--capy-unknown-edge);
+  border-radius: 6px;
+}
+.capy-unknown-line {
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--text-muted);
+}
+/* Over the note's own fill, as its other blocks are. */
+.capy-board capy-unknown-block {
+  position: relative;
+  display: block;
+}
+
 /* Notes take their stored style (P1, Epo 2026-11-13): fill, shadow, border and
    corner from the style panel. A card is tight (N2, 2026-11-08): 8 by 10 px
    padding, the same size while typing, and its Box shadow is the board's hairline.

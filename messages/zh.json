@@ -976,7 +976,7 @@
   "files_legacy_title": "旧版 Office 格式",
   "files_legacy_body": "{ext} 文件无法在此打开。将此文件转换为 {target} 后即可查看和编辑。",
   "files_legacy_convert": "转换为新版 Office 格式",
-  "material_unsupported_block": "此版本的 Capy 无法显示这个区块。",
+  "material_unsupported_block": "无法显示这个区块",
   "files_download_original": "下载 {name}",
   "files_tab_files": "文件",
   "files_tab_trash": "回收站",

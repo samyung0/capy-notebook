@@ -1,6 +1,7 @@
 import { minimatch } from 'minimatch';
 
 import { SCHEMA_NOT_FOUND_MESSAGE } from '../consts.js';
+import type { YBlock } from '../model/block/types.js';
 import { BlockSchema, type BlockSchemaType } from '../model/block/zod.js';
 import { SchemaValidateError } from './error.js';
 
@@ -13,6 +14,26 @@ export class Schema {
    * A map storing block flavour names to their corresponding schema definitions.
    */
   readonly flavourSchemaMap = new Map<string, BlockSchemaType>();
+
+  /* Capy (vendor/blocksuite/README.md, local change 62): an editor's say on the
+   * schema a stored block is read with, given the one registered for its flavour
+   * (none for a flavour this build doesn't have). It answers with a schema of its
+   * own for a block it can't read, so the block is drawn as a placeholder and its
+   * data left as it is. Set from `BlockStandInExtension`. */
+  standIn?: (
+    yBlock: YBlock,
+    known: BlockSchemaType | undefined
+  ) => BlockSchemaType | undefined;
+
+  /** The schema a stored block is read with (local change 62). */
+  of(yBlock: YBlock) {
+    const flavour: unknown = yBlock.get('sys:flavour');
+    const known =
+      typeof flavour === 'string'
+        ? this.flavourSchemaMap.get(flavour)
+        : undefined;
+    return this.standIn ? this.standIn(yBlock, known) : known;
+  }
 
   /**
    * Safely validates the schema relationship for a given flavour, parent, and children.

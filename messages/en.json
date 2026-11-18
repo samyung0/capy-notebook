@@ -976,7 +976,7 @@
   "files_legacy_title": "Old Office format",
   "files_legacy_body": "{ext} files can't be opened here. Convert this file to {target} to view and edit it.",
   "files_legacy_convert": "Convert to new Office format",
-  "material_unsupported_block": "This block can't be shown in this version of Capy.",
+  "material_unsupported_block": "This block cannot be shown",
   "files_download_original": "Download {name}",
   "files_tab_files": "Files",
   "files_tab_trash": "Trash",

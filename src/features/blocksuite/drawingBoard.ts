@@ -137,13 +137,8 @@ import {
   type WorkspaceLinks,
 } from './boardCards';
 import { closeBoardEditor, watchBoardEditor } from './boardEditorShell';
-import {
-  addedElementFits,
-  type BoardKind,
-  checkSavedBoard,
-  type Fields,
-  holds,
-} from './boardLoad';
+import { keepToCatalog, savedCopy } from './boardKeep';
+import { type BoardKind, checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
 import './boardPlaneEditor';
@@ -159,6 +154,8 @@ import {
   shapeButtonTool,
   sheetTools,
 } from './boardTools';
+import { unknownStore } from './boardUnknown';
+import { unknownViews } from './boardUnknownView';
 
 // BlockSuite's notices show in the app's own toast (local change 33). They come
 // as bare English strings, a refusal ("Invalid link", "Import failed") read by
@@ -299,45 +296,6 @@ class NoFrameOverlay extends Overlay {
   override render() {}
 }
 
-/** A board holds only what its load check would take, whatever adds it (a paste, a
- * duplicate, a peer): the question board drops a pasted mind map or capy embed, and
- * either board an element past its limits or a mind map with broken nodes (Epo
- * 2026-11-09). A mind map goes with its node shapes. */
-function keepToCatalog(gfx: GfxController, board: BoardKind) {
-  const { elements, parents } = holds(board);
-  const { doc } = gfx;
-  const surface = gfx.surface;
-  // Checked once the add's transaction is done: a mind map gets its nodes after itself.
-  const added = surface?.elementAdded.subscribe(({ id }) =>
-    queueMicrotask(() => {
-      const element = surface.getElementById(id);
-      if (!element) return;
-      const fields = element.serialize() as Fields;
-      const all =
-        fields.type === 'mindmap'
-          ? Object.fromEntries(
-              surface.elementModels.map((each) => [
-                each.id,
-                each.serialize() as Fields,
-              ])
-            )
-          : { [id]: fields };
-      if (!addedElementFits(id, all, elements)) surface.deleteElement(id);
-    })
-  );
-  const blocks = doc.slots.blockUpdated.subscribe((change) => {
-    if (change.type !== 'add' || parents.has(change.flavour)) return;
-    queueMicrotask(() => {
-      const model = doc.getModelById(change.id);
-      if (model) doc.deleteBlock(model);
-    });
-  });
-  return () => {
-    added?.unsubscribe();
-    blocks.unsubscribe();
-  };
-}
-
 const surfaceOf = (gfx: GfxController) =>
   gfx.surfaceComponent as SurfaceBlockComponent | null;
 
@@ -411,46 +369,6 @@ function answerArea(label: string) {
   };
 }
 
-const roundPlace = (xywh: string) =>
-  JSON.stringify(
-    (JSON.parse(xywh) as number[]).map((value) => Math.round(value * 10) / 10)
-  );
-
-/** The saved copy keeps strokes to whole pixels and places to a tenth: 60% of the
- * size with no change to see (drawing answers' measure, 2026-11-06, for Epo's "every
- * stored byte cut"). Pressure stays, as perfect-freehand draws the line from it. */
-function roundPlaces(doc: Y.Doc) {
-  const place = (map: Y.Map<unknown>, key: string) => {
-    const xywh = map.get(key);
-    if (typeof xywh !== 'string') return;
-    const rounded = roundPlace(xywh);
-    if (rounded !== xywh) map.set(key, rounded);
-  };
-  doc.transact(() => {
-    for (const block of doc.getMap<Y.Map<unknown>>('blocks').values()) {
-      place(block, 'prop:xywh');
-      const native = block.get('prop:elements') as Y.Map<unknown> | undefined;
-      const elements = native?.get('value') as
-        | Y.Map<Y.Map<unknown>>
-        | undefined;
-      for (const element of elements?.values() ?? []) {
-        place(element, 'xywh');
-        const type = element.get('type');
-        if (type !== 'brush' && type !== 'highlighter') continue;
-        const points = element.get('points') as number[][];
-        element.set(
-          'points',
-          points.map(([x, y, ...pressure]) => [
-            Math.round(x),
-            Math.round(y),
-            ...pressure,
-          ])
-        );
-      }
-    }
-  });
-}
-
 /** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
  * can't decode from a file. */
 async function decodeImage(file: Blob) {
@@ -472,11 +390,18 @@ export function mountDrawingBoard(
   options: DrawingBoardOptions
 ) {
   const saved = options.saved ? fromBase64(options.saved) : null;
-  if (saved) checkSavedBoard(saved, options.board);
+  // A question's board that doesn't check out is refused here. A canvas opens with
+  // what doesn't fit drawn as placeholders (boardUnknown.ts).
+  const misfits = saved ? checkSavedBoard(saved, options.board).misfits : [];
+  if (misfits.length)
+    console.warn('drawing board: shown as placeholders', misfits);
   const { readOnly = false } = options;
   const blobs = new BoardBlobSource(options.images);
   const workspace = new TestWorkspace({ blobSources: { main: blobs } });
-  workspace.storeExtensions = stores.get('store');
+  workspace.storeExtensions = [
+    ...stores.get('store'),
+    ...unknownStore(options.board),
+  ];
   workspace.meta.initialize();
   const doc = workspace.createDoc('board');
   const store = doc.getStore();
@@ -519,6 +444,7 @@ export function mountDrawingBoard(
     ...formulaExtensions,
     ...planeExtensions,
     ...chartExtensions,
+    ...unknownViews,
     NoFrameOverlay,
   ];
   const std = new BlockStdScope({
@@ -555,7 +481,9 @@ export function mountDrawingBoard(
   );
   const board = container.querySelector('.capy-board');
   const gfx = std.get(GfxControllerIdentifier);
-  const unguard = readOnly ? null : keepToCatalog(gfx, options.board);
+  const unguard = readOnly
+    ? null
+    : keepToCatalog(store, gfx.surface, options.board);
   // Top right, left of any Done the page puts there: undo, redo and zoom, so the
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
@@ -975,18 +903,12 @@ export function mountDrawingBoard(
       if (!gfx.viewport.viewportBounds.contains(bound))
         gfx.viewport.setCenter(bound.center[0], bound.center[1]);
     },
-    /** The board to store, with no undo history: a fresh document keeps only what's
-     * on the board (200 plane clicks were 606 KB live, 7.5 KB this way), rounded
-     * (roundPlaces). */
+    /** The board to store, with no undo history and rounded (savedCopy). */
     save: ({ finish = true }: { finish?: boolean } = {}) => {
       // An autosave (the workspace canvas) leaves an open card and the tool as
       // they are; Done finishes the plot first.
       if (finish) finishPlot();
-      const fresh = new Y.Doc();
-      Y.applyUpdate(fresh, Y.encodeStateAsUpdate(store.spaceDoc));
-      roundPlaces(fresh);
-      const update = Y.encodeStateAsUpdate(fresh);
-      fresh.destroy();
+      const update = savedCopy(store.spaceDoc, options.board);
       return { bytes: update.byteLength, doc: toBase64(update) };
     },
     /** The board as it is, leaving a tool in use alone. */

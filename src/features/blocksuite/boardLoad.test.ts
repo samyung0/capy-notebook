@@ -201,17 +201,12 @@ describe('checkSavedBoard', () => {
   });
 
   it("checks a mind map's nodes against the canvas", () => {
-    const nodes = (children: Record<string, unknown>) => {
-      try {
-        checkSavedBoard(
-          withElements(MIND_MAP[0], MIND_MAP[1], { ...MIND_MAP[2], children }),
-          'workspace'
-        );
-        return null;
-      } catch (error) {
-        return error instanceof BoardLoadError ? error.reason : String(error);
-      }
-    };
+    // A canvas opens and says what doesn't fit (Epo 2026-11-18).
+    const nodes = (children: Record<string, unknown>) =>
+      checkSavedBoard(
+        withElements(MIND_MAP[0], MIND_MAP[1], { ...MIND_MAP[2], children }),
+        'workspace'
+      ).misfits[0] ?? null;
     expect(
       nodes({ idea: { index: 'a0', parent: 'topic' }, topic: { index: 'a0' } })
     ).toBeNull();
@@ -283,14 +278,9 @@ describe('checkSavedBoard', () => {
   });
 
   it('opens the workspace canvas pictures and cards it can show', () => {
-    const opens = (flavour: string, props: Record<string, unknown>) => {
-      try {
-        checkSavedBoard(withCanvasBlock(flavour, props), 'workspace');
-        return null;
-      } catch (error) {
-        return error instanceof BoardLoadError ? error.reason : String(error);
-      }
-    };
+    const opens = (flavour: string, props: Record<string, unknown>) =>
+      checkSavedBoard(withCanvasBlock(flavour, props), 'workspace')
+        .misfits[0] ?? null;
     const picture = 'affine:embed-capy-picture';
     expect(
       opens(picture, { kind: 'emoji', label: '🧠', ref: '1f9e0' })

@@ -132,7 +132,7 @@ export class SyncController {
 
   private _createModel(props: UnRecord) {
     const _mutex = this._mutex;
-    const schema = this.schema.flavourSchemaMap.get(this.flavour);
+    const schema = this.schema.of(this.yBlock);
     if (!schema) {
       throw new BlockSuiteError(
         ErrorCode.ModelCRUDError,
@@ -285,7 +285,7 @@ export class SyncController {
       );
     }
 
-    const schema = this.schema.flavourSchemaMap.get(flavour);
+    const schema = this.schema.of(this.yBlock);
     if (!schema) {
       throw new BlockSuiteError(
         ErrorCode.ModelCRUDError,
