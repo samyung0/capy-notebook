@@ -273,7 +273,7 @@ describe('readable note exports', () => {
     const block = {
       board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
       description: 'A line',
-      elements: [{ id: 'f', term: 'x', type: 'functiongraph' }],
+      elements: [{ id: 'f', latex: 'y=x', type: 'expression' }],
       height: 300,
       type: 'graph',
       width: 400,

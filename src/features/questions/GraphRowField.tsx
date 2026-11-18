@@ -8,13 +8,15 @@ export interface GraphRowFieldProps {
   autoFocus?: boolean;
   label: string;
   latex: string;
-  /** LaTeX for the field and ASCII-math for the row parser. */
-  onChange: (latex: string, ascii: string) => void;
+  /** The row's LaTeX, which the row parser reads. */
+  onChange: (latex: string) => void;
   onEnter: () => void;
   /** Arrow keys past the first or last line of the formula. */
   onMoveOut: (direction: 'up' | 'down') => void;
   /** Backspace in an empty row. */
   onRemoveEmpty?: () => void;
+  /** What the empty new row shows, as the plane's list: "Type a formula". */
+  placeholder?: string;
   /** Registers the field so neighbouring rows can focus it. */
   register: (field: MathfieldElement | null) => void;
 }
@@ -27,6 +29,7 @@ export function GraphRowField({
   onEnter,
   onRemoveEmpty,
   onMoveOut,
+  placeholder,
   register,
   autoFocus,
 }: GraphRowFieldProps) {
@@ -54,14 +57,18 @@ export function GraphRowField({
       element.smartFence = true;
       element.mathVirtualKeyboardPolicy = 'auto';
       element.style.cssText =
-        'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:1.21em;line-height:1.2;';
-      const input = () =>
-        callbacks.current.onChange(
-          element.value,
-          element.getValue('ascii-math')
-        );
+        'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:15px;line-height:1.2;';
+      const input = () => callbacks.current.onChange(element.value);
       // Row keys stop here, before MathLive's handler inside the shadow root.
       const key = (event: KeyboardEvent) => {
+        // Escape leaves the row first, as the plane's list did (the editor
+        // closes on the next one), not MathLive's LaTeX mode.
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          element.blur();
+          return;
+        }
         const action =
           event.key === 'Enter'
             ? callbacks.current.onEnter
@@ -95,6 +102,7 @@ export function GraphRowField({
         ...element.inlineShortcuts,
         ...COMMAND_SHORTCUTS,
       };
+      if (placeholder) element.placeholder = `\\text{${placeholder}}`;
       element.setValue(initial.current, { silenceNotifications: true });
       field.current = element;
       callbacks.current.register(element);
@@ -140,7 +148,7 @@ export function GraphRowField({
   }, [latex]);
   return (
     <span
-      className="block min-w-0 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden"
+      className="block min-w-0 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(placeholder)]:text-placeholder [&_math-field::part(virtual-keyboard-toggle)]:hidden"
       ref={host}
     />
   );

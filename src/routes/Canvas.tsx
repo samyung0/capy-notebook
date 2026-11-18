@@ -18,6 +18,7 @@ import {
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
 import { FileError } from '@/features/files/FileStates';
+import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { m } from '@/i18n';
 import { useOpenLink } from '@/lib/openLink';
 
@@ -84,6 +85,7 @@ function OwnCanvas({
     materials: linked,
     open: setEditing,
   });
+  const { openPlane, planeEditor } = usePlaneEditor();
   const failed = useCanvasBoard(
     container,
     {
@@ -91,7 +93,7 @@ function OwnCanvas({
       open: () => canvasById(id),
       save: (body) => saveCanvas(id, body),
     },
-    { gone, link, onBoard, workspace: links }
+    { gone, link, onBoard, openPlane, workspace: links }
   );
   return (
     <div
@@ -100,6 +102,7 @@ function OwnCanvas({
     >
       {failed && <FileError message={failed} onRetry={onRetry} />}
       <CanvasMaterialCards link={link} materials={materials} />
+      {planeEditor}
       <CanvasMaterialDialog
         materialId={editing}
         onClose={() => setEditing(null)}

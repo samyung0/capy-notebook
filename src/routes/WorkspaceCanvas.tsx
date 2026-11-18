@@ -15,6 +15,7 @@ import {
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
 import { FileError } from '@/features/files/FileStates';
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
+import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -145,6 +146,7 @@ function CanvasBoard({
     materials: linked,
     open: onOpenMaterial,
   });
+  const { openPlane, planeEditor } = usePlaneEditor();
   const failed = useCanvasBoard(
     container,
     {
@@ -152,7 +154,7 @@ function CanvasBoard({
       open: () => canvasById(id),
       save: (body) => saveCanvas(id, body),
     },
-    { gone, link, onBoard, workspace: links }
+    { gone, link, onBoard, openPlane, workspace: links }
   );
   // The placed quizzes and sets run in the page's own tree, through portals into the
   // board's card hosts (Epo 2026-11-09).
@@ -164,6 +166,7 @@ function CanvasBoard({
       {/* Reopening the canvas tries again. */}
       {failed && <FileError message={failed} onRetry={onRetry} />}
       <CanvasMaterialCards link={link} materials={materials} />
+      {planeEditor}
     </div>
   );
 }

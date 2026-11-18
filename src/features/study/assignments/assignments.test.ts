@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { AssignmentGradedQuestion } from '@/api/types';
-import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
 import { m } from '@/i18n';
+import { parseAssignmentsSearch } from '../studyRoutes';
 import {
   advancedStartsOpen,
   closedItself,
@@ -10,10 +10,10 @@ import {
   lateLabel,
   latePolicy,
   localInputValue,
-  markSteps,
   markText,
   questionOutcome,
   takesLateWork,
+  typedMark,
 } from './assignmentText';
 import { questionsWithNoAnswers } from './NoAnswersWarning';
 import { paperMeta } from './useAssignmentStart';
@@ -37,9 +37,17 @@ it('reads a question as right, partly, wrong or waiting', () => {
   ).toBe('waiting');
 });
 
-it('offers half marks up to the marks', () => {
-  expect(markSteps(2)).toEqual([0, 0.5, 1, 1.5, 2]);
+it('keeps a typed mark to one decimal place within the marks', () => {
+  expect(typedMark('1.', 2)).toBe('1.');
+  expect(typedMark('1,5', 2)).toBe('1.5');
+  expect(typedMark('1.55', 2)).toBeUndefined();
+  expect(typedMark('2.1', 2)).toBeUndefined();
+  expect(typedMark('-1', 2)).toBeUndefined();
+});
+
+it('writes a mark out of the marks', () => {
   expect(markText(2.5, 6)).toBe('2.5 / 6');
+  expect(markText(0.1 + 0.2, 1)).toBe('0.3 / 1');
 });
 
 it('draws dates as the boards do', () => {
@@ -57,17 +65,17 @@ it('sizes a paper in the words of Before you start', () => {
 });
 
 it('keeps each report link in the URL', () => {
-  const parse = parseWorkspaceOpenSearch;
-  expect(parse({ study: 'assignments' }).study).toBe('assignments');
-  expect(
-    parse({ assignment: 'as1', study: 'assignments', tab: 'members' })
-  ).toMatchObject({ assignment: 'as1', tab: 'members' });
+  const parse = parseAssignmentsSearch;
+  expect(parse({ tab: 'members' }).tab).toBe(undefined);
+  expect(parse({ assignment: 'as1', tab: 'members' })).toMatchObject({
+    assignment: 'as1',
+    tab: 'members',
+  });
   expect(
     parse({
       assignment: 'as1',
       member: 'u1',
       question: 'q3',
-      study: 'assignments',
       tab: 'approve',
     })
   ).toMatchObject({ member: 'u1', question: 'q3', tab: 'approve' });
@@ -75,13 +83,13 @@ it('keeps each report link in the URL', () => {
     parse({
       assignment: 'as1',
       by: 'question',
-      study: 'assignments',
       tab: 'responses',
     })
   ).toMatchObject({ by: 'question', tab: 'responses' });
-  expect(
-    parse({ assignment: 'as1', attempt: 'at1', study: 'assignments' })
-  ).toMatchObject({ assignment: 'as1', attempt: 'at1' });
+  expect(parse({ assignment: 'as1', attempt: 'at1' })).toMatchObject({
+    assignment: 'as1',
+    attempt: 'at1',
+  });
   // Opened from a member's profile: the profile to go back to.
   expect(
     parse({
@@ -89,16 +97,11 @@ it('keeps each report link in the URL', () => {
       attempt: 'at1',
       member: 'u1',
       show: 'topics',
-      study: 'assignments',
     })
   ).toMatchObject({ member: 'u1', show: 'topics' });
   // An unknown tab clears, and a question only belongs to Approve AI marks.
-  expect(parse({ assignment: 'as1', study: 'assignments', tab: 'x' }).tab).toBe(
-    undefined
-  );
-  expect(
-    parse({ assignment: 'as1', question: 'q3', study: 'assignments' }).question
-  ).toBe(undefined);
+  expect(parse({ assignment: 'as1', tab: 'x' }).tab).toBe(undefined);
+  expect(parse({ assignment: 'as1', question: 'q3' }).question).toBe(undefined);
 });
 
 it('sends the due date policy only with a marked due date', () => {

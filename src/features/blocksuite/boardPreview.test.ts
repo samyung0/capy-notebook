@@ -21,6 +21,7 @@ const INLINE_NOTE_TEXT = /<tspan x="0" [^>]*>Osmosis/;
 const TURNED_NOTE = /transform="rotate\(30 100 20\)"/;
 const PLANE_CARD = /<svg x="0" y="600" width="300" height="200" viewBox="/;
 const INK_STROKE = /<path d="M[^"]*" fill="none" stroke="#000"/;
+const DRAWN_NEARER = /<g transform="translate\(-1780 0\)">/;
 const CARD_NOTE_BOX =
   /<rect [^>]*rx="16" fill="#fff" fill-opacity="0.5" stroke="#e6e6e6"/;
 
@@ -242,4 +243,21 @@ it('draws a turned note turned about its middle', () => {
     'workspace'
   );
   expect(svg).toMatch(TURNED_NOTE);
+});
+
+// Epo 2026-11-18: only a quiz's drawing draws a far group nearer; a workspace
+// canvas keeps everything where it is.
+it("draws a quiz drawing's far label nearer and a canvas's where it is", () => {
+  const saved = toBase64(
+    withElements({
+      fontSize: 24,
+      id: 'far',
+      index: 'z9',
+      text: 'Far',
+      type: 'text',
+      xywh: '[3000,0,80,30]',
+    })
+  );
+  expect(drawBoardPreview(saved, SIZE, 'question')).toMatch(DRAWN_NEARER);
+  expect(drawBoardPreview(saved, SIZE, 'workspace')).not.toMatch(DRAWN_NEARER);
 });

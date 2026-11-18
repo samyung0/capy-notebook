@@ -1,9 +1,12 @@
+import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useEffect, useRef, useState } from 'react';
+import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { Dialog, DialogContent, SimpleDialog } from '@/components/ui/Dialog';
 import { m } from '@/i18n';
 import { BlockEditor, type UploadQuestionAsset } from './BlockEditor';
 import type { FigureBinding } from './figureBinding';
+import { GraphEditor } from './GraphEditor';
 import type { QuestionBlock } from './types';
 
 export const blockLabels: Record<QuestionBlock['type'], () => string> = {
@@ -49,7 +52,7 @@ export function BlockDialog({
 } & Edits) {
   const [draft, setDraft] = useState(block);
   const [busy, setBusy] = useState(false);
-  // A graph's zoom tools and a table cell's formula tools, beside the title.
+  // A table cell's formula tools, beside the title.
   const [tools, setTools] = useState<HTMLDivElement | null>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -60,16 +63,43 @@ export function BlockDialog({
       }),
     [binding]
   );
+  const removeBlock = () => {
+    if (binding) binding.remove();
+    else onRemove();
+    onClose();
+  };
+  // A graph fills the dialog, laid out as the canvas plane (Epo 2026-11-17):
+  // its own menu and Done stand in for the title and footer.
+  if (block.type === 'graph' && binding)
+    return (
+      <Dialog onOpenChange={(open) => !open && onClose()} open>
+        <DialogContent
+          aria-describedby={undefined}
+          cardClassName="h-full"
+          cardScrollContainerClassName="max-h-none overflow-hidden p-0 sm:p-0 max-sm:pb-0"
+          className="h-[calc(100dvh-2rem)] max-h-none max-w-[min(90rem,100vw)]"
+          showCloseButton={false}
+        >
+          <DialogPrimitive.Title className="sr-only">
+            {blockLabels.graph()}
+          </DialogPrimitive.Title>
+          <GraphEditor
+            binding={binding}
+            descriptionMax={
+              bank ? limits.QUESTION_TEXT_MAX : limits.QUESTION_DESCRIPTION_MAX
+            }
+            onDone={onClose}
+            onRemove={removeBlock}
+          />
+        </DialogContent>
+      </Dialog>
+    );
   const remove = (
     <Button
       // Pulled left by its padding so its label lines up with the content, as
       // the card's borderless buttons are (Epo 2026-11-16).
       className="mr-auto -ml-5"
-      onClick={() => {
-        if (binding) binding.remove();
-        else onRemove();
-        onClose();
-      }}
+      onClick={removeBlock}
       rounded="large"
       size="md"
       type="button"

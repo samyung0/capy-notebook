@@ -6,7 +6,7 @@ import { m } from '../i18n';
  * Settings step (Epo 2026-11-16: settings first, then questions). */
 
 async function pickNew(page: Page, item: string) {
-  await page.goto('/workspaces/ws_bio?study=assignments');
+  await page.goto('/workspaces/ws_bio/assignments');
   await page
     .getByRole('button', { name: m.assignment_new_menu() })
     .first()

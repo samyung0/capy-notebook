@@ -10,9 +10,7 @@ const LAST_PUBLISHED = new RegExp(
 test('Settings holds the actions: Republish moves the last published time', async ({
   page,
 }) => {
-  await page.goto(
-    '/workspaces/ws_bio?study=assignments&assignment=as_genetics'
-  );
+  await page.goto('/workspaces/ws_bio/assignments?assignment=as_genetics');
   await page
     .getByRole('tab', { name: m.assignment_tab_settings() })
     .click({ timeout: 60_000 });
@@ -36,7 +34,7 @@ test('Settings holds the actions: Republish moves the last published time', asyn
 test('a draft publishes from its header, and publishing brings Responses', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_draft');
+  await page.goto('/workspaces/ws_bio/assignments?assignment=as_draft');
   await page
     .getByRole('button', { exact: true, name: m.assignment_publish() })
     .click({ timeout: 60_000 });
@@ -47,7 +45,7 @@ test('a draft publishes from its header, and publishing brings Responses', async
 
 test('a closed assignment has no Republish', async ({ page }) => {
   await page.goto(
-    '/workspaces/ws_bio?study=assignments&assignment=as_cells&tab=settings'
+    '/workspaces/ws_bio/assignments?assignment=as_cells&tab=settings'
   );
   await expect(
     page.getByRole('tab', { name: m.assignment_tab_settings() })
@@ -67,7 +65,7 @@ test.describe('as a member', () => {
   test('a page open through a republish reads the new questions', async ({
     page,
   }) => {
-    await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_paper');
+    await page.goto('/workspaces/ws_bio/assignments?assignment=as_paper');
     await page
       .getByRole('button', { exact: true, name: m.assignment_start() })
       .click({ timeout: 30_000 });
@@ -145,7 +143,7 @@ test.describe('at phone width', () => {
     page,
   }) => {
     await page.goto(
-      '/workspaces/ws_bio?study=assignments&assignment=as_genetics&tab=settings'
+      '/workspaces/ws_bio/assignments?assignment=as_genetics&tab=settings'
     );
     await expect(
       page.getByRole('tab', { name: m.assignment_tab_settings() })

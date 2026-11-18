@@ -17,6 +17,7 @@ import type { Answer } from '@/features/quizzes/grade';
 import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { attemptMeta, attemptMinutes } from '@/features/study/attempts';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { features } from '@/lib/features';
@@ -97,11 +98,7 @@ export default function AttemptResult() {
   // Learning is hidden: a result goes back to its workspace's Practice, or Home
   // once it has no workspace.
   const home = attempt.workspaceId
-    ? linkOptions({
-        params: { workspaceId: attempt.workspaceId },
-        search: { study: 'practice' as const },
-        to: '/workspaces/$workspaceId',
-      })
+    ? linkOptions(studyLink(attempt.workspaceId, 'practice'))
     : linkOptions({ to: '/' });
 
   return (

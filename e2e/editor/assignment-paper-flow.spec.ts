@@ -35,7 +35,7 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_upload');
+  await page.goto('/workspaces/ws_bio/assignments?assignment=as_upload');
   await page
     .getByRole('button', { exact: true, name: m.assignment_upload_file() })
     .click({ timeout: 30_000 });
@@ -65,7 +65,7 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
   await asScenario(
     page,
     null,
-    '/workspaces/ws_bio?study=assignments&assignment=as_upload&tab=approve&member=u_1'
+    '/workspaces/ws_bio/assignments?assignment=as_upload&tab=approve&member=u_1'
   );
   await page
     .getByRole('button', { name: m.assignment_paper_whole() })

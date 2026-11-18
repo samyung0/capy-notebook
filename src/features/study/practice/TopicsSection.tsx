@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
+import { studyLink } from '../studyRoutes';
 import { LabelChip, TopicSquares } from '../topicLabels';
 
 /** Study's Overview, whoever practises (boards G5, M1; Study's own page until
@@ -19,14 +20,12 @@ export function TopicsSection({ workspaceId }: { workspaceId: string }) {
     { errorBoundary: false }
   );
   const practise = (topic: SummaryTopic) =>
-    navigate({
-      search: {
+    navigate(
+      studyLink(workspaceId, 'practice', {
         group: topic.group,
-        study: 'practice' as const,
         topicId: topic.topicId,
-      },
-      to: '.',
-    });
+      })
+    );
   if (isPending) return <SkeletonList count={4} rowHeight={44} />;
   if (isError || !data)
     return (

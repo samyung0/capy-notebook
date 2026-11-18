@@ -86,7 +86,7 @@ test('the list keeps the open question in view, and each opens at its top', asyn
 });
 
 test.describe('taking an assignment', () => {
-  const ASSIGNMENT = '/workspaces/ws_bio?study=assignments&assignment=as_paper';
+  const ASSIGNMENT = '/workspaces/ws_bio/assignments?assignment=as_paper';
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() =>
       sessionStorage.setItem('capy.scenario.last', 'workspace-member')

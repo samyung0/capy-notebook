@@ -1,4 +1,4 @@
-import { Navigate, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
 import { useMembersProgress, useWorkspace } from '@/api/hooks';
 import type {
@@ -24,6 +24,7 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { percentText } from '../assignments/assignmentText';
 import { ListRow, PracticeFrame, RowScore } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
+import { studyLink } from '../studyRoutes';
 import { LabelPill } from '../topicLabels';
 import { MemberProfilePage } from './MemberProfile';
 import { MembersRoster } from './MembersRoster';
@@ -43,13 +44,11 @@ import {
 /** Members (its own page on the rail since Epo 2026-11-11): the people, with
  * sharing and invitations (`MembersRoster`). A class's owner and teaching
  * assistants manage them there; their marks are on Study (Epo 2026-11-13).
- * Every other member gets the list without marks. A visitor who is no member
- * is sent to Practice. */
+ * Every other member gets the list without marks; a visitor who is no member
+ * has no Members (`studyView`). */
 export function MembersPage({ workspaceId }: { workspaceId: string }) {
   const { data: ws } = useWorkspace(workspaceId);
   if (!ws) return null;
-  if (!ws.role)
-    return <Navigate replace search={{ study: 'practice' }} to="." />;
   return studyView(ws).manages ? (
     <StaffRoster workspace={ws} />
   ) : (
@@ -133,14 +132,11 @@ function MembersList({
       order.ascending
     );
   const open = (member: MemberProgress) =>
-    navigate({
-      search: {
+    navigate(
+      studyLink(workspaceId, tab === 'topics' ? 'topics' : 'summary', {
         member: member.userId,
-        show: tab === 'topics' ? ('topics' as const) : undefined,
-        study: 'summary' as const,
-      },
-      to: '.',
-    });
+      })
+    );
   const topics = tab === 'topics';
   return (
     <PracticeFrame className="@container">

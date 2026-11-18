@@ -47,7 +47,7 @@ const PPU = 40;
 const bbox: [number, number, number, number] = [-5, 3.75, 5, -3.75];
 
 const elements: GraphElement[] = [
-  { id: 'f', term: 'x^2 - 2', type: 'functiongraph' },
+  { id: 'f', latex: 'y=x^{2}-2', type: 'expression' },
   { coords: [-2, 1], id: 'a', name: 'A', type: 'point' },
   { coords: [2, 1], id: 'b', name: 'B', type: 'point' },
   { coords: [0, 3], id: 'c', name: 'C', type: 'point' },

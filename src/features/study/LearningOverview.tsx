@@ -18,6 +18,7 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { ContinueCards } from './ContinueCards';
 import { questionsLabel } from './practice/practiceText';
 import { groupName, itemCount, REVIEW_MODE, reviewReason } from './reviewText';
+import { studyLink } from './studyRoutes';
 import { LabelChip } from './topicLabels';
 
 /** Learning → Overview (Epo 2026-11-04, canvas board A): what to do next across
@@ -108,13 +109,7 @@ export function LearningOverviewTab() {
             <RowButton
               className="grid-cols-[32px_minmax(0,1fr)_auto] items-center"
               key={ws.workspaceId}
-              onClick={() =>
-                navigate({
-                  params: { workspaceId: ws.workspaceId },
-                  search: { study: 'summary' as const },
-                  to: '/workspaces/$workspaceId',
-                })
-              }
+              onClick={() => navigate(studyLink(ws.workspaceId, 'summary'))}
             >
               <WorkspaceIcon iconId={ws.iconId} />
               <span className="truncate font-semibold">{ws.name}</span>
@@ -211,16 +206,13 @@ function NextRow({ row }: { row: LearningRow }) {
   function open() {
     // The start dialog over the workspace's Practice, as on its Dashboard.
     if (s)
-      return navigate({
-        params: { workspaceId },
-        search: {
+      return navigate(
+        studyLink(workspaceId, 'practice', {
           group: s.group,
           reviewMode: s.mode,
-          study: 'practice' as const,
           topicId: s.topicId,
-        },
-        to: '/workspaces/$workspaceId',
-      });
+        })
+      );
     if (row.materialKind === 'flashcards')
       return navigate({
         params: { flashcardSetId: row.materialId ?? '' },

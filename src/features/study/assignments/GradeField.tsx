@@ -11,9 +11,10 @@ import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
+import { typedMark } from './assignmentText';
 
 /** A member's grade on a graded Assignment (Epo 2026-11-14), entered by staff
- * on the member's row: half points from 0 to its points, saved on Enter or on
+ * on the member's row: 0 to its points with one decimal place at most, saved on Enter or on
  * leaving the field; emptied, the grade is cleared. Shows the grade as given;
  * the row's late badge says what the penalty takes off. */
 export function GradeField({
@@ -32,7 +33,8 @@ export function GradeField({
     assignment.workspaceId,
     assignment.id
   );
-  // Typed as text, so "7." can become 7.5; empty clears the grade.
+  // Typed as text, so "7." can become 7.5; empty clears the grade. The
+  // field refuses keys past the points (`typedMark`), so no message says so.
   const schema = useMemo(
     () =>
       z.object({
@@ -40,14 +42,9 @@ export function GradeField({
           .string()
           .trim()
           .transform((value) => (value === '' ? undefined : Number(value)))
-          .pipe(
-            SetAssignmentGradeBody.shape.points.refine(
-              (value) => value === undefined || value <= points,
-              m.assignment_grade_max({ points: formatPoints(points) })
-            )
-          ),
+          .pipe(SetAssignmentGradeBody.shape.points),
       }),
-    [points]
+    []
   );
   const {
     control,
@@ -104,7 +101,12 @@ export function GradeField({
               field.onBlur();
               void save();
             }}
-            onChange={field.onChange}
+            // Keys that would not make a grade are refused, as in a mark
+            // field (Epo 2026-11-18).
+            onChange={(event) => {
+              const next = typedMark(event.target.value, points);
+              if (next !== undefined) field.onChange(next);
+            }}
             ref={field.ref}
             type="text"
             value={field.value}

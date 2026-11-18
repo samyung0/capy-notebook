@@ -90,9 +90,22 @@ async function onCard(page: Page) {
     [box.x + x * box.w, box.y + y * box.h] as const;
 }
 
-/** A point on the open plane, from 0 to 1 across the screen. */
+/** An open plane's editor: the graph editor over the board. */
+const planeEditor = (page: Page) => page.locator('.capy-graph-editor');
+
+/** Opens the open plane's ☰ menu; its entries are buttons. */
+async function planeMenu(page: Page) {
+  await planeEditor(page)
+    .getByRole('button', { exact: true, name: 'More' })
+    .click();
+  return page.getByRole('dialog');
+}
+
+/** A point on the open plane or chart, from 0 to 1 across the screen. */
 async function onPlane(page: Page) {
-  const box = await page.locator('.capy-plane-editor').boundingBox();
+  const box = await page
+    .locator('.capy-graph-editor, .capy-plane-editor')
+    .boundingBox();
   if (!box) throw new Error('no plane');
   return (x: number, y: number) =>
     [box.x + x * box.width, box.y + y * box.height] as const;
@@ -102,7 +115,7 @@ type Vec = [number, number];
 /** A plane's marks' first points, in its units and on the page while it's open: the
  * editor opens at the card's scale with the card's middle in its own. */
 async function planePoints(page: Page, polar = false) {
-  const box = await page.locator('.capy-plane-editor').boundingBox();
+  const box = await planeEditor(page).boundingBox();
   if (!box) throw new Error('no plane');
   const { centre, points, ppu } = await page.evaluate((wanted) => {
     const root = document.querySelector('affine-edgeless-root') as unknown as {
@@ -367,14 +380,13 @@ test("a shape's switcher offers every shape, and Clear all empties a plane and t
   await expect
     .poll(async () => (await planePoints(page)).points)
     .toHaveLength(1);
-  const menu = page.locator('.capy-plane-editor .capy-menu-button');
-  await menu.click();
-  await page.getByRole('menuitem', { name: 'Clear all' }).click();
+  await (await planeMenu(page))
+    .getByRole('button', { name: 'Clear all' })
+    .click();
   await expect
     .poll(async () => (await planePoints(page)).points)
     .toHaveLength(0);
-  await menu.click();
-  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  await (await planeMenu(page)).getByRole('button', { name: 'Undo' }).click();
   await expect
     .poll(async () => (await planePoints(page)).points)
     .toHaveLength(1);
@@ -405,9 +417,9 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
 
   // One click only selects the card; the canvas pen never reaches the plane.
   await page.mouse.click(...card(0.5, 0.5));
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(planeEditor(page)).toHaveCount(0);
   await page.mouse.dblclick(...card(0.5, 0.5));
-  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect(planeEditor(page)).toBeVisible();
   const at = await onPlane(page);
 
   // A right click plots nothing.
@@ -425,8 +437,8 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
   ] as const)
     await page.mouse.click(...at(x, y));
   await expect.poll(() => marks(page)).toBe(1);
-  await page.locator('.capy-plane-editor .capy-menu-button').click();
-  await page.getByRole('menuitem', { name: 'Undo' }).click();
+  // Undo keeps the menu open; a click on the plane closes it and plots.
+  await (await planeMenu(page)).getByRole('button', { name: 'Undo' }).click();
   await page.mouse.click(...at(0.55, 0.3));
   await expect(
     page.getByRole('button', { name: 'Finish curve' })
@@ -454,7 +466,7 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
 
   // With no mark open, Escape does what Done does.
   await page.keyboard.press('Escape');
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(planeEditor(page)).toHaveCount(0);
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(empty);
 
   const saved = await save(page);
@@ -463,7 +475,7 @@ test('double click opens the plane: it plots, undoes each click, and Escape leav
 
   await page.mouse.dblclick(...card(0.5, 0.5));
   await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(planeEditor(page)).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -481,7 +493,7 @@ test('Escape ends the open mark first, and a mark with one point goes', async ({
   await page.mouse.click(...at(0.3, 0.6));
   await page.mouse.click(...at(0.4, 0.4));
   await page.keyboard.press('Escape');
-  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect(planeEditor(page)).toBeVisible();
   await expect.poll(() => marks(page)).toBe(1);
 
   await curve.click();
@@ -493,7 +505,7 @@ test('Escape ends the open mark first, and a mark with one point goes', async ({
   await curve.click();
   await page.mouse.click(...at(0.6, 0.6));
   await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(planeEditor(page)).toHaveCount(0);
   await expect.poll(() => marks(page)).toBe(1);
 });
 
@@ -520,13 +532,11 @@ test('undo inside the plane stops at what was done there', async ({ page }) => {
   await expect.poll(() => marks(page)).toBe(0);
   expect(await canvas(page)).toEqual(['plane', 'brush']);
   // Undo sits in the open plane's ☰ menu; Escape closes the menu first.
-  const planeMenu = page.locator('.capy-plane-editor .capy-menu');
-  await planeMenu.getByRole('button', { name: 'More' }).click();
-  await expect(
-    planeMenu.getByRole('menuitem', { name: 'Undo' })
-  ).toBeDisabled();
+  const menu = await planeMenu(page);
+  await expect(menu.getByRole('button', { name: 'Undo' })).toBeDisabled();
   await page.keyboard.press('Escape');
-  await expect(planeMenu.getByRole('menu')).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
+  await expect(planeEditor(page)).toBeVisible();
 
   // Both redo keys, whatever the Shift key does to the letter.
   await page.keyboard.press('Control+Shift+z');
@@ -542,8 +552,9 @@ test('undo inside the plane stops at what was done there', async ({ page }) => {
   await page.setViewportSize({ height: size.height - 120, width: size.width });
   await expect
     .poll(() =>
-      page
-        .locator('.capy-plane-editor canvas')
+      planeEditor(page)
+        .locator('canvas')
+        .first()
         .evaluate(
           (element) =>
             (element as HTMLCanvasElement).height /
@@ -662,17 +673,12 @@ test('in a plane, selected points move together, and the eraser takes what its r
   // label's symbol row (Epo 2026-11-13).
   await page.mouse.dblclick(...polar(0.3, 0.3));
   await page.keyboard.type('a');
-  await page
-    .locator('.capy-plane-symbols')
-    .getByRole('button', { name: 'x²' })
-    .click();
+  await planeEditor(page).getByRole('button', { name: 'x²' }).click();
   await page.keyboard.press('Enter');
   await expect
     .poll(async () => (await planePoints(page, true)).points)
     .toHaveLength(3);
-  await expect(
-    page.locator('.capy-plane-editor .capy-chart-label')
-  ).toHaveCount(0);
+  await expect(planeEditor(page).getByLabel('Type a label')).toHaveCount(0);
 });
 
 test("a label picked alone wears the board's frame, whose corner sizes it, and the plane card turns", async ({
@@ -784,8 +790,9 @@ test("a selected line's point still moves alone, and Fit shows ten units of an e
     });
 
   // Epo 2026-11-13: Fit on nothing showed one unit across the screen.
-  await page.locator('.capy-plane-editor .capy-menu-button').click();
-  await page.getByRole('menuitem', { name: 'Fit to screen' }).click();
+  await (await planeMenu(page))
+    .getByRole('button', { name: 'Fit to screen' })
+    .click();
   await page.getByRole('button', { name: 'Done' }).click();
   const viewport = page.viewportSize();
   if (!viewport) throw new Error('no viewport');
@@ -1133,15 +1140,18 @@ test('a plane card has its pen and size, and fits its marks', async ({
   await page.mouse.click(...at(0.5, 0.5));
   const toolbar = page.locator('affine-toolbar-widget');
   await expect(toolbar.locator('.label', { hasText: 'Connect' })).toBeVisible();
+  // A card starts at Custom size (Epo 2026-11-18): Fit to size is turned on.
+  await toolbar.locator('.label', { hasText: 'Custom size' }).click();
+  await expect(
+    toolbar.locator('.label', { hasText: 'Fit to size' })
+  ).toBeVisible();
   await toolbar.getByLabel('Edit the plane').click();
-  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect(planeEditor(page)).toBeVisible();
 
   // Plotted past the card's right edge, zoomed out so it's on the screen.
   const inside = await onPlane(page);
   // Zoom out sits in the open plane's ☰ menu.
-  const planeMenu = page.locator('.capy-plane-editor .capy-menu');
-  await planeMenu.getByRole('button', { name: 'More' }).click();
-  await planeMenu
+  await (await planeMenu(page))
     .getByRole('button', { exact: true, name: 'Zoom out' })
     .click();
   await page.getByRole('button', { exact: true, name: 'Point' }).click();
@@ -1380,13 +1390,13 @@ test('a phone has the menu at the top and the toolbar at full width', async ({
     await page.locator('edgeless-toolbar-widget smooth-corner').boundingBox()
   ).toMatchObject({ width: 344, x: 8 });
 
-  // The open plane's nine tools fit their panel.
+  // The open plane's nine tools fit one row.
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
-  const row = page.locator('.capy-plane-row');
-  await expect(row.getByRole('button')).toHaveCount(9);
-  expect(
-    await row.evaluate((element) => element.scrollWidth - element.clientWidth)
-  ).toBeLessThanOrEqual(0);
+  const tools = planeEditor(page).getByRole('toolbar').getByRole('button');
+  await expect(tools).toHaveCount(9);
+  const first = await tools.first().boundingBox();
+  const last = await tools.last().boundingBox();
+  expect(last?.y).toBe(first?.y);
 });
 
 test.describe('with a finger', () => {
@@ -1405,10 +1415,10 @@ test.describe('with a finger', () => {
     ).toBeVisible();
     await page.waitForTimeout(600);
     await page.touchscreen.tap(...card(0.5, 0.5));
-    await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+    await expect(planeEditor(page)).toHaveCount(0);
     await page.waitForTimeout(100);
     await page.touchscreen.tap(...card(0.52, 0.51));
-    await expect(page.locator('.capy-plane-editor')).toBeVisible();
+    await expect(planeEditor(page)).toBeVisible();
 
     // Plotted by tapping, ended by the button, undone by the real one over the plane.
     const at = await onPlane(page);
@@ -1421,9 +1431,14 @@ test.describe('with a finger', () => {
     await page.getByRole('button', { name: 'Finish curve' }).tap();
     await expect.poll(() => marks(page)).toBe(1);
     // Undo is in the menu, which stays open for it, as for the zoom row.
-    await page.locator('.capy-plane-editor .capy-menu-button').tap();
+    await planeEditor(page)
+      .getByRole('button', { exact: true, name: 'More' })
+      .tap();
     for (const _ of [1, 2])
-      await page.getByRole('menuitem', { name: 'Undo' }).tap();
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Undo' })
+        .tap();
     await expect.poll(() => marks(page)).toBe(0);
     await page.getByRole('button', { name: 'Done' }).tap();
 
@@ -1774,7 +1789,7 @@ test("a plane's editor is in the canvas's URL: Back closes it, and a missing one
   );
   await placePiece(page, 'capy-graph-slot', 'cart');
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
-  const editor = page.locator('.capy-plane-editor');
+  const editor = planeEditor(page);
   await expect(editor).toBeVisible();
   await expect(page).toHaveURL(/[?&]open=/);
   await page.goBack();
@@ -1782,7 +1797,7 @@ test("a plane's editor is in the canvas's URL: Back closes it, and a missing one
   await page.goForward();
   await expect(editor).toBeVisible();
   // Done steps back out of it.
-  await page.locator('.capy-editor-done').click();
+  await editor.getByRole('button', { exact: true, name: 'Done' }).click();
   await expect(page).not.toHaveURL(/[?&]open=/);
   // A link to something no longer on the canvas.
   await page.goto('/workspaces/ws_bio?view=canvas&open=gone-card');
@@ -1858,7 +1873,8 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
   );
   // MathLive takes the keyboard a moment after the click.
   const typeRow = async (text: string) => {
-    await page.locator('.capy-plane-list li[data-new] math-field').click();
+    // The list's last row is the empty one.
+    await planeEditor(page).locator('math-field').last().click();
     await page.waitForTimeout(250);
     await page.keyboard.type(text);
     await page.keyboard.press('Enter');
@@ -1876,7 +1892,7 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
   // The answer board has no list, so an answer is drawn rather than typed.
   await openBoard(page);
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
-  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await expect(planeEditor(page)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Objects' })).toHaveCount(0);
 });
 
@@ -2271,10 +2287,10 @@ test('the workspace canvas stays in the URL at every width', async ({
 }) => {
   test.slow();
   // Pressed with a page open in the centre, it takes that page's place in the URL.
-  await page.goto('/workspaces/ws_bio?study=practice');
+  await page.goto('/workspaces/ws_bio/study/practice');
   await page.getByRole('button', { name: 'Canvas' }).click();
   await expect(page).toHaveURL(/view=canvas/);
-  await expect(page).not.toHaveURL(/study=/);
+  await expect(page).not.toHaveURL(/\/study\//);
   const board = page.locator('.capy-board');
   await board.waitFor();
 
@@ -2365,7 +2381,7 @@ test('a saved board leaves its undo history out, and a teacher opens it read-onl
   expect(board && card[0] - board.x).toBeGreaterThanOrEqual(371);
   const at = await onCard(page);
   await page.mouse.dblclick(...at(0.5, 0.5));
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(planeEditor(page)).toHaveCount(0);
   expect(await inkIn(page, await toImage(page))).toBeGreaterThan(0);
 
   // The board's styles leave the app's own truncate alone.

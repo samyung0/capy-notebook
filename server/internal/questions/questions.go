@@ -37,24 +37,6 @@ type Policy struct {
 // workspace. Empty refuses such links.
 var QuizBankAssetsURL string
 
-var termTokens = regexp.MustCompile(`(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[A-Za-z]+|[+\-*/^(),]`)
-var whitespace = regexp.MustCompile(`\s`)
-
-func validTerm(term string) bool {
-	tokens := termTokens.FindAllString(term, -1)
-	if len(tokens) == 0 || strings.Join(tokens, "") != whitespace.ReplaceAllString(term, "") {
-		return false
-	}
-	for _, token := range tokens {
-		if token[0] >= 'A' && token[0] <= 'Z' || token[0] >= 'a' && token[0] <= 'z' {
-			if !enum(token, "x pi e sin cos tan asin acos atan sqrt abs exp log ln floor ceil pow min max") {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func tableCells(value any) bool {
 	cells, ok := array(value, 1, fieldlimits.QuestionTableColumns)
 	if !ok {
@@ -783,9 +765,11 @@ func graph(b map[string]any) error {
 		e := raw.(map[string]any)
 		required, optional := "type id", "hidden"
 		switch e["type"] {
-		case "functiongraph":
-			required += " term"
-			optional += " domain dash"
+		case "expression":
+			// A formula row's LaTeX as typed (Epo 2026-11-18): browsers read
+			// what it draws, so no grammar is checked here.
+			required += " latex"
+			optional += " dash"
 		case "point":
 			required += " coords"
 			optional += " name"
@@ -850,16 +834,9 @@ func graph(b map[string]any) error {
 			}
 		}
 		switch e["type"] {
-		case "functiongraph":
-			term, ok := e["term"].(string)
-			if !ok || len(term) > fieldlimits.QuestionGraphTerm || !validTerm(term) {
-				return fail("invalid function term")
-			}
-			if d, exists := e["domain"]; exists {
-				v, ok := tuple(d, 2)
-				if !ok || v[0] >= v[1] {
-					return fail("invalid function domain")
-				}
+		case "expression":
+			if !str(e["latex"], fieldlimits.QuestionGraphExpression, true) {
+				return fail("invalid expression")
 			}
 		case "point", "text":
 			if _, ok := tuple(e["coords"], 2); !ok {

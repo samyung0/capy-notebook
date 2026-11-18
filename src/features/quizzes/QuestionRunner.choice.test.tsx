@@ -109,8 +109,9 @@ it('answers matching on the grid, storing the picked option text per row', async
   expect(pick?.cell.checked).toBe(true);
 });
 
-it('reviews matching on the grid: a wrong row red with its correct cell ringed', async () => {
+it('reviews matching on the grid: a wrong row red, the correct answer listed under it', async () => {
   const question = structuredClone(matching);
+  question.parts[0].marks = 2;
   question.parts[0].awarded = 1;
   question.parts[0].itemResults = [true, false];
   root = createRoot(host);
@@ -127,9 +128,10 @@ it('reviews matching on the grid: a wrong row red with its correct cell ringed',
   expect(right[0].cell.className).toContain('bg-tint-success-fg');
   expect(wrong[2].cell.checked).toBe(true);
   expect(wrong[2].cell.className).toContain('bg-tint-error-fg');
-  // The correct cell the row missed: a green ring, not filled.
-  expect(wrong[1].cell.className).toContain('border-tint-success-fg');
-  expect(wrong[1].cell.className).not.toContain('bg-tint-success-fg');
+  // Only the member's own picks are marked (Epo 2026-11-18); the correct
+  // answer lists apart.
+  expect(wrong[1].cell.className).not.toContain('tint-success-fg');
+  expect(host.textContent).toContain('Correct answer');
   expect(
     gridRows()
       .flat()

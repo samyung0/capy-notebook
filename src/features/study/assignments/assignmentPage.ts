@@ -1,5 +1,9 @@
 import type { Assignment } from '@/api/types';
-import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
+import {
+  type AssignmentsSearch,
+  assignmentsLink,
+  type ReportTab,
+} from '../studyRoutes';
 
 type ReportKind = Pick<Assignment, 'draft' | 'kind'>;
 
@@ -44,17 +48,9 @@ export function assignmentPage(
   a: Pick<Assignment, 'id' | 'workspaceId'>,
   search: Omit<AssignmentsSearch, 'assignment'> = {}
 ) {
-  const opened = {
-    ...search,
-    assignment: a.id,
-    study: 'assignments' as const,
-  };
+  const opened = { ...search, assignment: a.id };
   return a.workspaceId
-    ? {
-        params: { workspaceId: a.workspaceId },
-        search: opened,
-        to: '/workspaces/$workspaceId' as const,
-      }
+    ? assignmentsLink(a.workspaceId, opened)
     : { search: opened, to: '/todo/task' as const };
 }
 

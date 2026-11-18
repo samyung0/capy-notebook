@@ -10,6 +10,7 @@ import {
   PopoverContent,
 } from '@/components/ui/Popover';
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -217,9 +218,9 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
           title: m.tour_quiz_title,
         },
     {
-      at: inWorkspacePage,
+      at: (path) => path === `/workspaces/${workspaceId}/study/practice`,
       body: m.tour_study_body,
-      go: () => inWorkspace({ study: 'practice' }),
+      go: () => navigate(studyLink(workspaceId, 'practice')),
       spot: centrePanel,
       title: m.tour_study_title,
     },

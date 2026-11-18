@@ -69,9 +69,15 @@
             "coords": [4, -4]
           },
           {
-            "type": "functiongraph",
+            "type": "expression",
             "id": "f",
-            "term": "0.2*x^2-3"
+            "latex": "y=0.2x^{2}-3"
+          },
+          {
+            "type": "expression",
+            "id": "q",
+            "latex": "x^{2}+y^{2}=4",
+            "dash": true
           },
           {
             "type": "line",

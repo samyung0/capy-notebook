@@ -1,8 +1,13 @@
 /* Draws a graph in the canvas plane's look (Epo 2026-11-16, D5/D14): its grid
- * with minor lines, axes whose numbers leave with them, haloed numbers and ink
+ * with minor lines, axes whose numbers keep to the edge they leave by, haloed numbers and ink
  * that keeps its thickness at any zoom. One renderer with no per-surface
  * switches: the editors, previews and the SVG export all draw through here. */
-import { curveSegments, functionRuns } from './curves';
+import {
+  curveSegments,
+  equationRuns,
+  functionRuns,
+  markEquation,
+} from './curves';
 import { formulaAt, formulaBox, type ReplayContext, replay } from './formula';
 import {
   type Frame,
@@ -53,6 +58,8 @@ const ARROW_SPREAD = Math.PI / 7;
 /** An angle's arc and right-angle square, in screen pixels. */
 const ANGLE_RADIUS = 24;
 const DASH = [7, 5];
+/** An implicit curve's grid, in screen pixels. */
+const EQUATION_CELL = 4;
 const SHADE = 0.15;
 /** Label text wraps at this width in pixels (Epo 2026-10-17). */
 const LABEL_WIDTH = 200;
@@ -175,7 +182,9 @@ function drawSquareGrid(at: Screen, board: Graph['board']) {
     grid(stepX, stepY, paper.major);
   }
   if (!board.axis) return;
-  // Numbers sit by their axis and leave with it (Epo 2026-11-06, 2026-11-16).
+  // Numbers sit by their axis; one gone past an edge leaves them on that edge,
+  // as Desmos keeps them (Epo 2026-11-18, "do what other apps do"; GeoGebra's
+  // "Stick to edge").
   const axisX = X(0);
   const axisY = Y(0);
   ctx.strokeStyle = paper.axis;
@@ -193,14 +202,32 @@ function drawSquareGrid(at: Screen, board: Graph['board']) {
   ctx.font = '12px Arial, sans-serif';
   ctx.fillStyle = paper.number;
   ctx.textBaseline = 'middle';
-  // An axis far off the view has no numbers to place.
-  if (Math.abs(axisY - frame.y) < frame.h * 4)
-    for (const x of ticks(left, right, stepX))
-      haloText(at, axisNumber(x, stepX), X(x), axisY + 14, 'center');
-  if (Math.abs(axisX - frame.x) < frame.w * 4)
-    for (const y of ticks(bottom, top, stepY))
-      haloText(at, axisNumber(y, stepY), axisX - 7, Y(y), 'right');
+  const [frameRight, frameBottom] = [frame.x + frame.w, frame.y + frame.h];
+  // Under the x axis, kept between the top and bottom edges.
+  const numbersY = Math.min(
+    Math.max(axisY + 14, frame.y + 10),
+    frameBottom - 8
+  );
+  for (const x of ticks(left, right, stepX))
+    haloText(at, axisNumber(x, stepX), X(x), numbersY, 'center');
+  for (const y of ticks(bottom, top, stepY)) {
+    const text = axisNumber(y, stepY);
+    // Left of the y axis; past the right edge, on it; with no room left of
+    // the axis (near or past the left edge), right of it on the frame.
+    if (axisX > frameRight) {
+      haloText(at, text, frameRight - EDGE_GAP, Y(y), 'right');
+      continue;
+    }
+    // 12 px Arial digits are under 7 px wide: an estimate, as previews have
+    // nothing to measure with and draw many.
+    if (axisX - 7 - text.length * 7 < frame.x + EDGE_GAP)
+      haloText(at, text, Math.max(axisX + 7, frame.x + EDGE_GAP), Y(y), 'left');
+    else haloText(at, text, axisX - 7, Y(y), 'right');
+  }
 }
+
+/** The room between a number pinned to an edge and that edge. */
+const EDGE_GAP = 4;
 
 /** Rings at the grid's steps round the origin, numbered along 0°, and spokes with their
  * angles where they leave the frame. */
@@ -509,16 +536,24 @@ function drawElement(
   ctx.lineWidth = width;
   ctx.setLineDash('dash' in element && element.dash ? DASH : []);
   switch (element.type) {
-    case 'functiongraph': {
-      const left = view.left;
+    case 'expression': {
       const right = view.left + frame.w / view.ppuX;
-      const runs = functionRuns(
-        element,
-        left,
-        right,
-        2 / view.ppuX,
-        frame.h / view.ppuY
-      );
+      const bottom = view.top - frame.h / view.ppuY;
+      // A function sampled every two pixels across; an implicit curve on a
+      // grid every few (it redraws on every pan frame).
+      const runs = markEquation(element.latex)
+        ? equationRuns(
+            element,
+            [view.left, bottom, right, view.top],
+            [EQUATION_CELL / view.ppuX, EQUATION_CELL / view.ppuY]
+          )
+        : functionRuns(
+            element,
+            view.left,
+            right,
+            2 / view.ppuX,
+            frame.h / view.ppuY
+          );
       ctx.beginPath();
       for (const run of runs) {
         let drawing = false;

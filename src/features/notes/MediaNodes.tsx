@@ -571,7 +571,7 @@ function YouTubeLinkEditor({
             aria-invalid={invalid}
             aria-label={m.editor_youtube_link()}
             autoFocus
-            className="h-7 py-1 font-medium text-sm"
+            className="font-medium text-sm"
             leftIcon="link"
             onChange={(event) => {
               setUrl(event.target.value);
@@ -581,7 +581,7 @@ function YouTubeLinkEditor({
             value={url}
             variant="transparent"
             wrapperClassName={cn(
-              'rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4',
+              'h-7 rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4',
               invalid && 'ring-1 ring-solid-error'
             )}
           />

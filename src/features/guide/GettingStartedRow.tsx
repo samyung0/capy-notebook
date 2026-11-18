@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/Popover';
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
@@ -26,9 +27,12 @@ const STEP_LABEL: Record<GettingStartedStep, () => string> = {
   upload: m.getting_started_step_upload,
 };
 
-const STEP_SEARCH: Record<GettingStartedStep, WorkspaceOpenSearch> = {
+/** A step's action in the workspace: Practice is its own page. */
+const STEP_SEARCH: Record<
+  Exclude<GettingStartedStep, 'practice'>,
+  WorkspaceOpenSearch
+> = {
   chat: { chat: 'new' },
-  practice: { study: 'practice' },
   upload: { add: 'upload' },
 };
 
@@ -105,16 +109,17 @@ function ListPopover({
   const target = workspaceId ?? workspaces?.[0]?.id;
   const total = GETTING_STARTED_STEPS.length;
   const done = list.done.length;
-  const go = (search: WorkspaceOpenSearch) => {
+  const go = (step: GettingStartedStep) => {
     setOpen(false);
     onNavigate?.();
-    if (target)
+    if (!target) void navigate({ to: '/' });
+    else if (step === 'practice') void navigate(studyLink(target, 'practice'));
+    else
       void navigate({
         params: { workspaceId: target },
-        search,
+        search: STEP_SEARCH[step],
         to: '/workspaces/$workspaceId',
       });
-    else void navigate({ to: '/' });
   };
 
   return (
@@ -166,7 +171,7 @@ function ListPopover({
                 <button
                   className="group flex h-9 w-full cursor-pointer items-center gap-3 rounded-button px-2 text-left font-medium text-fg-muted hover:bg-surface-hover-bg hover:text-fg disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-fg-muted"
                   disabled={finished}
-                  onClick={() => go(STEP_SEARCH[step])}
+                  onClick={() => go(step)}
                   type="button"
                 >
                   <span

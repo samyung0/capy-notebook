@@ -74,6 +74,7 @@ import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { FrostedSurface } from '@/theme/theme';
 import { useOptionalEditorRuntime } from '../EditorRuntime';
+import { EmbedUndoLender } from '../embedUndo';
 import {
   FLASHCARD_BACK_CLASS,
   FLASHCARD_CLASS,
@@ -390,17 +391,20 @@ export function MaterialRefElement(props: PlateElementProps) {
     <PlateElement {...props} className="my-4">
       <div contentEditable={false}>
         {materialId && canEdit ? (
-          <AppEmbedEdit
-            materialId={materialId}
-            // The last question or card removed takes the block with it;
-            // removing the block trashes the item, and Undo restores both.
-            onEmpty={() => {
-              const at = editor.api.findPath(props.element);
-              if (at) editor.tf.removeNodes({ at });
-            }}
-            ownerId={owner}
-            refKind={refKind}
-          />
+          // Its history is the note's Undo and Redo once pressed (embedUndo).
+          <EmbedUndoLender>
+            <AppEmbedEdit
+              materialId={materialId}
+              // The last question or card removed takes the block with it;
+              // removing the block trashes the item, and Undo restores both.
+              onEmpty={() => {
+                const at = editor.api.findPath(props.element);
+                if (at) editor.tf.removeNodes({ at });
+              }}
+              ownerId={owner}
+              refKind={refKind}
+            />
+          </EmbedUndoLender>
         ) : materialId ? (
           <AppEmbedView materialId={materialId} refKind={refKind} />
         ) : (

@@ -9,7 +9,7 @@ test('closing an assignment ends the attempt open on the page, keeping its answe
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_paper');
+  await page.goto('/workspaces/ws_bio/assignments?assignment=as_paper');
   // Before you start, as it has a time limit, over the notice told once.
   await page
     .getByRole('button', { exact: true, name: m.assignment_start() })

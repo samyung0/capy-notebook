@@ -9,7 +9,11 @@ export const surfaceAreaGraph: GraphBlock = {
   description:
     'Surface-area-to-volume ratio, y = 6/x, for a cube-shaped cell. A is (1, 6), B is (2, 3), and C is (3, 2).',
   elements: [
-    { domain: [1, 6], id: 'ratio', term: '6/x', type: 'functiongraph' },
+    {
+      id: 'ratio',
+      latex: 'y=\\frac{6}{x}\\left\\lbrace 1\\le x\\le 6\\right\\rbrace',
+      type: 'expression',
+    },
     { coords: [1, 6], id: 'a', name: 'A', type: 'point' },
     { coords: [2, 3], id: 'b', name: 'B', type: 'point' },
     { coords: [3, 2], id: 'c', name: 'C', type: 'point' },

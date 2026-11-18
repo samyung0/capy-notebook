@@ -29,6 +29,7 @@ import {
   TopicsCell,
 } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
+import type { AssignmentsSearch } from '../studyRoutes';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
 import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
@@ -39,38 +40,9 @@ import { NewAssignmentMenu } from './NewAssignmentMenu';
 import { OwnTaskDetails } from './TodoDialog';
 import { useAssignmentStart } from './useAssignmentStart';
 
-/** A report's tab in the URL: a graded quiz's Questions, Responses (`approve`
- * its Approve AI grades view) and Settings; a task's Members, Settings and
- * Preview. */
-export type ReportTab =
-  | 'questions'
-  | 'responses'
-  | 'approve'
-  | 'members'
-  | 'settings'
-  | 'preview';
-
-/** The Assignments page's URL, under `study=assignments`. `assignment` opens
- * one: its report for a class's owner and teaching assistants (unless `own`, the
- * page of one given to them), its page for a member. `attempt` opens a try: a
- * running one, or results, a member's for staff. `tab`, `by`, `question` and
- * `member` are a report's view (todo-study-tracking.md §9, Links); `by`
- * is Responses' By question (By member without it). */
-export type AssignmentsSearch = {
-  assignment?: string;
-  attempt?: string;
-  member?: string;
-  own?: true;
-  question?: string;
-  by?: 'question';
-  /** Beside `attempt` and `member`: the profile's Topics tab to return to. */
-  show?: 'topics';
-  tab?: ReportTab;
-};
-
 /** The workspace's To do, Assignments to a class's staff (boards W1, W2 for
  * staff, W3 for members; its own page on the rail since Epo 2026-11-11), the
- * workspace's centre page while `study=assignments` is in its URL. */
+ * workspace's centre page at `assignments`. */
 export function AssignmentsPage({
   search,
   workspaceId,
@@ -191,10 +163,7 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { mutate: remove } = useDeleteAssignment(workspaceId);
   const open = (id: string) =>
-    navigate({
-      search: { assignment: id, study: 'assignments' as const },
-      to: '.',
-    });
+    navigate({ search: { assignment: id }, to: '.' });
   // Open ones first, then closed ones behind Show closed, a page at a time.
   const rows = data?.pages.flatMap((page) => page.items) ?? [];
   const topicName = (id: string) =>
@@ -467,7 +436,6 @@ function MemberList({ workspaceId }: { workspaceId: string }) {
         ...(row.kind === 'marked' && row.mine?.countedAttemptId
           ? { attempt: row.mine.countedAttemptId }
           : {}),
-        study: 'assignments' as const,
       },
       to: '.',
     });

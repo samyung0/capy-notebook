@@ -76,13 +76,13 @@ export function LinkFloatingToolbar() {
             <Input
               aria-invalid={invalid}
               aria-label={m.editor_link_url()}
-              className="h-7 py-1 font-medium text-sm"
+              className="font-medium text-sm"
               leftIcon="link"
               maxLength={LINK_URL_MAX}
               placeholder="https://example.com"
               variant="transparent"
               wrapperClassName={cn(
-                'rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4',
+                'h-7 rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4',
                 invalid && 'ring-1 ring-solid-error'
               )}
             />
@@ -90,14 +90,14 @@ export function LinkFloatingToolbar() {
           <Separator className="my-1" />
           <Input
             aria-label={m.editor_link_text()}
-            className="h-7 py-1 font-medium text-sm"
+            className="font-medium text-sm"
             leftIcon="alignLeft"
             maxLength={LINK_TEXT_MAX}
             onChange={(event) => setOption('text', event.target.value)}
             placeholder={m.editor_link_text_placeholder()}
             value={text}
             variant="transparent"
-            wrapperClassName="rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4"
+            wrapperClassName="h-7 rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4"
           />
           <Separator className="my-1" />
           <div className="flex items-center justify-end gap-0">

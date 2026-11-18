@@ -14,6 +14,7 @@ import {
   type DrawingBoardOptions,
   mountDrawingBoard,
 } from '@/features/blocksuite/drawingBoard';
+import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import {
@@ -71,6 +72,8 @@ export function useCanvasBoard(
     gone?: () => boolean;
     /** The board as it mounts, and null as it goes. */
     onBoard?: (board: CanvasBoard | null) => void;
+    /** Where its plane cards open (`usePlaneEditor`). */
+    openPlane?: PlaneOpener;
     /** A workspace canvas's quizzes and sets for its cards. */
     workspace?: DrawingBoardOptions['workspace'];
     /** The page's URL for what fills the screen (Epo 2026-11-13): a plane's or
@@ -285,6 +288,7 @@ export function useCanvasBoard(
           // Done: the URL still names it. Closed by the URL: it no longer does.
           else if (before && link.opened === before) link.close();
         },
+        openPlane: latest.current.openPlane,
         saved,
         workspace: latest.current.workspace,
       });

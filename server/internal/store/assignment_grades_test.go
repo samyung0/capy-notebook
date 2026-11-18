@@ -43,7 +43,7 @@ func TestGradedAssignment(t *testing.T) {
 		t.Fatalf("a member's grade = %v", err)
 	}
 	var input *AssignmentInputError
-	for _, bad := range []float64{20.5, 3.25} {
+	for _, bad := range []float64{20.5, 3.25, -1} {
 		if err := grade(f.user, f.viewer, bad); !errors.As(err, &input) {
 			t.Fatalf("grade %v = %v", bad, err)
 		}

@@ -81,7 +81,7 @@ describe('checkSavedBoard', () => {
               id: 'v',
               type: 'polyline',
             },
-            { id: 'y', term: 'x^2', type: 'functiongraph' },
+            { id: 'y', latex: 'y=x^{2}', type: 'expression' },
           ]),
           ppu: 30,
           type: 'plane',
@@ -154,7 +154,7 @@ describe('checkSavedBoard', () => {
         kind: 'expression',
         latex,
         style: {},
-        ...readRow(latex, latex),
+        ...readRow(latex),
       })
     );
     const { elements, errors } = buildElements(rows);

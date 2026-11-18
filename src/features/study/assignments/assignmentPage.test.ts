@@ -7,11 +7,11 @@ it("opens a task's pages in its workspace, or on To do's page with none", () => 
     assignmentPage({ id: 'as1', workspaceId: 'ws1' }, { tab: 'approve' })
   ).toEqual({
     params: { workspaceId: 'ws1' },
-    search: { assignment: 'as1', study: 'assignments', tab: 'approve' },
-    to: '/workspaces/$workspaceId',
+    search: { assignment: 'as1', tab: 'approve' },
+    to: '/workspaces/$workspaceId/assignments',
   });
   expect(assignmentPage({ id: 'as2', workspaceId: '' })).toEqual({
-    search: { assignment: 'as2', study: 'assignments' },
+    search: { assignment: 'as2' },
     to: '/todo/task',
   });
 });

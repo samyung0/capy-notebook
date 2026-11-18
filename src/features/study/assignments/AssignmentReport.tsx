@@ -34,7 +34,6 @@ import {
   EditorSaveStatus,
 } from '@/features/materials/CenterContentHeader';
 import { answerLabels } from '@/features/questions/editorFields';
-import { fullPartLabel } from '@/features/questions/groups';
 import { stripMarks } from '@/features/questions/parseMarkedText';
 import {
   AnswerView,
@@ -56,6 +55,7 @@ import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { blockText, questionLine } from '../practice/practiceText';
 import { ListRow, PracticeFrame, Td, Th } from '../practice/studyPage';
+import type { AssignmentsSearch, ReportTab } from '../studyRoutes';
 import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
 import {
@@ -64,13 +64,13 @@ import {
   QuizFilePreview,
 } from './AssignmentPreview';
 import { AssignmentSettingsTab, PublishButton } from './AssignmentSettingsTab';
-import type { AssignmentsSearch, ReportTab } from './AssignmentsPage';
 import { fileLink, reportView } from './assignmentPage';
 import {
   dayLabel,
   isGraded,
   markText,
   percentText,
+  questionRowName,
   takesLateWork,
 } from './assignmentText';
 import { GradedQuizQuestions } from './GradedQuizQuestions';
@@ -83,8 +83,6 @@ import { PreviewButton } from './PreviewButton';
 
 /** Rows the report opens with, as the board draws them. */
 const OPEN_FIRST = 3;
-
-const TRAILING_DOT = /\.$/;
 
 const CHIP =
   'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
@@ -122,11 +120,7 @@ export function AssignmentReport({
   const { approving, byQuestion, tab, tabs } = reportView(assignment, search);
   const go = (next: AssignmentsSearch) =>
     navigate({
-      search: {
-        assignment: assignment.id,
-        study: 'assignments' as const,
-        ...next,
-      },
+      search: { assignment: assignment.id, ...next },
       to: '.',
     });
   const pickTab = (value: string) =>
@@ -292,10 +286,9 @@ export function AssignmentReport({
             <div className="mt-4" data-report-head>
               <BackToAssignments
                 label={m.assignment_tab_responses()}
-                search={{
-                  assignment: assignment.id,
-                  study: 'assignments' as const,
-                  tab: 'responses' as const,
+                link={{
+                  search: { assignment: assignment.id, tab: 'responses' },
+                  to: '.',
                 }}
               />
             </div>
@@ -819,12 +812,7 @@ function QuestionReportRow({
     : question.parts[0];
   const marks = part ? (source?.marks ?? 0) : questionMarks(question);
   const type = source?.answer.type;
-  const label = part ? fullPartLabel(question, part.partId) : '';
-  const name = label
-    ? label.startsWith('(')
-      ? `Q${number} ${label}`
-      : `Q${number}.${label.replace(TRAILING_DOT, '')}`
-    : `Q${number}`;
+  const name = questionRowName(number, question, part?.partId);
   const meta = `${name} · ${type ? answerLabels[type]() : ''} · ${
     marks === 1
       ? m.question_ui_one_mark()

@@ -4,8 +4,8 @@ import { cn } from '@/lib/cn';
 import { TextView } from './TextView';
 
 /** How a cell reads: picked while answering, a correct cell in the editor,
- * and once checked a right pick, a wrong one or the correct cell missed. */
-type CellState = 'picked' | 'correct' | 'right' | 'wrong' | 'missed';
+ * and once checked a right pick or a wrong one. */
+type CellState = 'picked' | 'correct' | 'right' | 'wrong';
 
 function cellState(
   picked: boolean | undefined,
@@ -15,8 +15,9 @@ function cellState(
   if (picked === undefined) return correct ? 'correct' : undefined;
   // No key: a member answering.
   if (correct === undefined) return picked ? 'picked' : undefined;
+  // Checked: only the member's own picks are marked; the correct answer
+  // lists apart under the grid (Epo 2026-11-18).
   if (picked) return correct ? 'right' : 'wrong';
-  return correct ? 'missed' : undefined;
 }
 
 /** A cell's accessible name: "row: column", with what a checked answer or a
@@ -32,17 +33,14 @@ function cellName(
       return m.question_ui_grid_cell_right({ column, row });
     case 'wrong':
       return m.question_ui_grid_cell_wrong({ column, row });
-    case 'missed':
-      return m.question_ui_grid_cell_answer({ column, row });
     case 'correct':
       if (readOnly) return m.question_ui_grid_cell_answer({ column, row });
   }
   return m.question_ui_grid_cell({ column, row });
 }
 
-/** The mark beside a checked cell: right or the missed answer ✓, wrong ×. */
+/** The mark beside a checked pick: right ✓, wrong ×. */
 const GLYPHS: Partial<Record<CellState, string>> = {
-  missed: '✓',
   right: '✓',
   wrong: '×',
 };
@@ -57,8 +55,8 @@ const GLYPHS: Partial<Record<CellState, string>> = {
  *   click): correct cells fill green.
  * - A member answering passes `value` and `onPick`: picks fill dark.
  * - A checked answer passes `value` and `correct` with no `onPick`: a right
- *   pick fills green, a wrong one red, a missed correct cell gets a green ring,
- *   each with a ✓ or × beside it and its state in its name.
+ *   pick fills green, a wrong one red, each with a ✓ or × beside it and its
+ *   state in its name; the correct answer lists apart (Epo 2026-11-18).
  *
  * Without `onPick` it only reads: its cells stay focusable (aria-disabled,
  * not disabled), so a screen reader walks the grid. Rows are banded; on a
@@ -143,15 +141,12 @@ export function MatchingGrid({
                     className={cn(
                       'size-4.5 cursor-pointer appearance-none rounded-full border-2 border-line-strong bg-surface outline-none transition-colors focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-offset-2 aria-disabled:cursor-default',
                       !(readOnly || state) && 'hover:border-fg-muted',
-                      state &&
-                        state !== 'missed' &&
-                        'shadow-[inset_0_0_0_3px_var(--color-surface)]',
+                      state && 'shadow-[inset_0_0_0_3px_var(--color-surface)]',
                       state === 'picked' && 'border-fg bg-fg',
                       (state === 'correct' || state === 'right') &&
                         'border-tint-success-fg bg-tint-success-fg',
                       state === 'wrong' &&
-                        'border-tint-error-fg bg-tint-error-fg',
-                      state === 'missed' && 'border-tint-success-fg'
+                        'border-tint-error-fg bg-tint-error-fg'
                     )}
                     name={`${id}-${r}`}
                     onChange={() => onPick?.(r, c)}

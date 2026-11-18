@@ -1,6 +1,6 @@
 {
-  "name": "graph-code-rejected",
-  "valid": false,
+  "name": "graph-expressions",
+  "valid": true,
   "policy": {},
   "question": {
     "id": "q1",
@@ -14,29 +14,31 @@
         },
         "elements": [
           {
-            "type": "point",
-            "id": "a",
-            "coords": [0, 0]
-          },
-          {
-            "type": "point",
-            "id": "b",
-            "coords": [1, 1]
-          },
-          {
-            "type": "line",
-            "id": "line",
-            "points": ["a", "b"]
-          },
-          {
-            "type": "functiongraph",
+            "type": "expression",
             "id": "f",
-            "term": "x;alert(1)"
+            "latex": "f\\left(x\\right)=\\frac{1}{2}x^{2}-3"
+          },
+          {
+            "type": "expression",
+            "id": "g",
+            "latex": "y=\\sqrt{x}\\left\\lbrace 0\\le x\\le 4\\right\\rbrace",
+            "dash": true
+          },
+          {
+            "type": "expression",
+            "id": "h",
+            "latex": "x^{2}-y^{2}=0"
+          },
+          {
+            "type": "expression",
+            "id": "k",
+            "latex": "x=3",
+            "hidden": true
           }
         ],
         "width": 320,
         "height": 190,
-        "description": "A graph"
+        "description": "Formula rows as typed: a function, a restricted root, crossing lines and a vertical line"
       }
     ],
     "parts": [

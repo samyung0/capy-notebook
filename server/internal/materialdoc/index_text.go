@@ -392,9 +392,9 @@ func labelled(head, tail string) string {
 	return head + ": " + tail
 }
 
-// graphElementText is one graph element as stored: its type, then its term,
-// points (by name, else coordinates), text, label or formula's LaTeX. An
-// element naming a point that is gone is left out, as a merged graph is
+// graphElementText is one graph element as stored: its type, then a formula
+// row's LaTeX as typed, its points (by name, else coordinates), text, label
+// or formula's LaTeX. An element naming a point that is gone is left out, as a merged graph is
 // repaired on read, and so is a mark without text (a stroke, curve or
 // ellipse).
 func graphElementText(e map[string]any, points map[string]string) string {
@@ -414,15 +414,8 @@ func graphElementText(e map[string]any, points map[string]string) string {
 	var body string
 	ok := true
 	switch typ {
-	case "functiongraph":
-		body = str("term")
-		if domain, okDomain := e["domain"].([]any); okDomain && len(domain) == 2 {
-			a, okA := formatIndexNumber(domain[0])
-			b, okB := formatIndexNumber(domain[1])
-			if okA && okB {
-				body += " on [" + a + ", " + b + "]"
-			}
-		}
+	case "expression":
+		body = str("latex")
 	case "point":
 		body, ok = pair(e["coords"])
 		if name := field(e, "name"); name != "" {

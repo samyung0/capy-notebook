@@ -33,9 +33,9 @@
             "points": ["a", "b"]
           },
           {
-            "type": "functiongraph",
+            "type": "expression",
             "id": "f",
-            "term": "sin(x)+0.5"
+            "latex": "y=\\sin\\left(x\\right)+0.5"
           }
         ],
         "image": {

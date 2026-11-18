@@ -1,9 +1,10 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useCheckQuizQuestion, useMaterial, useQuiz } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
+import { itemSaveState } from '@/features/collaboration/LiveItemControls';
 import { NoteSeatContext } from '@/features/collaboration/noteSeat';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import { useLendUndo } from '@/features/collaboration/undo';
@@ -20,6 +21,7 @@ import {
   RemovedAssetsContext,
   useRemovedAssets,
 } from '@/features/materials/MediaAssetView';
+import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import {
@@ -33,6 +35,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { OpenLinkContext } from '@/lib/openLink';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
+import { useReportEmbedState } from './embedStatus';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
    account. View studies it in place (a quick check: nothing is recorded) and
@@ -146,6 +149,12 @@ function LiveSetEdit({
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);
   const inside = useContext(NoteSeatContext);
+  // The note's header says whether its edits are saved (embedStatus).
+  const report = useReportEmbedState();
+  const onStatusChange = useCallback(
+    (status: NoteEditorStatus | null) => report(status?.saveState ?? null),
+    [report]
+  );
   return (
     <div ref={box}>
       <LiveFlashcards
@@ -153,6 +162,7 @@ function LiveSetEdit({
         enabled={near}
         inside={inside}
         onEmpty={onEmpty}
+        onStatusChange={onStatusChange}
         setId={materialId}
         showTitle={false}
         showUndo={false}
@@ -379,7 +389,22 @@ function EmbedQuizEditor({
     setHeld(rooms.status === 'syncing' || rooms.status === 'offline');
   }, [rooms.status]);
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
-  useLendUndo(rooms.undo);
+  // Only while QuizForm shows: a room stopped or read-only takes no Undo.
+  const editable =
+    rooms.status !== 'unavailable' &&
+    !rooms.recovery &&
+    rooms.ready &&
+    rooms.access !== 'read' &&
+    !!rooms.content &&
+    !!rooms.keys &&
+    !itemEditingStopped(rooms);
+  useLendUndo(editable ? rooms.undo : null);
+  // The note's header says whether its edits are saved (embedStatus).
+  const report = useReportEmbedState();
+  const saveState = rooms.recovery
+    ? 'error'
+    : itemSaveState(rooms.status, rooms.offline, rooms.sending);
+  useEffect(() => report(saveState), [report, saveState]);
   return (
     <div ref={box}>
       {rooms.status === 'unavailable' ? (

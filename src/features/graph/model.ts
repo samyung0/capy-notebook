@@ -8,16 +8,14 @@ export type Vec = [number, number];
 
 type Style = { dash?: boolean; hidden?: boolean };
 
-/** The constructions: a function of x, points, and what is built on points
+/** The constructions: a formula row, points, and what is built on points
  * named by id. A segment may take an arrowhead at its second point and a
- * label a text size in pixels, as the plane's vector and label do. */
+ * label a text size in pixels, as the plane's vector and label do. A formula
+ * row is its LaTeX as typed (Epo 2026-11-18): `y=2x`, `x^2+y^2=4`, a
+ * restriction `\left\lbrace a\le x\le b\right\rbrace` inside it; what
+ * it draws is read from it (`readExpression`). */
 type Construction =
-  | ({
-      type: 'functiongraph';
-      id: string;
-      term: string;
-      domain?: [number, number];
-    } & Style)
+  | ({ type: 'expression'; id: string; latex: string } & Style)
   | {
       type: 'point';
       id: string;

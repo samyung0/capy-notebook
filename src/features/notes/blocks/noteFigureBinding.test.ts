@@ -172,7 +172,11 @@ it('merges two editors editing one figure through their dialogs', () => {
     name: 'Q',
     type: 'point',
   });
-  dialogB.binding.setElement({ id: 'f1', term: 'x^2', type: 'functiongraph' });
+  dialogB.binding.setElement({
+    id: 'f1',
+    latex: 'y=x^{2}',
+    type: 'expression',
+  });
   YjsEditor.flushLocalChanges(a.editor);
   YjsEditor.flushLocalChanges(b.editor);
   sync(room, a.doc, b.doc);
@@ -181,7 +185,7 @@ it('merges two editors editing one figure through their dialogs', () => {
   const want = [
     { coords: [4, 4], id: 'p1', name: 'A', type: 'point' },
     { coords: [1, 1], id: 'p2', name: 'Q', type: 'point' },
-    { id: 'f1', term: 'x^2', type: 'functiongraph' },
+    { id: 'f1', latex: 'y=x^{2}', type: 'expression' },
   ];
   for (const dialog of [dialogA, dialogB])
     expect(graphIn(dialog.binding).elements).toEqual(want);

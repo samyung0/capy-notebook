@@ -1429,7 +1429,7 @@ function TopicTree({
       {dialog ? (
         // PanelSearch pads itself for a panel; here the field lines up with
         // the dialog's title and the strips.
-        <div className="-mx-2.5">
+        <div className="-mx-2.5 pt-2.5">
           <PanelSearch
             label={m.question_ui_find_a_topic()}
             onChange={onFilter}

@@ -547,6 +547,16 @@ html.dark:not([data-board-light]) .capy-board {
   touch-action: none;
 }
 
+/* The graph editor (questions/GraphEditor.tsx) open on a plane card: the page renders
+   it here, over the board (Epo 2026-11-17). */
+.capy-graph-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  touch-action: none;
+}
+
 /* The open editor's paper is see-through like a card's, so the board under it goes.
    Opacity, as AFFiNE's note cards set their own visibility and would stay. */
 .capy-board[data-editor-open] > editor-host {
@@ -771,19 +781,6 @@ html.dark:not([data-board-light]) .capy-board {
   border-bottom: 1px solid var(--affine-text-primary-color);
 }
 
-/* The canvas label's symbol row, under a plane label being typed (Epo 2026-11-13). */
-.capy-plane-editor .capy-plane-symbols {
-  width: max-content;
-  transform: translateX(-50%);
-}
-
-.capy-plane-editor .capy-plane-symbols button {
-  min-width: 32px;
-  height: 32px;
-  font-size: 15px;
-  color: var(--affine-text-primary-color);
-}
-
 .capy-chart-label {
   all: unset;
   position: absolute;
@@ -925,44 +922,6 @@ html.dark:not([data-board-light]) .capy-board {
   min-width: 0;
   font-size: 14px;
   line-height: 1.4;
-}
-
-/* As the graph dialog's rows: no MathLive menu or keyboard buttons, no padding. */
-.capy-plane-math::part(container) {
-  min-height: 0;
-}
-
-.capy-plane-math::part(content) {
-  padding: 0;
-}
-
-/* The empty new row's "Type a formula". */
-.capy-plane-math::part(placeholder) {
-  color: var(--affine-placeholder-color);
-}
-
-.capy-plane-math::part(menu-toggle),
-.capy-plane-math::part(virtual-keyboard-toggle) {
-  display: none;
-}
-
-.capy-plane-math {
-  display: block;
-  width: 100%;
-  padding: 0;
-  font-size: 15px;
-  line-height: 1.2;
-  color: inherit;
-  outline: 0;
-  background: transparent;
-  border: 0;
-}
-
-.capy-plane-list .capy-plane-row-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  white-space: nowrap;
 }
 
 .capy-plane-editor .capy-plane-list .more {

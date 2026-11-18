@@ -317,7 +317,7 @@ def check():
         "width": 600,
         "height": 400,
         "board": {"bbox": [-5, 5, 5, -5]},
-        "elements": [{"type": "functiongraph", "term": "secret", "hidden": True}],
+        "elements": [{"type": "expression", "latex": "secret", "hidden": True}],
     }
     q = {
         "id": "q",
@@ -350,7 +350,7 @@ def check():
             "width": 600,
             "height": 400,
         }
-    assert q["stem"][0]["elements"][0]["term"] == "secret"
+    assert q["stem"][0]["elements"][0]["latex"] == "secret"
     assert closed_correct({"type": "short", "accepted": ["12"], "unit": "cm"}, "12")
     gaps = {"type": "gaps", "accepted": [["oil"], ["tenor", "tenors"]]}
     assert closed_correct(gaps, ["Oil", "tenors"])

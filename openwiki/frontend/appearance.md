@@ -38,8 +38,10 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   class, the page's full width (Epo 2026-11-10), under tabs To do ·
   Done and a Type filter (see study-progress.md).
 - **Dashboard (Epo 2026-11-03, boards H1 owner, H2 member, H3):**
-  `WorkspaceDashboard.tsx`, the centre with nothing open (from lg without a
-  file header; one column keeps it). The workspace's name with "owner · N
+  `WorkspaceDashboard.tsx`, the centre with nothing open (without a file
+  header wherever the rail shows, as every page but Files, whose header holds
+  Add file and Add topic below lg; a phone keeps it for Back and ⋮, Epo
+  2026-11-17). The workspace's name with "owner · N
   members", Upload and a disabled "Make a quiz from a file" ("Coming soon")
   for those who may add; **What to practise next**, Practice's suggestions for
   whoever practises here (`studyView`, board U3), each with Practise, which

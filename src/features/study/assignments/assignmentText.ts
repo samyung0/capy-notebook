@@ -3,6 +3,7 @@ import type {
   AssignmentFormReq,
   AssignmentGradedQuestion,
 } from '@/api/types';
+import { fullPartLabel } from '@/features/questions/groups';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
 
@@ -189,11 +190,6 @@ export const OUTCOME_SQUARE: Record<Outcome, string> = {
   wrong: 'bg-solid-error',
 };
 
-/** Half marks from 0 to the marks, for a mark dropdown. */
-export function markSteps(marks: number) {
-  return Array.from({ length: marks * 2 + 1 }, (_, i) => i / 2);
-}
-
 /** The local date input's value for an ISO time. */
 export function localInputValue(iso: string, dateOnly: boolean) {
   const d = new Date(iso);
@@ -242,3 +238,34 @@ export function closeOutcomes(
       index === 0 && early ? { early: true, text } : { text }
     );
 }
+
+const MARK_TEXT = /^\d*(\.\d?)?$/;
+
+/** A mark field's next text, or undefined to refuse the key: digits with at
+ * most one decimal place (a decimal comma reads as a point), from 0 to
+ * `max`. "1." stays as typed, on its way to 1.5. */
+export function typedMark(text: string, max: number): string | undefined {
+  const next = text.trim().replace(',', '.');
+  if (!MARK_TEXT.test(next)) return;
+  return next === '' || next === '.' || Number(next) <= max
+    ? next === '.'
+      ? '0.'
+      : next
+    : undefined;
+}
+
+/** A question's row name, or one of its parts' when a question of several
+ * parts lays each out as its own row (the report's Questions tab, a
+ * member's result): "Q18", "Q18 (a)(i)", "Q19.2" with number labels. */
+export function questionRowName(
+  number: number,
+  question?: Parameters<typeof fullPartLabel>[0],
+  partId?: string
+) {
+  const label = question && partId ? fullPartLabel(question, partId) : '';
+  if (!label) return `Q${number}`;
+  return label.startsWith('(')
+    ? `Q${number} ${label}`
+    : `Q${number}.${label.replace(TRAILING_DOT, '')}`;
+}
+const TRAILING_DOT = /\.$/;

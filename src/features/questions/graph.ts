@@ -15,16 +15,13 @@ export class GraphError extends CopyError {}
 const fieldMessages: Record<string, () => string> = {
   center: m.question_ui_enter_valid_coordinates,
   coords: m.question_ui_enter_valid_coordinates,
-  domain: m.question_ui_enter_a_valid_function_domain,
   handles: m.question_ui_enter_valid_coordinates,
   id: m.question_ui_graph_elements_need_unique_identifiers,
   radii: m.question_ui_enter_valid_coordinates,
   radius: m.question_ui_select_a_center_and_a_positive_radius,
-  term: m.question_ui_use_a_supported_mathematical_expression_in_x,
 };
 const issueMessages = {
   center: m.question_ui_select_a_center_point,
-  domain: m.question_ui_enter_a_valid_function_domain,
   ids: m.question_ui_graph_elements_need_unique_identifiers,
   points: m.question_ui_select_different_points,
 } satisfies Record<GraphElementsIssue, () => string>;

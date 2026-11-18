@@ -16,7 +16,7 @@ export function WorkspaceBankPage({ workspaceId }: { workspaceId: string }) {
           {m.bank_new_question()}
         </PageButton>
       </div>
-      <StudyTabs staff value="bank" />
+      <StudyTabs staff value="bank" workspaceId={workspaceId} />
       <ItemBankList
         bank={workspaceId}
         creating={creating}

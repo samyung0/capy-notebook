@@ -12,6 +12,7 @@ import {
 import type { PlateEditor } from 'platejs/react';
 import './figureBinding';
 import { blockPoint, pointIn } from './roomSwap';
+import { openEnd } from './trailingHint';
 
 const synced = new WeakSet<object>();
 const waiting = new WeakSet<object>();
@@ -190,9 +191,9 @@ interface CopyHistory {
  * share the first edit's Undo step, and that Undo would bring it back as a new
  * edit, emptying Redo. Later ones stay the plugin's.
  */
-function addTrailingParagraph(editor: YjsEditor) {
+function addTrailingParagraph(editor: YjsEditor, always = false) {
   const last = editor.children.at(-1) as { type?: string } | undefined;
-  if (last?.type === KEYS.p) return;
+  if (!always && last?.type === KEYS.p) return;
   const root = editor.sharedRoot;
   const paragraph = { children: [{ text: '' }], id: nanoid(), type: KEYS.p };
   root.doc?.transact(
@@ -208,15 +209,16 @@ function addTrailingParagraph(editor: YjsEditor) {
   );
 }
 
-/** A click below the note's last block: its first real edit when the note
- * holds no paragraph there to click on, and the caret goes in it. */
+/** A click below the note's last block, where "Type / for commands" shows
+ * (trailingHint): the caret goes in the empty paragraph ending the note, else
+ * one is added, a real edit. */
 export function openTrailingParagraph(plate: PlateEditor) {
   const editor = plate as unknown as YjsEditor;
   if (!YjsEditor.connected(editor)) return;
-  const last = plate.children.at(-1) as { type?: string } | undefined;
-  if (last?.type === KEYS.p) return;
-  edited.add(editor);
-  addTrailingParagraph(editor);
+  if (!openEnd(plate)) {
+    edited.add(editor);
+    addTrailingParagraph(editor, true);
+  }
   plate.tf.select(plate.api.end([]));
   plate.tf.focus();
 }

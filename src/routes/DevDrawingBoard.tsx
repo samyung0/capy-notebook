@@ -4,6 +4,7 @@ import {
   type DrawingBoardOptions,
   mountDrawingBoard,
 } from '@/features/blocksuite/drawingBoard';
+import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 
 /** The drawing answer's board on its own, for building it, for its spec and for
  * bench:canvas, with its handle on `window`. Not linked from anywhere. `__reopen(doc,
@@ -11,6 +12,7 @@ import {
  * any options; `__preview(doc, size)` draws it as lists do. `?unmounted` mounts
  * nothing until `__mount`. */
 export default function DevDrawingBoard() {
+  const { openPlane, planeEditor } = usePlaneEditor();
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = container.current;
@@ -24,6 +26,7 @@ export default function DevDrawingBoard() {
       performance.mark('board:mount-start');
       board = mountDrawingBoard(host, {
         board: 'question',
+        openPlane,
         plane: true,
         saved: __benchBoard,
       });
@@ -32,7 +35,11 @@ export default function DevDrawingBoard() {
     // The drawing answer's board, as every test on this page opens it.
     const mount = (options: Omit<DrawingBoardOptions, 'board'>) => {
       board?.unmount();
-      board = mountDrawingBoard(host, { ...options, board: 'question' });
+      board = mountDrawingBoard(host, {
+        openPlane,
+        ...options,
+        board: 'question',
+      });
       Object.assign(window, { __board: board });
     };
     const reopen = (
@@ -49,5 +56,9 @@ export default function DevDrawingBoard() {
     });
     return () => board?.unmount();
   }, []);
-  return <div className="h-dvh w-full [&>div]:h-full" ref={container} />;
+  return (
+    <div className="h-dvh w-full [&>div]:h-full" ref={container}>
+      {planeEditor}
+    </div>
+  );
 }

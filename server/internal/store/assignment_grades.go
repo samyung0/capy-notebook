@@ -16,8 +16,8 @@ import (
 // under Show grades Manual until release.
 
 // SetAssignmentGrade sets a member's grade on a graded Assignment, or clears it
-// (nil). Only its class's staff change it, as quiz marks: half points from 0 to
-// its points, for someone it went to, open or closed alike.
+// (nil). Only its class's staff change it, as quiz marks: from 0 to its points
+// with at most one decimal place, for someone it went to, open or closed alike.
 func (s *Store) SetAssignmentGrade(ctx context.Context, actorID, id, memberID string, points *float64, now time.Time) error {
 	row, err := s.taskRow(ctx, s.pool, id)
 	if err != nil {
@@ -49,8 +49,8 @@ func (s *Store) SetAssignmentGrade(ctx context.Context, actorID, id, memberID st
 			_, err := tx.Exec(ctx, `DELETE FROM assignment_grades WHERE assignment_id=$1 AND user_id=$2`, id, memberID)
 			return err
 		}
-		if !validHalfMark(*points, float64(*outOf)) {
-			return assignmentInput("a grade is 0 to " + strconv.Itoa(*outOf) + " in half points")
+		if !validMark(*points, float64(*outOf)) {
+			return assignmentInput("a grade is 0 to " + strconv.Itoa(*outOf) + " with at most one decimal place")
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO assignment_grades (assignment_id, user_id, points, graded_by, graded_at)
 			VALUES ($1,$2,$3,$4,$5)

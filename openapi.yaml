@@ -841,7 +841,7 @@ components:
           format: double
           maximum: 1000
           minimum: 0
-          multipleOf: 0.5
+          multipleOf: 0.1
           type: number
       type: object
     AssignmentItemReport:

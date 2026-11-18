@@ -100,7 +100,7 @@ export const kindOf = (element: GraphElement) =>
     ? element.arrow
       ? 'vector'
       : 'line'
-    : element.type === 'functiongraph'
+    : element.type === 'expression'
       ? 'function'
       : element.type === 'text'
         ? 'label'
@@ -683,7 +683,7 @@ export function graphTools(host: ToolHost) {
   ) => {
     stroke(mark, list, HALO, 10);
     stroke(mark, list, BLUE, 2);
-    if (mark.type === 'functiongraph') return;
+    if (mark.type === 'expression') return;
     if (mark.type === 'formula') {
       const box = boxOf(mark);
       if (!box) return;
@@ -1032,7 +1032,8 @@ export function graphTools(host: ToolHost) {
         host.redraw();
         return;
       }
-      if (picked.type === 'functiongraph') return;
+      // A formula row's curve is not dragged: its row is retyped.
+      if (picked.type === 'expression') return;
       const [from, to] = [plane(grab.start), plane(at)];
       // A whole mark lands its first point (an ellipse its middle) on the grid, a polar
       // one's rings and spokes included, so one off it from before comes back. A label

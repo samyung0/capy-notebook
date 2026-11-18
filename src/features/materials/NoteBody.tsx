@@ -38,6 +38,10 @@ import {
   FileActionsTarget,
   usePhoneMenuItem,
 } from '@/features/files/fileModeContext';
+import {
+  EmbedStatusProvider,
+  useEmbedStatusSink,
+} from '@/features/materials/embeds/embedStatus';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { NoteBlocks } from '@/features/notes/liveNoteBlocks';
@@ -546,6 +550,8 @@ function PaintedFrame({
   seed: RoomSeed | null | undefined;
 }) {
   const builds = editing && !!material;
+  // The header's Saved covers the note's embedded quizzes and sets too.
+  const embedStatus = useEmbedStatusSink(onEditorStatusChange);
   // Its token alongside the paint, not behind the editor's chunk: the open
   // (CenterContent) asked already, unless it didn't know this was a note.
   const queryClient = useQueryClient();
@@ -794,16 +800,18 @@ function PaintedFrame({
               <Suspense fallback={null}>
                 <EditorPreviewing.Provider value={previewing}>
                   <NotePreviewHost.Provider value={hostApi}>
-                    <NoteEditor
-                      allowExternalAssets={allowExternalAssets}
-                      materialId={materialId}
-                      onEditorStatusChange={onEditorStatusChange}
-                      onJoinFailed={onJoinFailed}
-                      onPresenceChange={onPresenceChange}
-                      onReadOnly={onReadOnly}
-                      onShown={onShown}
-                      seed={seed}
-                    />
+                    <EmbedStatusProvider value={embedStatus.sink}>
+                      <NoteEditor
+                        allowExternalAssets={allowExternalAssets}
+                        materialId={materialId}
+                        onEditorStatusChange={embedStatus.onNote}
+                        onJoinFailed={onJoinFailed}
+                        onPresenceChange={onPresenceChange}
+                        onReadOnly={onReadOnly}
+                        onShown={onShown}
+                        seed={seed}
+                      />
+                    </EmbedStatusProvider>
                   </NotePreviewHost.Provider>
                 </EditorPreviewing.Provider>
               </Suspense>

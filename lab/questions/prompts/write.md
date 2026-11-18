@@ -3,6 +3,6 @@ Write original questions from topic metadata and the style guide only. You have 
 Mechanics that broke earlier runs:
 - Quantity answers with a unit are plain numbers: no thousands separators, surds or symbols.
 - Image and graph width and height are whole pixels; round the height, then set the board's x range from it.
-- Graph terms reject PI; write degrees as x*0.017453292519943295. Keep a geometry board's proportions equal to the image's (x range / y range = width / height).
+- A graph's formula row is an expression whose latex is the row as typed in Desmos: y=2x^{2}-3, y=\sin\left(\frac{\pi x}{180}\right) for degrees, x^{2}+y^{2}=16, x=3; restrict x with \left\lbrace 0\le x\le 2\right\rbrace at the end. Brace every exponent longer than one character (x^{23}); \log is base 10, \ln natural. Keep a geometry board's proportions equal to the image's (x range / y range = width / height).
 - Write the output with json.dump from a script, never a shell heredoc: heredocs turn \frac into a form feed.
 - Never let answer positions leak: vary which option is correct, don't make the key the longest option, and don't list matching options in answer order.

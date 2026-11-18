@@ -17,6 +17,7 @@ import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
 import { ContinueCards } from '@/features/study/ContinueCards';
 import { studyView } from '@/features/study/practice/studyView';
+import { assignmentsLink } from '@/features/study/studyRoutes';
 import { getLocale, m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
@@ -221,16 +222,16 @@ function ActivityRow({
     <li className="-mx-1.5 border-divider border-t first:border-t-0">
       <Link
         className="flex min-h-12 items-center gap-3 px-1.5 py-1.5 hover:bg-surface-hover-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-        params={{ workspaceId }}
         preload="intent"
-        search={
-          row.assignmentId
-            ? { assignment: row.assignmentId, study: 'assignments' as const }
-            : row.materialId
-              ? { material: row.materialId }
-              : { file: row.fileId }
-        }
-        to="/workspaces/$workspaceId"
+        {...(row.assignmentId
+          ? assignmentsLink(workspaceId, { assignment: row.assignmentId })
+          : {
+              params: { workspaceId },
+              search: row.materialId
+                ? { material: row.materialId }
+                : { file: row.fileId },
+              to: '/workspaces/$workspaceId' as const,
+            })}
       >
         {row.kind === 'agent' ? (
           <span className="grid size-7.5 shrink-0 place-items-center rounded-full bg-tint-accent-1 text-tint-accent-1-fg">

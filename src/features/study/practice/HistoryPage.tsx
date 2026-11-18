@@ -11,7 +11,7 @@ export function HistoryPage({ workspaceId }: { workspaceId: string }) {
       {/* 16px down to the toolbar, as on the account's History. */}
       <div className="page-px pt-5 pb-2 lg:pt-7">
         <h1 className="t-page-title">{m.workspace_tab_study()}</h1>
-        <StudyTabs staff={false} value="history" />
+        <StudyTabs staff={false} value="history" workspaceId={workspaceId} />
       </div>
       <StudyHistory workspaceId={workspaceId} />
     </div>

@@ -80,8 +80,9 @@ const (
 	// canvas plane (Epo 2026-11-16, D7). Every graph limit lives here; the
 	// board catalog reads the ones its cards share.
 	QuestionGraphElements = 100
-	QuestionGraphTerm     = 200
-	QuestionGraphPolygon  = 12
+	// A formula row's LaTeX as typed (Epo 2026-11-18, "1000 seems enough").
+	QuestionGraphExpression = 1_000
+	QuestionGraphPolygon    = 12
 	// A graph's label text (wrapped on the board) and its point names and
 	// angle labels (Epo 2026-10-17).
 	QuestionGraphLabel = 60
@@ -180,7 +181,7 @@ var QuestionBounds = map[string]int{
 	"QUESTION_CHART_LABEL_MAX":       QuestionChartLabel,
 	"QUESTION_CHART_VALUE_MAX":       QuestionChartValue,
 	"QUESTION_GRAPH_ELEMENTS_MAX":    QuestionGraphElements,
-	"QUESTION_GRAPH_TERM_MAX":        QuestionGraphTerm,
+	"QUESTION_GRAPH_EXPRESSION_MAX":  QuestionGraphExpression,
 	"QUESTION_GRAPH_POLYGON_MAX":     QuestionGraphPolygon,
 	"QUESTION_GRAPH_LABEL_MAX":       QuestionGraphLabel,
 	"QUESTION_GRAPH_NAME_MAX":        QuestionGraphName,

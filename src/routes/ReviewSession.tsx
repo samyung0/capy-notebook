@@ -51,6 +51,7 @@ import {
   type Steps,
   useSteps,
 } from '@/features/study/steps';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -253,16 +254,11 @@ function Session({
   }
 
   // A review started in a workspace returns to its Practice page.
-  const studySearch = { study: 'practice' as const };
+  const practice = studyLink(workspaceId, 'practice');
   function back() {
     if (features.learning && search.from === 'review')
       navigate({ search: { tab: 'overview' }, to: '/learning' });
-    else
-      navigate({
-        params: { workspaceId },
-        search: studySearch,
-        to: '/workspaces/$workspaceId',
-      });
+    else navigate(practice);
   }
   async function more() {
     // The next batch is chosen from every rating saved so far.
@@ -304,11 +300,7 @@ function Session({
                   }
                 : {
                     label: ws?.name ?? '',
-                    link: linkOptions({
-                      params: { workspaceId },
-                      search: studySearch,
-                      to: '/workspaces/$workspaceId',
-                    }),
+                    link: linkOptions(practice),
                   },
             ]}
           />

@@ -651,9 +651,8 @@ edits one in `BlockDialog`: a chart or graph live, each change written as it is
 made and Done only closing (Epo 2026-11-16, D13; see
 [plate-editor.md](frontend/plate-editor.md), the bank's draft takes each
 change at once too), a table staged until its Save. The dialog's Remove block is
-pulled left by its padding to line up with the content, and on phones the
-title's zoom tools take no more height than the title so the header stays
-level (Epo 2026-11-16). An open text's formatting row ends
+pulled left by its padding to line up with the content (Epo 2026-11-16); a
+graph opens in the graph editor instead (see the graph section below). An open text's formatting row ends
 in Move up and Move down for the paragraph or display formula holding the
 caret (`TextEditor`'s `moves`): it moves within the text, and at the text's
 edge it moves past the next block as a text of its own; a text of one line
@@ -817,14 +816,99 @@ a formula's stretched signs as KaTeX's own paths), and
 (D5/D14): 2 px round-capped ink, 4.5 px points with their names, 15 px labels
 centred on their position and wrapped at 200 px, a fixed 24 px angle mark,
 light or dark paper in the editor and white paper in every export. The graph
-editor (`GraphEditor.tsx`, the same in quizzes and notes) is Desmos-style: one
-typeset MathLive row per element on the left, a canvas at the graph's stored
-pixel size on the right (stacked on phones). `graphSyntax.ts` turns rows into recipe
-elements and back: Desmos input (`y = 0.5x^2 - 3`, `{0 ≤ x ≤ 4}` restrictions,
-`A = (1, 2)`, `segment(A, B)`, `polygon(…)`, `circle(A, 3)`, `angle(…)`,
-`arc(O, A, B)`, `sector(…)`) with implicit products, stored with JessieCode's
-syntax and explicit `*`, and evaluated by `functionOf` (natural `log`) on every
-surface; style (dash, equal-side marks, shading, labels, hide) sits in each
+editor (`GraphEditor.tsx`) is the one graph editor (Epo 2026-11-17): quiz and
+note graphs and the canvas's plane cards open in it, and it looks and behaves as
+the plane's editor always did. `BlockDialog` opens a figure in a dialog filling
+the screen with no title row or footer. The graph fills the editor; the rows'
+list floats over its top left (a 300 px card under a list button, a sheet over
+the lower half on phones; open on wider screens, shut on phones, the last
+choice kept for the session), the tools float at the foot, and the top right
+holds the ☰ menu (Fit to screen, at least 10 units each way; Undo, Redo and
+Clear all for a plane; Full screen and Remove block for a figure; a − % + zoom
+row whose 100% is the scale it opened at) and Done. A figure's view is its
+stored size around the editor's middle at the editor's scale, as a canvas
+card's camera is: a settled pan or zoom writes that as its `bbox`, and typed
+bounds or size move the view; its frame is not drawn, so Full screen shows it
+as readers will. Leaving the dialog fits its window (Epo 2026-11-18,
+`fitWindow` in `src/features/graph/fit.ts`): once a mark or the view changed
+in it, the figure keeps its size, as Desmos's Zoom Fit and Matplotlib's
+autoscale keep the picture and move the window, and the window takes the frame
+round its marks, labels' and formulas' text and functions with 40 px to spare,
+scaled to fill the figure and centred, its units' ratio kept (zoomed in for a
+small graph, out for a wide one). Not the origin: other apps fit to what is
+drawn, so a graph far from it keeps its scale. The frame depends on what is
+shown, so it is fitted again until it settles and a second Done keeps it.
+Typing a size or bound in Advanced keeps what was typed for that visit;
+nothing changed leaves it alone. One Undo takes the fit back. Functions count
+as the ☰ menu's Fit samples them (`functionReach` in `curves.ts`), across the x
+range shown and the marks' together (their restriction if set), as a plotted curve
+counts over its plotted range in Matplotlib and Mathematica, at 101 even
+steps; one that runs off to infinity there (an asymptote, found by halving
+towards the larger end until it runs off or settles at a peak) leaves out
+values past Tukey's far fences (three interquartile ranges out), as
+Mathematica's automatic plot range drops outliers, while any other keeps every
+value (a narrow peak, ln x beside where it is undefined). A fit counts a
+function only within the y range shown, less the 40 px it leaves round a
+frame, keeping that range's edge where the function runs past it, so x², x³ or
+eˣ fills what was looked at; marks still widen it. A function never within that
+range (y = 3x + 10000 on a plane round the origin) counts whole, so the frame
+moves to it. An implicit curve is looked for over a box three times the
+range shown and the marks' (`equationReach`, a 150 × 150 grid): a part closed
+within that box counts whole (a circle crossing the shown edge), a part running
+on to its edge (the lines of x² − y² = 0) counts within the range shown and
+keeps the edges it runs past, as a function does, so fitting again keeps the
+frame; one never within the range counts whole, and with none in the box it is
+looked for ten times as wide, so one typed off the view is framed too. Typing a function row wholly above or below the view across the
+x range shown moves the view up or down to it, its middle value in the
+middle, scale kept (`revealed`, Epo 2026-11-18, though Desmos and GeoGebra
+stay put); a plane card keeps that view on Done. The ☰ Fit frames as leaving
+does (`fitPressed`: the window `fitWindow` settles on for the editor's view,
+at least 10 units each way, an empty graph round the origin), so a second
+press changes nothing (Epo 2026-11-18; it once added a 10% margin each press
+over a range clamped to the view, zooming out every time). A canvas plane card's Fit to size (`fitMarks`) counts the same
+but grows or shrinks the card instead, its size being board layout. Rows are the plane list's: 36 px, the kind's icon (a figure
+row's opens its style menu), the field, ⋮ with Delete; then + Label and
+Advanced (a plane's holds its paper only). `graphSyntax.ts` turns rows into recipe
+elements and back, reading each row's LaTeX with its own small reader (no
+MathLive, so previews never load it), read as Desmos reads it (Epo
+2026-11-18, "the desmos one makes the most sense"): fractions, roots
+(`\sqrt[n]{}`, odd roots of negatives negative), powers as LaTeX reads them
+(`x^23` is x²·3, only `x^{23}` is x²³), subscripted names, `\left…\right`
+brackets (`\lbrack`, `\lbrace`), bars and `|x|` (abs, `2|x|` too),
+`\lfloor`/`\lceil`, `\cdot`/`\times`, `\pi`, implicit products, `\le`/`\ge`
+and braces; named functions and `\operatorname{…}` with `\sec`, `\csc`,
+`\cot`, `\sinh`, `\cosh`, `\tanh`; `\sin^{-1}x` (and cos, tan) the inverse;
+`\log` base 10, `\log_{b}x` base b, `\ln` natural. A restriction may be
+one-sided (`\left\lbrace x\ge0\right\rbrace`, the other bound open).
+Points and commands (`A = (1, 2)`, `segment(A, B)`, `polygon(…)`,
+`circle(A, 3)`, `angle(…)`, `arc(O, A, B)`, `sector(…)`) are stored as their
+elements. A formula row is stored as typed, as Desmos stores it (Epo
+2026-11-18, "store user input as is"): `{type: 'expression', id, latex}` with
+optional `dash`/`hidden`, a restriction `\left\lbrace a\le x\le b\right\rbrace`
+inside the LaTeX, no grammar checked on any server, at most
+`QUESTION_GRAPH_EXPRESSION_MAX` 1000 code points (Epo 2026-11-18, "1000 seems
+enough": a rotated ellipse as MathLive writes it is under 200). What it
+draws is read where it is drawn (`readExpression`, cached by `markExpression`
+in `curves.ts`): `y = …`, `f(x) = …` or a bare expression in x is a function
+of x, sampled every 2 px across; any other equation in x and y
+(`x^2 - y^2 = 0`, `x = 3`, `x^2 + y^2 = 4`) is an implicit curve,
+F(x, y) = left − right = 0, drawn by marching squares over the view
+(`equationRuns`): F on an 8 px grid (typed arrays, reused), cells whose
+corners differ in sign (or hold an undefined corner) split into four 4 px
+cells, each crossing closed in on by four halvings of its edge and
+interpolated, saddles split by the cell's middle, the traced runs kept for an
+unchanged box and step (the last 32), so a redraw at the same view retraces
+nothing. Timings on the Mac for a 1200 × 800 px view moved each frame
+(uncached, medians, 2026-11-18): x² + y² = 4 0.5 ms, sin x = cos y 2.6 ms,
+sin(xy) = 0.5 5.3 ms (10,759 points), from 12, 16 and 25 ms with one 4 px
+grid and a map entry per edge; a loop smaller than an 8 px cell may be
+missed, and an edge whose |F|
+grows as it is closed in on (a pole, as in x / y = 1) left out so no false line
+is drawn across it. A zero set with no change of sign, as (x − y)² = 0, draws
+nothing (Desmos draws it; a known limit). Inequalities are "not yet". A row
+that can't be read draws nothing and shows its issue. An implicit curve is
+picked and erased by its distance to its drawn steps and can't be dragged, as
+a function can't; typing one off the view does not move the view. Style (dash, equal-side marks, shading, labels, hide) sits in each
 row's style menu. A row's point names are its references; a saved point another
 element uses but whose label is not a name gets the row name `P_n`. Issues read
 like the question dialog's: the first one (with "+n more") above the editor, a
@@ -836,11 +920,10 @@ Ctrl/⌘-wheel and pinch zoom about the pointer, the middle button pans; moves
 apply once per animation frame and the visible area is the saved `bbox`,
 reported once a gesture settles (150 ms after the last wheel event, or the last
 pointer up). It also takes the plane's tools (Epo 2026-11-16, D12), in a strip
-with the plane's icons, labels and letter keys, centred in its own row under
-the graph and wrapping on a narrow dialog (Epo 2026-11-17: the graph is the
-figure's real size, so a strip over its foot hid the x-axis title and numbers;
-the plane keeps its floating strip; Finish sits at the graph's foot while a
-line or curve is drawn) (V P L A C O T F E, once the canvas is pressed): Select (a click
+with the plane's icons, labels and letter keys, floating at the dialog's foot
+as on the plane (above the sheet on phones), the graph kept clear of it so it
+hides no x-axis title or numbers (Epo 2026-11-17; Finish sits above the strip
+while a line or curve is drawn) (V P L A C O T F E, once the canvas is pressed): Select (a click
 picks a mark, Shift adds, a drag on empty paper draws a selection box, as on
 the plane, so a primary drag no longer pans; handles, curve bends, label and
 formula frames whose corner sizes the text, 8–96 px), Point (each point takes
@@ -857,8 +940,7 @@ keeps its name, a new point is a named `A = (a, b)` row, a line or vector a
 `(a, b) to (c, d)` row typed in place, a curve, ellipse or formula a row with
 its kind's name, as the plane lists them; erasing or deleting a point takes what
 is built on it too. A tool at 100 elements is refused and the cap's issue shows.
-Advanced's Paper chooses square or polar paper (`board.polar`). Zoom in, Zoom
-out and Fit sit in the toolbar. Full screen
+Advanced's Paper chooses square or polar paper (`board.polar`). Full screen
 opens the graph as shown in the note figure preview. A graph stores no picture
 (D16, D11, Epo 2026-11-16): the block is its elements, board, size and
 description, the same in quizzes, notes and the bank, and every view (the
@@ -870,12 +952,13 @@ holds only the sized box). `graphSvg` runs only for the note export.
 Numbers follow GeoGebra (Epo 2026-10-17): ticks every 1, 2 or 5 × 10ⁿ from
 100px of units rounded down, finer grid lines between them, tick numbers plain
 (`0.25`, `2010`) or scientific (`5E8`) when the step is under 10⁻⁵ or over
-10⁷, an en dash for minus; an axis's numbers leave with the axis when its 0 is
-off the view (the plane's rule). A graph is
+10⁷, an en dash for minus; an axis off the view leaves its numbers on the edge
+it left by, as Desmos keeps them (Epo 2026-11-18, "do what other apps do"),
+and a y axis with no room left of it numbers to its right. A graph is
 120–1200 px wide and tall (120 keeps the bank's 150 px box plots) (`QUESTION_GRAPH_DIMENSION_MIN/MAX`, every server);
 a size outside that is an issue, not clamped, and the row count shows the
 x/100 counter beside Add label from 90%.
-Rows and label positions write e-notation as `6.02·10²³` (LaTeX `\cdot 10^{23}`).
+Rows write e-notation as `6.02·10²³` (LaTeX `\cdot 10^{23}`).
 The engine draws in plain doubles from the view's corner, so it has no small
 number cut-off and its grid holds far from the origin; a grid direction with
 more than 1000 lines is left out.
@@ -991,7 +1074,7 @@ comma). There are two kinds, both rows of `item_bank_questions` (migration
   edited by its owner and editor members (`assignmentStaff`); a viewer member,
   link or public visitor, and a personal workspace get 404. It is the fourth
   tab of the staff's Study (Overview, Topics, Practice, Question bank;
-  `?study=bank`). A personal workspace has no staff, so it has none: its
+  `/workspaces/<id>/study/bank`). A personal workspace has no staff, so it has none: its
   people use My bank.
 
 Every route names the bank the same way, `me` or the workspace id
@@ -1251,7 +1334,7 @@ hold a blank above them ("Text with blanks"), each block selected on a click and
 editor on a double click, whose Back returns to the question (the bank keeps
 the staged answer first). A blank is right only when it equals an accepted answer,
 ignoring case and spacing; unlike short answers there is no typo tolerance. `QuestionRunner` renders each blank as a small field inside
-the sentence, green or red on review with the accepted answers after a wrong one. It is authored only, so in-app generation does not offer it. A question with one part shows its
+the sentence, green or red on review, with every blank's accepted answers listed under it as "Correct answers" (Epo 2026-11-18, as a short answer's Correct answer shows), what the learner wrote beside a missed one. It is authored only, so in-app generation does not offer it. A question with one part shows its
 marks once, in the header. Multiple-choice options sit two by two (A B / C D)
 when a paper-layout answer area is at least 36rem wide (a container query);
 split-layout questions keep one column beside their passage. Layouts follow
@@ -1369,23 +1452,23 @@ pane padding and a 1.5rem number column. Options, True / False and ordering
 items are full boxes (board K5, Epo 2026-11-03; `answerBoxClass` and
 `answerLetterClass` in `QuestionView.tsx`): 46px tall, `rounded-tile`, the
 letter or number muted before the text. Chosen is a purple tint
-(`tint-accent-1` with the accent border). After checking, a right choice fills
-green with ✓ Right, a wrong choice fills red with ✗ Your answer, and the
-correct answer the learner did not choose gets a green outline with no fill
-and "Correct answer" (M1), so a green fill only ever means chosen and right.
-A multi-answer part marked wrong (R4) shows "Your answer" on top, the
-learner's choices filled green (✓ Right) or red (✗ Wrong) and the rest
-plain, then "Correct answer" listing the correct options; its label adds
-the counts ("0 / 2 marks · 1 right, 1 wrong"). A checked ordering (O4) shows
-"Your order", each item green in its right place and red elsewhere, and when
-any is misplaced "Correct order" (number and text only). Both correct-answer
-lists are plain text lines, not boxes
-(`PlainList`: the letter or number muted and bold, the text semibold, 4px
-apart, one column even on paper questions); a skipped
-ordering shows the key's order unmarked. Once checked, a label above a
-choice, True / False or ordering part says Right or Wrong with its marks, as
-in Results ("Wrong · 0 / 1 mark"); a skipped part says "Not answered" and
-counts as wrong. The question header keeps its marks too (D1). Boxes stack
+(`tint-accent-1` with the accent border). After checking (L1, Epo 2026-11-18)
+only the learner's own pick is marked: green with ✓ Correct or red with ✗
+Wrong; no other box changes. Under the boxes the part's verdict reads as a
+chip and its marks ("Wrong 0 / 2", or "Not answered", which counts as
+wrong), and when the part is short of full marks "Correct answer" lists the
+correct options apart. A checked ordering (O4) shows "Your order", each item
+green in its right place and red elsewhere, and when any is misplaced
+"Correct order"; a short answer keeps its field, then its verdict and
+"Correct answer". These lists are plain text lines, not boxes (`PlainList`:
+the letter or number muted, then the text, one column even on paper
+questions; a learner's own pick carries ✓ Correct or ✗ Wrong at the end),
+under headings in the member result's style (`SUBHEAD`); a skipped ordering
+shows the key's order unmarked. The Explanation is open under its heading,
+as the Sample answer is. A member's result (`AttemptResults`, staff and
+member alike) reads the same parts as lines (`layout="list"`, A): every
+option, then "Your answer" and "Correct answer" as sections, with no verdict
+line since the row shows it beside the question. The question header keeps its marks too (D1). Boxes stack
 with an 8px gap; choices sit two by two on wide paper answer areas, and True
 and False take a row each, text at the left in every state (B2). Text
 answers are underlined `Input`s, written answers sit on ruled lines
@@ -1398,10 +1481,12 @@ pick per row filled dark. Each row is a native radio group (arrow keys move
 its pick), each cell named "row: column" (`question_ui_grid_cell`); on phones
 the grid scrolls sideways inside the answer area with the row names sticky.
 After checking, a short answer lists every accepted answer with its unit; a
-gaps part with a miss lists the key under the learner's own answer ("Correct
-answers"), noting what the learner wrote; a matching grid fills a right pick
-green and a wrong one red, and rings the key's cell green in a row that
-missed it (an unanswered row only gets the ring). A checked open answer opens with a verdict counted over its marking points
+gaps part lists the key under the learner's own answer ("Correct answers"),
+right or not, noting what the learner wrote beside a missed blank; a
+matching grid fills a right pick green and a wrong one red and marks no
+other cell, and "Correct answer" lists each row with its answer under the
+grid (always in a member's result, short of full marks otherwise; Epo
+2026-11-18). A checked open answer opens with a verdict counted over its marking points
 ("Partially correct: 1 of 3 points answered correctly", "Skipped: Question not
 answered").
 Matching grid columns follow the order the read sent the options (shuffled
@@ -1545,8 +1630,8 @@ answer-free (`questions.LearnerView`), editors' View mode included; Check
 answer posts the answers to the check route, which grades and records them and
 returns that question's key and awards only. The question then shows the quiz
 review (`QuestionReview`: part score in the marks column with no question total,
-the answer boxes tagged Right, Your answer and Correct answer, accepted answers, the
-worked solution collapsed), and the topic's marks and the landing refresh. Open
+the learner's own box tagged Correct or Wrong, the verdict and the correct
+answer under it, the Explanation open), and the topic's marks and the landing refresh. Open
 parts (none in the bank today) are graded by the model like a quiz's. Try again
 clears the answers and the key; the next check records a new attempt, and the
 list shows the latest. Edit mode reads `GET /api/bank/questions/{id}/edit` and

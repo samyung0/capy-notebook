@@ -27,6 +27,7 @@ export function SummaryPage({
           <StudyTabs
             staff
             value={search.show === 'topics' ? 'topics' : 'summary'}
+            workspaceId={workspaceId}
           />
         </>
       }

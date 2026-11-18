@@ -137,7 +137,7 @@ test.describe('assignments', () => {
     );
 
     // The member answers on their page.
-    await viewerPage.goto(`/workspaces/${workspaceId}?study=assignments`);
+    await viewerPage.goto(`/workspaces/${workspaceId}/assignments`);
     // Told once what a class member shares (Epo 2026-11-04).
     await viewerPage
       .getByRole('button', { exact: true, name: m.sharing_notice_ok() })
@@ -180,7 +180,7 @@ test.describe('assignments', () => {
 
     // The owner marks it on Approve AI marks, and no model marked it first.
     await ownerPage.goto(
-      `/workspaces/${workspaceId}?study=assignments&assignment=${assignment.id}&tab=approve`
+      `/workspaces/${workspaceId}/assignments?assignment=${assignment.id}&tab=approve`
     );
     await expect(ownerPage.getByText('By osmosis.')).toBeVisible();
     await ownerPage.getByRole('combobox', { name: 'Names osmosis' }).click();

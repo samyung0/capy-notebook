@@ -1,9 +1,5 @@
-import type { Region, ReviewMode } from '@/api/types';
+import type { Region } from '@/api/types';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
-import {
-  type HistorySearch,
-  parseHistorySearch,
-} from '@/features/study/reviewSearch';
 import {
   isSettingsView,
   type SettingsView,
@@ -44,7 +40,8 @@ export type NoteCitationTarget = OfficeCitation & { blockIds?: string[] };
  * (phones; wider it is the Chat page), a chat (the Chat page, or over the open
  * file its window or sheet), the chat over Files with nothing open
  * (`files-chat`), and the member's board. An open file or material is the
- * Files page; `study` names the others; none is the Dashboard. */
+ * Files page; the others are routes of their own (`studyRoutes.ts`); none
+ * is the Dashboard. */
 export type WorkspaceView =
   | 'files'
   | 'files-chat'
@@ -80,54 +77,10 @@ export type WorkspaceOpenSearch = {
   /** What fills the canvas's screen (Epo 2026-11-13): a plane's or chart's
    * editor, or a quiz card's drawing answer (`<card>~<part>`). */
   open?: string;
-  /** One of the pages that came out of Study (To do or Assignments,
-   * Practice, Members, Study's own summary) in the centre while nothing is open. */
-  study?:
-    | 'practice'
-    | 'summary'
-    | 'history'
-    | 'bank'
-    | 'assignments'
-    | 'members';
-  /** Assignments' open assignment, and a try at it: running, or results. */
-  assignment?: string;
-  attempt?: string;
-  /** An assignment given to its own owner or teaching assistant: their page,
-   * not its report. */
-  own?: true;
-  /** An assignment's report: its tab, and on Approve AI marks a question or
-   * member to open at. On a class staff's Study, `member` is the profile open;
-   * beside `attempt`, the profile it was opened from. */
-  tab?:
-    | 'questions'
-    | 'responses'
-    | 'approve'
-    | 'members'
-    | 'settings'
-    | 'preview';
-  /** A graded quiz's Responses By question (By member without it). */
-  by?: 'question';
-  question?: string;
-  member?: string;
-  /** A class staff's Study on Topics (board G4), kept while a profile is open. */
-  show?: 'topics';
-  /** Study's History tab: its sort and filters, as the account's History. */
-  sort?: HistorySearch['sort'];
-  dir?: HistorySearch['dir'];
-  kind?: string;
-  status?: string;
-  /** Practice's topic session to start: its group, topic and, from a
-   * suggestion, its mode. */
-  group?: 'topic' | 'others' | 'workspace';
-  topicId?: string;
-  reviewMode?: ReviewMode;
-  /** Practice's result of a finished topic session. */
-  review?: string;
-  /** Make a quiz's dialog while nothing is open: its files, pages or run. */
+  /** Make a quiz's dialog while nothing is open: its files, pages or run,
+   * over the page it opened from (a workspace page's route), the Dashboard
+   * when none. */
   make?: 'files' | 'pages' | 'run';
-  /** The page Make a quiz opened from, which cancelling returns to; the Dashboard
-   * when there's none. */
-  makeFrom?: 'practice';
   /** The file whose pages it shows. */
   quizFile?: string;
   /** The question paper's files and the mark scheme or answer files, comma
@@ -199,30 +152,14 @@ export function parseWorkspaceOpenSearch(
 ): WorkspaceOpenSearch {
   // Invalid values are cleared explicitly: the router keeps raw keys the
   // parser leaves out.
+  // A workspace page's own keys are left to its route.
   return {
     answers: undefined,
-    assignment: undefined,
-    attempt: undefined,
-    dir: undefined,
     file: undefined,
-    group: undefined,
-    kind: undefined,
     make: undefined,
-    makeFrom: undefined,
-    member: undefined,
-    own: undefined,
     paper: undefined,
-    question: undefined,
     quizFile: undefined,
-    review: undefined,
-    reviewMode: undefined,
     run: undefined,
-    show: undefined,
-    sort: undefined,
-    status: undefined,
-    study: undefined,
-    tab: undefined,
-    topicId: undefined,
     ...parseOpenPage(search),
     add:
       search.add === 'upload' || search.add === 'create'
@@ -263,13 +200,6 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
       ...(item ? { item } : {}),
     };
   }
-  if (search.study === 'assignments') return parseAssignments(search);
-  if (search.study === 'summary') return parseSummary(search);
-  if (search.study === 'history')
-    return { study: 'history', ...parseHistorySearch(search) };
-  if (search.study === 'members') return { study: 'members' };
-  if (search.study === 'bank') return { study: 'bank' };
-  if (search.study === 'practice') return parsePractice(search);
   return parseMakeQuiz(search);
 }
 
@@ -278,107 +208,15 @@ function parseMakeQuiz(search: Record<string, unknown>): WorkspaceOpenSearch {
   const paper = text(search.paper);
   const answers = text(search.answers);
   const run = text(search.run);
-  const makeFrom = search.makeFrom === 'practice' ? search.makeFrom : undefined;
-  if (search.make === 'files')
-    return { answers, make: 'files', makeFrom, paper };
+  if (search.make === 'files') return { answers, make: 'files', paper };
   if (search.make === 'pages' && paper)
-    return {
-      answers,
-      make: 'pages',
-      makeFrom,
-      paper,
-      quizFile: text(search.quizFile),
-    };
-  if (search.make === 'run' && run)
-    return { answers, make: 'run', makeFrom, paper, run };
+    return { answers, make: 'pages', paper, quizFile: text(search.quizFile) };
+  if (search.make === 'run' && run) return { answers, make: 'run', paper, run };
   return {};
 }
 
 const text = (value: unknown) =>
   typeof value === 'string' && value ? value : undefined;
-const GROUPS = ['topic', 'others', 'workspace'] as const;
-const MODES: readonly ReviewMode[] = ['tricky', 'fading', 'learned'];
-
-const TABS = [
-  'questions',
-  'responses',
-  'approve',
-  'members',
-  'settings',
-  'preview',
-] as const;
-
-/** Assignments, one assignment (its report's view), or a try at one. Unknown
- * tabs clear; ids are the page's to answer. */
-function parseAssignments(
-  search: Record<string, unknown>
-): WorkspaceOpenSearch {
-  const assignment = text(search.assignment);
-  if (!assignment) return { study: 'assignments' };
-  const attempt = text(search.attempt);
-  if (attempt) {
-    // Opened from a member's profile: its back link returns there.
-    const member = text(search.member);
-    return {
-      assignment,
-      attempt,
-      study: 'assignments',
-      ...(member ? { member } : {}),
-      ...(member && search.show === 'topics'
-        ? { show: 'topics' as const }
-        : {}),
-    };
-  }
-  const tab = TABS.find((t) => t === search.tab);
-  const question = tab === 'approve' ? text(search.question) : undefined;
-  const member = tab === 'approve' ? text(search.member) : undefined;
-  const by =
-    tab === 'responses' && search.by === 'question'
-      ? ('question' as const)
-      : undefined;
-  return {
-    assignment,
-    study: 'assignments',
-    ...(search.own === true || search.own === 'true'
-      ? { own: true as const }
-      : {}),
-    ...(tab ? { tab } : {}),
-    ...(by ? { by } : {}),
-    ...(question ? { question } : {}),
-    ...(member ? { member } : {}),
-  };
-}
-
-/** To do's page of a task with no workspace (`/todo/task`): the same keys. */
-export const parseTaskSearch = (search: Record<string, unknown>) =>
-  parseAssignments(search);
-
-/** Study, for a class's staff its Topics tab or a member's profile. */
-function parseSummary(search: Record<string, unknown>): WorkspaceOpenSearch {
-  const member = text(search.member);
-  return {
-    study: 'summary',
-    ...(member ? { member } : {}),
-    ...(search.show === 'topics' ? { show: 'topics' as const } : {}),
-  };
-}
-
-/** Practice, a topic session to start on it, or a session's result. */
-function parsePractice(search: Record<string, unknown>): WorkspaceOpenSearch {
-  const review = text(search.review);
-  if (review) return { review, study: 'practice' };
-  const group = GROUPS.find((g) => g === search.group);
-  const topicId = text(search.topicId);
-  if (!group || (group === 'topic' && !topicId)) return { study: 'practice' };
-  const reviewMode = MODES.find((md) => md === search.reviewMode);
-  return {
-    group,
-    study: 'practice',
-    ...(group === 'topic' ? { topicId } : {}),
-    ...(reviewMode ? { reviewMode } : {}),
-  };
-}
-
 export function openItemFromSearch(
   search: WorkspaceOpenSearch
 ): OpenItem | null {

@@ -61,8 +61,10 @@ import {
 import { RecordDialog } from './RecordDialog';
 import { TableViewKanban } from './TableViewKanban';
 
-/** A view's tab; the open one's menu renames or deletes it (never the last
- * view). Narrow screens show the other views as their icons. */
+/** A view's tab. Its menu renames or deletes it (never the last view): a
+ * press on the open tab or a right-click on any tab opens it, as Notion's
+ * and AFFiNE's do (Epo 2026-11-17); a press on another tab only opens that
+ * view. Narrow screens show the other views as their icons. */
 function ViewTab({
   active,
   onOpen,
@@ -73,6 +75,7 @@ function ViewTab({
   view: TableViewView;
 }) {
   const { block, write } = useTableView();
+  const [menu, setMenu] = useState(false);
   const [name, setName] = useState(view.name);
   const tab = (
     <>
@@ -88,7 +91,7 @@ function ViewTab({
       ? 'bg-surface-hover-bg font-semibold text-fg'
       : 'text-fg-muted hover:bg-surface-hover-bg/60 hover:text-fg'
   );
-  if (!(active && write))
+  if (!write)
     return (
       <button
         aria-label={view.name}
@@ -106,15 +109,33 @@ function ViewTab({
     if (next && next !== view.name)
       write((current) => renameView(current, view.id, next));
   };
+  const openMenu = () => {
+    setName(view.name);
+    setMenu(true);
+  };
   return (
     <DropdownMenu
       modal={false}
-      onOpenChange={(open) => (open ? setName(view.name) : rename())}
+      onOpenChange={(open) => {
+        if (!open) {
+          setMenu(false);
+          rename();
+        } else if (active) openMenu();
+        else onOpen();
+      }}
+      open={menu}
     >
       <DropdownMenuTrigger
         aria-label={view.name}
-        aria-selected
+        aria-selected={active}
         className={className}
+        onContextMenu={(event) => {
+          // Not the block's own menu, nor the browser's.
+          event.preventDefault();
+          event.stopPropagation();
+          onOpen();
+          openMenu();
+        }}
         role="tab"
       >
         {tab}
@@ -399,15 +420,17 @@ function TableViewBody() {
             ) : (
               view !== NO_VIEW && <SortControl view={view} />
             )}
+            {/* Borderless like Sort beside it (Epo 2026-11-17), in the
+                text's ink as the action. */}
             <Button
-              className="h-8 gap-1 px-2.5 sm:h-7"
+              className="h-8 gap-1.5 px-2 font-normal sm:h-7"
               disabled={!canAddRow(block)}
               iconLeft="plus"
               onClick={() =>
                 newRecord(group && first ? { [group.id]: first.id } : {})
               }
               size="xs"
-              variant="outline"
+              variant="ghost-hover"
             >
               <span className="sm:hidden">{m.table_view_new()}</span>
               <span className="hidden sm:inline">

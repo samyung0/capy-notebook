@@ -238,8 +238,8 @@ decimal, the shortest that reads back exactly, never with an exponent
   line per series, `name: (x, y), (x, y), …`; each reference line as
   `x = 3: label` (`y = …` for a y line) and each mark as `(x, y): label`.
 - **graph**: the description, then one line per element as stored, its type
-  first: `functiongraph: 0.5*x^2-3` (the term verbatim, ` on [a, b]` with a
-  domain), `point A: (0, 0)`, `line: A, B`, `segment: A, B`, `polygon: A, B,
+  first: `expression: y=0.5x^{2}-3` (a formula row's LaTeX as typed, its
+  restriction inside it), `point A: (0, 0)`, `line: A, B`, `segment: A, B`, `polygon: A, B,
   C`, `angle θ: A, B, C` (its label after the type), `circle: center A,
   radius 2`, `arc: center O, A, B`, `sector: center O, A, B`, `text: Region R`,
   `formula: \frac12` (its LaTeX). A stroke, curve or ellipse holds no text

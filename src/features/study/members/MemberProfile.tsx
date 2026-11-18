@@ -27,6 +27,7 @@ import {
 } from '../assignments/assignmentText';
 import { GradedQuizDialog } from '../assignments/LazyNewAssignmentDialog';
 import { PracticeFrame } from '../practice/studyPage';
+import { assignmentsLink, studyLink } from '../studyRoutes';
 import { LabelChip, TopicSquares } from '../topicLabels';
 import { topicName } from './membersRows';
 import { StorageFullChip } from './StorageFullChip';
@@ -83,7 +84,9 @@ export function MemberProfilePage({
     <button
       className="inline-flex items-center gap-1.5 font-semibold underline decoration-1 underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
       onClick={() =>
-        void navigate({ search: { show, study: 'summary' as const }, to: '.' })
+        void navigate(
+          studyLink(workspaceId, show === 'topics' ? 'topics' : 'summary')
+        )
       }
       type="button"
     >
@@ -132,19 +135,20 @@ export function MemberProfilePage({
     data.activity.length === 0 &&
     data.topics.every((t) => t.asked === 0);
   const openAssignment = (a: MemberAssignment) =>
-    navigate({
-      search: a.attemptId
-        ? {
-            assignment: a.id,
-            attempt: a.attemptId,
-            // Its back link returns to this profile (Epo 2026-11-16).
-            member: memberId,
-            show,
-            study: 'assignments' as const,
-          }
-        : { assignment: a.id, study: 'assignments' as const, tab: 'members' },
-      to: '.',
-    });
+    navigate(
+      assignmentsLink(
+        workspaceId,
+        a.attemptId
+          ? {
+              assignment: a.id,
+              attempt: a.attemptId,
+              // Its back link returns to this profile (Epo 2026-11-16).
+              member: memberId,
+              show,
+            }
+          : { assignment: a.id, tab: 'members' }
+      )
+    );
   return (
     <PracticeFrame className="lg:pt-6">
       <div>{back}</div>

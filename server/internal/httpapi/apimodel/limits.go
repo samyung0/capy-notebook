@@ -81,8 +81,8 @@ func (CommentText) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema
 }
 
 // AssignmentPoints is what a graded Assignment is out of, 1 to
-// fieldlimits.AssignmentPoints; AssignmentGrade a member's grade on it, in half
-// points from 0 (the store holds it to the assignment's points).
+// fieldlimits.AssignmentPoints; AssignmentGrade a member's grade on it, with at
+// most one decimal place from 0 (the store holds it to the assignment's points).
 type (
 	AssignmentPoints int
 	AssignmentGrade  float64
@@ -94,7 +94,7 @@ func (AssignmentPoints) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.S
 	return s
 }
 func (AssignmentGrade) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
-	low, high, step := 0.0, float64(fieldlimits.AssignmentPoints), 0.5
+	low, high, step := 0.0, float64(fieldlimits.AssignmentPoints), 0.1
 	s.Minimum, s.Maximum, s.MultipleOf = &low, &high, &step
 	return s
 }

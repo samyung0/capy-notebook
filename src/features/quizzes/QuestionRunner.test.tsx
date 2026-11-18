@@ -5,7 +5,7 @@ import { m } from '@/i18n';
 import { applyItemAwards } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 
-it('reviews the graded snapshot with marks, the answer before a collapsed solution, and a fixed unit', () => {
+it('reviews the graded snapshot with marks, the answer before an open Explanation, and a fixed unit', () => {
   const question = exampleQuestion('quantity', {
     accepted: ['2'],
     type: 'short',
@@ -32,8 +32,9 @@ it('reviews the graded snapshot with marks, the answer before a collapsed soluti
   );
   expect(html).toContain('disabled=""');
   expect(html).toContain('>cm</span>');
-  // Collapsed: no `open` attribute after the class.
-  expect(html).toContain('<details class="col-start-2 min-w-0 text-sm">');
+  // Open under its heading (Epo 2026-11-18), no fold.
+  expect(html).not.toContain('<details');
+  expect(html).toContain(m.question_ui_worked_solution());
 });
 
 it('reviews an ordering answered by item text against the stored order', () => {
@@ -119,7 +120,9 @@ it('shows a drawing part as a grid to draw on, its drawing after Done, and its v
   expect(checked).not.toContain(m.drawing_answer_edit());
 });
 
-it('marks a checked choice in its box and says Right or Wrong with the marks above', () => {
+// Epo 2026-11-18, L1: a checked choice marks only the learner's own pick,
+// gives its verdict under the boxes and lists the correct answer apart.
+it('marks only the picked box and says Correct or Wrong with the marks under it', () => {
   const reviewed = (choice: number[]) => {
     const question = exampleQuestion('mcq');
     question.parts[0].awarded = choice[0] === 1 ? 1 : 0;
@@ -132,18 +135,21 @@ it('marks a checked choice in its box and says Right or Wrong with the marks abo
     );
   };
   const right = reviewed([1]);
-  expect(right).toContain('Right<span class="t-meta');
-  expect(right).toContain('>1 / 1 mark</span>');
+  expect(right).toContain('>Correct</span>');
+  expect(right).not.toContain('Correct answer');
   const wrong = reviewed([0]);
-  expect(wrong).toContain('Wrong<span class="t-meta');
-  expect(wrong).toContain('Your answer');
-  expect(wrong).toContain('Correct answer');
+  expect(wrong).toContain('Wrong</span>');
+  expect(wrong.indexOf('>Wrong</span>')).toBeLessThan(
+    wrong.indexOf('Correct answer')
+  );
   const skipped = reviewed([]);
-  expect(skipped).toContain('Not answered · 0 / 1 mark');
+  expect(skipped).toContain(`>${m.assignment_not_answered()}</span>`);
   expect(skipped).toContain('Correct answer');
 });
 
-it('lists a wrong multi-answer part as your answer, then the correct answer apart', () => {
+// Epo 2026-11-18, A: a member's result lists the options as lines, then
+// what they picked and what was correct.
+it('lists a member result as options, your answer, then the correct answer', () => {
   const question = exampleQuestion('multi', {
     correct: [0, 2],
     options: ['Nucleus', 'Ribosome', 'Mitochondria'],
@@ -154,18 +160,44 @@ it('lists a wrong multi-answer part as your answer, then the correct answer apar
   const html = renderToStaticMarkup(
     <QuestionRunner
       answers={{ 'multi-part': [0, 1] }}
+      layout="list"
+      partResults={false}
       question={question}
       review
     />
   );
-  expect(html).toContain('0 / 2 marks · 1 right, 1 wrong');
-  expect(html.indexOf('Your answer')).toBeLessThan(
+  expect(html).not.toContain('<button');
+  const yours = html.slice(
+    html.indexOf('Your answer'),
     html.indexOf('Correct answer')
   );
-  // The chosen wrong option says Wrong; nothing in your answer is outlined.
-  expect(html).toContain('Wrong</span>');
+  expect(yours).toContain('Ribosome');
+  expect(yours).toContain('Wrong</span>');
   expect(html.slice(html.indexOf('Correct answer'))).toContain('Mitochondria');
   expect(html.slice(html.indexOf('Correct answer'))).not.toContain('Ribosome');
+});
+
+// Epo 2026-11-18: blanks list their correct answers as a short answer does,
+// all right or not.
+it("lists the blanks' correct answers on review even when all are right", () => {
+  const question = exampleQuestion('gaps', {
+    accepted: [['osmosis'], ['dilute']],
+    type: 'gaps',
+  });
+  question.parts[0].blocks = [
+    { text: 'Water moves by (1) ___ from a (2) ___ solution.', type: 'text' },
+  ];
+  question.parts[0].marks = 2;
+  question.parts[0].awarded = 2;
+  question.parts[0].itemResults = [true, true];
+  const html = renderToStaticMarkup(
+    <QuestionRunner
+      answers={{ 'gaps-part': ['osmosis', 'dilute'] }}
+      question={question}
+      review
+    />
+  );
+  expect(html).toContain(m.question_ui_correct_answers());
 });
 
 // The in-app review shared by a quiz, Practice and a review session.

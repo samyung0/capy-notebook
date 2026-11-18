@@ -18,13 +18,6 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { AiWarning } from '@/features/questions/AiWarning';
@@ -41,9 +34,10 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { questionLine } from '../practice/practiceText';
-import type { AssignmentsSearch } from './AssignmentsPage';
-import { markSteps, markText } from './assignmentText';
+import type { AssignmentsSearch } from '../studyRoutes';
+import { markText } from './assignmentText';
 import { PaperPages } from './LazyPaper';
+import { MarkField } from './MarkField';
 import { MarkingNow } from './MarkingNow';
 
 type Selected = { attemptId: string; questionId: string };
@@ -929,36 +923,19 @@ function MarkForm({
                     </span>
                   </div>
                   <div className="flex min-h-11 items-center border-divider border-t">
-                    <Select
-                      onValueChange={(value) =>
+                    <MarkField
+                      label={item.text}
+                      marks={item.marks}
+                      onChange={(value) =>
                         setItems((all) => ({
                           ...all,
                           [part.id]: (all[part.id] ?? []).map((v, j) =>
-                            j === i ? Number(value) : v
+                            j === i ? value : v
                           ),
                         }))
                       }
-                      value={
-                        items[part.id]?.[i] === null ||
-                        items[part.id]?.[i] === undefined
-                          ? ''
-                          : String(items[part.id]?.[i])
-                      }
-                    >
-                      <SelectTrigger
-                        aria-label={item.text}
-                        className="h-7 w-25 px-2.5"
-                      >
-                        <SelectValue placeholder={`– / ${item.marks}`} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {markSteps(item.marks).map((step) => (
-                          <SelectItem key={step} value={String(step)}>
-                            {markText(step, item.marks)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      value={items[part.id]?.[i] ?? null}
+                    />
                   </div>
                 </div>
               ))}

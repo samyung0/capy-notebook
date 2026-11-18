@@ -60,7 +60,7 @@ test("the rail avatar menu invites from Members' Manage tab", async ({
   await page
     .getByRole('menuitem', { name: m.workspace_invite_member() })
     .click();
-  await expect(page).toHaveURL(/study=members/);
+  await expect(page).toHaveURL(/\/workspaces\/ws_bio\/members$/);
   await expect(
     page.getByRole('tab', { name: m.members_tab_manage(), selected: true })
   ).toBeVisible();

@@ -22,6 +22,7 @@ import {
   reviewResultMeta,
 } from '@/features/study/ReviewResult';
 import { groupName } from '@/features/study/reviewText';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { features } from '@/lib/features';
@@ -88,11 +89,7 @@ export default function ReviewResult() {
 
   const s = data.session;
   // Learning is hidden: a result goes back to its workspace's Practice.
-  const practice = linkOptions({
-    params: { workspaceId: s.workspaceId },
-    search: { study: 'practice' as const },
-    to: '/workspaces/$workspaceId',
-  });
+  const practice = linkOptions(studyLink(s.workspaceId, 'practice'));
   return (
     <PagePanel
       header={

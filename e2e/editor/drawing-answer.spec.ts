@@ -191,7 +191,7 @@ for (const { screen, width } of SCREENS) {
     await page.evaluate((to) => {
       history.pushState({}, '', to);
       dispatchEvent(new PopStateEvent('popstate'));
-    }, `/workspaces/ws_bio?study=assignments&assignment=${assignment}`);
+    }, `/workspaces/ws_bio/assignments?assignment=${assignment}`);
     const take = page.locator('[data-assignment-take]');
     await expect(take).toBeVisible({ timeout: 30_000 });
     await openQuestion(page);
@@ -220,7 +220,7 @@ for (const { screen, width } of SCREENS) {
     await asScenario(
       page,
       null,
-      `/workspaces/ws_bio?study=assignments&assignment=${assignment}&tab=approve`
+      `/workspaces/ws_bio/assignments?assignment=${assignment}&tab=approve`
     );
     await expect(
       page.getByRole('img', { name: m.drawing_answer_image() })

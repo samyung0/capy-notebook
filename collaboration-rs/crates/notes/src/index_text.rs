@@ -442,8 +442,9 @@ fn figure(block: &Value) -> String {
     lines.join("\n")
 }
 
-/// One graph element as stored: its type, then its term, points (by name,
-/// else coordinates), text, label or formula's LaTeX. An element naming a
+/// One graph element as stored: its type, then a formula row's LaTeX as
+/// typed, its points (by name, else coordinates), text, label or formula's
+/// LaTeX. An element naming a
 /// point that is gone is left out, as a merged graph is repaired on read, and
 /// so is a mark without text (a stroke, curve or ellipse).
 fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
@@ -462,15 +463,7 @@ fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
     let string = |key: &str| e[key].as_str().unwrap_or_default();
     let mut typ = string("type").to_owned();
     let body = match typ.as_str() {
-        "functiongraph" => {
-            let mut body = string("term").to_owned();
-            if let Some([a, b]) = e["domain"].as_array().map(Vec::as_slice)
-                && let (Some(a), Some(b)) = (number(a), number(b))
-            {
-                body.push_str(&format!(" on [{a}, {b}]"));
-            }
-            Some(body)
-        }
+        "expression" => Some(string("latex").to_owned()),
         "point" => {
             let body = pair(&e["coords"]);
             let name = field(e, "name");

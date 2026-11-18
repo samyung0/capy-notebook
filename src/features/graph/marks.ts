@@ -4,7 +4,9 @@
  * pixels, so a graph whose axes are scaled apart reads the same as the plane. */
 import {
   curvePieces,
+  equationRuns,
   functionRuns,
+  markEquation,
   curveSegments as segmentsOf,
 } from './curves';
 import { textBox } from './draw';
@@ -39,7 +41,7 @@ export const ellipseHandles = ({
 ];
 
 /** The points an element is drawn through, or at, that a press picks up. A
- * function has none, and a construction none of its own: the points it names
+ * formula row has none, and a construction none of its own: the points it names
  * are elements of their own. */
 export const pointsOf = (element: GraphElement): Vec[] =>
   element.type === 'polyline' || element.type === 'curve'
@@ -237,9 +239,9 @@ function fromLine([a, b]: Vec[], [x, y]: Vec) {
 /** An angle's arc, in screen pixels round its middle point, as it is drawn. */
 const ANGLE_REACH = 24;
 
-/** How far an element's stroke is from a pixel, in screen pixels: a function is
- * only looked for within `reach` pixels across, where any of it in reach must
- * be. Labels and formulas count from their point. */
+/** How far an element's stroke is from a pixel, in screen pixels: a formula
+ * row's curve is only looked for within `reach` pixels, where any of it in
+ * reach must be. Labels and formulas count from their point. */
 export function distanceTo(
   element: GraphElement,
   px: Vec,
@@ -248,18 +250,26 @@ export function distanceTo(
   reach: number
 ) {
   const screen = (path: Vec[]) => path.map((p) => toScreen(view, p));
-  if (element.type === 'functiongraph') {
-    const [x] = toPlane(view, px);
+  if (element.type === 'expression') {
+    const [x, y] = toPlane(view, px);
     const across = reach / view.ppuX;
+    const up = reach / view.ppuY;
+    const runs = markEquation(element.latex)
+      ? equationRuns(
+          element,
+          [x - across, y - up, x + across, y + up],
+          [across / 8, up / 8]
+        )
+      : functionRuns(
+          element,
+          x - across,
+          x + across,
+          across / 16,
+          Number.POSITIVE_INFINITY
+        );
     return Math.min(
       Number.POSITIVE_INFINITY,
-      ...functionRuns(
-        element,
-        x - across,
-        x + across,
-        across / 16,
-        Number.POSITIVE_INFINITY
-      ).map((run) => alongPath(screen(run), px))
+      ...runs.map((run) => alongPath(screen(run), px))
     );
   }
   if (
@@ -344,14 +354,23 @@ export function touches(
       box.x <= x1 && box.x + box.w >= x0 && box.y <= y1 && box.y + box.h >= y0
     );
   }
-  if (element.type === 'functiongraph')
-    return functionRuns(
-      element,
-      toPlane(view, [x0, 0])[0],
-      toPlane(view, [x1, 0])[0],
-      2 / view.ppuX,
-      Number.POSITIVE_INFINITY
-    ).some((run) => run.some((point) => inside(screen(point))));
+  if (element.type === 'expression') {
+    const [left, top] = toPlane(view, [x0, y0]);
+    const [right, bottom] = toPlane(view, [x1, y1]);
+    return markEquation(element.latex)
+      ? equationRuns(
+          element,
+          [left, bottom, right, top],
+          [4 / view.ppuX, 4 / view.ppuY]
+        ).length > 0
+      : functionRuns(
+          element,
+          left,
+          right,
+          2 / view.ppuX,
+          Number.POSITIVE_INFINITY
+        ).some((run) => run.some((point) => inside(screen(point))));
+  }
   let onScreen: Vec[];
   if (element.type === 'point') onScreen = [screen(element.coords)];
   else if (

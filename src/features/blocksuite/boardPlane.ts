@@ -21,19 +21,17 @@ import {
   observe,
 } from '@blocksuite/affine/std/gfx';
 import * as Y from 'yjs';
-import { drawGraph, textBox } from '@/features/graph/draw';
-import { formulaBox } from '@/features/graph/formula';
+import { drawGraph } from '@/features/graph/draw';
+import { FIT_SIDE_MAX, fitMarks, fitWindow } from '@/features/graph/fit';
 import {
   type ElementEntry,
   keyedElements,
   readElements,
   writeElements,
 } from '@/features/graph/keyed';
-import { pointsById, pointsOf } from '@/features/graph/marks';
 import type { Frame, Graph, GraphElement } from '@/features/graph/model';
-import { bboxOf, type View } from '@/features/graph/view';
-import { cardPaper, LABEL_SIZE, type Paper } from './boardData';
-import { laidOut } from './boardFormulaDraw';
+import { bboxOf, PLANE_ZOOM, type View } from '@/features/graph/view';
+import { cardPaper, type Paper } from './boardData';
 import type { Vec } from './boardGeometry';
 
 /** The plane's top left corner in its own units, and board pixels per unit. A polar
@@ -56,10 +54,6 @@ export const viewOfPlane = ({ ppu, x0, y0 }: PlaneView): View => ({
 const CARD_WIDTH_MIN = 120;
 const CARD_HEIGHT_MIN = 80;
 const CARD_SIDE_MAX = 4000;
-/** Fit to size: the room left around the marks, and the longest side before it zooms
- * out instead of growing. */
-const FIT_PAD = 40;
-const FIT_SIDE_MAX = 1600;
 const clamp = (value: number, low: number, high: number) =>
   Math.max(low, Math.min(high, value));
 
@@ -86,14 +80,6 @@ export function drawPlane(
   };
   drawGraph(ctx, frame, camera, graph, paper, refresh);
 }
-
-/** A plane label's text box on screen, centred on (x, y), wrapped as it's drawn. */
-export const labelBox = (
-  ctx: CanvasRenderingContext2D,
-  { size = LABEL_SIZE, text }: { size?: number; text: string },
-  x: number,
-  y: number
-) => textBox(ctx, text, size, x, y);
 
 /** The plane's elements as stored: one entry per element id, each the element and
  * its order key (Epo 2026-11-16, D10), kept as BlockSuite's mind map keeps its nodes.
@@ -197,9 +183,10 @@ export class PlaneElementModel extends GfxPrimitiveElementModel<{
     return pointInPolygon([x, y], getPointsFromBoundWithRotation(this));
   }
 
-  /** Fit to size: the card follows its marks each time the plane is left. */
+  /** Fit to size: the card follows its marks each time the plane is left.
+   * A card starts at Custom size, the size it is placed at (Epo 2026-11-18). */
   @field()
-  accessor fit = true;
+  accessor fit = false;
 
   @observe(observeElements)
   @field()
@@ -260,29 +247,6 @@ export function setPlaneEditor(open: typeof openEditor) {
 export const openPlane = (gfx: GfxController, model: PlaneElementModel) =>
   openEditor(gfx, model);
 
-/** Every point a plane's marks reach (a curve's handles too, a circle round its
- * centre), and its origin, so the axes stay in view. A function reaches none: it
- * runs across whatever is shown. */
-export function markPoints(marks: readonly GraphElement[]) {
-  const centres = pointsById(marks);
-  return [
-    [0, 0] as Vec,
-    ...marks.flatMap((mark): Vec[] => {
-      const centre = mark.type === 'circle' && centres.get(mark.center);
-      return [
-        ...pointsOf(mark),
-        ...(mark.type === 'curve' && mark.handles ? mark.handles.flat() : []),
-        ...(centre && mark.type === 'circle'
-          ? ([
-              [centre[0] - mark.radius, centre[1] - mark.radius],
-              [centre[0] + mark.radius, centre[1] + mark.radius],
-            ] as Vec[])
-          : []),
-      ];
-    }),
-  ];
-}
-
 /** A point `dx` along and `dy` down a card turned `rotate` degrees, from `from`. */
 const turned = (rotate: number, [x, y]: Vec, dx: number, dy: number): Vec => {
   const turn = (rotate * Math.PI) / 180;
@@ -291,65 +255,23 @@ const turned = (rotate: number, [x, y]: Vec, dx: number, dy: number): Vec => {
 };
 const minus = ([ax, ay]: Vec, [bx, by]: Vec): Vec => [ax - bx, ay - by];
 
-/** A canvas only for measuring text, made once. */
-let measurer: CanvasRenderingContext2D | null = null;
-
-/** How far each label's and formula's text reaches past its point, in pixels: as
- * much at any scale, so Fit to size keeps sized text on the card (Epo 2026-11-13). A
- * formula not laid out yet counts as its point. */
-function textReach(marks: readonly GraphElement[]) {
-  measurer ??= document.createElement('canvas').getContext('2d');
-  return marks.flatMap((mark) => {
-    if (mark.type === 'text' && measurer) {
-      const { h, w } = labelBox(measurer, mark, 0, 0);
-      return [{ at: mark.coords, x: w / 2, y: h / 2 }];
-    }
-    const drawn = mark.type === 'formula' && laidOut(mark.latex);
-    if (!drawn || mark.type !== 'formula') return [];
-    const { h, w } = formulaBox(drawn, 0, 0, mark.size);
-    return [{ at: mark.coords, x: w / 2, y: h / 2 }];
-  });
-}
-
 /** Sizes a card to its marks at its scale, its top left staying put. Past the longest
  * side it zooms out instead. An empty card keeps its size. Not in the undo history,
  * like the view. */
 export function fitCard(model: PlaneElementModel) {
-  const seen = markPoints(model.elementList);
-  // Nothing but the origin (no marks, or only functions): the card keeps its size.
-  if (seen.length < 2) return;
-  const xs = seen.map(([x]) => x);
-  const ys = seen.map(([, y]) => y);
-  const room = FIT_SIDE_MAX - FIT_PAD * 2;
-  const ppu = Math.min(
-    model.ppu,
-    room / Math.max(Math.max(...xs) - Math.min(...xs), 1e-6),
-    room / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6)
-  );
-  // The plane's pixels at that scale: the points, and the text round its own.
-  const texts = textReach(model.elementList);
-  const [left, right, bottom, top] = [
-    Math.min(
-      ...xs.map((x) => x * ppu),
-      ...texts.map((t) => t.at[0] * ppu - t.x)
-    ),
-    Math.max(
-      ...xs.map((x) => x * ppu),
-      ...texts.map((t) => t.at[0] * ppu + t.x)
-    ),
-    Math.min(
-      ...ys.map((y) => y * ppu),
-      ...texts.map((t) => t.at[1] * ppu - t.y)
-    ),
-    Math.max(
-      ...ys.map((y) => y * ppu),
-      ...texts.map((t) => t.at[1] * ppu + t.y)
-    ),
-  ];
-  const w = clamp(right - left + FIT_PAD * 2, CARD_WIDTH_MIN, FIT_SIDE_MAX);
-  const h = clamp(top - bottom + FIT_PAD * 2, CARD_HEIGHT_MIN, FIT_SIDE_MAX);
-  // Its top left corner stays put on the page, the card turned or not.
   const was = Bound.deserialize(model.xywh);
+  const fitted = fitMarks(
+    model.elementList,
+    { x: model.ppu, y: model.ppu },
+    { max: FIT_SIDE_MAX, minH: CARD_HEIGHT_MIN, minW: CARD_WIDTH_MIN },
+    {
+      x: [model.x0, model.x0 + was.w / model.ppu],
+      y: [model.y0 - was.h / model.ppu, model.y0],
+    }
+  );
+  if (!fitted) return;
+  const { h, w } = fitted;
+  // Its top left corner stays put on the page, the card turned or not.
   const corner = turned(
     model.rotate,
     was.center as Vec,
@@ -358,10 +280,34 @@ export function fitCard(model: PlaneElementModel) {
   );
   const [cx, cy] = turned(model.rotate, corner, w / 2, h / 2);
   model.surface.store.withoutTransact(() => {
-    model.ppu = ppu;
-    model.x0 = ((left + right) / 2 - w / 2) / ppu;
-    model.y0 = ((top + bottom) / 2 + h / 2) / ppu;
+    model.ppu = fitted.ppu.x;
+    model.x0 = fitted.x0;
+    model.y0 = fitted.y0;
     model.xywh = new Bound(cx - w / 2, cy - h / 2, w, h).serialize();
+  });
+}
+
+/** Custom size: the card keeps its size, and the plane in it is framed round its
+ * marks, as a graph figure's window is (`fitWindow`): the card's size is board
+ * layout and never decides what of the plane shows (Epo 2026-11-18, "custom
+ * size should mean the card on the canvas is on custom size, it never dictates
+ * how the plane is drawn"). Nothing to frame keeps the view as it is. */
+export function fitView(model: PlaneElementModel) {
+  const { h, w } = Bound.deserialize(model.xywh);
+  const box = fitWindow(
+    model.elementList,
+    { height: h, width: w },
+    [model.x0, model.y0, model.x0 + w / model.ppu, model.y0 - h / model.ppu],
+    { max: FIT_SIDE_MAX, minH: CARD_HEIGHT_MIN, minW: CARD_WIDTH_MIN }
+  );
+  if (!box) return;
+  const [left, top, right] = box;
+  const ppu = w / (right - left);
+  if (!(ppu >= PLANE_ZOOM.min && ppu <= PLANE_ZOOM.max)) return;
+  model.surface.store.withoutTransact(() => {
+    model.ppu = ppu;
+    model.x0 = left;
+    model.y0 = top;
   });
 }
 
@@ -476,7 +422,7 @@ export function addPlane(
 ) {
   return gfx.surface?.addElement({
     elements: keyedElements([]),
-    fit: true,
+    fit: false,
     polar,
     ppu,
     type: 'plane',
