@@ -118,14 +118,22 @@ export default function Files() {
 }
 
 /** Where a trashed item opens read-only: the file page Files opens it on. A
- * board opens only live, on its workspace. */
+ * canvas opens on its own canvas page, the account's or its workspace's,
+ * under the Trash strip with Restore. */
 function trashLink(item: TrashItem) {
   if (item.kind === 'source_file')
     return linkOptions({
       params: { fileId: item.id },
       to: '/files/$fileId',
     });
-  if (item.materialKind === 'canvas') return;
+  if (item.materialKind === 'canvas')
+    return item.workspaceId
+      ? linkOptions({
+          params: { workspaceId: item.workspaceId },
+          search: { c: item.id, view: 'canvas' },
+          to: '/workspaces/$workspaceId',
+        })
+      : linkOptions({ search: { c: item.id }, to: '/canvas' });
   return linkOptions({
     params: { materialId: item.id },
     to: '/materials/$materialId',

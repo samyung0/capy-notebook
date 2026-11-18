@@ -3,7 +3,7 @@ import { expect, type Page, test } from '@playwright/test';
 /**
  * A canvas in its collaboration room (Epo 2026-11-18), against the mock room
  * (src/mocks/collaboration.ts, the board room): two people on one canvas, a
- * reload, the picker's sharing switch, and a workspace viewer's read-only
+ * reload, the picker's sharing switch (asking first), and a workspace viewer's read-only
  * board with its maker taking the canvas back.
  */
 
@@ -117,17 +117,17 @@ test('a reload shows the canvas as its room stored it', async ({ page }) => {
   await expect.poll(() => drawn(page)).toEqual(['brush']);
 });
 
-test("the picker's switch shares a canvas with the workspace and takes it back", async ({
+test("the picker's switch asks before it shares a canvas with the members, and takes it back at once", async ({
   page,
 }) => {
   test.slow();
   await openCanvas(page);
   const trigger = picker(page, 'Biology 101');
   await trigger.click();
-  const shared = page.getByRole('switch', { name: 'Shared with workspace' });
+  const shared = page.getByRole('switch', { name: 'Shared with members' });
   // The people mark on the canvas's own row, read out with its name.
   const mark = page.getByRole('button', {
-    name: /^Biology 101\s*Shared with workspace/,
+    name: /^Biology 101\s*Shared with members/,
   });
   await expect(shared).toHaveAttribute('aria-checked', 'false');
   await expect(mark).toHaveCount(0);
@@ -138,7 +138,25 @@ test("the picker's switch shares a canvas with the workspace and takes it back",
       row.nextElementSibling?.textContent,
     ])
   ).toEqual(['Rename', 'Delete']);
+  // Sharing asks first, as a file's switch does (mock ShareDialog); Cancel
+  // leaves it private.
+  const ask = page.getByRole('dialog', {
+    name: 'Share this canvas with members?',
+  });
   await shared.click();
+  await expect(ask).toBeVisible();
+  await expect(
+    ask.getByText(
+      'Everyone in the workspace will see it. Editors can draw on it.'
+    )
+  ).toBeVisible();
+  await ask.getByRole('button', { name: 'Cancel' }).click();
+  await expect(ask).toBeHidden();
+  if (!(await shared.isVisible())) await trigger.click();
+  await expect(shared).toHaveAttribute('aria-checked', 'false');
+  await shared.click();
+  await ask.getByRole('button', { name: 'Share with members' }).click();
+  if (!(await shared.isVisible())) await trigger.click();
   await expect(shared).toHaveAttribute('aria-checked', 'true');
   // Its row carries the people mark once the list has it.
   await expect(mark).toHaveCount(1);
@@ -147,7 +165,9 @@ test("the picker's switch shares a canvas with the workspace and takes it back",
   await page.keyboard.press('Escape');
   await trigger.click();
   await expect(shared).toHaveAttribute('aria-checked', 'true');
+  // Taking it back does not ask.
   await shared.click();
+  await expect(ask).toHaveCount(0);
   await expect(shared).toHaveAttribute('aria-checked', 'false');
   await expect(mark).toHaveCount(0);
 });

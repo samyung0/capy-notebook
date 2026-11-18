@@ -449,12 +449,34 @@ html.dark:not([data-board-light]) .capy-board {
 
 /* The ☰ menu (boardMenu.ts) top right of the board, left of any Done the page around
    it places and sizes through --capy-board-done-width, level with it through
-   --capy-board-menu-top; an open card has its own. */
+   --capy-board-menu-top; an open card has its own. The page's save status sits just
+   left of it (statusSlot, Epo 2026-11-18, 1B), 12px apart, 8px below 640px. */
 .capy-board > .capy-board-menu {
   position: absolute;
   top: var(--capy-board-menu-top, 8px);
   right: calc(8px + var(--capy-board-done-width, 0px));
   z-index: 2;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Centred on the ☰, not on a line of text (mock StatusPhone's icon alone). */
+.capy-board-status {
+  display: flex;
+  align-items: center;
+}
+
+.capy-board-status:empty {
+  display: none;
+}
+
+/* A note's header goes compact below 640 px (CenterContentHeader.tsx), and so
+   does the canvas's status (CanvasBoardStates.tsx). */
+@media (min-width: 640px) {
+  .capy-board > .capy-board-menu {
+    gap: 12px;
+  }
 }
 
 .capy-board[data-editor-open] .capy-board-menu {
@@ -1165,8 +1187,10 @@ html.dark:not([data-board-light]) .capy-board {
   box-shadow: var(--shadow-pop);
 }
 
+/* As wide as mock MenuDownload's, each row on one line; the size row wraps. */
 .capy-board > .capy-board-menu .capy-menu-list {
   top: calc(var(--capy-board-menu-size, 40px) + 6px);
+  min-width: 230px;
 }
 
 /* Rows as the editor's popovers (ToolbarPopoverItem, Epo 2026-11-12): 30px,
@@ -1178,6 +1202,7 @@ html.dark:not([data-board-light]) .capy-board {
   font-size: 14px;
   font-weight: 500;
   color: var(--affine-text-primary-color);
+  white-space: nowrap;
 }
 
 .capy-board .capy-menu-list svg {
@@ -1204,6 +1229,11 @@ html.dark:not([data-board-light]) .capy-board {
   opacity: 0.4;
 }
 
+/* A row with no icon lines its text up with the rows that have one. */
+.capy-board > .capy-board-menu .capy-menu-list > button:not(:has(svg)) {
+  padding-left: 34px;
+}
+
 /* − 100% +, under the entries. */
 .capy-menu-zoom {
   display: flex;
@@ -1223,6 +1253,23 @@ html.dark:not([data-board-light]) .capy-board {
   flex: 1;
   font-size: 14px;
   color: var(--affine-text-primary-color);
+}
+
+/* The canvas's size under a divider, the menu's last row (setRoomSize); in the
+   error colour at the cap. */
+.capy-menu-note {
+  max-width: 240px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--affine-text-secondary-color);
+  border-top: 1px solid var(--affine-border-color);
+}
+
+.capy-menu-note-error {
+  color: var(--solid-error);
 }
 
 /* A note's links are underlined, and hovering one (or a tap on a touch screen)
@@ -1278,4 +1325,153 @@ html.dark:not([data-board-light]) .capy-board {
 
 .capy-plane-editor .capy-plane-list .capy-menu-list > button {
   gap: 8px;
+}
+
+/* Images going up (boardUploads.ts): a box at the image's place and size, its
+   share uploaded and a bar (Epo 2026-11-06, as a note's placeholder); a refused
+   one says why until it is closed. Over the board, under its chrome. */
+.capy-uploads {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.capy-upload {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--affine-text-secondary-color);
+  text-align: center;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: 6px;
+}
+
+.capy-upload > svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--affine-icon-color);
+}
+
+.capy-upload-bar {
+  width: min(160px, 80%);
+  height: 4px;
+  overflow: hidden;
+  background: var(--affine-border-color);
+  border-radius: 2px;
+}
+
+.capy-upload-bar > div {
+  height: 100%;
+  background: var(--affine-text-primary-color);
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+.capy-upload-refused {
+  pointer-events: auto;
+}
+
+.capy-upload-why {
+  color: var(--solid-error);
+}
+
+.capy-board .capy-upload-close {
+  all: unset;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--affine-icon-color);
+  cursor: pointer;
+  border-radius: var(--radius-toolbar-button);
+}
+
+.capy-board .capy-upload-close:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-upload-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* A board that takes no edits: one Copy above what is selected, in the
+   toolbar's place (boardReadOnly.ts, mocks ReadOnlyCopy and ReadOnlyPhone): a
+   finger's size on a phone, the desktop toolbar's above it. */
+.capy-copy-bar {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 4px;
+  background: var(--affine-background-overlay-panel-color);
+  border: 1px solid var(--affine-border-color);
+  border-radius: var(--radius-toolbar);
+  box-shadow: var(--shadow-pop);
+  translate: -50% -100%;
+}
+
+.capy-copy-bar[data-side="below"] {
+  translate: -50% 0;
+}
+
+.capy-copy-bar[hidden] {
+  display: none;
+}
+
+.capy-board .capy-copy-bar button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--affine-text-primary-color);
+  cursor: pointer;
+  border-radius: var(--radius-toolbar-button);
+}
+
+.capy-board .capy-copy-bar button:hover {
+  background: var(--affine-hover-color);
+}
+
+.capy-board .capy-copy-bar button:focus-visible {
+  outline: 2px solid var(--affine-primary-color);
+}
+
+.capy-copy-bar svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (min-width: 768px) {
+  .capy-copy-bar {
+    height: 36px;
+  }
+
+  .capy-board .capy-copy-bar button {
+    height: 28px;
+    padding: 0 10px;
+  }
 }

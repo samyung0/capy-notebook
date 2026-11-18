@@ -21,7 +21,11 @@ export type BoardImages = {
    * (the workspace canvas: an editor asset, as notes do). Without it the block
    * keeps the hash and the file stays on the board until the page sends it (an
    * answer board, at Done). */
-  store?: (file: File) => Promise<{ bytes: number; id: string }>;
+  store?: (
+    file: File,
+    /** How much has gone up, 0 to 100. */
+    onProgress?: (percent: number) => void
+  ) => Promise<{ bytes: number; id: string }>;
   /** Files the page already holds, by id: a draft's. */
   held?: ReadonlyMap<string, Blob>;
 };

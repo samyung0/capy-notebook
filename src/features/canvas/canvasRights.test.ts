@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { canvasRights } from './canvasRights';
+import { canvasRights, sendsPresence } from './canvasRights';
 
 // Provisional until Epo answers who administers a shared canvas: its maker
 // alone, and sharing only as the workspace's owner or editor.
@@ -18,4 +18,13 @@ it('lets the maker rename and delete, and share as a workspace owner or editor',
     manage: false,
     share: false,
   });
+});
+
+// Presence goes by the role, as the room's (`on_awareness`): a narrowed
+// editor on another member's canvas still shows.
+it('sends presence for an owner or editor, never a viewer', () => {
+  expect(sendsPresence('owner')).toBe(true);
+  expect(sendsPresence('editor')).toBe(true);
+  expect(sendsPresence('viewer')).toBe(false);
+  expect(sendsPresence(undefined)).toBe(false);
 });

@@ -765,6 +765,39 @@ Outside this directory, for BlockSuite:
     viewport has no size yet in that frame (`mountLayer` waits) is drawn once
     before its fit, as before.
 
+70. An image is placed before its file is stored (`affine/blocks/image`
+    `utils.ts`, `index.ts`, marked `Capy (local change 70)`; 2026-11-19, the
+    canvas's upload placeholder, Epo 2026-11-06). `addImages` read each file's
+    size and stored it together, then placed the blocks: a canvas stores the file
+    before its block lands (`boardBlobs.ts`), so nothing showed while it went up.
+    Each image's size is now read first, its box worked out, and the hook set by
+    `setImageUploadHandler` told of each file and its box before the files are
+    stored; its answer is called as the block lands, or with why the file was
+    refused. An image whose size can't be read is said and left out (as before,
+    with BlockSuite's own notice); one whose file is refused lands nothing and the
+    others of the same paste still land (upstream one refusal dropped them all),
+    and `addImages` answers the ids that landed. A board that stopped taking
+    edits while the files were stored (`store.readonly`), or whose add throws,
+    lands none and calls every answer with the error, so no box stays. Pinned by the upload test in
+    `e2e/editor/canvas-read-only.spec.ts` and the image tests in
+    `canvas-room-states.spec.ts`.
+
+71. A read-only store selects and copies, and its clipboard and double click add
+    nothing (`affine/blocks/surface` `tool/default-tool.ts`, `affine/blocks/root`
+    `edgeless/clipboard/clipboard.ts`, `affine/gfx/note` `note-tool.ts`, marked
+    `Capy (local change 71)`; 2026-11-19). Upstream a click on a read-only store
+    returned at once, so nothing could be selected but by a press-drag. Now:
+    - `DefaultTool.click` selects what it is on (or clears) on a read-only store
+      too, and hands the click to no view.
+    - `EdgelessClipboardController.copySelection()` puts on the clipboard what a
+      copy event of the selection does (`_onCopy` without its event; the board's
+      Copy bar, `boardReadOnly.ts`).
+    - Cut on a read-only store copies and removes nothing; a paste returns before
+      reading the clipboard.
+    - The double click that places an inline note (local change 59) places none.
+    Pinned by "a viewer's board selects and copies…" in
+    `e2e/editor/canvas-read-only.spec.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

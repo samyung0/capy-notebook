@@ -23,6 +23,8 @@ export type DrawingBoardOptions = {
     ) => Promise<{ id: string; title: string }>;
   };
   fitPadding?: [number, number, number, number];
+  /** The board's name now, for the file Download as image saves. */
+  title?: () => string;
   images?: import('./boardImages').BoardImages;
   onChange?: () => void;
   onEditor?: (cardId: string | null) => void;
@@ -48,6 +50,7 @@ export type BoardPresenceView = {
   caret: () => { anchor: BoardTextPoint; focus: BoardTextPoint } | null;
   host: HTMLElement;
   onSelection: (listener: () => void) => () => void;
+  onUploads: (listener: () => void) => () => void;
   onView: (listener: () => void) => () => void;
   selected: () => string[];
   textBoxes: (
@@ -55,6 +58,8 @@ export type BoardPresenceView = {
     anchor: BoardTextPoint | null
   ) => { caret: BoardBox; range: BoardBox[] } | null;
   toBoard: (clientX: number, clientY: number) => [number, number];
+  /** Where the images this tab is storing will land; none while locked. */
+  uploads: () => BoardBox[];
   view: () => { left: number; top: number; width: number; zoom: number };
 };
 
@@ -76,7 +81,13 @@ export function mountDrawingBoard(
   imageFiles: () => Promise<{ file: Blob; id: string }[]>;
   save: () => { bytes: number; doc: string };
   setLocked: (locked: boolean) => void;
+  /** The room's size against its cap: the menu's last row from 75% of it, in the
+   * error colour at it. null (no room) shows none. */
+  setRoomSize: (size: { bytes: number; max: number } | null) => void;
   snapshot: () => string;
+  /** Just left of the ☰ in the board's chrome, for the page's save status (a
+   * portal); empty, it takes no room. */
+  statusSlot: HTMLElement;
   view: () => BoardView | null;
   putAway: () => void;
   refreshCards: () => void;

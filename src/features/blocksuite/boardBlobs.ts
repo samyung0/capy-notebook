@@ -36,6 +36,9 @@ export class BoardBlobSource implements BlobSource {
   readonly name = 'board';
   /** Set while the board takes no edits: BlockSuite then stores nothing. */
   readonly = false;
+  /** How much of a file handed to `set` has gone up, 0 to 100 (its box,
+   * boardUploads.ts). */
+  onProgress: ((file: Blob, percent: number) => void) | null = null;
 
   private readonly files = new Map<string, Blob>();
   private readonly asked = new Map<string, Promise<Blob | null>>();
@@ -101,20 +104,22 @@ export class BoardBlobSource implements BlobSource {
         throw error;
       }
     // Without a store the file stays on the board until the page sends it.
-    if (store) await this.keep(key, file);
+    if (store) await this.keep(key, file, value);
     else this.files.set(key, file);
     return key;
   }
 
-  /** Stores `file`, which came under `key`, once; a refusal is said and
-   * thrown, so nothing lands. */
-  private async keep(key: string, file: Blob) {
+  /** Stores `file`, which came under `key` (handed in as `given`), once; a
+   * refusal is said and thrown, so nothing lands. */
+  private async keep(key: string, file: Blob, given: Blob = file) {
     const { store, onRefused } = this.images;
     if (!store) throw new Error('board images are not stored at once');
     let storing = this.storing.get(key);
     if (!storing) {
       storing = Promise.resolve()
-        .then(() => store(asFile(file)))
+        .then(() =>
+          store(asFile(file), (percent) => this.onProgress?.(given, percent))
+        )
         .then((to) => {
           this.moved.set(key, to);
           this.foreign.delete(key);

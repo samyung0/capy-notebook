@@ -4882,13 +4882,48 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   page around the board places (its width through `--capy-board-done-width`, its top through
   `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
   wider screen's), so the
-  bottom row holds only the toolbar: Undo, Redo, Fit to screen, Clear all (Epo 2026-11-13:
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, Download as image, Clear all (Epo 2026-11-13:
   everything on the board, or in an open plane or chart, goes in one undo step; greyed
   out when there's nothing; a pie keeps its 12 o'clock line), then a row of −, the
   zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
   row keep it open, so a few presses step back or zoom; a press anywhere else and
   Escape close it. Its rows are the editor popovers' (30px, medium 14px text, 18px
-  icons, Epo 2026-11-12). A teacher's board has Fit to screen and zoom only.
+  icons, Epo 2026-11-12); a row with no icon lines its text up with those that have one.
+  A teacher's board, a viewer's and one that takes no edits have Fit to screen,
+  Download as image and zoom only.
+  Download as image (2026-11-19, mock MenuDownload, as Office keeps Download) saves
+  the whole board as a PNG named by the board's `title` (a canvas's, without the
+  characters a file name cannot hold; `canvas.png` or `drawing.png` with none), on white in the
+  light palette, its longest side at most 4,096 px, drawn as the marking image is
+  (layer by layer, so what the screen covers is covered) but with nothing moved
+  nearer. BlockSuite's own `ExportManager.exportPng` is not used: it draws every note
+  under every stroke, offsets blocks by 50 units, and gives nothing when one image's
+  file is missing. A board that cannot be drawn says so in a toast.
+  On a canvas (`setRoomSize`, Epo 2026-11-18, 2B) the menu ends, from 75% of the
+  room's cap, with a divider and `Size: 3,150/4,096 KB`, kilobytes rounded up as a
+  note's size line (`documentStats.ts`); at the cap the row is in the error colour
+  and reads on ` · Only edits that remove content will be saved.` A board with no
+  room (`/dev/drawing`, answers) shows none. Just left of the ☰ (12 px apart, 8 px
+  below 640 px, where a note's header goes compact) sits `statusSlot`, an empty element the canvas page portals its save
+  status into (1B); empty, it takes no room.
+  From the cap less the room's 64 KiB margin (`BOARD_OFFLINE_MARGIN`, the
+  space offline work leaves, online too: client-limits A) the size row is red
+  with the remove-only words and the board takes only edits that remove content
+  (`boardFull.ts`): select, the eraser, Delete and moving stay; what adds is
+  refused with "Only edits that remove content will be saved." in a toast: a
+  tool other than select, pan and the eraser (the pen, highlighter, shapes,
+  notes, text, connectors, stamps; picking one goes back to select), a paste,
+  a drop, ⌘D and the element toolbar's Duplicate (both through
+  `createElementsFromClipboardDataCommand`), an Alt-drag's copy, a mind map's
+  Tab or Enter child, a shape's auto-complete +, a double click's note, a piece
+  or picture from the toolbar or Misc, an image picked, and a new formula.
+  Typing in what is already there and Undo are not stopped; the room refuses
+  them past its cap and its copy-only recovery takes over. Below the margin it
+  all comes back. The gate coming on under the pen waits for the stroke to end,
+  then goes back to select without a toast (the row says why); picking an
+  adding tool while gated is what the toast is for. `setRoomSize` is called on
+  every update of the room, so it does nothing unless the row's text or the
+  gate changes.
   A popover, menu or dialog of the page's that holds focus keeps it while the pointer
   crosses the board (local change 40): upstream the board took focus back on the
   pointer's first move, which closed the canvas picker.
@@ -4902,7 +4937,32 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   The board (`.capy-board`) is positioned, so this selection layer and the ☰ menu sit
   against it even with a header row above it (a tablet's). BlockSuite's own toasts go to
   the app's `userToast` (`setToastHandler`, vendored local change 33); its fixed
-  container was cut off by the page.
+  container was cut off by the page. They read in the app's language through a table
+  of their own beside the chrome labels' (`toastText` in `chromeLabels.ts`, as decided
+  2026-11-10 for the labels); one the table does not hold shows as written.
+- **A canvas that takes no edits selects and copies** (2026-11-19, mocks ReadOnlyCopy
+  and ReadOnlyPhone; notes and Office allow it in every read-only state): a viewer's
+  board, copy-only recovery, a frozen or full one, a trashed canvas and an editor's
+  board while it is locked. A mouse or pen click selects (vendored local change 71),
+  a drag on empty board selects by its box, ⌘C copies; a finger pans and a tap
+  selects (`TapPanTool`, `boardReadOnly.ts`). The tool is picked by each press's
+  pointer, so a touch screen with a mouse does both. There is no toolbar: a bar with
+  one Copy sits above the selection (below it when the board's top has no room),
+  and puts on the clipboard what an editor's copy does (`copySelection`, local
+  change 71); it says "Copied to clipboard". Nothing writes to the board: the moves
+  stay refused (local change 65), cut copies only, a paste and a double click add
+  nothing (local change 71). A teacher's view of an answer pans and zooms only.
+- **An image while it uploads** (Epo 2026-11-06, as a note's placeholder; mock
+  Upload): on a canvas, a box at the place and size its block will take shows at
+  once with "0% uploaded" and a bar (`boardUploads.ts`; BlockSuite names the box
+  before it stores the file, local change 70). The box is the page's own, in no
+  one's stored board, so a refused upload leaves nothing behind: its box says "The
+  image couldn't be added." with the reason and a Close. The other images of one
+  paste still land. Peers see an "Uploading" box with the uploader's outline and
+  name tag through board presence `uploads`, each id the box itself (`x,y,w,h` in
+  whole board units, base 36, at most 29 characters, `uploadId` in
+  `boardPresence.ts`); a board that takes no edits sends none, as a read channel's
+  state may hold no `uploads`.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
   senior tool. The right triangle, parallelogram, trapezium, pentagon and hexagon are
   shape types added to BlockSuite (local change 46: corners in `POLYGON_SHAPES`, one
@@ -5572,13 +5632,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       opens over it. Whoever may edit the canvas sends and hears it,
       also while their own board is read-only for a time (a frozen account, a full
       payer); a workspace viewer sends nothing and the room tells a viewer nothing, as
-      in a note. The page sends only for a person it knows may edit
-      (`sendsBoardPresence`): by the room's write channel, or by their having made
-      the canvas (`own` of the canvas's read). An editor narrowed to read on
-      another member's canvas can be told apart from a viewer by the canvas's
-      read, whose `role` is the caller's (owner, editor or viewer), but the page
-      does not read it yet, so their tab sends none, though the room would relay
-      it. `BoardPresenceMarks` draws the others with the marks a note uses
+      in a note. The page sends by the caller's `role` in the canvas's read
+      (`sendsPresence` in `canvasRights.ts`): an owner or editor sends, a narrowed
+      one on another member's canvas included, as the room relays any channel but a
+      viewer's (`on_awareness`); a viewer does not, and before the read answers
+      nothing is sent. `BoardPresenceMarks` draws the others with the marks a note uses
       (`PresenceMarks.tsx`, shared with `RemoteCursors.tsx`): a pointer that glides
       120 ms in board units and follows pan and zoom, one named outline around what a
       person selected, a caret and tinted range inside a note's text, and for text
@@ -5587,31 +5645,95 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       outline around a multi-selection, carets without a name flag, and no avatar
       group on a canvas are as built, to be shown to Epo).
     - **What a person sees.** While the room joins, the pane's loader
-      (`CanvasOpening`). A room that refuses the person before anything showed (no
-      role, a canvas gone) is the usual unavailable panel (`UnavailableItem`), never
-      saying blocked rather than gone. A canvas opened offline waits and opens by
-      itself when the connection returns. A workspace viewer of a shared canvas, a
-      frozen account and anyone on a canvas whose payer is frozen or full get a board
-      to pan and zoom with no toolbar (mounted without tools; it mounts once more,
-      at the same view, if the person may then write). An editor's board stops and
-      starts taking edits in place when its access changes (`setLocked`: the view,
-      the history and the board stay). A revoke while inside (the canvas taken back,
-      the member removed or lowered) leaves the board as it was, read-only, under a
-      strip reading "You no longer have access" (`CanvasBoardStrip`, the `access-lost`
-      save strip; where it sits has no mock yet). The strip also carries offline, an
-      outdated build with Reload, and edits open for copying. A full canvas, where
-      the room refuses an update for the document's size, drops what this tab had not
-      stored, says once "This canvas is full. Delete something to keep drawing."
-      (`workspace_canvas_full`, provisional words) and opens the room afresh, so the
-      person is back on an editable board holding the room's state (`onFull` in
-      `itemRoom.ts`; the refused edits are not kept to copy, since they would be
-      refused at every join).
+      (`CanvasOpening`), which says after 5 s that an open slowed by the user's open
+      budget is slowed (`editor_open_slowed`, `FileLoading`). A member's device keeps
+      a copy of what the room confirmed (`deviceCopy.ts`, the `keep` label from the
+      canvas's read, `seed` at the next open): the board shows it at once, offline
+      too, locked until the room has synced, with its tools when the copy says the
+      person could edit. The copy's label follows the canvas's read: a rename or a
+      demotion is written with the next copy (`ItemRoom.keepAs`, `relabel`), so the
+      next open paints with the current title and tools. A board's copy is at most
+      its 4 MiB cap, against the 200 MiB the device's copies share. Under the mocks
+      only the scenarios workspace's canvases (`mock-scenario-canvas-N`) keep a
+      copy and drafts, as every MSW scenario fixture does. A room that refuses the person before anything
+      showed (no role, a canvas gone) is the usual unavailable panel
+      (`UnavailableItem`), never saying blocked rather than gone. A canvas read that
+      fails with nothing to show offers Retry and, for an unexpected failure, its
+      error id (Q612); a board whose mount throws says the canvas couldn't be opened,
+      and both reach Sentry (`canvas-open`, `canvas-board`; an API failure is the
+      server's to log). A canvas opened offline with no copy waits ("Waiting for
+      connection") and opens by itself when the connection returns; with the browser
+      online and the service down, the loader stays and at 30 s from the join's start
+      the strip reads "The live collaboration service is unavailable." with Retry
+      (Epo 2026-11-04, D5, C9; `unreachable` and `retry` in `itemRoom.ts`). A
+      workspace viewer of a shared canvas gets a board to pan and zoom with no
+      toolbar (mounted without tools; it mounts once more, at the same view, if the
+      person may then write), with no cue (D9). A frozen account opens under "This
+      file is read-only now." and a full storage under the strip naming whose
+      (`StorageFullBanner`: "Your storage is full." or "Owner of the file has
+      insufficient storage."), picked as a note picks them from the canvas's read
+      (`storageFull`, else an owner's or editor's `role` with `canEditContent` off).
+      An editor's board stops and starts taking edits in place when its access
+      changes (`setLocked`: the view, the history and the board stay). Turned
+      read-only while open (a demotion, a freeze, a full payer), the room discards
+      the unsaved edits and, when there were any, opens afresh on what was saved
+      (Epo 2026-09-29; the `board` option of `itemRoom.ts`), under the read-only strip
+      from then on, and the canvas is read again for why. A revoke while inside (the
+      canvas taken back, the member removed) leaves the board as it was, read-only,
+      under a strip reading "You no longer have access" (`CanvasBoardStrip`, the
+      `access-lost` save strip; where it sits has no mock yet). The strip also
+      carries offline, an outdated build with Reload, edits open for copying, and
+      "Saving is delayed" (closeable) once an edit's receipt has waited 25 s of
+      connected time, as a note's, or the room said a store failed with edits
+      unsaved (`delayed`, `SaveDelayClock`). One strip shows at a time: recovery,
+      access lost, offline or outdated, unreachable, storage, read-only, delayed.
+      An edit the room refuses for good, one taking the board past its cap
+      included, is kept on this device as one refused row and opens read-only for
+      copying, as any item's (Developer 2026-09-30; Epo 2026-11-18, nothing deleted
+      without acknowledgement), under the recovery strip; Reload asks first ("Discard
+      these edits and reload?", the note's discard words), then drops them and
+      opens the room afresh. The 7-day toast's Download gives a board's edits as its
+      blocks in JSON, named after the canvas (`draftFile`).
+    - **Save status and size (Epo 2026-11-18, 1B and 2B, mocks `StatusB`,
+      `StatusPhone`, `SizeB`, `SizeFull`).** The board's save status sits just left
+      of its ☰ (`statusSlot`, `CanvasBoardStatus`): `LiveStatus` with its label, the
+      icon alone on a phone as a note's phone header, a spinner while a copy shows
+      before the room joins, its tooltip held open with the slowed line after 5 s.
+      A viewer, who saves nothing, gets what a note's viewer gets (no save status):
+      the offline icon alone (`OfflineStatus`) and no size row. The picker's row
+      stops 8px short of the status and ☰ whatever the status says: the page reads
+      their width as `--capy-board-chrome` (`useCanvasBoard`); a phone's picker
+      fills the row (mock `StatusPhone`, 360 px included), a wider screen's shrinks
+      into it. The status turns compact below 640 px, as a note's header.
+      The room keeps the board's size (`size`, `subscribeSize`): the room's own
+      measure in each receipt (`metrics.contentBytes`, the Yjs v1 encoding the server
+      caps), one encode of this tab's document when idle before the first, plus the
+      bytes of every update applied since; the page hands it to the board
+      (`setRoomSize`), whose menu ends with the size from 75% and, at the cap, "Only
+      edits that remove content will be saved." The server is the judge of what
+      removes content: an update whose state with it is no larger than without it (a
+      deletion) is always admitted, and a growing one at the cap is refused and kept
+      for copying as above. Offline, a board's work stops under the offline-limit
+      strip once its size is within 64 KiB of the cap (the space left), or at 4 MiB
+      of unsent updates (its cap, not the note's 2 MiB), whichever comes first.
+    - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
+      link on its own canvas page (the account's, or its workspace's with
+      `view=canvas`): `useCanvasPicker` asks `GET /api/canvases/{id}` for a `c` the
+      list does not hold once its pages ended, and one answering `trash` is shown
+      read-only with no Rename, sharing or Delete. Its board is the stored state from
+      `GET /api/canvases/{id}/board` (the editor's first state for one never opened),
+      with no room, under the Trash strip with Restore (`TrashBanner`); Restore's
+      refresh asks again, the list is read again, and the canvas opens live.
     - **The picker's sharing (Epo 2026-11-18, "B, a switch", mock Artifact
-      F2dZxe8XvcW1FAiqMf81NA).** The canvas shown has a "Shared with workspace" row
-      with the people icon and a switch between Rename and Delete in `CanvasSwitcher`,
+      F2dZxe8XvcW1FAiqMf81NA).** The canvas shown has a "Shared with members" row
+      (`content_shared_with_members`, the file switch's words, Epo 2026-11-18) with the
+      people icon and a switch between Rename and Delete in `CanvasSwitcher`,
       for its creator while an owner or editor of the workspace (`canvasRights`, the
       server enforcing the same; provisional, see authorization). The row is the
-      control and stays open; the switch shows where it is going while
+      control and stays open. Sharing asks first, as the file switch does (mock
+      `ShareDialog`: "Share this canvas with members?", "Everyone in the workspace will
+      see it. Editors can draw on it.", Cancel and "Share with members"); taking it
+      back does not. The switch shows where it is going while
       `PATCH /api/canvases/{id}` is on its way, and a refusal is said by a toast. A
       canvas the person shared carries the people mark before its time, another
       member's shared canvas reads their name before the time ("Ben · 3d"), and a
@@ -5658,7 +5780,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     document the agent reads. On a phone the navigation drawer's button sits beside the
     panel, and the row stops short of the board's own menu. The Files page lists no
     canvas (the rows of earlier that day are gone); a canvas's images still list there
-    and open the canvas they are on, and Trash shows a deleted canvas with its icon.
+    and open the canvas they are on, and Trash shows a deleted canvas with its icon
+    and opens it read-only on its canvas page (above).
   - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
     keeps only an id (`sourceId`), and the board reads and stores files through its own
     blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory

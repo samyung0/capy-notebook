@@ -1004,14 +1004,15 @@ it('tells its page it is going while its document still stands', async () => {
   expect(failing.awareness?.getLocalState()).toBeNull();
 });
 
-// Epo 2026-11-18 (the canvas's room): a board shown read-only has nothing to
-// copy from, and the same edits would be refused at every join.
-it('drops the unsent edits of a full canvas and opens afresh once they are gone', async () => {
-  const onFull = vi.fn();
+// Developer 2026-09-30 (a permanent refusal keeps the unsaved edits to copy)
+// and Epo 2026-11-18 ("dont just delete stuff without user acknowledgement"):
+// a canvas refused for its size keeps this tab's edits as any item does.
+it("keeps a full canvas's refused edits to copy, and opens afresh", async () => {
+  vi.mocked(userToast).mockClear();
   const onReplace = vi.fn();
   const room = new ItemRoom('q', {
+    board: { max: 4096 },
     drafts: { actorId: 'u' },
-    onFull,
     onReplace,
   });
   await room.start();
@@ -1025,13 +1026,121 @@ it('drops the unsent edits of a full canvas and opens afresh once they are gone'
   });
   // The close that follows the refusal ends nothing a second time.
   provider.config.onClose?.({ code: 4400, reason: 'document rejected' });
-  expect(room.getSnapshot()).toMatchObject({ recovery: null, stopped: true });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.refused).toBe(1);
+  expect(drafts.discarded).toBe(0);
+  expect(onReplace).toHaveBeenCalledOnce();
+  expect(userToast).toHaveBeenCalledOnce();
+  room.destroy();
+});
+
+// Epo 2026-11-18 (2B, client-limits A): a board's size is the room's measure
+// at each receipt plus what arrived since; offline, its work stops at the
+// space the cap leaves.
+it("keeps a board's size from its receipts and stops offline work at the space left", async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const room = new ItemRoom('q', {
+    board: { max: 100_000 },
+    drafts: { actorId: 'u' },
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  const [provider] = providers;
+  const sizes: (number | undefined)[] = [];
+  room.subscribeSize(() => sizes.push(room.size()?.bytes));
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      metrics: { contentBytes: 20_000 },
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(room.size()).toEqual({ bytes: 20_000, max: 100_000 });
+  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  expect(room.getSnapshot().offline).toBe('offline');
+  room.doc.getText('t').insert(0, 'x'.repeat(10_000));
+  expect(room.size()?.bytes).toBeGreaterThan(30_000);
+  expect(room.getSnapshot().offline).toBe('offline');
+  // Within the margin of the cap: the board stops taking edits.
+  room.doc.getText('t').insert(0, 'x'.repeat(20_000));
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  expect(sizes[0]).toBe(20_000);
+  room.destroy();
+});
+
+// Epo 2026-09-29: a board turned read-only drops its unsaved edits and shows
+// what was saved, which its document no longer holds alone: a fresh room.
+it('opens a fresh room when a board turns read-only with unsaved edits', async () => {
+  const onReplace = vi.fn();
+  const room = new ItemRoom('q', {
+    board: { max: 4096 },
+    drafts: { actorId: 'u' },
+    onReplace,
+  });
+  await room.start();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  await expect(provider.config.token()).rejects.toThrow(
+    'collaboration room moved'
+  );
+  expect(room.getSnapshot().access).toBe('read');
   await vi.advanceTimersByTimeAsync(0);
   expect(drafts.discarded).toBe(1);
-  expect(drafts.refused).toBe(0);
-  expect(onFull).toHaveBeenCalledOnce();
   expect(onReplace).toHaveBeenCalledOnce();
-  expect(userToast).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// Epo 2026-11-04 (D5, C9): a join with no answer 30 s after it began, the
+// browser online, says the service is unavailable, and Retry asks again.
+it('says it is unreachable 30 s into a failing open, and Retry starts again', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  tokens.push(new ApiError(503, 'Service Unavailable'));
+  const { room } = await started();
+  expect(room.getSnapshot()).toMatchObject({
+    status: 'offline',
+    unreachable: false,
+  });
+  vi.advanceTimersByTime(30_000);
+  expect(room.getSnapshot().unreachable).toBe(true);
+  room.retry();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(room.getSnapshot().unreachable).toBe(false);
+  expect(providers).toHaveLength(1);
+  providers[0].config.onSynced?.({ state: true });
+  expect(room.getSnapshot().status).not.toBe('offline');
+  room.destroy();
+});
+
+// Epo 2026-10-04: a receipt waiting 25 s of connected time, or a store the
+// room says failed with edits unsaved, shows "Saving is delayed" until a
+// receipt answers.
+it('says saving is delayed past 25 s without a receipt, or on a failed store', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  vi.advanceTimersByTime(24_999);
+  expect(room.getSnapshot().delayed).toBe(false);
+  vi.advanceTimersByTime(1);
+  expect(room.getSnapshot().delayed).toBe(true);
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(room.getSnapshot().delayed).toBe(false);
+  drafts.unsaved = true;
+  provider.config.onStateless?.({
+    payload: JSON.stringify({ materialId: 'q', type: 'checkpoint-failed' }),
+  });
+  expect(room.getSnapshot().delayed).toBe(true);
   room.destroy();
 });
 

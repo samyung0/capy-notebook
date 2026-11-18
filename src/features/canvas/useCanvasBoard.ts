@@ -1,12 +1,14 @@
+import { captureException } from '@sentry/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type * as Y from 'yjs';
-import { canvasById } from '@/api/canvas';
+import * as Y from 'yjs';
+import { BOARD_CATALOG } from '@/api/board.generated';
+import { canvasById, trashedCanvasBoard } from '@/api/canvas';
 import { useMe } from '@/api/hooks';
+import type { CanvasBody, StorageFullBy, Trashed } from '@/api/types';
 import {
   recoveryBanner,
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
-import { userToast } from '@/components/ui/userToast';
 import { assetImages } from '@/features/blocksuite/boardAsset';
 import {
   type BoardView,
@@ -14,31 +16,80 @@ import {
   mountDrawingBoard,
 } from '@/features/blocksuite/drawingBoard';
 import {
+  type CopyLabel,
+  keepsCopyOf,
+  useRoomSeed,
+} from '@/features/collaboration/deviceCopy';
+import {
+  type ItemRoomStatus,
   itemEditingStopped,
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
 import { m } from '@/i18n';
-import { errorCopy, errorKind } from '@/lib/errors';
+import { base64ToBytes } from '@/lib/base64';
+import { errorCopy, errorKind, unexpectedErrorId } from '@/lib/errors';
+import { useOnlineStatus } from '@/lib/online';
 import type { OpenLink } from '@/lib/openLink';
 import type { CanvasPresence } from './BoardPresenceMarks';
-import { sendBoardPresence, sendsBoardPresence } from './boardPresence';
+import { sendBoardPresence } from './boardPresence';
 import { holdsBoard } from './boardRoom';
+import { editsCanvas, sendsPresence } from './canvasRights';
 
 export type CanvasBoard = ReturnType<typeof mountDrawingBoard>;
 
+/** A canvas room's cap on its board's state (Epo 2026-11-18). */
+const BOARD = { max: BOARD_CATALOG.limits.CANVAS_BOARD_MAX };
+
+/** The editor's own first state, for a trashed canvas never opened (its
+ * stored board is empty). Loaded only then: the board's modules stay out of
+ * this one's. */
+const firstStateModule = import.meta.glob<{
+  boardFirstState: () => Uint8Array;
+}>('/src/features/blocksuite/boardFirstState.ts');
+async function boardFirstState() {
+  const [load] = Object.values(firstStateModule);
+  return (await load()).boardFirstState();
+}
+
+/** The one strip over a canvas's board, by priority: the room's save strips,
+ * then why the board is read-only, then a delayed save. */
+export type CanvasStrip =
+  | {
+      kind: 'save';
+      /** Recovery's Reload (after asking), which leaves the copy-only edits
+       * for a fresh room. */
+      onReload?: () => void;
+      /** `unreachable`'s Retry. */
+      onRetry?: () => void;
+      state: SaveBannerState;
+    }
+  /** The account is frozen, or this person was narrowed while it was open
+   * (Epo 2026-09-29): "This file is read-only now." */
+  | { kind: 'read-only' }
+  /** Its payer (its maker) is at the storage limit, or this person is. */
+  | { by: StorageFullBy; kind: 'storage' }
+  /** Opened from its maker's Trash: read-only until Restore. */
+  | { id: string; kind: 'trash'; trash: Trashed; workspaceId: string };
+
 /** What a canvas page shows around its board. */
 export type CanvasBoardState = {
-  /** Why the canvas couldn't open, if it couldn't: said with Retry. */
-  failed: string | null;
+  /** Why the canvas couldn't open, if it couldn't and nothing shows: said
+   * with Retry and, for an unexpected failure, its error id (Q612). */
+  failed: { errorId: string | null; message: string } | null;
   /** Nothing shows yet and nothing is wrong: the room is joining. */
   opening: boolean;
   /** The other people on the board, for their marks (`BoardPresenceMarks`);
    * none until the board shows its room. */
   presence: CanvasPresence | null;
-  /** The strip over the board while its room cannot take edits as usual
-   * (offline, outdated, edits to copy, access lost); `onReload` leaves the
-   * copy-only edits for a fresh room. */
-  strip: { onReload?: () => void; state: SaveBannerState } | null;
+  /** The room's open waits on the user's open budget (Epo 2026-10-20). */
+  slowed: boolean;
+  /** The save status just left of the board's ☰ (Epo 2026-11-18, 1B):
+   * where it goes, and what it says. None while the board shows no room
+   * (the Trash, edits to copy, access lost). A viewer, who saves nothing,
+   * gets what a note's viewer gets: the offline icon alone (`reads`). */
+  status: { reads: boolean; slot: HTMLElement; state: ItemRoomStatus } | null;
+  /** The strip over the board, under the picker's row. */
+  strip: CanvasStrip | null;
   /** The room refused this person before anything showed: gone, or not
    * theirs. */
   unavailable: boolean;
@@ -49,11 +100,13 @@ export type CanvasBoardState = {
 
 /** The drawing board over a canvas's collaboration room, mounted in
  * `container` (Epo 2026-11-18; a room for every canvas, shared or not). The
- * board edits the room's document in place once the room has synced: the
- * server seeded its page and canvas, every change goes to the room as it is
- * made, and what another tab or person draws arrives the same way. Nothing is
- * saved from here. Unsent edits are kept on this device as any live item's are
- * (`itemRoom.ts`), and sent on the next open.
+ * board edits the room's document in place: the server seeded its page and
+ * canvas, every change goes to the room as it is made, and what another tab or
+ * person draws arrives the same way. Nothing is saved from here. Unsent edits
+ * are kept on this device as any live item's are (`itemRoom.ts`), and sent on
+ * the next open. A member's device keeps a copy of what the room confirmed
+ * (`deviceCopy.ts`): the next open shows it at once, offline too, read-only
+ * until the room has synced.
  *
  * The board is read-only for whoever the room gives a read channel (a
  * workspace viewer on a shared canvas, a frozen account, a payer at its
@@ -65,17 +118,18 @@ export type CanvasBoardState = {
  * write, at the view they had. An image is stored at once as the material's
  * own image asset, as a note's is, and lands on the board once it is stored.
  *
- * A canvas that is full (the room refuses an update for its size) drops what
- * this tab had not stored, says so once, and opens the room afresh: the
- * person is back on an editable board holding the room's state, to delete
- * something.
+ * An edit the room refuses for good, one taking the board past its cap
+ * included, is kept on this device and opens read-only for copying, as any
+ * item's (Developer 2026-09-30); Reload asks before it drops them. Turned
+ * read-only while open (a demotion, a freeze, a full payer), the board shows
+ * what was saved before, under the strip saying so (Epo 2026-09-29). A canvas
+ * in its maker's Trash opens read-only from its stored board, with Restore.
  *
- * Presence is a note's (Epo 2026-11-18): whoever may edit the canvas sends
- * their pointer, selection and text caret and sees the others', also while
- * their own board is read-only for a time (a frozen account, a full one). A
- * workspace viewer sends nothing, as a note's reader does not, and the room
- * tells a viewer nothing of the others. Who may edit is what the page knows,
- * never a guess (`sendsBoardPresence`). */
+ * Presence is a note's (Epo 2026-11-18): whoever may edit the canvas by their
+ * role sends their pointer, selection and text caret and sees the others',
+ * also while their own board is read-only for a time (a frozen account, a full
+ * one). A workspace viewer sends nothing, as a note's reader does not, and the
+ * room tells a viewer nothing of the others (`sendsPresence`). */
 export function useCanvasBoard(
   container: React.RefObject<HTMLDivElement | null>,
   id: string,
@@ -94,60 +148,47 @@ export function useCanvasBoard(
 ): CanvasBoardState {
   const { data: me } = useMe();
   const actorId = me?.id ?? null;
+  const online = useOnlineStatus();
   const shown = useRef<CanvasBoard | null>(null);
   // The board's document is going (the page left, a fresh room): its closing
   // writes are no step back in the URL.
   const leaving = useRef(false);
-  const { room, snapshot } = useItemRoom(id, !!actorId, {
-    actorId,
-    awareness: true,
-    onFull: () =>
-      userToast({
-        id: `canvas-full-${id}`,
-        title: m.workspace_canvas_full(),
-        variant: 'warning',
-      }),
-    // A room replaced under an open plane or chart (moved, refused): what the
-    // editor writes as it closes goes into the document while it still stands.
-    // The fresh room's board opens the editor again from the URL.
-    onLeave: () => {
-      leaving.current = true;
-      shown.current?.closeEditor();
-    },
-  });
-  const [failed, setFailed] = useState<string | null>(null);
-  const [mounted, setMounted] = useState<CanvasBoard | null>(null);
-  // The card whose plane or chart editor is open.
-  const editor = useRef<string | null>(null);
-  // The board reads the latest of these when it needs them.
-  const latest = useRef(options);
-  latest.current = options;
 
-  // The canvas's image assets as the server lists them: an image already the
-  // canvas's own is never stored again.
-  const [listed, setListed] = useState<{
-    id: string;
-    /** The person made the canvas: its owner, whatever their channel. */
-    mine: boolean;
-    own: readonly string[];
-  } | null>(null);
+  // The canvas as the server reads it: who the person is on it, why it may
+  // be read-only, whether it is in the Trash, its image assets.
+  const [canvas, setCanvas] = useState<CanvasBody | null>(null);
+  const [failed, setFailed] = useState<CanvasBoardState['failed']>(null);
   // Asked for while the device was offline: asked again (`attempt`) once it is
-  // back, as the room joins again by itself.
+  // back, as the room joins again by itself. Read again too when the room
+  // turned read-only, for why.
   const [away, setAway] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // The canvas's image assets as the server lists them, a trashed one
+  // included: an image already the canvas's own is never stored again.
+  const own = useRef(new Set<string>());
   useEffect(() => {
     let live = true;
     setFailed(null);
     canvasById(id).then(
-      (canvas) => {
+      (body) => {
         if (!live) return;
         setAway(false);
-        setListed({ id, mine: canvas.own, own: canvas.ownImageAssetIds });
+        for (const asset of body.ownImageAssetIds) own.current.add(asset);
+        setCanvas(body);
       },
       (error: unknown) => {
         if (!live) return;
-        if (errorKind(error) === 'offline') setAway(true);
-        else setFailed(errorCopy(error, m.workspace_canvas_open_failed()));
+        if (errorKind(error) === 'offline') {
+          setAway(true);
+          return;
+        }
+        // An API failure is the server's to log (beforeSend drops it); any
+        // other throw is this page's.
+        captureException(error, { tags: { component: 'canvas-open' } });
+        setFailed({
+          errorId: unexpectedErrorId(error),
+          message: errorCopy(error, m.workspace_canvas_open_failed()),
+        });
       }
     );
     return () => {
@@ -164,40 +205,140 @@ export function useCanvasBoard(
     window.addEventListener('online', again);
     return () => window.removeEventListener('online', again);
   }, [away]);
-  const images = useMemo(
-    () =>
-      listed?.id === id
-        ? assetImages(id, listed.own, (error) => {
-            const title = m.workspace_canvas_image_refused();
-            // Why, when the error says: its own copy, never the title again.
-            const why = errorCopy(error, title);
-            userToast({
-              description: why === title ? undefined : why,
-              title,
-              variant: 'error',
-            });
-          })
-        : null,
-    [id, listed]
+  const trash = canvas?.trash;
+
+  // The device's copy, read once before the room starts from it.
+  const seed = useRoomSeed(id, actorId);
+  const { room, snapshot } = useItemRoom(
+    id,
+    !!actorId && seed !== undefined && !trash,
+    {
+      actorId,
+      awareness: true,
+      board: BOARD,
+      keep: seed
+        ? {
+            canEditContent: seed.row.canEditContent,
+            kind: seed.row.kind,
+            owner: seed.row.owner,
+            standalone: seed.row.standalone,
+            title: seed.row.title,
+          }
+        : undefined,
+      // A room replaced under an open plane or chart (moved, refused): what
+      // the editor writes as it closes goes into the document while it still
+      // stands. The fresh room's board opens the editor again from the URL.
+      onLeave: () => {
+        leaving.current = true;
+        shown.current?.closeEditor();
+      },
+      seed,
+    }
   );
+  // A member keeps a copy of what the room confirmed, under the canvas's
+  // name (C1, Epo 2026-11-04).
+  const keep = useMemo((): CopyLabel | undefined => {
+    if (!(canvas && actorId && !canvas.trash)) return;
+    if (!keepsCopyOf({ id, isOwner: canvas.own, role: canvas.role })) return;
+    return {
+      canEditContent: canvas.capabilities.canEditContent,
+      kind: 'canvas',
+      owner: actorId,
+      standalone: !canvas.workspaceId,
+      title: canvas.title,
+    };
+  }, [actorId, canvas, id]);
+  useEffect(() => {
+    if (room && keep) room.keepAs(keep);
+  }, [room, keep]);
+
+  // A canvas in the Trash shows its stored board, with no room.
+  const [trashDoc, setTrashDoc] = useState<Y.Doc | null>(null);
+  const trashed = !!trash;
+  useEffect(() => {
+    if (!trashed) return;
+    const doc = new Y.Doc();
+    let live = true;
+    trashedCanvasBoard(id)
+      .then(async ({ updates }) => {
+        if (!live) return;
+        if (updates.length)
+          for (const update of updates)
+            Y.applyUpdate(doc, base64ToBytes(update));
+        else Y.applyUpdate(doc, await boardFirstState());
+        if (live) setTrashDoc(doc);
+      })
+      .catch((error: unknown) => {
+        if (!live) return;
+        captureException(error, { tags: { component: 'canvas-open' } });
+        setFailed({
+          errorId: unexpectedErrorId(error),
+          message: errorCopy(error, m.workspace_canvas_open_failed()),
+        });
+      });
+    return () => {
+      live = false;
+      setTrashDoc(null);
+      doc.destroy();
+    };
+  }, [id, trashed]);
+
+  const [mounted, setMounted] = useState<CanvasBoard | null>(null);
+  // The card whose plane or chart editor is open.
+  const editor = useRef<string | null>(null);
+  // The board reads the latest of these when it needs them.
+  const latest = useRef(options);
+  latest.current = options;
+  // Its name now, for Download as image's file: the read's, or the copy's.
+  const title = useRef('');
+  title.current = canvas?.title ?? seed?.row.title ?? '';
+
+  const images = useMemo(() => {
+    // A refused upload says why in the board's own upload box (boardUploads.ts).
+    const stored = assetImages(id, [], () => {});
+    return {
+      ...stored,
+      stored: (asset: string) =>
+        own.current.has(asset) || !!stored.stored?.(asset),
+    };
+  }, [id]);
 
   const { recovery } = snapshot;
   const lost = snapshot.status === 'unavailable';
-  // Edits that cannot join the room show alone, for copying; else the room's
-  // document once it holds the room's state.
-  const doc = recovery?.doc ?? (room && snapshot.synced ? room.doc : null);
+  // The board as the device kept it, until the room's state arrives.
+  const seeded = !!seed && room?.doc === seed.doc;
+  // The room refused this person before anything showed: nothing to show.
+  const refusedFirst = lost && !snapshot.synced;
+  // Edits that cannot join the room show alone, for copying; a trashed
+  // canvas shows its stored board; else the room's document once it holds
+  // the room's state, or the device's copy of it.
+  const doc =
+    trashDoc ??
+    recovery?.doc ??
+    (room && !refusedFirst && (snapshot.synced || seeded) ? room.doc : null);
   const readOnly =
+    !!trashDoc ||
     !!recovery ||
     lost ||
+    !snapshot.synced ||
     snapshot.stopped ||
     snapshot.access !== 'write' ||
     itemEditingStopped(snapshot);
-  const copyOnly = !!recovery;
-  // A board mounts with its tools once its person may write to its document,
-  // and keeps them: from then on it only stops and starts taking edits.
+  const copyOnly = !!recovery || !!trashDoc;
+  // A board mounts with its tools once its person may write to its document
+  // (or, painting from the copy before the token answers, could when it was
+  // kept), and keeps them: from then on it only stops and starts taking edits.
   const tooled = useRef<Y.Doc | null>(null);
-  if (doc && !copyOnly && snapshot.access === 'write') tooled.current = doc;
+  if (
+    doc &&
+    !copyOnly &&
+    (snapshot.access === 'write' ||
+      (seeded && snapshot.access === null && !!seed?.row.canEditContent))
+  )
+    tooled.current = doc;
   const tools = !!doc && tooled.current === doc;
+  // The canvas is read or painted from the copy: what the board needs.
+  const ready = !!canvas || seeded;
   const locked = useRef(readOnly);
   locked.current = readOnly;
   // Where the person was looking, for a board that mounts again on this
@@ -205,10 +346,14 @@ export function useCanvasBoard(
   const view = useRef<BoardView | null>(null);
   useEffect(() => {
     const host = container.current;
-    if (!(host && doc && images)) return;
+    if (!(host && doc && ready)) return;
     if (!holdsBoard(doc)) {
       // Edits to copy that hold no board show their strip alone.
-      if (!copyOnly) setFailed(m.workspace_canvas_open_failed());
+      if (!copyOnly)
+        setFailed({
+          errorId: null,
+          message: m.workspace_canvas_open_failed(),
+        });
       return;
     }
     let disposed = false;
@@ -232,11 +377,17 @@ export function useCanvasBoard(
         },
         readOnly: !tools,
         room: { doc },
+        title: () => title.current,
         view: view.current ?? undefined,
         workspace: latest.current.workspace,
       });
     } catch (error) {
-      setFailed(errorCopy(error, m.workspace_canvas_open_failed()));
+      // The board's own failure: reported, as an editor's crash is.
+      captureException(error, { tags: { component: 'canvas-board' } });
+      setFailed({
+        errorId: null,
+        message: errorCopy(error, m.workspace_canvas_open_failed()),
+      });
       return;
     }
     const drawing = board;
@@ -254,9 +405,40 @@ export function useCanvasBoard(
       shown.current = null;
       setMounted(null);
     };
-  }, [container, doc, images, tools, copyOnly]);
+  }, [container, doc, images, tools, copyOnly, ready]);
   // The board stops and starts taking edits where it stands.
   useEffect(() => mounted?.setLocked(readOnly), [mounted, readOnly]);
+  // The picker's row, a sibling of the board on its page, stops short of the
+  // board's status and ☰ whatever the status says (mock StatusPhone): their
+  // width as --capy-board-chrome on the page around the board.
+  useEffect(() => {
+    const chrome = mounted?.statusSlot.parentElement;
+    const page = container.current?.parentElement;
+    if (!(chrome && page)) return;
+    const observer = new ResizeObserver(() =>
+      page.style.setProperty('--capy-board-chrome', `${chrome.offsetWidth}px`)
+    );
+    observer.observe(chrome);
+    return () => {
+      observer.disconnect();
+      page.style.removeProperty('--capy-board-chrome');
+    };
+  }, [container, mounted]);
+  // A viewer saves nothing: no size and no save status, as a note's viewer.
+  const reads = !!canvas && !editsCanvas(canvas.role);
+  // The board's size in its menu from 75% (Epo 2026-11-18, 2B), as the room
+  // measures it; none for a viewer, edits to copy or a trashed board.
+  const sized = !(copyOnly || reads) && room;
+  useEffect(() => {
+    if (!mounted) return;
+    if (!sized) {
+      mounted.setRoomSize(null);
+      return;
+    }
+    const show = () => mounted.setRoomSize(sized.size());
+    show();
+    return sized.subscribeSize(show);
+  }, [mounted, sized]);
   // Leaving the page (another canvas, another page): an open plane or chart
   // writes as it closes, and that must reach the room. The room's own effect
   // is cleaned up before the board's, which would write into a document already
@@ -270,16 +452,29 @@ export function useCanvasBoard(
     []
   );
 
+  // Turned read-only while open (Epo 2026-09-29): the strip says so from
+  // then on, and the canvas is read again for why (a full payer).
+  const wrote = useRef(false);
+  const [narrowed, setNarrowed] = useState(false);
+  const { access } = snapshot;
+  useEffect(() => {
+    if (access === 'write') {
+      wrote.current = true;
+      setNarrowed(false);
+    } else if (access === 'read' && wrote.current) {
+      wrote.current = false;
+      setNarrowed(true);
+      setAttempt((count) => count + 1);
+    }
+  }, [access]);
+
   // Presence, between the room's awareness and the board showing its document
   // (edits open for copying show a document of their own).
   const awareness = (!copyOnly && room?.awareness) || null;
   const marks = mounted?.presence ?? null;
-  // Whoever is known to edit the canvas: by the room's channel, or by having
-  // made it. Anyone else sets no state and listens for no pointer.
-  const sends = sendsBoardPresence(
-    snapshot.access,
-    listed?.id === id ? listed.mine : undefined
-  );
+  // Whoever edits the canvas by their role, as the room relays it. Anyone
+  // else sets no state and listens for no pointer.
+  const sends = sendsPresence(canvas?.role);
   useEffect(() => {
     if (!(awareness && marks && sends)) return;
     return sendBoardPresence(marks, awareness);
@@ -309,23 +504,69 @@ export function useCanvasBoard(
       link.gone();
   }, [mounted, opened]);
 
-  const strip: CanvasBoardState['strip'] = recovery
+  // Read-only for its account or its payer, said the way a note says it: a
+  // full storage names whose, else the read-only strip (no cue for a viewer).
+  const storageFull = !trash && canvas?.storageFull;
+  const readOnlyStrip =
+    narrowed ||
+    (!!canvas &&
+      !trash &&
+      editsCanvas(canvas.role) &&
+      !canvas.capabilities.canEditContent);
+  const strip: CanvasStrip | null = trash
     ? {
-        onReload: () => void room?.reload(),
-        state: recoveryBanner(recovery),
+        id,
+        kind: 'trash',
+        trash,
+        workspaceId: canvas?.workspaceId ?? '',
       }
-    : lost && snapshot.synced
-      ? { state: 'access-lost' }
-      : snapshot.offline
-        ? { state: snapshot.offline }
-        : null;
-  const unavailable = lost && !snapshot.synced && !options.gone?.();
-  const waiting = away || (snapshot.status === 'offline' && !snapshot.synced);
+    : recovery
+      ? {
+          kind: 'save',
+          onReload: () => void room?.reload(),
+          state: recoveryBanner(recovery),
+        }
+      : lost && (snapshot.synced || !!mounted)
+        ? { kind: 'save', state: 'access-lost' }
+        : snapshot.offline
+          ? { kind: 'save', state: snapshot.offline }
+          : snapshot.unreachable && online
+            ? {
+                kind: 'save',
+                onRetry: () => room?.retry(),
+                state: 'unreachable',
+              }
+            : storageFull
+              ? { by: storageFull, kind: 'storage' }
+              : readOnlyStrip
+                ? { kind: 'read-only' }
+                : snapshot.delayed
+                  ? { kind: 'save', state: 'delayed' }
+                  : null;
+  const unavailable =
+    refusedFirst &&
+    !trash &&
+    !mounted &&
+    (!!canvas || !!failed) &&
+    !options.gone?.();
+  // Offline with nothing shown keeps waiting; the server down with the
+  // browser online loads, and says so at 30 s with Retry.
+  const waiting =
+    !online &&
+    !mounted &&
+    !trash &&
+    (away || (snapshot.status === 'offline' && !snapshot.synced));
+  const failedShown = mounted ? null : failed;
   return {
-    failed,
+    failed: failedShown,
     // Edits to copy that hold no board show their strip alone.
-    opening: !(mounted || failed || unavailable || waiting || copyOnly),
+    opening: !(mounted || failedShown || unavailable || waiting || recovery),
     presence,
+    slowed: snapshot.slowed,
+    status:
+      mounted && !(copyOnly || lost)
+        ? { reads, slot: mounted.statusSlot, state: snapshot.status }
+        : null,
     strip,
     unavailable,
     waiting,

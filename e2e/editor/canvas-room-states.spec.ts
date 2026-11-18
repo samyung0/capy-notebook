@@ -6,7 +6,9 @@ import { expect, type Page, test } from '@playwright/test';
  * (src/mocks/collaboration.ts, the board room): a viewer on a board whose
  * connector has a label, the keyboard on a board that takes no edits, another
  * person's image, an image still being stored as its board goes, an editor
- * losing access, a full canvas, a dropped socket, and a canvas opened offline.
+ * losing access, a full canvas, a dropped socket, a canvas opened offline,
+ * an editor narrowed or demoted while it is open, the service down at open,
+ * saving delayed, and a canvas opened from the Trash.
  */
 
 type Collaboration = typeof import('../../src/mocks/collaboration');
@@ -36,9 +38,6 @@ const CANVAS = 'cv_ws_bio_1';
 
 const drawn = (page: Page) =>
   page.evaluate(() => (window as Shown).__board?.stats().canvas ?? null);
-
-/** What is drawn, by kind, whatever their order front to back. */
-const kinds = async (page: Page) => [...((await drawn(page)) ?? [])].sort();
 
 async function boardShown(page: Page) {
   await page.waitForFunction(() => (window as Shown).__board);
@@ -149,7 +148,7 @@ const viewOf = (page: Page) =>
 /** Calls one of the mock room's e2e switches for a canvas. */
 const room = (
   page: Page,
-  call: 'mockFillBoard' | 'mockRevokeBoard',
+  call: 'mockDemoteBoard' | 'mockFillBoard' | 'mockRevokeBoard',
   id: string
 ) =>
   page.evaluate(
@@ -160,6 +159,75 @@ const room = (
     },
     [call, id] as const
   );
+/** The mock user's account or a storage is full or frozen on a canvas. */
+const narrow = (page: Page, id: string, how: 'frozen' | 'payer' | 'self') =>
+  page.evaluate(
+    async ([canvasId, why]) => {
+      const modulePath = '/src/mocks/collaboration.ts';
+      const { mockNarrowBoard } = (await import(modulePath)) as Collaboration;
+      mockNarrowBoard(canvasId, why);
+    },
+    [id, how] as const
+  );
+const storeFails = (page: Page, id: string, failing: boolean) =>
+  page.evaluate(
+    async ([canvasId, fails]) => {
+      const modulePath = '/src/mocks/collaboration.ts';
+      const { mockBoardStoreFails } = (await import(
+        modulePath
+      )) as Collaboration;
+      mockBoardStoreFails(canvasId, fails);
+    },
+    [id, failing] as const
+  );
+const tokensFail = (page: Page, id: string, failing: boolean) =>
+  page.evaluate(
+    async ([canvasId, fails]) => {
+      const modulePath = '/src/mocks/canvas.ts';
+      const { failMockCanvasTokens } = (await import(modulePath)) as Canvases;
+      failMockCanvasTokens(canvasId, fails);
+    },
+    [id, failing] as const
+  );
+/** The scenarios workspace's first canvas: it keeps drafts and a device copy
+ * under the mocks, as every MSW scenario fixture does (editDrafts.ts,
+ * deviceCopy.ts), where a plain mock canvas keeps neither. */
+const SCENARIO = 'mock-scenario-canvas-1';
+const SCENARIO_PAGE = '/workspaces/ws_scenarios?view=canvas';
+/** The canvas's room stands at its cap: it refuses whatever grows the board. */
+const atCap = (page: Page, id: string, capped: boolean) =>
+  page.evaluate(
+    async ([canvasId, on]) => {
+      const modulePath = '/src/mocks/collaboration.ts';
+      const { mockBoardAtCap } = (await import(modulePath)) as Collaboration;
+      mockBoardAtCap(canvasId, on);
+    },
+    [id, capped] as const
+  );
+/** The user's open budget is spent: a room's join waits, told so. */
+const slowed = (page: Page, on: boolean) =>
+  page.evaluate(async (value) => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { setCollaborationSlowed } = (await import(
+      modulePath
+    )) as Collaboration;
+    setCollaborationSlowed(value);
+  }, on);
+/** Whether this device holds a copy of the canvas's room. */
+const copied = (page: Page, id: string) =>
+  page.evaluate(async (materialId) => {
+    for (const name of await caches.keys()) {
+      const cache = await caches.open(name);
+      for (const request of await cache.keys())
+        if (request.url.includes(`copy/${materialId}/`)) return true;
+    }
+    return false;
+  }, id);
+const SLOWED_LINE =
+  'Opening is slowed because many large files were opened recently.';
+const strip = (page: Page) => page.locator('[data-canvas-strip]');
+/** The save status beside the board's ☰. */
+const status = (page: Page) => page.locator('.capy-board-status [role=status]');
 const socket = (page: Page, id: string, up: boolean) =>
   page.evaluate(
     async ([canvasId, back]) => {
@@ -590,7 +658,7 @@ test('an editor whose access is taken back keeps the board as it was, read-only,
   expect(errors).toEqual([]);
 });
 
-test('a full canvas says so once, drops the stroke it could not take, and leaves an editable board on what the room holds', async ({
+test('a canvas another person filled to its cap goes removals-only from its size, and takes a stroke once Clear all made room', async ({
   page,
 }) => {
   test.slow();
@@ -599,38 +667,27 @@ test('a full canvas says so once, drops the stroke it could not take, and leaves
   await expect.poll(() => drawn(page)).toEqual(['brush']);
   await room(page, 'mockFillBoard', CANVAS);
   await expect.poll(() => drawn(page)).toHaveLength(2);
-  const held = await kinds(page);
-  const before = await viewOf(page);
+  const board = page.locator('.capy-board');
+  // The room's size (its receipts, and what it heard since) reaches the cap's
+  // margin: the board takes only removals (client-limits A), and the pen goes
+  // back to select. A room's own refusal is the scenario canvas's test below.
+  await expect(board).toHaveAttribute('data-full', '');
   await keep(page);
-
-  // The stroke the room cannot take.
-  await drawStroke(page, 0.6);
-  const full = page.getByText(
-    'This canvas is full. Delete something to keep drawing.'
-  );
-  await expect(full).toHaveCount(1);
-  // The room opens afresh: what it holds, without the refused stroke, at the
-  // same view, with the tools.
-  await page.waitForFunction(
-    () => (window as Shown).__board && !(window as Shown).__board?.kept
-  );
-  await expect.poll(() => kinds(page)).toEqual(held);
-  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
-  expect(await viewOf(page)).toEqual(before);
-  await expect(page.getByText('Copy anything you need')).toHaveCount(0);
-  // And stays: nothing kept on this device is sent, refused and reopened again.
-  await keep(page);
-  await page.waitForTimeout(3000);
-  expect(await kept(page)).toBe(true);
-  expect(await kinds(page)).toEqual(held);
-  // Something deleted makes room: the first stroke goes, and the next is taken.
+  await page.locator('edgeless-pen-tool-button').first().click();
+  await expect(board).toHaveAttribute('data-tool', 'default');
+  await expect(
+    page.getByText('Only edits that remove content will be saved.').first()
+  ).toBeVisible();
+  // Something deleted makes room: once stored, the next stroke is taken.
   await page.locator('.capy-board-menu .capy-menu-button').click();
   await page.getByRole('menuitem', { name: 'Clear all' }).click();
   await page.keyboard.press('Escape');
+  await expect(board).not.toHaveAttribute('data-full', '');
   await drawStroke(page, 0.6);
   await expect.poll(() => drawn(page)).toContain('brush');
   await page.waitForTimeout(1500);
   expect(await kept(page)).toBe(true);
+  await expect(strip(page)).toHaveCount(0);
 });
 
 test("a tab cut off from the room keeps drawing, and both people's drawing is there once it is back", async ({
@@ -673,7 +730,10 @@ test("a tab cut off from the room keeps drawing, and both people's drawing is th
   await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
 });
 
-test('a canvas shows the pane loader while it opens; opened offline it waits, and opens by itself when the connection is back', async ({
+// A canvas this device keeps no copy of: under the mocks a plain canvas keeps
+// none (deviceCopy.ts); one with a copy paints it offline (the scenario
+// canvas's test below).
+test('a canvas shows the pane loader while it opens; one with no copy on this device opened offline waits, and opens by itself when the connection is back', async ({
   page,
   context,
 }) => {
@@ -710,4 +770,285 @@ test('a canvas shows the pane loader while it opens; opened offline it waits, an
   await boardShown(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
   await expect(panel.getByText('Waiting for connection')).toHaveCount(0);
+});
+
+test('an editor demoted while offline drops to view under the read-only strip, keeping what was saved before', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  const theirs = await memberCanvas(page, 'editor');
+  await switchTo(page, 'Biology 101', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
+  await boardShown(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+
+  // Drawn while cut off, then demoted: the unsent stroke goes, the saved one
+  // stays, and the board takes no edits under the strip (Epo 2026-09-29).
+  await socket(page, theirs, false);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toEqual(['brush', 'brush']);
+  await room(page, 'mockDemoteBoard', theirs);
+  await socket(page, theirs, true);
+  await expect(strip(page)).toContainText('This file is read-only now.');
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+});
+
+test('a frozen account opens a canvas under the read-only strip, a full storage under the storage strip', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  await expect(strip(page)).toHaveCount(0);
+  // The mocks are the page's: narrowed before the canvas opens, in place.
+  const frozen = await memberCanvas(page, 'editor', 'Lab diagrams');
+  await narrow(page, frozen, 'frozen');
+  const full = await memberCanvas(page, 'editor', 'Field notes');
+  await narrow(page, full, 'payer');
+
+  await switchTo(page, 'Biology 101', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${frozen}`));
+  await boardShown(page);
+  await expect(strip(page)).toContainText('This file is read-only now.');
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+
+  await switchTo(page, 'Lab diagrams', 'Field notes');
+  await expect(page).toHaveURL(new RegExp(`c=${full}`));
+  await expect(strip(page)).toContainText(
+    'Owner of the file has insufficient storage.'
+  );
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+});
+
+test('with the service down at open the canvas says so at 30 s, and Retry opens it', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  // The mocks are the page's: the service fails for a canvas not yet open.
+  const theirs = await memberCanvas(page, 'editor');
+  await tokensFail(page, theirs, true);
+  await switchTo(page, 'Biology 101', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
+  // Loading, never waiting on a connection the browser has.
+  await expect(page.locator('.pane-loading')).toBeVisible();
+  await expect(page.getByText('Waiting for connection')).toHaveCount(0);
+  await expect(strip(page)).toContainText(
+    'The live collaboration service is unavailable.',
+    { timeout: 40_000 }
+  );
+  await tokensFail(page, theirs, false);
+  await strip(page).getByRole('button', { name: 'Retry' }).click();
+  await boardShown(page);
+  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
+  await expect(strip(page)).toHaveCount(0);
+});
+
+test('saving is delayed while the room cannot store, and the strip goes once it does', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  await storeFails(page, CANVAS, true);
+  await drawStroke(page);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'syncing');
+  // The room says its store failed with the stroke unsaved.
+  await storeFails(page, CANVAS, true);
+  await expect(strip(page)).toContainText('Saving is delayed.');
+  await storeFails(page, CANVAS, false);
+  await expect(strip(page)).toHaveCount(0);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+});
+
+test('a deleted canvas opens read-only from the Trash, and Restore opens it live', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await picker(page, 'Biology 101').click();
+  await page
+    .locator('[data-slot=popover-content]')
+    .getByRole('button', { name: 'Delete' })
+    .click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Delete' })
+    .click();
+  await expect(page).not.toHaveURL(new RegExp(`c=${CANVAS}`));
+
+  // In the app, not a fresh page: the mocks are the page's.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/files?tab=trash');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await page
+    .getByRole('button', { exact: true, name: 'Select Biology 101' })
+    .dblclick();
+  await expect(page).toHaveURL(new RegExp(`c=${CANVAS}`));
+  await boardShown(page);
+  await expect(strip(page)).toContainText('Restore');
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+  await expect(status(page)).toHaveCount(0);
+
+  await strip(page).getByRole('button', { name: 'Restore' }).click();
+  await expect(strip(page)).toHaveCount(0);
+  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+});
+
+test('a canvas whose room is at its cap keeps the stroke it refused for copying, and Reload asks before it opens what the room holds', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await atCap(page, SCENARIO, true);
+  await keep(page);
+
+  // The stroke the room refuses is kept on this device, shown read-only on a
+  // board of its own under the recovery strip (Developer 2026-09-30).
+  await drawStroke(page, 0.6);
+  await expect(strip(page)).toContainText('Copy anything you need');
+  await page.waitForFunction(
+    () => (window as Shown).__board && !(window as Shown).__board?.kept
+  );
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+
+  // Reload asks first; Cancel keeps the edits.
+  const ask = page.getByRole('dialog', {
+    name: 'Discard these edits and reload?',
+  });
+  await strip(page).getByRole('button', { name: 'Reload' }).click();
+  await expect(ask).toBeVisible();
+  await ask.getByRole('button', { name: 'Cancel' }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  // Confirmed, the room opens afresh on what it holds, with the tools.
+  await strip(page).getByRole('button', { name: 'Reload' }).click();
+  await ask.getByRole('button', { name: 'Reload' }).click();
+  await expect(strip(page)).toHaveCount(0);
+  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+});
+
+test("a canvas opens from this device's copy: offline it shows what was saved, locked, and the same board takes edits once the room is back", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  // Leaving the canvas writes its copy.
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  // The copy's label says this person edits, so the board mounts with its
+  // tools, locked (no toolbar) until the room's state is in (useCanvasBoard).
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+  await keep(page);
+
+  await context.setOffline(false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  // The same board, now taking edits.
+  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
+  expect(await kept(page)).toBe(true);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+});
+
+test('a slowed open says why after 5 s, under the loader and, painted from the copy, under the save status; the canvas opens once the budget allows', async ({
+  page,
+}) => {
+  test.slow();
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('slowed-once')) {
+      sessionStorage.setItem('slowed-once', 'true');
+      sessionStorage.setItem('capy.mock.collaboration.slowed', 'true');
+    }
+  });
+  await page.goto(SCENARIO_PAGE);
+  // Nothing on this device yet: the pane's loader says it.
+  await expect(
+    page.locator('[data-workspace-canvas]').getByText(SLOWED_LINE)
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await slowed(page, false);
+  await boardShown(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+
+  // Painted from the copy, the status's tooltip holds the line open.
+  await slowed(page, true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect(
+    page
+      .locator('[data-slot="tooltip-content"][data-open]')
+      .getByText(SLOWED_LINE, { exact: true })
+  ).toBeVisible({ timeout: 15_000 });
+  await slowed(page, false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await expect(page.getByText(SLOWED_LINE)).toHaveCount(0);
+});
+
+test("the picker stops short of the save status and the board's ☰ at 360 and 700 px, whatever the status says", async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  const menu = page.locator('.capy-board-menu .capy-menu-button');
+  // 8px between each (mock StatusPhone), give or take a pixel.
+  const apart = async () => {
+    for (const width of [360, 700]) {
+      await page.setViewportSize({ height: 740, width });
+      await expect(async () => {
+        const [pick, shown, button] = await Promise.all([
+          picker(page, 'Biology 101').boundingBox(),
+          status(page).boundingBox(),
+          menu.boundingBox(),
+        ]);
+        if (!(pick && shown && button)) throw new Error('not shown');
+        expect(shown.x - (pick.x + pick.width)).toBeGreaterThanOrEqual(7);
+        expect(button.x - (shown.x + shown.width)).toBeGreaterThanOrEqual(7);
+      }).toPass();
+    }
+    await page.setViewportSize({ height: 720, width: 1280 });
+  };
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await apart();
+  await storeFails(page, CANVAS, true);
+  await drawStroke(page);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'syncing');
+  await apart();
+  await storeFails(page, CANVAS, false);
+  // Cut off past the rejoin's 30 s grace: Offline.
+  await socket(page, CANVAS, false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'offline', {
+    timeout: 45_000,
+  });
+  await apart();
+  await socket(page, CANVAS, true);
 });

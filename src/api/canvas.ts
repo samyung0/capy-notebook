@@ -1,6 +1,7 @@
 import { infiniteQueryOptions } from '@tanstack/react-query';
 import { api, qk } from '@/api/client';
 import type {
+  CanvasBoardBody,
   CanvasBody,
   CanvasListItem as GenCanvasListItem,
   CanvasPage as GenCanvasPage,
@@ -39,6 +40,13 @@ export const createCanvas = (title: string, workspaceId?: string) =>
 
 export const canvasById = (id: string, signal?: AbortSignal) =>
   api.get<WorkspaceCanvas>(`/canvases/${encodeURIComponent(id)}`, { signal });
+
+/** A canvas in the caller's Trash, its stored board as Yjs updates: shown
+ * read-only, with no room (a live canvas's board is its room's). */
+export const trashedCanvasBoard = (id: string, signal?: AbortSignal) =>
+  api.get<CanvasBoardBody>(`/canvases/${encodeURIComponent(id)}/board`, {
+    signal,
+  });
 
 /** Shares a workspace canvas with the workspace's members, who then hold it
  * by their workspace role, or takes it back. */

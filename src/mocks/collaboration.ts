@@ -57,10 +57,13 @@ import {
 } from '@/features/quizzes/liveQuiz';
 import { base64ToBytes, bytesToBase64 } from '@/lib/base64';
 import {
+  demoteMockCanvas,
   isMockCanvas,
   mockCanvasAccess,
+  mockCanvasViewer,
   narrowMockCanvas,
   projectMockCanvas,
+  setMockStoredBoard,
   unshareMockCanvas,
 } from './canvas';
 import * as db from './db';
@@ -481,7 +484,7 @@ export function join(room: Room, participant: Participant) {
     origin: unknown
   ) => {
     if (origin === REMOTE || !awareness) return;
-    if (!relaysPresence(room, awareness)) return;
+    if (!relaysPresence(room, participant)) return;
     const update = encodeAwarenessUpdate(awareness, [
       ...added,
       ...updated,
@@ -499,7 +502,7 @@ export function join(room: Room, participant: Participant) {
       if (
         other.awareness &&
         other !== participant &&
-        relaysPresence(room, other.awareness)
+        relaysPresence(room, other)
       ) {
         applyAwarenessUpdate(
           awareness,
@@ -1734,17 +1737,23 @@ async function boardFirstState() {
 
 /** The service's presence check (`Fields::Board`, `on_awareness`): a board
  * room keeps and relays a participant's state only when every field is one a
- * board lists, within its bounds and the room's 4 KiB; any other is dropped
- * and the sender hears nothing. A removal always goes. Other rooms relay
- * what comes. */
-function relaysPresence(room: Room, awareness: Awareness) {
-  const state = awareness.getLocalState();
+ * board lists, within its bounds and the room's 4 KiB, and names `uploads`
+ * only from a writer (a read channel uploads nothing, REVIEW5 E2); any other
+ * is dropped and the sender hears nothing. A removal always goes. Other rooms
+ * relay what comes. */
+function relaysPresence(room: Room, participant: Participant) {
+  const state = participant.awareness?.getLocalState() ?? null;
   if (room.target.kind !== 'board' || state === null) return true;
+  if (participant.access === 'read' && 'uploads' in state) return false;
   return (
     readBoardPresence(state) !== null &&
     new TextEncoder().encode(JSON.stringify(state)).length <= MAX_PRESENCE_BYTES
   );
 }
+
+/** Boards whose room stands at its cap as far as this tab can tell
+ * (`mockBoardAtCap`). */
+const cappedBoards = new Set<string>();
 
 /** The service's admission of a board update: whether the room takes it. */
 function admitsBoardUpdate(
@@ -1759,13 +1768,45 @@ function admitsBoardUpdate(
   if (!update.byteLength) return true;
   if (participant.access === 'read') return refuse('read-only');
   const measured = () => Y.encodeStateAsUpdate(room.document).byteLength;
+  if (cappedBoards.has(room.target.id)) {
+    const probe = new Y.Doc();
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(room.document));
+    Y.applyUpdate(probe, update);
+    const grows = Y.encodeStateAsUpdate(probe).byteLength > measured();
+    probe.destroy();
+    if (grows) return refuse('size');
+  }
   room.bytes ??= measured();
   if (room.bytes + update.byteLength > BOARD_MAX) {
     room.bytes = measured();
-    if (room.bytes + update.byteLength > BOARD_MAX) return refuse('size');
+    if (room.bytes + update.byteLength > BOARD_MAX) {
+      // Exactly, as the service near its cap: the state with it fits, or is
+      // no larger than without it (a deletion).
+      const probe = new Y.Doc();
+      Y.applyUpdate(probe, Y.encodeStateAsUpdate(room.document));
+      Y.applyUpdate(probe, update);
+      const after = Y.encodeStateAsUpdate(probe).byteLength;
+      probe.destroy();
+      if (after > BOARD_MAX && after > room.bytes) return refuse('size');
+      room.bytes = after;
+      return true;
+    }
   }
   room.bytes += update.byteLength;
   return true;
+}
+
+/** A board room's stored state, as the gateway answers a trashed canvas's
+ * board: the open room's, else the last stored one; none for a canvas never
+ * opened. */
+function storedBoardUpdates(materialId: string) {
+  const name = `material:${materialId}:schema:1`;
+  const room = rooms.get(name);
+  if (room) return [bytesToBase64(Y.encodeStateAsUpdate(room.document))];
+  const checkpoint = checkpoints.get(name);
+  if (checkpoint) return [bytesToBase64(checkpointState(checkpoint))];
+  const kept = browser ? sessionStorage.getItem(BOARD_STATE + name) : null;
+  return kept ? [(JSON.parse(kept) as { state: string }).state] : [];
 }
 
 /** What a joining document holds that its board room does not, as one update;
@@ -1864,6 +1905,9 @@ class MockBoardProvider implements ItemProvider {
   private joining = false;
   private down = false;
   private previousToken: string | undefined;
+  /** Receipts the room holds back while its stores fail
+   * (`mockBoardStoreFails`). */
+  private held: string[] | null = null;
   /** The room holds an update of this tab's as soon as it took it: nothing
    * stays unacknowledged, and the room is asked for its receipt. */
   private readonly sent = (_: Uint8Array, origin: unknown) => {
@@ -1910,19 +1954,29 @@ class MockBoardProvider implements ItemProvider {
         return;
       }
       if (!this.wanted || this.down) return;
+      // A spent open budget (`setCollaborationSlowed`): the join waits, told
+      // so, until the flag clears.
+      if (browser && sessionStorage.getItem(SLOWED) === 'true') {
+        this.config.onSlowed?.(true);
+        window.addEventListener(REACHABILITY, () => void this.join(), {
+          once: true,
+        });
+        return;
+      }
       const access = mockCanvasAccess(this.materialId);
       if (!access) {
         this.config.onAuthenticationFailed?.(refused);
         return;
       }
-      const write = access === 'write';
+      // A viewer sends no presence and hears none; a narrowed editor's read
+      // channel keeps its presence, uploads aside.
+      const viewer = mockCanvasViewer(this.materialId);
       this.channel = access;
       this.leave = join(boardRoom(this.config.name, firstState), {
         access,
-        // A viewer sends no presence and hears none.
-        awareness: (write && this.config.awareness) || undefined,
+        awareness: (!viewer && this.config.awareness) || undefined,
         document: this.config.document,
-        onPresence: write ? this.config.onPresence : undefined,
+        onPresence: viewer ? undefined : this.config.onPresence,
         onRefused: (why) => this.refusedUpdate(why),
         origin: this,
       });
@@ -1966,22 +2020,55 @@ class MockBoardProvider implements ItemProvider {
     } else this.close(1006, 'socket closed');
   }
 
-  /** A checkpoint request: the room stores now and answers its receipt. */
+  /** A checkpoint request: the room stores now and answers its receipt,
+   * with the board's size as the service measures it. While its stores fail
+   * the request waits for the next one that lands. */
   sendStateless(payload: string) {
     const request = JSON.parse(payload) as { id?: string; type?: string };
     if (request.type !== 'checkpoint-request' || !request.id) return;
+    if (this.held) {
+      this.held.push(request.id);
+      return;
+    }
+    this.receipt([request.id]);
+  }
+
+  private receipt(ids: string[]) {
     const room = rooms.get(this.config.name);
     if (!(room && this.leave)) return;
     checkpointRoom(room);
     const receipt = JSON.stringify({
-      checkpointIds: [request.id],
+      checkpointIds: ids,
       materialId: this.materialId,
+      metrics: {
+        contentBytes: Y.encodeStateAsUpdate(room.document).byteLength,
+        maxDepth: 0,
+        nodeCount: 0,
+      },
       type: 'checkpoint-persisted',
       yjsVersion: room.version,
     });
     queueMicrotask(() => {
       if (this.leave) this.config.onStateless?.({ payload: receipt });
     });
+  }
+
+  /** The room's stores fail, or land again (`mockBoardStoreFails`): failing,
+   * it says so and answers nothing; back, it answers what waited. */
+  storeFails(failing: boolean) {
+    if (failing) {
+      this.held ??= [];
+      this.config.onStateless?.({
+        payload: JSON.stringify({
+          materialId: this.materialId,
+          type: 'checkpoint-failed',
+        }),
+      });
+      return;
+    }
+    const ids = this.held ?? [];
+    this.held = null;
+    if (ids.length) this.receipt(ids);
   }
 
   wake() {}
@@ -2170,13 +2257,42 @@ export const mockBoardOwnPresence = (materialId: string) =>
 export const mockBoardChannel = (materialId: string) =>
   boardTab(materialId).channel;
 
-/** The mock user's account is frozen while they are on a canvas they may edit
- * (e2e): the service closes their channel (4403) and their next token reads. */
-export function mockNarrowBoard(materialId: string) {
-  narrowMockCanvas(materialId);
+/** The mock user's account is frozen, or a storage full, while they are on
+ * a canvas they may edit (e2e): the service closes their channel (4403) and
+ * their next token reads. */
+export function mockNarrowBoard(
+  materialId: string,
+  how?: Parameters<typeof narrowMockCanvas>[1]
+) {
+  narrowMockCanvas(materialId, how);
   for (const provider of [...boardProviders])
     if (provider.materialId === materialId)
       provider.close(4403, 'collaboration access changed');
+}
+
+/** The mock user's role on another member's canvas drops to viewer while
+ * they are on it (e2e): the service closes their channel (4403) and their
+ * next token reads. */
+export function mockDemoteBoard(materialId: string) {
+  demoteMockCanvas(materialId);
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId)
+      provider.close(4403, 'collaboration access changed');
+}
+
+/** The canvas room's stores fail while the mock user is on it, or land again
+ * (e2e): failing, the room says so and answers no checkpoint request. */
+export function mockBoardStoreFails(materialId: string, failing: boolean) {
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId) provider.storeFails(failing);
+}
+
+/** The canvas's room stands at its cap while set (e2e): it refuses any update
+ * that grows the board, as when another tab filled it a moment before this
+ * one's stroke, before this tab heard of it. Deletions still land. */
+export function mockBoardAtCap(materialId: string, atCap: boolean) {
+  if (atCap) cappedBoards.add(materialId);
+  else cappedBoards.delete(materialId);
 }
 
 /** Whether the canvas's open mock room has stored every update it took (e2e:
@@ -2187,6 +2303,7 @@ export function mockBoardStored(materialId: string) {
 }
 
 export function registerMockCollaborationProvider() {
+  setMockStoredBoard(storedBoardUpdates);
   registerProviderType('mock', MockCollaborationProvider);
   registerMockSourceProvider((config) => new MockSourceProvider(config));
   registerMockItemProvider((config) =>

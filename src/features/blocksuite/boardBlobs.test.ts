@@ -31,6 +31,20 @@ describe('BoardBlobSource', () => {
     expect(store).toHaveBeenCalledOnce();
   });
 
+  it('says how much of the file handed to it has gone up', async () => {
+    const source = new BoardBlobSource({
+      store: async (_file, onProgress) => {
+        onProgress?.(42);
+        return { bytes: 7, id: 'asset_1' };
+      },
+    });
+    const onProgress = vi.fn();
+    source.onProgress = onProgress;
+    const file = png();
+    await source.set('hash', file);
+    expect(onProgress).toHaveBeenCalledWith(file, 42);
+  });
+
   it('leaves an image already stored under its id alone when a copy is pasted back', async () => {
     const store = vi.fn(async (_file: File) => ({ bytes: 7, id: 'asset_2' }));
     const own = new Set(['asset_own']);
@@ -91,9 +105,9 @@ describe('BoardBlobSource', () => {
       id: 'asset_mine',
     });
     // Read back from storage it has no name: it goes up with one its type fits.
-    expect(store.mock.calls[0]).toEqual([
-      expect.objectContaining({ name: 'image.webp' }),
-    ]);
+    expect(store.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ name: 'image.webp' })
+    );
     // No file to be had: no block.
     expect(await source.pasted('asset_gone')).toBeNull();
   });

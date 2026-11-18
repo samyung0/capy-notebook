@@ -76,11 +76,15 @@ export default function WorkspaceCanvas({
       )}
       {!(current || none) && <CanvasOpening />}
       {picker && (
-        // On a phone the row stops short of the board's own menu at the top right.
+        // The row stops 8px short of the board's status and ☰ at the top right
+        // (--capy-board-chrome, useCanvasBoard): a phone's picker fills it, a
+        // wider screen's shrinks into it.
         <div
           className={cn(
-            'absolute top-2 right-12 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden',
-            besideBack ? 'left-12' : 'left-2'
+            'absolute top-2 right-[calc(var(--capy-board-chrome,32px)+16px)] flex sm:right-auto [&>[data-slot=popover-anchor]]:min-w-0 [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-initial [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden',
+            besideBack
+              ? 'left-12 sm:max-w-[calc(100%-var(--capy-board-chrome,32px)-64px)]'
+              : 'left-2 sm:max-w-[calc(100%-var(--capy-board-chrome,32px)-24px)]'
           )}
         >
           {picker}

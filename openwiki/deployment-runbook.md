@@ -4636,8 +4636,8 @@ Steps on UAT:
    The first prints 0 when run within the hour; the second runs without an
    error and prints 0 until someone shares one. Open the account's Canvas
    page: a first canvas is made and opens. Draw a stroke, reload: it is
-   there. In a workspace's Canvas tab, switch "Shared with workspace" on and
-   open the canvas as a second member: an editor draws, a viewer gets no
+   there. In a workspace's Canvas tab, switch "Shared with members" on
+   (confirm "Share with members") and open the canvas as a second member: an editor draws, a viewer gets no
    toolbar; switch it off: the other member's board turns read-only under
    "You no longer have access". After the room's next projection (30 s idle)
    the charge holds the board's stored bytes:

@@ -209,12 +209,13 @@ export class DefaultTool extends BaseTool {
   }
 
   override click(e: PointerEventState) {
-    if (this.doc.readonly) return;
-
+    // Capy (local change 71): a store that takes no edits still selects what
+    // a click is on (to copy it), and hands the click to no view.
     if (!this.interactivity?.handleElementSelection(e)) {
       this.selection.clear();
       resetNativeSelection(null);
     }
+    if (this.doc.readonly) return;
 
     this.interactivity?.dispatchEvent('click', e);
   }

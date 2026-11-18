@@ -9,12 +9,17 @@ import { mockMemberCanvas } from './canvas';
 import {
   mockBoardPeer,
   mockBoardSocket,
+  mockFillBoard,
   mockRevokeBoard,
   registerMockCollaborationProvider,
 } from './collaboration';
 
 /* A canvas's mock room (collaboration.ts, the board room), driven as an item
  * room drives its provider. */
+
+// Whichever test joins first loads the board's modules for its first state
+// (`tab` waits 30 s for it), which takes longer than 5 s on a loaded machine.
+vi.setConfig({ testTimeout: 30_000 });
 
 vi.mock('@/api/auth', () => ({ USE_MSW: true }));
 // The note mock's unused Plate plugins import CSS.
@@ -191,6 +196,34 @@ it('rejects the update that takes a board over its cap, for its writer alone', a
   peer.add('after', stroke);
   expect(Object.keys(peer.elements())).toEqual(['after']);
   peer.leave();
+  provider.destroy();
+});
+
+// As the service near its cap: an update that grows nothing (a deletion) is
+// taken on a full board, and a receipt says the board's size.
+it('takes a deletion on a full board, and its receipt says the size', async () => {
+  const id = canvas('editor');
+  const { document, heard, provider } = await tab(id);
+  mockFillBoard(id);
+  await vi.waitFor(() => expect(drawn(document).has('filler')).toBe(true));
+  drawn(document).delete('filler');
+  provider.sendStateless(
+    JSON.stringify({ id: 'r1', type: 'checkpoint-request' })
+  );
+  await vi.waitFor(() =>
+    expect(heard.stateless).toContainEqual(
+      expect.objectContaining({ type: 'checkpoint-persisted' })
+    )
+  );
+  expect(heard.stateless).not.toContainEqual(
+    expect.objectContaining({ type: 'document-rejected' })
+  );
+  const receipt = heard.stateless.find(
+    ({ type }) => type === 'checkpoint-persisted'
+  ) as { metrics?: { contentBytes: number } } | undefined;
+  expect(receipt?.metrics?.contentBytes).toBeLessThan(
+    BOARD_CATALOG.limits.CANVAS_BOARD_MAX / 2
+  );
   provider.destroy();
 });
 

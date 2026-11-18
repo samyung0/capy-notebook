@@ -19,6 +19,7 @@ import {
   roomReconnector,
   roomRefusal,
 } from '@/features/notes/roomConnection';
+import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from '@/features/notes/saveDelay';
 import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
 import {
   applyReaderMessage,
@@ -86,6 +87,10 @@ export interface ItemRecovery {
 
 export interface ItemRoomSnapshot {
   access: 'read' | 'write' | null;
+  /** An edit's receipt has waited 25 s of connected time, as a note's (Epo
+   * 2026-10-04), or the room said a store failed while this device had edits
+   * unsaved: "Saving is delayed" until a receipt answers. */
+  delayed: boolean;
   /** Bumped when the readers' lists change (`lists`). */
   listsVersion: number;
   /** An editor's save strip while the room cannot be used: unreachable
@@ -114,12 +119,14 @@ export interface ItemRoomSnapshot {
   slowed: boolean;
   status: ItemRoomStatus;
   /** The room takes nothing more from this tab for now: it closed for this
-   * person's access change and the next token says what they may do, or it
-   * ended for a full document and a fresh one is opening. What is drawn or
-   * typed meanwhile would be stored nowhere. */
+   * person's access change and the next token says what they may do. What
+   * is drawn or typed meanwhile would be stored nowhere. */
   stopped: boolean;
   /** The document holds the room's state (painted from it, editable). */
   synced: boolean;
+  /** The join has not answered 30 s after it began, the browser online
+   * (Epo 2026-11-04, D5, C9): the page offers Retry (`ItemRoom.retry`). */
+  unreachable: boolean;
 }
 
 /** Whether an item editor stops taking edits: offline past the bound this
@@ -164,12 +171,22 @@ const TRANSIENT_CLOSES = new Set([
   'collaboration room is being reset',
 ]);
 const EVICTED = 'collaboration room evicted';
+/** What a board's offline work leaves of its cap: the server's estimate adds
+ * a little per struct to each update's bytes. */
+export const BOARD_OFFLINE_MARGIN = 64 * 1024;
 
 export interface ItemRoomOptions {
   /** The room keeps an awareness of its own on its document, sent through
    * its channel: a canvas's pointers and selections. It says nothing until a
    * state is set on it. */
   awareness?: boolean;
+  /** A canvas's board, its state capped at `max` bytes (CANVAS_BOARD_MAX,
+   * Epo 2026-11-18). The room keeps the board's size from its receipts
+   * (`size`), and offline work stops at the space left as at the 4 MiB this
+   * device may hold. A turn to read-only that discards unsaved edits opens a
+   * fresh room on what was saved: the board shows the document, which still
+   * holds them. */
+  board?: { max: number };
   /** A quiz's keys document instead of the material's own. */
   document?: 'keys';
   /** An editor's room: unsent edits are kept on this device under this
@@ -182,12 +199,6 @@ export interface ItemRoomOptions {
   inside?: NoteSeat | null;
   /** Keeps a device copy of this room under this label (a member's page). */
   keep?: CopyLabel;
-  /** A canvas: an update the room refused for the document's size is dropped
-   * with this tab's other unsent edits, not kept to copy (a board shown
-   * read-only has nothing to copy from, and the same edits would be refused
-   * at every join). A fresh room opens on the room's state, and this says the
-   * canvas is full. */
-  onFull?: () => void;
   /** The room is going, left or replaced by a fresh one, and its document
    * with it: called while the document still stands, for what the page has
    * yet to write into it or take down from it. The room goes whatever this
@@ -209,14 +220,15 @@ export class ItemRoom {
   readonly doc: Y.Doc;
   /** `ItemRoomOptions.awareness`: what the room's editors tell each other. */
   readonly awareness: Awareness | null;
-  readonly undo: Y.UndoManager;
-  /** What the item's Undo and Redo buttons act on. */
-  readonly history: UndoTarget;
+  /** None for a board, whose editor keeps its own (`ItemRoomOptions.board`). */
+  private readonly undoManager: Y.UndoManager | null;
+  private readonly undoTarget: UndoTarget | null;
   /** A quiz content room: the readers' matching and ordering lists. */
   lists: ReaderLists = new Map();
   private provider: ItemProvider | null = null;
   private snapshot: ItemRoomSnapshot = {
     access: null,
+    delayed: false,
     listsVersion: 0,
     offline: null,
     presence: NO_PRESENCE,
@@ -227,6 +239,7 @@ export class ItemRoom {
     status: 'opening',
     stopped: false,
     synced: false,
+    unreachable: false,
   };
   private unsynced = 0;
   private destroyed = false;
@@ -256,6 +269,16 @@ export class ItemRoom {
     event.returnValue = '';
   };
   private overLimit = false;
+  /** Offline, a board's work reached the space its cap leaves. */
+  private boardFull = false;
+  /** A board's size: the room's measure at its last receipt (or this tab's
+   * own encode before one) and the bytes of every update applied since. */
+  private measured: { base: number; since: number } | null = null;
+  private readonly sizeListeners = new Set<() => void>();
+  /** Says saving is delayed once a receipt waits too long (`delayed`). */
+  private readonly delay = new SaveDelayClock(NOTE_SAVE_DELAY_MS, () =>
+    this.set({ delayed: true })
+  );
   /** The room refuses this build (the version gate). */
   private stale = false;
   /** Checkpoint requests waiting for a receipt: id -> local edit count. */
@@ -287,16 +310,20 @@ export class ItemRoom {
     this.doc = options.seed?.doc ?? new Y.Doc();
     this.awareness = options.awareness ? new Awareness(this.doc) : null;
     this.awareness?.setLocalState(null);
-    // The document holds only this item.
-    this.undo = itemUndo(this.doc);
-    // Undo reaches back 24 h (Epo 2026-10-23).
-    limitUndo(this.undo);
-    this.history = undoTarget(this.undo);
+    // The document holds only this item. Undo reaches back 24 h (Epo
+    // 2026-10-23).
+    this.undoManager = options.board ? null : itemUndo(this.doc);
+    if (this.undoManager) limitUndo(this.undoManager);
+    this.undoTarget = this.undoManager && undoTarget(this.undoManager);
+    if (options.board) this.doc.on('update', this.grew);
     this.reconnector = roomReconnector({
-      // Still not back after the grace period: the room is offline. A join
-      // waiting on the draft send is not stuck.
+      // Still not back after the grace period: the room is offline, and a
+      // join that never answered says so with Retry. A join waiting on the
+      // draft send is not stuck.
       onStuck: () => {
-        if (!this.heldSteps) this.goOffline();
+        if (this.heldSteps) return;
+        if (!this.snapshot.synced) this.set({ unreachable: true });
+        this.goOffline();
       },
       provider: () => (this.destroyed || this.ended ? null : this.provider),
     });
@@ -335,6 +362,74 @@ export class ItemRoom {
       access: this.options.read ? ('read' as const) : undefined,
       document: this.options.document,
     };
+  }
+
+  /** `ItemRoomOptions.board`: the board's size against its cap, null until
+   * the room measured it. Outside the snapshot, as it moves with each update. */
+  get undo(): Y.UndoManager {
+    if (!this.undoManager) throw new Error('a board room keeps no undo');
+    return this.undoManager;
+  }
+
+  /** What the item's Undo and Redo buttons act on. */
+  get history(): UndoTarget {
+    if (!this.undoTarget) throw new Error('a board room keeps no undo');
+    return this.undoTarget;
+  }
+
+  readonly size = () => {
+    const { board } = this.options;
+    if (!(board && this.measured)) return null;
+    return {
+      bytes: this.measured.base + this.measured.since,
+      max: board.max,
+    };
+  };
+
+  readonly subscribeSize = (listener: () => void) => {
+    this.sizeListeners.add(listener);
+    return () => {
+      this.sizeListeners.delete(listener);
+    };
+  };
+
+  private readonly grew = (update: Uint8Array) => {
+    if (!this.measured) return;
+    this.measured.since += update.byteLength;
+    this.sized();
+  };
+
+  private sized() {
+    for (const listener of this.sizeListeners) listener();
+    // Offline, a board's work stops at the space its cap leaves (Epo
+    // 2026-11-18, client-limits A): a lone person's backlog always fits.
+    const size = this.size();
+    if (
+      size &&
+      this.snapshot.offline &&
+      !this.boardFull &&
+      size.bytes + BOARD_OFFLINE_MARGIN > size.max
+    ) {
+      this.boardFull = true;
+      this.showOffline();
+    }
+  }
+
+  /** A board's first measure, before any receipt: one encode once the tab is
+   * idle (about 40 ms at 4 MiB on an M1). */
+  private measure() {
+    if (!this.options.board || this.measured) return;
+    const run = () => {
+      if (this.destroyed || this.measured) return;
+      this.measured = {
+        base: Y.encodeStateAsUpdate(this.doc).byteLength,
+        since: 0,
+      };
+      this.sized();
+    };
+    if (typeof requestIdleCallback === 'function')
+      requestIdleCallback(run, { timeout: 2000 });
+    else setTimeout(run, 0);
   }
 
   private draftKey() {
@@ -422,6 +517,7 @@ export class ItemRoom {
         this.rejoin();
       },
       onClose: ({ code, reason }) => {
+        this.delay.disconnected();
         this.set({ slowed: false });
         // This person's access changed, with no notice: a fresh token says
         // what they have now. A demotion reads on; a removal is refused and
@@ -480,14 +576,18 @@ export class ItemRoom {
           if (this.snapshot.offline || this.heldEpisode)
             this.recorder?.connected();
           this.heldEpisode = false;
+          this.boardFull = false;
           this.reconnector.connected();
+          this.delay.connected();
           this.set({
             offline: null,
             slowed: false,
             status: this.live(),
             stopped: false,
             synced: true,
+            unreachable: false,
           });
+          this.measure();
           this.requestReceipt();
           // A first sync after DRAFT_SEND_WAIT_MS still takes the held
           // steps (Q360).
@@ -531,6 +631,8 @@ export class ItemRoom {
         }
         const now = fresh.access === 'write' ? 'write' : 'read';
         if (now !== this.snapshot.access && now === 'read') this.readOnly();
+        // A board that discarded edits opens a fresh room instead.
+        if (this.ended) throw new Error('collaboration room moved');
         this.set({ access: now });
         this.lastToken = fresh.token;
         return fresh.token;
@@ -562,11 +664,21 @@ export class ItemRoom {
     return this.options.document ?? 'content';
   }
 
-  /** A copy that joins with a device copy to keep, on a room opened without. */
+  /** The device copy's label: a room opened without one starts keeping a
+   * copy, and one whose label changed (a rename, a demotion) writes it with
+   * the next copy, so the next open paints with it. */
   keepAs(keep: CopyLabel) {
-    if (this.options.keep) return;
+    const was = this.options.keep;
     this.options = { ...this.options, keep };
-    if (this.provider) this.keepCopy();
+    if (!was) {
+      if (this.provider) this.keepCopy();
+    } else if (
+      was.canEditContent !== keep.canEditContent ||
+      was.kind !== keep.kind ||
+      was.standalone !== keep.standalone ||
+      was.title !== keep.title
+    )
+      this.keeper?.relabel();
   }
 
   /** The room's confirmed state goes on the device: on hide and at the end,
@@ -583,7 +695,7 @@ export class ItemRoom {
         !this.recorder?.unsaved,
       owner: keep.owner,
       row: () => ({
-        ...keep,
+        ...(this.options.keep ?? keep),
         document: this.copyDocument(),
         materialId: this.materialId,
         room: this.room,
@@ -727,7 +839,8 @@ export class ItemRoom {
                 recovery,
                 editIncidentReporter('material', this.materialId)
               ),
-            title: this.options.keep?.title ?? this.materialId,
+            // Read at the download: the page may name it after this opens.
+            title: () => this.options.keep?.title ?? this.materialId,
           });
           rows = rows.filter((row) => !recovery.includes(row));
           continue;
@@ -756,7 +869,8 @@ export class ItemRoom {
           origin === RESTORE_ORIGIN ||
           (origin !== null && origin === this.provider),
         key,
-        limitBytes: MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
+        limitBytes:
+          this.options.board?.max ?? MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
         lineage: this.room,
         onLimit: (over) => {
           this.overLimit = over;
@@ -779,11 +893,12 @@ export class ItemRoom {
   private showOffline() {
     if (!this.snapshot.offline || this.stale) return;
     this.set({
-      offline: this.overLimit
-        ? 'offline-limit'
-        : this.storageOk
-          ? 'offline'
-          : 'offline-unstored',
+      offline:
+        this.overLimit || this.boardFull
+          ? 'offline-limit'
+          : this.storageOk
+            ? 'offline'
+            : 'offline-unstored',
     });
   }
 
@@ -803,11 +918,13 @@ export class ItemRoom {
             ? this.live()
             : 'opening'
           : this.snapshot.status,
+      unreachable: false,
     });
   }
 
   private goOffline() {
     if (this.stale) return;
+    this.delay.disconnected();
     this.set({ status: 'offline' });
     if (!this.recorder || this.snapshot.offline) return;
     this.recorder.disconnected();
@@ -834,6 +951,13 @@ export class ItemRoom {
         this.set({ listsVersion: this.snapshot.listsVersion + 1 });
         return;
       case 'checkpoint-persisted': {
+        // A board's size, as the room measured it at this store.
+        const bytes = (event.metrics as { contentBytes?: unknown } | undefined)
+          ?.contentBytes;
+        if (this.options.board && typeof bytes === 'number') {
+          this.measured = { base: bytes, since: 0 };
+          this.sized();
+        }
         const ids = Array.isArray(event.checkpointIds)
           ? (event.checkpointIds as string[])
           : [];
@@ -843,19 +967,25 @@ export class ItemRoom {
         if (covered < 0) return;
         for (const [id, sequence] of this.pending)
           if (sequence <= covered) this.pending.delete(id);
+        // Saving works again: the delayed strip comes back only if the
+        // oldest request still unanswered crosses the threshold.
+        this.delay.retain(this.pending.keys());
+        this.set({ delayed: false });
         void this.recorder?.covered(covered);
         if (this.snapshot.synced && this.snapshot.status !== 'offline')
           this.set({ status: this.live() });
         return;
       }
+      // A failed store the server retries: the receipts stay pending, and
+      // the strip is only for unsaved work.
+      case 'checkpoint-failed':
+        if (this.recorder?.unsaved) this.set({ delayed: true });
+        return;
       case 'document-rejected':
       case 'authorization-revoked':
-        if (event.code === 'document_size_exceeded' && this.options.onFull) {
-          this.full();
-          return;
-        }
-        // A store refused for good: this room's unsaved state is gone on
-        // the server, so this tab's edits open for copying.
+        // A store refused for good, a canvas's too large for its cap
+        // included: this room's unsaved state is gone on the server, so this
+        // tab's edits open for copying (Developer, 2026-09-30).
         this.refused();
         return;
       case 'room-read-only':
@@ -871,6 +1001,7 @@ export class ItemRoom {
       return;
     const id = crypto.randomUUID();
     this.pending.set(id, this.recorder.sequence);
+    this.delay.requested(id);
     this.provider.sendStateless(
       JSON.stringify({ id, type: 'checkpoint-request' })
     );
@@ -904,21 +1035,6 @@ export class ItemRoom {
     this.end();
   }
 
-  /** The room refused an update that takes its document past its size
-   * (`onFull`): this tab's unsent edits go from the document and from this
-   * device, and a fresh room opens once they are gone, so its first read
-   * finds none of them to send again. */
-  private full() {
-    if (this.ended || this.destroyed) return;
-    this.ended = true;
-    this.dropCopy();
-    const dropped = this.recorder?.discard();
-    this.recorder = null;
-    this.set({ stopped: true });
-    this.options.onFull?.();
-    this.end(dropped);
-  }
-
   /** The room's lineage moved: unsent edits stay stored under the old one
    * (they open for copying), and a fresh room joins the new one. */
   private moved() {
@@ -932,6 +1048,7 @@ export class ItemRoom {
 
   /** `after`: what the fresh room waits for before it starts. */
   private end(after?: Promise<unknown>) {
+    this.delay.dispose();
     this.sender?.stop();
     this.stopHold?.();
     this.armLeave(false);
@@ -945,17 +1062,27 @@ export class ItemRoom {
 
   /** The room turned read-only (a frozen account, an owner at its limit, a
    * demotion, a block this version cannot edit): unsaved edits are
-   * discarded, as a note's are. */
+   * discarded, as a note's are (Epo 2026-09-29). A board's document still
+   * holds them, so a fresh room shows what was saved before. */
   private readOnly(code?: ReadOnlyCode) {
+    const unsaved = !!this.recorder?.unsaved;
     // The document may hold what this discards.
-    if (this.recorder?.unsaved) {
+    if (unsaved) {
       this.keeper?.stop();
       this.keeper = null;
     }
     this.set({ access: 'read', readOnlyCode: code ?? null });
-    void this.recorder?.discard();
+    const discarded = this.recorder?.discard();
     this.recorder = null;
     this.armLeave(false);
+    if (
+      this.options.board &&
+      (unsaved || this.unsynced > 0) &&
+      !(this.ended || this.destroyed)
+    ) {
+      this.ended = true;
+      this.end(discarded);
+    }
   }
 
   /** Joins again with a fresh token, after a growing delay while joins
@@ -998,6 +1125,23 @@ export class ItemRoom {
     this.set({ status: 'unavailable' });
   }
 
+  /** The page's Retry once the join ran past its 30 s (`unreachable`): a
+   * first open that failed asks for its token again, a join that never
+   * answered joins again, each with 30 s more. */
+  retry() {
+    if (this.destroyed || this.ended) return;
+    this.set({ unreachable: false });
+    if (this.waiting) {
+      this.waiting();
+      void this.start();
+      return;
+    }
+    if (!this.provider || this.snapshot.synced) return;
+    this.reconnector.started();
+    this.provider.disconnect();
+    this.provider.connect();
+  }
+
   /** Leaves recovery: the stored edits go and a fresh room opens. */
   async reload() {
     const rows = this.snapshot.recovery?.rows ?? [];
@@ -1018,6 +1162,9 @@ export class ItemRoom {
     globalThis.document?.removeEventListener('visibilitychange', this.shown);
     this.keeper?.close();
     this.destroyed = true;
+    this.delay.dispose();
+    this.doc.off('update', this.grew);
+    this.sizeListeners.clear();
     this.sender?.stop();
     this.stopHold?.();
     this.waiting?.();
@@ -1027,7 +1174,7 @@ export class ItemRoom {
     this.options.seat?.attach(null);
     this.provider?.destroy();
     this.awareness?.destroy();
-    this.undo.destroy();
+    this.undoManager?.destroy();
     this.doc.destroy();
     this.snapshot.recovery?.doc.destroy();
     this.listeners.clear();
@@ -1078,10 +1225,10 @@ export function useItemRoom(
   {
     actorId,
     awareness,
+    board,
     document,
     inside,
     keep,
-    onFull,
     onLeave,
     seed,
     wake,
@@ -1089,13 +1236,13 @@ export function useItemRoom(
     actorId?: string | null;
     /** `ItemRoomOptions.awareness`. */
     awareness?: boolean;
+    /** `ItemRoomOptions.board`; read once, as the room starts. */
+    board?: { max: number };
     document?: 'keys';
     /** An embed's note seat (`ItemRoomOptions.inside`). */
     inside?: NoteSeat | null;
     /** `ItemRoomOptions.keep`; read once, as the room starts. */
     keep?: CopyLabel;
-    /** `ItemRoomOptions.onFull`; the latest one is called. */
-    onFull?: () => void;
     /** `ItemRoomOptions.onLeave`; the latest one is called. */
     onLeave?: () => void;
     /** `ItemRoomOptions.seed`, for the first room only. */
@@ -1106,18 +1253,17 @@ export function useItemRoom(
 ) {
   const [room, setRoom] = useState<ItemRoom | null>(null);
   const [generation, setGeneration] = useState(0);
-  const start = useRef({ keep, onFull, onLeave, seed });
-  start.current = { keep, onFull, onLeave, seed };
-  const takesFull = !!onFull;
+  const start = useRef({ board, keep, onLeave, seed });
+  start.current = { board, keep, onLeave, seed };
   useEffect(() => {
     if (!(materialId && enabled)) return;
     const { close, room: created } = openItemRoom(materialId, {
       awareness,
+      board: start.current.board,
       document,
       drafts: actorId ? { actorId } : undefined,
       inside,
       keep: start.current.keep,
-      onFull: takesFull ? () => start.current.onFull?.() : undefined,
       onLeave: () => start.current.onLeave?.(),
       onReplace: () => setGeneration((value) => value + 1),
       // Unusable once a room ended on it (its document went with the room).
@@ -1128,16 +1274,7 @@ export function useItemRoom(
       close();
       setRoom((current) => (current === created ? null : current));
     };
-  }, [
-    materialId,
-    enabled,
-    document,
-    actorId,
-    awareness,
-    inside,
-    generation,
-    takesFull,
-  ]);
+  }, [materialId, enabled, document, actorId, awareness, inside, generation]);
   useEffect(() => {
     if (wake) room?.wake();
   }, [room, wake]);
@@ -1153,6 +1290,7 @@ export function useItemRoom(
 const noSubscribe = () => () => undefined;
 const INITIAL: ItemRoomSnapshot = {
   access: null,
+  delayed: false,
   listsVersion: 0,
   offline: null,
   presence: NO_PRESENCE,
@@ -1163,5 +1301,6 @@ const INITIAL: ItemRoomSnapshot = {
   status: 'opening',
   stopped: false,
   synced: false,
+  unreachable: false,
 };
 const initialSnapshot = () => INITIAL;

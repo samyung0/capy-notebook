@@ -78,6 +78,27 @@ describe('keepDeviceCopy', () => {
     keep.stop();
   });
 
+  // A rename or a demotion reaches the copy with the document unchanged, so
+  // the next open paints with the current title and tools (ItemRoom.keepAs).
+  it('writes a new label with the document as it was', () => {
+    const doc = new Y.Doc();
+    let title = 'Note';
+    const keep = keepDeviceCopy(doc, {
+      clean: () => true,
+      owner: 'user',
+      row: () => ({ ...row(), canEditContent: false, title }),
+      seeded: true,
+    });
+    title = 'Renamed';
+    keep.relabel();
+    keep.close();
+    expect(storeDeviceCopy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(storeDeviceCopy).mock.calls[0][0]).toMatchObject({
+      canEditContent: false,
+      title: 'Renamed',
+    });
+  });
+
   it('waits for nothing unsent before it writes', () => {
     const doc = new Y.Doc();
     let clean = false;

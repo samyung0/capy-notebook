@@ -111,6 +111,7 @@ import {
   workspaceOf,
 } from './boardCards';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
+import { refusesAdds } from './boardFull';
 import {
   type KlipyGif,
   type KlipyKind,
@@ -1861,6 +1862,7 @@ const MINDMAP_PIECE: Piece = {
 
 /** Puts down the card a piece stands for, centred where it was dropped. */
 export function placePiece(gfx: GfxController, kind: PieceKind, [cx, cy]: Vec) {
+  if (refusesAdds(gfx.doc)) return;
   const centred = (w: number, h: number) =>
     new Bound(cx - w / 2, cy - h / 2, w, h);
   if (kind === 'cart' || kind === 'polar') {
@@ -2695,6 +2697,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   /** Image files picked from the device land as pasted ones do, through the
    * board's blob source: stored at once on the workspace canvas. */
   private pickImages() {
+    if (refusesAdds(this.gfx.doc)) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = IMAGE_ACCEPT;
@@ -2794,6 +2797,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** A carried picture centred on a board point, at its size on screen. */
   private placeAt(data: Carried, [x, y]: Vec) {
+    if (refusesAdds(this.gfx.doc)) return;
     const { zoom } = this.gfx.viewport;
     const [w, h] = [data.w / zoom, data.h / zoom];
     addPicture(this.gfx, new Bound(x - w / 2, y - h / 2, w, h), data.picture);

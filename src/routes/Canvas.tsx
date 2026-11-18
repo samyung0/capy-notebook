@@ -174,8 +174,10 @@ export default function CanvasPage() {
         )}
         {!(current || none) && <CanvasOpening />}
         {picker && (
-          // On a phone the row stops short of the board's own menu at the top right.
-          <div className="absolute top-2 right-12 left-2 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-canvas-board]:has(.capy-board[data-editor-open])_&]:hidden">
+          // The row stops 8px short of the board's status and ☰ at the top
+          // right (--capy-board-chrome, useCanvasBoard): a phone's picker fills
+          // it, a wider screen's shrinks into it.
+          <div className="absolute top-2 right-[calc(var(--capy-board-chrome,32px)+16px)] left-2 flex sm:right-auto sm:max-w-[calc(100%-var(--capy-board-chrome,32px)-24px)] [&>[data-slot=popover-anchor]]:min-w-0 [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-initial [[data-canvas-board]:has(.capy-board[data-editor-open])_&]:hidden">
             {picker}
           </div>
         )}

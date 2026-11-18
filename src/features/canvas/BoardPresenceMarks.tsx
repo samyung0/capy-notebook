@@ -1,7 +1,11 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Awareness } from 'y-protocols/awareness';
-import type { BoardPresenceView } from '@/features/blocksuite/drawingBoard';
+import { Icon } from '@/components/ui/Icon';
+import type {
+  BoardBox,
+  BoardPresenceView,
+} from '@/features/blocksuite/drawingBoard';
 import {
   FLIP_WITHIN,
   PeerOutline,
@@ -13,10 +17,12 @@ import {
   presenceClients,
 } from '@/features/collaboration/presence';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
+import { m } from '@/i18n';
 import {
   type BoardMark,
   placeOutline,
   placeText,
+  placeUploads,
   readBoardPeer,
 } from './boardPresence';
 
@@ -36,10 +42,11 @@ const VIEW_RESTS_MS = 150;
 
 /** A peer's marks, and what each was placed from. */
 type Placed = {
-  from: { b: string; label: string; p: boolean; text: string };
+  from: { b: string; label: string; p: boolean; text: string; u: string };
   outline?: BoardMark;
   pointer?: BoardMark;
   text: BoardMark[];
+  uploads: BoardMark[];
 };
 
 const sameMarks = (
@@ -128,15 +135,24 @@ function Marks({ awareness, connections, view }: CanvasPresence) {
           redraw = placed.delete(client) || redraw;
           continue;
         }
-        const { b, f, p, s } = peer.presence;
+        const { b, f, p, s, uploads } = peer.presence;
         const from = {
           b: JSON.stringify(b),
           label: `${peer.color} ${peer.name}`,
           p: !!p,
           text: `${s} ${f}`,
+          u: JSON.stringify(uploads),
         };
         const renamed = before?.from.label !== from.label;
-        const next: Placed = { from, text: before?.text ?? [] };
+        const next: Placed = {
+          from,
+          text: before?.text ?? [],
+          uploads: before?.uploads ?? [],
+        };
+        if (renamed || before?.from.u !== from.u) {
+          next.uploads = placeUploads(client, peer);
+          redraw ||= !sameMarks(next.uploads, before?.uploads ?? []);
+        }
         if (p) {
           const [x, y] = p;
           spots.current.set(key, [x, y]);
@@ -166,9 +182,10 @@ function Marks({ awareness, connections, view }: CanvasPresence) {
       changed.clear();
       flip();
       if (!redraw) return;
-      // Tints under outlines, carets over them, pointers on top.
+      // Uploads and tints under outlines, carets over them, pointers on top.
       const drawn = [...placed.values()];
       setMarks([
+        ...drawn.flatMap(({ uploads }) => uploads),
         ...drawn.flatMap(({ text }) =>
           text.filter(({ kind }) => kind === 'range')
         ),
@@ -270,6 +287,8 @@ function Marks({ awareness, connections, view }: CanvasPresence) {
                 zoomed
               />
             );
+          if (mark.kind === 'upload')
+            return <PeerUpload key={key} mark={mark} />;
           const peer = { '--peer': `var(--peer-${color})` } as CSSProperties;
           return mark.kind === 'caret' ? (
             // Sized in screen pixels and scaled back, as an outline is: the
@@ -304,5 +323,39 @@ function Marks({ awareness, connections, view }: CanvasPresence) {
         })}
       </div>
     </div>
+  );
+}
+
+/** A peer's image going up (Epo 2026-11-06, as a note's): a box where its
+ * block will land saying Uploading, outlined and named as a selection is.
+ * Sized in screen pixels and scaled back, so its text keeps its size. */
+function PeerUpload({ mark }: { mark: BoardMark & BoardBox }) {
+  const { color, h, name, w, x, y } = mark;
+  return (
+    <>
+      <span
+        className="absolute flex origin-top-left flex-col items-center justify-center gap-2 overflow-hidden rounded-[6px] border border-divider bg-surface text-[13px] text-fg-muted"
+        data-remote-upload={name}
+        style={{
+          height: `calc(${h}px * var(--presence-zoom))`,
+          left: x,
+          top: y,
+          transform: 'scale(calc(1 / var(--presence-zoom)))',
+          width: `calc(${w}px * var(--presence-zoom))`,
+        }}
+      >
+        <Icon className="size-5 shrink-0" name="image" />
+        {m.drawing_board_peer_uploading()}
+      </span>
+      <PeerOutline
+        color={color}
+        height={h}
+        left={x}
+        name={name}
+        top={y}
+        width={w}
+        zoomed
+      />
+    </>
   );
 }

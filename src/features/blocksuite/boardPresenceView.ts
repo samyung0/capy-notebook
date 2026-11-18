@@ -2,8 +2,10 @@ import { getCommonBound } from '@blocksuite/affine/global/gfx';
 import { type BlockStdScope, TextSelection } from '@blocksuite/affine/std';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import type * as Y from 'yjs';
+import type { BoardUploads } from './boardUploads';
 
 type Box = { h: number; w: number; x: number; y: number };
+const noop = () => {};
 type TextPoint = { index: number; text: Y.Text };
 
 /**
@@ -17,7 +19,8 @@ type TextPoint = { index: number; text: Y.Text };
 export function boardPresenceView(
   std: BlockStdScope,
   gfx: GfxController,
-  host: HTMLElement
+  host: HTMLElement,
+  uploads: BoardUploads | null
 ) {
   const { store } = std;
   const { viewport } = gfx;
@@ -94,6 +97,9 @@ export function boardPresenceView(
         selections.unsubscribe();
       };
     },
+    /** Calls `listener` when an image starts or stops going up (`uploads`);
+     * returns the undo. */
+    onUploads: (listener: () => void) => uploads?.onChange(listener) ?? noop,
     /** Calls `listener` when the board pans, zooms or is resized; returns the
      * undo. */
     onView: (listener: () => void) => {
@@ -144,6 +150,9 @@ export function boardPresenceView(
       const [x, y] = viewport.toModelCoordFromClientCoord([clientX, clientY]);
       return [x, y];
     },
+    /** Where the images this tab is storing will land, in board units: none
+     * while the board takes no edits. */
+    uploads: (): Box[] => uploads?.boxes() ?? [],
     /** The viewport: the zoom, where the board's origin sits in the board's
      * element, and that element's width, in its own pixels. */
     view: () => {

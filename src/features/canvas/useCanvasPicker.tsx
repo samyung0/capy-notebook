@@ -1,11 +1,13 @@
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   type CanvasListItem,
+  canvasById,
   canvasesQuery,
   createCanvas,
   shareCanvas,
@@ -19,6 +21,7 @@ import {
 } from '@/api/hooks';
 import { pagedRows } from '@/api/paged';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { CanvasSwitcher } from '@/features/canvas/CanvasSwitcher';
 import { canvasRights } from '@/features/canvas/canvasRights';
@@ -44,9 +47,14 @@ function newTitle(taken: string[]) {
  * to show. A frozen account draws on what it has and makes nothing new.
  * `picker` goes over the board, `dialogs` anywhere in the page.
  *
+ * A `c` the list does not hold once its pages ended may be one in the
+ * person's Trash, which opens read-only from there as a trashed note does,
+ * with no Rename, sharing or Delete; Restore brings it back into the list.
+ *
  * Nothing tells the other members when a canvas is shared or taken back (as
  * for a hidden file), so the list is read again each time the picker opens
- * and after the person's own change. */
+ * and after the person's own change. Sharing asks first, as a file's switch
+ * does (Epo 2026-11-16); taking it back does not. */
 export function useCanvasPicker({
   c,
   firstTitle,
@@ -70,6 +78,7 @@ export function useCanvasPicker({
   const {
     data: canvases,
     fetchNextPage,
+    isFetching: listing,
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
@@ -96,9 +105,39 @@ export function useCanvasPicker({
   // its next open, tries again.
   const unlisted = !!wanted && !listed && hasNextPage;
   const seeking = unlisted && !isFetchNextPageError;
+  // Its pages ended without it: it may be in the Trash. Keyed under the
+  // material, so Restore's refresh of an item open from the Trash asks again.
+  const asksTrash = !!wanted && !!own && !listed && !hasNextPage;
+  const { data: inTrash, isFetching: askingTrash } = useQuery({
+    enabled: asksTrash,
+    meta: { errorBoundary: false },
+    queryFn: ({ signal }) => canvasById(wanted ?? '', signal),
+    queryKey: [...qk.material(wanted ?? ''), 'canvas'],
+    retry: false,
+  });
+  const fromTrash: CanvasListItem | undefined =
+    asksTrash &&
+    inTrash?.id === wanted &&
+    inTrash.trash &&
+    (inTrash.workspaceId ?? undefined) === workspaceId
+      ? {
+          id: inTrash.id,
+          own: inTrash.own,
+          shared: inTrash.shared,
+          title: inTrash.title,
+          updatedAt: inTrash.updatedAt,
+          workspaceId: inTrash.workspaceId,
+        }
+      : undefined;
+  // Restored: the list holds it once read again.
+  const restored =
+    asksTrash && inTrash?.id === wanted && !inTrash.trash ? inTrash.id : null;
+  const [relisted, setRelisted] = useState<string | null>(null);
   const current =
     listed ??
+    fromTrash ??
     (unlisted && shown.current?.id === wanted ? shown.current : undefined);
+  const trashed = !!fromTrash && current === fromTrash;
   if (current) shown.current = current;
   /** The canvas being deleted: its room's refusal is no news to its board. */
   const deleted = useRef<string | null>(null);
@@ -115,7 +154,12 @@ export function useCanvasPicker({
   // What the picker offers for the canvas shown, by the person's role in its
   // workspace (none on the account's page, whose canvases have no workspace).
   const { data: workspace } = useWorkspace(workspaceId ?? '');
-  const rights = canvasRights(current, workspace?.role);
+  // One in the Trash is only read until restored.
+  const rights = trashed
+    ? { manage: false, share: false }
+    : canvasRights(current, workspace?.role);
+  /** The canvas whose sharing the person is asked to confirm. */
+  const [confirming, setConfirming] = useState<string | null>(null);
   const {
     isPending: sharing,
     mutate: share,
@@ -135,6 +179,11 @@ export function useCanvasPicker({
         await show(made.id, replace);
       })
       .catch(() => undefined);
+  useEffect(() => {
+    if (!restored) return;
+    void relist().then(() => setRelisted(restored));
+    // `relist` is this render's; the restored canvas is what it follows.
+  }, [restored]);
   // One first canvas, however often this runs before the list has it.
   const making = useRef(false);
   useEffect(() => {
@@ -143,6 +192,14 @@ export function useCanvasPicker({
       if (!isFetchingNextPage) void fetchNextPage();
       return;
     }
+    // Asking whether it is in the Trash, or reading the list again for a
+    // restored one: the link stays meanwhile.
+    if (
+      !current &&
+      asksTrash &&
+      (askingTrash || (restored && (relisted !== restored || listing)))
+    )
+      return;
     if (current) {
       making.current = false;
       // The URL names what is shown, so a reload and a shared tab open it.
@@ -160,7 +217,21 @@ export function useCanvasPicker({
     }
     // `show`, `add` and `fetchNextPage` are this render's; the list, its
     // paging, the canvas shown and the URL's are what it follows.
-  }, [own, current, c, frozen, seeking, unlisted, isFetchingNextPage, removed]);
+  }, [
+    own,
+    current,
+    c,
+    frozen,
+    seeking,
+    unlisted,
+    isFetchingNextPage,
+    removed,
+    asksTrash,
+    askingTrash,
+    restored,
+    relisted,
+    listing,
+  ]);
 
   const picker = canvases && (
     <CanvasSwitcher
@@ -182,7 +253,10 @@ export function useCanvasPicker({
       onRename={() => setRenaming(true)}
       onShare={
         current && rights.share
-          ? (shared) => share({ id: current.id, shared })
+          ? (shared) =>
+              shared
+                ? setConfirming(current.id)
+                : share({ id: current.id, shared })
           : undefined
       }
       paging={{
@@ -202,6 +276,17 @@ export function useCanvasPicker({
   );
   const dialogs = (
     <>
+      <ConfirmDialog
+        body={m.canvas_share_body()}
+        confirmLabel={m.content_share_with_members()}
+        danger={false}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => {
+          if (confirming) share({ id: confirming, shared: true });
+        }}
+        open={!!confirming}
+        title={m.canvas_share_title()}
+      />
       {/* Mounted for each rename: the form reads its first name once. */}
       {renaming && current && (
         <NameFormDialog
@@ -240,8 +325,9 @@ export function useCanvasPicker({
     </>
   );
   return {
-    /** The board's key: the canvas, and each Retry after it failed to open. */
-    boardKey: current && `${current.id}:${attempt}`,
+    /** The board's key: the canvas, each Retry after it failed to open, and
+     * whether it is in the Trash (Restore opens it live). */
+    boardKey: current && `${current.id}:${attempt}${trashed ? ':trash' : ''}`,
     current,
     dialogs,
     /** The canvas shown is being deleted. */

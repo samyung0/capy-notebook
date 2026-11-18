@@ -18,11 +18,13 @@ import {
   mergeBoxes,
   placeOutline,
   placeText,
+  placeUploads,
   readBoardPeer,
   readBoardPresence,
   resolveCaret,
   sendBoardPresence,
-  sendsBoardPresence,
+  uploadBox,
+  uploadId,
 } from './boardPresence';
 
 afterEach(() => vi.useRealTimers());
@@ -46,6 +48,10 @@ vi.stubGlobal(
 const ids = (count: number) =>
   JSON.stringify({ b: Array.from({ length: count }, () => 'a') });
 const id = (units: number) => JSON.stringify({ b: ['é'.repeat(units)] });
+const uploads = (count: number, units: number) =>
+  JSON.stringify({
+    uploads: Array.from({ length: count }, () => 'u'.repeat(units)),
+  });
 
 /** The canvas contract's vector list (section 6), the same one the
  * collaboration server holds (presence.rs tests): a state either both drop or
@@ -63,6 +69,11 @@ describe("a board's presence field list", () => {
       ids(16),
       id(64),
       '{"s":"AA==","f":"AA=="}',
+      // A note's uploads, shape and bounds.
+      '{"uploads":[]}',
+      '{"uploads":["abc"]}',
+      uploads(1, 32),
+      uploads(100, 1),
     ])
       expect(read(state), state).toBe(true);
   });
@@ -77,24 +88,16 @@ describe("a board's presence field list", () => {
       id(65),
       '{"b":[["a","b"]]}',
       '{"s":"not base64!"}',
-      '{"uploads":[]}',
+      uploads(1, 33),
+      uploads(101, 1),
+      '{"uploads":"abc"}',
+      '{"uploads":[1]}',
       '{"selectionV2":[]}',
       '{"user":{"name":"x"}}',
       '[]',
     ])
       expect(read(state), state).toBe(false);
   });
-});
-
-it('sends for whoever is known to edit the canvas, also on a read channel', () => {
-  expect(sendsBoardPresence('write', false)).toBe(true);
-  // Its maker, narrowed to read (a frozen account, a full payer).
-  expect(sendsBoardPresence('read', true)).toBe(true);
-  // A viewer, or an editor not known to be one.
-  expect(sendsBoardPresence('read', false)).toBe(false);
-  // The canvas has not answered, or the room has not.
-  expect(sendsBoardPresence('read', undefined)).toBe(false);
-  expect(sendsBoardPresence(null, true)).toBe(false);
 });
 
 /** A board with one note's paragraph on it, as presence reads it, and this
@@ -122,8 +125,9 @@ function board() {
   const shown = {
     caret: null as ReturnType<BoardPresenceView['caret']>,
     selected: [] as string[],
+    uploads: [] as BoardBox[],
   };
-  const heard = { selection: () => {}, view: () => {} };
+  const heard = { selection: () => {}, uploads: () => {}, view: () => {} };
   const view: BoardPresenceView = {
     boxOf: (elements) =>
       elements.includes('shape1') ? { h: 40, w: 80, x: 10, y: 20 } : null,
@@ -131,6 +135,10 @@ function board() {
     host: host as unknown as HTMLElement,
     onSelection: (listener) => {
       heard.selection = listener;
+      return () => {};
+    },
+    onUploads: (listener) => {
+      heard.uploads = listener;
       return () => {};
     },
     onView: (listener) => {
@@ -153,6 +161,7 @@ function board() {
         : [],
     }),
     toBoard: (x, y) => [(x - 100) / 2, (y - 100) / 2],
+    uploads: () => shown.uploads,
     view: () => ({ left: 100, top: 100, width: 800, zoom: 2 }),
   };
   const awareness = new Awareness(doc);
@@ -171,6 +180,11 @@ function board() {
   };
   const at = (index: number): BoardTextPoint => ({ index, text });
   const state = () => awareness.getLocalState() as BoardPresence | null;
+  /** This tab's images going up, or none (also as the board locks). */
+  const upload = (boxes: BoardBox[]) => {
+    shown.uploads = boxes;
+    heard.uploads();
+  };
   return {
     at,
     awareness,
@@ -182,6 +196,7 @@ function board() {
     select,
     state,
     text,
+    upload,
     view,
   };
 }
@@ -331,4 +346,45 @@ it('tints a line once, however many boxes the page gives for it, and keeps lines
       box(0, 18, 60),
     ])
   ).toEqual([box(40, 0, 80), box(0, 18, 60)]);
+});
+
+it('sends the images going up, each named by its box, and none from a locked board', () => {
+  vi.useFakeTimers();
+  const { state, upload, view, awareness } = board();
+  const stop = sendBoardPresence(view, awareness);
+  vi.advanceTimersByTime(50);
+  const box = { h: 300.4, w: 400, x: -1_000_000_000, y: 20.6 };
+  upload([box]);
+  vi.advanceTimersByTime(50);
+  const sent = state()?.uploads ?? [];
+  expect(sent).toHaveLength(1);
+  expect(sent[0].length).toBeLessThanOrEqual(32);
+  expect(uploadBox(sent[0])).toEqual({ h: 300, w: 400, x: -1e9, y: 21 });
+  // Landed, refused, or the board locked (a read channel takes no uploads):
+  // the field goes.
+  upload([]);
+  vi.advanceTimersByTime(50);
+  expect(state()).not.toHaveProperty('uploads');
+  stop();
+});
+
+it("draws a peer's uploads where they will land, and nothing for an id naming no box", () => {
+  const id = uploadId({ h: 30, w: 40, x: 10, y: -20 }) as string;
+  const marks = placeUploads(7, {
+    color: 2,
+    name: 'Ana',
+    presence: { uploads: [id, 'abc', '1,2,0,4'] },
+  });
+  expect(marks).toEqual([
+    {
+      color: 2,
+      h: 30,
+      key: `7:u${id}`,
+      kind: 'upload',
+      name: 'Ana',
+      w: 40,
+      x: 10,
+      y: -20,
+    },
+  ]);
 });

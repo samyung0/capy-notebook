@@ -83,6 +83,8 @@ export class DblClickAddNote extends InteractivityExtension {
     this.event.on('dblclick', ({ event }: GfxInteractivityContext) => {
       const flags = this.std.store.get(FeatureFlagService);
       if (!flags.getFlag('enable_dblclick_note')) return;
+      // Capy (local change 71): no note on a store that takes no edits.
+      if (this.std.store.readonly) return;
       const [x, y] = this.gfx.viewport.toModelCoord(event.x, event.y);
       if (this.gfx.getElementByPoint(x, y)) return;
       addNote(this.std, new Point(event.x, event.y), {

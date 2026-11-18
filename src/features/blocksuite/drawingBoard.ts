@@ -1,7 +1,8 @@
 import '@toeverything/theme/style.css';
 import './chrome.css';
-import './chromeLabels';
+import { toastText } from './chromeLabels';
 import './drawingBoard.css';
+import { setImageUploadHandler } from '@blocksuite/affine/blocks/image';
 import { ImageStoreExtension } from '@blocksuite/affine/blocks/image/store';
 import { ImageViewExtension } from '@blocksuite/affine/blocks/image/view';
 import { ListStoreExtension } from '@blocksuite/affine/blocks/list/store';
@@ -10,6 +11,7 @@ import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { NoteViewExtension } from '@blocksuite/affine/blocks/note/view';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { ParagraphViewExtension } from '@blocksuite/affine/blocks/paragraph/view';
+import { createElementsFromClipboardDataCommand } from '@blocksuite/affine/blocks/root';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
@@ -74,7 +76,11 @@ import { InlinePresetStoreExtension } from '@blocksuite/affine/inlines/preset/st
 import { InlinePresetViewExtension } from '@blocksuite/affine/inlines/preset/view';
 import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/store';
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
-import { ColorScheme, ImageBlockModel } from '@blocksuite/affine/model';
+import {
+  ColorScheme,
+  ImageBlockModel,
+  MindmapElementModel,
+} from '@blocksuite/affine/model';
 import { ImageAdapter } from '@blocksuite/affine/shared/adapters';
 import {
   FeatureFlagService,
@@ -113,6 +119,7 @@ import { ToolbarViewExtension } from '@blocksuite/affine/widgets/toolbar/view';
 import { ViewportOverlayViewExtension } from '@blocksuite/affine/widgets/viewport-overlay/view';
 import {
   Delete02Icon,
+  Download01Icon,
   Redo03Icon,
   Undo03Icon,
 } from '@hugeicons/core-free-icons';
@@ -122,6 +129,8 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
 import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
+import { BOARD_OFFLINE_MARGIN } from '@/features/collaboration/itemRoom';
+import { contentSizeKilobytes } from '@/features/notes/documentStats';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
@@ -135,6 +144,7 @@ import {
   openBlankFormula,
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
+import { refusesAdds, setBoardFull } from './boardFull';
 import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
@@ -161,6 +171,7 @@ import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
 import { boardPresenceView } from './boardPresenceView';
 import './boardPlaneEditor';
+import { readOnlyCopy, TapPanTool } from './boardReadOnly';
 import {
   boardToolbar,
   markBoard,
@@ -176,17 +187,25 @@ import {
 } from './boardTools';
 import { unknownStore } from './boardUnknown';
 import { unknownViews } from './boardUnknownView';
+import { BoardUploads, boardUploads } from './boardUploads';
 import { openRoomStore } from './roomStore';
 
-// BlockSuite's notices show in the app's own toast (local change 33). They come
-// as bare English strings, a refusal ("Invalid link", "Import failed") read by
-// its wording as a warning, anything else ("Copied to clipboard") as a check.
+// BlockSuite's notices show in the app's own toast (local change 33), in the
+// app's language (chromeLabels.ts). They come as bare English strings, a refusal
+// ("Invalid link", "Import failed") read by its wording as a warning, anything
+// else ("Copied to clipboard") as a check.
 const BLOCKSUITE_REFUSAL = /fail|invalid|can ?not|unable|error/i;
 setToastHandler((message) =>
   userToast({
-    title: message,
+    title: toastText(message),
     variant: BLOCKSUITE_REFUSAL.test(message) ? 'warning' : 'success',
   })
+);
+
+// An image BlockSuite is about to store shows as a box on its board while it
+// goes up (local change 70, boardUploads.ts).
+setImageUploadHandler((std, file, xywh) =>
+  boardUploads.get(std)?.begin(file, xywh)
 );
 
 const stores = new StoreExtensionManager([
@@ -286,9 +305,16 @@ const READ_ONLY_TOOLS = new Set<unknown>([
 const readOnlyViews = new ViewExtensionManager(
   VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view))
 );
-/** A teacher's or a viewer's workspace canvas still draws what only it may hold. */
+/** A viewer's workspace canvas still draws what only it may hold, and selects
+ * to copy: its selection's frame and box (boardReadOnly.ts). */
+const READ_ONLY_SELECTS = new Set<unknown>([
+  EdgelessDraggingAreaViewExtension,
+  EdgelessSelectedRectViewExtension,
+]);
 const readOnlyWorkspaceViews = new ViewExtensionManager([
-  ...VIEWS.filter((view) => !READ_ONLY_TOOLS.has(view)),
+  ...VIEWS.filter(
+    (view) => !READ_ONLY_TOOLS.has(view) || READ_ONLY_SELECTS.has(view)
+  ),
   MindmapWithoutTool,
 ]);
 
@@ -322,6 +348,9 @@ const surfaceOf = (gfx: GfxController) =>
 
 /** The plane card the dev pages start with. */
 const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
+/** A downloaded image's longest side in pixels: sharp on a screen, and well
+ * inside every browser's canvas limit. */
+const DOWNLOAD_SIDE_MAX = 4096;
 /** The marking image's bytes after the shared compressor. */
 const IMAGE_BYTES_MAX = 300 * 1024;
 
@@ -334,13 +363,17 @@ export type DrawingBoardOptions = {
    * pixels, for what the page lays over the board (a pinned question, a top bar).
    * Without it, room for the board's own toolbar and undo. */
   fitPadding?: [number, number, number, number];
+  /** The board's name now (a canvas's title), for the file Download as image
+   * saves; without it, `canvas.png` or `drawing.png`. */
+  title?: () => string;
   onChange?: () => void;
   /** Where its image files come from and go: none keeps them on the page only. */
   images?: BoardImages;
   /** A fresh board starts with a plane card: the dev pages. Every answer starts on the
    * same plain board (Epo 2026-11-06). */
   plane?: boolean;
-  /** Pan and zoom only: no tools, nothing opens for editing. */
+  /** No tools, nothing opens for editing: pan and zoom, and on a canvas
+   * select and copy (boardReadOnly.ts). */
   readOnly?: boolean;
   /** An editor's board that takes no edits as it mounts (`setLocked`). */
   locked?: boolean;
@@ -400,6 +433,15 @@ function answerArea(label: string) {
       chip.style.transform = `scale(${1 / zoom}) translateY(-100%)`;
     },
   };
+}
+
+function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
@@ -616,6 +658,7 @@ export function mountDrawingBoard(
                 ...cardViews,
                 BoardImageClipboard,
                 storedImagePaste(store),
+                TapPanTool,
               ]
             : views.get('edgeless')),
           shapeButtonTool,
@@ -632,6 +675,7 @@ export function mountDrawingBoard(
                 ...readOnlyWorkspaceViews.get('edgeless'),
                 ...pictureViews,
                 ...cardViews,
+                TapPanTool,
               ]
             : readOnlyViews.get('edgeless')),
           ...drawn,
@@ -659,6 +703,25 @@ export function mountDrawingBoard(
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
     gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
+  // The room's size and cap (`setRoomSize`): the menu's last row from 75% of the
+  // cap, as a note's size line reads it (Epo 2026-11-18, 2B), and from the cap
+  // less the room's margin (`BOARD_OFFLINE_MARGIN`, online too: client-limits
+  // A) the board takes only removals and the row says so in the error colour.
+  let roomSize: { bytes: number; max: number } | null = null;
+  const fullAt = (size: { bytes: number; max: number } | null) =>
+    !!size && size.bytes >= size.max - BOARD_OFFLINE_MARGIN;
+  const sizeNote = () => {
+    if (!roomSize || roomSize.bytes < roomSize.max * 0.75) return;
+    const text = m.editor_stats_size({
+      current: contentSizeKilobytes(roomSize.bytes).toLocaleString(),
+      max: contentSizeKilobytes(roomSize.max).toLocaleString(),
+    });
+    const full = fullAt(roomSize);
+    return {
+      error: full,
+      text: full ? `${text} · ${m.editor_limit_remove_only()}` : text,
+    };
+  };
   const menu = new BoardMenu(() => ({
     entries: [
       ...(readOnly
@@ -682,6 +745,13 @@ export function mountDrawingBoard(
             },
           ]),
       { label: m.drawing_board_fit_to_screen(), run: () => gfx.fitToScreen() },
+      // Kept on a read-only board, as Office keeps Download.
+      {
+        disabled: !gfx.gfxElements.length,
+        icon: Download01Icon,
+        label: m.drawing_board_download_image(),
+        run: () => void downloadImage(),
+      },
       // Everything on the canvas goes in one undo step (Epo 2026-11-13).
       ...(readOnly
         ? []
@@ -701,18 +771,132 @@ export function mountDrawingBoard(
             },
           ]),
     ],
+    note: sizeNote(),
     zoom: {
       in: () => zoomTo(gfx.viewport.zoom + ZOOM_STEP),
       out: () => zoomTo(gfx.viewport.zoom - ZOOM_STEP),
       percent: { reset: () => zoomTo(1), value: () => gfx.viewport.zoom },
     },
   }));
+  // A canvas near its room's cap (`fullAt`) takes only edits that remove
+  // content: select, the eraser, delete and moving stay; a tool that adds, a
+  // paste, a drop, ⌘D and Duplicate (`duplicates`), an Alt-drag's copy, a
+  // mind map's Tab or Enter child, a shape's auto-complete +, a double
+  // click's note, a piece, a picture, an image and a formula are refused with
+  // the cap's line (boardFull.ts). Typing in what is there and Undo are not
+  // stopped; a refusal by the room still goes to the copy-only recovery.
+  let full = false;
+  const ADDS_NOTHING = new Set([
+    DefaultTool.toolName,
+    'eraser',
+    PanTool.toolName,
+    TapPanTool.toolName,
+  ]);
+  /** Back to select from a tool that adds, while gated: said when the
+   * person picked it, silent when the gate came on under it (the size row
+   * says why), and never under a stroke in progress, which ends first. */
+  let stillTool: (() => void) | null = null;
+  const refuseTool = (picked: boolean) => {
+    if (!full || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())) return;
+    if (picked) {
+      gfx.tool.setTool(DefaultTool);
+      refusesAdds(store);
+      return;
+    }
+    stillTool?.();
+    stillTool = gfx.tool.dragging$.subscribe((dragging) => {
+      if (dragging) return;
+      queueMicrotask(() => {
+        stillTool?.();
+        stillTool = null;
+        if (full && !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()))
+          gfx.tool.setTool(DefaultTool);
+      });
+    });
+  };
+  /** A mind map's node alone is selected: Tab and Enter add its child or
+   * sibling. */
+  const onMindmapNode = () => {
+    const { selectedElements, editing } = gfx.selection;
+    return (
+      !editing &&
+      selectedElements.length === 1 &&
+      selectedElements[0].group instanceof MindmapElementModel
+    );
+  };
+  const refuseAdd = (event: Event) => {
+    if (!full || readOnly) return;
+    const adds =
+      event.type === 'paste' ||
+      event.type === 'drop' ||
+      (event instanceof KeyboardEvent &&
+        (((event.metaKey || event.ctrlKey) &&
+          event.key.toLowerCase() === 'd') ||
+          ((event.key === 'Tab' || event.key === 'Enter') &&
+            onMindmapNode()))) ||
+      (event instanceof PointerEvent &&
+        (event.altKey ||
+          event
+            .composedPath()
+            .some(
+              (target) =>
+                target instanceof Element &&
+                target.localName === 'edgeless-auto-complete'
+            )));
+    if (!adds) return;
+    event.preventDefault();
+    event.stopPropagation();
+    refusesAdds(store);
+  };
+  for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
+    board.addEventListener(type, refuseAdd, true);
+  // Duplicate (the element toolbar's, ⌘D's) and a paste of copied elements
+  // make their copies through one command.
+  const { command } = std;
+  const exec = command.exec.bind(command);
+  command.exec = ((run, ...rest) =>
+    (run as unknown) === createElementsFromClipboardDataCommand &&
+    refusesAdds(store)
+      ? [false, {}]
+      : exec(run, ...rest)) as typeof command.exec;
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
     board.dataset.tool = name;
+    if (full) queueMicrotask(() => refuseTool(true));
   });
-  menu.element.classList.add('capy-board-menu');
-  board.append(menu.element);
+  // The ☰ and, just left of it, the page's save status (`statusSlot`, empty
+  // without a room).
+  const chrome = document.createElement('div');
+  chrome.className = 'capy-board-menu';
+  const statusSlot = document.createElement('div');
+  statusSlot.className = 'capy-board-status';
+  chrome.append(statusSlot, menu.element);
+  board.append(chrome);
+  // Images going up: only a board that stores them at once (a canvas).
+  const uploads = options.images?.store
+    ? new BoardUploads(gfx, () => readOnly)
+    : null;
+  if (uploads) {
+    boardUploads.set(std, uploads);
+    blobs.onProgress = (file, percent) => uploads.progress(file, percent);
+    chrome.before(uploads.element);
+  }
+  // A canvas that takes no edits selects and copies; an answer shown to its
+  // teacher pans and zooms only.
+  const copying =
+    options.board === 'workspace'
+      ? readOnlyCopy(gfx, board, () => readOnly)
+      : null;
+  if (copying) chrome.before(copying.bar);
+  /** The tool a board that takes no edits starts on: a canvas's selects
+   * (by a finger's tap on a touch screen), anything else's pans, as
+   * BlockSuite's root picks when it mounts. */
+  const readingTool = () => {
+    if (!copying) gfx.tool.setTool(PanTool, { panning: true });
+    else if (matchMedia('(pointer: coarse)').matches)
+      gfx.tool.setTool(TapPanTool);
+    else gfx.tool.setTool(DefaultTool);
+  };
   const historyUpdates = store
     .get(HistoryExtension)
     .onUpdated.subscribe(() => menu.open && menu.draw());
@@ -722,7 +906,8 @@ export function mountDrawingBoard(
   // The slots' keys (their tooltips show them): a card in the view's middle. Off while
   // typing anywhere, while a card is open (it takes the keys), and out of sight.
   const slotKeys = (event: KeyboardEvent) => {
-    if (readOnly || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (readOnly || full || event.metaKey || event.ctrlKey || event.altKey)
+      return;
     if (!board.checkVisibility() || board.hasAttribute('data-editor-open'))
       return;
     const [target] = event.composedPath();
@@ -843,14 +1028,14 @@ export function mountDrawingBoard(
       getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
     );
   };
-  /** What the image draws: everything, far groups drawn nearer (FAR_GAP), with an
-   * 8-unit margin. `bound` is in board units. */
-  const framing = () => {
+  /** What the image draws: everything, far groups drawn nearer (FAR_GAP) on the
+   * marking image, with an 8-unit margin. `bound` is in board units. */
+  const framing = (nearer = true) => {
     const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
     // Turned items by the box they turn into.
     const bounds = items.map((item) => item.elementBound);
     const whole = everything();
-    const far = Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
+    const far = nearer && Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
     const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
     const placed = bounds.map(
       (box, i) =>
@@ -892,6 +1077,7 @@ export function mountDrawingBoard(
       return;
     }
     background.prepend(layer);
+    if (readOnly && copying) readingTool();
     if (options.plane && !saved) {
       addPlane(
         gfx,
@@ -938,14 +1124,16 @@ export function mountDrawingBoard(
     gfx.tool.setTool(DefaultTool);
   };
 
-  /** The marking image: see toImage. */
-  const drawImage = async () => {
+  /** The board drawn layer by layer on white, its longest side at most `side`
+   * pixels: the marking image (see toImage) draws far groups nearer, a download
+   * draws the board as it lies. */
+  const drawImage = async (side: number, nearer: boolean) => {
     await formulasDrawn(gfx);
     const renderer = surfaceOf(gfx)?.renderer;
     if (!(renderer instanceof CanvasRenderer))
       throw new Error('drawing board: no canvas renderer');
-    const { bound, shiftOf } = framing();
-    const scale = Math.min(2, IMAGE_SIDE_MAX / Math.max(bound.w, bound.h));
+    const { bound, shiftOf } = framing(nearer);
+    const scale = Math.min(2, side / Math.max(bound.w, bound.h));
     const output = document.createElement('canvas');
     output.width = Math.round(bound.w * scale);
     output.height = Math.round(bound.h * scale);
@@ -1007,6 +1195,41 @@ export function mountDrawingBoard(
     return png;
   };
 
+  /** Drawn in the light palette, whatever the app's theme. */
+  const lightImage = async (side: number, nearer: boolean) => {
+    root.dataset.boardLight = '';
+    theme$.value = ColorScheme.Light;
+    try {
+      return await drawImage(side, nearer);
+    } finally {
+      delete root.dataset.boardLight;
+      followTheme();
+    }
+  };
+
+  /** The downloaded file's name: the board's title, with what a file name
+   * cannot hold taken out; `canvas` or `drawing` without one. */
+  const imageName = () =>
+    options
+      .title?.()
+      .replace(/[\\/:*?"<>|]/g, '')
+      .trim() || (options.board === 'workspace' ? 'canvas' : 'drawing');
+
+  /** The menu's Download as image: the whole board as a PNG, read-only too. A
+   * board that cannot be drawn says so. */
+  const downloadImage = async () => {
+    if (!readOnly) finishPlot();
+    try {
+      downloadBlob(
+        await lightImage(DOWNLOAD_SIDE_MAX, false),
+        `${imageName()}.png`
+      );
+    } catch (error) {
+      console.error(error);
+      userToast({ title: m.drawing_board_download_failed(), variant: 'error' });
+    }
+  };
+
   return {
     /** Leaves the open plane or chart, writing it as Done does. */
     closeEditor: () => closeBoardEditor(gfx),
@@ -1049,7 +1272,7 @@ export function mountDrawingBoard(
     },
     /** What a canvas's presence reads of the board (boardPresenceView.ts): its
      * viewport, selection and text caret, and where others' marks go. */
-    presence: boardPresenceView(std, gfx, board),
+    presence: boardPresenceView(std, gfx, board, uploads),
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {
@@ -1094,10 +1317,31 @@ export function mountDrawingBoard(
       readOnly = locked;
       blobs.readonly = locked;
       store.readonly = locked;
-      // As BlockSuite's root picks one when it mounts.
-      if (locked) gfx.tool.setTool(PanTool, { panning: true });
+      if (locked) readingTool();
       else gfx.tool.setTool(DefaultTool);
       if (menu.open) menu.draw();
+      uploads?.changed();
+      copying?.draw();
+    },
+    /** The room's size against its cap, shown in the menu from 75%; null (no
+     * room) shows none. */
+    setRoomSize: (size: { bytes: number; max: number } | null) => {
+      // Called on every update of the room: only a change of what the board
+      // shows or takes does any work.
+      const before = menu.open ? JSON.stringify(sizeNote()) : '';
+      roomSize = size;
+      if (menu.open && JSON.stringify(sizeNote()) !== before) menu.draw();
+      if (fullAt(size) === full) return;
+      full = !full;
+      setBoardFull(store, full);
+      board.toggleAttribute('data-full', full);
+      store
+        .get(FeatureFlagService)
+        .setFlag(
+          'enable_dblclick_note',
+          options.board === 'workspace' && !full
+        );
+      refuseTool(false);
     },
     /** The board as it is, leaving a tool in use alone. */
     snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
@@ -1112,21 +1356,16 @@ export function mountDrawingBoard(
         span: Math.max(bound.w, bound.h),
       };
     },
+    /** Just left of the ☰ in the board's chrome, for the page's save status:
+     * taking no room while empty. */
+    statusSlot,
     /** The canvas as it stands, for marking, through the shared image compressor:
      * every card with the view it was left at, and what's drawn over and around them.
      * Something dragged far away is drawn nearer (FAR_GAP). */
     toImage: async () => {
       if (!readOnly) finishPlot();
       // Marked on white in the light palette, whatever the app's theme.
-      root.dataset.boardLight = '';
-      theme$.value = ColorScheme.Light;
-      let png: Blob;
-      try {
-        png = await drawImage();
-      } finally {
-        delete root.dataset.boardLight;
-        followTheme();
-      }
+      const png = await lightImage(IMAGE_SIDE_MAX, true);
       // The encode runs in the compressor's worker; drawing needs the page.
       // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
       // (Epo 2026-11-06: minimise drawing storage).
@@ -1146,9 +1385,16 @@ export function mountDrawingBoard(
       unguard?.();
       imageAdds.unsubscribe();
       document.removeEventListener('keydown', slotKeys);
+      for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
+        board.removeEventListener(type, refuseAdd, true);
       window.removeEventListener('keydown', cardKeys, true);
       unwatchEditor?.();
       menu.dispose();
+      chrome.remove();
+      uploads?.dispose();
+      boardUploads.delete(std);
+      stillTool?.();
+      copying?.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
       unwatchLinks();

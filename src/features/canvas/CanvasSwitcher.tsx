@@ -31,8 +31,10 @@ import { iconUrl } from '@/lib/icon-catalog';
  *
  * Sharing (Epo 2026-11-18, mock F2dZxe8XvcW1FAiqMf81NA B): a canvas the person shared with its
  * workspace has the people mark before its time, another member's reads
- * "Ben · 3d", a private one neither; the shown canvas's "Shared with
- * workspace" switch sits between Rename and Delete. */
+ * "Ben · 3d", a private one neither; the shown canvas's "Shared with members"
+ * switch, worded as a file's (Epo 2026-11-18), sits between Rename and
+ * Delete. Sharing asks first, as a file's does; taking it back does not
+ * (`useCanvasPicker`). */
 export function CanvasSwitcher({
   canvases,
   current,
@@ -114,10 +116,10 @@ export function CanvasSwitcher({
         // says it.
         <span
           className="inline-flex shrink-0 text-fg-muted"
-          title={m.canvas_shared_with_workspace()}
+          title={m.content_shared_with_members()}
         >
           <Icon aria-hidden name="members" />
-          <span className="sr-only">{m.canvas_shared_with_workspace()}</span>
+          <span className="sr-only">{m.content_shared_with_members()}</span>
         </span>
       )}
       <span className="shrink-0 font-normal text-fg-muted text-xs">
@@ -137,7 +139,7 @@ export function CanvasSwitcher({
             width, as tall as the board's ☰ button and a phone's Back (Epo
             2026-11-12). */}
         <Button
-          className="h-8 w-full min-w-0 justify-between bg-surface px-3.5 sm:w-60"
+          className="h-8 w-full min-w-0 max-w-full justify-between bg-surface px-3.5 sm:w-60"
           iconRight="chevronDown"
           variant="outline"
         >
@@ -192,7 +194,7 @@ export function CanvasSwitcher({
               <Icon name="members" />
             </span>
             <span className="min-w-0 flex-1 whitespace-nowrap">
-              {m.canvas_shared_with_workspace()}
+              {m.content_shared_with_members()}
             </span>
             <Switch
               aria-hidden

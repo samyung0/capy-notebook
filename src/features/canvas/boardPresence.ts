@@ -37,6 +37,9 @@ export interface BoardPresence {
   /** The text caret's anchor: base64 of `Y.encodeRelativePosition` on its
    * block's text. */
   s?: string;
+  /** From a writer only: the images it is storing, each named by the box its
+   * block will take (`uploadId`), so others show a box there meanwhile. */
+  uploads?: string[];
 }
 
 /** Whole board units: BlockSuite's viewport gives fractions, and a rounded
@@ -47,6 +50,9 @@ export const MAX_BOARD_COORDINATE = 1_000_000_000;
 const MAX_ID = 64;
 const MAX_IDS = 16;
 const MAX_POSITION = 64;
+/** A note's `uploads` bounds, which the room holds a board's to. */
+const MAX_UPLOAD_ID = 32;
+const MAX_UPLOADS = 100;
 const POSITION = /^[A-Za-z0-9+/=]*$/;
 
 const isPosition = (value: unknown) =>
@@ -65,6 +71,11 @@ const isIds = (value: unknown) =>
   value.length <= MAX_IDS &&
   value.every((id) => typeof id === 'string' && id.length <= MAX_ID);
 
+const isUploads = (value: unknown) =>
+  Array.isArray(value) &&
+  value.length <= MAX_UPLOADS &&
+  value.every((id) => typeof id === 'string' && id.length <= MAX_UPLOAD_ID);
+
 function admits(state: object) {
   for (const [key, value] of Object.entries(state)) {
     // This tab's own state may leave a field undefined; JSON drops it.
@@ -73,6 +84,8 @@ function admits(state: object) {
       if (!isPosition(value)) return false;
     } else if (key === 'p') {
       if (!(value === null || isPointer(value))) return false;
+    } else if (key === 'uploads') {
+      if (!isUploads(value)) return false;
     } else if (!(key === 'b' && isIds(value))) return false;
   }
   return true;
@@ -118,6 +131,36 @@ export function setBoardPresence(awareness: Awareness, fields: BoardPresence) {
 export function boardPointer(x: number, y: number): BoardPointer | null {
   const pointer = [Math.round(x), Math.round(y)];
   return isPointer(pointer) ? (pointer as BoardPointer) : null;
+}
+
+/** An image going up, named by the box its block will take: whole board
+ * units in base 36, `x,y,w,h`, at most 29 characters within the room's
+ * coordinates. None for a box the room's coordinates do not hold. */
+export function uploadId({ h, w, x, y }: BoardBox): string | undefined {
+  const units = [x, y, w, h].map(Math.round);
+  if (!units.every((unit) => isCoordinate(unit))) return;
+  return units.map((unit) => unit.toString(36)).join(',');
+}
+
+const BASE36 = /^-?[0-9a-z]+$/;
+
+/** The box an upload's id names; null for one that names none. */
+export function uploadBox(id: string): BoardBox | null {
+  const parts = id.split(',');
+  if (parts.length !== 4 || !parts.every((part) => BASE36.test(part)))
+    return null;
+  const [x, y, w, h] = parts.map((part) => Number.parseInt(part, 36));
+  return w > 0 && h > 0 ? { h, w, x, y } : null;
+}
+
+/** This tab's uploads as presence sends them: none when there are none (a
+ * read channel's state may hold no `uploads` at all). */
+export function uploadIds(boxes: readonly BoardBox[]): string[] | undefined {
+  const ids = [...new Set(boxes.flatMap((box) => uploadId(box) ?? []))].slice(
+    0,
+    MAX_UPLOADS
+  );
+  return ids.length ? ids : undefined;
 }
 
 const utf8 = new TextEncoder();
@@ -174,22 +217,6 @@ function selectionFields(
 }
 
 /**
- * Whether this tab sends its presence on a canvas (Epo 2026-11-18): whoever
- * may edit the canvas does, also while their channel is narrowed to read (a
- * frozen account, a frozen or full payer), and a workspace viewer sends none,
- * as the room keeps and relays them (`in_presence`, room.rs). The page knows
- * a person may edit from a write channel, or from their having made the
- * canvas (`made`, the canvas's own read; its maker holds it as its owner).
- * Anyone else on a read channel is a viewer or a narrowed editor, which
- * nothing the page reads tells apart: not known to edit, so none. Nothing is
- * sent before the room and the canvas have answered.
- */
-export const sendsBoardPresence = (
-  access: 'read' | 'write' | null,
-  made: boolean | undefined
-) => access === 'write' || (access === 'read' && made === true);
-
-/**
  * Sends this tab's presence on a canvas: the pointer in board units (a mouse
  * or pen only, as a note's), the selected elements, and the text caret as
  * soon as it is placed, moved or a range is selected, not only while typing
@@ -220,6 +247,7 @@ export function sendBoardPresence(
     const shown = over && !host.hasAttribute('data-editor-open');
     const fields: BoardPresence = {
       p: shown ? boardPointer(...view.toBoard(pageX, pageY)) : null,
+      uploads: uploadIds(view.uploads()),
     };
     if (selectionChanged) Object.assign(fields, selectionFields(view));
     selectionChanged = false;
@@ -250,6 +278,8 @@ export function sendBoardPresence(
     selectionChanged = true;
     sender.schedule();
   });
+  // An image started or stopped going up, or the board locked.
+  const offUploads = view.onUploads(() => sender.schedule());
   // The board moved under a still pointer.
   const offView = view.onView(() => {
     if (over) sender.schedule();
@@ -266,6 +296,7 @@ export function sendBoardPresence(
     page.removeEventListener('visibilitychange', hidden);
     tab?.removeEventListener('blur', leave);
     offSelection();
+    offUploads();
     offView();
     awareness.setLocalState(null);
   };
@@ -301,8 +332,21 @@ export function readBoardPeer(
 /** What the canvas draws for a peer, in board units. */
 export type BoardMark = { color: number; key: string; name: string } & (
   | { kind: 'pointer'; x: number; y: number }
-  | ({ kind: 'outline' | 'caret' | 'range' } & BoardBox)
+  | ({ kind: 'outline' | 'caret' | 'range' | 'upload' } & BoardBox)
 );
+
+/** A box for each image a peer is storing, where its block will land. */
+export function placeUploads(
+  client: number,
+  { color, name, presence: { uploads } }: BoardPeer
+): BoardMark[] {
+  return (uploads ?? []).flatMap((id) => {
+    const box = uploadBox(id);
+    return box
+      ? [{ ...box, color, key: `${client}:u${id}`, kind: 'upload', name }]
+      : [];
+  });
+}
 
 /** The outline around what a peer selected; none when the board holds none
  * of it. */

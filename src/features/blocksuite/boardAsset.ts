@@ -87,9 +87,11 @@ export function assetImages(
       };
     },
     onRefused,
-    store: async (file) => {
+    store: async (file, onProgress) => {
       const { uploadEditorAsset } = await import('@/api/editorAssets');
-      const asset = await uploadEditorAsset(materialId, file, 'image');
+      const asset = await uploadEditorAsset(materialId, file, 'image', {
+        onProgress,
+      });
       own.add(asset.assetId);
       return { bytes: asset.sizeBytes, id: asset.assetId };
     },
