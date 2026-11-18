@@ -22,9 +22,18 @@ const BOARD_FIRST_STATE: &[u8] = include_bytes!("../fixtures/board-first-state.b
 /// makes (an info byte, an origin and a right origin of at most ten bytes of
 /// client id and five of clock each, a length).
 const SPLIT_HEADER: u64 = 36;
-/// The bytes a new map entry adds beyond its own: the deleted range of the
-/// value it replaces, under a client the delete set may not name yet.
+/// The bytes a new struct adds beyond its own when yrs deletes something
+/// for it (the value its map key held, or the struct itself under a deleted
+/// parent): a deleted range under a client the delete set may not name yet.
 const REPLACED: u64 = 25;
+/// The deepest a board nests a type below its root (`ydoc::Bounds`), so
+/// yrs's recursion through nested types stays shallow: a chain of 8,000
+/// maps and the deletion of its top overflowed a worker's 2 MiB stack. A
+/// resource bound like the size cap, no rule on what the content is. The
+/// editor's deepest today is 5 (blocks, the surface block, its elements'
+/// holder and map, an element, the element's own text or map), measured on
+/// the first state (3) and a saved board with a plane card (5).
+const BOARD_DEPTH: u32 = 64;
 
 // A joiner takes a board's whole state in one sync message.
 const _: () = assert!(CANVAS_BOARD_MAX <= crate::room::NOTE_MAX_SYNC_BYTES);
@@ -287,27 +296,37 @@ fn board_metrics(content_bytes: u64) -> Metrics {
 }
 
 /// The most `update` of `bytes` bytes adds to a board's state: its own
-/// bytes, a piece's header for each of the two places a struct or a deleted
-/// range may split an item, and the deletion of the value a new map entry
-/// replaces. Content a deletion frees only shrinks the state: a collected
-/// item gives back more than its deleted range takes.
+/// bytes, a piece's header wherever it may split an item (after a struct's
+/// origin, before its right origin, at each end of a deleted range), and
+/// what yrs deletes for a struct ([REPLACED]). What the update names as
+/// deleted only shrinks beyond that. What yrs deletes unnamed, the content
+/// of a deleted type, may grow (each isolated piece becomes a collected
+/// block with a deleted range of its own): `Inspection::unnamed`, measured.
 fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
-    let structs = update.blocks().count() as u64;
+    let (mut structs, mut sides) = (0u64, 0u64);
+    for block in update.blocks() {
+        structs += 1;
+        if let yrs::UpdateBlock::Item(item) = block {
+            sides += u64::from(item.origin().is_some()) + u64::from(item.right_origin().is_some());
+        }
+    }
     let ranges: usize = update
         .delete_set()
         .iter()
         .map(|(_, ranges)| ranges.len())
         .sum();
-    bytes as u64 + structs * (2 * SPLIT_HEADER + REPLACED) + ranges as u64 * 2 * SPLIT_HEADER
+    bytes as u64 + structs * REPLACED + (sides + 2 * ranges as u64) * SPLIT_HEADER
 }
 
 /// A board update's own checks, after the room's (the client-id rule, the
-/// marker root): one the room can place, at a cost yrs bounds, writing only
-/// the blocks root, and keeping the state within [CANVAS_BOARD_MAX].
+/// marker root): one the room can place, within its work budget and no
+/// deeper than [BOARD_DEPTH] (`ydoc::inspect_bounded`), writing only the
+/// blocks root, and keeping the state within [CANVAS_BOARD_MAX].
 ///
 /// `bound` is an upper bound of the state's bytes. While it and the most the
 /// update can add ([board_growth]) fit the cap, the update enters unmeasured.
-/// Past that the state is measured exactly without and with the update,
+/// Past that, or when it deletes content it does not name, the state is
+/// measured exactly without and with the update,
 /// which enters when the state with it fits the cap or is no larger than
 /// without it: the cap is never passed, deletions that split items count
 /// like any growth, a board at its cap can always be thinned, and no update
@@ -324,7 +343,8 @@ fn admit_board(
     let cap = CANVAS_BOARD_MAX as u64;
     let txn = doc.transact();
     let incoming = ydoc::Incoming::new(update);
-    let inspection = match ydoc::inspect_counting_splits(&txn, &incoming) {
+    let bounds = ydoc::Bounds { depth: BOARD_DEPTH };
+    let inspection = match ydoc::inspect_bounded(&txn, &incoming, bounds) {
         Ok(inspection) => inspection,
         Err(error) => return Admitted::Refused(error.to_string()),
     };
@@ -342,7 +362,7 @@ fn admit_board(
         return Admitted::Accepted;
     }
     let growth = board_growth(update, bytes.len());
-    if *bound + growth <= cap {
+    if !inspection.unnamed && *bound + growth <= cap {
         *bound += growth;
         return Admitted::Accepted;
     }
@@ -1081,7 +1101,7 @@ mod tests {
 
     /// Board review 2.2, scoped to the board: yrs copies an item's content at
     /// every split and counts none of it, and only a board's admission
-    /// counts it for now (`ydoc::inspect_counting_splits`). 5,000 scattered
+    /// counts it for now (`ydoc::inspect_bounded`). 5,000 scattered
     /// deletions out of one text of 100,000 characters are refused by a
     /// board and taken by a note room, as before the count existed: whether
     /// the other rooms should count is undecided.
@@ -1138,6 +1158,207 @@ mod tests {
             validator.admit(&note, &update, &bytes, true, false),
             Admitted::Accepted
         ));
+    }
+
+    /// Security regression (board review 2, finding 1): a board has no rule
+    /// on what its content is, and yrs deletes and collects nested types by
+    /// recursion, which overflowed a worker's stack at 8,000 levels. A board
+    /// takes a type [super::BOARD_DEPTH] deep below its root (the editor's
+    /// deepest is 5), what such a type holds, and no type deeper.
+    #[test]
+    fn a_board_refuses_a_type_nested_past_its_depth() {
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        let mut deepest = None;
+        let chain = update(&writer, |doc| {
+            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+            let mut txn = doc.transact_mut();
+            let mut current: yrs::MapRef = blocks.insert(&mut txn, "deep", MapPrelim::default());
+            for _ in 1..super::BOARD_DEPTH {
+                current = current.insert(&mut txn, "k", MapPrelim::default());
+            }
+            deepest = Some(current);
+        });
+        let deepest = deepest.unwrap();
+        let held = update(&writer, |doc| {
+            deepest.insert(&mut doc.transact_mut(), "text", "abc");
+        });
+        for bytes in [&chain, &held] {
+            assert!(matches!(
+                send(&room, &mut validator, bytes),
+                Admitted::Accepted
+            ));
+        }
+        let deeper = update(&writer, |doc| {
+            deepest.insert(&mut doc.transact_mut(), "k", MapPrelim::default());
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &deeper),
+            Admitted::Refused(reason) if reason.contains("nested more than 64 deep")
+        ));
+    }
+
+    /// Security regression (board review 2, finding 4): yrs deletes what a
+    /// deleted type holds, and an update built by hand need not name it.
+    /// Each such piece ends as a collected block with a deleted range of its
+    /// own, larger than it was where it is tiny and its clock high (three
+    /// bytes each here), and nothing charged that: on a board filled to just
+    /// under its cap, the six-byte deletion of a block holding 4,000 of them
+    /// entered unmeasured and left the state over the cap. It is measured,
+    /// and refused with the size the board would have; thinned, the board
+    /// takes it, measured again. Fails in `send` if the state passes the cap.
+    #[test]
+    fn a_type_deleted_with_content_unnamed_is_measured() {
+        use yrs::Array;
+        use yrs::encoding::write::Write;
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        // Two blocks, each a list of one value. `b` is the writer's first
+        // struct.
+        let mut anchors = Vec::new();
+        let made = update(&writer, |doc| {
+            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+            let mut txn = doc.transact_mut();
+            for id in ["b", "o"] {
+                let block = blocks.insert(&mut txn, id, MapPrelim::default());
+                let list = block.insert(&mut txn, "a", yrs::ArrayPrelim::default());
+                list.push_back(&mut txn, yrs::Any::Null);
+                let branch: &yrs::branch::Branch = list.as_ref();
+                anchors.push(*branch.start().unwrap().id());
+            }
+        });
+        // Under one client, past 2^28 clocks (a collected struct claims
+        // them, so every later clock takes five bytes): 4,000 pairs of one
+        // value in `b`'s list and one in `o`'s, five bytes each.
+        let pairs = 4_000u32;
+        let mut tiny: Vec<u8> = Vec::new();
+        tiny.write_var(1u32);
+        tiny.write_var(2 * pairs + 1);
+        tiny.write_var(77u64);
+        tiny.write_var(0u32);
+        tiny.write_u8(0);
+        tiny.write_var(1u32 << 28);
+        for _ in 0..pairs {
+            for anchor in &anchors {
+                tiny.write_u8(0x80 | 8);
+                tiny.write_var(anchor.client.get());
+                tiny.write_var(anchor.clock);
+                tiny.write_var(1u32);
+                tiny.write_u8(126);
+            }
+        }
+        tiny.write_var(0u32);
+        for bytes in [&made, &tiny] {
+            assert!(matches!(
+                send(&room, &mut validator, bytes),
+                Admitted::Accepted
+            ));
+        }
+        // Filled to 2,000 bytes under the cap, by a measure: the bound is
+        // the state.
+        let room_left = CANVAS_BOARD_MAX - whole(&room).len() - 2_000;
+        let filled = update(&writer, |doc| {
+            add_block(
+                doc,
+                "fill",
+                "affine:note",
+                &[("prop:text", &"x".repeat(room_left))],
+            )
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &filled),
+            Admitted::Accepted
+        ));
+        let before = whole(&room).len();
+        assert_eq!(bound(&validator), before as u64);
+        // `b` alone, by its id: every value in its list goes with it.
+        let gone = deleting(11, &[(0, 1)]);
+        let Admitted::Limit(LimitCode::DocumentSizeExceeded, metrics) =
+            send(&room, &mut validator, &gone)
+        else {
+            panic!("the deletion entered");
+        };
+        let with = tab(&room, 14);
+        ydoc::apply(&with, ydoc::decode(&gone).unwrap()).unwrap();
+        assert_eq!(metrics.content_bytes, whole(&with).len() as u64);
+        assert!(metrics.content_bytes > (before + 2 * pairs as usize) as u64);
+        assert_eq!(whole(&room).len(), before);
+        let thinned = update(&tab(&room, 13), |doc| {
+            doc.get_or_insert_map(super::BOARD_ROOT)
+                .remove(&mut doc.transact_mut(), "fill");
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &thinned),
+            Admitted::Accepted
+        ));
+        let thin = whole(&room).len();
+        assert!(matches!(
+            send(&room, &mut validator, &gone),
+            Admitted::Accepted
+        ));
+        let after = whole(&room).len();
+        assert!(after > thin + 2 * pairs as usize);
+        assert_eq!(bound(&validator), after as u64);
+    }
+
+    /// Board review 2: a board far from its cap is never measured, whatever
+    /// an editor does to it. An exact measure leaves the bound at the state;
+    /// here every update leaves it above: strokes drawn, a text typed into
+    /// and cut, a text and a value written again under their keys, and
+    /// blocks erased with all they hold (an editor's update names all of it).
+    #[test]
+    fn a_small_board_is_never_measured() {
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        let mut unmeasured = |bytes: Vec<u8>| {
+            assert!(!validator.near_cap(&Update::decode_v1(&bytes).unwrap(), bytes.len()));
+            assert!(matches!(
+                send(&room, &mut validator, &bytes),
+                Admitted::Accepted
+            ));
+            assert!(bound(&validator) > whole(&room).len() as u64);
+        };
+        for n in 0..20 {
+            unmeasured(update(&writer, |doc| stroke(doc, &format!("s{n}"))));
+        }
+        let blocks = writer.get_or_insert_map(super::BOARD_ROOT);
+        let mut note = None;
+        unmeasured(update(&writer, |doc| {
+            let mut txn = doc.transact_mut();
+            let block = blocks.insert(&mut txn, "note", MapPrelim::default());
+            block.insert(
+                &mut txn,
+                "prop:text",
+                TextPrelim::new("a long line of text"),
+            );
+            note = Some(block);
+        }));
+        let note: yrs::MapRef = note.unwrap();
+        let Some(yrs::Out::YText(text)) = note.get(&writer.transact(), "prop:text") else {
+            panic!("no text");
+        };
+        for at in [3, 9, 1] {
+            unmeasured(update(&writer, |doc| {
+                text.insert(&mut doc.transact_mut(), at, "typed");
+            }));
+            unmeasured(update(&writer, |doc| {
+                text.remove_range(&mut doc.transact_mut(), at + 2, 4);
+            }));
+        }
+        unmeasured(update(&writer, |doc| {
+            let mut txn = doc.transact_mut();
+            note.insert(&mut txn, "prop:text", TextPrelim::new("again"));
+            note.insert(&mut txn, "sys:flavour", "affine:note");
+            note.insert(&mut txn, "sys:flavour", "affine:edgeless-text");
+        }));
+        // Another tab erases: half the strokes, then the note.
+        let eraser = tab(&room, 12);
+        for id in ["s0", "s3", "s4", "s5", "s11", "s19", "note"] {
+            unmeasured(update(&eraser, |doc| {
+                doc.get_or_insert_map(super::BOARD_ROOT)
+                    .remove(&mut doc.transact_mut(), id);
+            }));
+        }
     }
 
     fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<Option<String>, String> {

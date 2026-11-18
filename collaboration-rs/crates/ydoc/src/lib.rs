@@ -288,18 +288,15 @@ pub fn applies_inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) ->
     inline(txn, incoming, bytes, false)
 }
 
-/// [applies_inline] for a room that inspects with
-/// [inspect_counting_splits]: an edit whose splits cost more than
-/// [SMALL_SPLITS] is tried on a copy there, so it is not inline here.
-pub fn applies_inline_counting_splits<T: ReadTxn>(
-    txn: &T,
-    incoming: &Incoming,
-    bytes: usize,
-) -> bool {
+/// [applies_inline] for a room that inspects with [inspect_bounded]: an
+/// edit whose splits cost more than [SMALL_SPLITS], or one deleting a type
+/// whose content it does not name, is tried on a copy there, so it is not
+/// inline here.
+pub fn applies_inline_bounded<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) -> bool {
     inline(txn, incoming, bytes, true)
 }
 
-fn inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize, splits: bool) -> bool {
+fn inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize, bounded: bool) -> bool {
     if bytes > INLINE_BYTES {
         return false;
     }
@@ -311,7 +308,9 @@ fn inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize, splits: bool) 
             return false;
         }
     }
-    trial_budget(txn, &txn.state_vector(), incoming, splits).is_ok_and(|budget| budget.is_none())
+    // The few structs of an inline edit walk few holders: none counted.
+    tried(txn, &txn.state_vector(), incoming, bounded.then_some(0))
+        .is_ok_and(|tried| tried.budget.is_none())
 }
 
 /// Whether at most [SMALL_EDIT] of the update's delete ranges delete
@@ -376,9 +375,15 @@ fn pending_ids<T: ReadTxn>(txn: &T) -> Vec<ID> {
         .collect()
 }
 
-/// What [inspect_counting_splits] counts and [inspect] does not (a canvas's
-/// board counts it; whether every room should is undecided, as it lowers how
-/// many scattered deletions one update may make in a large text).
+/// What [inspect_bounded] counts and [inspect] does not (a canvas's board
+/// counts it; whether every room should is undecided, as it lowers how many
+/// scattered deletions one update may make in a large text). A bounded room
+/// holds all of an update's work to one budget, [MAX_WORK] steps of about
+/// 50 ns each: what its splits copy and walk, the hops of the walk from
+/// each new struct to its root ([HOPS]), the deleted ids that content it
+/// deletes unnamed may move ([MOVES]), and yrs's own steps ([YRS_STEP]
+/// each). Uncounted: what an update costs by its own size, and the deleted
+/// ids that named deletions move.
 ///
 /// Units of a held text one step of [MAX_WORK] pays yrs to copy when it
 /// splits the text's item, and to walk to the cut. yrs counts a split as one
@@ -399,6 +404,18 @@ const SPLIT_WIDE: u64 = 6;
 const SPLIT_VALUES: u64 = 4;
 /// The most steps of splits in a small edit: about 1.5 ms.
 const SMALL_SPLITS: u64 = 1 << 16;
+/// Steps of a bounded room's budget one step of yrs's own count costs: a
+/// conflict scan's step is about 70 ns in the trial and 70 ns again when
+/// the room applies the update (release, 2026-11-18).
+const YRS_STEP: u64 = 3;
+/// Holders [inspect] passes on its walks to the roots per step of a bounded
+/// room's budget.
+const HOPS: u64 = 16;
+/// Entries of a transaction's deleted ids yrs moves per step of a bounded
+/// room's budget: it keeps them sorted in a list, so each id that lands out
+/// of order moves those after it, about 0.16 ns each, in the trial and
+/// again when the room applies the update.
+const MOVES: u64 = 256;
 
 /// The cuts an update makes in the items it splits, per client, and what
 /// they cost in steps of [MAX_WORK].
@@ -470,6 +487,82 @@ struct Placing {
     /// The deleted ranges that delete something the room does not hold
     /// deleted already (or collected).
     deletions: usize,
+    cascade: Cascade,
+    /// The walk of the deleted ranges stopped at its budget: what the update
+    /// deletes past that is unknown.
+    unread: bool,
+}
+
+/// What yrs deletes along with the held types an update deletes: their live
+/// content, and the content of that. An editor's update names all of it in
+/// its own deleted ranges; one built by hand need not.
+#[derive(Clone, Copy, Default)]
+struct Cascade {
+    /// The live items of it the update's deleted ranges name.
+    named: u64,
+    /// Those they do not.
+    unnamed: u64,
+}
+
+impl Cascade {
+    /// Counts the content of `holder`, a held type the update deletes. The
+    /// content of a type it names is left to the walk of the ranges, which
+    /// reaches that type itself. A step per item.
+    fn count(&mut self, holder: yrs::block::ItemPtr, incoming: &Incoming, walked: &mut u64) {
+        let mut types = vec![holder];
+        while let Some(holder) = types.pop() {
+            let ItemContent::Type(branch) = holder.content() else {
+                continue;
+            };
+            let branch = yrs::branch::BranchPtr::from(&**branch);
+            let listed = std::iter::successors(branch.start(), |child| child.right());
+            for child in listed.chain(branch.map_items().map(|(_, child)| child)) {
+                if *walked > MAX_WORK {
+                    return;
+                }
+                steps::step(steps::Walk::Deletions);
+                *walked += 1;
+                if child.is_deleted() {
+                    continue;
+                }
+                let ID { client, clock } = *child.id();
+                if incoming.deletes(&client, clock, item_end(&child)) {
+                    self.named += 1;
+                } else {
+                    self.unnamed += 1;
+                    types.push(child);
+                }
+            }
+        }
+    }
+}
+
+/// The held value of a map key that a new item replaces: yrs deletes it
+/// when the item lands, and with it what it holds.
+fn replaced<T: ReadTxn>(txn: &T, state: &StateVector, item: &Item) -> Option<yrs::block::ItemPtr> {
+    let store = txn.store();
+    let held = |id: &ID| id.clock < state.get(&id.client);
+    match (item.update_parent(), item.parent_sub()) {
+        (UpdateParent::Root(name), Some(key)) => BranchID::get_root(txn, &**name)?.entry_item(key),
+        (UpdateParent::Item(parent), Some(key)) if held(parent) => {
+            match store.get_item(parent)?.content() {
+                ItemContent::Type(branch) => {
+                    yrs::branch::BranchPtr::from(&**branch).entry_item(key)
+                }
+                _ => None,
+            }
+        }
+        // An editor's overwrite: typed after the value before it.
+        (UpdateParent::Unknown, _) => {
+            let beside = item
+                .origin()
+                .or(item.right_origin())
+                .filter(|id| held(id))?;
+            let beside = store.get_item(beside)?;
+            beside.parent_branch()?.entry_item(beside.parent_sub()?)
+        }
+        _ => None,
+    }
 }
 
 /// yrs splits the live item holding `at` of `client`, if `at` is not its
@@ -525,9 +618,18 @@ fn placing<T: ReadTxn>(
 ) -> Result<Placing, UpdateError> {
     let store = txn.store();
     let mut cuts = Cuts::default();
+    let (mut deletions, mut walked) = (0, 0u64);
+    let mut cascade = Cascade::default();
     for item in incoming.items() {
         if item_end(item) <= state.get(&item.id().client) {
             continue;
+        }
+        // A value the update also names is reached by the walk of its ranges.
+        if let Some(value) = replaced(txn, state, item).filter(|value| {
+            let ID { client, clock } = *value.id();
+            !value.is_deleted() && !incoming.deletes(&client, clock, item_end(value))
+        }) {
+            cascade.count(value, incoming, &mut walked);
         }
         if let Some(origin) = item.origin() {
             let after = origin.clock.saturating_add(1);
@@ -537,7 +639,6 @@ fn placing<T: ReadTxn>(
             cut_at(&mut cuts, store, state, incoming, right.client, right.clock)?;
         }
     }
-    let (mut deletions, mut walked) = (0, 0u64);
     for (client, ranges) in incoming.update().delete_set().iter() {
         let held = state.get(client);
         for range in ranges.iter() {
@@ -565,6 +666,17 @@ fn placing<T: ReadTxn>(
                 continue;
             };
             deletions += 1;
+            // The types the range deletes, from its first live block on.
+            for (_, item) in store.blocks_in(client, clock..range.end.min(held)) {
+                if walked > MAX_WORK {
+                    break;
+                }
+                steps::step(steps::Walk::Deletions);
+                walked += 1;
+                if let Some(item) = item.filter(|item| !item.is_deleted()) {
+                    cascade.count(item, incoming, &mut walked);
+                }
+            }
             match live {
                 Some((block, Some(item))) => {
                     let span = (block.clock, block.clock + block.len);
@@ -582,46 +694,188 @@ fn placing<T: ReadTxn>(
             }
         }
     }
+    // Past the walk's budget nothing more was read: no small edit.
+    let unread = walked > MAX_WORK;
     Ok(Placing {
         splits: cuts.steps,
-        deletions: if walked > MAX_WORK {
-            usize::MAX
-        } else {
-            deletions
-        },
+        deletions: if unread { usize::MAX } else { deletions },
+        cascade,
+        unread,
     })
 }
 
-/// The steps of [MAX_WORK] the trial of `incoming` may take, or none for a
-/// small edit, which takes no trial. With `splits`, what the update's splits
-/// cost comes off the budget and keeps an edit from being small past
-/// [SMALL_SPLITS]; past [MAX_WORK] the update is refused untried.
-fn trial_budget<T: ReadTxn>(
+/// The hops of [inspect]'s walks from each new struct's place up to its
+/// root, for a bounded room's budget, refusing a type the update would nest
+/// more than `limit` deep (a root's own content is 1 deep). yrs deletes and
+/// collects nested types by recursion: a chain of 8,000 nested maps and the
+/// deletion of its top overflowed a worker's 2 MiB stack, which aborts the
+/// process. With every admitted type within the limit, no held chain is
+/// longer, so the walk from a held item is at most `limit` holders.
+///
+/// Read before the trial, which would recurse already. Iterative: an update
+/// may chain its own structs to any length.
+fn nesting<T: ReadTxn>(
     txn: &T,
     state: &StateVector,
     incoming: &Incoming,
-    splits: bool,
-) -> Result<Option<u64>, UpdateError> {
-    if !splits {
-        return Ok((!small_edit(txn, incoming)).then_some(MAX_WORK));
+    limit: u32,
+) -> Result<u64, UpdateError> {
+    let store = txn.store();
+    let held = |id: &ID| id.clock < state.get(&id.client);
+    let too_deep = || UpdateError::Decode(format!("a type nested more than {limit} deep"));
+    // The depth of the content of each held type, by its item: asked once.
+    let mut holders: HashMap<ID, u32> = HashMap::new();
+    // How deep a held item sits (none: the room collected its place).
+    let mut held_at = |id: &ID| -> Result<Option<u32>, UpdateError> {
+        let mut walked: Vec<ID> = Vec::new();
+        let mut branch = store.get_item(id).and_then(|item| item.parent_branch());
+        let known = loop {
+            let Some(holder) = branch.and_then(|branch| branch.item()) else {
+                break if branch.is_some() { Some(0) } else { None };
+            };
+            if let Some(known) = holders.get(holder.id()) {
+                break Some(*known);
+            }
+            walked.push(*holder.id());
+            if walked.len() as u32 > limit {
+                return Err(too_deep());
+            }
+            branch = holder.parent_branch();
+        };
+        let Some(known) = known else {
+            return Ok(None);
+        };
+        let depth = known + walked.len() as u32;
+        for (above, id) in walked.into_iter().enumerate() {
+            holders.insert(id, depth - above as u32);
+        }
+        Ok(Some(depth))
+    };
+    // How deep each of the update's own items lands (none: nowhere the room
+    // holds, or a reference cycle).
+    let mut own: HashMap<ID, Option<u32>> = HashMap::new();
+    let mut hops = 0u64;
+    for item in incoming.items() {
+        if item_end(item) <= state.get(&item.id().client) {
+            continue;
+        }
+        let depth = match incoming.landing(store, state, item) {
+            Landing::Gone => None,
+            Landing::At(id) => held_at(&id)?,
+            Landing::Chain => {
+                // Each link: the item, and how much deeper it sits than the
+                // item it refers to (1 below a parent, 0 beside a sibling).
+                let mut chain: Vec<(ID, u32)> = Vec::new();
+                let mut current = item;
+                let mut depth = loop {
+                    if let Some(known) = own.get(current.id()) {
+                        break *known;
+                    }
+                    own.insert(*current.id(), None);
+                    let (reference, below) = match current.update_parent() {
+                        UpdateParent::Root(_) => break Some(0),
+                        UpdateParent::Item(parent) => (Some(*parent), 1),
+                        UpdateParent::Unknown => {
+                            (current.origin().or(current.right_origin()).copied(), 0)
+                        }
+                        UpdateParent::Branch(_) => (None, 0),
+                    };
+                    let Some(reference) = reference else {
+                        break None;
+                    };
+                    if held(&reference) {
+                        break held_at(&reference)?.map(|depth| depth + below);
+                    }
+                    match incoming.item_at(&reference) {
+                        Some(next) => {
+                            chain.push((*current.id(), below));
+                            current = next;
+                        }
+                        None => break None,
+                    }
+                };
+                own.insert(*current.id(), depth);
+                for (id, below) in chain.into_iter().rev() {
+                    depth = depth.map(|depth| depth + below);
+                    own.insert(id, depth);
+                }
+                depth
+            }
+        };
+        let Some(depth) = depth else {
+            continue;
+        };
+        if matches!(item.content(), ItemContent::Type(_)) && depth >= limit {
+            return Err(too_deep());
+        }
+        hops += u64::from(depth) + 1;
     }
-    let placing = placing(txn, state, incoming)?;
-    let small = placing.splits <= SMALL_SPLITS
-        && placing.deletions <= SMALL_EDIT
-        && few_placed_structs(txn, state, incoming);
-    Ok((!small).then_some(MAX_WORK - placing.splits))
+    Ok(hops)
 }
 
-/// The room copied with the update applied, as [inspect_counting_splits]
-/// tries one past a small edit: for a caller that reads a small edit's
-/// result too (a board measured at its cap).
+/// Whether [inspect] tries an update on a copy, and what it found reading
+/// for that.
+struct Tried {
+    /// The steps of yrs's count the trial may take; none for a small edit,
+    /// which takes no trial.
+    budget: Option<u64>,
+    /// [Inspection::unnamed].
+    unnamed: bool,
+}
+
+/// [Tried] of `incoming`. In a bounded room (`hops`: those of [nesting]),
+/// what the update's splits, walks and unnamed deletions cost comes off the
+/// budget, the rest of which yrs's own steps share at [YRS_STEP] each; past
+/// [MAX_WORK] the update is refused untried. Splits past [SMALL_SPLITS], or
+/// a deleted type whose content the update does not name, keep an edit from
+/// being small.
+fn tried<T: ReadTxn>(
+    txn: &T,
+    state: &StateVector,
+    incoming: &Incoming,
+    hops: Option<u64>,
+) -> Result<Tried, UpdateError> {
+    let Some(hops) = hops else {
+        return Ok(Tried {
+            budget: (!small_edit(txn, incoming)).then_some(MAX_WORK),
+            unnamed: false,
+        });
+    };
+    let placing = placing(txn, state, incoming)?;
+    // Each id yrs deletes unnamed may land before every id the transaction
+    // deleted so far: at most those the update names and those yrs deletes
+    // with them.
+    let Cascade { named, unnamed } = placing.cascade;
+    let ranges: usize = incoming
+        .delete_ranges()
+        .map(|(_, ranges)| ranges.len())
+        .sum();
+    let moved = unnamed.saturating_mul(ranges as u64 + named + unnamed) / MOVES;
+    let spent = (placing.splits + hops / HOPS).saturating_add(moved);
+    if spent > MAX_WORK {
+        return Err(UpdateError::Costly);
+    }
+    let unnamed = unnamed > 0 || placing.unread;
+    let small = placing.splits <= SMALL_SPLITS
+        && placing.deletions <= SMALL_EDIT
+        && !unnamed
+        && few_placed_structs(txn, state, incoming);
+    Ok(Tried {
+        budget: (!small).then_some((MAX_WORK - spent) / YRS_STEP),
+        unnamed,
+    })
+}
+
+/// The room copied with the update applied, as [inspect_bounded] tries one
+/// past a small edit: for a caller that reads a small edit's result too (a
+/// board measured at its cap). A small edit's walks are too few to count.
 pub fn placed<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Doc, UpdateError> {
     let splits = placing(txn, &txn.state_vector(), incoming)?.splits;
-    trial(txn, incoming, MAX_WORK - splits)
+    trial(txn, incoming, (MAX_WORK - splits) / YRS_STEP)
 }
 
 /// The room copied and the update applied to the copy, with yrs counting its
-/// work: past `budget` ([trial_budget]), or with
+/// work: past `budget` ([tried]), or with
 /// structs of the update the copy still leaves pending (the references
 /// [inspect] checked are all held by the room or the update, so they wait on
 /// each other in a cycle), the update is refused.
@@ -713,6 +967,21 @@ pub struct Inspection {
     /// note's draft send alone; live typing into a block someone just deleted
     /// is ordinary collaboration.
     pub hidden_units: u32,
+    /// The update deletes a held type (by a deleted range, or by writing its
+    /// map key again) that holds live content its own deleted ranges do not
+    /// name. yrs deletes that content too, and each isolated piece may end
+    /// larger than it was: a room that bounds its state by what an update
+    /// names measures instead. Read by [inspect_bounded] alone; an update
+    /// tried on a copy either way.
+    pub unnamed: bool,
+}
+
+/// What a bounded room ([inspect_bounded]) holds an update to beyond its
+/// work.
+#[derive(Clone, Copy)]
+pub struct Bounds {
+    /// The deepest a type may nest: a root's own content is 1.
+    pub depth: u32,
 }
 
 enum Found {
@@ -895,23 +1164,29 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection
 /// to a copy of the room first ([trial]): refused if yrs counts more than
 /// [MAX_WORK] steps placing it, or if its structs wait on each other.
 pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
-    inspected(txn, incoming, false)
+    inspected(txn, incoming, None)
 }
 
-/// [inspect], counting too what yrs's steps miss: the content it copies and
-/// walks at every split ([placing]). An update whose splits alone cost more
-/// than [MAX_WORK] is refused untried, and its trial has what they leave.
-pub fn inspect_counting_splits<T: ReadTxn>(
+/// [inspect] for a room that bounds what one update may cost it (a canvas's
+/// board, which has no rule of its own on what its content is). A type
+/// nested deeper than `bounds.depth` is refused before anything recurses
+/// ([nesting]). The update's work is held to one budget ([SPLIT_COPY]): what
+/// yrs's steps miss, the content it copies and walks at every split, the
+/// ids it deletes unnamed ([placing]) and this inspection's own walks to the
+/// roots, come off [MAX_WORK] before the trial, which shares the rest. Past
+/// it the update is refused.
+pub fn inspect_bounded<T: ReadTxn>(
     txn: &T,
     incoming: &Incoming,
+    bounds: Bounds,
 ) -> Result<Inspection, UpdateError> {
-    inspected(txn, incoming, true)
+    inspected(txn, incoming, Some(bounds))
 }
 
 fn inspected<T: ReadTxn>(
     txn: &T,
     incoming: &Incoming,
-    splits: bool,
+    bounds: Option<Bounds>,
 ) -> Result<Inspection, UpdateError> {
     // First, so no sum below of a clock and a length of the update wraps.
     within_clocks(incoming.update())?;
@@ -1072,10 +1347,18 @@ fn inspected<T: ReadTxn>(
     }
     // The trial before the containers: a costly update is refused before
     // that pass. One the pass then finds unheld drops its trial.
+    let mut unnamed = false;
     let mut trial = if unheld {
         None
     } else {
-        match trial_budget(txn, &state, incoming, splits)? {
+        // The depths before the trial, which recurses through nested types.
+        let hops = match bounds {
+            Some(bounds) => Some(nesting(txn, &state, incoming, bounds.depth)?),
+            None => None,
+        };
+        let tried = tried(txn, &state, incoming, hops)?;
+        unnamed = tried.unnamed;
+        match tried.budget {
             Some(budget) => Some(trial(txn, incoming, budget)?),
             None => None,
         }
@@ -1110,6 +1393,7 @@ fn inspected<T: ReadTxn>(
         unheld,
         trial,
         hidden_units,
+        unnamed,
     })
 }
 

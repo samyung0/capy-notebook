@@ -3349,10 +3349,9 @@ impl Room {
             Kindly::Note(note) if note.model == crate::model::Model::Note => {
                 notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
             }
-            // A board counts what its splits cost, and at its cap is
-            // measured exactly.
+            // A board bounds its work, and at its cap is measured exactly.
             Kindly::Note(note) if note.model == crate::model::Model::Board => {
-                !ydoc::applies_inline_counting_splits(
+                !ydoc::applies_inline_bounded(
                     &self.doc.transact(),
                     &ydoc::Incoming::new(&update),
                     bytes.len(),

@@ -1072,17 +1072,20 @@ fn typed_inside(count: u32, gap: u32) -> Vec<u8> {
     bytes
 }
 
-/// [inspect_counting_splits] of `bytes` against `room`.
+/// The bounds the tests inspect a bounded room with (a board's).
+const BOUNDS: Bounds = Bounds { depth: 64 };
+
+/// [inspect_bounded] of `bytes` against `room`.
 fn counting(room: &Doc, bytes: &[u8]) -> Result<Inspection, UpdateError> {
     let update = decode(bytes).unwrap();
-    inspect_counting_splits(&room.transact(), &Incoming::new(&update))
+    inspect_bounded(&room.transact(), &Incoming::new(&update), BOUNDS)
 }
 
 /// Security regression (board review 2.2): yrs copies both halves of an
 /// item's content at every split and counts a split as one step, so 320,000
 /// one-character deletions out of one text of 640,000 characters passed the
 /// work limit and held a room for 27 s. A room that counts its splits
-/// ([inspect_counting_splits], a canvas's board) counts the content each
+/// ([inspect_bounded], a canvas's board) counts the content each
 /// one copies and walks toward [MAX_WORK]: such an update is refused before
 /// any copy of the room applies it, in whichever order its ranges come, and
 /// so are characters typed all over one text. Fails if either is taken.
@@ -1183,19 +1186,337 @@ fn a_costly_split_is_not_a_small_edit_where_splits_count() {
         let update = decode(&bytes).unwrap();
         let txn = room.transact();
         let incoming = Incoming::new(&update);
-        let tried = inspect_counting_splits(&txn, &incoming)
+        let tried = inspect_bounded(&txn, &incoming, BOUNDS)
             .unwrap()
             .trial
             .is_some();
         let uncounted = inspect(&txn, &incoming).unwrap().trial.is_some();
         (
-            (
-                tried,
-                applies_inline_counting_splits(&txn, &incoming, bytes.len()),
-            ),
+            (tried, applies_inline_bounded(&txn, &incoming, bytes.len())),
             (uncounted, applies_inline(&txn, &incoming, bytes.len())),
         )
     };
     assert_eq!(keystroke(100_000), ((false, true), (false, true)));
     assert_eq!(keystroke(3_000_000), ((true, false), (false, true)));
+}
+
+/// Runs `check` on a thread with the 2 MiB stack a server task has.
+fn on_task_stack<T: Send + 'static>(check: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(check)
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+/// A tab (client 2) of `room` that nested `depth` maps under the root map
+/// `blocks`, the update that did it, and the deepest map. The top map is
+/// the tab's first struct.
+fn chained(room: &Doc, depth: usize) -> (Doc, Vec<u8>, yrs::MapRef) {
+    let tab = doc(2);
+    sync(room, &tab);
+    let blocks = tab.get_or_insert_map("blocks");
+    let mut deepest = None;
+    let bytes = delta(&tab, |txn| {
+        let mut current: yrs::MapRef = blocks.insert(txn, "d", MapPrelim::default());
+        for _ in 1..depth {
+            current = current.insert(txn, "k", MapPrelim::default());
+        }
+        deepest = Some(current);
+    });
+    (tab, bytes, deepest.unwrap())
+}
+
+fn too_deep(inspected: &Result<Inspection, UpdateError>) -> bool {
+    matches!(inspected, Err(UpdateError::Decode(reason)) if reason.contains("nested"))
+}
+
+/// Security regression (board review 2, finding 1): a board has no rule on
+/// what its content is, so nothing bounded how deep its types nest, and yrs
+/// deletes and collects nested types by recursion: a chain of 8,000 maps and
+/// the deletion of its top overflowed a worker's 2 MiB stack, which aborts
+/// the process. A bounded room refuses a type past its depth: the deepest
+/// chain it takes, one level more, and what still fits under the deepest
+/// map. Every other room inspects as before. Fails if a deeper type enters.
+#[test]
+fn a_bounded_room_refuses_a_type_nested_past_its_depth() {
+    let room = doc(1);
+    room.get_or_insert_map("blocks");
+    let depth = BOUNDS.depth as usize;
+    let (_, over, _) = chained(&room, depth + 1);
+    assert!(too_deep(&counting(&room, &over)));
+    assert!(inspect_update(&room.transact(), &decode(&over).unwrap()).is_ok());
+    let (tab, chain, deepest) = chained(&room, depth);
+    assert!(counting(&room, &chain).is_ok_and(|taken| !taken.unheld));
+    apply(&room, decode(&chain).unwrap()).unwrap();
+    // Under the deepest map: a value and a text's characters fit, a type
+    // of their own does not.
+    let more = delta(&tab, |txn| {
+        deepest.insert(txn, "n", 1.5);
+    });
+    assert!(counting(&room, &more).is_ok_and(|taken| !taken.unheld));
+    apply(&room, decode(&more).unwrap()).unwrap();
+    let deeper = delta(&tab, |txn| {
+        deepest.insert(txn, "m", MapPrelim::default());
+    });
+    assert!(too_deep(&counting(&room, &deeper)));
+}
+
+/// Security regression (board review 2, finding 1): the depth is read
+/// before anything recurses. One update holding a chain of 20,000 maps and
+/// the deletion of its top is refused on a task's stack (its trial on a copy
+/// would overflow it), and the deepest chain a bounded room holds is deleted
+/// there by one range. Fails by aborting the test process.
+#[test]
+fn a_deep_chain_and_its_deletion_stay_on_a_task_stack() {
+    use yrs::encoding::write::Write;
+    // The top of a tab's chain deleted by one range, which names none of
+    // what the chain holds.
+    let top = |bytes: &mut Vec<u8>| {
+        bytes.write_var(1u32);
+        bytes.write_var(2u64);
+        bytes.write_var(1u32);
+        bytes.write_var(0u32);
+        bytes.write_var(1u32);
+    };
+    let room = doc(1);
+    room.get_or_insert_map("blocks");
+    let (_, mut chain, _) = chained(&room, 20_000);
+    assert_eq!(chain.pop(), Some(0));
+    top(&mut chain);
+    let refused = on_task_stack({
+        let room = room.clone();
+        move || too_deep(&counting(&room, &chain))
+    });
+    assert!(refused);
+    let (_, chain, _) = chained(&room, BOUNDS.depth as usize);
+    apply(&room, decode(&chain).unwrap()).unwrap();
+    let mut gone = vec![0u8];
+    top(&mut gone);
+    let left = on_task_stack(move || {
+        let taken = counting(&room, &gone).unwrap();
+        assert!(!taken.unheld && taken.unnamed && taken.trial.is_some());
+        apply(&room, decode(&gone).unwrap()).unwrap();
+        room.get_or_insert_map("blocks").len(&room.transact())
+    });
+    assert_eq!(left, 0);
+}
+
+/// Security regression (board review 2, finding 2): the inspection walks
+/// from each new struct's place up to its root, and nothing counted the
+/// holders it passes: 2,000 entries under a chain of 100,000 maps took 12 s.
+/// With the depth bounded a walk passes at most that many holders, and they
+/// count toward a bounded room's work: 1,000 entries under its deepest map
+/// pass 64 holders each, and 250,000 are refused before the walk. Fails if
+/// the walk grows past the depth, or goes uncounted.
+#[test]
+fn the_walks_to_the_roots_count_toward_a_bounded_rooms_work() {
+    let room = doc(1);
+    room.get_or_insert_map("blocks");
+    let depth = u64::from(BOUNDS.depth);
+    let (tab, chain, deepest) = chained(&room, depth as usize);
+    apply(&room, decode(&chain).unwrap()).unwrap();
+    let entries = |count: u32| {
+        delta(&tab, |txn| {
+            for entry in 0..count {
+                deepest.insert(txn, format!("e{entry}"), 1.5);
+            }
+        })
+    };
+    let few = entries(1_000);
+    let _ = steps::take();
+    assert!(counting(&room, &few).is_ok_and(|taken| !taken.unheld));
+    assert_eq!(steps::take().of(steps::Walk::Holders), 1_000 * depth);
+    apply(&room, decode(&few).unwrap()).unwrap();
+    // (64 + 1) hops charged for each, 16 to a step: past a million steps.
+    let many = entries(250_000);
+    let _ = steps::take();
+    assert!(matches!(counting(&room, &many), Err(UpdateError::Costly)));
+    assert_eq!(steps::take().of(steps::Walk::Holders), 0);
+}
+
+/// Board review 2, finding 3: a bounded room holds an update's work to one
+/// budget, by count: yrs's own steps cost three of its million each (a
+/// conflict scan's step is about 70 ns in the trial and again in the apply,
+/// so 333,333 of them hold the room about 50 ms; any other room takes a
+/// million, about 140 ms), and they share it with the splits. 816 items
+/// each placed before a tombstone scan 332,520 steps: taken; 817 are not;
+/// and 600 are not once the update's deletions split a long text for more
+/// than what the scans leave.
+#[test]
+fn a_bounded_room_holds_scans_and_splits_to_one_budget() {
+    use yrs::encoding::write::Write;
+    let (room, bytes) = fanned(816);
+    assert!(counting(&room, &bytes).is_ok_and(|taken| !taken.unheld));
+    let (room, bytes) = fanned(817);
+    assert!(matches!(counting(&room, &bytes), Err(UpdateError::Costly)));
+    // 600 scan 179,700 steps (539,100 of the budget). 1,000 deletions out
+    // of a text of 100,000 characters split it for 526,850 more.
+    let (room, mut scans) = fanned(600);
+    let long = room.get_or_insert_text("u");
+    long.insert(&mut room.transact_mut(), 0, &"x".repeat(100_000));
+    let first = 600;
+    let cuts: Vec<(u32, u32)> = (0..1_000).map(|k| (first + 100 * k + 1, 1)).collect();
+    let splits = deleting(1, &cuts);
+    assert_eq!(placing_of(&room, &splits).unwrap().splits, 526_850);
+    assert!(counting(&room, &scans).is_ok());
+    assert!(counting(&room, &splits).is_ok());
+    assert_eq!(scans.pop(), Some(0));
+    scans.write_var(1u32);
+    scans.extend_from_slice(&splits[2..]);
+    assert!(matches!(counting(&room, &scans), Err(UpdateError::Costly)));
+}
+
+/// Board review 2, finding 4: yrs deletes what a deleted type holds, and an
+/// update built by hand need not name it; each piece may then end larger
+/// than it was, which a room that bounds its state by what an update names
+/// must measure. A bounded inspection tells when an update deletes a held
+/// type, by a range or by writing its map key again, whose live content its
+/// own deleted ranges do not name, and tries it on a copy. An editor's
+/// deletion names it all.
+#[test]
+fn a_bounded_inspection_tells_content_deleted_unnamed() {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    let blocks = room.get_or_insert_map("blocks");
+    let tab = doc(2);
+    let held = tab.get_or_insert_map("blocks");
+    let made = delta(&tab, |txn| {
+        let block = held.insert(txn, "b", MapPrelim::default());
+        block.insert(txn, "x", 1.5);
+        block.insert(txn, "text", yrs::TextPrelim::new("hello"));
+    });
+    apply(&room, decode(&made).unwrap()).unwrap();
+    assert_eq!(blocks.len(&room.transact()), 1);
+    // The block alone, by its id; and its key written again with no range.
+    let by_range = deleting(2, &[(0, 1)]);
+    let mut by_key: Vec<u8> = Vec::new();
+    by_key.write_var(1u32);
+    by_key.write_var(1u32);
+    by_key.write_var(3u64);
+    by_key.write_var(0u32);
+    by_key.write_u8(0x20 | 8);
+    by_key.write_var(1u32);
+    by_key.write_string("blocks");
+    by_key.write_string("b");
+    by_key.write_var(1u32);
+    by_key.write_u8(126);
+    by_key.write_var(0u32);
+    for bytes in [&by_range, &by_key] {
+        let taken = counting(&room, bytes).unwrap();
+        assert!(taken.unnamed && taken.trial.is_some() && !taken.unheld);
+        let incoming = decode(bytes).unwrap();
+        assert!(!applies_inline_bounded(
+            &room.transact(),
+            &Incoming::new(&incoming),
+            bytes.len()
+        ));
+        // Any other room reads no such thing.
+        assert!(!inspect_update(&room.transact(), &incoming).unwrap().unnamed);
+    }
+    // The tab's own deletion, and its own overwrite, name everything.
+    let peer = doc(4);
+    sync(&room, &peer);
+    let theirs = peer.get_or_insert_map("blocks");
+    let erased = delta(&tab, |txn| {
+        held.remove(txn, "b");
+    });
+    let written = delta(&peer, |txn| {
+        theirs.insert(txn, "b", 2.5);
+    });
+    for bytes in [&erased, &written] {
+        assert!(!counting(&room, bytes).unwrap().unnamed);
+    }
+}
+
+/// A transaction's deleted ids are a sorted list in yrs, and each one that
+/// lands out of order moves those after it, which nothing counts: a
+/// six-byte range deleting a type whose 100,000 scattered values it does not
+/// name held a room 0.8 s in the trial and again in the apply (release,
+/// 2026-11-18). What an update deletes unnamed counts toward a bounded
+/// room's work as the entries it may move: 15,000 values are taken, 16,000
+/// refused untried, and the tab's own removal, which names them, is charged
+/// nothing.
+#[test]
+fn content_deleted_unnamed_counts_toward_a_bounded_rooms_work() {
+    use yrs::Array;
+    let listed = |count: u32| {
+        let room = doc(1);
+        room.get_or_insert_map("blocks");
+        let tab = doc(2);
+        let blocks = tab.get_or_insert_map("blocks");
+        let made = delta(&tab, |txn| {
+            let block = blocks.insert(txn, "b", MapPrelim::default());
+            let list = block.insert(txn, "a", yrs::ArrayPrelim::default());
+            for value in 0..count {
+                list.push_front(txn, f64::from(value));
+            }
+        });
+        apply(&room, decode(&made).unwrap()).unwrap();
+        (room, tab, blocks)
+    };
+    // The block alone, by its id.
+    let top = deleting(2, &[(0, 1)]);
+    let (room, tab, blocks) = listed(15_000);
+    assert!(counting(&room, &top).is_ok_and(|taken| taken.unnamed));
+    let own = delta(&tab, |txn| {
+        blocks.remove(txn, "b");
+    });
+    assert_eq!(placing_of(&room, &own).unwrap().cascade.unnamed, 0);
+    assert!(counting(&room, &own).is_ok_and(|taken| !taken.unnamed));
+    let (room, _, _) = listed(16_000);
+    assert_eq!(placing_of(&room, &top).unwrap().cascade.unnamed, 16_001);
+    assert!(matches!(counting(&room, &top), Err(UpdateError::Costly)));
+    // Any other room reads it as before.
+    assert!(inspect_update(&room.transact(), &decode(&top).unwrap()).is_ok());
+}
+
+/// One character typed by client 2 after each of `places` of client 1's
+/// text, in that order.
+fn typed_at(places: &[u32]) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(places.len() as u32);
+    bytes.write_var(2u64);
+    bytes.write_var(0u32);
+    for at in places {
+        bytes.write_u8(0x80 | 0x40 | 4);
+        bytes.write_var(1u64);
+        bytes.write_var(*at);
+        bytes.write_var(1u64);
+        bytes.write_var(*at + 1);
+        bytes.write_string("y");
+    }
+    bytes.write_var(0u32);
+    bytes
+}
+
+/// Board review 2, finding 5: what a person does to a long text in one
+/// update is taken whatever its order (an offline tab's edits arrive as one
+/// update, in the order made): 1,000 characters typed, or deleted, all over
+/// one item of 20,000 characters, from its start on, from its end back and
+/// shuffled. From the end back is the costliest, about two thirds of the
+/// budget. Fails if the split count refuses one.
+#[test]
+fn a_bounded_room_takes_a_thousand_edits_all_over_a_long_text() {
+    let room = one_text("x", 20_000);
+    let ascending: Vec<u32> = (0..1_000).map(|k| 20 * k + 7).collect();
+    let descending: Vec<u32> = ascending.iter().rev().copied().collect();
+    let mut shuffled = ascending.clone();
+    let mut seed = 7u64;
+    for at in (1..shuffled.len()).rev() {
+        seed = seed * 16_807 % 2_147_483_647;
+        shuffled.swap(at, (seed % (at as u64 + 1)) as usize);
+    }
+    for places in [&ascending, &descending, &shuffled] {
+        let ranges: Vec<(u32, u32)> = places.iter().map(|at| (*at, 1)).collect();
+        for bytes in [typed_at(places), deleting(1, &ranges)] {
+            let taken = counting(&room, &bytes);
+            assert!(taken.is_ok_and(|taken| !taken.unheld));
+        }
+    }
+    let spent = placing_of(&room, &typed_at(&descending)).unwrap().splits;
+    assert!((600_000..750_000).contains(&spent), "{spent}");
 }
