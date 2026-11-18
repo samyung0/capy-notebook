@@ -661,6 +661,20 @@ Outside this directory, for BlockSuite:
     ones with no label). Pinned by
     `src/features/blocksuite/connectorLabel.test.ts`.
 
+64. A double click that opens a card's editor is used up (`framework/std`
+    `event/control/pointer.ts` `ClickController.endRun` and
+    `PointerControl.endClickRun`, `event/dispatcher.ts`
+    `UIEventDispatcher.endClickRun`, marked `Capy (local change 64)`; found
+    2026-11-18). The click counter listens on the host and adds one for each press
+    at the same place within 500 ms of the last. A plane's or chart's editor opens
+    over the board, outside the host, so its presses (the menu, Done) are not
+    seen: a double click on the card within 500 ms of the one that opened the
+    editor counted as presses three and four, a triple click, and opened nothing.
+    `openBoardEditor` (`src/features/blocksuite/boardEditorShell.ts`) calls
+    `std.event.endClickRun()` as the editor opens. Pinned by "a selected line's
+    point still moves alone" in `e2e/editor/drawing-board.spec.ts`, which closes
+    an editor and opens it again at once.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

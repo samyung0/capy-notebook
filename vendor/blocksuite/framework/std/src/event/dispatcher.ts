@@ -341,6 +341,12 @@ export class UIEventDispatcher extends LifeCycleWatcher {
     this._setActive(false);
   }
 
+  /** Capy (local change 64): what a double click opened over the host uses up
+   * that double click, so the next press at the same place is a first one. */
+  endClickRun() {
+    this._pointerControl.endClickRun();
+  }
+
   private _setActive(active: boolean) {
     if (active) {
       if (UIEventDispatcher._activeDispatcher !== this) {
