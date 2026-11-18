@@ -350,9 +350,10 @@ func TestACanvasTakesNoBoardAsset(t *testing.T) {
 type canvasAccessJSON struct {
 	Role         *string `json:"role"`
 	Capabilities struct {
-		CanView        bool `json:"canView"`
-		CanEdit        bool `json:"canEdit"`
-		CanEditContent bool `json:"canEditContent"`
+		CanView          bool `json:"canView"`
+		CanEdit          bool `json:"canEdit"`
+		CanEditContent   bool `json:"canEditContent"`
+		CanManageMembers bool `json:"canManageMembers"`
 	} `json:"capabilities"`
 	StorageFull string `json:"storageFull"`
 	Trash       *struct {
@@ -383,7 +384,8 @@ func TestACanvasSaysTheCallersRoleAndWhyItIsReadOnly(t *testing.T) {
 		t.Helper()
 		got := readCanvasAccess(t, h, user, canvas.ID)
 		if got.Role == nil || *got.Role != role || !got.Capabilities.CanView || got.Capabilities.CanEdit != edit ||
-			got.Capabilities.CanEditContent != content || got.StorageFull != full || got.Trash != nil {
+			got.Capabilities.CanEditContent != content || got.Capabilities.CanManageMembers ||
+			got.StorageFull != full || got.Trash != nil {
 			t.Errorf("%s: %s reads %+v", when, user, got)
 		}
 	}
@@ -470,8 +472,11 @@ func TestACanvasTakesNoComments(t *testing.T) {
 	canvas := makeCanvas(t, h, st, "u_editor", "ws_e2e_private", true)
 	discussion := map[string]any{"anchorVersion": 1, "text": "Look here"}
 	for _, user := range []string{"u_editor", "u_owner"} {
-		expectStatus(t, doReq(t, h, http.MethodPost, "/api/materials/"+canvas.ID+"/discussions", user, discussion),
-			http.StatusBadRequest, user+" commenting on a canvas")
+		rec := doReq(t, h, http.MethodPost, "/api/materials/"+canvas.ID+"/discussions", user, discussion)
+		expectStatus(t, rec, http.StatusBadRequest, user+" commenting on a canvas")
+		if !strings.Contains(rec.Body.String(), "a canvas takes no comments") {
+			t.Errorf("%s commenting on a canvas: refused for another reason: %s", user, rec.Body.String())
+		}
 	}
 }
 

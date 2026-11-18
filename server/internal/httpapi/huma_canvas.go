@@ -220,6 +220,8 @@ func (a *api) canvasResponse(ctx context.Context, canvas store.Canvas) (*canvasO
 		}
 	}
 	capabilities, storageFull := editingOf(canvas.Role, readOnly, full, canvas.OwnerUserID, userID(ctx))
+	// A canvas has no members of its own: who holds it is the workspace's.
+	capabilities.CanManageMembers = false
 	body := canvasBody{
 		ID: canvas.ID, Title: canvas.Title, Revision: canvas.Revision, Version: board.Version,
 		ImageAssetIDs: board.ImageAssetIDs, OwnImageAssetIDs: own, WorkspaceID: canvas.CanvasWorkspaceID,

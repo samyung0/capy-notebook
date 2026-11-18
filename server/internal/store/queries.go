@@ -198,13 +198,15 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	// Every canvas the caller holds a role on (materialAccessRow.canvasRole,
 	// as lostCanvasSQL reads it): their own, and the other members' shared
-	// ones in their workspaces (Epo 2026-11-18). The first clause narrows to
-	// those by index. One of a workspace opens on its Canvas panel, one of
-	// their own on the Canvas page, each at that canvas.
+	// ones in their workspaces (Epo 2026-11-18). Both arms of the first clause
+	// read an index: `= ANY(ARRAY(...))` gives the planner the workspace ids
+	// as one array, where `IN (subquery)` under an OR scanned every canvas.
+	// One of a workspace opens on its Canvas panel, one of their own on the
+	// Canvas page, each at that canvas.
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, `+searchTypos("m.title")+`, COALESCE(m.canvas_workspace_id, ''), COALESCE(w.name, '')
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.canvas_workspace_id
-		WHERE (m.owner_user_id=$2 OR m.canvas_workspace_id IN (`+memberWorkspacesSQL("$2")+`))
+		WHERE (m.owner_user_id=$2 OR m.canvas_workspace_id = ANY(ARRAY(`+memberWorkspacesSQL("$2")+`)))
 			AND NOT `+lostCanvasSQL("m", "$2")+`
 			AND m.kind='canvas' AND m.trashed_at IS NULL AND `+searchMatch("m.title")+`
 		ORDER BY `+searchRank("m.title")+`

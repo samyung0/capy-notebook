@@ -4,7 +4,7 @@ import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
 import type { GfxBlockElementModel } from '@blocksuite/affine/std/gfx';
 import { MemoryBlobSource } from '@blocksuite/affine/sync';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { boardFirstState } from './boardFirstState';
@@ -38,7 +38,11 @@ it("finds the store's surface, and another once it is replaced", () => {
   ) as GfxBlockElementModel;
   const [first] = store.getModelsByFlavour('affine:surface');
   expect(note.surface).toBe(first);
+  // Read again, it is the one found before: no scan of the store's blocks.
+  const scan = vi.spyOn(note.store, 'getBlocksByFlavour');
   expect(note.surface).toBe(first);
+  expect(scan).not.toHaveBeenCalled();
+  scan.mockRestore();
 
   store.deleteBlock(first);
   expect(note.surface).toBeNull();
