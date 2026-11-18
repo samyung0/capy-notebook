@@ -18290,7 +18290,10 @@ async fn a_board_over_its_cap_refuses_its_writer_and_still_takes_deletions() {
     a.draw(
         "big",
         "affine:note",
-        &[("prop:text", &"x".repeat(1_900_000))],
+        &[(
+            "prop:text",
+            &"x".repeat(notes::catalog::CANVAS_BOARD_MAX - 200_000),
+        )],
     )
     .await;
     a.until(6).await.expect("ack");

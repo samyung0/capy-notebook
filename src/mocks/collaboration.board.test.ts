@@ -1,5 +1,6 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { BOARD_CATALOG } from '@/api/board.generated';
 import type { WorkspaceRole } from '@/api/types';
 import type { ItemProvider } from '@/features/collaboration/itemRoom';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
@@ -174,7 +175,7 @@ it('rejects the update that takes a board over its cap, for its writer alone', a
   const { document, heard, provider } = await tab(id);
   const peer = mockBoardPeer(id);
   const big = new Y.Map<unknown>();
-  big.set('text', 'x'.repeat(2 * 1024 * 1024 + 1));
+  big.set('text', 'x'.repeat(BOARD_CATALOG.limits.CANVAS_BOARD_MAX + 1));
   drawn(document).set('too-big', big);
   await vi.waitFor(() =>
     expect(heard.stateless).toContainEqual(
@@ -264,7 +265,9 @@ it('admits what a join brings as any update: nothing past the cap', async () => 
   const { document, heard, provider } = await tab(id);
   const peer = mockBoardPeer(id);
   mockBoardSocket(id, false);
-  draw(document, 'too-big', { text: 'x'.repeat(2 * 1024 * 1024 + 1) });
+  draw(document, 'too-big', {
+    text: 'x'.repeat(BOARD_CATALOG.limits.CANVAS_BOARD_MAX + 1),
+  });
   mockBoardSocket(id, true);
   await vi.waitFor(() =>
     expect(heard.stateless).toContainEqual(

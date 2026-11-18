@@ -685,7 +685,7 @@ mod tests {
                 doc,
                 "big",
                 "affine:note",
-                &[("prop:text", &text(1_900_000))],
+                &[("prop:text", &text(CANVAS_BOARD_MAX - 200_000))],
             )
         });
         assert!(matches!(
