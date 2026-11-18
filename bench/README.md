@@ -23,7 +23,7 @@ place (Epo 2026-10-10).
 
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance | `pnpm bench:stress` (Docker), `pnpm bench:rates` |
+| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance. A board's live Yjs state against its saved size, per kind of work | `pnpm bench:stress` (Docker), `pnpm bench:rates`, `pnpm bench:growth` |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`gateway/`](gateway/)     | Go gateway capacity: signed-in browser sessions replayed against the API with their event streams, uploads and paged lists, per-route and per-page latency and errors, gateway and Postgres CPU, waits for a pooled connection | `bench/gateway/scripts/step.sh <users>` (bench host) |
@@ -172,6 +172,23 @@ wait), into the gitignored `collaboration/.results/rates.jsonl`. It sized the
 collaboration server's per-user update allowance
 ([2026-10-18 report](collaboration/reports/2026-10-18-update-rates.md), its
 record in `collaboration/reports/2026-10-18-windows-pc/rates.jsonl`).
+
+`bench/collaboration/scripts/board-growth.growth.ts` (`pnpm bench:growth`,
+`playwright.growth.config.ts`) measures how a board's Yjs state grows: the
+Vite dev server with MSW, the Canvas page's board driven with the mouse and
+keys as fast as the page takes them (keys 30 ms apart, since a note stores
+more when its keys come apart). One test per kind of work on a fresh
+board (pen strokes, shapes dragged and resized, plane points, lines and moved
+points, notes typed, edited and deleted, labelled shapes, things added then
+deleted) and a mixed hour, each measured three ways: the board's own document
+with its undo history, a second document sent every update (what a room
+holds), and the copy the save stores. It reports bytes per action, and per
+minute at the pace assumed for each kind, into the gitignored
+`collaboration/.results/board-growth.jsonl`; `GROWTH_BASE_URL` measures a dev
+server already running on another checkout. It is the input for the canvas
+room's size cap
+([2026-11-18 report](collaboration/reports/2026-11-18-board-live-growth.md), its
+record in `collaboration/reports/2026-11-18-mac-m1/board-growth.jsonl`).
 
 `bench/collaboration/scripts/chaos-peers.ts` (`pnpm chaos:peers`) is not a
 measurement: it joins synthetic collaborators to one live room of the Rust
