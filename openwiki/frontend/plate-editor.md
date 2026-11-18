@@ -357,7 +357,10 @@ binary format). A note room's awareness state (`notePresence.ts`) holds only:
 | `b` | block selection runs `[[firstId, lastId], ...]` | ≤ 16 runs, ids ≤ 64 |
 | `uploads` | upload placeholder ids ([uploads](#stable-ids-and-persisted-node-data)), writers only | ≤ 100 ids ≤ 32 characters |
 
-A source room's holds only `cursor` ([Office cursors](#office-cursors)); an
+A source room's holds only `cursor` ([Office cursors](#office-cursors)); a
+canvas's room holds a board's `p`, `b`, `s` and `f` (Epo 2026-11-18,
+`Fields::Board`: the pointer in whole board units and the selected ids as a
+flat list; [the canvas's room](#the-boards-tools), Presence); an
 item room (quiz, set, mindmap, diagram) and a quiz's keys room hold none.
 The collaboration server (`presence.rs`, called from `on_awareness` in
 `room.rs`) keeps and relays a state only when every field is one its room
@@ -2177,7 +2180,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   `collaboration-rs/crates/server/src/protocol.rs`; a vitest keeps them equal.
   - The server keeps one minimum per room family:
     - material rooms (`material:`, `keys:`: notes, mindmaps, diagrams,
-      quizzes, quiz keys, flashcard sets): `MIN_MATERIAL`;
+      quizzes, quiz keys, flashcard sets, canvases): `MIN_MATERIAL`;
     - source rooms (`source:`: Office and text): `MIN_SOURCE`.
   - `socket::authenticate` checks it right after parsing the room name,
     before any lookup. A client below its family's minimum, or above the
@@ -2392,6 +2395,14 @@ design, option d), and the nudge's release file on 2026-10-17.
   seed again from their questions (migration 0178,
   [deployment-runbook](../deployment-runbook.md#quiz-figure-maps-reset-migration-0178)).
   Its deploy request names "client protocol 29 -> 30, material 29 -> 30".
+  Canvas rooms (Epo 2026-11-18: a canvas's board is a room in the `material:`
+  family, no longer a saved board asset) raised `CLIENT_PROTOCOL` to 31 and
+  `MIN_MATERIAL` to 31, since the family's minimum is the only gate before any
+  lookup: a tab from before saves a canvas through a route that is gone;
+  `MIN_SOURCE` stays 28. Existing canvases are deleted at that deploy
+  (migration 0181,
+  [deployment-runbook](../deployment-runbook.md#canvas-rooms-migrations-0181-to-0183)).
+  Its deploy request names "client protocol 30 -> 31, material 30 -> 31".
 
 #### When to bump
 
@@ -5226,7 +5237,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
-    `reason`.
+    `reason` on a question's board. A canvas is not opened from `saved`: it mounts on
+    its room's document and draws what does not fit as a placeholder (The canvas's
+    room, below).
   - **One toolbar, Misc per board** (Epo 2026-11-10, superseding the question board's own
     Charts slot of 2026-11-09): both boards have Graphs, Formulas (GIF & Sticker on the
     workspace canvas) and **Misc** after the shapes (`sheetTools`). Misc shows each board
@@ -5420,56 +5433,198 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     any page can write the clipboard. Their renderers check again what they use: a link
     opens only as http(s), an emoji shows only from the list, a GIF only from https
     `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
-  - **Stored (Epo 2026-11-09, `todo-workspace-canvas-storage.md`):** the workspace canvas
-    is personal: any number per member per workspace (Epo 2026-11-12, migration 0171;
-    one per member before), seen by its owner alone, one editor over
-    the whole canvas and no collaboration room (collaboration means resuming the held
-    canvas plan). It is a standalone material of kind `canvas` linked to its workspace
-    by `canvas_workspace_id`, owned and paid for by the member, listed in Files with the
-    drawing icon, never shared or cloned, and deleted with their membership when they
-    leave. The Canvas tab (`WorkspaceCanvas.tsx`) has the Canvas page's picker
-    (`useCanvasPicker`, below) over the workspace's canvases (`GET
-    /api/canvases?workspaceId=`), `?c=` beside `view=canvas` naming the one shown; the
-    first is made with the workspace's name. Its document is one
-    `canvas_board` block (embed catalog) naming the board asset, the save's version and
-    the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
-    the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
-    browser, `assetLink` and `DecompressionStream` back), or from this device's unsaved
-    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`: the live `snapshot()` with
-    the material revision it was taken at, written 400 ms after each change and on
-    `pagehide`) when the last save didn't go up and the copy's revision is the material's
-    current one; an older copy (another tab's or device's save landed since) is deleted.
-    It saves 2 s after the last change (`save({ finish: false })`, the cleaned-up document
-    that leaves the drawer's tool and open card alone) and when the page within the app
-    leaves the canvas (`save()`, which finishes an open card's view into it; a save still
-    in flight then rewrites the copy from the document as left, at the revision it lands
-    on), gzipped, uploaded as a new `board` asset under
-    `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
-    and the last good save stands), then `PUT /api/canvases/{id}` with the
-    asset and the revision it read; the server checks the asset is a ready `board`
-    asset of the canvas (images likewise) and counts the version. The save writes the
-    document in SQL even where collaboration is configured: a canvas is never a room,
-    so `UpdateMaterial` sends no content command for its kind (each save writes a whole
-    new block, which a replace-block command refuses). 409 (the same person's
-    other tab saved first) says so, deletes this tab's copy and stops saving until a
-    reload; any other failure waits for the next change or open, the copy holding the
-    work (no retry loop), and the board asset uploaded for the failed save is deleted
-    again. A closed tab keeps the copy only: the upload can't run as a keepalive request.
-    The routes answer 404 to a non-member (a link or public visitor), and a save naming
-    an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
-    it); the Canvas tab shows to members only, since a link or public visitor has none.
+  - **The canvas's room (Epo 2026-11-18, superseding the saved board asset of
+    2026-11-09):** a canvas is a standalone material of kind `canvas`, owned and paid
+    for by the person who made it, any number per member per workspace (Epo
+    2026-11-12, migration 0171), linked to its workspace by `canvas_workspace_id`
+    and never cloned. Its board is the Yjs
+    document of a collaboration room, one room per canvas whether it is private or
+    shared, named `material:<materialId>:schema:<n>` like a note's (`MaterialRoom`),
+    with no `keys` document and no parent. The collaboration server runs it as a note
+    room with its own model, `Model::Board`, beside `Model::Note` and `Model::Item`
+    (`model.rs`). Who holds a canvas, the tokens by role and what revokes them are in
+    [authorization](../authorization-permissions-lifecycles.md#workspace-canvases); the
+    charge and the cap's number in
+    [storage](../backend-storage-quota.md#canvases).
+    - **Opening.** `useCanvasBoard` (both pages mount it) reads the canvas
+      (`GET /api/canvases/{id}`, for its image assets and whose it is) and joins the
+      room through `useItemRoom`, the room client every live item uses, with an
+      awareness of its own. The board mounts once the room has synced under its
+      adopted client id, on the room's document itself (`mountDrawingBoard` with
+      `room: { doc }`, `roomStore.ts`: the room's document is BlockSuite's root and
+      space document and its `blocks` map the store's, so nothing but block edits
+      reaches the room). Every change goes to the room as it is made and nothing is
+      saved from the page; unsent edits are kept on this device as any live item's
+      are. The `drawingDrafts` copies of canvases and the save loop are gone; a
+      quiz's drawing answer and sample keep the in-memory board. Undo is BlockSuite's
+      own manager following the document's client id (`followClientId`), so it
+      reaches a person's own edits only, and a canvas has no previous versions (Epo
+      2026-11-18, "no prev version").
+    - **The first state.** Every canvas starts from the same bytes: one `affine:page`
+      block with id `page` holding one `affine:surface` block with id `surface`, written
+      under Yjs client id 1, which no user is assigned, so two first openers hold one
+      state and no tab can write under it. The editor's own code makes them
+      (`boardFirstState.ts`), a Vitest pins them byte for byte to
+      `collaboration-rs/crates/server/fixtures/board-first-state.bin` (237 bytes), and
+      the collaboration server seeds a canvas with that file at its first open
+      (`Model::Board.state_from_value`); Go writes no Yjs row when it creates one. A
+      tab never makes those blocks: a synced room without exactly one page holding one
+      canvas is "couldn't open" with Retry (`holdsBoard`).
+    - **Protocol 31.** Canvas rooms raised `CLIENT_PROTOCOL` and `MIN_MATERIAL` from
+      30 to 31 ([the gate](#client-protocol-and-the-release-nudge)). The build's
+      contract adds a rule the code does not hold: from here a change to the board
+      catalog (`server/internal/boardcatalog`) raises both together.
+    - **What the room admits.** A board has no rule on what its content is (Epo
+      2026-11-18, "reject nothing"): admission bounds what an update may cost, never
+      its shape. After the checks every material room makes (the 4 MiB sync message,
+      the token, the client-id rule, the marker root), `admit_board` takes an update
+      that:
+      - the room can place (`ydoc::inspect_bounded`): no struct or deleted range
+        ends past clock 2^30 (`ydoc::MAX_CLOCK`, a ceiling for every room since this
+        build: two 11-byte GC structs wrapped a client's clock in a release build and
+        left a stored document that no longer loaded; note, flashcard and source
+        rooms took the same input and refuse it now);
+      - nests no type more than 64 deep below the root (`BOARD_DEPTH`; the editor's
+        deepest is 5). yrs deletes nested types by recursion, and a chain of 8,000
+        maps with one deletion of its top overflowed a worker's 2 MiB stack, which
+        aborts the process;
+      - stays within one work budget of `ydoc::MAX_WORK` (1,000,000) steps that
+        counts what yrs's own count misses: the content copied and walked at every
+        split of an item, conflict scans, the walk from each new struct to its root
+        and the items a deletion removes without naming them. The slowest update a
+        board admits by those costs held the room 48 to 66 ms on an M1 in a release
+        build (the builder's measurements, 2026-11-18); an update's own size is not
+        counted (100,000 map entries took 144 ms there).
+        Only a board counts splits; the other rooms inspect as before;
+      - writes only the `blocks` root (`BOARD_ROOT`) besides the room's own
+        contributor markers;
+      - keeps the state within `CANVAS_BOARD_MAX`, 4 MiB (Epo 2026-11-18), the largest
+        sync message the server takes (`NOTE_MAX_SYNC_BYTES`). The validator keeps an
+        upper bound of the state's bytes; while the bound plus the most the update
+        can add fits, the update enters unmeasured, and near the cap, or when it
+        deletes a type's content without naming it, the state is measured exactly
+        without and with the update, which enters when the state with it fits the cap
+        or is no larger than before. So the cap is never passed, deletions that split
+        items count like growth, a full board can always be thinned, and a person who
+        cleared part of a full board draws again at once. An update that tells the
+        room nothing new (a joiner's step 2) is not sized.
+
+      A refusal closes that writer's channel alone. One for size reaches the tab as
+      `document-rejected` with `document_size_exceeded` and
+      `limits.maxContentBytes` the cap. A store never refuses a board for size, and a
+      board has no repairs, sessions, held deletions, collection, late merge, index
+      request or agent path: an agent inspect or edit, a replace-block command and the
+      live read of a loaded board answer 409 `unsupported_operation`, unreported
+      (`CANVAS_REFUSED`); the live read of a board this process has not loaded answers
+      none, as for any room it does not hold. Known and left open, here as in every
+      room: named deletions written out of order hold a room about 1.7 to 3.4 s per
+      MB (the second Rust review's probe), and note, item and source rooms are still exposed to the split stall and the
+      depth abort a board now refuses (follow-ups for Epo, the second Rust review).
+    - **Unknown content is kept (Epo 2026-11-18, "reject nothing, dont just delete
+      stuff without user acknowledgement", mock A, Artifact FFzLp8Zwcen678YfTEn88s).**
+      Nothing a peer or the stored state brought is refused or removed for its shape,
+      on the server or in the browser. What a tab cannot read (a block or canvas
+      element of a kind this build does not know, or a known one that fails the
+      board's checks) stays in the document as it is and is drawn as a placeholder: a
+      dashed outline with "This block cannot be shown", the words a note's unknown
+      block uses (`material_unsupported_block`). A canvas element's placeholder is
+      BlockSuite's own inert model (vendor local change 62: an unknown element type no
+      longer throws at load or on a remote add); a block's is `capy:unknown` in a
+      note's text or `capy:unknown-card` with a place of its own (`boardUnknown.ts`,
+      drawn by `boardUnknownView.ts`). Neither declares props, so reading one writes
+      nothing, and a selected placeholder has no toolbar. Content is judged as it
+      arrives; a later change to it waits for a reload. A person's own add that the
+      catalog does not take (a paste, a duplicate) is still removed at once
+      (`keepToCatalog` in `boardKeep.ts` acts only on this tab's own action, never on
+      an undo, a peer's update or the loaded state). A question's board still refuses
+      a saved board that does not check out.
+    - **Projection.** The server reads one thing from a board: the editor assets its
+      blocks name, each block map's string `prop:sourceId` of 1 to 64 characters of
+      `[A-Za-z0-9_-]`, whatever the block's flavour (so an image block of a newer
+      editor keeps its asset), each id once, in byte order. The room sends Go the
+      canvas's whole document, one `canvas_board` block with the constant id `board`,
+      `version` the stored version projected and `images: [{ assetId }]`, on the
+      note's cadence (30 s idle, every 5 minutes, on unload). `version` changes with
+      every projection, so the content changes and the charge is recomputed. Go
+      writes the block through `ProjectMaterialContent` with no canvas branch, and
+      its asset pruner keeps the images named and trashes the canvas's others. An
+      update that writes a `prop:sourceId` makes the room project after its next
+      store (`names_asset`, `project_soon`), so an image added, pasted or brought back
+      by Undo, whose asset Go had trashed, is served again within seconds.
+    - **Presence (Epo 2026-11-18, "just the same presence events like others").** A
+      board's state is a note's event with board fields (`Fields::Board` in
+      `presence.rs`, `boardPresence.ts`): `p` the pointer as `[x, y]` in whole board
+      units, each within 1,000,000,000 either side of the origin, or null once it left
+      the board; `b` the selected elements' and blocks' ids, at most 16 of at most 64
+      UTF-16 units each; `s` and `f` a text caret's anchor and focus as base64 Yjs
+      relative positions of at most 64 characters (`f` absent when collapsed). No
+      name, colour or uploads: receivers name and colour a peer from the room's
+      presence. Any other key, type or bound drops the whole state, silently, on the
+      server and in the receiver (`readBoardPresence`), one vector list checking both.
+      BlockSuite's own awareness (its `selectionV2`) stays on the page and never
+      reaches the room. It is sent at most every 50 ms and only on a change; a caret is
+      sent as soon as it is placed. Whoever may edit the canvas sends and hears it,
+      also while their own board is read-only for a time (a frozen account, a full
+      payer); a workspace viewer sends nothing and the room tells a viewer nothing, as
+      in a note. `BoardPresenceMarks` draws the others with the marks a note uses
+      (`PresenceMarks.tsx`, shared with `RemoteCursors.tsx`): a pointer that glides
+      120 ms in board units and follows pan and zoom, one named outline around what a
+      person selected, a caret and tinted range inside a note's text, and for text
+      in a shape or on a connector the outline alone. Nothing shows with the
+      "Show others' cursors" switch off. The presence marks have no mock yet (one
+      outline around a multi-selection, carets without a name flag, and no avatar
+      group on a canvas are as built, to be shown to Epo).
+    - **What a person sees.** While the room joins, the pane's loader
+      (`CanvasOpening`). A room that refuses the person before anything showed (no
+      role, a canvas gone) is the usual unavailable panel (`UnavailableItem`), never
+      saying blocked rather than gone. A canvas opened offline waits and opens by
+      itself when the connection returns. A workspace viewer of a shared canvas, a
+      frozen account and anyone on a canvas whose payer is frozen or full get a board
+      to pan and zoom with no toolbar (mounted without tools; it mounts once more,
+      at the same view, if the person may then write). An editor's board stops and
+      starts taking edits in place when its access changes (`setLocked`: the view,
+      the history and the board stay). A revoke while inside (the canvas taken back,
+      the member removed or lowered) leaves the board as it was, read-only, under a
+      strip reading "You no longer have access" (`CanvasBoardStrip`, the `access-lost`
+      save strip; where it sits has no mock yet). The strip also carries offline, an
+      outdated build with Reload, and edits open for copying. A full canvas, where
+      the room refuses an update for the document's size, drops what this tab had not
+      stored, says once "This canvas is full. Delete something to keep drawing."
+      (`workspace_canvas_full`, provisional words) and opens the room afresh, so the
+      person is back on an editable board holding the room's state (`onFull` in
+      `itemRoom.ts`; the refused edits are not kept to copy, since they would be
+      refused at every join).
+    - **The picker's sharing (Epo 2026-11-18, "B, a switch", mock Artifact
+      F2dZxe8XvcW1FAiqMf81NA).** The canvas shown has a "Shared with workspace" row
+      with the people icon and a switch between Rename and Delete in `CanvasSwitcher`,
+      for its creator while an owner or editor of the workspace (`canvasRights`, the
+      server enforcing the same; provisional, see authorization). The row is the
+      control and stays open; the switch shows where it is going while
+      `PATCH /api/canvases/{id}` is on its way, and a refusal is said by a toast. A
+      canvas the person shared carries the people mark before its time, another
+      member's shared canvas reads their name before the time ("Ben · 3d"), and a
+      private one neither. Rename and Delete show for the creator alone. The Canvas
+      tab lists the canvases the person drew in the workspace and the other members'
+      shared ones; nothing announces a share or an unshare, so the list is read again
+      each time the picker opens and after the person's own change. The first canvas
+      is made, with the workspace's name, for a person with none to show, so a
+      member whose list holds only another member's shared canvas opens that one
+      (as built; put to Epo). The Canvas tab shows to members only, since a link or
+      public visitor has no canvas.
   - **The Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):** `/canvas`
     (`Canvas.tsx`, Canvas under Tools in the sidebar) is a board: one of the person's
     own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
-    no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
-    exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
-    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` on both), with the same device copy, images and limits, and Misc's
-    **Quizzes and flashcards** (above). `?c=` names the canvas shown; without one (the sidebar's link) the one
+    no `canvas_workspace_id` (migration 0167), any number per person, opened in its
+    room exactly as a workspace's is (`useCanvasBoard`, which both pages mount), with
+    the same images and limits, and Misc's **Quizzes and flashcards** (above). It is its
+    maker's alone and can never be shared. `?c=` names the canvas shown; without one (the sidebar's link) the one
     already shown stays, else the latest saved of the person's own, and a first one ("My
     canvas") is made for a person who has none. The id routes serve only a person's own
-    canvases, a workspace's while they are a member of it. A frozen account draws on what it has and is offered neither New canvas
-    nor Rename. The page and the Canvas tab share `useCanvasPicker` (the canvas shown,
-    the first one made, New, Rename and Delete). The panel at the top left
+    canvases, a workspace's while they are a member of it, and another member's
+    once it is shared with that workspace. A frozen account opens what it has
+    read-only (its room token carries `read`) and is offered neither New canvas,
+    Rename nor the sharing switch. The page and the Canvas tab share `useCanvasPicker` (the canvas shown,
+    the first one made, New, Rename, the sharing switch and Delete). The panel at the top left
     (`CanvasSwitcher`) is the editor's popover (`ToolbarPopoverContent` and its 30px
     rows, as Plate's All blocks, Epo 2026-11-12) and
     lists every canvas there is (`GET /api/canvases`: their own, latest saved first,
@@ -5477,13 +5632,14 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
     2026-11-10: `cursor` and `nextCursor`, `canvasesQuery` is an infinite query ending
     in `ListEnd`; there is no cap on how many a person makes). The list scrolls in a box
-    of its own, so New canvas, Rename and Delete under it stay in reach. Their own come first so
+    of its own, so New canvas, Rename, the sharing switch and Delete under it stay in reach. Their own come first so
     that a first page without one means they have none, and a canvas the URL names on a
     page not loaded yet has the pages load until it shows or they end. The panel makes
     a new one ("Untitled canvas", numbered when a loaded one has the name), and renames
     or deletes the one shown, as a standalone
     material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
-    the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
+    the trash; the room's refusal of a canvas being deleted is no news to its board,
+    `gone`). A
     workspace's canvas opens in its workspace (`?c=` with `view=canvas`), where its quiz
     and flashcard cards work; there the picker lists that workspace's canvases alone.
     The account chat's file listing leaves canvases out: a canvas is a board, not a
@@ -5498,31 +5654,34 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     Every way an image arrives (a paste, a drop, a note's slash menu, Misc's Image tile,
     which opens the device's file picker for a phone with no paste or drop) goes
     through BlockSuite's `blobSync.set`, so the source is the one place that sees them.
-    On the workspace canvas (`assetImages` in `boardAsset.ts`) an image is stored at
+    On a canvas (`assetImages` in `boardAsset.ts`) an image is stored at
     once as the canvas material's own `image` editor asset through `uploadEditorAsset`,
     as a note's is: compressed in the browser first (`fitImageOffThread`: WebP where the
-    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the plan's
-    image cap, refused when storage is full, billed to the member and listed on the
-    Files page. The block lands with BlockSuite's hash and shows the local file with the
-    upload state set (`blobState$`); when the upload completes its `sourceId` becomes
-    the asset id and its `size` the stored size, outside the undo history, and a refused
-    image leaves the board with a toast. An image already stored under its id is never
-    stored again: a copy pasted back hands its file to `set` under that id, which the
-    source leaves alone (`stored`). `GET` and `PUT /api/canvases/{id}` answer
-    `ownImageAssetIds`, every ready image asset of the canvas, one the pruner trashed
-    included; a save waits for uploads in flight (at most 20 s, `IMAGE_WAIT_MS`, on
-    leaving the canvas too, since the board's document outlives its unmount) and sends
-    as `imageAssetIds` the ids on the board that are in that list or were uploaded
-    since. The pruner then keeps them, and trashes a removed one at the next save once
-    it is over a minute old. An image deleted on the canvas and brought back by undo is
-    named again and that save restores it (`assertCanvasAssets` takes a trashed image,
-    never a trashed board), after which the board asks for its file again
-    (`reloadImages`). An image deleted for good elsewhere (the Files page) is not in the
-    list, so it is left out; a save refused for what it named (400) reads the list again
-    for the next one. An image pasted from another canvas resolves as another material's
-    and is stored again as this one's, also when the board opens with one. Opened again,
-    an image loads from its asset's link (`assetLink`). A tab closed mid-upload keeps the
-    hash in its device copy and shows an empty frame after a reload.
+    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the
+    uploader's plan image cap, refused when storage is full, billed to whoever
+    uploaded it (the creator, or an editor of a shared canvas) and listed on their
+    Files page. The image is stored before its block is added: BlockSuite waits for the
+    source's `set` (a file pasted, picked or dropped) and for a copied block's paste
+    (`BoardImageClipboard`), and the one way in where BlockSuite adds the block first, a
+    file pasted into a note's text, waits for `set` on a canvas too
+    (`storedImagePaste`). So a block is never in the room under an id no one can load,
+    leaving mid-upload leaves no empty frame, and a refused image never lands (a
+    toast says so). The block then takes the stored id and size outside the undo
+    history. The board acts only on this tab's own image adds (`change.isLocal`): it
+    never uploads for, rewrites or deletes a block another person added. An image
+    already stored under its id is never stored again: a copy pasted back hands its
+    file to `set` under that id, which the source leaves alone (`stored`).
+    `GET /api/canvases/{id}` answers `ownImageAssetIds`, every ready image asset of the
+    canvas, one the pruner trashed included. The room's projection says which images
+    the board holds, so one taken off the board is trashed and one put back (an undo)
+    is restored with no word from the page, and served again after the room's next
+    store. A peer's image still going up, a deleted image or one the pruner trashed
+    answers 404 to the reader and is asked for again by the next view of it. An image
+    pasted from another canvas resolves as another material's and is stored again as
+    this one's when the tab may write; a reader's board stores nothing. Opened again,
+    an image loads from its asset's link (`assetLink`). Known and left open (the
+    browser fix round's notes): an image uploaded and then abandoned by leaving stays
+    an asset no block names, which the pruner's rule for it was not checked.
     On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
     (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
     catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10, counting the ones of

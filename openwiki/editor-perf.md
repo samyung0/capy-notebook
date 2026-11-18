@@ -388,6 +388,21 @@ evaluated (`/dev/drawing?unmounted`): the first mount on the page, a second one,
 and showing a board mounted ahead out of sight, with the JS heap and DOM nodes a
 board adds.
 
+A canvas at its size cap is measured apart, by hand, by
+[`board-open.cap.ts`](../bench/editor/scripts/board-open.cap.ts)
+(`node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts`,
+report only, in no workflow): a production build with MSW opens a blank canvas
+and boards of about 2 MiB and 4 MiB (`CANVAS_BOARD_MAX`) of the growth bench's
+mixed hour through the mock collaboration room, and the same states with no
+room on `/dev/drawing`. On the Mac at 28a77f5f0 (2026-11-18, medians of 3),
+first paint through the room was 2,210 ms blank, 2,726 ms at 2 MiB and 3,312 ms
+at 4 MiB; the last long frame ended at 2,210, 2,927 and 3,526 ms; the longest
+frame was 176, 678 and 1,186 ms; the JS heap after a GC 30, 94 and 155 MB (27,
+67 and 104 MB with no room). At 4x CPU the 4 MiB board painted at 9.4 s and
+settled at 12.5 s. MSW's latency is in every total, and the service, a network,
+phones and typing on the open board were not measured:
+[report](../bench/editor/reports/2026-11-18-board-open-at-cap.md).
+
 ## Formula parity audit (`pnpm bench:formula`)
 
 [`bench/editor/scripts/formula-parity.audit.ts`](../bench/editor/scripts/formula-parity.audit.ts)

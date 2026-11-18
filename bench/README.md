@@ -24,7 +24,7 @@ place (Epo 2026-10-10).
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance. A board's live Yjs state against its saved size, per kind of work | `pnpm bench:stress` (Docker), `pnpm bench:rates`, `pnpm bench:growth` |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing; a canvas's open at its size cap (by hand) | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`gateway/`](gateway/)     | Go gateway capacity: signed-in browser sessions replayed against the API with their event streams, uploads and paged lists, per-route and per-page latency and errors, gateway and Postgres CPU, waits for a pooled connection | `bench/gateway/scripts/step.sh <users>` (bench host) |
 | [`clone/`](clone/)         | A single file clone's two parts on a disposable pgvector database: the file row with its saved edits (as update rows and folded), and the index copy into the target's HNSW index | `bench/clone/scripts/run.sh` (Docker) |
@@ -40,8 +40,8 @@ The only CI-wired suite, run manually via the `Performance` workflow
 (`.github/workflows/perf.yml`, formerly `Editor perf`) and on
 production promotion. Budgets are regression tripwires, not UX targets; snapshot
 deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
-Results land in the gitignored `editor/.results/`, so this family has no
-committed reports.
+Results land in the gitignored `editor/.results/`; the family's committed
+reports (`editor/reports/`) are from runs made by hand.
 
 `pnpm bench:canvas` is the drawing board's spec (`editor/scripts/board.canvas.ts`):
 a production build without MSW whose `/dev/drawing` route is kept by
@@ -54,6 +54,32 @@ downloads are report-only. `editor/scripts/board-stages.canvas.ts`,
 report only, splits the cold open into stages and times the list preview and Draw with
 the module already evaluated (`pnpm bench:canvas board-stages`). It runs as the `canvas` job of the `Performance` workflow, on dispatch
 only. Details: [editor-perf.md](../openwiki/editor-perf.md#drawing-board-pnpm-benchcanvas).
+
+`editor/scripts/board-open.cap.ts` measures how long a canvas at its size cap
+takes to open, by hand and report only
+(`node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts`;
+no workflow runs it), on a production build with MSW. The board is one in
+the mix of the growth bench's mixed hour (pen strokes of 41 points, typed
+notes, labelled shapes; planes left out). Its first case writes ten minutes
+of that mix on the Canvas page, through the board's own API and the mock
+collaboration room, and reports what a stroke, a note and a shape cost
+against the growth bench's figures from real input. Its second writes the
+same mix into a Yjs document in the runner, from copies of what the board
+wrote in the first, and keeps the state near 2 MiB and near
+`CANVAS_BOARD_MAX`: written in a page, the mix slows as the board grows (the
+cause was not found). A blank canvas
+and each kept state are then opened three times each in fresh browser
+contexts, through the mock room on the Canvas page and with no room on
+`/dev/drawing`, and once through the room at 4x CPU: the first frame holding
+every element, the end of the last long frame before 3 s with none, the JS
+heap after a forced GC, and, on the settled board, wheel pans, a pen stroke
+and one write under a sampling profile (the mock room's share of it apart).
+Its build (`editor/scripts/vite.cap.config.ts`) is the app's with any
+BetterOffice artifact that is not built resolved to an empty module, so it
+runs in a checkout without `pnpm office:prepare`. Results land in the
+gitignored `editor/.results/board-cap/`. Findings:
+[`editor/reports/2026-11-18-board-open-at-cap.md`](editor/reports/2026-11-18-board-open-at-cap.md),
+its record in `editor/reports/2026-11-18-mac-m1/board-open-at-cap.json`.
 
 `bench/editor/scripts/open-paint.mjs` measures a note's one way of opening on a
 production build with MSW, by hand (its header has the build): click or navigation

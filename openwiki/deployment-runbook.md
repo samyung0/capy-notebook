@@ -4581,3 +4581,79 @@ Steps on UAT:
 
 If 0179 refuses, handle the rows of step 1 and rerun `deploy-uat` at the same
 SHA; locally, project or accept them, or recreate the local database.
+
+## Canvas rooms (migrations 0181 to 0183)
+
+The release that draws a canvas in a collaboration room (client protocol 31,
+Epo 2026-11-18; [plate-editor](frontend/plate-editor.md#the-boards-tools),
+The canvas's room) carries three migrations, and all three must be applied
+before the new collaboration server starts: its access query reads
+`materials.canvas_shared` for every material room it joins, a note's as well
+as a canvas's (`access::live_role`), so against a database without the
+column every join fails. The deploy's own order (collaboration stopped, then
+`migrate`, then the services) does this; do not start the new collaboration
+image by hand against an unmigrated database.
+
+- [`0181_canvas_rooms_clear.sql`](../server/migrations/0181_canvas_rooms_clear.sql)
+  deletes every existing canvas, by decision (Epo 2026-11-18, no backward
+  compatibility: a canvas saved as a `board` asset is not converted). Their
+  assets go with them (cascade), each row's triggers release its charge and
+  queue its blob, and nothing can be restored afterwards. It also puts
+  `editor_assets_size_check` back to 256,000 bytes for a `board` asset, a
+  quiz's drawn sample answer alone from here.
+- [`0182_canvas_shared.sql`](../server/migrations/0182_canvas_shared.sql)
+  adds `materials.canvas_shared` (false, and only a canvas with a
+  `canvas_workspace_id` may set it), an index on `canvas_workspace_id`, the
+  trigger that queues a `revoke` for a canvas's room when it is taken back,
+  and a workspace's canvases in `enqueue_workspace_collaboration_evictions`.
+- [`0183_canvas_board_bytes.sql`](../server/migrations/0183_canvas_board_bytes.sql)
+  replaces `prepare_material_storage_fields` so a canvas is charged its
+  content plus its stored Yjs bytes
+  ([storage](backend-storage-quota.md#canvases)).
+
+None of the three refuses. A database with no canvas (production today) loses
+nothing to 0181.
+
+Steps on UAT:
+
+1. Before the deploy, count what 0181 will delete and tell whoever drew them:
+
+   ```sql
+   SELECT m.owner_user_id, count(*) FROM materials m
+   WHERE m.kind = 'canvas' GROUP BY m.owner_user_id;
+   ```
+
+2. Deploy (`deploy-uat`); the deploy request names "client protocol 30 -> 31,
+   material 30 -> 31" and that existing canvases are deleted. Open note, quiz
+   and set tabs read the outdated prompt and reload.
+3. Check the column is there and no canvas from before is left:
+
+   ```sql
+   SELECT count(*) FROM materials WHERE kind = 'canvas' AND created_at < now() - interval '1 hour';
+   SELECT count(*) FROM materials WHERE canvas_shared;
+   ```
+
+   The first prints 0 when run within the hour; the second runs without an
+   error and prints 0 until someone shares one. Open the account's Canvas
+   page: a first canvas is made and opens. Draw a stroke, reload: it is
+   there. In a workspace's Canvas tab, switch "Shared with workspace" on and
+   open the canvas as a second member: an editor draws, a viewer gets no
+   toolbar; switch it off: the other member's board turns read-only under
+   "You no longer have access". After the room's next projection (30 s idle)
+   the charge holds the board's stored bytes:
+
+   ```sql
+   SELECT m.id, m.size_bytes, octet_length(m.content::text) AS content_bytes,
+          octet_length(d.state) + d.log_bytes AS yjs_bytes
+   FROM materials m JOIN material_yjs_documents d ON d.material_id = m.id
+   WHERE m.kind = 'canvas';
+   ```
+
+   `size_bytes` is the two added as of that projection; a store since then
+   shows in `yjs_bytes` first.
+
+Locally the compose gateway runs the three at start and deletes local
+canvases the same way. As of 2026-11-18 the board room's integration tests
+(`collaboration-rs/crates/server/tests/rooms.rs`) have compiled but not run:
+they need Docker, which did not answer on the build machine. Their first run
+is CI, so wait for it before this deploy.

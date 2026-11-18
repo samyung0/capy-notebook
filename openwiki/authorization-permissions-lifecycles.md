@@ -488,7 +488,10 @@ unchanged.
   (`MenuItem.switch` in `Menu.tsx`). Switching it off hides the item without
   asking and leaves the menu open on the switch, which moves at once (it shows
   the value being sent until the lists have it, `useToggleHidden`'s
-  `hiddenOf`, and falls back with a toast on a refusal); switching it on, or the chip, closes the menu and asks first
+  `hiddenOf`, and falls back with a toast on a refusal; the write stays
+  pending until the workspace's lists and the account's Files list,
+  `qk.itemsRoot`, are read again, so that page's row does not snap back);
+  switching it on, or the chip, closes the menu and asks first
   ("Share this file with members?", everyone in the workspace will see it;
   Epo 2026-11-16). Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
@@ -1435,18 +1438,121 @@ the person attempting (see [study-progress.md](study-progress.md) and
 
 ### Workspace canvases
 
-A member's workspace canvases (Epo 2026-11-09; any number since Epo
-2026-11-12) are theirs alone: standalone materials of kind `canvas` linked to
-the workspace by `canvas_workspace_id`, so a standalone material's owner-only
-rules apply (read, trash, restore, purge) with no new path. The canvas routes
-take the workspace: `GET /api/canvases?workspaceId=` lists the caller's there
-and `POST /api/canvases` with a `workspaceId` makes one (an editing account
-needed), each for members only; `GET` and `PUT /api/canvases/{id}` open and
-save one of the caller's while they are still a member of its workspace (404
-otherwise). It is never
-shared (`UpdateStandaloneMaterialPrivacy` refuses it), never cloned
-(`CloneMaterial` refuses it) and never hidden or filed; it leaves with the
-member (`RemoveWorkspaceMemberWithResult`) and with the workspace.
+A canvas (Epo 2026-11-09; any number per member and workspace since Epo
+2026-11-12) is a standalone material of kind `canvas`, owned and paid for by
+the person who made it. One drawn in a workspace names it in
+`canvas_workspace_id` and sits in no workspace (`workspace_id` is null), so
+no workspace read lists it; one made on the account's Canvas page names none.
+Its board is drawn in the canvas's collaboration room (Epo 2026-11-18, one
+room per canvas whether it is shared or not;
+[plate-editor](frontend/plate-editor.md#the-boards-tools), The canvas's room).
+
+- **Private or shared (Epo 2026-11-18).** A new canvas is private: its creator
+  alone holds it. `materials.canvas_shared` (migration 0182; only a canvas
+  with a `canvas_workspace_id` may carry it) shares it with the workspace it
+  was drawn in, and its members then hold it by their workspace role. There is
+  no per-canvas invite, grant, link or public state
+  (`UpdateStandaloneMaterialPrivacy` refuses a canvas), and a canvas of one's
+  own, in no workspace, is never shared (`PATCH` answers 422).
+- **The role** is one rule in Go (`materialAccessRow.canvasRole`, read by
+  `materialEffectiveAccess` and `ReadableMaterialIDs`) and in the
+  collaboration server (`access::canvas_role`, read by `live_role`):
+  - in no workspace: its creator is `owner`, anyone else has none;
+  - drawn in a workspace: someone with no role there has none, their own
+    canvas included, so a leaver and a link or public visitor hold nothing
+    (Epo 2026-11-09). A workspace whose owner's account is deleted, being
+    deleted or suspended gives no role;
+  - its creator, while they have a role there, is `owner` whatever that role
+    is, so a creator who is a workspace viewer still draws on their own;
+  - once shared, every other member holds their workspace role: owners and
+    editors draw, viewers watch;
+  - the `hidden` flag, link grants and share roles never apply to a canvas.
+- **The room token** (`POST /api/materials/{id}/collaboration-token`, the
+  route every material uses; the refusal a canvas had before is gone) carries
+  `write` for `owner` and `editor` and `read` for `viewer`, and answers 404 to
+  anyone with no role. It is `read` for everyone while the canvas's payer (its
+  creator) is frozen or at its storage limit, and for an actor whose own
+  account is frozen; a `keys` document is refused for a canvas as for any
+  material that is no quiz. The collaboration server rechecks the role on
+  its own schedule (`LiveAccess::access`).
+- **Revoking.** Taking a shared canvas back queues a `revoke` for its room
+  (`materials_canvas_unshared_eviction`, migration 0182): the room stays
+  loaded, its creator stays joined and only the channels whose role no longer
+  covers them close. Sharing widens access and queues nothing. A membership,
+  role or lifecycle change in the workspace rechecks the channels of that
+  workspace's canvases too (`enqueue_workspace_collaboration_evictions` also
+  selects `kind='canvas' AND canvas_workspace_id`). Nothing announces a share
+  or an unshare to the other members (the hidden-file write publishes no
+  event either): the picker reads its list again each time it opens.
+- **The routes.** `GET /api/canvases` lists every canvas the caller made
+  (their own first, then the ones they drew in workspaces); with
+  `workspaceId` (members only) the ones they drew there and the other members'
+  shared ones, each row carrying `shared`, `own` and, on another member's,
+  `creatorName`. A canvas whose creator's account is not live is left out, as
+  `GET /api/canvases/{id}` would not open it. `POST /api/canvases` makes a
+  private one (an editing account needed, a member when a workspace is named).
+  `GET /api/canvases/{id}` answers anyone with a role (404 otherwise) with
+  `shared` and `own`. `PATCH /api/canvases/{id}` with `{shared}` shares or
+  takes back. `PUT /api/canvases/{id}` (the saved board) is gone, and a
+  `board` editor asset for a canvas is refused with 400
+  (`checkEditorAsset`): a board asset is a quiz's drawn sample answer alone.
+  `UpdateMaterial` refuses a content patch for a canvas (its document is
+  written by its room's projection alone).
+- **Who shares, renames and deletes (PROVISIONAL, open question 3 of the
+  canvas build, with Epo: who administers a shared canvas, and may a
+  workspace viewer share their own).** As built, the creator alone
+  (`canvasAdmin`): `SetCanvasShared` answers 403 to another member who holds
+  the canvas and 404 to anyone who does not; sharing also needs the creator to
+  be an owner or editor of the workspace at that moment (`canShareCanvas`,
+  read under the workspace's mutation lock, so a role change landing at the
+  same time is seen), while taking back needs no role; a frozen creator does
+  neither (`requireAccountEdit`, `assertEditableTx`), so a frozen creator
+  cannot unshare. Rename (`UpdateMaterial`) is refused for anyone but the
+  creator, though a shared canvas's editors pass the route's
+  `AssertMaterialEditor`. Delete follows the standalone rule: only the owner
+  of a material in no workspace trashes it. A workspace owner who did not make
+  the canvas can do none of the three.
+- **Leaving (PROVISIONAL, open question 2: a shared canvas whose creator
+  leaves or is removed).** As built, every canvas a member drew in the
+  workspace is deleted when they leave or are removed, shared ones included
+  with what the other members drew on them (`dropLeaverCanvasTx`, decided for
+  private canvases, Epo 2026-11-09). It also goes with the workspace.
+- **Images.** An image on a canvas is an `image` editor asset of the canvas
+  material, charged to whoever uploaded it (`lockEditorAssetScopeTx`): the
+  creator, or on a shared canvas a member whose role there is owner or editor,
+  read under the material's row lock so an unshare has landed or waits. A
+  viewer is refused, and nobody adds to a canvas whose creator is frozen.
+- **An editor's images on a canvas they lost.** An editor who put images on a
+  shared canvas keeps paying for them after the canvas is taken back or they
+  leave the workspace. The Files page and its Embeds rows mark such an image
+  `lostAccess` as they mark an item of a lost workspace
+  (`lostCanvasSQL` through `embedHomeLostSQL`: the caller holds no role on the
+  canvas under its creator's lifecycle): the row keeps the canvas's title and
+  drops its material and workspace ids, so it can be deleted and never opened;
+  the title is blank too once the workspace's owner, or for another member's
+  canvas its creator, is no longer live (`embedHomeTitleSQL`). When the leaver
+  is the creator the canvas itself is deleted, and its images with it.
+- It is never cloned (`CloneMaterial` refuses it), hidden or filed, and no
+  agent tool, command or detailed read reaches it: the collaboration server
+  answers 409 `unsupported_operation` to an agent inspect or edit, a
+  replace-block command and the live read of a loaded board. The global search
+  lists the caller's own canvases only.
+- Known and left as built (the Go review, 2026-11-18): an editor of a shared
+  canvas passes `createMaterialDiscussion`, which has no kind guard, so
+  discussion rows can be written for a canvas that nothing shows; a creator
+  lowered to workspace viewer stays `owner` of their canvases, so one they
+  shared stays shared and they keep drawing and uploading there, though they
+  can share no other; and the suspension or deletion request of a workspace
+  owner closes the rooms of that owner's own materials only, so members'
+  canvas rooms there last until their 5 minute tokens end, the same gap
+  member-paid workspace materials have.
+
+Sources: [canvas store](../server/internal/store/canvas.go),
+[access](../server/internal/store/share.go),
+[routes](../server/internal/httpapi/huma_canvas.go),
+[lost rows](../server/internal/store/listing.go),
+[migration 0182](../server/migrations/0182_canvas_shared.sql),
+[collaboration access](../collaboration-rs/crates/server/src/access.rs).
 
 A paper (an assignment answered on paper, migration 0161) is the member's own
 standalone uploads, linked to the attempt by `files.attempt_id`, so a viewer
