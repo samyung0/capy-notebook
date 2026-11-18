@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { qk } from '@/api/client';
 import { useCreateMaterial } from '@/api/hooks';
 import { userToast } from '@/components/ui/userToast';
+import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
 import {
   CanvasBoardPanel,
   CanvasBoardStrip,
@@ -165,6 +166,7 @@ function CanvasBoard({
         {/* Reopening the canvas tries again. */}
         <CanvasBoardPanel onRetry={onRetry} state={state} />
         <CanvasMaterialCards link={link} materials={materials} />
+        <BoardPresenceMarks presence={state.presence} />
       </div>
       <CanvasBoardStrip strip={state.strip} />
     </>

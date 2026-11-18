@@ -16,6 +16,10 @@ import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { Material } from '@/api/types';
 import {
+  encodeCaret,
+  readBoardPresence,
+} from '@/features/canvas/boardPresence';
+import {
   type ItemProvider,
   registerMockItemProvider,
 } from '@/features/collaboration/itemRoom';
@@ -42,6 +46,7 @@ import {
   COLLABORATION_OUTDATED_REASON,
 } from '@/features/notes/collaborationEvents';
 import '@/features/notes/figureBinding';
+import { MAX_PRESENCE_BYTES } from '@/features/notes/notePresence';
 import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {
@@ -475,6 +480,7 @@ export function join(room: Room, participant: Participant) {
     origin: unknown
   ) => {
     if (origin === REMOTE || !awareness) return;
+    if (!relaysPresence(room, awareness)) return;
     const update = encodeAwarenessUpdate(awareness, [
       ...added,
       ...updated,
@@ -489,7 +495,11 @@ export function join(room: Room, participant: Participant) {
     awareness.on('update', relay);
     // Existing presence, so a late joiner sees cursors already in the room.
     for (const other of room.participants) {
-      if (other.awareness && other !== participant) {
+      if (
+        other.awareness &&
+        other !== participant &&
+        relaysPresence(room, other.awareness)
+      ) {
         applyAwarenessUpdate(
           awareness,
           encodeAwarenessUpdate(other.awareness, [
@@ -1704,8 +1714,8 @@ class MockItemProvider implements ItemProvider {
  * under their provider's origin, closing a read channel that writes and the
  * writer whose update takes the board over its cap, and answering a
  * checkpoint request with its receipt. Its state is kept across a reload (the
- * tab's sessionStorage), as the service stores it. Awareness is relayed as it
- * comes. */
+ * tab's sessionStorage), as the service stores it. A presence state is
+ * relayed when the board's field list admits it (`relaysPresence`). */
 
 const BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
 const BOARD_STATE = 'capy.mock.board.';
@@ -1719,6 +1729,20 @@ const firstStateModule = import.meta.glob<{
 async function boardFirstState() {
   const [load] = Object.values(firstStateModule);
   return (await load()).boardFirstState();
+}
+
+/** The service's presence check (`Fields::Board`, `on_awareness`): a board
+ * room keeps and relays a participant's state only when every field is one a
+ * board lists, within its bounds and the room's 4 KiB; any other is dropped
+ * and the sender hears nothing. A removal always goes. Other rooms relay
+ * what comes. */
+function relaysPresence(room: Room, awareness: Awareness) {
+  const state = awareness.getLocalState();
+  if (room.target.kind !== 'board' || state === null) return true;
+  return (
+    readBoardPresence(state) !== null &&
+    new TextEncoder().encode(JSON.stringify(state)).length <= MAX_PRESENCE_BYTES
+  );
 }
 
 /** The service's admission of a board update: whether the room takes it. */
@@ -1939,14 +1963,16 @@ function openBoard(materialId: string) {
 }
 
 /** Another person on a canvas, headless (e2e): its own document and presence
- * in the canvas's mock room, to draw and set awareness as a peer would. */
-export function mockBoardPeer(materialId: string) {
+ * in the canvas's mock room, to draw and set awareness as a peer would. With
+ * an `identity` the room's presence names them, so their marks are drawn. */
+export function mockBoardPeer(materialId: string, identity?: MockIdentity) {
   const document = new Y.Doc();
   const awareness = new Awareness(document);
   const leave = join(openBoard(materialId), {
     access: 'write',
     awareness,
     document,
+    identity,
     origin: {},
   });
   /** The canvas's elements by id, as the board's surface block keeps them. */
@@ -1970,6 +1996,20 @@ export function mockBoardPeer(materialId: string) {
       canvas().set(id, element);
     },
     awareness,
+    /** A caret `index` characters into the block text that reads `words` (a
+     * note's paragraph), with `end` a range from there to it, as a tab's
+     * presence holds them (boardPresence.ts). */
+    caret: (words: string, index: number, end?: number) => {
+      for (const block of document.getMap<unknown>('blocks').values()) {
+        const text = block instanceof Y.Map ? block.get('prop:text') : null;
+        if (!(text instanceof Y.Text && text.toString() === words)) continue;
+        return {
+          f: end === undefined ? undefined : encodeCaret({ index: end, text }),
+          s: encodeCaret({ index, text }),
+        };
+      }
+      throw new Error(`The board room holds no text "${words}"`);
+    },
     /** The peer's own document. */
     document,
     /** The canvas's elements as the peer holds them, by id. */

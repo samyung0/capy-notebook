@@ -1,7 +1,8 @@
 //! What an awareness state may hold, per room kind (Epo 2026-10-28,
 //! todo-presence.md "Wire shapes"). The browser checks the same lists on
 //! receive (`src/features/notes/notePresence.ts`,
-//! `src/features/files/officeCursors.ts`). A state with a field its room kind
+//! `src/features/files/officeCursors.ts`,
+//! `src/features/canvas/boardPresence.ts`). A state with a field its room kind
 //! does not list, or a value of the wrong type or out of bounds, is neither
 //! kept nor relayed (`room.rs` `on_awareness`, which also drops one past
 //! `MAX_AWARENESS_ENTRY`): presence is best effort, so the sender hears
@@ -9,13 +10,16 @@
 
 use serde_json::{Map, Value};
 
-/// Ids in a note's pointer and block selection runs.
+/// Ids in a note's pointer and block selection runs, and a board's selected
+/// elements.
 const MAX_ID: usize = 64;
 /// A caret position: base64 of `Y.encodeRelativePosition`.
 const MAX_POSITION: usize = 64;
 const MAX_RUNS: usize = 16;
 /// The browser's 0–1000 of a block's box.
 const MAX_COORDINATE: u64 = 1000;
+/// A board pointer's x and y, in board units either side of its origin.
+const MAX_BOARD_COORDINATE: i64 = 1_000_000_000;
 /// Upload placeholder ids (`uploadPresence.ts`).
 const MAX_UPLOADS: usize = 100;
 const MAX_UPLOAD_ID: usize = 32;
@@ -33,6 +37,10 @@ pub enum Fields {
     /// block selection runs `b` and, from a writer only, the blocks it is
     /// uploading into (`uploads`).
     Note { uploads: bool },
+    /// A canvas's room (Epo 2026-11-18, "just the same presence events like
+    /// others"): pointer `p` in board units, the selected element and block
+    /// ids `b`, and a text caret's anchor `s` and focus `f` as a note's.
+    Board,
     /// A source room (Office or text): the editor's `cursor`.
     Source,
     /// Items (quiz, flashcards, mindmap, diagram) and a quiz's keys: none,
@@ -50,8 +58,10 @@ impl Fields {
             return false;
         };
         state.iter().all(|(key, value)| match (self, key.as_str()) {
-            (Fields::Note { .. }, "s" | "f") => base64(value, MAX_POSITION),
+            (Fields::Note { .. } | Fields::Board, "s" | "f") => base64(value, MAX_POSITION),
             (Fields::Note { .. }, "p") => value.is_null() || pointer(value),
+            (Fields::Board, "p") => value.is_null() || board_pointer(value),
+            (Fields::Board, "b") => ids(value),
             (Fields::Note { .. }, "b") => runs(value),
             (Fields::Note { uploads }, "uploads") => uploads && upload_ids(value),
             (Fields::Source, "cursor") => value.is_null() || office_cursor(value),
@@ -85,6 +95,23 @@ fn count(value: &Value, max: u64) -> bool {
 fn pointer(value: &Value) -> bool {
     matches!(value.as_array().map(Vec::as_slice), Some([id, x, y])
         if text(id, MAX_ID) && count(x, MAX_COORDINATE) && count(y, MAX_COORDINATE))
+}
+
+/// `[x, y]`, whole board units: a number with a fraction or an exponent
+/// (`0.5`, `1.0`, `1e3`) is no integer here.
+fn board_pointer(value: &Value) -> bool {
+    let within = |at: &Value| {
+        at.as_i64()
+            .is_some_and(|at| (-MAX_BOARD_COORDINATE..=MAX_BOARD_COORDINATE).contains(&at))
+    };
+    matches!(value.as_array().map(Vec::as_slice), Some([x, y]) if within(x) && within(y))
+}
+
+/// `[id, ...]`: a board's selected elements and blocks.
+fn ids(value: &Value) -> bool {
+    value
+        .as_array()
+        .is_some_and(|ids| ids.len() <= MAX_RUNS && ids.iter().all(|id| text(id, MAX_ID)))
 }
 
 /// `[[firstId, lastId], ...]`.
@@ -195,6 +222,35 @@ mod tests {
         assert!(!ok(r#"{"s":"AA","x":"\ud800"}"#));
         assert!(!ok("[]"));
         assert!(!ok("{"));
+    }
+
+    /// The canvas contract's vector list (section 6), the same one
+    /// `boardPresence.test.ts` reads.
+    #[test]
+    fn a_board_state_holds_only_its_fields_within_bounds() {
+        let ok = |state: &str| Fields::Board.admit(state);
+        let ids = |n: usize| format!(r#"{{"b":[{}]}}"#, vec![r#""a""#; n].join(","));
+        let id = |units: usize| format!(r#"{{"b":["{}"]}}"#, "é".repeat(units));
+        assert!(ok("{}"));
+        assert!(ok(r#"{"p":null}"#));
+        assert!(ok(r#"{"p":[0,-1000000000]}"#));
+        assert!(ok(r#"{"b":[]}"#));
+        assert!(ok(&ids(16)));
+        // 64 UTF-16 units, 128 UTF-8 bytes.
+        assert!(ok(&id(64)));
+        assert!(ok(r#"{"s":"AA==","f":"AA=="}"#));
+        assert!(!ok(r#"{"p":[0.5,0]}"#));
+        assert!(!ok(r#"{"p":[1000000001,0]}"#));
+        assert!(!ok(r#"{"p":["b1",0,0]}"#));
+        assert!(!ok(r#"{"p":[0]}"#));
+        assert!(!ok(&ids(17)));
+        assert!(!ok(&id(65)));
+        assert!(!ok(r#"{"b":[["a","b"]]}"#));
+        assert!(!ok(r#"{"s":"not base64!"}"#));
+        assert!(!ok(r#"{"uploads":[]}"#));
+        assert!(!ok(r#"{"selectionV2":[]}"#));
+        assert!(!ok(r#"{"user":{"name":"x"}}"#));
+        assert!(!ok("[]"));
     }
 
     #[test]

@@ -205,3 +205,23 @@ it('closes the others when a canvas is taken back, and refuses their next join',
   );
   provider.destroy();
 });
+
+it('relays a presence state a board lists and drops any other', async () => {
+  const id = canvas('editor');
+  const { provider } = await tab(id);
+  const ann = mockBoardPeer(id);
+  const ben = mockBoardPeer(id);
+  const heard = () => ben.awareness.getStates().get(ann.awareness.clientID);
+  ann.awareness.setLocalState({ b: ['shape1'], p: [120, -45] });
+  expect(heard()).toEqual({ b: ['shape1'], p: [120, -45] });
+  // The room keeps the state it held, as the service does.
+  ann.awareness.setLocalState({ p: [0.5, 0] });
+  ann.awareness.setLocalState({ p: null, selectionV2: [] });
+  expect(heard()).toEqual({ b: ['shape1'], p: [120, -45] });
+  ann.awareness.setLocalState({ p: null });
+  expect(heard()).toEqual({ p: null });
+  ann.leave();
+  expect(heard()).toBeUndefined();
+  ben.leave();
+  provider.destroy();
+});

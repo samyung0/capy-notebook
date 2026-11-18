@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { canvasById } from '@/api/canvas';
-import { useMe } from '@/api/hooks';
+import { useMe, useWorkspace } from '@/api/hooks';
 import {
   recoveryBanner,
   type SaveBannerState,
@@ -18,6 +18,8 @@ import {
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import type { OpenLink } from '@/lib/openLink';
+import type { CanvasPresence } from './BoardPresenceMarks';
+import { sendBoardPresence } from './boardPresence';
 import { holdsBoard } from './boardRoom';
 
 export type CanvasBoard = ReturnType<typeof mountDrawingBoard>;
@@ -26,6 +28,9 @@ export type CanvasBoard = ReturnType<typeof mountDrawingBoard>;
 export type CanvasBoardState = {
   /** Why the canvas couldn't open, if it couldn't: said with Retry. */
   failed: string | null;
+  /** The other people on the board, for their marks (`BoardPresenceMarks`);
+   * none until the board shows its room. */
+  presence: CanvasPresence | null;
   /** The strip over the board while its room cannot take edits as usual
    * (offline, outdated, edits to copy, access lost); `onReload` leaves the
    * copy-only edits for a fresh room. */
@@ -50,7 +55,13 @@ export type CanvasBoardState = {
  * workspace viewer on a shared canvas, a frozen account, a payer at its
  * limit) and while the room takes no edits (offline past what this device may
  * hold, an outdated build, edits open for copying, access lost). An image
- * uploads at once as the material's own image asset, as a note's does. */
+ * uploads at once as the material's own image asset, as a note's does.
+ *
+ * Presence is a note's (Epo 2026-11-18): whoever may edit the canvas sends
+ * their pointer, selection and text caret and sees the others', also while
+ * their own board is read-only for a time (a frozen account, a full one). A
+ * workspace viewer sends nothing, as a note's reader does not, and the room
+ * tells a viewer nothing of the others. */
 export function useCanvasBoard(
   container: React.RefObject<HTMLDivElement | null>,
   id: string,
@@ -85,13 +96,23 @@ export function useCanvasBoard(
   // canvas's own is never stored again.
   const [listed, setListed] = useState<{
     id: string;
+    /** The person made the canvas: theirs whatever their workspace role. */
+    mine: boolean;
     own: readonly string[];
+    workspaceId?: string;
   } | null>(null);
   useEffect(() => {
     let live = true;
     setFailed(null);
     canvasById(id).then(
-      (canvas) => live && setListed({ id, own: canvas.ownImageAssetIds }),
+      (canvas) =>
+        live &&
+        setListed({
+          id,
+          mine: canvas.own,
+          own: canvas.ownImageAssetIds,
+          workspaceId: canvas.workspaceId,
+        }),
       (error: unknown) =>
         live && setFailed(errorCopy(error, m.workspace_canvas_open_failed()))
     );
@@ -171,6 +192,24 @@ export function useCanvasBoard(
     };
   }, [container, doc, images, readOnly, copyOnly]);
 
+  // Presence, between the room's awareness and the board showing its document
+  // (edits open for copying show a document of their own).
+  const awareness = (!copyOnly && room?.awareness) || null;
+  const view = mounted?.presence ?? null;
+  const canvas = listed?.id === id ? listed : null;
+  const { data: workspace } = useWorkspace(canvas?.workspaceId ?? '');
+  // Another member's shared canvas, held as the workspace's viewer.
+  const viewer = !canvas?.mine && workspace?.role === 'viewer';
+  useEffect(() => {
+    if (!(awareness && view) || viewer) return;
+    return sendBoardPresence(view, awareness);
+  }, [awareness, view, viewer]);
+  const connections = snapshot.presence;
+  const presence = useMemo(
+    () => (awareness && view ? { awareness, connections, view } : null),
+    [awareness, connections, view]
+  );
+
   // The URL drives what fills the screen: Back closes it, Forward or the page's
   // link opens it, and one no longer on the canvas says so.
   const opened = options.link?.opened ?? null;
@@ -202,6 +241,7 @@ export function useCanvasBoard(
         : null;
   return {
     failed,
+    presence,
     strip,
     unavailable: lost && !snapshot.synced && !options.gone?.(),
     waiting: snapshot.status === 'offline' && !snapshot.synced,

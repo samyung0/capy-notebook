@@ -32,6 +32,27 @@ export type DrawingBoardOptions = {
   room?: { doc: import('yjs').Doc };
 };
 
+/** A box in board units. */
+export type BoardBox = { h: number; w: number; x: number; y: number };
+/** A place in a block's text. */
+export type BoardTextPoint = { index: number; text: import('yjs').Text };
+
+/** What a canvas's presence reads of its board (./boardPresenceView.ts). */
+export type BoardPresenceView = {
+  boxOf: (ids: readonly string[]) => BoardBox | null;
+  caret: () => { anchor: BoardTextPoint; focus: BoardTextPoint } | null;
+  host: HTMLElement;
+  onSelection: (listener: () => void) => () => void;
+  onView: (listener: () => void) => () => void;
+  selected: () => string[];
+  textBoxes: (
+    focus: BoardTextPoint,
+    anchor: BoardTextPoint | null
+  ) => { caret: BoardBox; range: BoardBox[] } | null;
+  toBoard: (clientX: number, clientY: number) => [number, number];
+  view: () => { left: number; top: number; width: number; zoom: number };
+};
+
 export class BoardLoadError extends Error {
   readonly reason: string;
 }
@@ -44,6 +65,7 @@ export function mountDrawingBoard(
   fit: (padding: [number, number, number, number]) => void;
   has: (id: string) => boolean;
   openEditor: (id: string) => boolean;
+  presence: BoardPresenceView | null;
   reveal: (id: string) => void;
   images: () => { file?: Blob; id: string }[];
   imageFiles: () => Promise<{ file: Blob; id: string }[]>;

@@ -18917,3 +18917,122 @@ async fn a_canvas_of_a_suspended_owners_workspace_is_nobodys() {
         );
     }
 }
+
+/// Epo 2026-11-18 ("just the same presence events like others"; contract
+/// section 6): a board room relays a state made of its four fields, the
+/// sender's bytes as they came, and drops one with a pointer that is not two
+/// whole numbers within the board, too many ids, or any other field
+/// (BlockSuite's own `selectionV2`, a note's `uploads`), keeping the state it
+/// held and the channel. Fails if a board keeps no presence, relays a field
+/// outside its list, or closes a channel for one.
+#[tokio::test]
+async fn a_board_relays_only_presence_within_its_fields() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let shared = workspace_canvas(&env).await;
+    share_canvas(&env, &shared.material, true).await;
+    let mut sender = Client::at_board(server.port, &shared.room, &shared.creator).await;
+    let mut peer = Client::at_board(server.port, &shared.room, &shared.editor).await;
+    let id = sender.id();
+    // A space a browser never writes: the relay keeps the sender's bytes.
+    let held = r#"{"p":[120,-45], "b":["a1"],"s":"AQKS9tMIAQA=","f":"AQKS9tMIBwA="}"#;
+    sender.send(7, &awareness_update(id, 1, held)).await;
+    assert_eq!(peer.states_of(id, |_| true).await, [held]);
+    let ids = |n: usize| serde_json::json!({ "b": vec!["a"; n] }).to_string();
+    let dropped = [
+        r#"{"p":[0.5,0]}"#.to_owned(),
+        r#"{"p":[1000000001,0]}"#.to_owned(),
+        r#"{"p":["a1",0,0]}"#.to_owned(),
+        ids(17),
+        r#"{"p":null,"selectionV2":[]}"#.to_owned(),
+        r#"{"uploads":[]}"#.to_owned(),
+    ];
+    // Each one checked on its own (a flush sends a client's latest state):
+    // the room still holds the first, and answers the sender's query.
+    for (clock, state) in (2..).zip(&dropped) {
+        sender.send(7, &awareness_update(id, clock, state)).await;
+        assert_eq!(
+            sender.awareness_states(1).await,
+            [(id, held.to_owned())],
+            "{state}"
+        );
+    }
+    sender.send(7, &awareness_update(id, 8, &ids(16))).await;
+    peer.states_of(id, |state| state == ids(16)).await;
+    // The pointer left the board.
+    sender
+        .send(7, &awareness_update(id, 9, r#"{"p":null}"#))
+        .await;
+    peer.states_of(id, |state| state == r#"{"p":null}"#).await;
+}
+
+/// A board's marks are named as a note's are (Epo 2026-11-18): the room's
+/// presence gives each editor the others by their tokens' names with the
+/// client ids their pointers go under, a workspace viewer on its read
+/// channel is not listed, hears neither the presence nor a pointer, and its
+/// own pointer reaches nobody. Fails if a board room sends no presence, lists
+/// or tells a viewer, or relays a viewer's state.
+#[tokio::test]
+async fn a_boards_presence_names_its_editors_and_leaves_a_viewer_out() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let shared = workspace_canvas(&env).await;
+    share_canvas(&env, &shared.material, true).await;
+    let room = shared.room.as_str();
+    let mut cara = Client::open(server.port).await;
+    cara.joined(
+        room,
+        &identity_token(room, &shared.creator, "write", "Cara"),
+    )
+    .await;
+    let cara_id = cara.id();
+    cara.send(7, &awareness_update(cara_id, 1, r#"{"p":[10,20]}"#))
+        .await;
+    let mut eddie = Client::open(server.port).await;
+    eddie
+        .joined(
+            room,
+            &identity_token(room, &shared.editor, "write", "Eddie"),
+        )
+        .await;
+    let mut vic = Client::open(server.port).await;
+    assert_eq!(
+        vic.joined(room, &identity_token(room, &shared.viewer, "read", "Vic"))
+            .await,
+        0
+    );
+    assert!(vic.settle(|c| c.board_blocks().len() >= 2).await);
+
+    // The editor hears whose pointer the client id is.
+    let at_eddie = eddie
+        .presence(|connections| connections.iter().any(|c| c["clients"][0] == cara_id))
+        .await;
+    assert_eq!(at_eddie.len(), 1, "{at_eddie:?}");
+    assert_eq!(at_eddie[0]["name"], "Cara");
+    let at_cara = cara.presence(|connections| !connections.is_empty()).await;
+    assert_eq!(at_cara.len(), 1, "{at_cara:?}");
+    assert_eq!(at_cara[0]["name"], "Eddie");
+
+    // The viewer sends a pointer and asks for the room's: neither answers.
+    let vic_id = vic.id();
+    vic.send(7, &awareness_update(vic_id, 1, r#"{"p":[1,2]}"#))
+        .await;
+    vic.send(8, &[]).await;
+    cara.send(7, &awareness_update(cara_id, 2, r#"{"p":[30,40]}"#))
+        .await;
+    eddie
+        .states_of(cara_id, |state| state == r#"{"p":[30,40]}"#)
+        .await;
+    assert!(!vic.hears(7, 1500).await, "a viewer heard a pointer");
+    assert!(
+        vic.inbox
+            .iter()
+            .all(|m| m.kind != 9 || !text_payload(&m.payload).contains("room-presence")),
+        "a viewer heard the room's presence"
+    );
+    assert_eq!(
+        cara.awareness_states(1).await,
+        [(cara_id, r#"{"p":[30,40]}"#.to_owned())],
+        "a viewer's pointer was kept"
+    );
+}

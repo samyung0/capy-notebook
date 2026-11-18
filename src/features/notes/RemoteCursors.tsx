@@ -19,14 +19,18 @@ import {
 } from 'platejs/react';
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import type { Awareness } from 'y-protocols/awareness';
-import { Icon } from '@/components/ui/Icon';
+import {
+  FLIP_WITHIN,
+  PEER_COLORS,
+  PeerOutline,
+  PeerPointer,
+} from '@/features/collaboration/PresenceMarks';
 import {
   type PresenceConnection,
   type PresenceStore,
   presenceClients,
 } from '@/features/collaboration/presence';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import {
   type BlockRun,
@@ -38,10 +42,6 @@ import {
 import { editorAwareness } from './uploadPresence';
 
 const REMOTE_CURSOR_KEY = 'capy_remote_cursor';
-
-/** The co-editor palette's size (`--peer-0` to `--peer-7` in tailwind.css,
- * the cursors design's eight colours, a shade per theme). */
-export const PEER_COLORS = 8;
 
 export const remoteCursorDecorationPlugin = createPlatePlugin({
   key: REMOTE_CURSOR_KEY,
@@ -297,15 +297,6 @@ type Mark =
     };
 
 const NO_MARKS: Mark[] = [];
-/** The pointer's tip sits 3.2 units into Cursor02Icon's 24-unit box. */
-const POINTER_SIZE = 18;
-const POINTER_TIP = (3.2 / 24) * POINTER_SIZE;
-/** A name pill is at most 128 px wide (`max-w-32`, then truncated) and starts
- * 14 px from the tip, so a pointer this close to the overlay's right edge puts
- * it on its left, as a caret's flag flips (cursors design SPEC.md). */
-const FLIP_WITHIN = 14 + 128;
-/** The outline stands this far outside its blocks. */
-const RUN_OUTSET = 4;
 
 /** `client`'s pointer and block runs, from a state the note's field list
  * admits, when the room's presence lists it; none when it shows neither. */
@@ -378,13 +369,10 @@ const sameMarks = (left: Mark[], right: Mark[]) =>
 
 /**
  * Co-editors' pointers and block selections (Epo 2026-10-28, presence mocks
- * P1 and B3): a pointer is Cursor02Icon in the peer's colour with its name in
- * a pill beside it; a block selection is an outline around each run, its
- * corners the theme's (half its button radius), with the name at its top
- * right. A pointer glides to each new position in 120 ms at one speed (Epo
- * 2026-11-18): positions leave every 50 ms but reach a far browser in pairs
- * about 100 ms apart, so it has to outlast that gap (on UAT 80 ms still
- * paused between pairs). An overlay in the editor's container, so it scrolls with the note;
+ * P1 and B3), drawn as a canvas draws them (`PeerPointer`, `PeerOutline` in
+ * PresenceMarks.tsx): a pointer with its name beside it, gliding to each new
+ * position, and an outline around each run of selected blocks. An overlay in
+ * the editor's container, so it scrolls with the note;
  * it lays out at most once per frame and never re-renders the editor: a peer
  * again when its pointer or runs change (not on a caret move), every peer
  * when the room's presence, the note's size or the document changes. Nothing
@@ -485,51 +473,24 @@ export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
     >
       {marks.map((mark) =>
         mark.kind === 'pointer' ? (
-          <span
-            className="absolute top-0 left-0 text-(--peer) motion-safe:transition-transform motion-safe:duration-[120ms] motion-safe:ease-linear"
-            data-remote-pointer={mark.name}
+          <PeerPointer
+            color={mark.color}
+            flip={mark.flip}
             key={mark.key}
-            style={
-              {
-                '--peer': `var(--peer-${mark.color})`,
-                transform: `translate(${mark.left - POINTER_TIP}px, ${mark.top - POINTER_TIP}px)`,
-              } as CSSProperties
-            }
-          >
-            <Icon
-              className="drop-shadow-[0_1px_1px_rgb(0_0_0/0.3)]"
-              fill="currentColor"
-              name="pointer"
-              size={POINTER_SIZE}
-            />
-            <span
-              className={cn(
-                'absolute top-3.5 max-w-32 truncate rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]',
-                mark.flip ? 'right-3.5' : 'left-3.5'
-              )}
-            >
-              {mark.name}
-            </span>
-          </span>
+            left={mark.left}
+            name={mark.name}
+            top={mark.top}
+          />
         ) : (
-          <span
-            className="absolute rounded-[calc(var(--radius-button)/2)] border-(--peer) border-2"
-            data-remote-run={mark.name}
+          <PeerOutline
+            color={mark.color}
+            height={mark.height}
             key={mark.key}
-            style={
-              {
-                '--peer': `var(--peer-${mark.color})`,
-                height: mark.height + RUN_OUTSET * 2,
-                left: mark.left - RUN_OUTSET,
-                top: mark.top - RUN_OUTSET,
-                width: mark.width + RUN_OUTSET * 2,
-              } as CSSProperties
-            }
-          >
-            <span className="absolute -top-[11px] right-1.5 max-w-32 truncate rounded-[6px] bg-(--peer) px-[7px] font-bold text-(--peer-fg) text-[12.5px] leading-[21px]">
-              {mark.name}
-            </span>
-          </span>
+            left={mark.left}
+            name={mark.name}
+            top={mark.top}
+            width={mark.width}
+          />
         )
       )}
     </div>

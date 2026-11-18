@@ -146,6 +146,7 @@ import { keepToCatalog, savedCopy } from './boardKeep';
 import { type BoardKind, checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
+import { boardPresenceView } from './boardPresenceView';
 import './boardPlaneEditor';
 import {
   boardToolbar,
@@ -925,6 +926,10 @@ export function mountDrawingBoard(
       else return false;
       return !!board?.querySelector('.capy-plane-editor');
     },
+    /** What a canvas's presence reads of the board (boardPresenceView.ts): its
+     * viewport, selection and text caret, and where others' marks go. */
+    presence:
+      board instanceof HTMLElement ? boardPresenceView(std, gfx, board) : null,
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {

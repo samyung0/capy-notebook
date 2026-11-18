@@ -7,6 +7,7 @@ import {
 } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
 import { userToast } from '@/components/ui/userToast';
+import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
 import {
   CanvasBoardPanel,
   CanvasBoardStrip,
@@ -115,6 +116,7 @@ function OwnCanvas({
       >
         <CanvasBoardPanel onRetry={onRetry} state={state} />
         <CanvasMaterialCards link={link} materials={materials} />
+        <BoardPresenceMarks presence={state.presence} />
         <CanvasMaterialDialog
           material={editing}
           onClose={() => setEditing(null)}
