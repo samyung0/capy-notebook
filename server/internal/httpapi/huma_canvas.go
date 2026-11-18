@@ -32,6 +32,21 @@ type canvasBody struct {
 	Shared           bool      `json:"shared" doc:"Shared with its workspace: the members hold it by their workspace role"`
 	Own              bool      `json:"own" doc:"The caller made it"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	// What a note's response says of the caller's editing (editingOf), so the
+	// page tells why it is read-only as a note's does.
+	Role         *store.WorkspaceRole     `json:"role,omitempty" doc:"The caller's role on the canvas: owner (its creator), or their workspace role on another member's shared one; absent on one opened from the Trash"`
+	Capabilities store.AccessCapabilities `json:"capabilities"`
+	StorageFull  store.StorageFullBy      `json:"storageFull,omitempty" doc:"The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only"`
+	Trash        *store.Trashed           `json:"trash,omitempty" doc:"The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board"`
+}
+
+// canvasBoardBody is a trashed canvas's stored board (store.TrashedCanvasBoard).
+type canvasBoardBody struct {
+	Updates [][]byte `json:"updates" nullable:"false" doc:"The board's stored Yjs state as V1 updates, base64, applied in order: the base state, then each update stored after it; empty for a canvas never opened"`
+}
+
+type canvasBoardOutput struct {
+	Body canvasBoardBody
 }
 
 type canvasOutput struct {
@@ -47,7 +62,11 @@ func (a *api) registerCanvas(api huma.API) {
 	reg(api, http.MethodPost, "/api/canvases", "createCanvas", tag,
 		"Make a private canvas of the caller's, in a workspace they are a member of or in none", http.StatusCreated, a.createCanvas)
 	reg(api, http.MethodGet, "/api/canvases/{id}", "getCanvas", tag,
-		"A canvas the caller made, or one shared with a workspace they are a member of", http.StatusOK, a.getCanvas)
+		"A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only", http.StatusOK, a.getCanvas)
+	// A trashed canvas opens read-only from the Trash as a note or file does
+	// (Epo 2026-11-12): from its stored state, joining no room.
+	reg(api, http.MethodGet, "/api/canvases/{id}/board", "getTrashedCanvasBoard", tag,
+		"The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's", http.StatusOK, a.getTrashedCanvasBoard)
 	reg(api, http.MethodPatch, "/api/canvases/{id}", "updateCanvas", tag,
 		"Share a canvas with the workspace it was drawn in, or take it back", http.StatusOK, a.updateCanvas)
 }
@@ -104,19 +123,35 @@ func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasO
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.canvasResponse(ctx, store.Canvas{Material: mt})
+	return a.canvasResponse(ctx, store.Canvas{Material: mt, Role: store.RoleOwner})
 }
 
 type canvasIDInput struct {
 	ID string `path:"id" maxLength:"64" doc:"Canvas material id"`
 }
 
+// getCanvas reads a canvas the caller holds, or else one they may open from
+// the Trash (getTrashedMaterial's rule): no role, so every capability is off.
 func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, error) {
 	canvas, err := a.s.GetCanvas(ctx, userID(ctx), in.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		trashed, trashErr := a.s.TrashedCanvas(ctx, userID(ctx), in.ID)
+		if !errors.Is(trashErr, store.ErrNotFound) {
+			canvas, err = trashed, trashErr
+		}
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
 	return a.canvasResponse(ctx, canvas)
+}
+
+func (a *api) getTrashedCanvasBoard(ctx context.Context, in *canvasIDInput) (*canvasBoardOutput, error) {
+	updates, err := a.s.TrashedCanvasBoard(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &canvasBoardOutput{Body: canvasBoardBody{Updates: updates}}, nil
 }
 
 type updateCanvasInput struct {
@@ -173,9 +208,26 @@ func (a *api) canvasResponse(ctx context.Context, canvas store.Canvas) (*canvasO
 	if own == nil {
 		own = []string{}
 	}
-	return &canvasOutput{Body: canvasBody{
+	// As a note's response (materialResponse, getTrashedMaterial): one opened
+	// from the Trash reads as made read-only by its account.
+	readOnly, full := true, false
+	if canvas.Trash == nil {
+		if readOnly, err = a.readOnly(ctx, canvas.OwnerUserID); err != nil {
+			return nil, hErr(err)
+		}
+		if full, err = a.ownerFull(ctx, canvas.OwnerUserID); err != nil {
+			return nil, hErr(err)
+		}
+	}
+	capabilities, storageFull := editingOf(canvas.Role, readOnly, full, canvas.OwnerUserID, userID(ctx))
+	body := canvasBody{
 		ID: canvas.ID, Title: canvas.Title, Revision: canvas.Revision, Version: board.Version,
 		ImageAssetIDs: board.ImageAssetIDs, OwnImageAssetIDs: own, WorkspaceID: canvas.CanvasWorkspaceID,
 		Shared: canvas.Shared, Own: canvas.OwnerUserID == userID(ctx), UpdatedAt: canvas.UpdatedAt,
-	}}, nil
+		Capabilities: capabilities, StorageFull: storageFull, Trash: canvas.Trash,
+	}
+	if canvas.Role != "" {
+		body.Role = &canvas.Role
+	}
+	return &canvasOutput{Body: body}, nil
 }

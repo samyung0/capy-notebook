@@ -18924,8 +18924,8 @@ async fn a_canvas_of_a_suspended_owners_workspace_is_nobodys() {
 /// Epo 2026-11-18 ("just the same presence events like others"; contract
 /// section 6): a board room relays a state made of its four fields, the
 /// sender's bytes as they came, and drops one with a pointer that is not two
-/// whole numbers within the board, too many ids, or any other field
-/// (BlockSuite's own `selectionV2`, a note's `uploads`), keeping the state it
+/// whole numbers within the board, too many ids, uploads past a note's bounds,
+/// or any other field (BlockSuite's own `selectionV2`), keeping the state it
 /// held and the channel. Fails if a board keeps no presence, relays a field
 /// outside its list, or closes a channel for one.
 #[tokio::test]
@@ -18948,7 +18948,8 @@ async fn a_board_relays_only_presence_within_its_fields() {
         r#"{"p":["a1",0,0]}"#.to_owned(),
         ids(17),
         r#"{"p":null,"selectionV2":[]}"#.to_owned(),
-        r#"{"uploads":[]}"#.to_owned(),
+        serde_json::json!({ "uploads": vec!["u"; 101] }).to_string(),
+        serde_json::json!({ "uploads": ["u".repeat(33)] }).to_string(),
     ];
     // Each one checked on its own (a flush sends a client's latest state):
     // the room still holds the first, and answers the sender's query.
@@ -18967,6 +18968,48 @@ async fn a_board_relays_only_presence_within_its_fields() {
         .send(7, &awareness_update(id, 9, r#"{"p":null}"#))
         .await;
     peer.states_of(id, |state| state == r#"{"p":null}"#).await;
+}
+
+/// A board's presence carries the images a writer is uploading as a note's
+/// does (`uploads`, the note's shape and bounds), so its peers show each as
+/// uploading; a read-only channel (its creator's read token, a frozen or full
+/// payer's) names none, so a state naming them is dropped whole and its caret
+/// alone goes through. Fails if a board drops a writer's uploads or relays a
+/// read-only channel's.
+#[tokio::test]
+async fn a_boards_presence_carries_a_writers_uploads_only() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let shared = workspace_canvas(&env).await;
+    share_canvas(&env, &shared.material, true).await;
+    let room = shared.room.as_str();
+    let mut writer = Client::at_board(server.port, room, &shared.creator).await;
+    let mut observer = Client::at_board(server.port, room, &shared.editor).await;
+    let mut reader = Client::open(server.port).await;
+    reader
+        .joined(room, &token(room, &shared.creator, "read"))
+        .await;
+    let (writer_id, reader_id) = (writer.id(), reader.id());
+    let uploading =
+        serde_json::json!({ "p": [3, 4], "uploads": vec!["u".repeat(32); 100] }).to_string();
+    writer
+        .send(7, &awareness_update(writer_id, 1, &uploading))
+        .await;
+    assert_eq!(observer.states_of(writer_id, |_| true).await, [uploading]);
+    reader
+        .send(
+            7,
+            &awareness_update(reader_id, 1, r#"{"s":"AA==","uploads":["u1"]}"#),
+        )
+        .await;
+    let held = reader.awareness_states(1).await;
+    assert!(
+        held.iter().all(|(client, _)| *client != reader_id),
+        "{held:?}"
+    );
+    let caret = r#"{"s":"AQ=="}"#;
+    reader.send(7, &awareness_update(reader_id, 2, caret)).await;
+    assert_eq!(observer.states_of(reader_id, |_| true).await, [caret]);
 }
 
 /// A board's marks are named as a note's are (Epo 2026-11-18): the room's

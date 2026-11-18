@@ -136,12 +136,20 @@ export function projectMockCanvas(
 }
 
 const body = (canvas: MockCanvas): CanvasBody => ({
+  // As the gateway answers: a viewer or a narrowed editor views only.
+  capabilities: {
+    canEdit: mockCanvasAccess(canvas.id) === 'write',
+    canEditContent: mockCanvasAccess(canvas.id) === 'write',
+    canManageMembers: false,
+    canView: true,
+  },
   id: canvas.id,
   imageAssetIds: canvas.imageAssetIds,
   own: !canvas.creatorName,
   // Every ready image asset of the canvas, as the gateway lists them.
   ownImageAssetIds: mockImageAssets(canvas.id),
   revision: canvas.revision,
+  role: roleOn(canvas),
   shared: canvas.shared,
   title: canvas.title,
   updatedAt: canvas.updatedAt,

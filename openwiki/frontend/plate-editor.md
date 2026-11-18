@@ -360,7 +360,8 @@ binary format). A note room's awareness state (`notePresence.ts`) holds only:
 A source room's holds only `cursor` ([Office cursors](#office-cursors)); a
 canvas's room holds a board's `p`, `b`, `s` and `f` (Epo 2026-11-18,
 `Fields::Board`: the pointer in whole board units and the selected ids as a
-flat list; [the canvas's room](#the-boards-tools), Presence); an
+flat list; [the canvas's room](#the-boards-tools), Presence) and a note's
+`uploads`, writers only, with the same bounds; an
 item room (quiz, set, mindmap, diagram) and a quiz's keys room hold none.
 The collaboration server (`presence.rs`, called from `on_awareness` in
 `room.rs`) keeps and relays a state only when every field is one its room
@@ -5557,8 +5558,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       units, each within 1,000,000,000 either side of the origin, or null once it left
       the board; `b` the selected elements' and blocks' ids, at most 16 of at most 64
       UTF-16 units each; `s` and `f` a text caret's anchor and focus as base64 Yjs
-      relative positions of at most 64 characters (`f` absent when collapsed). No
-      name, colour or uploads: receivers name and colour a peer from the room's
+      relative positions of at most 64 characters (`f` absent when collapsed);
+      `uploads` a note's upload list, the ids of the images the tab is uploading,
+      at most 100 of at most 32 UTF-16 units each, from a write channel only (a
+      read channel's state naming it, a frozen or full payer's creator included,
+      is dropped whole), so peers can show each as uploading. No name or colour:
+      receivers name and colour a peer from the room's
       presence. Any other key, type or bound drops the whole state, silently, on the
       server and in the receiver (`readBoardPresence`), one vector list checking both.
       BlockSuite's own awareness (its `selectionV2`) stays on the page and never
@@ -5570,9 +5575,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       in a note. The page sends only for a person it knows may edit
       (`sendsBoardPresence`): by the room's write channel, or by their having made
       the canvas (`own` of the canvas's read). An editor narrowed to read on
-      another member's canvas is not told apart from a viewer by anything the page
-      reads (the canvas's read carries no role), so their tab sends none yet,
-      though the room would relay it. `BoardPresenceMarks` draws the others with the marks a note uses
+      another member's canvas can be told apart from a viewer by the canvas's
+      read, whose `role` is the caller's (owner, editor or viewer), but the page
+      does not read it yet, so their tab sends none, though the room would relay
+      it. `BoardPresenceMarks` draws the others with the marks a note uses
       (`PresenceMarks.tsx`, shared with `RemoteCursors.tsx`): a pointer that glides
       120 ms in board units and follows pan and zoom, one named outline around what a
       person selected, a caret and tinted range inside a note's text, and for text

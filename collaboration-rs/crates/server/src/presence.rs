@@ -20,7 +20,7 @@ const MAX_RUNS: usize = 16;
 const MAX_COORDINATE: u64 = 1000;
 /// A board pointer's x and y, in board units either side of its origin.
 const MAX_BOARD_COORDINATE: i64 = 1_000_000_000;
-/// Upload placeholder ids (`uploadPresence.ts`).
+/// Upload placeholder ids (`uploadPresence.ts`), a note's and a board's.
 const MAX_UPLOADS: usize = 100;
 const MAX_UPLOAD_ID: usize = 32;
 /// An Office cursor's texts (`MAX_CURSOR_TEXT` in `officeProtocol.ts`).
@@ -39,8 +39,10 @@ pub enum Fields {
     Note { uploads: bool },
     /// A canvas's room (Epo 2026-11-18, "just the same presence events like
     /// others"): pointer `p` in board units, the selected element and block
-    /// ids `b`, and a text caret's anchor `s` and focus `f` as a note's.
-    Board,
+    /// ids `b`, a text caret's anchor `s` and focus `f` as a note's and, from
+    /// a writer only, the images it is uploading (`uploads`, a note's shape
+    /// and bounds).
+    Board { uploads: bool },
     /// A source room (Office or text): the editor's `cursor`.
     Source,
     /// Items (quiz, flashcards, mindmap, diagram) and a quiz's keys: none,
@@ -58,12 +60,14 @@ impl Fields {
             return false;
         };
         state.iter().all(|(key, value)| match (self, key.as_str()) {
-            (Fields::Note { .. } | Fields::Board, "s" | "f") => base64(value, MAX_POSITION),
+            (Fields::Note { .. } | Fields::Board { .. }, "s" | "f") => base64(value, MAX_POSITION),
             (Fields::Note { .. }, "p") => value.is_null() || pointer(value),
-            (Fields::Board, "p") => value.is_null() || board_pointer(value),
-            (Fields::Board, "b") => ids(value),
+            (Fields::Board { .. }, "p") => value.is_null() || board_pointer(value),
+            (Fields::Board { .. }, "b") => ids(value),
             (Fields::Note { .. }, "b") => runs(value),
-            (Fields::Note { uploads }, "uploads") => uploads && upload_ids(value),
+            (Fields::Note { uploads } | Fields::Board { uploads }, "uploads") => {
+                uploads && upload_ids(value)
+            }
             (Fields::Source, "cursor") => value.is_null() || office_cursor(value),
             _ => false,
         })
@@ -224,11 +228,13 @@ mod tests {
         assert!(!ok("{"));
     }
 
+    const BOARD: Fields = Fields::Board { uploads: true };
+
     /// The canvas contract's vector list (section 6), the same one
     /// `boardPresence.test.ts` reads.
     #[test]
     fn a_board_state_holds_only_its_fields_within_bounds() {
-        let ok = |state: &str| Fields::Board.admit(state);
+        let ok = |state: &str| BOARD.admit(state);
         let ids = |n: usize| format!(r#"{{"b":[{}]}}"#, vec![r#""a""#; n].join(","));
         let id = |units: usize| format!(r#"{{"b":["{}"]}}"#, "é".repeat(units));
         assert!(ok("{}"));
@@ -247,7 +253,18 @@ mod tests {
         assert!(!ok(&id(65)));
         assert!(!ok(r#"{"b":[["a","b"]]}"#));
         assert!(!ok(r#"{"s":"not base64!"}"#));
-        assert!(!ok(r#"{"uploads":[]}"#));
+        // A note's uploads, shape and bounds.
+        assert!(ok(r#"{"uploads":[]}"#));
+        assert!(ok(r#"{"uploads":["abc"]}"#));
+        assert!(ok(&format!(r#"{{"uploads":["{}"]}}"#, "u".repeat(32))));
+        assert!(!ok(&format!(r#"{{"uploads":["{}"]}}"#, "u".repeat(33))));
+        let uploads = |n: usize| format!(r#"{{"uploads":[{}]}}"#, vec![r#""u""#; n].join(","));
+        assert!(ok(&uploads(100)));
+        assert!(!ok(&uploads(101)));
+        assert!(!ok(r#"{"uploads":"abc"}"#));
+        assert!(!ok(r#"{"uploads":[1]}"#));
+        // A read-only channel uploads nothing.
+        assert!(!Fields::Board { uploads: false }.admit(r#"{"uploads":["abc"]}"#));
         assert!(!ok(r#"{"selectionV2":[]}"#));
         assert!(!ok(r#"{"user":{"name":"x"}}"#));
         assert!(!ok("[]"));

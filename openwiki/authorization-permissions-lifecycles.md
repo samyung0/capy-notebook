@@ -1492,7 +1492,14 @@ room per canvas whether it is shared or not;
   `GET /api/canvases/{id}` would not open it. `POST /api/canvases` makes a
   private one (an editing account needed, a member when a workspace is named).
   `GET /api/canvases/{id}` answers anyone with a role (404 otherwise) with
-  `shared` and `own`. `PATCH /api/canvases/{id}` with `{shared}` shares or
+  `shared`, `own` and what a note's read says of the caller's editing, in its
+  field names (`editingOf`, shared with `materialResponse`): `role` (owner for
+  the creator, else the workspace role), `capabilities` (`canEdit` off while a
+  frozen account, the caller's or the creator's, makes it read-only;
+  `canEditContent` off also while the creator is at its storage limit) and,
+  for an editor no frozen account stops, `storageFull` (`self` or `payer`), so
+  the page shows the note's read-only or storage strip and tells a narrowed
+  editor from a viewer. `PATCH /api/canvases/{id}` with `{shared}` shares or
   takes back. `PUT /api/canvases/{id}` (the saved board) is gone, and a
   `board` editor asset for a canvas is refused with 400
   (`checkEditorAsset`): a board asset is a quiz's drawn sample answer alone.
@@ -1535,11 +1542,27 @@ room per canvas whether it is shared or not;
 - It is never cloned (`CloneMaterial` refuses it), hidden or filed, and no
   agent tool, command or detailed read reaches it: the collaboration server
   answers 409 `unsupported_operation` to an agent inspect or edit, a
-  replace-block command and the live read of a loaded board. The global search
-  lists the caller's own canvases only.
-- Known and left as built (the Go review, 2026-11-18): an editor of a shared
-  canvas passes `createMaterialDiscussion`, which has no kind guard, so
-  discussion rows can be written for a canvas that nothing shows; a creator
+  replace-block command and the live read of a loaded board. It takes no
+  comments: creating a discussion or adding a comment on a canvas answers 400
+  (`assertCommentableTx`, as `UpdateMaterial` refuses its content patch), so
+  no row is written that nothing shows. The global search lists every canvas
+  the caller holds a role on (`NOT lostCanvasSQL`): their own and the other
+  members' shared ones, each linking to its Canvas panel or page at that
+  canvas (`?view=canvas&c=` or `/canvas?c=`).
+- **From the Trash** (Epo 2026-11-12, as a note or file). A trashed canvas is
+  in its creator's Trash alone (it sits in no workspace), and its creator alone
+  opens it from there (`trashReaderSQL`, `TrashedCanvas`): `GET
+  /api/canvases/{id}` answers with `trash` (`episodeId`, `purgeAfter`,
+  `canRestore`), no `role` and every capability off but `canView`, and `GET
+  /api/canvases/{id}/board` with the stored board, `{updates}`: the room's base
+  state then each stored update in order, Yjs V1 and base64, empty for a canvas
+  never opened (`TrashedCanvasBoard`, one statement so a fold drops nothing).
+  It joins no room, as a trashed note reads its stored content: the room token,
+  every room and every other write still refuse a trashed canvas, and the board
+  route answers 404 for a live canvas (its board is its room's) and for anyone
+  else. Its images resolve for the creator as a trashed note's
+  (`MaterialInTrashFor`). Restore makes it live at a new room schema.
+- Known and left as built (the Go review, 2026-11-18): a creator
   lowered to workspace viewer stays `owner` of their canvases, so one they
   shared stays shared and they keep drawing and uploading there, though they
   can share no other; and the suspension or deletion request of a workspace

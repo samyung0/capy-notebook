@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
@@ -339,5 +342,196 @@ func TestACanvasTakesNoBoardAsset(t *testing.T) {
 	} {
 		rec, _ := takeTicket(t, h, "/api/materials/"+c.material+"/editor-assets/uploads", "u_owner", c.meta)
 		expectStatus(t, rec, c.status, c.what)
+	}
+}
+
+// canvasAccessJSON is what a canvas's response says of the caller's editing,
+// in a note's field names.
+type canvasAccessJSON struct {
+	Role         *string `json:"role"`
+	Capabilities struct {
+		CanView        bool `json:"canView"`
+		CanEdit        bool `json:"canEdit"`
+		CanEditContent bool `json:"canEditContent"`
+	} `json:"capabilities"`
+	StorageFull string `json:"storageFull"`
+	Trash       *struct {
+		EpisodeID  string `json:"episodeId"`
+		CanRestore bool   `json:"canRestore"`
+	} `json:"trash"`
+}
+
+func readCanvasAccess(t *testing.T, h http.Handler, user, canvasID string) canvasAccessJSON {
+	t.Helper()
+	rec := doReq(t, h, http.MethodGet, "/api/canvases/"+canvasID, user, nil)
+	var got canvasAccessJSON
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+		t.Fatalf("%s reading canvas %s → %d %s", user, canvasID, rec.Code, rec.Body)
+	}
+	return got
+}
+
+// A canvas says what a note says of the caller's editing (role, capabilities,
+// storageFull): its creator owns it, the other members hold their workspace
+// role, a viewer edits nothing, and while its payer is at its storage limit the
+// editors still edit its metadata but not its board, told whose storage it is.
+func TestACanvasSaysTheCallersRoleAndWhyItIsReadOnly(t *testing.T) {
+	h, st := openCanvasHTTP(t)
+	ctx := context.Background()
+	canvas := makeCanvas(t, h, st, "u_editor", "ws_e2e_private", true)
+	expect := func(when, user, role string, edit, content bool, full string) {
+		t.Helper()
+		got := readCanvasAccess(t, h, user, canvas.ID)
+		if got.Role == nil || *got.Role != role || !got.Capabilities.CanView || got.Capabilities.CanEdit != edit ||
+			got.Capabilities.CanEditContent != content || got.StorageFull != full || got.Trash != nil {
+			t.Errorf("%s: %s reads %+v", when, user, got)
+		}
+	}
+	expect("healthy", "u_editor", "owner", true, true, "")
+	expect("healthy", "u_owner", "owner", true, true, "")
+	expect("healthy", "u_viewer", "viewer", false, false, "")
+
+	const full = 1000000000000000
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO user_storage_deltas (user_id, delta_bytes) VALUES ('u_editor', $1)`, full); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM user_storage_deltas WHERE user_id='u_editor' AND delta_bytes=$1`, full)
+	})
+	expect("payer full", "u_editor", "owner", true, false, "self")
+	expect("payer full", "u_owner", "owner", true, false, "payer")
+	expect("payer full", "u_viewer", "viewer", false, false, "")
+}
+
+// A frozen payer's canvas reads as a note of theirs does: nobody edits it, and
+// no storage strip names anyone.
+func TestAFrozenPayersCanvasSaysItIsReadOnly(t *testing.T) {
+	f := overQuotaFixture(t, 20)
+	ctx := context.Background()
+	lapsed := makeCanvas(t, f.member, f.store, "u_editor", f.workspaceID, true)
+	if _, err := f.store.Pool().Exec(ctx, `UPDATE materials SET owner_user_id=$2, created_by=$2 WHERE id=$1`,
+		lapsed.ID, f.material.CreatedBy); err != nil {
+		t.Fatal(err)
+	}
+	got := readCanvasAccess(t, f.member, "u_editor", lapsed.ID)
+	if got.Role == nil || *got.Role != "editor" || !got.Capabilities.CanView || got.Capabilities.CanEdit ||
+		got.Capabilities.CanEditContent || got.StorageFull != "" {
+		t.Fatalf("an editor on a frozen payer's canvas reads %+v", got)
+	}
+}
+
+// ⌘K search lists every canvas the caller can open (Epo 2026-11-18): their
+// own, and another member's shared one, each opening on its workspace's Canvas
+// panel at that canvas.
+func TestSearchListsTheCanvasesTheCallerCanOpen(t *testing.T) {
+	h, st := openCanvasHTTP(t)
+	title := "Search board " + strconv.FormatInt(time.Now().UnixNano(), 36)
+	create := func(user string, shared bool) string {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/canvases", user, map[string]any{"title": title + " " + user, "workspaceId": "ws_e2e_private"})
+		var made canvasJSON
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &made) != nil {
+			t.Fatalf("%s making a canvas → %d %s", user, rec.Code, rec.Body)
+		}
+		cleanupMaterial(t, st, made.ID)
+		if shared {
+			expectStatus(t, doReq(t, h, http.MethodPatch, "/api/canvases/"+made.ID, user, map[string]any{"shared": true}), http.StatusOK, "sharing")
+		}
+		return made.ID
+	}
+	mine := create("u_viewer", false)
+	theirs := create("u_editor", true)
+	rec := doReq(t, h, http.MethodGet, "/api/search?q="+strings.ReplaceAll(title, " ", "+"), "u_viewer", nil)
+	var results []struct {
+		ID   string `json:"id"`
+		Kind string `json:"kind"`
+		Href string `json:"href"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &results) != nil {
+		t.Fatalf("search → %d %s", rec.Code, rec.Body)
+	}
+	found := map[string]string{}
+	for _, r := range results {
+		if r.Kind == "canvas" {
+			found[r.ID] = r.Href
+		}
+	}
+	for _, id := range []string{mine, theirs} {
+		if found[id] != "/workspaces/ws_e2e_private?view=canvas&c="+id {
+			t.Errorf("canvas %s found at %q in %v", id, found[id], found)
+		}
+	}
+}
+
+// A canvas takes no comments, as it takes no content write: its board shows
+// none.
+func TestACanvasTakesNoComments(t *testing.T) {
+	h, st := openCanvasHTTP(t)
+	canvas := makeCanvas(t, h, st, "u_editor", "ws_e2e_private", true)
+	discussion := map[string]any{"anchorVersion": 1, "text": "Look here"}
+	for _, user := range []string{"u_editor", "u_owner"} {
+		expectStatus(t, doReq(t, h, http.MethodPost, "/api/materials/"+canvas.ID+"/discussions", user, discussion),
+			http.StatusBadRequest, user+" commenting on a canvas")
+	}
+}
+
+// A trashed canvas opens read-only from its creator's Trash as a note does
+// (Epo 2026-11-12): its read says so with every capability off, and its board
+// is the stored state, the base and then each stored update in order. Nobody
+// else reads either, a live canvas's board is its room's, and a restored one
+// is live again.
+func TestATrashedCanvasOpensReadOnlyFromItsCreatorsTrash(t *testing.T) {
+	h, st := openCanvasHTTP(t)
+	ctx := context.Background()
+	canvas := makeCanvas(t, h, st, "u_editor", "ws_e2e_private", true)
+	board := "/api/canvases/" + canvas.ID + "/board"
+	expectStatus(t, doReq(t, h, http.MethodGet, board, "u_editor", nil), http.StatusNotFound, "a live canvas's board")
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO material_yjs_documents (material_id, state, stored_version, projected_version)
+		VALUES ($1, '\x0102', 3, 3)`, canvas.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO material_yjs_updates (material_id, seq, update)
+		VALUES ($1, 3, '\x05'), ($1, 2, '\x0304')`, canvas.ID); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, doReq(t, h, http.MethodDelete, "/api/materials/"+canvas.ID, "u_editor", nil), http.StatusNoContent, "the creator deleting")
+
+	got := readCanvasAccess(t, h, "u_editor", canvas.ID)
+	if got.Role != nil || !got.Capabilities.CanView || got.Capabilities.CanEdit || got.Capabilities.CanEditContent ||
+		got.StorageFull != "" || got.Trash == nil || got.Trash.EpisodeID == "" || !got.Trash.CanRestore {
+		t.Fatalf("the creator reads the trashed canvas as %+v", got)
+	}
+	rec := doReq(t, h, http.MethodGet, board, "u_editor", nil)
+	var stored struct {
+		Updates [][]byte `json:"updates"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &stored) != nil || len(stored.Updates) != 3 ||
+		string(stored.Updates[0]) != "\x01\x02" || string(stored.Updates[1]) != "\x03\x04" || string(stored.Updates[2]) != "\x05" {
+		t.Fatalf("the trashed canvas's board → %d %s", rec.Code, rec.Body)
+	}
+	for _, user := range []string{"u_owner", "u_viewer", "u_other"} {
+		expectStatus(t, doReq(t, h, http.MethodGet, "/api/canvases/"+canvas.ID, user, nil), http.StatusNotFound, user+" reading the trashed canvas")
+		expectStatus(t, doReq(t, h, http.MethodGet, board, user, nil), http.StatusNotFound, user+" reading its board")
+	}
+	if status, _, _ := canvasToken(t, h, "u_editor", canvas.ID, nil); status != http.StatusNotFound {
+		t.Errorf("a room token for the trashed canvas = %d, want 404", status)
+	}
+
+	expectStatus(t, doReq(t, h, http.MethodPost, "/api/trash/material/"+canvas.ID+"/restore", "u_editor",
+		map[string]any{"episodeId": got.Trash.EpisodeID, "requestId": "restore-" + canvas.ID}), http.StatusOK, "the creator restoring")
+	if back := readCanvasAccess(t, h, "u_editor", canvas.ID); back.Trash != nil || back.Role == nil || !back.Capabilities.CanEditContent {
+		t.Fatalf("the restored canvas reads %+v", back)
+	}
+	expectStatus(t, doReq(t, h, http.MethodGet, board, "u_editor", nil), http.StatusNotFound, "a restored canvas's board")
+}
+
+// A trashed canvas never opened has stored no board: its board is empty.
+func TestATrashedCanvasNeverOpenedHasAnEmptyBoard(t *testing.T) {
+	h, st := openCanvasHTTP(t)
+	canvas := makeCanvas(t, h, st, "u_editor", "", false)
+	expectStatus(t, doReq(t, h, http.MethodDelete, "/api/materials/"+canvas.ID, "u_editor", nil), http.StatusNoContent, "the creator deleting")
+	rec := doReq(t, h, http.MethodGet, "/api/canvases/"+canvas.ID+"/board", "u_editor", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"updates":[]`) {
+		t.Fatalf("a never opened trashed canvas's board → %d %s", rec.Code, rec.Body)
 	}
 }

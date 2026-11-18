@@ -167,7 +167,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	// Every material the caller can open by its title (Epo 2026-11-13), as
 	// the flashcard sets were: not an embedded one, which lives in its note.
-	// A canvas is its owner's alone, so it is read apart below.
+	// A canvas sits in no workspace and is held by its own rule, so it is
+	// read apart below.
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, `+searchTypos("m.title")+`, m.workspace_name
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
@@ -195,12 +196,17 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	// The caller's own canvases: one of a workspace opens on its Canvas
-	// panel, one of their own on the Canvas page.
+	// Every canvas the caller holds a role on (materialAccessRow.canvasRole,
+	// as lostCanvasSQL reads it): their own, and the other members' shared
+	// ones in their workspaces (Epo 2026-11-18). The first clause narrows to
+	// those by index. One of a workspace opens on its Canvas panel, one of
+	// their own on the Canvas page, each at that canvas.
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, `+searchTypos("m.title")+`, COALESCE(m.canvas_workspace_id, ''), COALESCE(w.name, '')
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.canvas_workspace_id
-		WHERE m.owner_user_id=$2 AND m.kind='canvas' AND m.trashed_at IS NULL AND `+searchMatch("m.title")+`
+		WHERE (m.owner_user_id=$2 OR m.canvas_workspace_id IN (`+memberWorkspacesSQL("$2")+`))
+			AND NOT `+lostCanvasSQL("m", "$2")+`
+			AND m.kind='canvas' AND m.trashed_at IS NULL AND `+searchMatch("m.title")+`
 		ORDER BY `+searchRank("m.title")+`
 		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
@@ -214,7 +220,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		}
 		href := "/canvas?c=" + id
 		if wsID != "" {
-			href = "/workspaces/" + wsID + "?view=canvas"
+			href = "/workspaces/" + wsID + "?view=canvas&c=" + id
 		}
 		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(MaterialCanvas), Title: name, Subtitle: wsName, Href: href})
 	}

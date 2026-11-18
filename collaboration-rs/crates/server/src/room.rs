@@ -3880,7 +3880,9 @@ impl Room {
                     uploads: !member.read_only,
                 }
             }
-            Kindly::Note(note) if note.model == crate::model::Model::Board => Fields::Board,
+            Kindly::Note(note) if note.model == crate::model::Model::Board => Fields::Board {
+                uploads: !member.read_only,
+            },
             Kindly::Note(_) => Fields::Nothing,
             Kindly::Source(_) => Fields::Source,
         };

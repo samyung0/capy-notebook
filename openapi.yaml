@@ -1917,6 +1917,24 @@ components:
         - netTokens
         - access
       type: object
+    CanvasBoardBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CanvasBoardBody.json
+          format: uri
+          readOnly: true
+          type: string
+        updates:
+          description: "The board's stored Yjs state as V1 updates, base64, applied in order: the base state, then each update stored after it; empty for a canvas never opened"
+          items:
+            format: base64
+            type: string
+          type: array
+      required:
+        - updates
+      type: object
     CanvasBody:
       additionalProperties: false
       properties:
@@ -1926,6 +1944,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        capabilities:
+          $ref: "#/components/schemas/AccessCapabilities"
         id:
           description: The canvas material
           type: string
@@ -1946,11 +1966,20 @@ components:
           description: The material's revision
           format: int64
           type: integer
+        role:
+          $ref: "#/components/schemas/WorkspaceRole"
+          description: "The caller's role on the canvas: owner (its creator), or their workspace role on another member's shared one; absent on one opened from the Trash"
         shared:
           description: "Shared with its workspace: the members hold it by their workspace role"
           type: boolean
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
+          description: The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only
         title:
           type: string
+        trash:
+          $ref: "#/components/schemas/Trashed"
+          description: The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board
         updatedAt:
           format: date-time
           type: string
@@ -1971,6 +2000,7 @@ components:
         - shared
         - own
         - updatedAt
+        - capabilities
       type: object
     CanvasListItem:
       additionalProperties: false
@@ -11431,7 +11461,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: A canvas the caller made, or one shared with a workspace they are a member of
+      summary: A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only
       tags:
         - materials
     patch:
@@ -11465,6 +11495,34 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Share a canvas with the workspace it was drawn in, or take it back
+      tags:
+        - materials
+  /api/canvases/{id}/board:
+    get:
+      operationId: getTrashedCanvasBoard
+      parameters:
+        - description: Canvas material id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Canvas material id
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBoardBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's
       tags:
         - materials
   /api/chat/edit-operations/{operationId}/undo:

@@ -56,6 +56,9 @@ type Canvas struct {
 	Material
 	// Shared is canvas_shared: the workspace it was drawn in holds it.
 	Shared bool
+	// Role is the reader's (materialAccessRow.canvasRole); none on one opened
+	// from the Trash (TrashedCanvas).
+	Role WorkspaceRole
 }
 
 // CanvasPage is one page of a person's canvases.
@@ -157,16 +160,65 @@ func (s *Store) GetCanvas(ctx context.Context, userID, materialID string) (Canva
 	if mt.Kind != MaterialCanvas {
 		return Canvas{}, ErrNotFound
 	}
-	if _, err := s.MaterialEffectiveRole(ctx, userID, materialID); err != nil {
+	role, err := s.MaterialEffectiveRole(ctx, userID, materialID)
+	if err != nil {
 		return Canvas{}, err
 	}
-	canvas := Canvas{Material: mt}
+	canvas := Canvas{Material: mt, Role: role}
 	err = s.pool.QueryRow(ctx, `SELECT canvas_shared FROM materials WHERE id=$1 AND trashed_at IS NULL`,
 		materialID).Scan(&canvas.Shared)
 	if isNoRows(err) {
 		return Canvas{}, ErrNotFound
 	}
 	return canvas, err
+}
+
+// TrashedCanvas is a trashed canvas for whoever may open it from the Trash
+// (TrashedMaterial: its creator, the one it sits in the Trash of), with no
+// role: it opens read-only until restored (Epo 2026-11-12, as a note or file).
+// Anything else is not found.
+func (s *Store) TrashedCanvas(ctx context.Context, userID, materialID string) (Canvas, error) {
+	mt, err := s.TrashedMaterial(ctx, userID, materialID)
+	if err != nil {
+		return Canvas{}, err
+	}
+	if mt.Kind != MaterialCanvas {
+		return Canvas{}, ErrNotFound
+	}
+	canvas := Canvas{Material: mt}
+	err = s.pool.QueryRow(ctx, `SELECT canvas_shared FROM materials WHERE id=$1 AND trashed_at IS NOT NULL`,
+		materialID).Scan(&canvas.Shared)
+	if isNoRows(err) {
+		return Canvas{}, ErrNotFound
+	}
+	return canvas, err
+}
+
+// TrashedCanvasBoard is the stored board of a trashed canvas for whoever may
+// open it from the Trash (trashReaderSQL), as a trashed note's stored content
+// is: Yjs V1 updates to apply in order, the room's base state and then each
+// update stored after it (material_yjs_updates), none for a canvas never
+// opened (its room seeds the first state at the first open). One statement
+// reads both, so a fold between them drops nothing. A live canvas is read
+// through its room, so it is not found here.
+func (s *Store) TrashedCanvasBoard(ctx context.Context, userID, materialID string) ([][]byte, error) {
+	var base []byte
+	var rows [][]byte
+	err := s.pool.QueryRow(ctx, `SELECT d.state,
+			ARRAY(SELECT u.update FROM material_yjs_updates u WHERE u.material_id=m.id ORDER BY u.seq)
+		FROM materials m LEFT JOIN material_yjs_documents d ON d.material_id=m.id
+		WHERE m.id=$1 AND m.kind='canvas' AND m.trashed_at IS NOT NULL AND m.parent_material_id IS NULL
+			AND `+trashReaderSQL("m.owner_user_id", "m.workspace_id"), materialID, userID).Scan(&base, &rows)
+	if isNoRows(err) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if base == nil {
+		return [][]byte{}, nil
+	}
+	return append([][]byte{base}, rows...), nil
 }
 
 // SetCanvasShared shares a canvas with the workspace it was drawn in, or takes

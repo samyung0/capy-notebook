@@ -2175,13 +2175,26 @@ export const CreateCanvasBody = zod.object({
 
 export const CreateCanvasResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The images on the board at its last projection, as image editor assets'),
   "own": zod.boolean().describe('The caller made it'),
   "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included'),
   "revision": zod.int().describe('The material\'s revision'),
+  "role": zod.enum(['owner', 'editor', 'viewer']).optional().describe('The caller\'s role on the canvas: owner (its creator), or their workspace role on another member\'s shared one; absent on one opened from the Trash'),
   "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
+  "storageFull": zod.enum(['self', 'payer']).optional().describe('The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only'),
   "title": zod.string(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional().describe('The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('The room\'s stored version at its last projection; 0 before the first'),
   "workspaceId": zod.string().optional().describe('The workspace it was drawn in; none for a canvas of one\'s own')
@@ -2189,7 +2202,7 @@ export const CreateCanvasResponse = zod.object({
 
 
 /**
- * @summary A canvas the caller made, or one shared with a workspace they are a member of
+ * @summary A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only
  */
 export const getCanvasPathIdMax = 64;
 
@@ -2201,13 +2214,26 @@ export const GetCanvasParams = zod.object({
 
 export const GetCanvasResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The images on the board at its last projection, as image editor assets'),
   "own": zod.boolean().describe('The caller made it'),
   "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included'),
   "revision": zod.int().describe('The material\'s revision'),
+  "role": zod.enum(['owner', 'editor', 'viewer']).optional().describe('The caller\'s role on the canvas: owner (its creator), or their workspace role on another member\'s shared one; absent on one opened from the Trash'),
   "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
+  "storageFull": zod.enum(['self', 'payer']).optional().describe('The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only'),
   "title": zod.string(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional().describe('The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('The room\'s stored version at its last projection; 0 before the first'),
   "workspaceId": zod.string().optional().describe('The workspace it was drawn in; none for a canvas of one\'s own')
@@ -2231,16 +2257,46 @@ export const UpdateCanvasBody = zod.object({
 
 export const UpdateCanvasResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
   "id": zod.string().describe('The canvas material'),
   "imageAssetIds": zod.array(zod.string()).describe('The images on the board at its last projection, as image editor assets'),
   "own": zod.boolean().describe('The caller made it'),
   "ownImageAssetIds": zod.array(zod.string()).describe('Every ready image asset of this canvas, one the pruner trashed included'),
   "revision": zod.int().describe('The material\'s revision'),
+  "role": zod.enum(['owner', 'editor', 'viewer']).optional().describe('The caller\'s role on the canvas: owner (its creator), or their workspace role on another member\'s shared one; absent on one opened from the Trash'),
   "shared": zod.boolean().describe('Shared with its workspace: the members hold it by their workspace role'),
+  "storageFull": zod.enum(['self', 'payer']).optional().describe('The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only'),
   "title": zod.string(),
+  "trash": zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
+  "episodeId": zod.string(),
+  "purgeAfter": zod.iso.datetime({"offset":true})
+}).optional().describe('The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board'),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "version": zod.int().describe('The room\'s stored version at its last projection; 0 before the first'),
   "workspaceId": zod.string().optional().describe('The workspace it was drawn in; none for a canvas of one\'s own')
+})
+
+
+/**
+ * @summary The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's
+ */
+export const getTrashedCanvasBoardPathIdMax = 64;
+
+
+
+export const GetTrashedCanvasBoardParams = zod.object({
+  "id": zod.string().max(getTrashedCanvasBoardPathIdMax).describe('Canvas material id')
+})
+
+export const GetTrashedCanvasBoardResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "updates": zod.array(zod.string()).describe('The board\'s stored Yjs state as V1 updates, base64, applied in order: the base state, then each update stored after it; empty for a canvas never opened')
 })
 
 

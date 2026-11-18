@@ -97,6 +97,7 @@ export * from './bootstrapSourceDocumentParams.ts';
 export * from './browserSourceSession.ts';
 export * from './browserSourceSessionAccess.ts';
 export * from './browserSourceSessionFormat.ts';
+export * from './canvasBoardBody.ts';
 export * from './canvasBody.ts';
 export * from './canvasListItem.ts';
 export * from './canvasPage.ts';

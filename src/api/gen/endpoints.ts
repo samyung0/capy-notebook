@@ -47,6 +47,7 @@ import type {
   BillingInfo,
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
+  CanvasBoardBody,
   CanvasBody,
   CanvasPage,
   CheckBankQuestionReq,
@@ -3408,7 +3409,7 @@ export const getGetCanvasUrl = (id: string,) => {
 }
 
 /**
- * @summary A canvas the caller made, or one shared with a workspace they are a member of
+ * @summary A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only
  */
 export const getCanvas = async (id: string, options?: RequestInit): Promise<getCanvasResponse> => {
 
@@ -3491,6 +3492,56 @@ const res = await fetch(getUpdateCanvasUrl(id),
 
   const data: updateCanvasResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateCanvasResponse
+}
+
+
+
+export type getTrashedCanvasBoardResponse200 = {
+  data: CanvasBoardBody
+  status: 200
+}
+
+export type getTrashedCanvasBoardResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getTrashedCanvasBoardResponseSuccess = (getTrashedCanvasBoardResponse200) & {
+  headers: Headers;
+};
+export type getTrashedCanvasBoardResponseError = (getTrashedCanvasBoardResponseDefault) & {
+  headers: Headers;
+};
+
+export type getTrashedCanvasBoardResponse = (getTrashedCanvasBoardResponseSuccess | getTrashedCanvasBoardResponseError)
+
+export const getGetTrashedCanvasBoardUrl = (id: string,) => {
+
+
+
+
+  return `/api/canvases/${id}/board`
+}
+
+/**
+ * @summary The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's
+ */
+export const getTrashedCanvasBoard = async (id: string, options?: RequestInit): Promise<getTrashedCanvasBoardResponse> => {
+
+  const res = await fetch(getGetTrashedCanvasBoardUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTrashedCanvasBoardResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTrashedCanvasBoardResponse
 }
 
 
