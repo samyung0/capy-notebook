@@ -4,14 +4,24 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { type CanvasListItem, canvasesQuery, createCanvas } from '@/api/canvas';
+import {
+  type CanvasListItem,
+  canvasesQuery,
+  createCanvas,
+  shareCanvas,
+} from '@/api/canvas';
 import { qk } from '@/api/client';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
-import { useDeleteMaterial, useUpdateMaterial } from '@/api/hooks';
+import {
+  useDeleteMaterial,
+  useUpdateMaterial,
+  useWorkspace,
+} from '@/api/hooks';
 import { pagedRows } from '@/api/paged';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { CanvasSwitcher } from '@/features/canvas/CanvasSwitcher';
+import { canvasRights } from '@/features/canvas/canvasRights';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
@@ -27,11 +37,16 @@ function newTitle(taken: string[]) {
 
 /** Which canvas a canvas page shows, and its picker (Epo 2026-11-10: the
  * account's Canvas page; Epo 2026-11-12: a workspace's Canvas tab too). The
- * page's canvases are the person's own, or the ones they drew in `workspaceId`.
- * The URL's `c` names the one shown; without one the one already shown stays,
- * else the latest saved, and a first one (`firstTitle`) is made for a person
- * who has none. A frozen account draws on what it has and makes nothing new.
- * `picker` goes over the board, `dialogs` anywhere in the page. */
+ * page's canvases are the person's own, or in `workspaceId` the ones they drew
+ * there and the other members' shared ones (Epo 2026-11-18). The URL's `c`
+ * names the one shown; without one the one already shown stays, else the
+ * latest saved, and a first one (`firstTitle`) is made for a person with none
+ * to show. A frozen account draws on what it has and makes nothing new.
+ * `picker` goes over the board, `dialogs` anywhere in the page.
+ *
+ * Nothing tells the other members when a canvas is shared or taken back (as
+ * for a hidden file), so the list is read again each time the picker opens
+ * and after the person's own change. */
 export function useCanvasPicker({
   c,
   firstTitle,
@@ -85,7 +100,7 @@ export function useCanvasPicker({
     listed ??
     (unlisted && shown.current?.id === wanted ? shown.current : undefined);
   if (current) shown.current = current;
-  /** The canvas being deleted: its board saves and keeps nothing more. */
+  /** The canvas being deleted: its room's refusal is no news to its board. */
   const deleted = useRef<string | null>(null);
   const { mutateAsync: create } = useMutation({
     mutationFn: (title: string) => createCanvas(title, workspaceId),
@@ -97,6 +112,21 @@ export function useCanvasPicker({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const relist = () => qc.invalidateQueries({ queryKey: qk.canvases });
+  // What the picker offers for the canvas shown, by the person's role in its
+  // workspace (none on the account's page, whose canvases have no workspace).
+  const { data: workspace } = useWorkspace(workspaceId ?? '');
+  const rights = canvasRights(current, workspace?.role);
+  const {
+    isPending: sharing,
+    mutate: share,
+    variables: sharingTo,
+  } = useMutation({
+    mutationFn: ({ id, shared }: { id: string; shared: boolean }) =>
+      shareCanvas(id, shared),
+    // A refusal is said by the mutation's own toast; either way the list says
+    // what the canvas is now.
+    onSettled: () => relist(),
+  });
   // A refusal is said by the mutation's own toast.
   const add = (title: string, replace = false) =>
     create(title)
@@ -138,6 +168,7 @@ export function useCanvasPicker({
       current={current}
       frozen={frozen}
       inWorkspace={!!workspaceId}
+      manage={rights.manage}
       onDelete={() => setDeleting(true)}
       onNew={() => void add(newTitle((own ?? []).map(({ title }) => title)))}
       onOpen={(canvas) =>
@@ -149,12 +180,24 @@ export function useCanvasPicker({
         if (opened) void refetch();
       }}
       onRename={() => setRenaming(true)}
+      onShare={
+        current && rights.share
+          ? (shared) => share({ id: current.id, shared })
+          : undefined
+      }
       paging={{
         fetchNextPage,
         hasNextPage,
         isFetchingNextPage,
         isFetchNextPageError,
       }}
+      // The switch shows where it is going while the change is on its way.
+      shared={
+        sharing && sharingTo?.id === current?.id
+          ? sharingTo?.shared
+          : current?.shared
+      }
+      sharing={sharing}
     />
   );
   const dialogs = (
@@ -187,7 +230,7 @@ export function useCanvasPicker({
               setRemoved(id);
               return relist();
             })
-            // Refused: the canvas is still there and saves again.
+            // Refused: the canvas is still there.
             .catch(() => {
               deleted.current = null;
             });
@@ -201,7 +244,7 @@ export function useCanvasPicker({
     boardKey: current && `${current.id}:${attempt}`,
     current,
     dialogs,
-    /** The canvas shown is being deleted: its board saves nothing more. */
+    /** The canvas shown is being deleted. */
     gone: (id: string) => deleted.current === id,
     /** A frozen account with no canvas here: nothing to show. */
     none: own?.length === 0 && frozen,

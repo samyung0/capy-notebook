@@ -1482,31 +1482,16 @@ test.describe('with a finger', () => {
   });
 });
 
-/** Whether the workspace canvas's device copy in IndexedDB (src/lib/localDb.ts)
- * is the board as it is now. */
-const copyIsCurrent = (page: Page) =>
-  page.evaluate(
-    () =>
-      new Promise<boolean>((resolve, reject) => {
-        // The mocks keep their own database; a workspace's first canvas is
-        // cv_<workspace>_1.
-        const opened = indexedDB.open('capy-local-msw');
-        opened.onerror = () => reject(opened.error);
-        opened.onsuccess = () => {
-          const read = opened.result
-            .transaction('drawingDrafts')
-            .objectStore('drawingDrafts')
-            .get('canvas:cv_ws_bio_1');
-          read.onsuccess = () => {
-            opened.result.close();
-            const { __board: board } = window as unknown as {
-              __board: { snapshot(): string };
-            };
-            resolve(read.result?.doc === board.snapshot());
-          };
-        };
-      })
-  );
+/** Whether the workspace canvas's mock room has stored every change it took
+ * (src/mocks/collaboration.ts): a workspace's first canvas is cv_<workspace>_1. */
+const roomStored = (page: Page) =>
+  page.evaluate(async () => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockBoardStored } = (await import(
+      modulePath
+    )) as typeof import('../../src/mocks/collaboration');
+    return mockBoardStored('cv_ws_bio_1');
+  });
 
 test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   test.slow();
@@ -1514,8 +1499,8 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   const tab = page.getByRole('button', { name: 'Canvas' });
   await tab.waitFor();
   await tab.click();
-  // The board mounts once the canvas and its stored board have loaded, and a
-  // fresh canvas is empty: the Graphs tool places a plane card.
+  // The board mounts once the canvas's room has synced, and a fresh canvas is
+  // empty: the Graphs tool places a plane card.
   await page.waitForFunction(
     () => (window as unknown as { __board?: unknown }).__board
   );
@@ -1529,10 +1514,9 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
   await expect.poll(() => marks(page)).toBe(1);
   await page.keyboard.press('Escape');
 
-  // Kept in this browser 400 ms after the last change, with no request; the
-  // reload comes before the save 2 s after it (WorkspaceCanvas.tsx), which the
-  // mocks would forget on reload.
-  await expect.poll(() => copyIsCurrent(page), { intervals: [50] }).toBe(true);
+  // Every change goes to the canvas's room as it is made, and the room stores
+  // a moment after the last one; the mock room keeps that for the tab.
+  await expect.poll(() => roomStored(page)).toBe(true);
   // The URL brings the tab back on its own.
   await page.reload();
   await page.waitForFunction(() =>
@@ -1589,7 +1573,7 @@ test('an image pasted or picked on the workspace canvas is stored as its asset a
   // Uploaded at once as the canvas's image asset: its block keeps the asset's id.
   await expect.poll(imageIds).toEqual([expect.stringMatching(/^asset_mock_/)]);
   const [assetId] = await imageIds();
-  // The save 2 s after names it, so the pruner keeps it.
+  // The room's projection names it, so the pruner keeps it.
   await expect
     .poll(
       () =>

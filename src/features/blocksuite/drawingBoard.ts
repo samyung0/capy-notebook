@@ -85,7 +85,11 @@ import {
   ZOOM_MIN,
   ZOOM_STEP,
 } from '@blocksuite/affine/std/gfx';
-import { HistoryExtension, Text } from '@blocksuite/affine/store';
+import {
+  type ExtensionType,
+  HistoryExtension,
+  Text,
+} from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
 import { EdgelessAutoConnectViewExtension } from '@blocksuite/affine/widgets/edgeless-auto-connect/view';
 import { EdgelessDraggingAreaViewExtension } from '@blocksuite/affine/widgets/edgeless-dragging-area/view';
@@ -100,7 +104,8 @@ import {
   Undo03Icon,
 } from '@hugeicons/core-free-icons';
 import { combinedDarkCssVariables } from '@toeverything/theme';
-import { html, render } from 'lit';
+import { html, type LitElement, render } from 'lit';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
 import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
@@ -156,6 +161,7 @@ import {
 } from './boardTools';
 import { unknownStore } from './boardUnknown';
 import { unknownViews } from './boardUnknownView';
+import { openRoomStore } from './roomStore';
 
 // BlockSuite's notices show in the app's own toast (local change 33). They come
 // as bare English strings, a refusal ("Invalid link", "Import failed") read by
@@ -328,6 +334,10 @@ export type DrawingBoardOptions = {
   workspace?: WorkspaceLinks;
   /** `save()`'s `doc`. A board that doesn't check out throws a BoardLoadError. */
   saved?: string;
+  /** A canvas's room document, synced: the board edits it in place, and makes
+   * no page or canvas of its own (the room's first state holds them). Without
+   * it the board is in memory, opened from `saved`: answers and samples. */
+  room?: { doc: Y.Doc };
   /** A plane's or chart's full-board editor opened (its card's id) or closed
    * (null), for the page's URL. */
   onEditor?: (cardId: string | null) => void;
@@ -383,8 +393,66 @@ async function decodeImage(file: Blob) {
   }
 }
 
+/** Every `tag` under `root`, through its shadow trees (the toolbar's panels
+ * sit a few deep). */
+function* within(root: Element, tag: string): Generator<Element> {
+  for (const element of root.shadowRoot?.querySelectorAll('*') ?? []) {
+    if (element.localName === tag) yield element;
+    yield* within(element, tag);
+  }
+}
+
+/** A store over a canvas's room document (roomStore.ts). BlockSuite's own
+ * awareness (its selections) stays on this page: the room's carries only the
+ * board's presence fields. */
+function roomBoardStore(
+  doc: Y.Doc,
+  blobs: BoardBlobSource,
+  storeExtensions: ExtensionType[],
+  readonly: boolean
+) {
+  const awareness = new Awareness(doc);
+  const opened = openRoomStore({
+    awareness,
+    blobs: { main: blobs },
+    doc,
+    id: 'board',
+    readonly,
+    storeExtensions,
+  });
+  return {
+    close: () => {
+      opened.dispose();
+      awareness.destroy();
+    },
+    store: opened.store,
+  };
+}
+
+/** A store on an in-memory board, opened from a saved answer when there is one. */
+function memoryBoardStore(
+  saved: Uint8Array | null,
+  blobs: BoardBlobSource,
+  storeExtensions: ExtensionType[]
+) {
+  const workspace = new TestWorkspace({ blobSources: { main: blobs } });
+  workspace.storeExtensions = storeExtensions;
+  workspace.meta.initialize();
+  const store = workspace.createDoc('board').getStore();
+  if (saved) {
+    Y.applyUpdate(store.spaceDoc, saved);
+    store.load();
+  } else {
+    store.load(() => {
+      const page = store.addBlock('affine:page', { title: new Text() });
+      store.addBlock('affine:surface', {}, page);
+    });
+  }
+  return { close: null, store };
+}
+
 /** BlockSuite's edgeless editor on an in-memory board, opened from a saved answer when
- * there is one. */
+ * there is one, or on a canvas's room document (`room`). */
 export function mountDrawingBoard(
   container: HTMLElement,
   options: DrawingBoardOptions
@@ -397,23 +465,13 @@ export function mountDrawingBoard(
     console.warn('drawing board: shown as placeholders', misfits);
   const { readOnly = false } = options;
   const blobs = new BoardBlobSource(options.images);
-  const workspace = new TestWorkspace({ blobSources: { main: blobs } });
-  workspace.storeExtensions = [
+  const storeExtensions = [
     ...stores.get('store'),
     ...unknownStore(options.board),
   ];
-  workspace.meta.initialize();
-  const doc = workspace.createDoc('board');
-  const store = doc.getStore();
-  if (saved) {
-    Y.applyUpdate(store.spaceDoc, saved);
-    store.load();
-  } else {
-    store.load(() => {
-      const page = store.addBlock('affine:page', { title: new Text() });
-      store.addBlock('affine:surface', {}, page);
-    });
-  }
+  const { close: closeStore, store } = options.room
+    ? roomBoardStore(options.room.doc, blobs, storeExtensions, readOnly)
+    : memoryBoardStore(saved, blobs, storeExtensions);
   store.resetHistory();
   store.readonly = readOnly;
   const { onChange } = options;
@@ -883,8 +941,16 @@ export function mountDrawingBoard(
       std.selection.clear();
       std.event.deactivate();
     },
-    /** Redraws the quiz and flashcard cards, after the workspace's list changes. */
-    refreshCards: refreshMaterialCards,
+    /** Redraws the quiz and flashcard cards, and an open Misc panel's list of
+     * them, after the workspace's list changes: the board may show before the
+     * list has loaded. */
+    refreshCards: () => {
+      refreshMaterialCards();
+      const toolbar = container.querySelector('edgeless-toolbar-widget');
+      if (!toolbar) return;
+      for (const panel of within(toolbar, 'capy-misc-panel'))
+        (panel as LitElement).requestUpdate();
+    },
     /** Asks again for the images that showed none: a save brought one back. */
     reloadImages: () => {
       for (const { id } of imageBlocks()) {
@@ -969,6 +1035,7 @@ export function mountDrawingBoard(
       closeBoardEditor(gfx);
       forgetFormulas();
       render(null, container);
+      closeStore?.();
     },
   };
 }

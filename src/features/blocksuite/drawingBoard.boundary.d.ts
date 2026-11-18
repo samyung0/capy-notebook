@@ -29,6 +29,7 @@ export type DrawingBoardOptions = {
   plane?: boolean;
   readOnly?: boolean;
   saved?: string;
+  room?: { doc: import('yjs').Doc };
 };
 
 export class BoardLoadError extends Error {

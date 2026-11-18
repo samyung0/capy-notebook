@@ -1,10 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef } from 'react';
-import { canvasById, saveCanvas } from '@/api/canvas';
 import { qk } from '@/api/client';
 import { useCreateMaterial } from '@/api/hooks';
 import { userToast } from '@/components/ui/userToast';
+import {
+  CanvasBoardPanel,
+  CanvasBoardStrip,
+} from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
@@ -13,7 +16,6 @@ import {
   useCanvasMaterials,
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
-import { FileError } from '@/features/files/FileStates';
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
 import { m } from '@/i18n';
@@ -29,10 +31,11 @@ type BoardProps = {
   workspaceName: string;
 };
 
-/** A member's canvases in the workspace (Epo 2026-11-09,
- * todo-workspace-canvas-storage.md; several since Epo 2026-11-12): the one the
- * URL's `c` names, under the canvas picker the account's Canvas page has. The
- * first is made with the workspace's name. */
+/** A member's canvases in the workspace and the other members' shared ones
+ * (Epo 2026-11-09, todo-workspace-canvas-storage.md; several since Epo
+ * 2026-11-12; shared since Epo 2026-11-18): the one the URL's `c` names, under
+ * the canvas picker the account's Canvas page has. A member's first is made
+ * with the workspace's name. */
 export default function WorkspaceCanvas({
   besideBack,
   ...props
@@ -145,25 +148,25 @@ function CanvasBoard({
     materials: linked,
     open: onOpenMaterial,
   });
-  const failed = useCanvasBoard(
-    container,
-    {
-      key: id,
-      open: () => canvasById(id),
-      save: (body) => saveCanvas(id, body),
-    },
-    { gone, link, onBoard, workspace: links }
-  );
+  const state = useCanvasBoard(container, id, {
+    gone,
+    link,
+    onBoard,
+    workspace: links,
+  });
   // The placed quizzes and sets run in the page's own tree, through portals into the
   // board's card hosts (Epo 2026-11-09).
   return (
-    <div
-      className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
-      ref={container}
-    >
-      {/* Reopening the canvas tries again. */}
-      {failed && <FileError message={failed} onRetry={onRetry} />}
-      <CanvasMaterialCards link={link} materials={materials} />
-    </div>
+    <>
+      <div
+        className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
+        ref={container}
+      >
+        {/* Reopening the canvas tries again. */}
+        <CanvasBoardPanel onRetry={onRetry} state={state} />
+        <CanvasMaterialCards link={link} materials={materials} />
+      </div>
+      <CanvasBoardStrip strip={state.strip} />
+    </>
   );
 }

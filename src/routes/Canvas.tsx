@@ -1,6 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo, useRef, useState } from 'react';
-import { canvasById, saveCanvas } from '@/api/canvas';
 import {
   useCreateFlashcardSet,
   useCreateQuiz,
@@ -8,6 +7,10 @@ import {
 } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
 import { userToast } from '@/components/ui/userToast';
+import {
+  CanvasBoardPanel,
+  CanvasBoardStrip,
+} from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { CanvasMaterialDialog } from '@/features/canvas/CanvasMaterialDialog';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
@@ -17,11 +20,10 @@ import {
   useCanvasMaterials,
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
-import { FileError } from '@/features/files/FileStates';
 import { m } from '@/i18n';
 import { useOpenLink } from '@/lib/openLink';
 
-/** One of the person's own canvases as the page's board, saved as a
+/** One of the person's own canvases as the page's board, in its room as a
  * workspace's is, with no workspace. Its cards are every quiz and set the person
  * can open, each tile in Misc saying its workspace; New makes one in no
  * workspace, and a card opens in a dialog (Epo 2026-11-13, mock
@@ -84,27 +86,27 @@ function OwnCanvas({
     materials: linked,
     open: setEditing,
   });
-  const failed = useCanvasBoard(
-    container,
-    {
-      key: id,
-      open: () => canvasById(id),
-      save: (body) => saveCanvas(id, body),
-    },
-    { gone, link, onBoard, workspace: links }
-  );
+  const state = useCanvasBoard(container, id, {
+    gone,
+    link,
+    onBoard,
+    workspace: links,
+  });
   return (
-    <div
-      className="h-full w-full overflow-hidden [&>div]:h-full"
-      ref={container}
-    >
-      {failed && <FileError message={failed} onRetry={onRetry} />}
-      <CanvasMaterialCards link={link} materials={materials} />
-      <CanvasMaterialDialog
-        materialId={editing}
-        onClose={() => setEditing(null)}
-      />
-    </div>
+    <>
+      <div
+        className="h-full w-full overflow-hidden [&>div]:h-full"
+        ref={container}
+      >
+        <CanvasBoardPanel onRetry={onRetry} state={state} />
+        <CanvasMaterialCards link={link} materials={materials} />
+        <CanvasMaterialDialog
+          materialId={editing}
+          onClose={() => setEditing(null)}
+        />
+      </div>
+      <CanvasBoardStrip strip={state.strip} />
+    </>
   );
 }
 

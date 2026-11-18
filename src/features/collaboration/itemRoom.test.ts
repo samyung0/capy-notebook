@@ -963,3 +963,15 @@ it('goes offline when its join has not finished 30 s after its token request', a
   expect(room.getSnapshot().status).toBe('offline');
   vi.unstubAllGlobals();
 });
+
+// A canvas's room (Epo 2026-11-18): its pointers and selections go through an
+// awareness the room keeps on its own document, silent until a state is set.
+it('keeps an awareness on its document and hands it to its provider', async () => {
+  const room = new ItemRoom('q', { awareness: true, onReplace: vi.fn() });
+  await room.start();
+  const [provider] = providers;
+  expect(room.awareness?.doc).toBe(room.doc);
+  expect(provider.config.awareness).toBe(room.awareness);
+  expect(room.awareness?.getLocalState()).toBe(null);
+  room.destroy();
+});

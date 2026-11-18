@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
@@ -160,6 +161,10 @@ const TRANSIENT_CLOSES = new Set([
 const EVICTED = 'collaboration room evicted';
 
 export interface ItemRoomOptions {
+  /** The room keeps an awareness of its own on its document, sent through
+   * its channel: a canvas's pointers and selections. It says nothing until a
+   * state is set on it. */
+  awareness?: boolean;
   /** A quiz's keys document instead of the material's own. */
   document?: 'keys';
   /** An editor's room: unsent edits are kept on this device under this
@@ -186,6 +191,8 @@ export interface ItemRoomOptions {
 
 export class ItemRoom {
   readonly doc: Y.Doc;
+  /** `ItemRoomOptions.awareness`: what the room's editors tell each other. */
+  readonly awareness: Awareness | null;
   readonly undo: Y.UndoManager;
   /** What the item's Undo and Redo buttons act on. */
   readonly history: UndoTarget;
@@ -261,6 +268,8 @@ export class ItemRoom {
     this.materialId = materialId;
     this.options = options;
     this.doc = options.seed?.doc ?? new Y.Doc();
+    this.awareness = options.awareness ? new Awareness(this.doc) : null;
+    this.awareness?.setLocalState(null);
     // The document holds only this item.
     this.undo = itemUndo(this.doc);
     // Undo reaches back 24 h (Epo 2026-10-23).
@@ -353,6 +362,7 @@ export class ItemRoom {
     if (this.destroyed) return;
     let cached: string | null = first.token;
     this.provider = createItemProvider({
+      awareness: this.awareness,
       // While its never-accepted steps are held, a JOIN waits for the draft
       // send to take them (Q327).
       beforeJoin: () => {
@@ -967,6 +977,7 @@ export class ItemRoom {
     void this.recorder?.dispose();
     this.options.seat?.attach(null);
     this.provider?.destroy();
+    this.awareness?.destroy();
     this.undo.destroy();
     this.doc.destroy();
     this.snapshot.recovery?.doc.destroy();
@@ -1017,6 +1028,7 @@ export function useItemRoom(
   enabled = true,
   {
     actorId,
+    awareness,
     document,
     inside,
     keep,
@@ -1024,6 +1036,8 @@ export function useItemRoom(
     wake,
   }: {
     actorId?: string | null;
+    /** `ItemRoomOptions.awareness`. */
+    awareness?: boolean;
     document?: 'keys';
     /** An embed's note seat (`ItemRoomOptions.inside`). */
     inside?: NoteSeat | null;
@@ -1042,6 +1056,7 @@ export function useItemRoom(
   useEffect(() => {
     if (!(materialId && enabled)) return;
     const { close, room: created } = openItemRoom(materialId, {
+      awareness,
       document,
       drafts: actorId ? { actorId } : undefined,
       inside,
@@ -1055,7 +1070,7 @@ export function useItemRoom(
       close();
       setRoom((current) => (current === created ? null : current));
     };
-  }, [materialId, enabled, document, actorId, inside, generation]);
+  }, [materialId, enabled, document, actorId, awareness, inside, generation]);
   useEffect(() => {
     if (wake) room?.wake();
   }, [room, wake]);
