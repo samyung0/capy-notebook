@@ -215,13 +215,8 @@ fn foreign(doc: &Doc, update: &Update) -> bool {
 /// after a gap (another document's, a forged one), is not held.
 fn held(update: &Update, state: &StateVector) -> bool {
     update.blocks().all(|block| {
-        let (client, clock, len) = match block {
-            UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
-            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
-                (range.client, range.clock, range.len)
-            }
-        };
-        clock + len <= state.get(&client)
+        let (client, end) = crate::struct_end(&block);
+        end <= state.get(&client)
     })
 }
 

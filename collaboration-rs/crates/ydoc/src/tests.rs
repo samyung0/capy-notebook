@@ -952,3 +952,250 @@ fn apply_freeing_tells_when_its_update_says_less_than_the_writer() {
         .encode_state_as_update_v1(&StateVector::default());
     assert!(!state.windows(4).any(|window| window == b"PEER"));
 }
+
+/// An update of one GC struct, which carries no bytes: `len` clocks of
+/// `client` from `clock`.
+fn collected(client: u64, clock: u32, len: u32) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(1u32);
+    bytes.write_var(client);
+    bytes.write_var(clock);
+    bytes.write_u8(0);
+    bytes.write_var(len);
+    bytes.write_var(0u32);
+    bytes
+}
+
+/// An update of deletions alone: `ranges` (clock, length) of `client`, in
+/// that order.
+fn deleting(client: u64, ranges: &[(u32, u32)]) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(0u32);
+    bytes.write_var(1u32);
+    bytes.write_var(client);
+    bytes.write_var(ranges.len() as u32);
+    for (clock, len) in ranges {
+        bytes.write_var(*clock);
+        bytes.write_var(*len);
+    }
+    bytes
+}
+
+/// Security regression (board review 2.1): a GC struct, a deleted item and
+/// a deleted range claim any number of clocks in a few bytes, and yrs adds a
+/// clock and a length unchecked, so two GC structs of 4,000,000,000 and
+/// 400,000,000 clocks wrapped their client's clock in a release build and
+/// left a room whose stored state no longer loaded. No struct and no deleted
+/// range of an admitted update ends past [MAX_CLOCK]. Fails, in a debug and
+/// a release build alike, if one does.
+#[test]
+fn a_clock_past_the_ceiling_is_refused() {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    let inspect = |bytes: &[u8]| inspect_update(&room.transact(), &decode(bytes).unwrap());
+    let past = |bytes: &[u8]| matches!(inspect(bytes), Err(UpdateError::Decode(reason)) if reason.contains("past clock"));
+    // At the ceiling a struct is taken; one clock further it is not.
+    assert!(inspect(&collected(2, 0, MAX_CLOCK)).is_ok_and(|taken| !taken.unheld));
+    assert!(past(&collected(2, 0, MAX_CLOCK + 1)));
+    assert!(past(&collected(2, 0, 4_000_000_000)));
+    // A deleted item of `u32::MAX` units under the root.
+    let mut deleted: Vec<u8> = Vec::new();
+    deleted.write_var(1u32);
+    deleted.write_var(1u32);
+    deleted.write_var(2u64);
+    deleted.write_var(0u32);
+    deleted.write_u8(1);
+    deleted.write_var(1u32);
+    deleted.write_string("t");
+    deleted.write_var(u32::MAX);
+    deleted.write_var(0u32);
+    assert!(past(&deleted));
+    // A deleted range: to the ceiling it is only unheld.
+    assert!(inspect(&deleting(2, &[(0, MAX_CLOCK)])).is_ok_and(|taken| taken.unheld));
+    assert!(past(&deleting(2, &[(MAX_CLOCK, 1)])));
+    assert!(past(&deleting(1, &[(0, u32::MAX)])));
+    // Sums past `u32::MAX`: yrs's decoder panics on them in a debug build
+    // (the room catches it and refuses the sender) and wraps in a release
+    // build, where the first struct, or the range's end before its start,
+    // is refused. Never taken.
+    let mut pair = collected(2, 0, 4_000_000_000);
+    pair[1] = 2;
+    pair.pop();
+    pair.write_u8(0);
+    pair.write_var(400_000_000u32);
+    pair.write_var(0u32);
+    for bytes in [pair, deleting(1, &[(4_000_000_000, 400_000_000)])] {
+        let taken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            decode(&bytes).is_ok_and(|update| inspect_update(&room.transact(), &update).is_ok())
+        }));
+        assert!(!matches!(taken, Ok(true)));
+    }
+}
+
+/// A text of `units` of `unit` in one item, under client 1.
+fn one_text(unit: &str, units: usize) -> Doc {
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, &unit.repeat(units));
+    room
+}
+
+fn placing_of(room: &Doc, bytes: &[u8]) -> Result<Placing, UpdateError> {
+    let update = decode(bytes).unwrap();
+    let txn = room.transact();
+    placing(&txn, &txn.state_vector(), &Incoming::new(&update))
+}
+
+/// `count` one-character items of client 2, each typed inside client 1's
+/// text at its own spot `gap` units after the one before.
+fn typed_inside(count: u32, gap: u32) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(count);
+    bytes.write_var(2u64);
+    bytes.write_var(0u32);
+    for k in 0..count {
+        bytes.write_u8(0x80 | 0x40 | 4);
+        bytes.write_var(1u64);
+        bytes.write_var(k * gap);
+        bytes.write_var(1u64);
+        bytes.write_var(k * gap + 1);
+        bytes.write_string("y");
+    }
+    bytes.write_var(0u32);
+    bytes
+}
+
+/// [inspect_counting_splits] of `bytes` against `room`.
+fn counting(room: &Doc, bytes: &[u8]) -> Result<Inspection, UpdateError> {
+    let update = decode(bytes).unwrap();
+    inspect_counting_splits(&room.transact(), &Incoming::new(&update))
+}
+
+/// Security regression (board review 2.2): yrs copies both halves of an
+/// item's content at every split and counts a split as one step, so 320,000
+/// one-character deletions out of one text of 640,000 characters passed the
+/// work limit and held a room for 27 s. A room that counts its splits
+/// ([inspect_counting_splits], a canvas's board) counts the content each
+/// one copies and walks toward [MAX_WORK]: such an update is refused before
+/// any copy of the room applies it, in whichever order its ranges come, and
+/// so are characters typed all over one text. Fails if either is taken.
+#[test]
+fn splitting_one_text_over_and_over_is_refused_where_splits_count() {
+    let room = one_text("x", 200_000);
+    let every_fourth: Vec<(u32, u32)> = (0..50_000).map(|k| (4 * k + 1, 1)).collect();
+    let back: Vec<(u32, u32)> = every_fourth.iter().rev().copied().collect();
+    for ranges in [&every_fourth, &back] {
+        let bytes = deleting(1, ranges);
+        assert!(matches!(
+            placing_of(&room, &bytes),
+            Err(UpdateError::Costly)
+        ));
+        assert!(matches!(counting(&room, &bytes), Err(UpdateError::Costly)));
+    }
+    assert!(matches!(
+        counting(&room, &typed_inside(20_000, 10)),
+        Err(UpdateError::Costly)
+    ));
+    // What an editor sends is taken: a replace-all of 200 places, twenty
+    // characters typed in twenty places.
+    let places: Vec<(u32, u32)> = (0..200).map(|k| (1_000 * k + 1, 3)).collect();
+    for bytes in [deleting(1, &places), typed_inside(20, 10_000)] {
+        let inspection = counting(&room, &bytes).unwrap();
+        assert!(!inspection.unheld && inspection.trial.is_some());
+    }
+}
+
+/// Every other room inspects as before the count existed ([inspect]; whether
+/// they should count is undecided): 5,000 scattered deletions out of one
+/// text of 100,000 characters, whose splits alone are past [MAX_WORK], are
+/// tried on a copy and taken, as yrs counts few steps for them.
+#[test]
+fn an_inspection_that_counts_no_splits_takes_what_it_took() {
+    let room = one_text("x", 100_000);
+    let bytes = deleting(1, &(0..5_000).map(|k| (20 * k + 1, 1)).collect::<Vec<_>>());
+    assert!(matches!(counting(&room, &bytes), Err(UpdateError::Costly)));
+    let inspection = inspect_update(&room.transact(), &decode(&bytes).unwrap()).unwrap();
+    assert!(!inspection.unheld && inspection.trial.is_some());
+}
+
+/// What a split costs: the units of the piece it copies, six times over for
+/// text that is not ASCII, and the units before the cut, in the update's
+/// order (a second cut splits what the first left). A list's item costs its
+/// values; a deleted item and a block's edge cost nothing.
+#[test]
+fn a_split_costs_the_piece_it_copies_and_walks() {
+    let splits = |room: &Doc, bytes: &[u8]| placing_of(room, bytes).unwrap().splits;
+    let ascii = one_text("x", 96_000);
+    // One deletion to the end: one cut in the middle.
+    let half = deleting(1, &[(48_000, 48_000)]);
+    assert_eq!(splits(&ascii, &half), 48_000 / 16 + 96_000 / 192);
+    assert_eq!(
+        splits(&one_text("\u{4e2d}", 96_000), &half),
+        48_000 / 16 + 6 * 96_000 / 192
+    );
+    // Two cuts, the second in the piece the first left: it walks from the
+    // first cut on. Backward, each cut walks from the start of the text.
+    let forward = deleting(1, &[(32_000, 32_000)]);
+    assert_eq!(
+        splits(&ascii, &forward),
+        (32_000 / 16 + 96_000 / 192) + (32_000 / 16 + 64_000 / 192)
+    );
+    let backward = deleting(1, &[(80_000, 16_000), (64_000, 16_000)]);
+    assert_eq!(
+        splits(&ascii, &backward),
+        (80_000 / 16 + 96_000 / 192) + (64_000 / 16 + 80_000 / 192)
+    );
+    // A character typed after the first one cuts once (its right origin
+    // starts where its origin ends): nothing to walk, the whole text copied.
+    assert_eq!(splits(&ascii, &typed_inside(1, 0)), 96_000 / 192);
+    let list = doc(1);
+    let array = list.get_or_insert_array("a");
+    yrs::Array::insert_range(&array, &mut list.transact_mut(), 0, vec![1.5f64; 4_000]);
+    assert_eq!(splits(&list, &deleting(1, &[(2_000, 2_000)])), 4_000 / 4);
+    // Deleted already, and a whole item: no cut.
+    let text = ascii.get_or_insert_text("t");
+    text.remove_range(&mut ascii.transact_mut(), 0, 96_000);
+    let held = placing_of(&ascii, &half).unwrap();
+    assert_eq!((held.splits, held.deletions), (0, 0));
+    let whole = placing_of(&one_text("x", 96_000), &deleting(1, &[(0, 96_000)])).unwrap();
+    assert_eq!((whole.splits, whole.deletions), (0, 1));
+}
+
+/// A keystroke in the middle of a long text splits it once. Where splits
+/// count it is applied directly while the split is cheap, and tried on a copy
+/// off the async workers once it costs more than a small edit's share
+/// ([SMALL_SPLITS]); where they do not it stays a small edit.
+#[test]
+fn a_costly_split_is_not_a_small_edit_where_splits_count() {
+    let keystroke = |units: usize| {
+        let room = one_text("x", units);
+        let writer = doc(2);
+        sync(&room, &writer);
+        let text = writer.get_or_insert_text("t");
+        let bytes = delta(&writer, |txn| text.insert(txn, units as u32 / 2, "k"));
+        let update = decode(&bytes).unwrap();
+        let txn = room.transact();
+        let incoming = Incoming::new(&update);
+        let tried = inspect_counting_splits(&txn, &incoming)
+            .unwrap()
+            .trial
+            .is_some();
+        let uncounted = inspect(&txn, &incoming).unwrap().trial.is_some();
+        (
+            (
+                tried,
+                applies_inline_counting_splits(&txn, &incoming, bytes.len()),
+            ),
+            (uncounted, applies_inline(&txn, &incoming, bytes.len())),
+        )
+    };
+    assert_eq!(keystroke(100_000), ((false, true), (false, true)));
+    assert_eq!(keystroke(3_000_000), ((true, false), (false, true)));
+}

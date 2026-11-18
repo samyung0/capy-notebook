@@ -2,13 +2,13 @@
 //! document (notes, mindmaps, diagrams; the notes crate), a live item
 //! document (flashcard sets; the items crate, live-items DESIGN.md) or a
 //! canvas's board (BlockSuite's block map, which the server stores and bounds
-//! but never reads beyond its image blocks). All project to the same Plate
+//! but never reads beyond the assets its blocks name). All project to the same Plate
 //! envelope, so storage, projection, receipts and evictions do not care which.
 
 use notes::catalog::CANVAS_BOARD_MAX;
 use notes::limits::{LimitCode, Metrics};
 use serde_json::{Value, json};
-use yrs::{Any, Map, Out, ReadTxn, StateVector, Transact, UpdateBlock};
+use yrs::{Any, Map, Out, ReadTxn, StateVector, Transact};
 
 /// The one root a board's editors write: BlockSuite's map of blocks by id.
 pub const BOARD_ROOT: &str = "blocks";
@@ -18,9 +18,13 @@ pub const BOARD_ROOT: &str = "blocks";
 /// a page block holding a surface block.
 const BOARD_FIRST_STATE: &[u8] = include_bytes!("../fixtures/board-first-state.bin");
 
-/// A board has no Plate value of its own: its block names the stored version
-/// projected ([Model::projection]).
-const BOARD_VALUE: &str = "a board projects by its stored version";
+/// The bytes a split adds to a board's state: the header of the piece it
+/// makes (an info byte, an origin and a right origin of at most ten bytes of
+/// client id and five of clock each, a length).
+const SPLIT_HEADER: u64 = 36;
+/// The bytes a new map entry adds beyond its own: the deleted range of the
+/// value it replaces, under a client the delete set may not name yet.
+const REPLACED: u64 = 25;
 
 // A joiner takes a board's whole state in one sync message.
 const _: () = assert!(CANVAS_BOARD_MAX <= crate::room::NOTE_MAX_SYNC_BYTES);
@@ -61,12 +65,13 @@ impl Model {
         }
     }
 
-    /// The Plate value written to `materials.content`.
+    /// The Plate value written to `materials.content`: a board's is its one
+    /// block, at version 0 as before its first projection.
     pub fn value<T: ReadTxn>(self, txn: &T) -> Result<Vec<Value>, String> {
         match self {
             Model::Note => notes::plate::value(txn).map_err(|error| error.to_string()),
             Model::Item(kind) => Ok(kind.value(txn)),
-            Model::Board => Err(BOARD_VALUE.into()),
+            Model::Board => Ok(vec![board_block(txn, 0)]),
         }
     }
 
@@ -84,9 +89,8 @@ impl Model {
     /// the limits read it; an item's projection may leave blank cards out).
     pub fn document_value<T: ReadTxn>(self, txn: &T) -> Result<Vec<Value>, String> {
         match self {
-            Model::Note => self.value(txn),
+            Model::Note | Model::Board => self.value(txn),
             Model::Item(kind) => Ok(kind.document_value(txn)),
-            Model::Board => Err(BOARD_VALUE.into()),
         }
     }
 
@@ -126,11 +130,7 @@ impl Model {
             Model::Note => notes::limits::measure(txn).map_err(|error| error.to_string()),
             Model::Item(kind) => Ok(notes::limits::measure_value(&kind.document_value(txn))),
             // A board is bounded by its live state's bytes, history included.
-            Model::Board => Ok(Metrics {
-                content_bytes: txn.encode_state_as_update_v1(&StateVector::default()).len() as u64,
-                max_depth: 0,
-                node_count: 0,
-            }),
+            Model::Board => Ok(board_metrics(state_bytes(txn))),
         }
     }
 
@@ -191,7 +191,7 @@ impl Model {
             }),
             Model::Item(kind) => RoomValidator::Item(items::Validator::new(kind, Some(metrics))),
             // The load measured the state's bytes ([Model::measure]).
-            Model::Board => RoomValidator::Board(ydoc::Estimate::new(metrics.content_bytes)),
+            Model::Board => RoomValidator::Board(metrics.content_bytes),
         }
     }
 }
@@ -218,9 +218,15 @@ fn asset_id_ok(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// The one thing the server reads from a board: the editor assets its image
-/// blocks name (a block map of flavour `affine:image`, its `prop:sourceId`),
-/// each once, in byte order. Go keeps these and prunes the canvas's others.
+/// The key under which a board's block names an editor asset.
+const SOURCE_ID: &str = "prop:sourceId";
+
+/// The one thing the server reads from a board: the editor assets its blocks
+/// name (a block map's `prop:sourceId`, an image's today), each once, in
+/// byte order. Go keeps these and prunes the canvas's others, so a block of
+/// any flavour keeps its asset: one a newer editor wrote, which this version
+/// shows as a placeholder, is not deleted behind its writer's back. An id
+/// that is no asset of the canvas prunes nothing.
 fn board_images<T: ReadTxn>(txn: &T) -> Vec<String> {
     let Some(blocks) = txn.get_map(BOARD_ROOT) else {
         return Vec::new();
@@ -231,14 +237,9 @@ fn board_images<T: ReadTxn>(txn: &T) -> Vec<String> {
             let Out::YMap(block) = block else {
                 return None;
             };
-            let text = |key: &str| match block.get(txn, key) {
-                Some(Out::Any(Any::String(text))) => Some(text),
-                _ => None,
-            };
-            if &*text("sys:flavour")? != "affine:image" {
+            let Some(Out::Any(Any::String(id))) = block.get(txn, SOURCE_ID) else {
                 return None;
-            }
-            let id = text("prop:sourceId")?;
+            };
             asset_id_ok(&id).then(|| id.to_string())
         })
         .collect();
@@ -262,62 +263,105 @@ fn board_block<T: ReadTxn>(txn: &T, version: i64) -> Value {
     })
 }
 
-/// Whether `update` holds a struct past what the room holds.
-fn grows<T: ReadTxn>(txn: &T, update: &yrs::Update) -> bool {
-    let state = txn.state_vector();
+/// Whether `update` writes a board block's asset id: an image added, pasted
+/// or brought back by Undo, whose asset Go trashed when a projection no
+/// longer named it. The room then projects after its next store, not at the
+/// idle projection, so the image is served again within seconds.
+pub fn names_asset(update: &yrs::Update) -> bool {
     update.blocks().any(|block| {
-        let (client, end) = match block {
-            UpdateBlock::Item(item) => (item.id().client, item.id().clock + item.len()),
-            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
-                (range.client, range.clock + range.len)
-            }
-        };
-        end > state.get(&client)
+        matches!(block, yrs::UpdateBlock::Item(item)
+            if item.parent_sub().is_some_and(|key| &**key == SOURCE_ID))
     })
+}
+
+fn state_bytes<T: ReadTxn>(txn: &T) -> u64 {
+    txn.encode_state_as_update_v1(&StateVector::default()).len() as u64
+}
+
+fn board_metrics(content_bytes: u64) -> Metrics {
+    Metrics {
+        content_bytes,
+        max_depth: 0,
+        node_count: 0,
+    }
+}
+
+/// The most `update` of `bytes` bytes adds to a board's state: its own
+/// bytes, a piece's header for each of the two places a struct or a deleted
+/// range may split an item, and the deletion of the value a new map entry
+/// replaces. Content a deletion frees only shrinks the state: a collected
+/// item gives back more than its deleted range takes.
+fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
+    let structs = update.blocks().count() as u64;
+    let ranges: usize = update
+        .delete_set()
+        .iter()
+        .map(|(_, ranges)| ranges.len())
+        .sum();
+    bytes as u64 + structs * (2 * SPLIT_HEADER + REPLACED) + ranges as u64 * 2 * SPLIT_HEADER
 }
 
 /// A board update's own checks, after the room's (the client-id rule, the
 /// marker root): one the room can place, at a cost yrs bounds, writing only
-/// the blocks root, and keeping the state within [CANVAS_BOARD_MAX] by
-/// `estimate`. Deletions alone skip the byte check, so a board at its cap can
-/// still be thinned while the estimate refuses growth between two measures.
+/// the blocks root, and keeping the state within [CANVAS_BOARD_MAX].
+///
+/// `bound` is an upper bound of the state's bytes. While it and the most the
+/// update can add ([board_growth]) fit the cap, the update enters unmeasured.
+/// Past that the state is measured exactly without and with the update,
+/// which enters when the state with it fits the cap or is no larger than
+/// without it: the cap is never passed, deletions that split items count
+/// like any growth, a board at its cap can always be thinned, and no update
+/// is refused by a stale estimate (a person who cleared half a full board
+/// draws again at once). `changes`: whether the update tells the room
+/// anything new; one that does not (a joiner's step 2) leaves the size alone.
 fn admit_board(
     doc: &yrs::Doc,
     update: &yrs::Update,
     bytes: &[u8],
-    estimate: &mut ydoc::Estimate,
+    changes: bool,
+    bound: &mut u64,
 ) -> Admitted {
-    {
-        let txn = doc.transact();
-        let inspection = match ydoc::inspect_update(&txn, update) {
-            Ok(inspection) => inspection,
-            Err(error) => return Admitted::Refused(error.to_string()),
-        };
-        if inspection.unheld {
-            return Admitted::Unheld;
-        }
-        if inspection
-            .containers
-            .iter()
-            .any(|found| &*found.root != BOARD_ROOT)
-        {
-            return Admitted::Refused("a board update writes only the blocks root".into());
-        }
-        if !grows(&txn, update) {
-            return Admitted::Accepted;
-        }
+    let cap = CANVAS_BOARD_MAX as u64;
+    let txn = doc.transact();
+    let incoming = ydoc::Incoming::new(update);
+    let inspection = match ydoc::inspect_counting_splits(&txn, &incoming) {
+        Ok(inspection) => inspection,
+        Err(error) => return Admitted::Refused(error.to_string()),
+    };
+    if inspection.unheld {
+        return Admitted::Unheld;
     }
-    match ydoc::fits_room(doc, bytes, estimate, CANVAS_BOARD_MAX as u64) {
-        Ok(true) => Admitted::Accepted,
-        Ok(false) => Admitted::Limit(
-            LimitCode::DocumentSizeExceeded,
-            Metrics {
-                content_bytes: estimate.bytes + bytes.len() as u64,
-                max_depth: 0,
-                node_count: 0,
-            },
-        ),
-        Err(error) => Admitted::Refused(error),
+    if inspection
+        .containers
+        .iter()
+        .any(|found| &*found.root != BOARD_ROOT)
+    {
+        return Admitted::Refused("a board update writes only the blocks root".into());
+    }
+    if !changes {
+        return Admitted::Accepted;
+    }
+    let growth = board_growth(update, bytes.len());
+    if *bound + growth <= cap {
+        *bound += growth;
+        return Admitted::Accepted;
+    }
+    let before = state_bytes(&txn);
+    // The inspection tried it on a copy already, unless it is a small edit.
+    let placed = match inspection.trial {
+        Some(placed) => placed,
+        None => match ydoc::placed(&txn, &incoming) {
+            Ok(placed) => placed,
+            Err(error) => return Admitted::Refused(error.to_string()),
+        },
+    };
+    let after = state_bytes(&placed.transact());
+    if after <= before.max(cap) {
+        *bound = after;
+        Admitted::Accepted
+    } else {
+        *bound = before;
+        Admitted::Limit(LimitCode::DocumentSizeExceeded, board_metrics(after))
     }
 }
 
@@ -344,19 +388,23 @@ pub enum Admitted {
 pub enum RoomValidator {
     Note(notes::limits::Validator),
     Item(items::Validator),
-    /// A board's running state size, held to [CANVAS_BOARD_MAX].
-    Board(ydoc::Estimate),
+    /// An upper bound of a board's state in bytes, held to
+    /// [CANVAS_BOARD_MAX] ([admit_board]).
+    Board(u64),
 }
 
 impl RoomValidator {
     /// `bytes`: the update as it was sent (a board's size is counted in
-    /// them). `draft`: a draft send's update, refused when a note's typing
-    /// would be hidden in a deleted block (live typing there is collaboration).
+    /// them). `changes`: whether it tells the room anything new
+    /// (`ydoc::contains_changes`). `draft`: a draft send's update, refused
+    /// when a note's typing would be hidden in a deleted block (live typing
+    /// there is collaboration).
     pub fn admit(
         &mut self,
         doc: &yrs::Doc,
         update: &yrs::Update,
         bytes: &[u8],
+        changes: bool,
         draft: bool,
     ) -> Admitted {
         match self {
@@ -379,7 +427,7 @@ impl RoomValidator {
                 Err(items::Refusal::Limit { code, metrics }) => Admitted::Limit(code, metrics),
                 Err(error) => Admitted::Refused(error.to_string()),
             },
-            RoomValidator::Board(estimate) => admit_board(doc, update, bytes, estimate),
+            RoomValidator::Board(bound) => admit_board(doc, update, bytes, changes, bound),
         }
     }
 
@@ -387,26 +435,24 @@ impl RoomValidator {
         match self {
             RoomValidator::Note(validator) => validator.invalidate(),
             RoomValidator::Item(validator) => validator.invalidate(),
-            // At the cap with no measure pending, the next growing update
-            // measures the board exactly.
-            RoomValidator::Board(estimate) => {
-                *estimate = ydoc::Estimate::new(CANVAS_BOARD_MAX as u64);
-            }
+            // At the cap: the next update that changes the board measures
+            // it exactly.
+            RoomValidator::Board(bound) => *bound = CANVAS_BOARD_MAX as u64,
         }
     }
 
-    /// Whether admitting `bytes` more may measure a board exactly, which
-    /// runs off the async workers.
-    pub fn near_cap(&self, bytes: usize) -> bool {
-        matches!(self, RoomValidator::Board(estimate)
-            if estimate.bytes + bytes as u64 > CANVAS_BOARD_MAX as u64)
+    /// Whether admitting `update` of `bytes` bytes measures a board exactly,
+    /// which runs off the async workers.
+    pub fn near_cap(&self, update: &yrs::Update, bytes: usize) -> bool {
+        matches!(self, RoomValidator::Board(bound)
+            if bound + board_growth(update, bytes) > CANVAS_BOARD_MAX as u64)
     }
 
-    /// An applied update of `bytes` whose deletes freed `freed` payload
-    /// bytes, on a board's estimate.
-    pub fn applied(&mut self, bytes: u64, freed: u64) {
-        if let RoomValidator::Board(estimate) = self {
-            estimate.applied(bytes, freed);
+    /// The room's own write of `bytes` to the document (a contributor
+    /// marker, a map entry), on a board's bound.
+    pub fn wrote(&mut self, bytes: u64) {
+        if let RoomValidator::Board(bound) = self {
+            *bound += bytes + REPLACED;
         }
     }
 
@@ -488,15 +534,59 @@ mod tests {
         }
     }
 
-    /// Admits `bytes` and, accepted, applies them as the room does.
+    /// Admits `bytes` and, accepted, applies them as the room does. Whatever
+    /// the verdict, the board's state is within its cap and its bound no
+    /// lower than the state.
     fn send(room: &yrs::Doc, validator: &mut RoomValidator, bytes: &[u8]) -> Admitted {
-        let admitted = validator.admit(room, &ydoc::decode(bytes).unwrap(), bytes, false);
+        let update = ydoc::decode(bytes).unwrap();
+        let changes = ydoc::contains_changes(&room.transact(), &update);
+        let admitted = validator.admit(room, &update, bytes, changes, false);
         if matches!(admitted, Admitted::Accepted) {
-            let (applied, freed, _) =
-                ydoc::apply_freeing(room, ydoc::decode(bytes).unwrap(), None).unwrap();
-            validator.applied(applied.len() as u64, freed);
+            ydoc::apply(room, update).unwrap();
         }
+        let state = whole(room).len() as u64;
+        assert!(state <= CANVAS_BOARD_MAX as u64, "a state of {state} bytes");
+        assert!(bound(validator) >= state, "{} < {state}", bound(validator));
         admitted
+    }
+
+    fn bound(validator: &RoomValidator) -> u64 {
+        let RoomValidator::Board(bound) = validator else {
+            panic!("no board");
+        };
+        *bound
+    }
+
+    /// A stroke as the editor draws one: a block map holding its points.
+    fn stroke(doc: &yrs::Doc, id: &str) {
+        let points: Vec<yrs::Any> = (0..400)
+            .map(|n| {
+                yrs::Any::Array(
+                    vec![(f64::from(n) * 1.37).into(), (f64::from(n) * 2.11).into()].into(),
+                )
+            })
+            .collect();
+        let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+        let mut txn = doc.transact_mut();
+        let block = blocks.insert(&mut txn, id, MapPrelim::default());
+        block.insert(&mut txn, "sys:flavour", "affine:brush");
+        block.insert(&mut txn, "prop:lineWidth", 4.0);
+        block.insert(&mut txn, "prop:points", yrs::Any::Array(points.into()));
+    }
+
+    /// An update of deletions alone: `ranges` (clock, length) of `client`.
+    fn deleting(client: u64, ranges: &[(u32, u32)]) -> Vec<u8> {
+        use yrs::encoding::write::Write;
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write_var(0u32);
+        bytes.write_var(1u32);
+        bytes.write_var(client);
+        bytes.write_var(ranges.len() as u32);
+        for (clock, len) in ranges {
+            bytes.write_var(*clock);
+            bytes.write_var(*len);
+        }
+        bytes
     }
 
     /// A fresh canvas loads to exactly the bytes the editor's own code made
@@ -561,9 +651,10 @@ mod tests {
     }
 
     /// An update taking the board over its cap is refused with the size
-    /// limit, growth stays refused by the estimate until the next measure,
-    /// and deletions alone still enter, after which the board takes growth
-    /// again (contract C6). Fails if a board at its cap cannot be thinned.
+    /// limit and the size the board would have, each time by an exact
+    /// measure; deletions alone still enter, after which the board takes
+    /// growth again at once (contract C6). Fails if a board at its cap
+    /// cannot be thinned, or refuses growth after it was.
     #[test]
     fn a_board_at_its_cap_refuses_growth_and_takes_deletions() {
         let (room, mut validator) = board();
@@ -589,6 +680,10 @@ mod tests {
                 panic!("{id} entered");
             };
             assert_eq!(code, LimitCode::DocumentSizeExceeded);
+            // The size the board would have, exactly.
+            let with = tab(&room, 14);
+            ydoc::apply(&with, ydoc::decode(&more).unwrap()).unwrap();
+            assert_eq!(metrics.content_bytes, whole(&with).len() as u64);
             assert!(metrics.content_bytes > CANVAS_BOARD_MAX as u64);
         }
         let thinned = update(&writer, |doc| {
@@ -613,6 +708,186 @@ mod tests {
             send(&room, &mut validator, &more),
             Admitted::Accepted
         ));
+    }
+
+    /// Board review 3.2: a board of strokes (block maps holding point
+    /// arrays) drawn to its cap, then half of them erased, takes the next
+    /// stroke at once. The size estimate that came before counted an erased
+    /// stroke as freeing nothing and refused that stroke 999 times. Fails if
+    /// it is refused once.
+    #[test]
+    fn a_full_board_thinned_takes_a_stroke_at_once() {
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        let mut drawn = 0;
+        loop {
+            let bytes = update(&writer, |doc| stroke(doc, &format!("s{drawn}")));
+            match send(&room, &mut validator, &bytes) {
+                Admitted::Accepted => drawn += 1,
+                Admitted::Limit(LimitCode::DocumentSizeExceeded, metrics) => {
+                    assert!(metrics.content_bytes > CANVAS_BOARD_MAX as u64);
+                    break;
+                }
+                _ => panic!("stroke {drawn}"),
+            }
+        }
+        assert!(drawn > 200, "{drawn} strokes");
+        let full = whole(&room).len();
+        // The refused stroke stays in its writer's tab: another one erases.
+        let eraser = tab(&room, 12);
+        for n in 0..drawn / 2 {
+            let erased = update(&eraser, |doc| {
+                doc.get_or_insert_map(super::BOARD_ROOT)
+                    .remove(&mut doc.transact_mut(), &format!("s{n}"));
+            });
+            assert!(matches!(
+                send(&room, &mut validator, &erased),
+                Admitted::Accepted
+            ));
+        }
+        assert!(whole(&room).len() < full * 6 / 10);
+        let again = update(&tab(&room, 13), |doc| stroke(doc, "again"));
+        assert!(matches!(
+            send(&room, &mut validator, &again),
+            Admitted::Accepted
+        ));
+    }
+
+    /// Board review 3.1: a deletion inside an item splits it, and each piece
+    /// carries a header of its own, so deletions alone grow the state (about
+    /// 23 bytes a range; 320,000 of them took a board at a third of its cap
+    /// to four times it). They count like any growth: a long text with
+    /// scattered deletions is refused where it would pass the cap, alone or
+    /// beside new content, and taken where it fits, and the cap holds
+    /// throughout (`send` checks it after every update).
+    #[test]
+    fn deletions_that_split_items_count_toward_the_cap() {
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        // 3,300 separate items of twenty characters: each typed at the start.
+        let typed = update(&writer, |doc| {
+            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+            let mut txn = doc.transact_mut();
+            let block = blocks.insert(&mut txn, "note", MapPrelim::default());
+            let text = block.insert(&mut txn, "prop:text", TextPrelim::new(""));
+            for _ in 0..3_300 {
+                text.insert(&mut txn, 0, &"t".repeat(20));
+            }
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &typed),
+            Admitted::Accepted
+        ));
+        // Filled to 30,000 bytes under the cap.
+        let room_left = CANVAS_BOARD_MAX - whole(&room).len() - 30_000;
+        let filled = update(&writer, |doc| {
+            add_block(
+                doc,
+                "fill",
+                "affine:note",
+                &[("prop:text", &"x".repeat(room_left))],
+            )
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &filled),
+            Admitted::Accepted
+        ));
+        let before = whole(&room).len();
+        // One character out of the middle of each item.
+        let middles: Vec<(u32, u32)> = {
+            let txn = room.transact();
+            let Some(yrs::Out::YMap(block)) = txn
+                .get_map(super::BOARD_ROOT)
+                .and_then(|blocks| blocks.get(&txn, "note"))
+            else {
+                panic!("no block");
+            };
+            let Some(yrs::Out::YText(text)) = block.get(&txn, "prop:text") else {
+                panic!("no text");
+            };
+            let branch: &yrs::branch::Branch = text.as_ref();
+            let mut clocks = Vec::new();
+            let mut next = branch.start();
+            while let Some(item) = next {
+                clocks.push((item.id().clock + 10, 1));
+                next = item.right();
+            }
+            clocks.sort_unstable();
+            clocks
+        };
+        assert_eq!(middles.len(), 3_300);
+        // Every one of 3,000 adds two headers and a deleted range: over.
+        let all = deleting(11, &middles[..3_000]);
+        let Admitted::Limit(LimitCode::DocumentSizeExceeded, metrics) =
+            send(&room, &mut validator, &all)
+        else {
+            panic!("the deletions entered");
+        };
+        assert!(metrics.content_bytes > CANVAS_BOARD_MAX as u64);
+        assert_eq!(whole(&room).len(), before);
+        // The same beside a new block.
+        let block = update(&tab(&room, 12), |doc| {
+            add_block(doc, "b", "affine:note", &[])
+        });
+        let both = yrs::merge_updates_v1([block.as_slice(), all.as_slice()]).unwrap();
+        assert!(matches!(
+            send(&room, &mut validator, &both),
+            Admitted::Limit(LimitCode::DocumentSizeExceeded, _)
+        ));
+        // 300 of them fit, and grow the state.
+        assert!(matches!(
+            send(&room, &mut validator, &deleting(11, &middles[3_000..])),
+            Admitted::Accepted
+        ));
+        assert!(whole(&room).len() > before);
+        // Thinned, the board takes them all.
+        let thinned = update(&tab(&room, 13), |doc| {
+            doc.get_or_insert_map(super::BOARD_ROOT)
+                .remove(&mut doc.transact_mut(), "fill");
+        });
+        for bytes in [&thinned, &all] {
+            assert!(matches!(
+                send(&room, &mut validator, bytes),
+                Admitted::Accepted
+            ));
+        }
+    }
+
+    /// An update that tells the room nothing new (a joiner's step 2: what
+    /// the room holds, its whole delete set) is taken without sizing the
+    /// board, at its cap too.
+    #[test]
+    fn an_update_with_nothing_new_is_not_sized() {
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        let drawn = update(&writer, |doc| stroke(doc, "s"));
+        assert!(matches!(
+            send(&room, &mut validator, &drawn),
+            Admitted::Accepted
+        ));
+        let erased = update(&writer, |doc| {
+            doc.get_or_insert_map(super::BOARD_ROOT)
+                .remove(&mut doc.transact_mut(), "s");
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &erased),
+            Admitted::Accepted
+        ));
+        validator.invalidate();
+        assert_eq!(bound(&validator), CANVAS_BOARD_MAX as u64);
+        let step2 = whole(&tab(&room, 12));
+        assert!(matches!(
+            send(&room, &mut validator, &step2),
+            Admitted::Accepted
+        ));
+        assert_eq!(bound(&validator), CANVAS_BOARD_MAX as u64);
+        // The next update that changes the board measures it.
+        let more = update(&writer, |doc| stroke(doc, "t"));
+        assert!(matches!(
+            send(&room, &mut validator, &more),
+            Admitted::Accepted
+        ));
+        assert_eq!(bound(&validator), whole(&room).len() as u64);
     }
 
     /// An update whose placement costs yrs more than `ydoc::MAX_WORK` steps
@@ -680,12 +955,14 @@ mod tests {
         ));
     }
 
-    /// The server reads one thing from a board: the assets its image blocks
-    /// name, each once, in byte order; a name that is no asset id, an image
-    /// naming none and another block's `prop:sourceId` are skipped. Its
-    /// projection is one block naming the stored version projected.
+    /// The server reads one thing from a board: the assets its blocks name,
+    /// each once, in byte order, whatever the block's flavour (one this
+    /// version does not know keeps its asset: board review 3.5); a name that
+    /// is no asset id, a block naming none and a value that is no block are
+    /// skipped. Its value is one block, which a projection gives the stored
+    /// version projected.
     #[test]
-    fn a_board_projects_its_version_and_image_assets() {
+    fn a_board_projects_its_version_and_the_assets_it_names() {
         let (room, mut validator) = board();
         let writer = tab(&room, 11);
         let long = "a".repeat(65);
@@ -698,24 +975,169 @@ mod tests {
             add_block(doc, "i6", "affine:image", &[("prop:sourceId", &long)]);
             add_block(doc, "i7", "affine:image", &[("prop:sourceId", "")]);
             add_block(doc, "i8", "affine:image", &[]);
-            add_block(doc, "n1", "affine:note", &[("prop:sourceId", "asset_note")]);
+            add_block(doc, "n1", "affine:note", &[("prop:text", "asset_text")]);
+            add_block(
+                doc,
+                "f1",
+                "affine:later",
+                &[("prop:sourceId", "asset_later")],
+            );
             let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
-            blocks.insert(&mut doc.transact_mut(), "stray", "asset_stray");
+            let mut txn = doc.transact_mut();
+            blocks.insert(&mut txn, "stray", "asset_stray");
+            let numbered = blocks.insert(&mut txn, "f2", MapPrelim::default());
+            numbered.insert(&mut txn, "prop:sourceId", 7.0);
         });
+        assert!(super::names_asset(&Update::decode_v1(&drawn).unwrap()));
         assert!(matches!(
             send(&room, &mut validator, &drawn),
             Admitted::Accepted
         ));
-        assert_eq!(
-            Model::Board.projection(&room.transact(), 7).unwrap(),
-            [json!({
+        let block = |version: i64| {
+            json!({
                 "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
-                "version": 7,
+                "version": version,
                 "images": [
                     { "assetId": "Asset-9" }, { "assetId": "asset_a" }, { "assetId": "asset_b" },
+                    { "assetId": "asset_later" },
                 ],
-            })]
+            })
+        };
+        let txn = room.transact();
+        assert_eq!(Model::Board.projection(&txn, 7).unwrap(), [block(7)]);
+        assert_eq!(Model::Board.value(&txn).unwrap(), [block(0)]);
+        assert_eq!(Model::Board.document_value(&txn).unwrap(), [block(0)]);
+        // An update that names no asset asks for no early projection.
+        let moved = update(&writer, |doc| {
+            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+            let mut txn = doc.transact_mut();
+            let Some(yrs::Out::YMap(image)) = blocks.get(&txn, "i1") else {
+                panic!("no block");
+            };
+            image.insert(&mut txn, "prop:xywh", "[0,0,10,10]");
+            blocks.remove(&mut txn, "i2");
+        });
+        assert!(!super::names_asset(&Update::decode_v1(&moved).unwrap()));
+    }
+
+    /// An update of one GC struct, which carries no bytes: `len` clocks of
+    /// `client` from `clock`.
+    fn collected(client: u64, clock: u32, len: u32) -> Vec<u8> {
+        use yrs::encoding::write::Write;
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write_var(1u32);
+        bytes.write_var(1u32);
+        bytes.write_var(client);
+        bytes.write_var(clock);
+        bytes.write_u8(0);
+        bytes.write_var(len);
+        bytes.write_var(0u32);
+        bytes
+    }
+
+    /// Board review 2.1: a GC struct claims any number of clocks in eleven
+    /// bytes, and two of them wrapped a client's clock in a release build
+    /// (`ydoc::MAX_CLOCK`). The board, the note and the item room each
+    /// admitted the first before the ceiling; none takes it now.
+    #[test]
+    fn no_material_room_takes_a_clock_past_the_ceiling() {
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
+        let loaded = |model: Model, kind: &str, value: &[serde_json::Value]| {
+            let room = yrs::Doc::with_options(ydoc::doc_options(900));
+            ydoc::replay(&room, &model.state_from_value(value), &[] as &[Vec<u8>]).unwrap();
+            let metrics = model.measure(&room.transact()).unwrap();
+            (room, model.validator(kind, metrics))
+        };
+        let rooms = [
+            ("board", board()),
+            ("note", loaded(Model::Note, "note", &[body])),
+            (
+                "flashcards",
+                loaded(Model::Item(items::Kind::Flashcards), "flashcards", &[]),
+            ),
+        ];
+        let mut verdicts = Vec::new();
+        for (name, (room, mut validator)) in rooms {
+            let bytes = collected(11, 0, ydoc::MAX_CLOCK + 1);
+            let update = Update::decode_v1(&bytes).unwrap();
+            let verdict = match validator.admit(&room, &update, &bytes, true, false) {
+                Admitted::Accepted => "accepted",
+                Admitted::Unheld => "unheld",
+                Admitted::Limit(..) => "limit",
+                Admitted::Refused(_) => "refused",
+                Admitted::Hidden => "hidden",
+            };
+            verdicts.push((name, verdict));
+        }
+        assert_eq!(
+            verdicts,
+            [
+                ("board", "refused"),
+                ("note", "refused"),
+                ("flashcards", "refused")
+            ]
         );
+    }
+
+    /// Board review 2.2, scoped to the board: yrs copies an item's content at
+    /// every split and counts none of it, and only a board's admission
+    /// counts it for now (`ydoc::inspect_counting_splits`). 5,000 scattered
+    /// deletions out of one text of 100,000 characters are refused by a
+    /// board and taken by a note room, as before the count existed: whether
+    /// the other rooms should count is undecided.
+    #[test]
+    fn only_a_board_counts_what_its_splits_cost() {
+        // The longest item of an update: its client and first clock.
+        let longest = |bytes: &[u8]| {
+            let update = Update::decode_v1(bytes).unwrap();
+            update
+                .blocks()
+                .filter_map(|block| match block {
+                    yrs::UpdateBlock::Item(item) => {
+                        Some((item.len(), item.id().client.get(), item.id().clock))
+                    }
+                    _ => None,
+                })
+                .max()
+                .unwrap()
+        };
+        let scattered = |bytes: &[u8]| {
+            let (len, client, clock) = longest(bytes);
+            assert_eq!(len, 100_000);
+            let ranges: Vec<(u32, u32)> = (0..5_000).map(|k| (clock + 20 * k + 1, 1)).collect();
+            deleting(client, &ranges)
+        };
+        let long = "x".repeat(100_000);
+
+        let (room, mut validator) = board();
+        let writer = tab(&room, 11);
+        let typed = update(&writer, |doc| {
+            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+            let mut txn = doc.transact_mut();
+            let block = blocks.insert(&mut txn, "note", MapPrelim::default());
+            block.insert(&mut txn, "prop:text", TextPrelim::new(long.as_str()));
+        });
+        assert!(matches!(
+            send(&room, &mut validator, &typed),
+            Admitted::Accepted
+        ));
+        assert!(matches!(
+            send(&room, &mut validator, &scattered(&typed)),
+            Admitted::Refused(reason) if reason.contains("steps to place")
+        ));
+
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": long }] });
+        let note = yrs::Doc::with_options(ydoc::doc_options(900));
+        let state = Model::Note.state_from_value(&[body]);
+        ydoc::replay(&note, &state, &[] as &[Vec<u8>]).unwrap();
+        let metrics = Model::Note.measure(&note.transact()).unwrap();
+        let mut validator = Model::Note.validator("note", metrics);
+        let bytes = scattered(&state);
+        let update = Update::decode_v1(&bytes).unwrap();
+        assert!(matches!(
+            validator.admit(&note, &update, &bytes, true, false),
+            Admitted::Accepted
+        ));
     }
 
     fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<Option<String>, String> {

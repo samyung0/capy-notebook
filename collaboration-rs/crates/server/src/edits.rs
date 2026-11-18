@@ -405,8 +405,10 @@ fn material_room(request: &DocumentRequest) -> Result<(String, String, i64), Doc
 }
 
 /// Why no agent tool, command or detailed read reaches a canvas: its board
-/// is written by its editors' own tabs alone.
-const CANVAS_REFUSED: &str = "a canvas's board is edited only in its editor";
+/// is written and read by its editors' own tabs alone. Every route answers
+/// it 409 `unsupported_operation`, unreported: the refusal is permanent and
+/// the caller's to avoid.
+pub const CANVAS_REFUSED: &str = "a canvas's board is edited only in its editor";
 
 /// Whether the material is a canvas, read before any of its rooms or rows is
 /// touched.
@@ -572,19 +574,17 @@ async fn material_blocks(
 /// a detailed read of the note (inspect_document), only when the room is
 /// loaded here (one process holds every room) and holds edits its projected
 /// content lacks; else none, and the read uses the stored content. One room
-/// per request, so no answer nears the API's answer cap.
+/// per request, so no answer nears the API's answer cap. A loaded canvas's
+/// board is refused ([CANVAS_REFUSED]); one not loaded is none like any
+/// room this process does not hold, as telling it from a note would cost
+/// every note's read a query.
 pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError> {
     let none = json!({ "content": null });
-    let Some(RoomName::Material {
-        material_id,
-        keys: false,
-        ..
-    }) = RoomName::parse(room)
-    else {
+    if !matches!(
+        RoomName::parse(room),
+        Some(RoomName::Material { keys: false, .. })
+    ) {
         return Ok(none);
-    };
-    if is_canvas(app, &material_id).await? {
-        return Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED));
     }
     let Some(handle) = app.rooms.get(room) else {
         return Ok(none);
@@ -593,8 +593,12 @@ pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError>
     if handle.tx.send(RoomCmd::LiveNote(reply)).await.is_err() {
         return Ok(none);
     }
-    let Ok(Ok(Some(state))) = tokio::time::timeout(SNAPSHOT_WAIT, answer).await else {
-        return Ok(none);
+    let state = match tokio::time::timeout(SNAPSHOT_WAIT, answer).await {
+        Ok(Ok(Ok(Some(state)))) => state,
+        Ok(Ok(Err(crate::room::IsBoard))) => {
+            return Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED));
+        }
+        _ => return Ok(none),
     };
     let value = tokio::task::spawn_blocking(move || {
         let doc = ydoc::scratch_doc();

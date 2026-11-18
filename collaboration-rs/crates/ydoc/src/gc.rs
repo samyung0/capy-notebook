@@ -425,7 +425,7 @@ pub fn named_collected<T: ReadTxn>(txn: &T, update: &Update, window: &IdSet) -> 
             let have = held
                 .get_or_insert_with(|| txn.state_vector())
                 .get(&id.client);
-            if id.clock + item.len() <= have {
+            if id.clock.saturating_add(item.len()) <= have {
                 continue;
             }
             Some(ID::new(id.client, have - 1))

@@ -5,10 +5,10 @@
 //! (DESIGN.md section 3), the in-place collection of a folded state ([gc])
 //! and the live Undo of server edits ([undo]).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use yrs::block::{ClientID, Item, UpdateParent};
+use yrs::block::{ClientID, Item, ItemContent, UpdateParent};
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{
@@ -123,6 +123,62 @@ pub const SMALL_EDIT: usize = 16;
 /// photo is the largest piece that cannot be split.
 pub const MAX_UPDATE_BYTES: usize = 8 * 1024 * 1024;
 
+/// The highest clock an update may reach for any client, as a struct's end
+/// or a deleted range's. A client's clocks count the units it ever wrote, and
+/// no editor writes near 2^30 of them; a GC or skip struct and a deleted
+/// item claim any number in a few bytes, so size does not bound them. yrs
+/// adds a clock and a length unchecked: two such structs wrapped a client's
+/// clock in a release build and left a room whose stored state no longer
+/// loaded. Held here, no sum of a clock and a length an admitted update
+/// causes comes near `u32::MAX`.
+pub const MAX_CLOCK: u32 = 1 << 30;
+
+/// A struct's client, first clock and length.
+fn span(block: &UpdateBlock) -> (ClientID, u32, u32) {
+    match block {
+        UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
+        UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => (range.client, range.clock, range.len),
+    }
+}
+
+/// A struct's client and the clock after its last unit. The sum saturates:
+/// checks that run before [inspect] refuses a struct past [MAX_CLOCK] read it
+/// too.
+pub fn struct_end(block: &UpdateBlock) -> (ClientID, u32) {
+    let (client, clock, len) = span(block);
+    (client, clock.saturating_add(len))
+}
+
+/// The clock after `item`'s last unit, saturating as [struct_end] does.
+fn item_end(item: &Item) -> u32 {
+    item.id().clock.saturating_add(item.len())
+}
+
+/// Refuses a struct or a deleted range of `update` ending past [MAX_CLOCK].
+pub fn within_clocks(update: &Update) -> Result<(), UpdateError> {
+    for block in update.blocks() {
+        let (client, clock, len) = span(&block);
+        if clock.checked_add(len).is_none_or(|end| end > MAX_CLOCK) {
+            return Err(UpdateError::Decode(format!(
+                "struct {clock} of client {client} ends past clock {MAX_CLOCK}"
+            )));
+        }
+    }
+    for (client, ranges) in update.delete_set().iter() {
+        // A range whose end yrs's decoder wrapped ends before its start.
+        if let Some(range) = ranges
+            .iter()
+            .find(|range| range.end < range.start || range.end > MAX_CLOCK)
+        {
+            return Err(UpdateError::Decode(format!(
+                "a deletion from {} of client {client} ends past clock {MAX_CLOCK}",
+                range.start
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Whether `incoming` is a small edit the room applies directly, without a
 /// trial (Epo, 2026-10-08): structs of one client, at most [SMALL_EDIT] of
 /// them and of delete ranges, each an item placed where its conflict scan can
@@ -137,12 +193,14 @@ pub const MAX_UPDATE_BYTES: usize = 8 * 1024 * 1024;
 /// deletions it holds already are no work for yrs, and a reconnect's
 /// catch-up repeats the document's whole delete set.
 fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
-    let update = incoming.update();
     let state = txn.state_vector();
-    if !few_new_deletions(txn, &state, incoming) {
-        return false;
-    }
-    let lacking = |id: &ID, len: u32| id.clock + len > state.get(&id.client);
+    few_new_deletions(txn, &state, incoming) && few_placed_structs(txn, &state, incoming)
+}
+
+/// [small_edit]'s rule for the update's structs.
+fn few_placed_structs<T: ReadTxn>(txn: &T, state: &StateVector, incoming: &Incoming) -> bool {
+    let update = incoming.update();
+    let lacking = |id: &ID, len: u32| id.clock.saturating_add(len) > state.get(&id.client);
     let mut client = None;
     let mut structs = 0;
     for block in update.blocks() {
@@ -165,6 +223,7 @@ fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
     let room_next = |id: &ID| -> Option<Option<ID>> {
         let item = store.get_item(id)?;
         let start = item.id();
+        // Held, so within the room's clocks.
         if id.clock + 1 < start.clock + item.len() {
             return Some(Some(ID::new(id.client, id.clock + 1)));
         }
@@ -185,11 +244,12 @@ fn small_edit<T: ReadTxn>(txn: &T, incoming: &Incoming) -> bool {
                 *first.id() == right && first.left().is_none() && first.parent_sub().is_none()
             }),
             (Some(origin), right) => incoming.item_at(&origin).is_some_and(|earlier| {
-                let last = earlier.id().clock + earlier.len() - 1;
+                // `earlier` holds the origin, so its end is past that clock.
+                let last = item_end(earlier) - 1;
                 (origin.clock == last && right == earlier.right_origin().copied())
                     || right.is_some_and(|right| {
                         right.client == origin.client
-                            && right.clock == origin.clock + 1
+                            && right.clock == origin.clock.saturating_add(1)
                             && right.clock <= last
                     })
             }),
@@ -225,6 +285,21 @@ pub const INLINE_BYTES: usize = 64 * 1024;
 /// no trial on a copy. Anything else goes to the blocking pool while the room
 /// waits.
 pub fn applies_inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) -> bool {
+    inline(txn, incoming, bytes, false)
+}
+
+/// [applies_inline] for a room that inspects with
+/// [inspect_counting_splits]: an edit whose splits cost more than
+/// [SMALL_SPLITS] is tried on a copy there, so it is not inline here.
+pub fn applies_inline_counting_splits<T: ReadTxn>(
+    txn: &T,
+    incoming: &Incoming,
+    bytes: usize,
+) -> bool {
+    inline(txn, incoming, bytes, true)
+}
+
+fn inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize, splits: bool) -> bool {
     if bytes > INLINE_BYTES {
         return false;
     }
@@ -236,7 +311,7 @@ pub fn applies_inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) ->
             return false;
         }
     }
-    small_edit(txn, incoming)
+    trial_budget(txn, &txn.state_vector(), incoming, splits).is_ok_and(|budget| budget.is_none())
 }
 
 /// Whether at most [SMALL_EDIT] of the update's delete ranges delete
@@ -301,11 +376,256 @@ fn pending_ids<T: ReadTxn>(txn: &T) -> Vec<ID> {
         .collect()
 }
 
+/// What [inspect_counting_splits] counts and [inspect] does not (a canvas's
+/// board counts it; whether every room should is undecided, as it lowers how
+/// many scattered deletions one update may make in a large text).
+///
+/// Units of a held text one step of [MAX_WORK] pays yrs to copy when it
+/// splits the text's item, and to walk to the cut. yrs counts a split as one
+/// step whatever its item holds, but it copies both halves of the content
+/// and counts UTF-16 units from the start of the piece. So 320,000
+/// one-character deletions out of one text of 640,000 characters held a room
+/// for 27 s under the limit, and 10,000 characters typed inside a text of a
+/// million for 9 s. Measured in release (2026-11-18): up to 0.12 ns a unit
+/// copied in ASCII text and 1.3 ns a unit walked, so a step is about 24 ns
+/// of it and a million about 25 ms.
+const SPLIT_COPY: u64 = 192;
+const SPLIT_WALK: u64 = 16;
+/// Text that is not ASCII costs this many times more to copy (yrs counts
+/// its UTF-16 units again for each half): up to 0.7 ns a unit.
+const SPLIT_WIDE: u64 = 6;
+/// Values of a held list one step pays yrs to clone when it splits the
+/// list's item (up to 4 ns each).
+const SPLIT_VALUES: u64 = 4;
+/// The most steps of splits in a small edit: about 1.5 ms.
+const SMALL_SPLITS: u64 = 1 << 16;
+
+/// The cuts an update makes in the items it splits, per client, and what
+/// they cost in steps of [MAX_WORK].
+#[derive(Default)]
+struct Cuts {
+    at: HashMap<ClientID, BTreeSet<u32>>,
+    /// Per item cut, read once: a text's [SPLIT_WIDE] or 1, the bytes of a
+    /// legacy JSON item.
+    read: HashMap<ID, u64>,
+    steps: u64,
+}
+
+impl Cuts {
+    /// yrs splits the live item over `[start, end)` of `client` at `at`, the
+    /// piece its earlier cuts left around that clock.
+    fn cut(
+        &mut self,
+        client: ClientID,
+        (start, end): (u32, u32),
+        content: &ItemContent,
+        at: u32,
+    ) -> Result<(), UpdateError> {
+        if at <= start || at >= end {
+            return Ok(());
+        }
+        let cuts = self.at.entry(client).or_default();
+        let from = cuts.range(start..=at).next_back().copied().unwrap_or(start);
+        if from == at {
+            return Ok(());
+        }
+        let to = cuts.range(at..end).next().copied().unwrap_or(end);
+        cuts.insert(at);
+        let (walk, copy) = (u64::from(at - from), u64::from(to - from));
+        let mut read =
+            |of: &dyn Fn() -> u64| *self.read.entry(ID::new(client, start)).or_insert_with(of);
+        self.steps += match content {
+            ItemContent::String(text) => {
+                let wide = read(&|| {
+                    if text.as_str().is_ascii() {
+                        1
+                    } else {
+                        SPLIT_WIDE
+                    }
+                });
+                walk / SPLIT_WALK + wide * copy / SPLIT_COPY
+            }
+            ItemContent::Any(_) => copy / SPLIT_VALUES,
+            // Its strings are cloned whole; no editor writes this content.
+            ItemContent::JSON(values) => {
+                let bytes = read(&|| values.iter().map(|value| value.len() as u64).sum());
+                copy / SPLIT_VALUES + bytes / SPLIT_COPY
+            }
+            // A deleted run splits in place; every other content is one unit.
+            _ => 0,
+        };
+        if self.steps > MAX_WORK {
+            return Err(UpdateError::Costly);
+        }
+        Ok(())
+    }
+}
+
+/// What placing an update costs that yrs's own count misses, and how many
+/// of its deleted ranges are new to the room.
+struct Placing {
+    /// Steps of [MAX_WORK]: the content of each live item the update splits
+    /// ([SPLIT_COPY]), one the room holds or one of the update's own.
+    splits: u64,
+    /// The deleted ranges that delete something the room does not hold
+    /// deleted already (or collected).
+    deletions: usize,
+}
+
+/// yrs splits the live item holding `at` of `client`, if `at` is not its
+/// first unit: one the room holds, else one of the update's.
+fn cut_at(
+    cuts: &mut Cuts,
+    store: &Store,
+    state: &StateVector,
+    incoming: &Incoming,
+    client: ClientID,
+    at: u32,
+) -> Result<(), UpdateError> {
+    let id = ID::new(client, at);
+    if at < state.get(&client) {
+        return match store.get_block_range(&id) {
+            Some((block, Some(item))) if !item.is_deleted() => cuts.cut(
+                client,
+                (block.clock, block.clock + block.len),
+                item.content(),
+                at,
+            ),
+            _ => Ok(()),
+        };
+    }
+    match incoming.item_at(&id) {
+        Some(item) => cuts.cut(
+            client,
+            (item.id().clock, item_end(item)),
+            item.content(),
+            at,
+        ),
+        None => Ok(()),
+    }
+}
+
+/// [Placing] of `incoming` against the room, in one walk over its structs
+/// and its deleted ranges. yrs cuts an item where a new struct is typed
+/// inside it (after its origin, before its right origin) and at each end of
+/// a deleted range that falls inside it, in the update's order. Past
+/// [MAX_WORK] steps of splits the update is refused, before anything applies
+/// it.
+///
+/// A range the room holds deleted cuts nothing (yrs splits no deleted item):
+/// each room block it covers is a step of the walk, as in
+/// [few_new_deletions], whose count this walk gives too so a resync's step
+/// 2, which carries its whole delete set, is walked once. Past [MAX_WORK]
+/// of those steps the remaining ranges count as new unwalked and the update
+/// takes the trial, as any large one does.
+fn placing<T: ReadTxn>(
+    txn: &T,
+    state: &StateVector,
+    incoming: &Incoming,
+) -> Result<Placing, UpdateError> {
+    let store = txn.store();
+    let mut cuts = Cuts::default();
+    for item in incoming.items() {
+        if item_end(item) <= state.get(&item.id().client) {
+            continue;
+        }
+        if let Some(origin) = item.origin() {
+            let after = origin.clock.saturating_add(1);
+            cut_at(&mut cuts, store, state, incoming, origin.client, after)?;
+        }
+        if let Some(right) = item.right_origin() {
+            cut_at(&mut cuts, store, state, incoming, right.client, right.clock)?;
+        }
+    }
+    let (mut deletions, mut walked) = (0, 0u64);
+    for (client, ranges) in incoming.update().delete_set().iter() {
+        let held = state.get(client);
+        for range in ranges.iter() {
+            // The first block of the range the room does not hold deleted:
+            // none, a live item, or unknown (past what the room holds, or
+            // past the walk's budget).
+            let mut clock = range.start;
+            let live = loop {
+                if clock >= range.end {
+                    break None;
+                }
+                if clock >= held || walked > MAX_WORK {
+                    break Some(None);
+                }
+                steps::step(steps::Walk::Deletions);
+                walked += 1;
+                match store.get_block_range(&ID::new(*client, clock)) {
+                    Some((block, item)) if item.is_none_or(|item| item.is_deleted()) => {
+                        clock = block.clock + block.len;
+                    }
+                    found => break Some(found),
+                }
+            };
+            let Some(live) = live else {
+                continue;
+            };
+            deletions += 1;
+            match live {
+                Some((block, Some(item))) => {
+                    let span = (block.clock, block.clock + block.len);
+                    cuts.cut(*client, span, item.content(), range.start)?;
+                    if range.end <= span.1 {
+                        cuts.cut(*client, span, item.content(), range.end)?;
+                    } else {
+                        cut_at(&mut cuts, store, state, incoming, *client, range.end)?;
+                    }
+                }
+                _ => {
+                    cut_at(&mut cuts, store, state, incoming, *client, range.start)?;
+                    cut_at(&mut cuts, store, state, incoming, *client, range.end)?;
+                }
+            }
+        }
+    }
+    Ok(Placing {
+        splits: cuts.steps,
+        deletions: if walked > MAX_WORK {
+            usize::MAX
+        } else {
+            deletions
+        },
+    })
+}
+
+/// The steps of [MAX_WORK] the trial of `incoming` may take, or none for a
+/// small edit, which takes no trial. With `splits`, what the update's splits
+/// cost comes off the budget and keeps an edit from being small past
+/// [SMALL_SPLITS]; past [MAX_WORK] the update is refused untried.
+fn trial_budget<T: ReadTxn>(
+    txn: &T,
+    state: &StateVector,
+    incoming: &Incoming,
+    splits: bool,
+) -> Result<Option<u64>, UpdateError> {
+    if !splits {
+        return Ok((!small_edit(txn, incoming)).then_some(MAX_WORK));
+    }
+    let placing = placing(txn, state, incoming)?;
+    let small = placing.splits <= SMALL_SPLITS
+        && placing.deletions <= SMALL_EDIT
+        && few_placed_structs(txn, state, incoming);
+    Ok((!small).then_some(MAX_WORK - placing.splits))
+}
+
+/// The room copied with the update applied, as [inspect_counting_splits]
+/// tries one past a small edit: for a caller that reads a small edit's
+/// result too (a board measured at its cap).
+pub fn placed<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Doc, UpdateError> {
+    let splits = placing(txn, &txn.state_vector(), incoming)?.splits;
+    trial(txn, incoming, MAX_WORK - splits)
+}
+
 /// The room copied and the update applied to the copy, with yrs counting its
-/// work: past [MAX_WORK], or with structs of the update the copy still leaves
-/// pending (the references [inspect] checked are all held by the room or the
-/// update, so they wait on each other in a cycle), the update is refused.
-fn trial<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Doc, UpdateError> {
+/// work: past `budget` ([trial_budget]), or with
+/// structs of the update the copy still leaves pending (the references
+/// [inspect] checked are all held by the room or the update, so they wait on
+/// each other in a cycle), the update is refused.
+fn trial<T: ReadTxn>(txn: &T, incoming: &Incoming, budget: u64) -> Result<Doc, UpdateError> {
     use yrs::error::UpdateError as Refused;
     let update = incoming.update();
     let doc = scratch_doc();
@@ -317,7 +637,7 @@ fn trial<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Doc, UpdateError> {
     // A room never holds pending structs (it drops what it cannot place), but
     // what one holds stays its own.
     let held_pending = pending_ids(&copy);
-    copy.limit_work(MAX_WORK);
+    copy.limit_work(budget);
     // yrs applies an update by value: the copy takes it re-encoded.
     match copy.apply_update(decode(&update.encode_v1())?) {
         Ok(()) => {}
@@ -325,7 +645,7 @@ fn trial<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Doc, UpdateError> {
         Err(error) => return Err(UpdateError::Decode(error.to_string())),
     }
     copy.commit();
-    if copy.work() > MAX_WORK {
+    if copy.work() > budget {
         return Err(UpdateError::Costly);
     }
     let cycle = pending_ids(&copy)
@@ -459,7 +779,7 @@ impl<'a> Incoming<'a> {
     /// arrive in clock order per client.
     pub fn item_at(&self, id: &ID) -> Option<&'a Item> {
         let items = self.items.get(&id.client)?;
-        let index = items.partition_point(|item| item.id().clock + item.len() <= id.clock);
+        let index = items.partition_point(|item| item_end(item) <= id.clock);
         items
             .get(index)
             .copied()
@@ -518,7 +838,7 @@ impl<'a> Incoming<'a> {
         }
         let ID { client, clock } = *item.id();
         let state_clock = state.get(&client);
-        let left = if clock < state_clock && state_clock < clock + item.len() {
+        let left = if clock < state_clock && state_clock < item_end(item) {
             // Overlap: yrs keeps the tail after the writer's own unit here.
             Some(ID::new(client, state_clock - 1))
         } else if matches!(item.update_parent(), UpdateParent::Unknown) {
@@ -569,21 +889,38 @@ pub fn inspect_update<T: ReadTxn>(txn: &T, update: &Update) -> Result<Inspection
 /// second time and free the first while the sequence still links it. These
 /// are shapes no real editor writes.
 ///
+/// A struct or a deleted range past [MAX_CLOCK] is refused.
+///
 /// Past a small edit ([small_edit]), an update the room can place is applied
 /// to a copy of the room first ([trial]): refused if yrs counts more than
 /// [MAX_WORK] steps placing it, or if its structs wait on each other.
 pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, UpdateError> {
+    inspected(txn, incoming, false)
+}
+
+/// [inspect], counting too what yrs's steps miss: the content it copies and
+/// walks at every split ([placing]). An update whose splits alone cost more
+/// than [MAX_WORK] is refused untried, and its trial has what they leave.
+pub fn inspect_counting_splits<T: ReadTxn>(
+    txn: &T,
+    incoming: &Incoming,
+) -> Result<Inspection, UpdateError> {
+    inspected(txn, incoming, true)
+}
+
+fn inspected<T: ReadTxn>(
+    txn: &T,
+    incoming: &Incoming,
+    splits: bool,
+) -> Result<Inspection, UpdateError> {
+    // First, so no sum below of a clock and a length of the update wraps.
+    within_clocks(incoming.update())?;
     let mut ends: HashMap<ClientID, u32> = HashMap::new();
     // A step per struct: every update admission reads walks its structs at
     // least once, which the cost tests take as their floor.
     for block in incoming.update().blocks() {
         steps::step(steps::Walk::Structs);
-        let (client, clock, len) = match block {
-            UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
-            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
-                (range.client, range.clock, range.len)
-            }
-        };
+        let (client, clock, len) = span(&block);
         let end = ends.entry(client).or_default();
         if clock < *end {
             return Err(UpdateError::Decode(format!(
@@ -697,13 +1034,9 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
     let mut unheld = false;
     let mut reach: HashMap<ClientID, u32> = HashMap::new();
     for block in update.blocks() {
-        let (client, clock, len, skip) = match block {
-            UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len(), false),
-            UpdateBlock::Gc(range) => (range.client, range.clock, range.len, false),
-            UpdateBlock::Skip(range) => (range.client, range.clock, range.len, true),
-        };
+        let (client, clock, len) = span(&block);
         let from = reach.get(&client).copied().unwrap_or_else(|| held(&client));
-        if skip || clock > from {
+        if matches!(block, UpdateBlock::Skip(_)) || clock > from {
             unheld = true;
         }
         reach.insert(client, from.max(clock + len));
@@ -717,7 +1050,7 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
     // So does a struct referring to a unit neither side holds. A struct the
     // trial still leaves pending then waits only on the update's own.
     for item in incoming.items() {
-        if item.id().clock + item.len() <= held(&item.id().client) {
+        if item_end(item) <= held(&item.id().client) {
             continue;
         }
         let parent = match item.update_parent() {
@@ -739,15 +1072,18 @@ pub fn inspect<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Inspection, U
     }
     // The trial before the containers: a costly update is refused before
     // that pass. One the pass then finds unheld drops its trial.
-    let mut trial = if unheld || small_edit(txn, incoming) {
+    let mut trial = if unheld {
         None
     } else {
-        Some(trial(txn, incoming)?)
+        match trial_budget(txn, &state, incoming, splits)? {
+            Some(budget) => Some(trial(txn, incoming, budget)?),
+            None => None,
+        }
     };
     let mut containers = Vec::new();
     let mut hidden_units = 0;
     for item in incoming.items() {
-        if item.id().clock + item.len() <= held(&item.id().client) {
+        if item_end(item) <= held(&item.id().client) {
             continue;
         }
         // Place an item that overlaps the held clock, or sits next to a
@@ -796,12 +1132,7 @@ pub fn contains_changes<T: ReadTxn>(txn: &T, update: &Update) -> bool {
     let state = txn.state_vector();
     let held = |client: &ClientID| state.get(client);
     for block in update.blocks() {
-        let (client, end) = match block {
-            UpdateBlock::Item(item) => (item.id().client, item.id().clock + item.len()),
-            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
-                (range.client, range.clock + range.len)
-            }
-        };
+        let (client, end) = struct_end(&block);
         if end > held(&client) {
             return true;
         }
@@ -1094,11 +1425,8 @@ pub fn has_pending<T: ReadTxn>(txn: &T) -> bool {
     txn.store().pending_update().is_some() || txn.store().pending_ds().is_some()
 }
 
-mod estimate;
 pub mod gc;
 pub mod undo;
-
-pub use estimate::{Estimate, MEASURE_EVERY, MEASURE_GROWTH, fits_room};
 
 #[cfg(test)]
 mod tests;

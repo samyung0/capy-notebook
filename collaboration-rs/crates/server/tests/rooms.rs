@@ -18445,6 +18445,90 @@ async fn a_board_refuses_a_write_to_another_root() {
     let (notice, reason) = writer.rejected().await;
     assert_eq!(notice["code"], "invalid_document", "{notice}");
     assert!(reason.contains("blocks root"), "{reason}");
+    let reader = Client::at_board(server.port, &room, &user).await;
+    assert_eq!(reader.board_blocks(), ["page", "surface"]);
+    let roots: Vec<String> = reader
+        .doc
+        .transact()
+        .root_refs()
+        .map(|(name, _)| name.to_string())
+        .collect();
+    assert_eq!(roots, ["blocks"]);
+}
+
+/// Security regression (board review 2.1): a GC struct claims any number of
+/// clocks in eleven bytes, and two of them (4,000,000,000 then 400,000,000
+/// clocks) wrapped their writer's clock in a release build and left a canvas
+/// whose stored state no longer loaded. A struct ending past
+/// `ydoc::MAX_CLOCK` is refused on entry. Fails if the room takes it.
+#[tokio::test]
+async fn a_board_refuses_a_clock_past_the_ceiling() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let client = writer.doc.client_id();
+    let mut collected = Vec::new();
+    var(&mut collected, 1);
+    var(&mut collected, 1);
+    var(&mut collected, client.get());
+    var(&mut collected, 0);
+    collected.push(0); // a GC struct
+    var(&mut collected, u64::from(ydoc::MAX_CLOCK) + 1);
+    var(&mut collected, 0);
+    writer.send(5, &sync(2, &collected)).await;
+    let (notice, reason) = writer.rejected().await;
+    assert_eq!(notice["code"], "invalid_document", "{notice}");
+    assert!(reason.contains("past clock"), "{reason}");
+    let reader = Client::at_board(server.port, &room, &user).await;
+    assert_eq!(reader.board_blocks(), ["page", "surface"]);
+    assert_eq!(reader.doc.transact().state_vector().get(&client), 0);
+}
+
+/// Security regression (board review 2.2): 320,000 one-character deletions
+/// out of one text of 640,000 characters passed the work limit and held the
+/// room for 27 s, since yrs copies an item's content at every split. What
+/// the splits copy counts toward `ydoc::MAX_WORK`: the update is refused on
+/// entry and the room answers its next writer. Fails if the room applies it.
+#[tokio::test]
+async fn a_board_refuses_deletions_that_split_one_text_over_and_over() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let client = writer.doc.client_id();
+    let typed = writer.edited(|doc| {
+        use yrs::Map as _;
+        let blocks = doc.get_or_insert_map("blocks");
+        let mut txn = doc.transact_mut();
+        let block = blocks.insert(&mut txn, "note", yrs::MapPrelim::default());
+        block.insert(
+            &mut txn,
+            "prop:text",
+            yrs::TextPrelim::new("x".repeat(200_000)),
+        );
+    });
+    writer.send(5, &sync(2, &typed)).await;
+    writer.until(6).await.expect("the typing's ack");
+    // The text is the writer's last item: every fourth character of it.
+    let end = writer.doc.transact().state_vector().get(&client);
+    let ranges = 49_000u32;
+    let mut scattered = Vec::new();
+    var(&mut scattered, 0);
+    var(&mut scattered, 1);
+    var(&mut scattered, client.get());
+    var(&mut scattered, u64::from(ranges));
+    for k in 0..ranges {
+        var(&mut scattered, u64::from(end - 200_000 + 4 * k + 1));
+        var(&mut scattered, 1);
+    }
+    writer.send(5, &sync(2, &scattered)).await;
+    let (notice, reason) = writer.rejected().await;
+    assert_eq!(notice["code"], "invalid_document", "{notice}");
+    assert!(reason.contains("steps to place"), "{reason}");
+    let mut next = Client::at_board(server.port, &room, &user).await;
+    next.draw("n1", "affine:note", &[]).await;
+    next.until(6).await.expect("ack");
 }
 
 /// A read channel of a board that sends a change is closed.
@@ -18459,6 +18543,8 @@ async fn a_read_channel_that_writes_to_a_board_is_closed() {
     reader.draw("r1", "affine:note", &[]).await;
     let closed = reader.until(4).await.expect("closed");
     assert!(String::from_utf8_lossy(&closed).contains("read-only"));
+    let other = Client::at_board(server.port, &room, &user).await;
+    assert_eq!(other.board_blocks(), ["page", "surface"]);
 }
 
 /// A board is stored as a note is (contract section 3): a store appends a
@@ -18491,15 +18577,29 @@ async fn a_board_stores_folds_unloads_and_reopens_the_same() {
     assert_eq!(board_json(&reopened.doc), drawn);
 }
 
-/// A stand-in for the Go API's projection route: the bodies it was sent.
+/// A stand-in for the Go API's projection route: the bodies it was sent,
+/// each with its material. The server's pending scan posts other tests'
+/// materials here too (they share the database).
 #[derive(Clone, Default)]
-struct Projections(std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
+struct Projections(std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>);
+
+impl Projections {
+    /// The last body sent for `material`.
+    fn last(&self, material: &str) -> Option<serde_json::Value> {
+        let kept = self.0.lock().expect("bodies");
+        kept.iter()
+            .rev()
+            .find(|(id, _)| id == material)
+            .map(|(_, body)| body.clone())
+    }
+}
 
 async fn projection_posted(
     axum::extract::State(kept): axum::extract::State<Projections>,
+    axum::extract::Path(material): axum::extract::Path<String>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::http::StatusCode {
-    kept.0.lock().expect("bodies").push(body);
+    kept.0.lock().expect("bodies").push((material, body));
     axum::http::StatusCode::OK
 }
 
@@ -18522,10 +18622,10 @@ async fn projections() -> (String, Projections) {
 
 /// What a board room sends Go at a projection (contract section 3): the
 /// canvas's one `canvas_board` block, its `version` the stored version
-/// projected (`yjsVersion`), and the assets its image blocks name, each once
-/// and in byte order, with no `assetIds` beside the content. Fails if the
-/// content does not change with each projection, or an image a block names
-/// is left out for Go to prune.
+/// projected (`yjsVersion`), and the assets its blocks name, whatever their
+/// flavour (board review 3.5), each once and in byte order, with no
+/// `assetIds` beside the content. Fails if the content does not change with
+/// each projection, or an asset a block names is left out for Go to prune.
 #[tokio::test]
 async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
     let Some(env) = env() else { return };
@@ -18543,7 +18643,13 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
         draw_block(doc, "i2", "affine:image", &[("prop:sourceId", "asset_a")]);
         draw_block(doc, "i3", "affine:image", &[("prop:sourceId", "asset_b")]);
         draw_block(doc, "i4", "affine:image", &[("prop:sourceId", "not an id")]);
-        draw_block(doc, "n1", "affine:note", &[("prop:sourceId", "asset_note")]);
+        draw_block(doc, "n1", "affine:note", &[("prop:text", "asset_text")]);
+        draw_block(
+            doc,
+            "f1",
+            "affine:later",
+            &[("prop:sourceId", "asset_later")],
+        );
     });
     writer.send(5, &sync(2, &drawn)).await;
     writer.until(6).await.expect("ack");
@@ -18551,23 +18657,56 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
     let (projected, _) = writer.stateless("projection-updated").await;
     let version = projected["yjsVersion"].as_i64().expect("a version");
     assert_eq!(version, stored_version(&env, &material).await);
-    let sent = kept.0.lock().expect("bodies").last().cloned();
     assert_eq!(
-        sent,
+        kept.last(&material),
         Some(serde_json::json!({
             "yjsVersion": version,
             "content": { "schemaVersion": 1, "value": [{
                 "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
                 "version": version,
-                "images": [{ "assetId": "asset_a" }, { "assetId": "asset_b" }],
+                "images": [
+                    { "assetId": "asset_a" }, { "assetId": "asset_b" },
+                    { "assetId": "asset_later" },
+                ],
             }] },
         }))
     );
 }
 
+/// Go trashes an editor asset no projection names, so an image erased and
+/// brought back by Undo is not served until a projection names it again. A
+/// board that takes an update naming an asset projects after its next store,
+/// not at the idle projection (60 s in these tests). Fails if the image
+/// waits for the idle projection.
+#[tokio::test]
+async fn a_board_that_names_an_asset_projects_after_its_store() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections().await;
+    let server = start_configured(&env, Some(&api), &[]).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer
+        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .await;
+    writer.until(6).await.expect("ack");
+    persisted(&mut writer, "r1").await;
+    let (projected, _) = writer.stateless("projection-updated").await;
+    let version = projected["yjsVersion"].as_i64().expect("a version");
+    assert_eq!(version, stored_version(&env, &material).await);
+    let sent = kept.last(&material).expect("a projection");
+    assert_eq!(
+        sent["content"]["value"][0]["images"],
+        serde_json::json!([{ "assetId": "asset_1" }])
+    );
+}
+
 /// Contract section 7: no agent tool, command or detailed read reaches a
-/// canvas. Each is refused before a room or a row is touched: the canvas
-/// still has no Yjs document afterwards.
+/// canvas. An edit, an inspection and the replace-block command are refused
+/// for good (409 `unsupported_operation`: a 503 would tell Go its authority
+/// is unavailable) before a room or a row is touched: the canvas still has
+/// no Yjs document afterwards. The live read answers no content while no
+/// room holds the board, as for any room not loaded, and the same refusal
+/// once one does.
 #[tokio::test]
 async fn agent_edits_and_commands_are_refused_for_a_canvas() {
     let Some(env) = env() else { return };
@@ -18585,10 +18724,6 @@ async fn agent_edits_and_commands_are_refused_for_a_canvas() {
     for (path, body) in [
         ("/internal/documents/edit", &edit),
         ("/internal/documents/inspect", &inspect),
-        (
-            "/internal/materials/live",
-            &serde_json::json!({ "room": room }),
-        ),
     ] {
         let (status, refusal) = internal(server.port, path, body).await;
         assert_eq!(status, 409, "{path}: {refusal}");
@@ -18597,6 +18732,11 @@ async fn agent_edits_and_commands_are_refused_for_a_canvas() {
             "{path}: {refusal}"
         );
     }
+    let live = serde_json::json!({ "room": room });
+    assert_eq!(
+        internal(server.port, "/internal/materials/live", &live).await,
+        (200, serde_json::json!({ "content": null }))
+    );
     let command = serde_json::json!({
         "actorUserId": user,
         "expectedBlock": { "type": "canvas_board", "id": "board", "children": [{ "text": "" }], "version": 0, "images": [] },
@@ -18606,13 +18746,8 @@ async fn agent_edits_and_commands_are_refused_for_a_canvas() {
         "type": "replace-block",
     });
     let (status, answer) = internal(server.port, "/internal/commands", &command).await;
-    assert_ne!(status, 200, "{answer}");
-    assert!(
-        answer["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("canvas")),
-        "{answer}"
-    );
+    assert_eq!(status, 409, "{answer}");
+    assert_eq!(answer["code"], "unsupported_operation", "{answer}");
     let documents: i64 = db(&env)
         .await
         .query_one(
@@ -18623,6 +18758,10 @@ async fn agent_edits_and_commands_are_refused_for_a_canvas() {
         .expect("documents")
         .get(0);
     assert_eq!(documents, 0);
+    let _tab = Client::at_board(server.port, &room, &user).await;
+    let (status, refusal) = internal(server.port, "/internal/materials/live", &live).await;
+    assert_eq!(status, 409, "{refusal}");
+    assert_eq!(refusal["code"], "unsupported_operation", "{refusal}");
 }
 
 /// The canvas role rule (contract section 1). A canvas on the account's
@@ -18691,4 +18830,90 @@ async fn a_canvas_follows_its_workspace_roles_once_shared() {
         refused_join(&mut other, &own, &token(&own, &outsider, "write")).await,
         "collaboration-forbidden"
     );
+}
+
+/// Security regression (board review 5.4): a shared canvas's open channels
+/// follow the workspace as its joins do. A lowered editor's write channel
+/// closes with 4403 and comes back read-only; taking the canvas back from the
+/// workspace closes everyone who held it by a workspace role and keeps its
+/// creator. Fails if a canvas is left out of the workspace's evictions, the
+/// flip queues none, or the revoke closes the creator.
+#[tokio::test]
+async fn a_shared_canvas_closes_those_who_lose_it_and_keeps_its_creator() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let ws = workspace_canvas(&env).await;
+    let room = ws.room.as_str();
+    share_canvas(&env, &ws.material, true).await;
+    let write = token(room, &ws.editor, "write");
+    let mut creator = Client::open(server.port).await;
+    assert_eq!(
+        creator
+            .joined(room, &token(room, &ws.creator, "write"))
+            .await,
+        1
+    );
+    let mut editor = Client::open(server.port).await;
+    assert_eq!(editor.joined(room, &write).await, 1);
+    let mut viewer = Client::open(server.port).await;
+    assert_eq!(
+        viewer.joined(room, &token(room, &ws.viewer, "read")).await,
+        0
+    );
+
+    db(&env)
+        .await
+        .execute(
+            "UPDATE workspace_members SET role='viewer' WHERE user_id=$1",
+            &[&ws.editor],
+        )
+        .await
+        .expect("lowered");
+    deliver_evictions(&env, room).await;
+    closes_quietly(&mut editor).await;
+    stays_connected(&mut creator).await;
+    stays_connected(&mut viewer).await;
+    assert_eq!(
+        refused_join(&mut editor, room, &write).await,
+        "collaboration-read-only"
+    );
+    let mut lowered = Client::open(server.port).await;
+    assert_eq!(
+        lowered.joined(room, &token(room, &ws.editor, "read")).await,
+        0
+    );
+
+    share_canvas(&env, &ws.material, false).await;
+    deliver_evictions(&env, room).await;
+    closes_quietly(&mut lowered).await;
+    closes_quietly(&mut viewer).await;
+    stays_connected(&mut creator).await;
+}
+
+/// Security regression (board review 5.4): a workspace whose owner's account
+/// is not live gives nobody its canvases, their creators included, as its
+/// other materials are gone for its members. Fails if a suspended owner's
+/// workspace still hands out roles on a canvas.
+#[tokio::test]
+async fn a_canvas_of_a_suspended_owners_workspace_is_nobodys() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let ws = workspace_canvas(&env).await;
+    let room = ws.room.as_str();
+    share_canvas(&env, &ws.material, true).await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
+            &[&ws.owner],
+        )
+        .await
+        .expect("suspend");
+    for member in [&ws.creator, &ws.editor, &ws.viewer] {
+        let mut tab = Client::open(server.port).await;
+        assert_eq!(
+            refused_join(&mut tab, room, &token(room, member, "write")).await,
+            "collaboration-forbidden"
+        );
+    }
 }
