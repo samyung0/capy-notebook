@@ -121,3 +121,17 @@ it('opens read-only for a viewer and writes nothing', () => {
   expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
   dispose();
 });
+
+it("leaves no undo manager on the room's document when it closes", () => {
+  const doc = room();
+  const watching = () =>
+    (
+      doc as unknown as { _observers: Map<string, Set<unknown>> }
+    )._observers.get('afterTransaction')?.size ?? 0;
+  const before = watching();
+  const { dispose, store } = open(doc);
+  surfaceOf(store).addElement(stroke);
+  expect(watching()).toBeGreaterThan(before);
+  dispose();
+  expect(watching()).toBe(before);
+});

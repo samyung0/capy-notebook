@@ -28,9 +28,14 @@ export type DrawingBoardOptions = {
   onEditor?: (cardId: string | null) => void;
   plane?: boolean;
   readOnly?: boolean;
+  locked?: boolean;
+  view?: BoardView;
   saved?: string;
   room?: { doc: import('yjs').Doc };
 };
+
+/** Where a board is looked at: its centre in board units, and its zoom. */
+export type BoardView = { centre: [number, number]; zoom: number };
 
 /** A box in board units. */
 export type BoardBox = { h: number; w: number; x: number; y: number };
@@ -69,10 +74,10 @@ export function mountDrawingBoard(
   reveal: (id: string) => void;
   images: () => { file?: Blob; id: string }[];
   imageFiles: () => Promise<{ file: Blob; id: string }[]>;
-  imagesSettled: () => Promise<void>;
-  reloadImages: () => void;
-  save: (options?: { finish?: boolean }) => { bytes: number; doc: string };
+  save: () => { bytes: number; doc: string };
+  setLocked: (locked: boolean) => void;
   snapshot: () => string;
+  view: () => BoardView | null;
   putAway: () => void;
   refreshCards: () => void;
   stats: () => {

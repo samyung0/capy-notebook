@@ -183,6 +183,9 @@ export function openRoomStore({
   return {
     dispose: () => {
       stopFollowing();
+      // BlockSuite leaves its undo manager on the document, which outlives
+      // this store when the board mounts again on the same room.
+      store.history.undoManager.destroy();
       store.dispose();
     },
     store,

@@ -113,6 +113,11 @@ export interface ItemRoomSnapshot {
    * loading until it syncs, never offline meanwhile. */
   slowed: boolean;
   status: ItemRoomStatus;
+  /** The room takes nothing more from this tab for now: it closed for this
+   * person's access change and the next token says what they may do, or it
+   * ended for a full document and a fresh one is opening. What is drawn or
+   * typed meanwhile would be stored nowhere. */
+  stopped: boolean;
   /** The document holds the room's state (painted from it, editable). */
   synced: boolean;
 }
@@ -177,6 +182,12 @@ export interface ItemRoomOptions {
   inside?: NoteSeat | null;
   /** Keeps a device copy of this room under this label (a member's page). */
   keep?: CopyLabel;
+  /** A canvas: an update the room refused for the document's size is dropped
+   * with this tab's other unsent edits, not kept to copy (a board shown
+   * read-only has nothing to copy from, and the same edits would be refused
+   * at every join). A fresh room opens on the room's state, and this says the
+   * canvas is full. */
+  onFull?: () => void;
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
   /** A reader (a View, a study page): asks for a read channel even when the
@@ -209,6 +220,7 @@ export class ItemRoom {
     sending: false,
     slowed: false,
     status: 'opening',
+    stopped: false,
     synced: false,
   };
   private unsynced = 0;
@@ -411,6 +423,7 @@ export class ItemRoom {
         // stops at the token, keeping the page (Epo 2026-11-05).
         if (code === 4403) {
           this.accessChanged = true;
+          this.set({ stopped: true });
           this.rejoin();
           return;
         }
@@ -467,6 +480,7 @@ export class ItemRoom {
             offline: null,
             slowed: false,
             status: this.live(),
+            stopped: false,
             synced: true,
           });
           this.requestReceipt();
@@ -831,6 +845,10 @@ export class ItemRoom {
       }
       case 'document-rejected':
       case 'authorization-revoked':
+        if (event.code === 'document_size_exceeded' && this.options.onFull) {
+          this.full();
+          return;
+        }
         // A store refused for good: this room's unsaved state is gone on
         // the server, so this tab's edits open for copying.
         this.refused();
@@ -881,6 +899,21 @@ export class ItemRoom {
     this.end();
   }
 
+  /** The room refused an update that takes its document past its size
+   * (`onFull`): this tab's unsent edits go from the document and from this
+   * device, and a fresh room opens once they are gone, so its first read
+   * finds none of them to send again. */
+  private full() {
+    if (this.ended || this.destroyed) return;
+    this.ended = true;
+    this.dropCopy();
+    const dropped = this.recorder?.discard();
+    this.recorder = null;
+    this.set({ stopped: true });
+    this.options.onFull?.();
+    this.end(dropped);
+  }
+
   /** The room's lineage moved: unsent edits stay stored under the old one
    * (they open for copying), and a fresh room joins the new one. */
   private moved() {
@@ -892,14 +925,17 @@ export class ItemRoom {
     this.end();
   }
 
-  private end() {
+  /** `after`: what the fresh room waits for before it starts. */
+  private end(after?: Promise<unknown>) {
     this.sender?.stop();
     this.stopHold?.();
     this.armLeave(false);
     this.options.seat?.attach(null);
     this.provider?.destroy();
     this.provider = null;
-    queueMicrotask(() => this.options.onReplace?.());
+    const replace = () => this.options.onReplace?.();
+    if (after) void after.then(replace, replace);
+    else queueMicrotask(replace);
   }
 
   /** The room turned read-only (a frozen account, an owner at its limit, a
@@ -1032,6 +1068,7 @@ export function useItemRoom(
     document,
     inside,
     keep,
+    onFull,
     seed,
     wake,
   }: {
@@ -1043,6 +1080,8 @@ export function useItemRoom(
     inside?: NoteSeat | null;
     /** `ItemRoomOptions.keep`; read once, as the room starts. */
     keep?: CopyLabel;
+    /** `ItemRoomOptions.onFull`; the latest one is called. */
+    onFull?: () => void;
     /** `ItemRoomOptions.seed`, for the first room only. */
     seed?: RoomSeed | null;
     /** Bumped when an embed comes near the screen again (`ItemRoom.wake`). */
@@ -1051,8 +1090,9 @@ export function useItemRoom(
 ) {
   const [room, setRoom] = useState<ItemRoom | null>(null);
   const [generation, setGeneration] = useState(0);
-  const start = useRef({ keep, seed });
-  start.current = { keep, seed };
+  const start = useRef({ keep, onFull, seed });
+  start.current = { keep, onFull, seed };
+  const takesFull = !!onFull;
   useEffect(() => {
     if (!(materialId && enabled)) return;
     const { close, room: created } = openItemRoom(materialId, {
@@ -1061,6 +1101,7 @@ export function useItemRoom(
       drafts: actorId ? { actorId } : undefined,
       inside,
       keep: start.current.keep,
+      onFull: takesFull ? () => start.current.onFull?.() : undefined,
       onReplace: () => setGeneration((value) => value + 1),
       // Unusable once a room ended on it (its document went with the room).
       seed: start.current.seed?.doc.isDestroyed ? null : start.current.seed,
@@ -1070,7 +1111,16 @@ export function useItemRoom(
       close();
       setRoom((current) => (current === created ? null : current));
     };
-  }, [materialId, enabled, document, actorId, awareness, inside, generation]);
+  }, [
+    materialId,
+    enabled,
+    document,
+    actorId,
+    awareness,
+    inside,
+    generation,
+    takesFull,
+  ]);
   useEffect(() => {
     if (wake) room?.wake();
   }, [room, wake]);
@@ -1094,6 +1144,7 @@ const INITIAL: ItemRoomSnapshot = {
   sending: false,
   slowed: false,
   status: 'opening',
+  stopped: false,
   synced: false,
 };
 const initialSnapshot = () => INITIAL;

@@ -7,6 +7,7 @@ import { COLLABORATION_NOT_FOUND_REASON } from '@/features/notes/collaborationEv
 import { mockMemberCanvas } from './canvas';
 import {
   mockBoardPeer,
+  mockBoardSocket,
   mockRevokeBoard,
   registerMockCollaborationProvider,
 } from './collaboration';
@@ -223,5 +224,57 @@ it('relays a presence state a board lists and drops any other', async () => {
   ann.leave();
   expect(heard()).toBeUndefined();
   ben.leave();
+  provider.destroy();
+});
+
+/** A stroke of the tab's own, written as the board writes one. */
+function draw(document: Y.Doc, id: string, fields: Record<string, unknown>) {
+  const element = new Y.Map<unknown>();
+  for (const [key, value] of Object.entries(fields)) element.set(key, value);
+  drawn(document).set(id, element);
+}
+
+it('keeps what a tab and its peer drew while the tab was cut off, once it is back', async () => {
+  const id = canvas('editor');
+  const { document, heard, provider } = await tab(id);
+  const peer = mockBoardPeer(id);
+  mockBoardSocket(id, false);
+  expect(heard.closed).toEqual([{ code: 1006, reason: 'socket closed' }]);
+  draw(document, 'own-stroke', stroke);
+  peer.add('peer-stroke', stroke);
+  // Neither has the other's yet.
+  expect(Object.keys(peer.elements())).toEqual(['peer-stroke']);
+  expect([...drawn(document).keys()]).toEqual(['own-stroke']);
+  mockBoardSocket(id, true);
+  await vi.waitUntil(() => heard.synced === 2);
+  expect(Object.keys(peer.elements()).sort()).toEqual([
+    'own-stroke',
+    'peer-stroke',
+  ]);
+  expect([...drawn(document).keys()].sort()).toEqual([
+    'own-stroke',
+    'peer-stroke',
+  ]);
+  peer.leave();
+  provider.destroy();
+});
+
+it('admits what a join brings as any update: nothing past the cap', async () => {
+  const id = canvas('editor');
+  const { document, heard, provider } = await tab(id);
+  const peer = mockBoardPeer(id);
+  mockBoardSocket(id, false);
+  draw(document, 'too-big', { text: 'x'.repeat(2 * 1024 * 1024 + 1) });
+  mockBoardSocket(id, true);
+  await vi.waitFor(() =>
+    expect(heard.stateless).toContainEqual(
+      expect.objectContaining({
+        code: 'document_size_exceeded',
+        type: 'document-rejected',
+      })
+    )
+  );
+  expect(peer.elements()).toEqual({});
+  peer.leave();
   provider.destroy();
 });

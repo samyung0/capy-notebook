@@ -15,6 +15,8 @@ import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
   CanvasRenderer,
   DefaultTool,
+  EdgelessClipboardConfig,
+  EdgelessClipboardConfigIdentifier,
   EdgelessCRUDIdentifier,
   ExportManager,
   Overlay,
@@ -50,6 +52,7 @@ import {
 import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
 import { MindmapViewExtension } from '@blocksuite/affine/gfx/mindmap/view';
 import { NoteViewExtension as GfxNoteViewExtension } from '@blocksuite/affine/gfx/note/view';
+import { PanTool } from '@blocksuite/affine/gfx/pointer';
 import { PointerViewExtension } from '@blocksuite/affine/gfx/pointer/view';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { ShapeViewExtension } from '@blocksuite/affine/gfx/shape/view';
@@ -72,11 +75,17 @@ import { InlinePresetViewExtension } from '@blocksuite/affine/inlines/preset/vie
 import { ReferenceStoreExtension } from '@blocksuite/affine/inlines/reference/store';
 import { ReferenceViewExtension } from '@blocksuite/affine/inlines/reference/view';
 import { ColorScheme, ImageBlockModel } from '@blocksuite/affine/model';
+import { ImageAdapter } from '@blocksuite/affine/shared/adapters';
 import {
   FeatureFlagService,
   ThemeProvider,
 } from '@blocksuite/affine/shared/services';
-import { BlockStdScope, isGfxBlockComponent } from '@blocksuite/affine/std';
+import {
+  BlockStdScope,
+  ClipboardAdapterConfigIdentifier,
+  isGfxBlockComponent,
+  StdIdentifier,
+} from '@blocksuite/affine/std';
 import {
   type GfxBlockElementModel,
   type GfxController,
@@ -86,8 +95,12 @@ import {
   ZOOM_STEP,
 } from '@blocksuite/affine/std/gfx';
 import {
+  type BlockSnapshot,
   type ExtensionType,
   HistoryExtension,
+  nanoid,
+  type SliceSnapshot,
+  type Store,
   Text,
 } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
@@ -104,7 +117,7 @@ import {
   Undo03Icon,
 } from '@hugeicons/core-free-icons';
 import { combinedDarkCssVariables } from '@toeverything/theme';
-import { html, render } from 'lit';
+import { render } from 'lit';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
@@ -329,6 +342,11 @@ export type DrawingBoardOptions = {
   plane?: boolean;
   /** Pan and zoom only: no tools, nothing opens for editing. */
   readOnly?: boolean;
+  /** An editor's board that takes no edits as it mounts (`setLocked`). */
+  locked?: boolean;
+  /** The view the board opens at, in place of the first fit: the one its
+   * person had on this canvas a moment ago (`view()`). */
+  view?: BoardView;
   /** A question's answer board or the workspace canvas: what it may hold and its
    * tools (the board catalog). */
   board: BoardKind;
@@ -346,6 +364,9 @@ export type DrawingBoardOptions = {
 };
 
 export { BoardLoadError } from './boardLoad';
+
+/** Where a board is looked at: its centre in board units, and its zoom. */
+export type BoardView = { centre: [number, number]; zoom: number };
 
 /** The answer area in board units; drawing inside it keeps span under the wide-board
  * warning's 2,000. */
@@ -393,6 +414,95 @@ async function decodeImage(file: Blob) {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** A copied image pasted on a canvas (in place of BlockSuite's own config):
+ * another canvas's image is stored as this one's before its block is added,
+ * under the stored id (`BoardBlobSource.pasted`). A board that went away
+ * meanwhile, or an image that could not be stored, adds nothing. */
+class BoardImageClipboard extends EdgelessClipboardConfig {
+  static override readonly key = 'affine:image';
+
+  static override setup(
+    di: Parameters<typeof EdgelessClipboardConfig.setup>[0]
+  ) {
+    di.override(
+      EdgelessClipboardConfigIdentifier(BoardImageClipboard.key),
+      BoardImageClipboard,
+      [StdIdentifier]
+    );
+  }
+
+  override async createBlock(image: BlockSnapshot) {
+    const { xywh, rotate, sourceId, size, width, height, caption } =
+      image.props;
+    const blobs = this.std.store.blobSync.main;
+    if (!(blobs instanceof BoardBlobSource && typeof sourceId === 'string'))
+      return null;
+    const stored = await blobs.pasted(sourceId);
+    if (!(stored && this.surface)) return null;
+    return this.crud.addBlock(
+      'affine:image',
+      {
+        caption,
+        height,
+        rotate,
+        size: stored.bytes ?? size,
+        sourceId: stored.id,
+        width,
+        xywh,
+      },
+      this.surface.model.id
+    );
+  }
+}
+
+/** The picture types BlockSuite's page paste takes as image blocks. */
+const PASTED_IMAGE_TYPES = [
+  'image/apng',
+  'image/avif',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/svg+xml',
+  'image/webp',
+];
+
+/** A picture file pasted while something on the canvas is being edited (a
+ * note's text) goes through BlockSuite's page paste, whose own adapter adds
+ * the block first and stores its file after. On a canvas it is stored first,
+ * as every other way in is: its block comes with a file that is stored, or
+ * not at all (`imageAdds` gives it the stored id as it lands). */
+function storedImagePaste(store: Store): ExtensionType {
+  class StoredImagePaste extends ImageAdapter {
+    override async toSliceSnapshot({
+      file: files,
+      pageId,
+      workspaceId,
+    }: Parameters<ImageAdapter['toSliceSnapshot']>[0]) {
+      if (files.length === 0) return null;
+      const content: SliceSnapshot['content'] = [];
+      for (const file of files)
+        content.push({
+          children: [],
+          flavour: 'affine:image',
+          id: nanoid(),
+          props: { size: file.size, sourceId: await store.blobSync.set(file) },
+          type: 'block',
+        });
+      return { content, pageId, type: 'slice' as const, workspaceId };
+    }
+  }
+  return {
+    setup: (di) => {
+      for (const mimeType of PASTED_IMAGE_TYPES)
+        di.override(ClipboardAdapterConfigIdentifier(mimeType), () => ({
+          adapter: StoredImagePaste,
+          mimeType,
+          priority: 80,
+        }));
+    },
+  };
 }
 
 /** A store over a canvas's room document (roomStore.ts). BlockSuite's own
@@ -456,8 +566,12 @@ export function mountDrawingBoard(
   const misfits = saved ? checkSavedBoard(saved, options.board).misfits : [];
   if (misfits.length)
     console.warn('drawing board: shown as placeholders', misfits);
-  const { readOnly = false } = options;
+  // A view-only board mounts without tools for good; an editor's has them, and
+  // takes no edits while it is locked.
+  const tools = !options.readOnly;
+  let readOnly = !tools || !!options.locked;
   const blobs = new BoardBlobSource(options.images);
+  blobs.readonly = readOnly;
   const storeExtensions = [
     ...stores.get('store'),
     ...unknownStore(options.board),
@@ -471,26 +585,20 @@ export function mountDrawingBoard(
   if (onChange) store.spaceDoc.on('update', onChange);
   const imageBlocks = () =>
     store.getModelsByFlavour('affine:image') as ImageBlockModel[];
-  // An image stored at once (the workspace canvas) moves its blocks to the stored
-  // id, or takes them away when it was refused: neither is a step to undo.
-  blobs.onSettled = (from, to) =>
-    store.withoutTransact(() => {
-      for (const model of imageBlocks()) {
-        if (model.props.sourceId !== from) continue;
-        if (to) store.updateBlock(model, { size: to.bytes, sourceId: to.id });
-        else store.deleteBlock(model);
-      }
-    });
+  // A new image is stored before BlockSuite adds its block (boardBlobs.ts),
+  // which lands under BlockSuite's hash of the file: this tab's own block takes
+  // the stored id as it lands, which is no step to undo. Another person's block
+  // is theirs to place: this tab stores nothing for it and never removes it.
   const imageAdds = store.slots.blockUpdated.subscribe((change) => {
     if (change.type !== 'add' || change.flavour !== 'affine:image') return;
+    if (!change.isLocal) return;
     const model = store.getModelById(change.id) as ImageBlockModel | null;
-    const id = model?.props.sourceId;
-    if (id) void blobs.landed(id);
+    const to = model?.props.sourceId && blobs.storedAs(model.props.sourceId);
+    if (model && to)
+      store.withoutTransact(() =>
+        store.updateBlock(model, { size: to.bytes, sourceId: to.id })
+      );
   });
-  // An image the board opened with under an id that isn't its own (another
-  // canvas's, left before it was stored here) is stored now.
-  for (const id of new Set(imageBlocks().map(({ props }) => props.sourceId)))
-    if (id) void blobs.landed(id, true);
   const drawn = [
     ...formulaExtensions,
     ...planeExtensions,
@@ -499,20 +607,16 @@ export function mountDrawingBoard(
     NoFrameOverlay,
   ];
   const std = new BlockStdScope({
-    extensions: readOnly
+    extensions: tools
       ? [
           ...(options.board === 'workspace'
             ? [
-                ...readOnlyWorkspaceViews.get('edgeless'),
+                ...workspaceViews.get('edgeless'),
                 ...pictureViews,
                 ...cardViews,
+                BoardImageClipboard,
+                storedImagePaste(store),
               ]
-            : readOnlyViews.get('edgeless')),
-          ...drawn,
-        ]
-      : [
-          ...(options.board === 'workspace'
-            ? [...workspaceViews.get('edgeless'), ...pictureViews, ...cardViews]
             : views.get('edgeless')),
           shapeButtonTool,
           noteButtonTool,
@@ -521,20 +625,36 @@ export function mountDrawingBoard(
           ...drawn,
           noLatexMarkdown,
           ...boardToolbar,
+        ]
+      : [
+          ...(options.board === 'workspace'
+            ? [
+                ...readOnlyWorkspaceViews.get('edgeless'),
+                ...pictureViews,
+                ...cardViews,
+              ]
+            : readOnlyViews.get('edgeless')),
+          ...drawn,
         ],
     store,
   });
   markBoard(std, options.board, !options.images?.none);
   if (options.workspace) lendWorkspace(std, options.workspace);
-  render(
-    html`<div class="affine-edgeless-viewport capy-board">${std.render()}</div>`,
-    container
-  );
-  const board = container.querySelector('.capy-board');
+  // The board is one element of its own in the container, which goes with it:
+  // whatever else its page keeps there (a loader, its cards) is never touched.
+  // It goes in first, so a loader still there for a moment never has it laid
+  // out lower than it will stand (BlockSuite keeps the place it measured).
+  // What BlockSuite draws in it ends at `drawnEnd`; what goes in after that
+  // (the menu, the page's presence layer) is removed by whoever put it there.
+  const board = document.createElement('div');
+  board.className = 'affine-edgeless-viewport capy-board';
+  const drawnEnd = board.appendChild(document.createComment(''));
+  container.prepend(board);
+  render(std.render(), board, { renderBefore: drawnEnd });
   const gfx = std.get(GfxControllerIdentifier);
-  const unguard = readOnly
-    ? null
-    : keepToCatalog(store, gfx.surface, options.board);
+  const unguard = tools
+    ? keepToCatalog(store, gfx.surface, options.board)
+    : null;
   // Top right, left of any Done the page puts there: undo, redo and zoom, so the
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
@@ -589,10 +709,10 @@ export function mountDrawingBoard(
   }));
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
-    if (board instanceof HTMLElement) board.dataset.tool = name;
+    board.dataset.tool = name;
   });
   menu.element.classList.add('capy-board-menu');
-  board?.append(menu.element);
+  board.append(menu.element);
   const historyUpdates = store
     .get(HistoryExtension)
     .onUpdated.subscribe(() => menu.open && menu.draw());
@@ -603,7 +723,7 @@ export function mountDrawingBoard(
   // typing anywhere, while a card is open (it takes the keys), and out of sight.
   const slotKeys = (event: KeyboardEvent) => {
     if (readOnly || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (!board?.checkVisibility() || board.hasAttribute('data-editor-open'))
+    if (!board.checkVisibility() || board.hasAttribute('data-editor-open'))
       return;
     const [target] = event.composedPath();
     if (
@@ -634,8 +754,7 @@ export function mountDrawingBoard(
     if (!redo && key !== 'z') return;
     const path = event.composedPath();
     const [target] = path;
-    const onBoard =
-      target === document.body || (!!board && path.includes(board));
+    const onBoard = target === document.body || path.includes(board);
     if (
       !onBoard ||
       (target instanceof Element &&
@@ -677,10 +796,9 @@ export function mountDrawingBoard(
   const redrawOnFont = () => surfaceOf(gfx)?.refresh();
   document.fonts.addEventListener('loadingdone', redrawOnFont);
   void document.fonts.load('24px "blocksuite:surface:Inter"');
-  const symbols = readOnly ? null : mountSymbolRow(gfx);
-  if (symbols) board?.append(symbols.element);
-  const unwatchLinks =
-    board instanceof HTMLElement ? watchNoteLinks(gfx, board) : null;
+  const symbols = tools ? mountSymbolRow(gfx) : null;
+  if (symbols) board.append(symbols.element);
+  const unwatchLinks = watchNoteLinks(gfx, board);
   // A card's toolbar reads who may edit it and which card is edited, which the page
   // learns after the card is selected: the selection is set again so its toolbar
   // follows (Edit appears, Edit turns to Done).
@@ -710,9 +828,9 @@ export function mountDrawingBoard(
     layer.style.transform = `scale(${gfx.viewport.zoom})`;
     area?.zoom(gfx.viewport.zoom);
   };
-  const area = readOnly
-    ? null
-    : options.answerArea && answerArea(options.answerArea.label);
+  const area = tools
+    ? options.answerArea && answerArea(options.answerArea.label)
+    : null;
   if (area) {
     preview.before(area.box);
     layer.append(area.chip);
@@ -783,7 +901,12 @@ export function mountDrawingBoard(
       );
       store.resetHistory();
     }
-    fitView();
+    const { view } = options;
+    if (view) {
+      gfx.viewport.setViewport(view.zoom, view.centre);
+      place();
+      fitted = true;
+    } else fitView();
   });
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
@@ -915,8 +1038,6 @@ export function mountDrawingBoard(
       [
         ...new Set(imageBlocks().flatMap(({ props }) => props.sourceId ?? [])),
       ].map((id) => ({ file: blobs.held(id), id })),
-    /** Once no image is being stored. */
-    imagesSettled: () => blobs.settled(),
     /** Opens the full-board editor of the plane or chart card `id`: false when
      * the board has no such card (or opens nothing for editing). */
     openEditor: (id: string) => {
@@ -924,12 +1045,11 @@ export function mountDrawingBoard(
       if (element instanceof PlaneElementModel) openPlane(gfx, element);
       else if (element instanceof ChartElementModel) openChart(gfx, element);
       else return false;
-      return !!board?.querySelector('.capy-plane-editor');
+      return !!board.querySelector('.capy-plane-editor');
     },
     /** What a canvas's presence reads of the board (boardPresenceView.ts): its
      * viewport, selection and text caret, and where others' marks go. */
-    presence:
-      board instanceof HTMLElement ? boardPresenceView(std, gfx, board) : null,
+    presence: boardPresenceView(std, gfx, board),
     /** Out of sight but kept mounted: an open card closes, nothing stays selected,
      * and the page's keys and pastes no longer reach it. */
     putAway: () => {
@@ -945,16 +1065,6 @@ export function mountDrawingBoard(
       refreshMaterialCards();
       refreshMiscLists();
     },
-    /** Asks again for the images that showed none: a save brought one back. */
-    reloadImages: () => {
-      for (const { id } of imageBlocks()) {
-        const view = std.view.getBlock(id) as {
-          blobUrl?: string | null;
-          refreshData?: () => void;
-        } | null;
-        if (view && !view.blobUrl) view.refreshData?.();
-      }
-    },
     /** Brings `id` into view when it is out of it, so a card's runner mounts. */
     reveal: (id: string) => {
       const element = gfx.getElementById(id);
@@ -964,12 +1074,30 @@ export function mountDrawingBoard(
         gfx.viewport.setCenter(bound.center[0], bound.center[1]);
     },
     /** The board to store, with no undo history and rounded (savedCopy). */
-    save: ({ finish = true }: { finish?: boolean } = {}) => {
-      // An autosave (the workspace canvas) leaves an open card and the tool as
-      // they are; Done finishes the plot first.
-      if (finish) finishPlot();
+    save: () => {
+      finishPlot();
       const update = savedCopy(store.spaceDoc, options.board);
       return { bytes: update.byteLength, doc: toBase64(update) };
+    },
+    /** Stops an editor's board taking edits, or lets it take them again, in
+     * place: its view, its history and its tools stay mounted (a room that is
+     * sending stored steps, offline past its bound, outdated or lost). An open
+     * plane or chart is written as Done does before the board stops. A
+     * view-only board (`readOnly`) has no tools to give back and stays as it
+     * is. */
+    setLocked: (locked: boolean) => {
+      if (!tools || locked === readOnly) return;
+      if (locked) {
+        finishPlot();
+        gfx.selection.clear();
+      }
+      readOnly = locked;
+      blobs.readonly = locked;
+      store.readonly = locked;
+      // As BlockSuite's root picks one when it mounts.
+      if (locked) gfx.tool.setTool(PanTool, { panning: true });
+      else gfx.tool.setTool(DefaultTool);
+      if (menu.open) menu.draw();
     },
     /** The board as it is, leaving a tool in use alone. */
     snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
@@ -1009,6 +1137,7 @@ export function mountDrawingBoard(
       );
     },
     unmount: () => {
+      blobs.close();
       cancelAnimationFrame(frame);
       subscription.unsubscribe();
       historyUpdates.unsubscribe();
@@ -1022,14 +1151,24 @@ export function mountDrawingBoard(
       menu.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
-      unwatchLinks?.();
+      unwatchLinks();
       unwatchCards();
       themeWatch.disconnect();
       document.fonts.removeEventListener('loadingdone', redrawOnFont);
       closeBoardEditor(gfx);
       forgetFormulas();
-      render(null, container);
+      render(null, board, { renderBefore: drawnEnd });
+      board.remove();
       closeStore?.();
     },
+    /** Where the board is looked at now (`DrawingBoardOptions.view`); none
+     * before its first view. */
+    view: (): BoardView | null =>
+      fitted
+        ? {
+            centre: [gfx.viewport.centerX, gfx.viewport.centerY],
+            zoom: gfx.viewport.zoom,
+          }
+        : null,
   };
 }

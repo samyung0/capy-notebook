@@ -8,6 +8,7 @@ import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
 import {
   CanvasBoardPanel,
   CanvasBoardStrip,
+  CanvasOpening,
 } from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
@@ -73,6 +74,7 @@ export default function WorkspaceCanvas({
       {none && (
         <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
       )}
+      {!(current || none) && <CanvasOpening />}
       {picker && (
         // On a phone the row stops short of the board's own menu at the top right.
         <div

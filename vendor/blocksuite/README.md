@@ -642,6 +642,25 @@ Outside this directory, for BlockSuite:
       and `boardUnknownView.ts` (the placeholder), pinned by
       `src/features/blocksuite/boardUnknown.test.ts`.
 
+63. A connector's label is placed only by the tab whose own change moved it
+    (`affine/gfx/connector` `connector-watcher.ts` and `connector-manager.ts`
+    `ConnectorPathGenerator.updatePath`, marked `Capy (local change 63)`; Epo
+    2026-11-18, the canvas's collaboration room). `labelXYWH` is a stored field, and
+    upstream's watcher wrote it whenever a connector's path was worked out: as a
+    board loads, when a peer adds a connector or moves a shape one hangs on, and
+    in a read-only store. On a shared canvas every open tab then wrote, a
+    viewer's too (the room closes a read channel that writes, so a viewer's board
+    reopened in a loop), and a peer's move landed in another editor's Undo and
+    emptied its Redo. The watcher now carries whether the change was this tab's
+    own (`local` on the surface's events, `isLocal` on a block's) to
+    `updatePath`'s new `placeLabel` argument, false on load and in a read-only
+    store: the path, which is not stored, is still drawn again everywhere, and
+    the label's place comes from the tab that made the change. A place that did
+    not move is not written again, so an Undo that put it back keeps its Redo.
+    The mind map's two callers keep the default (their connectors are local
+    ones with no label). Pinned by
+    `src/features/blocksuite/connectorLabel.test.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

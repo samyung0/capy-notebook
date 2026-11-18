@@ -138,6 +138,8 @@ const body = (canvas: MockCanvas): CanvasBody => ({
 });
 
 const notFound = () => new HttpResponse(null, { status: 404 });
+/** Nothing answers a device that is offline (e2e: a canvas opened offline). */
+const offline = () => typeof navigator !== 'undefined' && !navigator.onLine;
 
 /** Canvases whose title holds q, for the mock global search: one's own. */
 export const searchCanvases = (q: string) =>
@@ -170,6 +172,7 @@ export const canvasHandlers = (
       async ({ params, request }) => {
         const id = String(params.id);
         if (!canvases.has(id)) return;
+        if (offline()) return HttpResponse.error();
         const access = mockCanvasAccess(id);
         if (!access) return notFound();
         const asked = (await request.json().catch(() => null)) as {
@@ -262,6 +265,7 @@ export const canvasHandlers = (
       });
     }),
     http.get('/api/canvases/:id', ({ params }) => {
+      if (offline()) return HttpResponse.error();
       const canvas = canvases.get(String(params.id));
       return canvas && roleOn(canvas)
         ? HttpResponse.json(body(canvas))

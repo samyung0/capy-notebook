@@ -1776,6 +1776,45 @@ test("a plane's editor is in the canvas's URL: Back closes it, and a missing one
   await expect(page).not.toHaveURL(/[?&]open=/);
 });
 
+test("leaving the canvas with a plane's editor open keeps what the editor writes as it closes", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await placePiece(page, 'capy-graph-slot', 'cart');
+  /** The plane's scale as its card keeps it, in pixels per unit. */
+  const scale = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(
+        'affine-edgeless-root'
+      ) as unknown as {
+        gfx: { layer: { canvasElements: { ppu?: number }[] } };
+      };
+      return root.gfx.layer.canvasElements[0]?.ppu ?? null;
+    });
+  const before = await scale();
+  await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
+  await expect(page.locator('.capy-plane-editor')).toBeVisible();
+  await page.locator('.capy-plane-editor .capy-menu-button').click();
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.keyboard.press('Escape');
+  // The card takes the editor's view only as the editor closes.
+  expect(await scale()).toBe(before);
+
+  // Away to another page of the workspace with the editor still open: its
+  // closing write reaches the room before the room goes.
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await expect.poll(scale).toBeGreaterThan(before ?? Number.NaN);
+});
+
 test("a plane's curve bends by its stroke, and the workspace's objects list plots a typed function", async ({
   page,
 }) => {

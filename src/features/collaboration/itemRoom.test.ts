@@ -975,3 +975,68 @@ it('keeps an awareness on its document and hands it to its provider', async () =
   expect(room.awareness?.getLocalState()).toBe(null);
   room.destroy();
 });
+
+// Epo 2026-11-18 (the canvas's room): a board shown read-only has nothing to
+// copy from, and the same edits would be refused at every join.
+it('drops the unsent edits of a full canvas and opens afresh once they are gone', async () => {
+  const onFull = vi.fn();
+  const onReplace = vi.fn();
+  const room = new ItemRoom('q', {
+    drafts: { actorId: 'u' },
+    onFull,
+    onReplace,
+  });
+  await room.start();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    }),
+  });
+  // The close that follows the refusal ends nothing a second time.
+  provider.config.onClose?.({ code: 4400, reason: 'document rejected' });
+  expect(room.getSnapshot()).toMatchObject({ recovery: null, stopped: true });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.discarded).toBe(1);
+  expect(drafts.refused).toBe(0);
+  expect(onFull).toHaveBeenCalledOnce();
+  expect(onReplace).toHaveBeenCalledOnce();
+  expect(userToast).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+it('keeps a refused update to copy when the room is not a canvas', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    }),
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.refused).toBe(1);
+  expect(drafts.discarded).toBe(0);
+  expect(onReplace).toHaveBeenCalledOnce();
+  room.destroy();
+});
+
+it('takes nothing between a close for this person and the next sync', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().stopped).toBe(false);
+  provider.config.onClose?.({
+    code: 4403,
+    reason: 'collaboration access changed',
+  });
+  expect(room.getSnapshot().stopped).toBe(true);
+  // Still theirs: the next sync takes edits again.
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().stopped).toBe(false);
+  room.destroy();
+});

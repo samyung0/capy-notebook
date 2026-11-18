@@ -3399,6 +3399,7 @@
   "canvas_row_by": "{name} · {time}",
   "workspace_canvas_open_failed": "无法打开画布。",
   "workspace_canvas_image_refused": "无法添加图片。",
+  "workspace_canvas_full": "这个画布已满。请删除一些内容后再继续绘制。",
   "drawing_answer_area": "作答区",
   "drawing_wide_title": "这幅作图很宽",
   "drawing_wide_body": "批改时会把整块画板拍成一张图，较小的字可能看不清。请把各部分移近一些，或把标注写大一些。",

@@ -458,11 +458,16 @@ export function join(room: Room, participant: Participant) {
       return;
     Y.applyUpdate(room.document, update, participant);
   };
-  Y.applyUpdate(
-    room.document,
-    Y.encodeStateAsUpdate(participant.document),
-    participant
-  );
+  // What the JOIN brings is admitted as any update is: a board room takes
+  // nothing from a read channel and nothing past its cap.
+  const brought =
+    room.target.kind === 'board' ? broughtToBoard(room, participant) : null;
+  if (!brought || admitsBoardUpdate(room, participant, brought))
+    Y.applyUpdate(
+      room.document,
+      Y.encodeStateAsUpdate(participant.document),
+      participant
+    );
   Y.applyUpdate(
     participant.document,
     Y.encodeStateAsUpdate(room.document),
@@ -1755,6 +1760,7 @@ function admitsBoardUpdate(
     queueMicrotask(() => participant.onRefused?.(why));
     return false;
   };
+  if (!update.byteLength) return true;
   if (participant.access === 'read') return refuse('read-only');
   const measured = () => Y.encodeStateAsUpdate(room.document).byteLength;
   room.bytes ??= measured();
@@ -1764,6 +1770,21 @@ function admitsBoardUpdate(
   }
   room.bytes += update.byteLength;
   return true;
+}
+
+/** What a joining document holds that its board room does not, as one update;
+ * an empty one when it brings nothing (a fresh tab, a tab back from a drop
+ * that drew nothing meanwhile). */
+function broughtToBoard(room: Room, participant: Participant) {
+  const probe = new Y.Doc();
+  Y.applyUpdate(probe, Y.encodeStateAsUpdate(room.document));
+  let brought: Uint8Array = new Uint8Array();
+  probe.on('update', (update: Uint8Array) => {
+    brought = update;
+  });
+  Y.applyUpdate(probe, Y.encodeStateAsUpdate(participant.document));
+  probe.destroy();
+  return brought;
 }
 
 /** The service's projection: the images the board holds, each id once, in
@@ -1828,6 +1849,7 @@ class MockBoardProvider implements ItemProvider {
   /** Connected unless disconnected on purpose. */
   private wanted = false;
   private joining = false;
+  private down = false;
   private previousToken: string | undefined;
   /** The room holds an update of this tab's as soon as it took it: nothing
    * stays unacknowledged, and the room is asked for its receipt. */
@@ -1840,6 +1862,7 @@ class MockBoardProvider implements ItemProvider {
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
+    boardProviders.add(this);
   }
 
   get materialId() {
@@ -1854,7 +1877,7 @@ class MockBoardProvider implements ItemProvider {
   /** A JOIN, as the room provider's: a fresh token first, whose refusal is
    * the join's; then the room, by the access the mock user has now. */
   private async join() {
-    if (this.leave || this.joining) return;
+    if (this.leave || this.joining || this.down) return;
     this.joining = true;
     try {
       let firstState: Uint8Array;
@@ -1868,14 +1891,13 @@ class MockBoardProvider implements ItemProvider {
           });
         return;
       }
-      if (!this.wanted) return;
+      if (!this.wanted || this.down) return;
       const access = mockCanvasAccess(this.materialId);
       if (!access) {
         this.config.onAuthenticationFailed?.(refused);
         return;
       }
       const write = access === 'write';
-      boardProviders.add(this);
       this.leave = join(boardRoom(this.config.name, firstState), {
         access,
         // A viewer sends no presence and hears none.
@@ -1916,6 +1938,15 @@ class MockBoardProvider implements ItemProvider {
     this.config.onClose?.({ code, reason });
   }
 
+  /** The tab's socket dropped, or is back (`mockBoardSocket`): while it is
+   * down nothing is sent or heard, and the tab joins again as it returns. */
+  socket(up: boolean) {
+    this.down = !up;
+    if (up) {
+      if (this.wanted) void this.join();
+    } else this.close(1006, 'socket closed');
+  }
+
   /** A checkpoint request: the room stores now and answers its receipt. */
   sendStateless(payload: string) {
     const request = JSON.parse(payload) as { id?: string; type?: string };
@@ -1937,7 +1968,6 @@ class MockBoardProvider implements ItemProvider {
   wake() {}
 
   private drop() {
-    boardProviders.delete(this);
     this.config.document.off('update', this.sent);
     this.leave?.();
     this.leave = null;
@@ -1952,6 +1982,7 @@ class MockBoardProvider implements ItemProvider {
 
   destroy() {
     this.disconnect();
+    boardProviders.delete(this);
   }
 }
 
@@ -1991,8 +2022,14 @@ export function mockBoardPeer(materialId: string, identity?: MockIdentity) {
      * `index`…, as the board stores one). */
     add: (id: string, fields: Record<string, unknown>) => {
       const element = new Y.Map<unknown>();
+      // A connector's label is a text of its own.
       for (const [key, value] of Object.entries({ ...fields, id }))
-        element.set(key, value);
+        element.set(
+          key,
+          key === 'text' && typeof value === 'string'
+            ? new Y.Text(value)
+            : value
+        );
       canvas().set(id, element);
     },
     awareness,
@@ -2010,11 +2047,50 @@ export function mockBoardPeer(materialId: string, identity?: MockIdentity) {
       }
       throw new Error(`The board room holds no text "${words}"`);
     },
+    /** Changes fields of the element `id` (moves it, by its `xywh`). */
+    change: (id: string, fields: Record<string, unknown>) => {
+      const element = canvas().get(id);
+      if (!element) throw new Error(`The board room holds no element ${id}`);
+      document.transact(() => {
+        for (const [key, value] of Object.entries(fields))
+          element.set(key, value);
+      });
+    },
     /** The peer's own document. */
     document,
     /** The canvas's elements as the peer holds them, by id. */
     elements: () =>
       canvas().toJSON() as Record<string, Record<string, unknown>>,
+    /** Pastes an image block `id` whose file is stored as `sourceId`, as a
+     * peer's tab adds one. */
+    image: (id: string, sourceId: string) => {
+      const blocks = document.getMap<Y.Map<unknown>>('blocks');
+      const surface = [...blocks.values()].find(
+        (block) => block.get('sys:flavour') === 'affine:surface'
+      );
+      const children = surface?.get('sys:children');
+      if (!(children instanceof Y.Array))
+        throw new Error('The board room holds no canvas');
+      const block = new Y.Map<unknown>();
+      for (const [key, value] of Object.entries({
+        'prop:height': 540,
+        'prop:index': 'a0',
+        'prop:rotate': 0,
+        'prop:size': 1240,
+        'prop:sourceId': sourceId,
+        'prop:width': 960,
+        'prop:xywh': '[0,0,320,180]',
+        'sys:children': new Y.Array<string>(),
+        'sys:flavour': 'affine:image',
+        'sys:id': id,
+        'sys:version': 1,
+      }))
+        block.set(key, value);
+      document.transact(() => {
+        blocks.set(id, block);
+        children.push([id]);
+      });
+    },
     leave,
     remove: (id: string) => canvas().delete(id),
   };
@@ -2028,6 +2104,32 @@ export function mockRevokeBoard(materialId: string) {
   for (const provider of [...boardProviders])
     if (provider.materialId === materialId && !mockCanvasAccess(materialId))
       provider.close(4403, 'collaboration access changed');
+}
+
+/** Fills a canvas's open room to the edge of its cap (e2e), as a peer's
+ * drawing would: one element no editor reads, which a board keeps and draws
+ * as a placeholder. The next stroke anyone draws is refused for size. */
+export function mockFillBoard(materialId: string) {
+  const room = openBoard(materialId);
+  const peer = mockBoardPeer(materialId);
+  const held = Y.encodeStateAsUpdate(room.document).byteLength;
+  peer.add('filler', {
+    index: 'a0',
+    pad: 'x'.repeat(BOARD_MAX - held - 300),
+    type: 'capy:filler',
+    xywh: '[0,-400,40,40]',
+  });
+  peer.leave();
+  if (Y.encodeStateAsUpdate(room.document).byteLength < BOARD_MAX - 1000)
+    throw new Error('The mock room refused its filler');
+}
+
+/** The mock user's socket to a canvas's room drops, or returns (e2e): while it
+ * is down their tab draws on its own, and what it and the others drew meets
+ * when it joins again. */
+export function mockBoardSocket(materialId: string, up: boolean) {
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId) provider.socket(up);
 }
 
 /** Whether the canvas's open mock room has stored every update it took (e2e:

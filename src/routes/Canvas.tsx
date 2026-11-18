@@ -11,6 +11,7 @@ import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
 import {
   CanvasBoardPanel,
   CanvasBoardStrip,
+  CanvasOpening,
 } from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import {
@@ -98,7 +99,9 @@ function OwnCanvas({
         made.current?.id === materialId
           ? made.current
           : linked?.find(({ id }) => id === materialId);
-      if (!known) throw new Error(`No quiz or set ${materialId} to open`);
+      // A card whose quiz or set is not listed (gone, or the list is still
+      // loading) says so itself and opens nothing.
+      if (!known) return;
       setEditing({ id: known.id, kind: known.kind, title: known.title });
     },
   });
@@ -169,6 +172,7 @@ export default function CanvasPage() {
         {none && (
           <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
         )}
+        {!(current || none) && <CanvasOpening />}
         {picker && (
           // On a phone the row stops short of the board's own menu at the top right.
           <div className="absolute top-2 right-12 left-2 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-canvas-board]:has(.capy-board[data-editor-open])_&]:hidden">
