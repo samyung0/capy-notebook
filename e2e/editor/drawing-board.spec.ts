@@ -1954,7 +1954,11 @@ test("a quiz card's Undo while edited is the quiz's, not the canvas's", async ({
     .click();
   const first = 'A cross between Aa × Aa gives what genotype ratio?';
   await expect(card).toContainText(first);
-  await card.getByRole('button', { name: 'Remove' }).first().click();
+  // A question opens by its card, and Delete is at the open card's foot.
+  await card
+    .getByRole('button', { exact: true, name: 'Edit question 1' })
+    .click();
+  await card.getByRole('button', { exact: true, name: 'Delete' }).click();
   await page
     .getByRole('dialog')
     .getByRole('button', { name: 'Remove' })
@@ -2114,9 +2118,11 @@ test("the Canvas page's Misc lists every quiz with its workspace, and New opens 
   // New makes one in no workspace (W1), places it and opens its editor in a dialog.
   await misc.getByRole('button', { name: 'New quiz' }).click();
   const dialog = page.getByRole('dialog', { name: 'Quiz 1' });
+  // The editor shows after four calls in a row, each behind the mocks' delay:
+  // the quiz is made, read, and its two rooms join one after the other.
   await expect(
     dialog.getByRole('button', { name: 'Add question' })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('.capy-card .title')).toHaveText('Quiz 1');
 });
 

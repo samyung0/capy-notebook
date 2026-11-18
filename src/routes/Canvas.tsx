@@ -12,7 +12,10 @@ import {
   CanvasBoardStrip,
 } from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
-import { CanvasMaterialDialog } from '@/features/canvas/CanvasMaterialDialog';
+import {
+  CanvasMaterialDialog,
+  type DialogMaterial,
+} from '@/features/canvas/CanvasMaterialDialog';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
   linkMaterial,
@@ -65,7 +68,9 @@ function OwnCanvas({
   }, [materials, workspaces]);
   const { mutateAsync: createQuiz } = useCreateQuiz();
   const { mutateAsync: createSet } = useCreateFlashcardSet();
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<DialogMaterial | null>(null);
+  // What New just made, which the list does not hold yet.
+  const made = useRef<DialogMaterial | null>(null);
   const { links, onBoard } = useCanvasLinks({
     account: true,
     // Quiz 1, Quiz 2…: the first number no listed one has.
@@ -77,14 +82,24 @@ function OwnCanvas({
           : m.drawing_board_new_set_title({ n });
       let n = 1;
       while (taken.has(title(n))) n++;
-      const made =
+      const { id, name } =
         kind === 'quiz'
           ? await createQuiz({ name: title(n) })
           : await createSet({ name: title(n) });
-      return { id: made.id, title: made.name };
+      made.current = { id, kind, title: name };
+      return { id, title: name };
     },
     materials: linked,
-    open: setEditing,
+    // A card's header opens a listed one, New the one it made: the dialog needs
+    // no read of its own to know which editor to show.
+    open: (materialId) => {
+      const known =
+        made.current?.id === materialId
+          ? made.current
+          : linked?.find(({ id }) => id === materialId);
+      if (!known) throw new Error(`No quiz or set ${materialId} to open`);
+      setEditing({ id: known.id, kind: known.kind, title: known.title });
+    },
   });
   const state = useCanvasBoard(container, id, {
     gone,
@@ -101,7 +116,7 @@ function OwnCanvas({
         <CanvasBoardPanel onRetry={onRetry} state={state} />
         <CanvasMaterialCards link={link} materials={materials} />
         <CanvasMaterialDialog
-          materialId={editing}
+          material={editing}
           onClose={() => setEditing(null)}
         />
       </div>

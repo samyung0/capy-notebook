@@ -104,7 +104,7 @@ import {
   Undo03Icon,
 } from '@hugeicons/core-free-icons';
 import { combinedDarkCssVariables } from '@toeverything/theme';
-import { html, type LitElement, render } from 'lit';
+import { html, render } from 'lit';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
@@ -154,6 +154,7 @@ import {
   noteButtonTool,
   outlineNewShapes,
   placePiece,
+  refreshMiscLists,
   StampTool,
   setBoardPreview,
   shapeButtonTool,
@@ -390,15 +391,6 @@ async function decodeImage(file: Blob) {
     return image;
   } finally {
     URL.revokeObjectURL(url);
-  }
-}
-
-/** Every `tag` under `root`, through its shadow trees (the toolbar's panels
- * sit a few deep). */
-function* within(root: Element, tag: string): Generator<Element> {
-  for (const element of root.shadowRoot?.querySelectorAll('*') ?? []) {
-    if (element.localName === tag) yield element;
-    yield* within(element, tag);
   }
 }
 
@@ -946,10 +938,7 @@ export function mountDrawingBoard(
      * list has loaded. */
     refreshCards: () => {
       refreshMaterialCards();
-      const toolbar = container.querySelector('edgeless-toolbar-widget');
-      if (!toolbar) return;
-      for (const panel of within(toolbar, 'capy-misc-panel'))
-        (panel as LitElement).requestUpdate();
+      refreshMiscLists();
     },
     /** Asks again for the images that showed none: a save brought one back. */
     reloadImages: () => {

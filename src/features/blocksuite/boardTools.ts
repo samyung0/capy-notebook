@@ -2190,6 +2190,14 @@ const PANEL_HEIGHT = 440;
 /** The grid shows a filter field from this many quizzes or sets. */
 const FILTER_FROM = 6;
 
+/** The open Misc panels. A panel lists the quizzes and sets the board holds as
+ * it draws, and the board may show before that list has loaded. */
+const openMiscPanels = new Set<CapyMiscPanel>();
+/** Redraws an open Misc panel's quizzes and sets, after the list changes. */
+export const refreshMiscLists = () => {
+  for (const panel of openMiscPanels) panel.requestUpdate();
+};
+
 /** The Misc panel: the chart and mind map pieces, picked up like a slot's piece,
  * and the pickers (Epo 2026-11-09): Emoji, GIF and Sticker (KLIPY, one search with
  * two tabs), Link, and the workspace's quizzes and sets as thumbnail grids with a
@@ -2672,8 +2680,14 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     });
   }
 
+  override connectedCallback() {
+    super.connectedCallback();
+    openMiscPanels.add(this);
+  }
+
   override disconnectedCallback() {
     super.disconnectedCallback();
+    openMiscPanels.delete(this);
     this.search?.abort();
     clearTimeout(this.searchTimer);
   }
