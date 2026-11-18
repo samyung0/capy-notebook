@@ -1035,6 +1035,11 @@ async function open(
   withInputs: boolean,
   shot?: string
 ) {
+  // On a shared machine, wait for its 1-minute load to fall under the knob.
+  const maxLoad = Number(process.env.PERF_CAP_MAX_LOAD ?? Number.NaN);
+  for (let waited = 0; loadavg()[0] >= maxLoad && waited < 600; waited++)
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  const loadBefore = loadavg()[0];
   const context = await browser.newContext({
     viewport: { height: 800, width: 1280 },
   });
@@ -1055,7 +1060,8 @@ async function open(
   const after = withInputs && via === 'room' ? await inputs(page) : null;
   if (shot) await page.screenshot({ path: shot });
   await context.close();
-  return { ...result, errors, inputs: after };
+  const load = [loadBefore, loadavg()[0]].map((value) => +value.toFixed(2));
+  return { ...result, errors, inputs: after, load };
 }
 
 const median = (values: number[]) => Math.round(percentile(values, 50));
@@ -1081,6 +1087,8 @@ function summary(runs: Awaited<ReturnType<typeof open>>[]) {
     /** What the mock room stored after an open: the board wrote as it opened. */
     storedChars: runs.map((run) => run.storedChars),
     inputs: runs.map((run) => run.inputs).filter((value) => value !== null),
+    /** Each open's 1-minute load before and after it. */
+    load: runs.map((run) => run.load),
     longestFrameMs: of((run) => run.longestFrameMs),
     mountMs: of((run) => run.mountMs),
     mountToPaintedMs: fromMount,
@@ -1182,14 +1190,11 @@ test('open: a blank canvas, one near 2 MiB and one near the cap', async ({
         // Reported, not failed: the room's path is the one this bench is for.
         memoryError = String(error);
       }
-    const slowed = await open(
-      browser,
-      'room',
-      kept?.stored ?? null,
-      expected,
-      4,
-      false
-    );
+    const slowed = [];
+    for (let i = 0; i < OPENS; i++)
+      slowed.push(
+        await open(browser, 'room', kept?.stored ?? null, expected, 4, false)
+      );
     results[name] = {
       board: kept && {
         bytes: kept.bytes,
@@ -1202,7 +1207,7 @@ test('open: a blank canvas, one near 2 MiB and one near the cap', async ({
       memory: memory.length ? summary(memory) : null,
       memoryError,
       room: summary(room),
-      roomAt4x: summary([slowed]),
+      roomAt4x: summary(slowed),
     };
     console.log(JSON.stringify({ [name]: results[name] }));
   }

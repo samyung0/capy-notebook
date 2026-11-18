@@ -14,6 +14,9 @@ import '../../../e2e/i18n/compile';
  *
  * Environment knobs:
  * - PERF_CANVAS_PORT  preview port (default 4520).
+ * - PERF_CANVAS_BASE_URL  a preview of such a build that is already running,
+ *   built into `.results/canvas-dist` (the spec reads its chunks' bytes there);
+ *   none is built or started.
  */
 
 const perfDir = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +24,7 @@ const root = path.resolve(perfDir, '..', '..', '..');
 const port = Number(process.env.PERF_CANVAS_PORT ?? 4520);
 // board.canvas.ts reads the chunks' bytes from here.
 const outDir = path.join(perfDir, '..', '.results', 'canvas-dist');
+const running = process.env.PERF_CANVAS_BASE_URL;
 
 export default defineConfig({
   fullyParallel: false,
@@ -33,26 +37,28 @@ export default defineConfig({
   testMatch: '**/*.canvas.ts',
   timeout: 1_200_000,
   use: {
-    baseURL: `http://127.0.0.1:${port}`,
+    baseURL: running ?? `http://127.0.0.1:${port}`,
     screenshot: 'off',
     trace: 'off',
     video: 'off',
   },
-  webServer: {
-    // The heap flag is the one `pnpm build` uses. One build, then its preview,
-    // which stops with the command.
-    command: `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build --outDir ${outDir} --emptyOutDir && node node_modules/vite/bin/vite.js preview --outDir ${outDir} --host 127.0.0.1 --port ${port} --strictPort`,
-    cwd: root,
-    env: {
-      ...process.env,
-      NODE_ENV: 'production',
-      VITE_BENCH_ROUTES: 'true',
-      VITE_CLERK_PUBLISHABLE_KEY: '',
-      VITE_USE_MSW: 'false',
-    },
-    reuseExistingServer: false,
-    timeout: 1_200_000,
-    url: `http://127.0.0.1:${port}`,
-  },
+  webServer: running
+    ? undefined
+    : {
+        // The heap flag is the one `pnpm build` uses. One build, then its preview,
+        // which stops with the command.
+        command: `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build --outDir ${outDir} --emptyOutDir && node node_modules/vite/bin/vite.js preview --outDir ${outDir} --host 127.0.0.1 --port ${port} --strictPort`,
+        cwd: root,
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          VITE_BENCH_ROUTES: 'true',
+          VITE_CLERK_PUBLISHABLE_KEY: '',
+          VITE_USE_MSW: 'false',
+        },
+        reuseExistingServer: false,
+        timeout: 1_200_000,
+        url: `http://127.0.0.1:${port}`,
+      },
   workers: 1,
 });

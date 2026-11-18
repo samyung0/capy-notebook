@@ -5,7 +5,10 @@ a number picked from the growth report
 ([`2026-11-18-board-live-growth.md`](../../collaboration/reports/2026-11-18-board-live-growth.md))
 before any board that size had been opened. This run opens a blank canvas,
 one of 1.99 MiB and one of 3.98 MiB on the Mac, and gives the times and the
-heap. It recommends nothing. MiB and KiB are multiples of 1,024 bytes; MB of
+heap. It recommends nothing. A trace of the open found work the mock alone did
+and work the page did; both were fixed and the open measured again:
+[`2026-11-18-board-open-fixes.md`](2026-11-18-board-open-fixes.md) (4x, 4 MiB:
+first paint 10.0 s to 5.7 s, settled 13.3 s to 9.0 s). MiB and KiB are multiples of 1,024 bytes; MB of
 heap is 1,000,000 bytes; times are milliseconds from the navigation's start.
 
 ## Short version

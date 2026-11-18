@@ -717,6 +717,54 @@ Outside this directory, for BlockSuite:
     and the arrows, then `v` or Escape and a press-drag, on a viewer's board and
     a revoked editor's).
 
+66. An inline editor with no range reads no selection after it renders
+    (`framework/std` `inline/services/range.ts`, marked `Capy (local change 66)`;
+    found 2026-11-18, opening a full canvas). Every inline editor syncs the page's
+    selection when its render completes (`render.ts`), and with no range of its own
+    that only clears a selection inside it; reading `selection.rangeCount` forces a
+    style recalc, so each note's first render paid one (1.5 s of forced recalcs at
+    4x CPU opening a 4 MiB board). `syncInlineRange` now returns first when the
+    editor holds no range, has held none since it last found the selection outside
+    it (`_mayHoldSelection`, set by any range it is given or syncs), and does not
+    hold the focus. A focused editor and one that has held a range read it as
+    before. Measured after (`bench/editor/reports/2026-11-18-board-open-fixes.md`):
+    the open reads the selection once instead of 42 times, but the frames' own
+    style recalcs then do the same work (1.5 s either way), so the open is no
+    shorter; what makes each frame's recalc that large was not found. Pinned by
+    `e2e/editor/board-note-caret.spec.ts` (typing, a composition, a caret kept while
+    another note renders, a selection that goes with a note's editing), and the
+    peer's caret by `canvas-presence.spec.ts`.
+
+67. A graphics block finds its store's surface once (`framework/std`
+    `gfx/model/gfx-block-model.ts`, marked `Capy (local change 67)`; found
+    2026-11-18). `surface` filtered every block of the store on each read, and the
+    layer sort reads `groups`, then `surface`, in every compare: 0.55 s at 4x CPU
+    on a 4 MiB board, growing faster than the board. Each store's surface is kept
+    (a `WeakMap`) while `store.getBlock(id)` still returns that model; a surface
+    removed or replaced is looked up anew, and none found is never kept, so one
+    added later is found. Pinned by `src/features/blocksuite/boardSurface.test.ts`.
+
+68. The views added in one go ask once what is in view (`framework/std`
+    `gfx/viewport-element.ts`, `gfx/grid.ts`, marked `Capy (local change 68)`;
+    found 2026-11-18). The viewport element sets each added block view's
+    `transformState$` from the models in view, and searched the grid over the
+    viewport for every view: a board's open adds every note's view in one pass,
+    0.74 s at 4x CPU for 262 notes. The search is kept to the end of the
+    microtask while the grid (`GridManager.version`, counting adds and removes),
+    the viewport and the query are the same. Pinned by the canvas e2e specs, whose
+    notes show (`canvas-room.spec.ts`, `canvas-presence.spec.ts`) and by
+    `e2e/editor/board-note-caret.spec.ts`.
+
+69. The surface draws first in the frame its `attach` asks for
+    (`affine/blocks/surface` `surface-block.ts`, marked `Capy (local change 69)`;
+    found 2026-11-18). `firstUpdated` drew the whole board at once, before an
+    editor fitting its view in the next frame (the drawing board's `mountLayer`)
+    had done so, and that frame drew it again: 0.56 s at 4x CPU on a full canvas.
+    The stacking canvases are still appended there; `attach`'s refresh draws them,
+    after the fit, since `mountLayer` asked for its frame first. A board whose
+    viewport has no size yet in that frame (`mountLayer` waits) is drawn once
+    before its fit, as before.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

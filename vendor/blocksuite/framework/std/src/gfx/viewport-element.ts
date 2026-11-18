@@ -711,14 +711,15 @@ export class GfxViewportElement extends WithDisposable(ShadowlessElement) {
             this.viewport.panning$.value || this.viewport.zooming$.value,
         });
         const isSelected = currentSelectedModels.has(payload.view.model);
-        const isInViewport = this.getModelsInViewport().has(payload.view.model);
+        const viewportModels = this._viewportModelsForAddedViews();
+        const isInViewport = viewportModels.has(payload.view.model);
         const shouldLimitActiveModels =
           shouldUseSurvivalMode &&
           this.viewport.LOW_ZOOM_GESTURE_ACTIVE_BLOCK_LIMIT > 0;
         const activeModels = shouldLimitActiveModels
           ? getLowZoomGestureActiveModels({
               selectedModels: currentSelectedModels,
-              viewportModels: this.getModelsInViewport(),
+              viewportModels,
               viewportBounds: this.viewport.viewportBounds,
               nearbyActiveBlockLimit:
                 this.viewport.LOW_ZOOM_GESTURE_ACTIVE_BLOCK_LIMIT,
@@ -973,6 +974,36 @@ export class GfxViewportElement extends WithDisposable(ShadowlessElement) {
 
     return promise;
   };
+
+  /** Capy (vendor/blocksuite/README.md, local change 68): what is in view,
+   * once for the block views added in one go. A board's open adds every
+   * note's view in one pass, and each searched the grid over the viewport
+   * again (0.7 s at 4x CPU for 262 notes). Kept to the end of the microtask,
+   * while the grid, the viewport and the query are the same. */
+  private _addedViewsQuery: {
+    key: string;
+    models: Set<GfxBlockElementModel>;
+    query: () => Set<GfxBlockElementModel>;
+  } | null = null;
+
+  private _viewportModelsForAddedViews() {
+    const { centerX, centerY, height, width, zoom } = this.viewport;
+    const grid = this.host?.std.get(GfxControllerIdentifier).grid;
+    const key = `${grid?.version},${zoom},${centerX},${centerY},${width},${height}`;
+    const held = this._addedViewsQuery;
+    if (held && held.key === key && held.query === this.getModelsInViewport)
+      return held.models;
+    const query = {
+      key,
+      models: this.getModelsInViewport(),
+      query: this.getModelsInViewport,
+    };
+    this._addedViewsQuery = query;
+    queueMicrotask(() => {
+      if (this._addedViewsQuery === query) this._addedViewsQuery = null;
+    });
+    return query.models;
+  }
 
   private _getSelectedModels(): Set<GfxBlockElementModel> {
     if (!this.host) return new Set();

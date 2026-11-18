@@ -402,6 +402,16 @@ frame was 176, 678 and 1,186 ms; the JS heap after a GC 30, 94 and 155 MB (27,
 settled at 12.5 s. MSW's latency is in every total, and the service, a network,
 phones and typing on the open board were not measured:
 [report](../bench/editor/reports/2026-11-18-board-open-at-cap.md).
+After the trace's fixes (the same day, at 75feaf8f6 plus the fixes): a build's
+`/assets/` chunks pass MSW by, the mock room encodes once per join and skips
+its probe for an empty tab, and vendored BlockSuite's local changes 66 to 69
+(no selection read after a rangeless editor's render, the surface found once
+per store, one grid search for the views added in one go, no draw before the
+fit). At 4x CPU the 4 MiB board then painted at 5.7 s and settled at 9.0 s
+(10.0 and 13.3 s at HEAD; 6.4 and 9.6 s with the mock fixes alone), its longest
+frame 2.95 s (5.0 s); the bench now opens three times at 4x and waits for the
+machine's load under `PERF_CAP_MAX_LOAD`:
+[report](../bench/editor/reports/2026-11-18-board-open-fixes.md).
 
 ## Formula parity audit (`pnpm bench:formula`)
 

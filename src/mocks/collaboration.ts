@@ -405,7 +405,7 @@ function rememberCheckpoint(room: Room) {
 }
 
 export function sourceRoomState(room: Room): string {
-  return base64(Y.encodeStateAsUpdate(room.document));
+  return bytesToBase64(Y.encodeStateAsUpdate(room.document));
 }
 
 /** A source's last saved state, as the server's lock-free viewer read
@@ -421,16 +421,8 @@ export function savedSourceState(fileId: string): string | null {
       latest = { checkpoint, epoch };
   }
   return latest && latest.checkpoint.version > 0
-    ? base64(checkpointState(latest.checkpoint))
+    ? bytesToBase64(checkpointState(latest.checkpoint))
     : null;
-}
-
-function base64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-  }
-  return btoa(binary);
 }
 
 /** Joins the participant to the room: merges both ways, then relays document
@@ -459,21 +451,24 @@ export function join(room: Room, participant: Participant) {
       return;
     Y.applyUpdate(room.document, update, participant);
   };
-  // What the JOIN brings is admitted as any update is: a board room takes
-  // nothing from a read channel and nothing past its cap.
-  const brought =
-    room.target.kind === 'board' ? broughtToBoard(room, participant) : null;
-  if (!brought || admitsBoardUpdate(room, participant, brought))
-    Y.applyUpdate(
-      room.document,
-      Y.encodeStateAsUpdate(participant.document),
-      participant
-    );
-  Y.applyUpdate(
-    participant.document,
-    Y.encodeStateAsUpdate(room.document),
-    participant.origin
-  );
+  // The room's state, encoded once: the joining document holds what it brings.
+  const state = Y.encodeStateAsUpdate(room.document);
+  // A fresh tab's document brings nothing. What a JOIN brings is admitted as
+  // any update is: a board room takes nothing from a read channel and nothing
+  // past its cap.
+  if (participant.document.store.clients.size > 0) {
+    const brought =
+      room.target.kind === 'board'
+        ? broughtToBoard(state, participant.document)
+        : null;
+    if (!brought || admitsBoardUpdate(room, participant, brought))
+      Y.applyUpdate(
+        room.document,
+        Y.encodeStateAsUpdate(participant.document),
+        participant
+      );
+  }
+  Y.applyUpdate(participant.document, state, participant.origin);
   participant.document.on('update', forward);
 
   const awareness = participant.awareness;
@@ -1776,14 +1771,14 @@ function admitsBoardUpdate(
 /** What a joining document holds that its board room does not, as one update;
  * an empty one when it brings nothing (a fresh tab, a tab back from a drop
  * that drew nothing meanwhile). */
-function broughtToBoard(room: Room, participant: Participant) {
+function broughtToBoard(roomState: Uint8Array, joining: Y.Doc) {
   const probe = new Y.Doc();
-  Y.applyUpdate(probe, Y.encodeStateAsUpdate(room.document));
+  Y.applyUpdate(probe, roomState);
   let brought: Uint8Array = new Uint8Array();
   probe.on('update', (update: Uint8Array) => {
     brought = update;
   });
-  Y.applyUpdate(probe, Y.encodeStateAsUpdate(participant.document));
+  Y.applyUpdate(probe, Y.encodeStateAsUpdate(joining));
   probe.destroy();
   return brought;
 }
@@ -1827,8 +1822,13 @@ function keepBoard(room: Room) {
 function boardRoom(name: string, firstState: Uint8Array): Room {
   const existing = rooms.get(name);
   if (existing) return existing;
-  const kept = browser ? sessionStorage.getItem(BOARD_STATE + name) : null;
-  if (kept && !checkpoints.has(name)) {
+  // The page holds its rooms' states as bytes; the tab's text copy is read
+  // on the page's first open alone.
+  const kept =
+    browser && !checkpoints.has(name)
+      ? sessionStorage.getItem(BOARD_STATE + name)
+      : null;
+  if (kept) {
     const { state, version } = JSON.parse(kept) as {
       state: string;
       version: number;
