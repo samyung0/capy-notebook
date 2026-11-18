@@ -381,7 +381,10 @@ const sameMarks = (left: Mark[], right: Mark[]) =>
  * P1 and B3): a pointer is Cursor02Icon in the peer's colour with its name in
  * a pill beside it; a block selection is an outline around each run, its
  * corners the theme's (half its button radius), with the name at its top
- * right. An overlay in the editor's container, so it scrolls with the note;
+ * right. A pointer glides to each new position in 120 ms at one speed (Epo
+ * 2026-11-18): positions leave every 50 ms but reach a far browser in pairs
+ * about 100 ms apart, so it has to outlast that gap (on UAT 80 ms still
+ * paused between pairs). An overlay in the editor's container, so it scrolls with the note;
  * it lays out at most once per frame and never re-renders the editor: a peer
  * again when its pointer or runs change (not on a caret move), every peer
  * when the room's presence, the note's size or the document changes. Nothing
@@ -483,14 +486,13 @@ export function RemotePresenceMarks({ presence }: { presence: PresenceStore }) {
       {marks.map((mark) =>
         mark.kind === 'pointer' ? (
           <span
-            className="absolute text-(--peer)"
+            className="absolute top-0 left-0 text-(--peer) motion-safe:transition-transform motion-safe:duration-[120ms] motion-safe:ease-linear"
             data-remote-pointer={mark.name}
             key={mark.key}
             style={
               {
                 '--peer': `var(--peer-${mark.color})`,
-                left: mark.left - POINTER_TIP,
-                top: mark.top - POINTER_TIP,
+                transform: `translate(${mark.left - POINTER_TIP}px, ${mark.top - POINTER_TIP}px)`,
               } as CSSProperties
             }
           >

@@ -397,7 +397,17 @@ picked from the mocks (2026-10-28, capy-harness
 Cursor02Icon (`pointer` in `Icon.tsx`) filled with the peer's colour, its
 tip at x and y of the block's box, with the name in a pill below and right
 of it (left of it within 142 px of the editor's right edge, the widest pill
-and its gap); a block
+and its gap). It glides to each new position in 120 ms at one speed (a
+`transform` transition, Epo 2026-11-18; a first position, and every one under
+reduced motion, is shown at once). Positions are sent every 50 ms and, as
+measured on UAT that day, leave the collaboration server and reach
+cloudflared one frame per segment 47 to 69 ms apart, but past Cloudflare
+reach a far browser in pairs about 100 ms apart (gaps of 0 to 221 ms), so the
+tab drew 8 to 11 positions a second in jumps of 27 to 85 px at a hand's speed.
+With a 120 ms linear transition put on UAT's own page it moved every frame in
+steps of about 4 px and settled about 90 ms later; 80 ms still paused between
+pairs, and Liveblocks' cursor guide also finds a linear transition smoother
+than an eased one. A block
 selection is a 2 px outline 4 px outside each run, from its first block's
 top to its last block's bottom, its corners half the theme's
 `--radius-button` (capy 4 px, fisheye 6 px, notion 3 px), with the name in a
