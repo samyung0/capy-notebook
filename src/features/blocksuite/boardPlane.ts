@@ -291,21 +291,27 @@ export function fitCard(model: PlaneElementModel) {
  * marks, as a graph figure's window is (`fitWindow`): the card's size is board
  * layout and never decides what of the plane shows (Epo 2026-11-18, "custom
  * size should mean the card on the canvas is on custom size, it never dictates
- * how the plane is drawn"). Nothing to frame keeps the view as it is. */
+ * how the plane is drawn"). The fit starts from the card's home window, not
+ * where the editor was left, so the frame comes from what is drawn alone (Epo
+ * 2026-11-18, "it followed my last plane location ... which it shouldnt"):
+ * functions count over the home window's x range. Nothing to frame keeps the
+ * view as it is. */
 export function fitView(model: PlaneElementModel) {
   const { h, w } = Bound.deserialize(model.xywh);
+  const ppu = PLANE_HOME_PPU;
+  const { x0, y0 } = homeOf(w, h, ppu, model.polar);
   const box = fitWindow(
     model.elementList,
     { height: h, width: w },
-    [model.x0, model.y0, model.x0 + w / model.ppu, model.y0 - h / model.ppu],
+    [x0, y0, x0 + w / ppu, y0 - h / ppu],
     { max: FIT_SIDE_MAX, minH: CARD_HEIGHT_MIN, minW: CARD_WIDTH_MIN }
   );
   if (!box) return;
   const [left, top, right] = box;
-  const ppu = w / (right - left);
-  if (!(ppu >= PLANE_ZOOM.min && ppu <= PLANE_ZOOM.max)) return;
+  const fitted = w / (right - left);
+  if (!(fitted >= PLANE_ZOOM.min && fitted <= PLANE_ZOOM.max)) return;
   model.surface.store.withoutTransact(() => {
-    model.ppu = ppu;
+    model.ppu = fitted;
     model.x0 = left;
     model.y0 = top;
   });
@@ -412,6 +418,16 @@ export const planeExtensions = [
   planeInteraction,
 ];
 
+/** The scale a new canvas card starts at, pixels per unit. */
+export const PLANE_HOME_PPU = 30;
+
+/** A card's home window at `ppu`: the origin near its bottom left (in the
+ * middle when polar), where a new card starts. */
+const homeOf = (w: number, h: number, ppu: number, polar: boolean) => ({
+  x0: polar ? -w / 2 / ppu : -1,
+  y0: (h * (polar ? 0.5 : 0.7)) / ppu,
+});
+
 /** A card on the canvas, its plane's origin towards the lower left, or in the middle
  * of a polar one. */
 export function addPlane(
@@ -426,9 +442,8 @@ export function addPlane(
     polar,
     ppu,
     type: 'plane',
-    x0: polar ? -box.w / 2 / ppu : -1,
+    ...homeOf(box.w, box.h, ppu, polar),
     xywh: box.serialize(),
-    y0: (box.h * (polar ? 0.5 : 0.7)) / ppu,
   });
 }
 

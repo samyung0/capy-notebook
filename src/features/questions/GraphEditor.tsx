@@ -264,6 +264,8 @@ export const GraphEditor = memo(function GraphEditor({
   const shown = useRef(drawn);
   shown.current = drawn;
   const stage = useRef<StageHandle>(null);
+  // Shift or ⌘/Ctrl held on the press that focuses a row's field.
+  const additive = useRef(false);
   const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
   // The rows' list, as the plane's: open on wider screens, shut on phones,
   // until one is chosen this session.
@@ -335,12 +337,8 @@ export const GraphEditor = memo(function GraphEditor({
           }),
         ]
       : []),
-    ...order.flatMap((key, index) => {
-      const message = errors.get(key);
-      return message
-        ? [m.question_ui_graph_row_issue({ message, number: index + 1 })]
-        : [];
-    }),
+    // A row's own trouble shows on its icon only (Epo 2026-11-18, "never show
+    // the error row").
     ...advancedIssues,
   ];
   if (!issues.length && recipeIssue) issues.push(recipeIssue);
@@ -545,12 +543,62 @@ export const GraphEditor = memo(function GraphEditor({
               more. */}
           <div className="flex min-h-0 flex-col overflow-y-auto">
             <IssueSummary className="px-3 pt-3 pb-1" messages={issues} />
-            <ol onPointerLeave={() => stage.current?.setHot(null)}>
+            <ol
+              // Chrome reads Shift-click as stretching the focused field's
+              // text, so focus stays put; move it to the clicked row instead.
+              onMouseDownCapture={(event) => {
+                if (!event.shiftKey) return;
+                const target = event.target as Element;
+                const row = target.closest('li');
+                if (
+                  !row ||
+                  (target !== row &&
+                    !target.closest(
+                      '[data-row-field],[data-row-icon],math-field,input'
+                    ))
+                )
+                  return;
+                const field =
+                  row.querySelector<HTMLElement>('math-field, input');
+                if (!field || field.contains(document.activeElement)) return;
+                event.preventDefault();
+                field.focus();
+              }}
+              // The modifier only counts for the focus this press brings (on
+              // press, or on click for the icon); the click or a key ends it.
+              onPointerDownCapture={(event) => {
+                additive.current =
+                  event.shiftKey || event.metaKey || event.ctrlKey;
+                if (!additive.current) return;
+                const end = (next: Event) => {
+                  if (
+                    next instanceof KeyboardEvent &&
+                    ['Control', 'Meta', 'Shift'].includes(next.key)
+                  )
+                    return;
+                  additive.current = false;
+                  window.removeEventListener('click', end);
+                  window.removeEventListener('keydown', end, true);
+                };
+                window.addEventListener('click', end);
+                window.addEventListener('keydown', end, true);
+              }}
+              onPointerLeave={() => stage.current?.setHot(null)}
+            >
               {order.map((key, index) => {
                 const row = rows.find((item) => item.key === key);
                 // A row lights its element on the graph, and the graph's
                 // selection lights its rows.
                 const lit = {
+                  // A row's field focused picks as a click on the graph does
+                  // (Epo 2026-11-18): a label row its label, any other row
+                  // nothing; Shift or ⌘/Ctrl adds to what is picked.
+                  onFieldFocus: () => {
+                    const add = additive.current;
+                    additive.current = false;
+                    if (row?.kind === 'label') stage.current?.select(key, add);
+                    else if (!add) stage.current?.select(null);
+                  },
                   onHover: () => stage.current?.setHot(row ? key : null),
                   selected: Boolean(row && stage.current?.selected(key)),
                 };
@@ -810,6 +858,9 @@ type StageHandle = {
   selected: (id: string) => boolean;
   /** Lights a row's element on the graph, or none. */
   setHot: (id: string | null) => void;
+  /** Selects a row's element on the graph (none for null), added to what
+   * is selected with `add`. */
+  select: (id: string | null, add?: boolean) => void;
 };
 
 type StageHooks = {
@@ -1045,6 +1096,7 @@ function GraphStage({
       redraw();
       report();
     },
+    select: (id, add) => live.current.tools?.select(id, add),
     selected: (id) => live.current.tools?.selected(id) ?? false,
     setHot: (id) => live.current.tools?.setHot(id),
   }));
@@ -1623,10 +1675,16 @@ const leaveOnEscape = (event: React.KeyboardEvent<HTMLInputElement>) => {
 };
 
 /** What lights a row: its element under the pointer or selected on the graph. */
-type RowLight = { onHover: () => void; selected: boolean };
+type RowLight = {
+  /** The row's own field took focus. */
+  onFieldFocus: () => void;
+  onHover: () => void;
+  selected: boolean;
+};
 
 function ExpressionItem({
   autoFocus,
+  onFieldFocus,
   onHover,
   selected,
   row,
@@ -1654,37 +1712,22 @@ function ExpressionItem({
 } & RowLight) {
   const type = row?.parsed && !error ? elementType(row.parsed) : undefined;
   const kind = row?.parsed && !error ? parsedKind(row.parsed) : undefined;
+  // A focused row doesn't light its curve (Epo 2026-11-18, "the highlight on
+  // curve is a bit intrusive"); hovering still does.
   return (
     <li
       className={rowClass(selected)}
-      onClick={(event) => {
-        if (
-          event.target === event.currentTarget ||
-          (event.target as Element).closest('[data-row-field]')
-        )
-          (
-            event.currentTarget.querySelector(
-              'math-field'
-            ) as HTMLElement | null
-          )?.focus();
-      }}
-      onFocus={onHover}
+      onClick={focusRowField}
       onPointerEnter={onHover}
     >
       {error ? (
         <RowIssue message={error} />
-      ) : type && kind && row ? (
-        <StyleMenu
-          kind={kind}
-          onChange={onRestyle}
-          row={row}
-          selected={selected}
-          type={type}
-        />
+      ) : kind && row ? (
+        <KindIcon hidden={row.style.hidden} kind={kind} selected={selected} />
       ) : (
         <span />
       )}
-      <span className="min-w-0" data-row-field>
+      <span className="min-w-0" data-row-field onFocus={onFieldFocus}>
         <GraphRowField
           autoFocus={autoFocus}
           label={label}
@@ -1697,9 +1740,30 @@ function ExpressionItem({
           register={register}
         />
       </span>
-      {onRemove ? <RowMenu onRemove={onRemove} /> : <span />}
+      {onRemove ? (
+        <RowMenu onRemove={onRemove}>
+          {type && row && (
+            <StyleFields onChange={onRestyle} row={row} type={type} />
+          )}
+        </RowMenu>
+      ) : (
+        <span />
+      )}
     </li>
   );
+}
+
+/** A click on a row's icon or blank space types in its field. */
+function focusRowField(event: React.MouseEvent<HTMLLIElement>) {
+  if (
+    event.target === event.currentTarget ||
+    (event.target as Element).closest('[data-row-field],[data-row-icon]')
+  )
+    (
+      event.currentTarget.querySelector(
+        'math-field, input'
+      ) as HTMLElement | null
+    )?.focus();
 }
 
 /** A row that cannot be drawn: the question dialog's warning icon. */
@@ -1711,7 +1775,15 @@ function RowIssue({ message }: { message: string }) {
   );
 }
 
-function RowMenu({ onRemove }: { onRemove: () => void }) {
+/** A row's ⋮: its style and Hide (Epo 2026-11-18, "put the hide button into
+ * the menu icon button"), then Delete. */
+function RowMenu({
+  children,
+  onRemove,
+}: {
+  children?: React.ReactNode;
+  onRemove: () => void;
+}) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -1723,7 +1795,15 @@ function RowMenu({ onRemove }: { onRemove: () => void }) {
           <Icon name="moreVertical" />
         </button>
       </PopoverTrigger>
-      <ToolbarPopoverContent align="end" className="w-40">
+      <ToolbarPopoverContent
+        align="end"
+        className={cn(children ? 'w-60' : 'w-40')}
+      >
+        {children && (
+          <div className="space-y-3 border-divider border-b p-3">
+            {children}
+          </div>
+        )}
         <PopoverClose asChild>
           <ToolbarPopoverItem
             icon={<Icon name="trash" />}
@@ -1736,17 +1816,13 @@ function RowMenu({ onRemove }: { onRemove: () => void }) {
   );
 }
 
-function StyleMenu({
-  kind,
+/** A row's style in its ⋮ menu: dash, marks, shading, label and Hide. */
+function StyleFields({
   row,
-  selected,
   type,
   onChange,
 }: {
-  /** The plane's icon for it. */
-  kind: string;
   row: ExpressionRow;
-  selected: boolean;
   type: RowElement['type'];
   onChange: (style: RowStyle) => void;
 }) {
@@ -1756,80 +1832,75 @@ function StyleMenu({
   const label =
     type === 'point' ? (style.label ?? pointName) : (style.label ?? '');
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <KindButton hidden={style.hidden} kind={kind} selected={selected} />
-      </PopoverTrigger>
-      <ToolbarPopoverContent align="start" className="w-60 space-y-3 p-3">
-        {keys.includes('dash') && (
-          <SelectField
-            label={m.question_ui_graph_line_style()}
-            onChange={(next) =>
-              onChange({ ...style, dash: next === 'dashed' || undefined })
-            }
-            options={[
-              { label: m.question_ui_graph_solid(), value: 'solid' },
-              { label: m.question_ui_graph_dashed(), value: 'dashed' },
-            ]}
-            value={style.dash ? 'dashed' : 'solid'}
-          />
-        )}
-        {keys.includes('ticks') && (
-          <SelectField
-            label={m.question_ui_graph_marks()}
-            onChange={(next) =>
-              onChange({ ...style, ticks: Number(next) || undefined })
-            }
-            options={[
-              { label: m.question_ui_graph_none(), value: '0' },
-              ...[1, 2, 3].map((n) => ({ label: String(n), value: String(n) })),
-            ]}
-            value={String(style.ticks ?? 0)}
-          />
-        )}
-        {keys.includes('shade') && (
-          <SelectField
-            label={m.question_ui_graph_shading()}
-            onChange={(next) =>
-              onChange({ ...style, shade: next === 'shaded' || undefined })
-            }
-            options={[
-              { label: m.question_ui_graph_none(), value: 'none' },
-              { label: m.question_ui_graph_shaded(), value: 'shaded' },
-            ]}
-            value={style.shade ? 'shaded' : 'none'}
-          />
-        )}
-        {(type === 'point' || type === 'angle') && (
-          <Field
-            count={{
-              max: limits.QUESTION_GRAPH_NAME_MAX,
-              value: textLength(label),
-            }}
-            label={m.question_ui_label()}
-          >
-            <FieldInput
-              maxLength={limits.QUESTION_GRAPH_NAME_MAX}
-              onChange={(event) => {
-                const next = event.target.value;
-                onChange({
-                  ...style,
-                  label:
-                    type === 'point' && next === pointName ? undefined : next,
-                });
-              }}
-              value={label}
-            />
-          </Field>
-        )}
-        <HideSwitch
-          checked={Boolean(style.hidden)}
-          onChange={(hidden) =>
-            onChange({ ...style, hidden: hidden || undefined })
+    <>
+      {keys.includes('dash') && (
+        <SelectField
+          label={m.question_ui_graph_line_style()}
+          onChange={(next) =>
+            onChange({ ...style, dash: next === 'dashed' || undefined })
           }
+          options={[
+            { label: m.question_ui_graph_solid(), value: 'solid' },
+            { label: m.question_ui_graph_dashed(), value: 'dashed' },
+          ]}
+          value={style.dash ? 'dashed' : 'solid'}
         />
-      </ToolbarPopoverContent>
-    </Popover>
+      )}
+      {keys.includes('ticks') && (
+        <SelectField
+          label={m.question_ui_graph_marks()}
+          onChange={(next) =>
+            onChange({ ...style, ticks: Number(next) || undefined })
+          }
+          options={[
+            { label: m.question_ui_graph_none(), value: '0' },
+            ...[1, 2, 3].map((n) => ({ label: String(n), value: String(n) })),
+          ]}
+          value={String(style.ticks ?? 0)}
+        />
+      )}
+      {keys.includes('shade') && (
+        <SelectField
+          label={m.question_ui_graph_shading()}
+          onChange={(next) =>
+            onChange({ ...style, shade: next === 'shaded' || undefined })
+          }
+          options={[
+            { label: m.question_ui_graph_none(), value: 'none' },
+            { label: m.question_ui_graph_shaded(), value: 'shaded' },
+          ]}
+          value={style.shade ? 'shaded' : 'none'}
+        />
+      )}
+      {(type === 'point' || type === 'angle') && (
+        <Field
+          count={{
+            max: limits.QUESTION_GRAPH_NAME_MAX,
+            value: textLength(label),
+          }}
+          label={m.question_ui_label()}
+        >
+          <FieldInput
+            maxLength={limits.QUESTION_GRAPH_NAME_MAX}
+            onChange={(event) => {
+              const next = event.target.value;
+              onChange({
+                ...style,
+                label:
+                  type === 'point' && next === pointName ? undefined : next,
+              });
+            }}
+            value={label}
+          />
+        </Field>
+      )}
+      <HideSwitch
+        checked={Boolean(style.hidden)}
+        onChange={(hidden) =>
+          onChange({ ...style, hidden: hidden || undefined })
+        }
+      />
+    </>
   );
 }
 
@@ -1850,6 +1921,7 @@ function HideSwitch({
 
 function LabelRow({
   autoSelect,
+  onFieldFocus,
   onHover,
   selected,
   row,
@@ -1872,49 +1944,35 @@ function LabelRow({
   return (
     <li
       className={rowClass(selected)}
-      onClick={(event) => {
-        if (
-          event.target === event.currentTarget ||
-          (event.target as Element).closest('[data-row-field]')
-        )
-          (
-            event.currentTarget.querySelector(
-              'math-field'
-            ) as HTMLElement | null
-          )?.focus();
-      }}
-      onFocus={onHover}
+      onClick={focusRowField}
       onPointerEnter={onHover}
     >
       {error ? (
         <RowIssue message={error} />
       ) : (
-        <Popover>
-          <PopoverTrigger asChild>
-            <KindButton hidden={row.hidden} kind="label" selected={selected} />
-          </PopoverTrigger>
-          <ToolbarPopoverContent align="start" className="w-60 p-3">
-            <HideSwitch
-              checked={Boolean(row.hidden)}
-              onChange={(hidden) =>
-                onChange({ ...row, hidden: hidden || undefined })
-              }
-            />
-          </ToolbarPopoverContent>
-        </Popover>
+        <KindIcon hidden={row.hidden} kind="label" selected={selected} />
       )}
       <FieldInput
         aria-label={m.question_ui_label()}
         className="py-0 leading-[1.4]"
         maxLength={limits.QUESTION_GRAPH_LABEL_MAX}
         onChange={(event) => onChange({ ...row, text: event.target.value })}
+        // Its own field, not its ⋮ menu, picks the label on the graph.
+        onFocus={onFieldFocus}
         onKeyDown={leaveOnEscape}
         ref={input}
         value={row.text}
         variant="transparent"
         wrapperClassName="h-auto min-w-0 px-0"
       />
-      <RowMenu onRemove={onRemove} />
+      <RowMenu onRemove={onRemove}>
+        <HideSwitch
+          checked={Boolean(row.hidden)}
+          onChange={(hidden) =>
+            onChange({ ...row, hidden: hidden || undefined })
+          }
+        />
+      </RowMenu>
     </li>
   );
 }
@@ -1926,6 +1984,7 @@ function MarkRow({
   error,
   label,
   onChange,
+  onFieldFocus,
   onHover,
   onRemove,
   row,
@@ -1939,11 +1998,7 @@ function MarkRow({
 } & RowLight) {
   const shown = markRow(row.element);
   return (
-    <li
-      className={rowClass(selected)}
-      onFocus={onHover}
-      onPointerEnter={onHover}
-    >
+    <li className={rowClass(selected)} onPointerEnter={onHover}>
       {error ? (
         <RowIssue message={error} />
       ) : (
@@ -1964,6 +2019,7 @@ function MarkRow({
             if (line) onChange(line);
             else event.currentTarget.value = shown.text;
           }}
+          onFocus={onFieldFocus}
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.currentTarget.blur();
             leaveOnEscape(event);
@@ -1979,30 +2035,23 @@ function MarkRow({
   );
 }
 
-/** A row's kind icon, opening its style menu (dash, marks, shading, label,
- * hide): the figure's more over the plane's list. */
-function KindButton({
+/** A row's kind, the label of its field: a click types in it (Epo
+ * 2026-11-18; its style and Hide are in the row's ⋮). Faded when hidden. */
+function KindIcon({
   hidden,
   kind,
   selected,
-  ...props
-}: React.ComponentProps<'button'> & {
+}: {
   hidden?: boolean;
   kind: string;
   selected: boolean;
 }) {
   return (
-    <button
-      aria-label={m.question_ui_graph_style()}
-      className={cn(
-        kindClass(selected),
-        'rounded-(--radius-toolbar-button) hover:bg-surface-hover-bg',
-        hidden && 'opacity-35'
-      )}
-      type="button"
-      {...props}
+    <span
+      className={cn(kindClass(selected), hidden && 'opacity-35')}
+      data-row-icon
     >
       <ToolIcon name={kind} />
-    </button>
+    </span>
   );
 }

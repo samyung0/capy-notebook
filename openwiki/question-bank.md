@@ -866,8 +866,9 @@ does (`fitPressed`: the window `fitWindow` settles on for the editor's view,
 at least 10 units each way, an empty graph round the origin), so a second
 press changes nothing (Epo 2026-11-18; it once added a 10% margin each press
 over a range clamped to the view, zooming out every time). A canvas plane card's Fit to size (`fitMarks`) counts the same
-but grows or shrinks the card instead, its size being board layout. Rows are the plane list's: 36 px, the kind's icon (a figure
-row's opens its style menu), the field, ⋮ with Delete; then + Label and
+but grows or shrinks the card instead, its size being board layout. Rows are the plane list's: 36 px, the kind's icon (the label of the row's
+field: a click types in it), the field, ⋮ with the row's style and Hide above
+Delete (Epo 2026-11-18); then + Label and
 Advanced (a plane's holds its paper only). `graphSyntax.ts` turns rows into recipe
 elements and back, reading each row's LaTeX with its own small reader (no
 MathLive, so previews never load it), read as Desmos reads it (Epo
@@ -909,10 +910,16 @@ nothing (Desmos draws it; a known limit). Inequalities are "not yet". A row
 that can't be read draws nothing and shows its issue. An implicit curve is
 picked and erased by its distance to its drawn steps and can't be dragged, as
 a function can't; typing one off the view does not move the view. Style (dash, equal-side marks, shading, labels, hide) sits in each
-row's style menu. A row's point names are its references; a saved point another
+row's ⋮ menu. Focusing a row's field picks as clicking the graph does: a label
+row selects its label alone, any other row clears the selection, and with
+Shift, ⌘ or Ctrl held the label is added and nothing is cleared (Epo
+2026-11-18). A focused function or equation row doesn't light its curve (Epo 2026-11-18,
+"the highlight on curve is a bit intrusive"), hovering a row still does. A row's point names are its references; a saved point another
 element uses but whose label is not a name gets the row name `P_n`. Issues read
-like the question dialog's: the first one (with "+n more") above the editor, a
-warning icon on each row that cannot be drawn and beside Advanced when its size
+like the question dialog's: the first one (with "+n more") above the editor for
+the graph's own (its size or bounds, the row cap), never a row's (Epo
+2026-11-18, "never show the error row"), and a warning icon on each row that
+cannot be drawn, its message in the icon's tooltip, and beside Advanced when its size
 or bounds are invalid; such a row or field is not written until it is fixed
 (a cleared description is sent as none). The editor
 takes the canvas plane's gestures (D4): the wheel or a two-finger scroll pans,

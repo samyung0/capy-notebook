@@ -4999,8 +4999,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   size it is placed at, which nothing changes but a corner drag (Epo 2026-11-18); the size
   never decides what of the plane shows: each time the plane is left, the plane in it is
   framed round its marks, the size kept, as a graph figure's window is (`fitView` over
-  `fitWindow`; functions over the x range last looked at; nothing to frame keeps the
-  editor's view; Epo 2026-11-18). **Fit to
+  `fitWindow`), starting from the card's home window (origin near its bottom left at
+  30 px a unit, `PLANE_HOME_PPU`), never from where the editor was left, so the frame
+  comes from what is drawn alone; functions count over the home window's x range;
+  nothing to frame keeps the editor's view (Epo 2026-11-18). **Fit to
   size**, turned on from its toolbar:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
   40 px (a label's or formula's text counted in pixels round its point; not the origin,
@@ -5153,7 +5155,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the graph editor's rows (Epo 2026-11-16,
   D12: `graphSyntax.ts`'s one parser, `buildElements`, `reconcileRows` and
   `rowsAfterEdit`, no second syntax), laid out compact (36 px, 14 px text, 15 px
-  formulas; kind icon, ⋮ with Delete). Every row the dialog takes (a function with its
+  formulas; kind icon as the field's label, ⋮ with style, Hide and Delete). Every row the dialog takes (a function with its
   restriction, an equation in x and y, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
   `sector`, `polygon`) is a MathLive field (loaded when the list first opens) that draws
   as it's typed and writes on Enter or leaving, one undo step; emptied it goes. A point a
@@ -5167,8 +5169,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   takes what's built on it too, while deleting its row in the list leaves those rows
   with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) a tool or a new row
   is refused with `drawing_board_plane_full` on the new row's icon. "+ Label" adds a label in
-  the middle of what's in view and selects its text. Hovering a row lights its mark;
-  selected marks light their rows. The answer board has no list button and no
+  the middle of what's in view and selects its text. Hovering a row lights its mark,
+  focusing a label row selects only its label (Shift/⌘/Ctrl adds it), focusing any other row
+  clears the selection; selected marks light their rows. The answer board has no list button and no
   functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
