@@ -10,6 +10,9 @@ import { useState } from 'react';
  * Every key lives here so the stored set stays in one place.
  */
 export const PREF_KEYS = {
+  /** Each canvas's last view on this device, with the account it belongs to
+   * (canvasViews.ts). */
+  canvasViews: 'capy.canvas.views',
   /** Agent's panel shows a chat rather than the history: kept while it is on
    * screen, so coming back to the workspace finds it (Epo 2026-10-27, T19),
    * and gone when Agent moves off it. */

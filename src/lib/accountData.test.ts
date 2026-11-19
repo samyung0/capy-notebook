@@ -10,6 +10,7 @@ import {
 const deleteAccountDrafts = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('./editDrafts', () => ({ deleteAccountDrafts }));
 
+import { keepView, keptView } from '@/features/canvas/canvasViews';
 import { claimAccountData, clearAccountData } from './accountData';
 import { claimUndoPayloads, keepUndoPayloads } from './undoPayloads';
 
@@ -53,4 +54,36 @@ it('keeps a drawing draft for its account only', async () => {
   expect(await localDrawingDraft('quiz:qz_1:p1')).toBeDefined();
   await claimAccountData('u_b');
   expect(await localDrawingDraft('quiz:qz_1:p1')).toBeUndefined();
+});
+
+// Each canvas's last view (Epo 2026-11-19, Q32) stays with its account: the
+// same account signing in again opens at it, another account or a sign-out
+// keeps none, and past 100 canvases the longest unopened one goes.
+it('keeps a canvas view for its account only', async () => {
+  const stored = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => stored.get(key) ?? null,
+    removeItem: (key: string) => stored.delete(key),
+    setItem: (key: string, value: string) => stored.set(key, value),
+  });
+  const view = { centre: [120, 80] as [number, number], zoom: 1.5 };
+  await claimAccountData('u_a');
+  keepView('cv_1', view);
+  await claimAccountData('u_a');
+  expect(keptView('cv_1')).toEqual(view);
+  await claimAccountData('u_b');
+  expect(keptView('cv_1')).toBeUndefined();
+  await claimAccountData('u_a');
+  expect(keptView('cv_1')).toBeUndefined();
+
+  keepView('cv_1', view);
+  await claimAccountData(null);
+  expect(keptView('cv_1')).toBeUndefined();
+
+  await claimAccountData('u_a');
+  for (let canvas = 0; canvas <= 100; canvas++) keepView(`cv_${canvas}`, view);
+  expect(keptView('cv_0')).toBeUndefined();
+  expect(keptView('cv_1')).toEqual(view);
+  expect(keptView('cv_100')).toEqual(view);
+  vi.unstubAllGlobals();
 });

@@ -6,6 +6,7 @@ import type {
   TrashItem,
   WorkspaceRole,
 } from '@/api/types';
+import { tokenClaims } from '@/features/collaboration/protocol';
 import { trash, uid } from './db';
 import { mockImageAssets } from './editorAssets';
 import { mockPage } from './paging';
@@ -131,44 +132,22 @@ export function failMockCanvasTokens(id: string, failing: boolean) {
   else failingTokens.delete(id);
 }
 
-/** The client ids the canvas's room tokens offered the mock user, as the
- * service binds them (Q236): a token presented again offers its id again,
- * unless the room holds it for someone else (`refuseMockCanvasIds`). */
-const clientIds = new Map<string, Set<number>>();
-const refusingIds = new Set<string>();
-export const mockCanvasClientIds = (id: string) =>
-  clientIds.get(id) ?? new Set<number>();
-/** The room holds this tab's earlier ids for someone else (e2e): the next
- * token offers a fresh one, and what was written under the old is refused. */
-export function refuseMockCanvasIds(id: string) {
-  refusingIds.add(id);
-  clientIds.delete(id);
-}
-
 const encode = (claims: object) =>
   btoa(JSON.stringify(claims))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/[=]+$/, '');
 
-/** A room token as the API signs one: its client id and when it was issued. */
+/** A room token as the API signs one, offering a client id (Q213): the
+ * previous token's again when one of this canvas is presented (Go's
+ * `regrantedClientIDs`, Q236), else a fresh one. The room decides whether
+ * it binds (`MockBoardProvider`). */
 export function mockCanvasToken(id: string, previous: string | undefined) {
-  let clientId: number | undefined;
-  try {
-    const claims = JSON.parse(
-      atob(
-        (previous?.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')
-      )
-    ) as { clientId?: number; materialId?: string };
-    if (claims.materialId === id && !refusingIds.has(id))
-      clientId = claims.clientId;
-  } catch {
-    // None to offer again.
-  }
-  clientId ??= 1 + Math.floor(Math.random() * 2 ** 30);
-  const offered = clientIds.get(id) ?? new Set<number>();
-  offered.add(clientId);
-  clientIds.set(id, offered);
+  const claims = previous ? tokenClaims(previous) : {};
+  const clientId =
+    claims.materialId === id && typeof claims.clientId === 'number'
+      ? claims.clientId
+      : 1 + Math.floor(Math.random() * 2 ** 30);
   return `mock.${encode({ clientId, iat: Math.floor(Date.now() / 1000), materialId: id })}.sig`;
 }
 

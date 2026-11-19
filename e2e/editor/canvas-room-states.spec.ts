@@ -944,80 +944,299 @@ test('a canvas whose room is at its cap keeps the stroke it refused for copying,
 });
 
 /** Opens the scenario canvas, draws a stroke, and leaves it, which writes
- * its copy with the tab's room token; then opens it again offline from the
- * copy. */
-async function fromCopyOffline(page: Page, context: BrowserContext) {
+ * its copy; `unclean`: its socket drops first, so no Leave goes and the room
+ * keeps its client id. */
+async function drewAndLeft(page: Page, unclean = false) {
   await page.goto(SCENARIO_PAGE);
   await boardShown(page);
   await drawStroke(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  if (unclean) await socket(page, SCENARIO, false);
   await page.getByRole('button', { name: 'Dashboard' }).click();
   await expect(page.locator('.capy-board')).toHaveCount(0);
   await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+}
+
+/** Opens the scenario canvas again, offline, from this device's copy. */
+async function fromCopyOffline(page: Page, context: BrowserContext) {
   await context.setOffline(true);
   await page.getByRole('button', { name: 'Canvas' }).click();
   await boardShown(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
 }
 
-// Epo 2026-11-19 (Q27 b1, as AFFiNE does): an editor's board painted from its
-// copy before the join takes edits, under the client id of the copy's token
-// (Q236), kept as drafts, and they sync as ordinary edits at the join.
-test("a canvas opened offline from this device's copy takes a stroke, which reaches the room and another person once it is back", async ({
+/** The peer's canvas elements, by id. */
+const peerHas = (page: Page) =>
+  page.evaluate(() =>
+    Object.keys((window as Shown).peer?.elements() ?? {}).sort()
+  );
+
+/** Selects everything on the board on the select tool; answers the ids. */
+async function selectAll(page: Page) {
+  await page.keyboard.press('Escape');
+  await page.locator('.capy-board').click({ position: { x: 300, y: 200 } });
+  await page.keyboard.press('ControlOrMeta+a');
+  return page.evaluate(() =>
+    [...((window as Shown).__board?.presence.selected() ?? [])].sort()
+  );
+}
+
+// Epo 2026-11-19 (Q27 b1; Q31 "1 then i guess", as a note's): a board painted
+// from its copy offline takes edits under its own client id, which no room
+// assigned; the join re-applies them under the room's (the case b1 broke: the
+// first visit's clean Leave, here the Dashboard, expired its id, Q236).
+test("a stroke drawn offline on this device's copy after a clean leave reaches the room re-applied, and the board takes edits after, where it was looked at and selected", async ({
   page,
   context,
 }) => {
   test.slow();
+  await drewAndLeft(page);
   await fromCopyOffline(page, context);
   await expect(strip(page)).toContainText("Can't connect to Capy.");
-  await keep(page);
   await drawStroke(page, 0.6);
   await expect.poll(() => drawn(page)).toHaveLength(2);
+  const selected = await selectAll(page);
+  expect(selected).toHaveLength(2);
+  const looked = await viewOf(page);
+  await keep(page);
 
   await context.setOffline(false);
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
   await expect(strip(page)).toHaveCount(0);
-  // The same board all along.
-  expect(await kept(page)).toBe(true);
-  await joinPeer(page, SCENARIO);
+  // The board moved onto the room's document, as it was.
+  await page.waitForFunction(
+    () => (window as Shown).__board && !(window as Shown).__board?.kept
+  );
+  expect(await viewOf(page)).toEqual(looked);
   await expect
     .poll(() =>
-      page.evaluate(
-        () => Object.keys((window as Shown).peer?.elements() ?? {}).length
+      page.evaluate(() =>
+        [...((window as Shown).__board?.presence.selected() ?? [])].sort()
       )
     )
-    .toBe(2);
+    .toEqual(selected);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await joinPeer(page, SCENARIO);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+  await drawStroke(page, 0.8);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(3);
 });
 
-// "Reject nothing": a stroke the room refuses for its id (the earlier id held
-// for someone else) stays on this device for copying.
-test('a stroke drawn on the copy under an id the room no longer gives this tab is kept for copying', async ({
+test('a stroke drawn offline on the copy after an unclean leave, whose id the room kept, lands too', async ({
   page,
   context,
 }) => {
   test.slow();
+  await drewAndLeft(page, true);
   await fromCopyOffline(page, context);
   await drawStroke(page, 0.6);
   await expect.poll(() => drawn(page)).toHaveLength(2);
-  await page.evaluate(async (id) => {
-    const modulePath = '/src/mocks/canvas.ts';
-    const { refuseMockCanvasIds } = (await import(modulePath)) as Canvases;
-    refuseMockCanvasIds(id);
-  }, SCENARIO);
+  await context.setOffline(false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await joinPeer(page, SCENARIO);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+});
+
+// The token answered and the JOIN waits (a slowed open): the board writes
+// under the id the token offers, which the JOIN binds as any session's
+// (Q236), so nothing is re-applied and the same board joins, from the copy.
+test('a stroke drawn on the copy while the join waits goes as it is: the same board joins, the copy kept', async ({
+  page,
+}) => {
+  test.slow();
+  await drewAndLeft(page);
+  await slowed(page, true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await keep(page);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await slowed(page, false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  expect(await kept(page)).toBe(true);
+  expect(await copied(page, SCENARIO)).toBe(true);
+  await joinPeer(page, SCENARIO);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+});
+
+test('a canvas opened online from the copy with no early edit joins on it: the same board, the copy kept', async ({
+  page,
+}) => {
+  test.slow();
+  await drewAndLeft(page);
+  await slowed(page, true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await keep(page);
+  await slowed(page, false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.waitForTimeout(500);
+  expect(await kept(page)).toBe(true);
+  expect(await copied(page, SCENARIO)).toBe(true);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+});
+
+// Epo 2026-11-19 (Q33): an offline move of a shape another person deleted
+// meanwhile would not show once re-applied, so it alone stays on this device
+// for copying ("Reject nothing", 2026-11-18), while the move beside it lands
+// and the board takes edits once Reload (which asks first) leaves the copy.
+test('a move made offline of a shape another person deleted meanwhile stays for copying, and the move beside it lands', async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  await joinPeer(page, SCENARIO);
+  await peerSquares(page);
+  await expect.poll(() => drawn(page)).toEqual(['shape', 'shape']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  expect(await nudgeAll(page)).toBe(2);
+  await page.evaluate(() => (window as Shown).peer?.remove('from'));
 
   await context.setOffline(false);
   await expect(strip(page)).toContainText('Copy anything you need');
-  await expect.poll(() => drawn(page)).toHaveLength(2);
+  // The deleted square alone, to copy; the other one's move is in the room.
+  await expect.poll(() => drawn(page)).toEqual(['shape']);
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
-  // Reload, confirmed, opens what the room holds.
+  expect(await peerHas(page)).toEqual(['to']);
+  expect(
+    await page.evaluate(() => (window as Shown).peer?.elements().to.xywh)
+  ).not.toBe('[400,0,100,100]');
   await strip(page).getByRole('button', { name: 'Reload' }).click();
   await page
     .getByRole('dialog', { name: 'Discard these edits and reload?' })
     .getByRole('button', { name: 'Reload' })
     .click();
   await expect(strip(page)).toHaveCount(0);
+  await expect.poll(() => drawn(page)).toEqual(['shape']);
+  await drawStroke(page, 0.8);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+});
+
+// Review b2 finding 1 (Q295, Q398): the re-apply's merge code not loading
+// keeps the strokes, read-only, under the note's strip, and Retry loads it.
+test("a stroke drawn offline on the copy waits read-only when the merge code doesn't load, and Retry lands it", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await drewAndLeft(page);
+  await fromCopyOffline(page, context);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  // The merge's worker script, which loads only on this path.
+  const merge = '**/lateMerge.worker.ts*';
+  await context.route(merge, (route) => route.abort());
+  await context.setOffline(false);
+  await expect(strip(page)).toContainText(
+    "Couldn't sync your edits. Retry or reload the page."
+  );
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+  await context.unroute(merge);
+  await strip(page).getByRole('button', { name: 'Retry' }).click();
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await expect(strip(page)).toHaveCount(0);
+  await joinPeer(page, SCENARIO);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+});
+
+// Epo 2026-11-19 (Q33, "Yes, one side wins"): a shape both people moved, one
+// of them before the join, ends where Yjs's own pick puts it, with no review.
+test('a shape moved offline that another person moved meanwhile ends at one of the two places, with no recovery', async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  await joinPeer(page, SCENARIO);
+  await peerSquares(page);
+  await expect.poll(() => drawn(page)).toEqual(['shape', 'shape']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  const box = () =>
+    page.evaluate(() => (window as Shown).__board?.presence.boxOf(['from']));
+  await dragElement(page, 'v', 'from', [0, 0.5]);
+  const moved = await box();
+  expect(moved?.x).not.toBe(0);
+  await page.evaluate(() =>
+    (window as Shown).peer?.change('from', { xywh: '[0,300,100,100]' })
+  );
+
+  await context.setOffline(false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  const theirs = await page.evaluate(
+    () => (window as Shown).peer?.elements().from.xywh
+  );
+  expect([
+    '[0,300,100,100]',
+    `[${moved?.x},${moved?.y},${moved?.w},${moved?.h}]`,
+  ]).toContain(theirs);
+  await expect
+    .poll(async () => {
+      const shown = await box();
+      return `[${shown?.x},${shown?.y},${shown?.w},${shown?.h}]`;
+    })
+    .toBe(theirs);
+  await expect(strip(page)).toHaveCount(0);
+  await drawStroke(page, 0.8);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(3);
+  await expect(strip(page)).toHaveCount(0);
+});
+
+// Review b1 finding 3: a canvas taken back while this person drew on its copy
+// offline keeps their strokes on screen, for copying.
+test('a canvas refused at the join keeps the strokes drawn on its copy for copying', async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  const theirs = await page.evaluate(async () => {
+    const modulePath = '/src/mocks/canvas.ts';
+    const { mockMemberCanvas } = (await import(modulePath)) as Canvases;
+    return mockMemberCanvas({
+      creatorName: 'Ben',
+      role: 'editor',
+      title: 'Lab diagrams',
+      workspaceId: 'ws_scenarios',
+    });
+  });
+  await switchTo(page, 'User scenarios', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
+  await boardShown(page);
+  await drawStroke(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect.poll(() => copied(page, theirs)).toBe(true);
+
+  await context.setOffline(true);
+  await page.goBack();
+  await boardShown(page);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await room(page, 'mockRevokeBoard', theirs);
+  await context.setOffline(false);
+  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
 });
 
 test("a viewer's copy opened offline takes no edits", async ({

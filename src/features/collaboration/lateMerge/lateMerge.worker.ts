@@ -53,15 +53,22 @@ export async function mergeRequest({
 
 // Absent under vitest, which calls mergeRequest directly.
 if (typeof self !== 'undefined') {
+  // The worker's own scope, typed by hand: the drawing board's check (which
+  // reaches this file through the item room) has no WebWorker lib, and adding
+  // it changes vendored BlockSuite's worker types.
+  const workerScope = self as unknown as {
+    onmessage: ((event: MessageEvent<MergeRequest>) => void) | null;
+    postMessage(reply: MergeReply, transfer?: Transferable[]): void;
+  };
   // The WASM loads as the worker starts; the tab sends its request once it
   // heard `ready`.
   void init().then(
-    () => self.postMessage({ ready: true } satisfies MergeReply),
+    () => workerScope.postMessage({ ready: true } satisfies MergeReply),
     (error: unknown) =>
-      self.postMessage({ error: message(error) } satisfies MergeReply)
+      workerScope.postMessage({ error: message(error) } satisfies MergeReply)
   );
-  self.onmessage = async ({ data }: MessageEvent<MergeRequest>) => {
+  workerScope.onmessage = async ({ data }: MessageEvent<MergeRequest>) => {
     const reply = await mergeRequest(data);
-    self.postMessage(reply, 'merged' in reply ? [reply.merged] : []);
+    workerScope.postMessage(reply, 'merged' in reply ? [reply.merged] : []);
   };
 }

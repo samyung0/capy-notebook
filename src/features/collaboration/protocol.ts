@@ -219,15 +219,7 @@ export function tokenClientIds(token: string): {
   clientId: number;
   workerClientId?: number;
 } {
-  const payload = token.split('.')[1] ?? '';
-  let claims: { clientId?: unknown; workerClientId?: unknown } = {};
-  try {
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    claims = JSON.parse(atob(base64)) as typeof claims;
-  } catch {
-    // Not a token the API minted; refused below.
-  }
-  const { clientId, workerClientId } = claims;
+  const { clientId, workerClientId } = tokenClaims(token);
   if (
     !isClientId(clientId) ||
     !(workerClientId === undefined || isClientId(workerClientId))
@@ -236,17 +228,19 @@ export function tokenClientIds(token: string): {
   return { clientId, workerClientId };
 }
 
-/** When a room token was issued (its `iat`, Unix seconds), or null for one
- * that says not: the room rebinds its client id for 7 days from then (Q236). */
-export function tokenIssuedAt(token: string): number | null {
+/** A room token's claims, unchecked (its signature is the server's to
+ * check); none for what is not a token the API minted. */
+export function tokenClaims(token: string): Record<string, unknown> {
   try {
     const payload = (token.split('.')[1] ?? '')
       .replace(/-/g, '+')
       .replace(/_/g, '/');
-    const { iat } = JSON.parse(atob(payload)) as { iat?: unknown };
-    return typeof iat === 'number' ? iat : null;
+    const claims: unknown = JSON.parse(atob(payload));
+    return claims && typeof claims === 'object'
+      ? (claims as Record<string, unknown>)
+      : {};
   } catch {
-    return null;
+    return {};
   }
 }
 

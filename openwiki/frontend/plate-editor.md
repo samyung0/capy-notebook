@@ -5314,7 +5314,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   marking model reads, Epo 2026-11-06; 42-47% smaller than drawing at 2,400 px and
   shrinking later), so it stacks as the screen does and
   fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
-  the device's scale. A note scrolled out of view is shown for the capture: BlockSuite
+  the device's scale. Notes are drawn by html2canvas-pro (local change 72): html2canvas
+  1.4.1 threw on the `color(srgb …)` Chrome computes for a note's `color-mix()` fill. A
+  note scrolled out of view is shown for the capture: BlockSuite
   hides it with no size, which html2canvas drew as nothing and the capture threw on. On a board wider or taller than 1,568 px, groups of elements more than
   400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
   the board itself stays as it is. Only a quiz's board (`question`) does this, for its
@@ -5579,6 +5581,21 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       own manager following the document's client id (`followClientId`), so it
       reaches a person's own edits only, and a canvas has no previous versions (Epo
       2026-11-18, "no prev version").
+    - **The view it opens at (Epo 2026-11-19, Q32, Q34, Q35).** A canvas opens where
+      its person last left it on this device (zoom and centre), and only a first open
+      on the device fits everything. `canvasViews.ts` keeps the view per canvas id in
+      one localPrefs record (`capy.canvas.views`, the latest 100 canvases, Q34),
+      written as the board unmounts and when the page is hidden (another tab, a
+      reload, the tab closed, where no unmount runs); `useCanvasBoard` passes it as
+      the board's `kept`, which the board takes only while something on it lies
+      inside that view on this screen, else it fits (Q35: a peer may have moved or
+      removed what was there); a board mounted again on the same canvas in the same
+      tab takes its `view` as it was. The record carries its account, as the Make a quiz runs do
+      (`claimAccountData`): another account's views, or anyone's once signed out, are
+      dropped. Only the two canvas pages keep one; the answer board and
+      `/dev/drawing` fit at every open. BlockSuite's own stored viewport is off
+      (vendor local change 73): it was keyed `board` on every board, so each board
+      opened at the last one's view.
     - **The first state.** Every canvas starts from the same bytes: one `affine:page`
       block with id `page` holding one `affine:surface` block with id `surface`, written
       under Yjs client id 1, which no user is assigned, so two first openers hold one
@@ -5708,19 +5725,51 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       a copy of what the room confirmed (`deviceCopy.ts`, the `keep` label from the
       canvas's read, `seed` at the next open): the board shows it at once, offline
       too, with its tools when the copy says the person could edit. Such a board
-      takes edits before the join (Epo 2026-11-19, Q27 b1, as AFFiNE does;
-      `early` in `itemRoom.ts`): the copy keeps the tab's last room token, and a
-      token younger than 7 days gives the document its client id, which the
-      first token request presents again (Q236). The edits are drafts like any
-      offline edit, under the offline bound (cap less size less 64 KiB, the
-      removals-only gate reading the copy's size), and sync as ordinary edits at
-      the join, merged by Yjs. A refusal, the id no longer this tab's
-      (`unassigned`), the size or any other, keeps them in the copy-only recovery
-      with Reload asking first. A token that says read at the join (a demotion, a
-      freeze) discards them as any read-only turn does (Epo 2026-09-29): a fresh
-      room opens on what was saved, read-only. With no stored token, one older
-      than 7 days, earlier sessions' drafts waiting for the join, or a viewer's
-      copy, the board stays locked until the room has synced. The copy's label follows the canvas's read: a rename or a
+      takes edits before the join (Epo 2026-11-19, Q27 b1, Q31, as a note does;
+      `early` in `itemRoom.ts`). Once the room's token has answered (a slow join,
+      or 30 s unreachable with the API up) the document takes the id the token
+      offers before its first edit (`adopt`): an id assigned to this user that no
+      session bound yet, so the JOIN binds it as any session's (Q236,
+      `ClientIds::holds`) and nothing is re-applied. With no token yet (offline at
+      open) the edits go under the tab's own id, which no room assigned, kept as
+      `late` draft rows (the removals-only gate reading the copy's size, under the
+      offline bound of cap less size less 64 KiB): at the join the room opens on a
+      fresh document from the copy, and the edits are re-applied under the room's
+      id by the catch-up merge (`reauthor`: `mergeLate` with the joined document's
+      id, `applyMerged` re-authored), the board moving onto that document at the
+      view and selection it had (`useCanvasBoard`), its size the board's until the
+      new document's measure. The early rows go once the re-applied edit's state is
+      on the device or a receipt covers it, and each recorder keeps its own `late`
+      mark, so a row the replaced one writes meanwhile stays late. A field both
+      sides changed (a shape both people moved) takes Yjs's own pick, with no
+      review step (Epo 2026-11-19, Q33, "Yes, one side wins"). What would not show
+      is decided per element and block (`boardHidden.ts`; the merge names hidden
+      edits by top-level block, and every element sits in the one surface block):
+      an element or block the early board edited and still shows that the merged
+      one does not (another person deleted it). Those alone are kept as one
+      hidden refused row and shown in the copy-only recovery (`merged`, the
+      `changed` strip) while the room runs on the merged document; Reload (asking
+      first) drops them and shows the room. Merge code that does not load (the
+      chunk, the worker or its WASM) keeps the edits as they are, the board
+      read-only under the note's `late-unloaded` strip ("Couldn't sync your edits.
+      Retry or reload the page."), and tries again on Retry and on the browser's
+      reconnect (Q295, Q398); its download has no time limit, the board saying
+      Syncing meanwhile. A merge that ran and failed (its 10 s, Q281), a refusal
+      (size or any other) or a token refused at the join (403/404) keep every
+      early edit in the copy-only recovery with Reload asking first, the strokes
+      still on screen, and only the room's refusals toast. A token that says read
+      at the join (a demotion, a freeze) discards them as any read-only turn does
+      (Epo 2026-09-29): a fresh room opens on what was saved, read-only. Each tab
+      writes under its own id, so two tabs of one person drawing early both land;
+      a tab leaves another live tab's late rows alone (`heldDraftSessions`;
+      without Web Locks it may take them, as Q420 accepts for notes). A reload
+      before the join paints the rows earlier sessions left: early ones are
+      re-applied with this session's at the join, as a note's late rows are;
+      ones of a session that held a room's id (it joined, or its token answered)
+      go as at any open (Q326), accepted ones with the joined document and
+      never-accepted ones through the draft send, which goes first (a board
+      joining as it is waits for it at its JOIN, `beforeJoin`). Rows to copy, or
+      a viewer's copy, keep the board locked until the room has synced. The copy's label follows the canvas's read: a rename or a
       demotion is written with the next copy (`ItemRoom.keepAs`, `relabel`), so the
       next open paints with the current title and tools. A board's copy is at most
       its 4 MiB cap, against the 200 MiB the device's copies share. Under the mocks
@@ -5756,7 +5805,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       "Saving is delayed" (closeable) once an edit's receipt has waited 25 s of
       connected time, as a note's, or the room said a store failed with edits
       unsaved (`delayed`, `SaveDelayClock`). One strip shows at a time: recovery,
-      access lost, offline or outdated, unreachable, storage, read-only, delayed.
+      access lost, what the device could not store, its offline bound or an
+      outdated build, unreachable, plain offline, storage, read-only, delayed.
       An edit the room refuses for good, one taking the board past its cap
       included, is kept on this device as one refused row and opens read-only for
       copying, as any item's (Developer 2026-09-30; Epo 2026-11-18, nothing deleted
@@ -5958,7 +6008,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   turns by the frame's knob about its middle (`rotate`, local change 56). Its links
   are underlined; hovering one while no note is typed in (or a tap on a touch
   screen) shows its address and Open, a new tab (`boardNoteLinks.ts`, Epo 2026-11-13,
-  L1), as the note's mask keeps the pointer off the link. A card
+  L1), as the note's mask keeps the pointer off the link. The chip sits above the
+  link. For a selected note it keeps off the frame and its handles, measured on the
+  note's turned box (the turn is on its inner container): past the frame on the side
+  away from the rotate knob, which it would otherwise cover, else beside the frame at
+  the link's height, else above the link again (a note taller or wider than the
+  screen); it moves when the note is selected under it, and always stays inside the
+  board, over its bottom tool row, so a tap can reach Open. A mouse on its way from
+  the link to the chip keeps it: crossing another link does not move it there unless
+  the pointer rests on it for 150 ms, and reaching the chip ends a hide under way.
+  A card
   takes its stored style from the style panel (fill half see-through, shadow, border,
   corner), with 8×10 px padding and
   the same size while typing (N2, 2026-11-08); note text is weight 500, the app's

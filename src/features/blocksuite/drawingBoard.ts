@@ -129,10 +129,10 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
 import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
-import { BOARD_OFFLINE_MARGIN } from '@/features/collaboration/itemRoom';
 import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { contentSizeKilobytes } from '@/features/notes/documentStats';
 import { m } from '@/i18n';
+import { BOARD_OFFLINE_MARGIN } from '@/lib/const';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { BoardBlobSource } from './boardBlobs';
@@ -384,6 +384,15 @@ export type DrawingBoardOptions = {
   /** The view the board opens at, in place of the first fit: the one its
    * person had on this canvas a moment ago (`view()`). */
   view?: BoardView;
+  /** Without `view`, the one this device kept for the canvas from an earlier
+   * open (Q32): taken while anything on the board lies inside it, else the
+   * first fit, as a peer may have moved or removed what was there (Epo
+   * 2026-11-19, Q35). */
+  kept?: BoardView;
+  /** What is selected as it opens, of what it holds: what its person had
+   * selected on the board this one replaces (a canvas's early edits
+   * re-applied, Q31). */
+  selected?: readonly string[];
   /** A question's answer board or the workspace canvas: what it may hold and its
    * tools (the board catalog). */
   board: BoardKind;
@@ -1081,6 +1090,19 @@ export function mountDrawingBoard(
     place();
     fitted = true;
   };
+  /** Whether anything on the board lies inside `view` on this screen. */
+  const shows = ({ centre: [x, y], zoom }: BoardView) => {
+    const { height, width } = gfx.viewport;
+    const seen = new Bound(
+      x - width / zoom / 2,
+      y - height / zoom / 2,
+      width / zoom,
+      height / zoom
+    );
+    return [...gfx.layer.canvasElements, ...gfx.layer.blocks].some((item) =>
+      item.elementBound.isOverlapWithBound(seen)
+    );
+  };
   let frame = requestAnimationFrame(function mountLayer() {
     const background = container.querySelector('.edgeless-background');
     if (!background || !gfx.viewport.width) {
@@ -1098,12 +1120,15 @@ export function mountDrawingBoard(
       );
       store.resetHistory();
     }
-    const { view } = options;
-    if (view) {
-      gfx.viewport.setViewport(view.zoom, view.centre);
+    const { kept, selected, view } = options;
+    const opening = view ?? (kept && shows(kept) ? kept : undefined);
+    if (opening) {
+      gfx.viewport.setViewport(opening.zoom, opening.centre);
       place();
       fitted = true;
     } else fitView();
+    const elements = selected?.filter((id) => gfx.getElementById(id)) ?? [];
+    if (elements.length) gfx.selection.set({ editing: false, elements });
   });
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */

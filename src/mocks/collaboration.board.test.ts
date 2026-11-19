@@ -314,3 +314,101 @@ it('admits what a join brings as any update: nothing past the cap', async () => 
   peer.leave();
   provider.destroy();
 });
+
+/** A tab joining with `document`, its tokens from `token`; what it heard. */
+async function joinWith(
+  id: string,
+  document: Y.Doc,
+  token: (previous?: string) => string
+) {
+  const heard = {
+    closed: [] as string[],
+    refused: [] as string[],
+    rejected: [] as unknown[],
+    synced: 0,
+  };
+  if (!registered.make) throw new Error('no mock item provider');
+  const provider = registered.make({
+    document,
+    name: `material:${id}:schema:1`,
+    onAuthenticationFailed: ({ reason }) => heard.refused.push(reason),
+    onClose: ({ reason }) => heard.closed.push(reason),
+    onStateless: ({ payload }) => {
+      const event = JSON.parse(payload) as { type: string };
+      if (event.type === 'document-rejected') heard.rejected.push(event);
+    },
+    onSynced: () => {
+      heard.synced += 1;
+    },
+    token: async (previous) => token(previous),
+    url: 'mock://collaboration',
+  });
+  provider.connect();
+  await vi.waitUntil(() => heard.synced + heard.refused.length > 0, {
+    timeout: 30_000,
+  });
+  return { heard, provider };
+}
+
+// As the service binds ids (client_ids.rs `holds`; rooms.rs
+// `a_clean_leave_expires_the_sessions_row`, Q236): a clean Leave expires the
+// id its token offered, so a document that wrote under it is refused at its
+// next JOIN even when offered it again; a channel that only dropped keeps it.
+it('expires an id at a clean Leave and keeps it through a dropped socket', async () => {
+  const id = canvas('editor');
+  for (const clean of [true, false]) {
+    let last = '';
+    const minted = (previous?: string) => {
+      last = mockCanvasToken(id, previous);
+      return last;
+    };
+    const document = new Y.Doc();
+    const first = await joinWith(id, document, minted);
+    draw(document, `stroke-${clean}`, stroke);
+    if (!clean) mockBoardSocket(id, false);
+    first.provider.destroy();
+    if (!clean) mockBoardSocket(id, true);
+    // The same document again, its last token presented: Go offers the id
+    // again (`regrantedClientIDs`).
+    const offered = last;
+    const again = await joinWith(id, document, () =>
+      mockCanvasToken(id, offered)
+    );
+    if (clean)
+      expect(again.heard.refused).toEqual(['collaboration-unassigned-id']);
+    else expect(again.heard.synced).toBe(1);
+    again.provider.destroy();
+  }
+});
+
+// An id a live channel holds is not bound to a second one, and structs under
+// an id the person holds no claim to are refused with `unassigned` (Q213,
+// `client_ids::foreign`).
+it('refuses a second channel on a live id and an update under an unassigned one', async () => {
+  const id = canvas('editor');
+  const first = mockCanvasToken(id, undefined);
+  const one = await joinWith(id, new Y.Doc(), () => first);
+  const two = await joinWith(id, new Y.Doc(), () => first);
+  expect(two.heard.refused).toEqual(['collaboration-client-id']);
+  two.provider.destroy();
+  const document = new Y.Doc();
+  const writer = await joinWith(id, document, (previous) =>
+    mockCanvasToken(id, previous)
+  );
+  // Written under an id no token offered (made before the tab had one).
+  document.clientID = 7777;
+  draw(document, 'foreign', stroke);
+  await vi.waitFor(() =>
+    expect(writer.heard.rejected).toEqual([
+      expect.objectContaining({ code: 'unassigned' }),
+    ])
+  );
+  expect(writer.heard.closed).toEqual([
+    'update under a client id the writer was not assigned',
+  ]);
+  const peer = mockBoardPeer(id);
+  expect(peer.elements()).toEqual({});
+  peer.leave();
+  writer.provider.destroy();
+  one.provider.destroy();
+});

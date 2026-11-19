@@ -35,6 +35,7 @@ import type { CanvasPresence } from './BoardPresenceMarks';
 import { sendBoardPresence } from './boardPresence';
 import { holdsBoard } from './boardRoom';
 import { editsCanvas, sendsPresence } from './canvasRights';
+import { keepViewOf, keptView } from './canvasViews';
 
 export type CanvasBoard = ReturnType<typeof mountDrawingBoard>;
 
@@ -60,7 +61,7 @@ export type CanvasStrip =
       /** Recovery's Reload (after asking), which leaves the copy-only edits
        * for a fresh room. */
       onReload?: () => void;
-      /** `unreachable`'s Retry. */
+      /** `unreachable`'s and `late-unloaded`'s Retry. */
       onRetry?: () => void;
       state: SaveBannerState;
     }
@@ -106,8 +107,9 @@ export type CanvasBoardState = {
  * person draws arrives the same way. Nothing is saved from here. Unsent edits
  * are kept on this device as any live item's are (`itemRoom.ts`), and sent on
  * the next open. A member's device keeps a copy of what the room confirmed
- * (`deviceCopy.ts`): the next open shows it at once, offline too, read-only
- * until the room has synced.
+ * (`deviceCopy.ts`): the next open shows it at once, offline too, taking edits
+ * when the copy says its person may edit; the join re-applies those under the
+ * room's client id (`ItemRoom.reauthor`).
  *
  * The board is read-only for whoever the room gives a read channel (a
  * workspace viewer on a shared canvas, a frozen account, a payer at its
@@ -310,8 +312,9 @@ export function useCanvasBoard(
   const lost = snapshot.status === 'unavailable';
   // The board as the device kept it, until the room's state arrives.
   const seeded = !!seed && room?.doc === seed.doc;
-  // The room refused this person before anything showed: nothing to show.
-  const refusedFirst = lost && !snapshot.synced;
+  // The room refused this person before anything showed: nothing to show
+  // (an early board's own edits aside, kept to copy).
+  const refusedFirst = lost && !snapshot.synced && !recovery;
   // Edits that cannot join the room show alone, for copying; a trashed
   // canvas shows its stored board; else the room's document once it holds
   // the room's state, or the device's copy of it.
@@ -320,7 +323,9 @@ export function useCanvasBoard(
     recovery?.doc ??
     (room && !refusedFirst && (snapshot.synced || seeded) ? room.doc : null);
   // Painted from the copy before the join, an editor's board takes edits
-  // (Epo 2026-11-19, Q27 b1; `early`) unless the token said read.
+  // (Epo 2026-11-19, Q27 b1, Q31; `early`) unless the token said read; the
+  // join re-authors them onto the room's document, which the board then
+  // shows, mounted again where the person was looking.
   const readOnly =
     !!trashDoc ||
     !!recovery ||
@@ -348,8 +353,11 @@ export function useCanvasBoard(
   const locked = useRef(readOnly);
   locked.current = readOnly;
   // Where the person was looking, for a board that mounts again on this
-  // canvas (a fresh room, a viewer who may now write).
+  // canvas (a fresh room, a viewer who may now write); a fresh open takes
+  // the view this device kept while it shows something (Epo 2026-11-19, Q32
+  // and Q35), else it fits.
   const view = useRef<BoardView | null>(null);
+  const selection = useRef<string[]>([]);
   useEffect(() => {
     const host = container.current;
     if (!(host && doc && ready)) return;
@@ -370,6 +378,7 @@ export function useCanvasBoard(
         board: 'workspace',
         // A reader stores nothing: another canvas's image stays as it is.
         images: tools ? images : { load: images.load },
+        kept: keptView(id),
         locked: locked.current,
         onEditor: (cardId) => {
           const before = editor.current;
@@ -384,6 +393,7 @@ export function useCanvasBoard(
         openPlane: latest.current.openPlane,
         readOnly: !tools,
         room: { doc },
+        selected: selection.current,
         title: () => title.current,
         view: view.current ?? undefined,
         workspace: latest.current.workspace,
@@ -402,9 +412,19 @@ export function useCanvasBoard(
     setMounted(drawing);
     latest.current.onBoard?.(drawing);
     if (import.meta.env.DEV) Object.assign(window, { __board: drawing });
+    const unkeep = keepViewOf(id, drawing);
+    // What the person has selected while the board takes edits, for one that
+    // replaces it (an early board's edits re-applied, Q31): locking a board
+    // clears its selection.
+    const presence = drawing.presence;
+    const unselect = presence?.onSelection(() => {
+      if (!locked.current) selection.current = [...presence.selected()];
+    });
     return () => {
       disposed = true;
       view.current = drawing.view() ?? view.current;
+      unselect?.();
+      unkeep();
       latest.current.onBoard?.(null);
       drawing.unmount();
       if (import.meta.env.DEV) Object.assign(window, { __board: undefined });
@@ -535,23 +555,34 @@ export function useCanvasBoard(
         }
       : lost && (snapshot.synced || !!mounted)
         ? { kind: 'save', state: 'access-lost' }
-        : // The join unanswered at 30 s, online, says so with Retry, an early
-          // board's offline episode too (D5, C9).
-          snapshot.unreachable && online
-          ? {
-              kind: 'save',
-              onRetry: () => room?.retry(),
-              state: 'unreachable',
-            }
-          : snapshot.offline
-            ? { kind: 'save', state: snapshot.offline }
-            : storageFull
-              ? { by: storageFull, kind: 'storage' }
-              : readOnlyStrip
-                ? { kind: 'read-only' }
-                : snapshot.delayed
-                  ? { kind: 'save', state: 'delayed' }
-                  : null;
+        : // The join unanswered at 30 s, online, says so with Retry, over an
+          // early board's plain offline episode (D5, C9); what the device
+          // could not store, its bound and an outdated build say first.
+          snapshot.offline && snapshot.offline !== 'offline'
+          ? { kind: 'save', state: snapshot.offline }
+          : snapshot.unreachable && online
+            ? {
+                kind: 'save',
+                onRetry: () => room?.retry(),
+                state: 'unreachable',
+              }
+            : snapshot.offline
+              ? { kind: 'save', state: snapshot.offline }
+              : // The re-apply's merge code did not load (Q295, Q398): Retry,
+                // as a note's, after offline (Q420).
+                snapshot.unloaded
+                ? {
+                    kind: 'save',
+                    onRetry: () => room?.retry(),
+                    state: 'late-unloaded',
+                  }
+                : storageFull
+                  ? { by: storageFull, kind: 'storage' }
+                  : readOnlyStrip
+                    ? { kind: 'read-only' }
+                    : snapshot.delayed
+                      ? { kind: 'save', state: 'delayed' }
+                      : null;
   const unavailable =
     refusedFirst &&
     !trash &&
