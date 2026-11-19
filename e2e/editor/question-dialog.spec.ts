@@ -1,13 +1,31 @@
-import { expect, type Locator, test } from '@playwright/test';
-import { openQuestionDialog } from '../helpers/quizEditor';
+import { expect, type Locator, type Page, test } from '@playwright/test';
+import { openQuestionCard } from '../helpers/quizEditor';
 import { m } from '../i18n';
+import { openEditorNote } from './helpers';
 
-/** A part's answer row in the question: the answer key under the waves
- * shares its name. A click selects the row and a double click edits it. */
-const partAnswers = (dialog: Locator) =>
-  dialog
-    .getByRole('button', { name: m.question_ui_select_answer() })
-    .and(dialog.locator('[data-row-key^="part:"]'));
+/* The question card (Epo 2026-11-15, Google Forms cards): a quiz page's open
+ * card edits its question in place, a note's quiz does the same in the note,
+ * and the bank's question dialog is the same card in a dialog. These run on
+ * qz_2's first question, a multiple choice of one part. */
+
+const STEM = 'A cross between Aa × Aa gives what genotype ratio?';
+
+/** The card's question text, open with its tools under it. */
+async function openText(card: Locator) {
+  await card.getByRole('button', { name: STEM }).click();
+  await expect(
+    card.getByRole('toolbar', { name: m.question_ui_formula_tools() })
+  ).toBeVisible();
+}
+
+/** Insert's menu under the open text, then one of its kinds. */
+async function insert(page: Page, card: Locator, kind: string) {
+  await openText(card);
+  await card
+    .getByRole('button', { name: m.question_ui_insert_figure() })
+    .click();
+  await page.getByRole('button', { exact: true, name: kind }).click();
+}
 
 // A chart or graph is edited where it lives (Epo 2026-11-16, D13): added
 // from Insert it is in the question at once, the dialog has Done and no Save
@@ -15,13 +33,8 @@ const partAnswers = (dialog: Locator) =>
 test('a chart added from Insert is in the question at once and Done keeps it', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
-  await page
-    .getByRole('button', { exact: true, name: m.question_ui_chart() })
-    .click();
+  const card = await openQuestionCard(page, '/materials/qz_2');
+  await insert(page, card, m.question_ui_chart());
   const chartEditor = page.getByRole('dialog', {
     name: m.question_ui_chart(),
   });
@@ -40,211 +53,178 @@ test('a chart added from Insert is in the question at once and Done keeps it', a
     .click();
   await expect(chartEditor).toBeHidden();
   await expect(
-    page.getByRole('button', {
+    card.getByRole('button', {
       name: m.question_ui_edit_block({ type: m.question_ui_chart() }),
     })
   ).toHaveCount(1);
-  await expect(page.getByText('Rainfall').first()).toBeVisible();
-});
-
-test('a block keeps its toolbar after Back from its editor', async ({
-  page,
-}) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
-  await page
-    .getByRole('button', { exact: true, name: m.question_ui_image() })
-    .click();
-  await dialog.locator('input[type="file"]').setInputFiles({
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      'base64'
-    ),
-    mimeType: 'image/png',
-    name: 'field-photo.png',
-  });
-  await dialog
-    .getByRole('textbox', { name: m.question_ui_description() })
-    .fill('Field photo');
-  await dialog
-    .getByRole('button', { exact: true, name: m.action_back() })
-    .click();
-  await expect(
-    page.getByRole('toolbar', { name: m.question_ui_block_actions() })
-  ).toBeVisible();
-});
-
-test('a quiz embedded in a note keeps its question dialog open through an edit', async ({
-  page,
-}) => {
-  await page.goto('/workspaces/ws_bio?material=mat_note_1');
-  await page
-    .getByRole('heading', { name: 'Self-check' })
-    .scrollIntoViewIfNeeded({ timeout: 30_000 });
-  const stem = page
-    .getByText('Which organelle produces most of the ATP')
-    .first();
-  await expect(stem).toBeVisible({ timeout: 30_000 });
-  await page
-    .locator('[data-question-id]')
-    .filter({ has: stem })
-    .locator('xpath=..')
-    .getByRole('button', { exact: true, name: m.action_edit() })
-    .first()
-    .click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
-  // The edit reprojects the quiz and invalidates its read, which the note's
-  // footer also observes: the refetch must reach the network and the embed
-  // (with its dialog) stay mounted.
-  const refetch = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/quizzes/mat_embed_bio_note_quiz') &&
-      response.ok()
-  );
-  await page
-    .getByRole('button', { exact: true, name: m.question_ui_text() })
-    .click();
-  await page.keyboard.type('Extra');
-  await refetch;
-  await expect(
-    dialog.getByRole('heading', { exact: true, name: m.question_ui_text() })
-  ).toBeVisible();
-});
-
-test('closing an open answer editor goes back to the question', async ({
-  page,
-}) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  const answer = partAnswers(dialog);
-  await answer.dblclick();
-  const answerEditor = dialog.getByRole('heading', {
-    exact: true,
-    name: 'Answer and marks',
-  });
-  await expect(answerEditor).toBeVisible();
-  await dialog
-    .getByRole('button', { exact: true, name: m.action_close() })
-    .click();
-  await expect(answerEditor).toBeHidden();
-  await expect(answer).toBeVisible();
+  await expect(card.getByText('Rainfall').first()).toBeVisible();
 });
 
 test('a part’s marks step and type within 1 to the marks cap', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await partAnswers(dialog).dblclick();
-  const marks = dialog.getByRole('textbox', {
+  const card = await openQuestionCard(page, '/materials/qz_2');
+  const marks = card.getByRole('textbox', {
     name: m.question_ui_part_marks(),
   });
-  const more = dialog.getByRole('button', {
-    name: m.question_ui_marks_increase(),
-  });
   await expect(marks).toHaveValue('1');
-  await more.click();
+  await marks.press('ArrowUp');
   await expect(marks).toHaveValue('2');
+  // Past the cap is not marks: it goes back to them on leaving.
   await marks.fill('25');
+  await expect(marks).toHaveAttribute('aria-invalid', 'true');
+  await marks.blur();
+  await expect(marks).toHaveValue('2');
+  await marks.fill('20');
+  await marks.press('ArrowUp');
   await expect(marks).toHaveValue('20');
-  await expect(more).toBeDisabled();
+  await marks.fill('1');
+  await marks.press('ArrowDown');
+  await expect(marks).toHaveValue('1');
 });
 
+// Correct answers are marked beside each option, as Canvas does (Epo
+// 2026-11-15): a single choice's radio.
 test('a multiple choice option is marked correct with its toggle', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await partAnswers(dialog).dblclick();
-  const first = dialog.getByRole('button', {
+  const card = await openQuestionCard(page, '/materials/qz_2');
+  const first = card.getByRole('radio', {
     name: m.question_ui_mark_correct({ number: 1 }),
   });
-  const second = dialog.getByRole('button', {
+  const second = card.getByRole('radio', {
     name: m.question_ui_mark_correct({ number: 2 }),
   });
-  await expect(first).toHaveAttribute('aria-pressed', 'true');
+  await expect(first).toHaveAttribute('aria-checked', 'true');
   await second.click();
-  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  await expect(second).toHaveAttribute('aria-checked', 'true');
+  await expect(first).toHaveAttribute('aria-checked', 'false');
   await first.click();
-  await expect(first).toHaveAttribute('aria-pressed', 'false');
+  await expect(first).toHaveAttribute('aria-checked', 'true');
+  await expect(second).toHaveAttribute('aria-checked', 'false');
 });
 
+// A question's table edits as a note's table does (Epo 2026-11-15): the + bar
+// past the last column adds one, a row's pill opens its menu.
 test('a table adds a column and removes a row from its own controls', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
-  await page
-    .getByRole('button', { exact: true, name: m.question_ui_table() })
-    .click();
+  const card = await openQuestionCard(page, '/materials/qz_2');
+  await insert(page, card, m.question_ui_table());
+  const dialog = page.getByRole('dialog', { name: m.question_ui_table() });
   const cell = (row: number, column: number) =>
     dialog.getByRole('button', {
       name: m.question_ui_edit_cell({ column, row }),
     });
+  // A new table is two rows of two.
+  await expect(cell(2, 2)).toBeVisible();
   await dialog
-    .getByRole('button', { name: m.question_ui_add_column() })
+    .getByRole('button', { exact: true, name: m.editor_insert_col_after() })
     .click();
   await expect(cell(1, 3)).toBeVisible();
   await dialog
-    .getByRole('button', {
-      name: m.question_ui_remove_row_number({ number: 2 }),
-    })
+    .getByRole('button', { exact: true, name: m.editor_row() })
+    .nth(1)
+    .click();
+  await page
+    .getByRole('menuitem', { exact: true, name: m.editor_delete_row() })
     .click();
   await expect(cell(2, 1)).toHaveCount(0);
+  await expect(cell(1, 3)).toBeVisible();
 });
 
-test('adding a part shows it in the question instead of opening its answer', async ({
+// A note's quiz block in Edit shows the quiz page's cards in place of the
+// question dialog (Epo 2026-11-15): an edit in its open card keeps the embed,
+// and the card with it, mounted.
+test('a quiz embedded in a note keeps its open card through an edit', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
-  await page
-    .getByRole('button', { exact: true, name: m.question_ui_part() })
+  // A note of many blocks and embeds, opened live.
+  test.slow();
+  const note = await openEditorNote(page, 'mat_note_1', 'Self-check');
+  // The block's quiz opens as it nears the screen.
+  await note
+    .getByRole('heading', { name: 'Self-check' })
+    .scrollIntoViewIfNeeded();
+  const quiz = page.locator('[data-note-quiz]').first();
+  await quiz
+    .getByRole('button', {
+      exact: true,
+      name: m.question_ui_edit_question_number({ number: 1 }),
+    })
+    .click({ timeout: 30_000 });
+  const card = quiz.locator('[data-question-open]');
+  await expect(card).toBeVisible();
+  await card.getByText('Cellular respiration transfers energy').first().click();
+  const text = card
+    .getByRole('textbox', { name: m.question_ui_text_and_formulas() })
+    .first();
+  await expect(text).toBeVisible();
+  // The edit reprojects the quiz and refetches its read, which the note's
+  // footer also observes: the embed, and its open card, stay mounted.
+  const refetch = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/quizzes/mat_embed_bio_note_quiz') &&
+      response.ok()
+  );
+  await page.keyboard.type(' Extra');
+  await refetch;
+  await expect(card).toBeVisible();
+  await expect(text).toContainText('Extra');
+});
+
+/** Add part on a question of one part: in the card's ⋮, as the footer's
+ * button is only once it has parts. */
+async function addPart(page: Page, card: Locator) {
+  await card
+    .getByRole('button', {
+      name: m.quiz_editor_question_actions({ number: 1 }),
+    })
     .click();
-  await expect(partAnswers(dialog)).toHaveCount(2);
-});
+  await menuItem(page, m.question_ui_add_part()).click();
+}
 
-// Grouped parts (board U2): Add part's Group, then the group's own menu.
-test('a group adds a sub-part, ungroups and goes with its parts', async ({
+/** A row of the ⋮ menu open over the card. */
+function menuItem(page: Page, name: string) {
+  return page.getByRole('dialog').getByRole('button', { exact: true, name });
+}
+
+// Add part only adds a part (Epo 2026-11-16): the new part shows in the
+// question, open in place.
+test('adding a part shows it in the question, open in place', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_2');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  const menuItem = (name: string) =>
-    page.getByRole('button', { exact: true, name });
-  const groupMenu = () =>
-    dialog
-      .getByRole('button', {
-        name: m.question_ui_actions({
-          label: m.question_ui_question_placeholder(),
-        }),
-      })
-      .first();
-  await dialog.getByRole('button', { name: m.question_ui_add_part() }).click();
-  await menuItem(m.question_ui_group()).click();
-  // A group starts with its first part: the question now has two answers.
-  await expect(partAnswers(dialog)).toHaveCount(2);
-  await expect(dialog.locator('[data-group-id]')).toHaveCount(1);
-  await expect(dialog.locator('[data-group-id]')).toContainText('(b)');
-  await groupMenu().click({ force: true });
-  await menuItem(m.question_ui_add_sub_part()).click();
-  await expect(partAnswers(dialog)).toHaveCount(3);
+  const card = await openQuestionCard(page, '/materials/qz_2');
+  await addPart(page, card);
+  await expect(card.locator('[data-part-id]')).toHaveCount(2);
   await expect(
-    dialog.locator('strong').filter({ hasText: '(ii)' })
+    card.getByRole('button', { name: m.question_ui_actions({ label: '(b)' }) })
   ).toBeVisible();
-  await groupMenu().click({ force: true });
-  await menuItem(m.question_ui_ungroup()).click();
-  await expect(dialog.locator('[data-group-id]')).toHaveCount(0);
-  await expect(partAnswers(dialog)).toHaveCount(3);
+});
+
+// Sub-parts (Epo 2026-11-16): a part's ⋮ has Add sub-part, which keeps it as
+// (i) and opens (ii); the group's ⋮ adds more and Ungroup keeps its parts.
+test('a part takes sub-parts, and its group ungroups keeping them', async ({
+  page,
+}) => {
+  const card = await openQuestionCard(page, '/materials/qz_2');
+  const parts = card.locator('[data-part-id]');
+  await addPart(page, card);
+  await card
+    .getByRole('button', { name: m.question_ui_actions({ label: '(b)' }) })
+    .click();
+  await menuItem(page, m.question_ui_add_sub_part()).click();
+  await expect(card.locator('[data-group-id]')).toHaveCount(1);
+  await expect(parts).toHaveCount(3);
+  await expect(card.locator('[data-group-id]')).toContainText('(ii)');
+  const groupMenu = card.getByRole('button', {
+    name: m.question_ui_actions({ label: '(b)' }),
+  });
+  await groupMenu.first().click();
+  await menuItem(page, m.question_ui_add_sub_part()).click();
+  await expect(parts).toHaveCount(4);
+  await groupMenu.first().click();
+  await menuItem(page, m.question_ui_ungroup()).click();
+  await expect(card.locator('[data-group-id]')).toHaveCount(0);
+  await expect(parts).toHaveCount(4);
 });

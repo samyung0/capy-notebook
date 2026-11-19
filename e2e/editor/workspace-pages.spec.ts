@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // From lg Files and Chat are pages: a side panel beside the rail and the centre.
@@ -34,9 +35,10 @@ async function openChatRow(page: Page, name = 'What is a cell?') {
   await expect(chatPage(page).getByRole('heading', { name })).toBeVisible();
 }
 
-/** A file from the Files page's tree. */
+/** A file from the Files page's tree: pressing Files while it shows would
+ * fold its side panel instead. */
 async function openFile(page: Page, name: string) {
-  await openSection(page, m.workspace_tab_files());
+  await showPanelView(page, m.workspace_tab_files());
   await leftPanel(page)
     .locator('[data-workspace-file-tree]')
     .getByText(name)
@@ -49,9 +51,8 @@ async function openFile(page: Page, name: string) {
 const width = async (page: Page, id: string) =>
   Math.round((await page.locator(`#${id}`).boundingBox())?.width ?? 0);
 
-test("the rail avatar menu invites from Members' Manage tab", async ({
-  page,
-}) => {
+// Members has no tabs, a class's staff included (Epo 2026-11-13).
+test('the rail avatar menu invites from Members', async ({ page }) => {
   await openWorkspace(page, 1600);
   await page
     .getByRole('navigation', { name: m.workspace_rail_label() })
@@ -61,9 +62,10 @@ test("the rail avatar menu invites from Members' Manage tab", async ({
     .getByRole('menuitem', { name: m.workspace_invite_member() })
     .click();
   await expect(page).toHaveURL(/\/workspaces\/ws_bio\/members$/);
-  await expect(
-    page.getByRole('tab', { name: m.members_tab_manage(), selected: true })
-  ).toBeVisible();
+  await expect(railButton(page, m.study_panel_members())).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
   await expect(
     page.getByPlaceholder(m.members_invite_placeholder())
   ).toBeVisible();
@@ -98,8 +100,9 @@ test('the Chat page lists chats beside the one it shows', async ({ page }) => {
     .getByRole('button', { name: m.a11y_open_menu() })
     .click();
   await page.getByRole('menuitem', { name: m.chat_new() }).click();
+  // A new chat has no title yet.
   await expect(
-    chatPage(page).getByRole('heading', { name: m.chat_new() })
+    chatPage(page).getByRole('heading', { name: m.chat_untitled() })
   ).toBeVisible();
   await expect(composer(page)).toBeVisible();
 });
@@ -112,7 +115,7 @@ test('Get started opens a new chat on the Chat page', async ({ page }) => {
     'page'
   );
   await expect(
-    chatPage(page).getByRole('heading', { name: m.chat_new() })
+    chatPage(page).getByRole('heading', { name: m.chat_untitled() })
   ).toBeVisible();
   await expect(page).not.toHaveURL(/chat=new/);
 });
@@ -240,11 +243,12 @@ test('other pages have no side panel and no chat button', async ({ page }) => {
   ).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('#left')).toBeHidden();
   await expect(chatButton(page)).toHaveCount(0);
-  await openSection(page, m.study_panel_practice());
+  // Practice is a tab of Study (Epo 2026-11-13).
+  await openSection(page, m.workspace_tab_study());
   await expect(
     page
       .locator('#viewer')
-      .getByRole('heading', { level: 1, name: m.study_panel_practice() })
+      .getByRole('heading', { level: 1, name: m.workspace_tab_study() })
   ).toBeVisible();
   await expect(page.locator('#left')).toBeHidden();
   await expect(chatButton(page)).toHaveCount(0);
@@ -309,9 +313,9 @@ test('a page has one h1', async ({ page }) => {
     page.getByRole('heading', { exact: true, name: 'Biology 101' })
   ).toBeVisible({ timeout: 60_000 });
   await expect(headings).toHaveCount(1);
-  await openSection(page, m.study_panel_practice());
+  await openSection(page, m.workspace_tab_study());
   await expect(
-    page.getByRole('heading', { level: 1, name: m.study_panel_practice() })
+    page.getByRole('heading', { level: 1, name: m.workspace_tab_study() })
   ).toBeVisible();
   await expect(headings).toHaveCount(1);
   await openFile(page, 'Cell structure.pdf');

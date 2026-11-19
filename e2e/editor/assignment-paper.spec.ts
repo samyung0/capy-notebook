@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
@@ -12,7 +13,7 @@ test('a member hands in a paper: two files, one removed, submitted', async ({
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio/assignments?assignment=as_upload');
+  await openAssignmentAsMember(page, 'as_upload');
   const before = page.getByRole('dialog');
   await before
     .getByRole('radio', { name: m.assignment_mode_upload() })
@@ -20,7 +21,6 @@ test('a member hands in a paper: two files, one removed, submitted', async ({
   await before
     .getByRole('button', { exact: true, name: m.assignment_start() })
     .click();
-  await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
   await expect(
     page.getByRole('button', { name: m.assignment_paper_add() })
   ).toBeEnabled({ timeout: 30_000 });

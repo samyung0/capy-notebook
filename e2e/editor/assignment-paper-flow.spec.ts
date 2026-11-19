@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { openAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
@@ -35,7 +36,7 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio/assignments?assignment=as_upload');
+  await openAssignmentAsMember(page, 'as_upload');
   const before = page.getByRole('dialog');
   await before
     .getByRole('radio', { name: m.assignment_mode_upload() })
@@ -43,14 +44,15 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
   await before
     .getByRole('button', { exact: true, name: m.assignment_start() })
     .click();
-  await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
   await expect(
     page.getByRole('button', { name: m.assignment_paper_add() })
   ).toBeEnabled({ timeout: 30_000 });
   await page.locator('input[type=file]').first().setInputFiles([PAGE, PAGE]);
-  await expect(page.locator('[data-paper-page="2"]')).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(
+    page
+      .getByRole('region', { name: m.assignment_your_answers() })
+      .getByRole('listitem')
+  ).toHaveCount(2, { timeout: 15_000 });
   await page
     .getByRole('button', { exact: true, name: m.assignment_submit() })
     .first()

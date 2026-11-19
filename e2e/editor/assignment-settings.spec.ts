@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { startAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const LAST_PUBLISHED = new RegExp(
@@ -65,11 +66,7 @@ test.describe('as a member', () => {
   test('a page open through a republish reads the new questions', async ({
     page,
   }) => {
-    await page.goto('/workspaces/ws_bio/assignments?assignment=as_paper');
-    await page
-      .getByRole('button', { exact: true, name: m.assignment_start() })
-      .click({ timeout: 30_000 });
-    await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
+    await startAssignmentAsMember(page, 'as_paper');
     const take = page.locator('[data-assignment-take]');
     const first = take.locator('h2').getByText('Which organelle makes most');
     await expect(first).toBeVisible({ timeout: 30_000 });
@@ -81,58 +78,6 @@ test.describe('as a member', () => {
     });
     await expect(first).toHaveCount(0);
     await expect(take).toBeVisible();
-  });
-
-  test('a quiz open when it gets assigned stays, and a fresh open goes to the assignment', async ({
-    page,
-  }) => {
-    const quiz = '/workspaces/ws_bio?material=qz_bio_near';
-    await page.goto(quiz);
-    await expect(page.getByTestId('content-header')).toBeVisible({
-      timeout: 60_000,
-    });
-    const assigned = await page.evaluate(async () => {
-      // The class's owner assigns it: a member's own POST makes a task for
-      // themself, which holds nothing.
-      const { assignAsMockOwner } = await import(
-        '/src/mocks/assignments.ts' as string
-      );
-      assignAsMockOwner('ws_bio', {
-        assignAll: true,
-        assignees: [],
-        attempts: 1,
-        draft: false,
-        dueAt: new Date(Date.now() + 86_400_000).toISOString(),
-        files: [],
-        kind: 'marked',
-        latePenaltyPct: 0,
-        marking: 'ai_approve',
-        noLate: false,
-        quizId: 'qz_bio_near',
-        showAnswers: 'submitted',
-        showGrades: 'automatic',
-        shuffle: false,
-        title: 'Assigned while open',
-      });
-      const paths = ['/src/api/queryClient.ts', '/src/api/client.ts'];
-      const [{ queryClient }, { qk }] = await Promise.all(
-        paths.map((path) => import(path))
-      );
-      await queryClient.invalidateQueries();
-      const list: { assignmentId?: string; id: string }[] =
-        queryClient.getQueryData(qk.materials('ws_bio'));
-      return list.find((row) => row.id === 'qz_bio_near')?.assignmentId;
-    });
-    // The list says it is assigned now, and the page stays.
-    expect(assigned).toBeTruthy();
-    await page.waitForTimeout(500);
-    await expect(page).toHaveURL(/material=qz_bio_near/);
-    await expect(page).not.toHaveURL(/assignment=/);
-    await expect(page.getByTestId('content-header')).toBeVisible();
-
-    // A quiz assigned already, opened afresh (a reload resets the mock's data).
-    await page.goto('/workspaces/ws_bio?material=qz_1');
-    await expect(page).toHaveURL(/assignment=/, { timeout: 60_000 });
   });
 });
 

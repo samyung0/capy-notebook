@@ -616,13 +616,20 @@ export function ChatPanel({
     movedOnHidden.current = false;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [hidden]);
-  // A thread drawn ahead of its Markdown code changes height as that lands: a
-  // reader at its end stays there, one who scrolled up keeps their place.
+  // A thread drawn ahead of its Markdown code changes height as that lands,
+  // and again as its maths and code colours load after it: a reader at its end
+  // stays there until they scroll away, one who scrolled up keeps their place.
   const proseLanded = typeof useProseBody() === 'function';
   const atEnd = useRef(true);
+  const followEnd = useRef<ResizeObserver>(null);
   useEffect(() => {
-    if (proseLanded && !hidden && atEnd.current)
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    const box = scrollRef.current;
+    if (!proseLanded || hidden || !box || !atEnd.current) return;
+    const toEnd = () => box.scrollTo({ top: box.scrollHeight });
+    toEnd();
+    followEnd.current = new ResizeObserver(toEnd);
+    for (const row of box.children) followEnd.current.observe(row);
+    return () => followEnd.current?.disconnect();
   }, [proseLanded]);
 
   function submit() {
@@ -739,14 +746,11 @@ export function ChatPanel({
           // Filling the page, the column stays 48rem wide in the middle.
           centred ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
         )}
-        onScroll={
-          proseLanded
-            ? undefined
-            : ({ currentTarget: box }) => {
-                atEnd.current =
-                  box.scrollHeight - box.clientHeight - box.scrollTop < 8;
-              }
-        }
+        onScroll={({ currentTarget: box }) => {
+          atEnd.current =
+            box.scrollHeight - box.clientHeight - box.scrollTop < 8;
+          if (!atEnd.current) followEnd.current?.disconnect();
+        }}
         ref={scrollRef}
       >
         {!messages.length && opening && (

@@ -30,8 +30,13 @@ test('bank checks an answer and marks its square', async ({ page }) => {
     .getByRole('button', { exact: true, name: m.question_ui_check() })
     .click();
   await expect(question).toContainText('1 / 1');
+  // A checked short answer lists its Correct answer under the field (Epo
+  // 2026-11-18).
   await expect(
-    question.getByText(m.question_ui_accepted_answers())
+    question.getByRole('heading', {
+      exact: true,
+      name: m.question_ui_correct_answer(),
+    })
   ).toBeVisible();
   await expect(
     squares.getByRole('button', { name: m.quiz_question_right({ number: 1 }) })

@@ -5,7 +5,7 @@ import { m } from '../i18n';
  * A drawing answer from the board to its marks: practice draws, Done and Check,
  * marked by the mock's stand-in for the vision model (a drawing earns every
  * point but the last); an assignment's member draws, Done stores the drawing,
- * and Submit hands it in; its owner runs Mark with AI on it and approves. On a
+ * and Submit hands it in; its owner runs Grade with AI on it and approves. On a
  * phone and on desktop.
  */
 
@@ -202,7 +202,7 @@ for (const { screen, width } of SCREENS) {
       .click();
     await expect(take).toHaveCount(0, { timeout: 30_000 });
 
-    // The owner: the drawing waits, Mark with AI marks it, Approve takes it.
+    // The owner: the drawing waits, Grade with AI grades it, Approve takes it.
     await page.evaluate(async (id) => {
       const { giveMockAttemptsTo } = await import(
         '/src/mocks/assignments.ts' as string
@@ -214,19 +214,45 @@ for (const { screen, width } of SCREENS) {
       null,
       `/workspaces/ws_bio/assignments?assignment=${assignment}&tab=grading`
     );
+    // Grade with AI, in the row above the lists, grades what the AI has not.
+    await page
+      .getByRole('button', {
+        exact: true,
+        name: m.assignment_grade_count_with_ai({ count: 1 }),
+      })
+      .click({ timeout: 60_000 });
+    // A phone goes one screen at a time (P1, Epo 2026-11-14): from the
+    // questions to the first answer waiting.
+    if (width < 768)
+      await page
+        .getByRole('button', { name: m.assignment_start_approving() })
+        .click();
     await expect(
       page.getByRole('img', { name: m.drawing_answer_image() })
     ).toBeVisible({ timeout: 60_000 });
-    await page
-      .getByRole('button', { exact: true, name: m.assignment_mark_with_ai() })
-      .click();
+    // The answer's pane reads the AI's grade over the grade to approve.
     await expect(
-      page.getByText(m.assignment_ai_mark({ mark: '1 / 2' })).first()
+      page.getByText(
+        `${m.assignment_ai_mark({ mark: '1 / 2' })} · ${m.assignment_mark_of({ marks: 2, total: 1 })}`
+      )
     ).toBeVisible({ timeout: 15_000 });
     await page
       .getByRole('button', { exact: true, name: m.assignment_approve() })
       .click();
-    await expect(page.getByText('1 / 2').first()).toBeVisible();
+    // The answer's row then reads the approved grade; a phone goes back to
+    // the question's members for it.
+    if (width < 768)
+      await page
+        .getByRole('button', {
+          name: m.assignment_back_to_members({ number: 11 }),
+        })
+        .click();
+    await expect(
+      page
+        .locator('[data-answer-row]')
+        .filter({ hasText: 'Dan Kim' })
+        .getByText('1 / 2', { exact: true })
+    ).toBeVisible();
   });
 }
 
@@ -469,10 +495,14 @@ test('a drawn sample put away in the quiz editor shows none of its note card, an
     .locator(`[data-question-row="${DRAWN}"]`)
     .first()
     .click({ timeout: 60_000 });
-  await showBoard(
-    page,
-    page.getByRole('button', { name: m.drawing_sample_draw() })
-  );
+  // The card footer's Draw sample answer opens the board at once: no board
+  // waits ahead for a sample not yet there (Epo 2026-11-15, its own section).
+  await page.getByRole('button', { name: m.drawing_sample_draw() }).click();
+  const board = page.locator('.answer-board');
+  await expect(board.locator('edgeless-pen-tool-button').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(board).not.toHaveAttribute('inert');
   // A sample answer holds no pictures (Epo 2026-11-10): Misc has its charts and
   // no Image tile, and a pasted picture is turned away and said.
   await page.locator('.answer-board capy-misc-button').click();
