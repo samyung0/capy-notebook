@@ -341,6 +341,17 @@ export interface ChatRequest {
 /** Requests whose prompt went out, so a remounted panel never resends it. */
 const sentPrompts = new WeakSet<ChatRequest>();
 
+/** Where the thread's last scroll left it, and how tall it was then. */
+type ThreadPlace = { height: number; top: number };
+
+/** The panel's own move to the thread's end, noted so that the scroll it fires
+ * is never read as the reader's. */
+function toThreadEnd(box: HTMLElement, place: ThreadPlace) {
+  box.scrollTo({ top: box.scrollHeight });
+  place.height = box.scrollHeight;
+  place.top = box.scrollTop;
+}
+
 /** The pending-sources notice's button: process the omitted files' changes. */
 function ProcessChangesButton({
   workspaceId,
@@ -605,16 +616,18 @@ export function ChatPanel({
   // an Undo on an older receipt changes messages too and must not scroll.
   const shownCount = useRef(0);
   const movedOnHidden = useRef(false);
+  const lastPlace = useRef<ThreadPlace>({ height: 0, top: 0 });
   useEffect(() => {
     if (!streaming && messages.length === shownCount.current) return;
     shownCount.current = messages.length;
     if (hidden) movedOnHidden.current = true;
-    else scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    else if (scrollRef.current)
+      toThreadEnd(scrollRef.current, lastPlace.current);
   }, [messages, streaming]);
   useEffect(() => {
     if (hidden || !movedOnHidden.current) return;
     movedOnHidden.current = false;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (scrollRef.current) toThreadEnd(scrollRef.current, lastPlace.current);
   }, [hidden]);
   // A thread drawn ahead of its Markdown code changes height as that lands,
   // and again as its maths and code colours load after it: a reader at its end
@@ -625,9 +638,11 @@ export function ChatPanel({
   useEffect(() => {
     const box = scrollRef.current;
     if (!proseLanded || hidden || !box || !atEnd.current) return;
-    const toEnd = () => box.scrollTo({ top: box.scrollHeight });
+    const toEnd = () => toThreadEnd(box, lastPlace.current);
     toEnd();
     followEnd.current = new ResizeObserver(toEnd);
+    // Its rows as they grow, and the thread itself as what's beside it does.
+    followEnd.current.observe(box);
     for (const row of box.children) followEnd.current.observe(row);
     return () => followEnd.current?.disconnect();
   }, [proseLanded]);
@@ -747,9 +762,21 @@ export function ChatPanel({
           centred ? 'px-[max(--spacing(4),calc(50%_-_24rem))]' : 'px-4'
         )}
         onScroll={({ currentTarget: box }) => {
-          atEnd.current =
-            box.scrollHeight - box.clientHeight - box.scrollTop < 8;
-          if (!atEnd.current) followEnd.current?.disconnect();
+          // Only the reader scrolling up leaves the end: a move up over a
+          // thread of the same height. Rows changing height move the scroll
+          // themselves (the browser's scroll anchoring), up or down, and that
+          // scroll can come before the follow above catches up.
+          const { scrollHeight, scrollTop } = box;
+          const last = lastPlace.current;
+          const up = scrollTop < last.top && scrollHeight === last.height;
+          last.height = scrollHeight;
+          last.top = scrollTop;
+          if (scrollHeight - box.clientHeight - scrollTop < 8)
+            atEnd.current = true;
+          else if (up) {
+            atEnd.current = false;
+            followEnd.current?.disconnect();
+          }
         }}
         ref={scrollRef}
       >

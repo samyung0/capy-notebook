@@ -400,7 +400,9 @@ preload that fails says nothing: only an open the user asked for shows a toast.
   `aria-busy`, and format when the code lands (`data-prose`: `loading`, `slow`,
   `failed`). A thread stays at its end as that happens if the reader was there,
   also as its maths (KaTeX) and code colours draw later still, until the reader
-  scrolls away (a `ResizeObserver` over the thread's rows). If
+  scrolls up (a `ResizeObserver` over the thread and its rows; only a move up over
+  a thread of unchanged height leaves the end, since the browser's scroll anchoring
+  moves a thread at its end, up or down, as its rows change height). If
   it won't load the words stay as they are, which is still the answer: offline with
   no toast of its own, trying once more when the connection is back, otherwise with
   the update toast. A browser that keeps the failed import stays on those words until

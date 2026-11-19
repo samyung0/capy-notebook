@@ -2739,7 +2739,12 @@ The editor stays mounted, joined and undoable behind it (its mounts hidden and `
 actions stay reachable (Review leaves Preview first), and it reads none of the editor's
 contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
 opens offline and shows text not yet saved; images use the links the editor already holds
-(`resolvedAssetLinks.ts`). It
+(`resolvedAssetLinks.ts`). Its code is there once the editor is: the static renderer comes
+with the editor's chunk, and `loadEditor` (`NoteBody.tsx`) loads the question text editor
+beside it, which an embedded quiz's long answers take in Preview (`QuestionRunner` loads it
+with the first long answer anywhere else), so drawing it offline needs no chunk the
+editor did not bring; opening a drawing answer's board, a drawn sample or an HTML embed's
+source still loads its own. It
 redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
 a collaborator's typing runs through too, and only changed blocks draw again. A room swap
 hands it the next editor without moving the reader.
