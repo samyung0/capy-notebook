@@ -200,10 +200,17 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
             })
             .unwrap_or_else(|| panic!("no accepted {kind} in the corpus"));
         // The frozen corpus's graphs still carry the picture removed since
-        // (Epo 2026-11-16).
+        // (Epo 2026-11-16) and `functiongraph` rows, stored as `expression`
+        // LaTeX since (Epo 2026-11-18).
         let mut base = base;
         if let Some(block) = base["block"].as_object_mut() {
             block.remove("image");
+        }
+        if let Some(elements) = base
+            .pointer_mut("/block/elements")
+            .and_then(Value::as_array_mut)
+        {
+            elements.retain(|element| element["type"] != "functiongraph");
         }
         let with_width = |width: Value| {
             let mut node = base.clone();

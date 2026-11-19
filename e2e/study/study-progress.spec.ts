@@ -412,7 +412,7 @@ test.describe('study progress', () => {
       .getByRole('button', { exact: true, name: m.action_back() })
       .click();
     await expect(ownerPage).toHaveURL(
-      new RegExp(`/workspaces/${ws.id}[?]study=practice$`)
+      new RegExp(`/workspaces/${ws.id}/study/practice$`)
     );
 
     // The finished session is in History with one card and one question.
@@ -451,7 +451,7 @@ test.describe('study progress', () => {
 
     // Every quiz members can see is practice. In a personal workspace, the
     // default, the owner practises too; in a class they see its use instead.
-    await ownerPage.goto(`/workspaces/${ws.id}?study=practice`);
+    await ownerPage.goto(`/workspaces/${ws.id}/study/practice`);
     await expect(ownerPage.getByText('Osmosis check').first()).toBeVisible();
     await expect(
       ownerPage.getByText(m.practice_col_best()).first()
@@ -471,7 +471,7 @@ test.describe('study progress', () => {
 
     // Practise on the topic: its question not seen yet, then marked.
     await ownerPage.goto(
-      `/workspaces/${ws.id}?study=practice&group=topic&topicId=${topic.id}`
+      `/workspaces/${ws.id}/study/practice?group=topic&topicId=${topic.id}`
     );
     const dialog = ownerPage.getByRole('dialog', {
       name: m.practice_session_title({ topic: 'Osmosis' }),

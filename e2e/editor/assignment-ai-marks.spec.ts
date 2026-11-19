@@ -7,7 +7,7 @@ test('Mark with AI fills the waiting marks, and Approve all takes them', async (
   page,
 }) => {
   await page.goto(
-    '/workspaces/ws_bio?study=assignments&assignment=as_paper&tab=approve'
+    '/workspaces/ws_bio/assignments?assignment=as_paper&tab=approve'
   );
   const list = page.locator('li button');
   // Why the AI left each unmarked (T3, Epo 2026-11-08): Grade Error, No credits.

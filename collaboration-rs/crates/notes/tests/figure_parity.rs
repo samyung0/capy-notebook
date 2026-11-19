@@ -46,7 +46,7 @@ fn value() -> Vec<Value> {
                     { "type": "point", "id": "B", "coords": [3, 0] },
                     { "type": "point", "id": "C", "coords": [0, 4] },
                     { "type": "polygon", "id": "t", "points": ["A", "B", "C"] },
-                    { "type": "functiongraph", "id": "f", "term": "0.5*x^2-3" },
+                    { "type": "expression", "id": "f", "latex": "y=0.5x^{2}-3" },
                 ],
             }),
         ),

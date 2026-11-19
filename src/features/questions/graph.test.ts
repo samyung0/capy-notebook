@@ -1,19 +1,20 @@
 import { expect, it } from 'vitest';
 import { validateGraphRecipe } from './graph';
 import type { GraphBlock } from './types';
-import { validGraphTerm } from './validation';
 
-it('accepts arithmetic functions but not property access or statements', () => {
-  expect(validGraphTerm('sin(x) + 2.5*x^2')).toBe(true);
-  for (const term of [
-    'x.constructor',
-    'alert(x)',
-    'x;while(1){}',
-    'x=2',
-    'x[0]',
-    'Math.sin(x)',
-  ])
-    expect(validGraphTerm(term)).toBe(false);
+// Epo 2026-11-18: a formula row is stored as typed, unchecked for grammar.
+it('takes formula rows as typed, an equation in x and y included', () => {
+  const graph: GraphBlock = {
+    board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
+    elements: [
+      { dash: true, id: 'f', latex: 'y=3x+10000', type: 'expression' },
+      { hidden: true, id: 'g', latex: 'x^{2}-y^{2}=0', type: 'expression' },
+    ],
+    height: 240,
+    type: 'graph',
+    width: 320,
+  };
+  expect(() => validateGraphRecipe(graph)).not.toThrow();
 });
 
 it('takes the free marks and styles the canvas plane draws', () => {

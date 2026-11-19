@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import { useMoveMaterial, useTopics, useUpdateMaterial } from '@/api/hooks';
 import type { Material } from '@/api/types';
+import { buttonVariants } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { MoveToTopicDialog } from '@/features/workspace/MoveToTopicDialog';
 import { m } from '@/i18n';
@@ -263,10 +264,16 @@ function NoteInfo({
   const canMove =
     !readonly && !!material?.capabilities.canEdit && Boolean(workspaceId);
   return (
-    <div className="pointer-events-auto mt-2 mb-2 border-divider border-y text-sm">
+    // Quiet (Epo 2026-11-17): no rules above and below, a ghost button as
+    // wide as its label, muted until hovered. Pulled left by its padding so
+    // the label lines up with the title.
+    <div className="pointer-events-auto mt-2 mb-2 py-1 text-sm">
       <button
         aria-expanded={open}
-        className="flex h-10 w-full items-center justify-between text-fg-secondary"
+        className={cn(
+          buttonVariants({ size: 'sm', variant: 'ghost-hover' }),
+          '-ml-2 gap-1 px-2 font-normal text-fg-muted hover:text-fg'
+        )}
         onClick={() => setOpen(!open)}
         type="button"
       >

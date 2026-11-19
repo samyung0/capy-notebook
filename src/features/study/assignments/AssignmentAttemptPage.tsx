@@ -9,6 +9,7 @@ import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { PracticeFrame } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
+import type { AssignmentsSearch, studyLink } from '../studyRoutes';
 import { AssignmentSubmitted } from './AssignmentSubmitted';
 import { AssignmentTake } from './AssignmentTake';
 import { AttemptResults } from './AttemptResults';
@@ -25,13 +26,14 @@ export function useTodoPageName() {
   return studyView(ws).manages ? m.study_panel_assignments() : m.nav_todo();
 }
 
-/** "← To do" or "← Assignments" over an assignment's pages. */
+/** "← To do" or "← Assignments" over an assignment's pages; `link` leads
+ * elsewhere: a report's tab on this page, or a member's profile on Study. */
 export function BackToAssignments({
   label,
-  search,
+  link = { search: {}, to: '.' },
 }: {
   label?: string;
-  search?: Record<string, unknown>;
+  link?: ReturnType<typeof studyLink> | { search: AssignmentsSearch; to: '.' };
 }) {
   const list = useTodoPageName();
   return (
@@ -41,9 +43,7 @@ export function BackToAssignments({
       iconLeft="navigationBack"
       noArrow
     >
-      <Link search={search ?? { study: 'assignments' as const }} to=".">
-        {label ?? list}
-      </Link>
+      <Link {...link}>{label ?? list}</Link>
     </UnderlineLink>
   );
 }
@@ -111,7 +111,7 @@ export function AssignmentAttemptPage({
             size="sm"
             variant="ghost-hover"
           >
-            <Link search={{ study: 'assignments' as const }} to="." />
+            <Link search={{}} to="." />
           </IconButton>
         }
         onClosed={closedHere}

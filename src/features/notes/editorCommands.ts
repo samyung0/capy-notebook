@@ -78,7 +78,7 @@ function newVisualBlock(type: NoteVisualBlock['type']): NoteVisualBlock {
         // the note at once, so it holds no description: the note's figure
         // check refuses a blank one.
         elements: [
-          { id: crypto.randomUUID(), term: 'x', type: 'functiongraph' },
+          { id: crypto.randomUUID(), latex: 'y=x', type: 'expression' },
         ],
         height: 400,
         type,

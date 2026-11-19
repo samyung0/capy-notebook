@@ -7,6 +7,7 @@ import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { AddPracticeDialog } from '../practice/AddPractice';
+import { assignmentsLink } from '../studyRoutes';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
 
 const NO_FILES: MakeQuizChoice = { answers: [], paper: [] };
@@ -58,15 +59,12 @@ export function GradedQuizDialog({
   const done = (id: string) => {
     void refreshAssignments();
     onDone({ id, kind: 'marked' });
-    void navigate({
-      params: { workspaceId },
-      search: {
+    void navigate(
+      assignmentsLink(workspaceId, {
         assignment: id,
-        study: 'assignments',
         ...(!own && { tab: 'questions' as const }),
-      },
-      to: '/workspaces/$workspaceId',
-    });
+      })
+    );
   };
 
   if (!ws) return null;

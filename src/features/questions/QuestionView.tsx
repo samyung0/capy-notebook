@@ -692,17 +692,16 @@ export function QuestionReview({
         );
         if (items.length === 0 && !sample && part.solution.length === 0)
           return renderAnswer?.(part);
+        // Open under its heading, as the Sample answer is (Epo 2026-11-18).
         const solution = part.solution.length > 0 && (
-          <details className="col-start-2 min-w-0 text-sm">
-            <summary className="cursor-pointer font-semibold text-fg-secondary">
+          <div className="col-start-2 grid min-w-0 gap-1.5">
+            <p className="t-meta text-fg-secondary">
               {m.question_ui_worked_solution()}
-            </summary>
-            <div className="grid gap-3 pt-3 text-fg-secondary">
-              {part.solution.map((block, i) => (
-                <QuestionBlockView block={block} key={i} />
-              ))}
-            </div>
-          </details>
+            </p>
+            {part.solution.map((block, i) => (
+              <QuestionBlockView block={block} key={i} />
+            ))}
+          </div>
         );
         if (items.length === 0)
           return (

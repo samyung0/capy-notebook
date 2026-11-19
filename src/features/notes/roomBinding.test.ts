@@ -243,6 +243,17 @@ describe('roomBindingPlugin', () => {
     expect(editor.selection?.anchor.path).toEqual([2, 0]);
   });
 
+  it('opens a new line below a closing paragraph with text (trailingHint)', async () => {
+    const { blocks, editor } = await openedNote([block('a', 'Intro')]);
+    openTrailingParagraph(editor as never);
+    await settle();
+    expect(blocks()).toMatchObject([
+      { children: [{ text: 'Intro' }] },
+      { children: [{ text: '' }], type: 'p' },
+    ]);
+    expect(editor.selection?.anchor.path).toEqual([1, 0]);
+  });
+
   // Our @slate-yjs/core patch: history maps the selection onto the room
   // only once the editor is bound to it.
   it('lets an unbound editor move its caret without mapping it onto the room', () => {

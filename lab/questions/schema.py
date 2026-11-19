@@ -35,10 +35,12 @@ def tagged(tag, props, required=None):
 
 ELEMENT = {
     "oneOf": [
+        # A formula row as typed, Desmos-style LaTeX: y=..., f(x)=... or an
+        # equation in x and y (Epo 2026-11-18).
         tagged(
-            "functiongraph",
-            {"id": TEXT, "term": TEXT, "domain": PAIR, "dash": BOOL, "hidden": BOOL},
-            ["id", "term"],
+            "expression",
+            {"id": TEXT, "latex": TEXT, "dash": BOOL, "hidden": BOOL},
+            ["id", "latex"],
         ),
         tagged(
             "point",

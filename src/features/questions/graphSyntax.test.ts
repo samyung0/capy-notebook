@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildElements,
-  displayNumber,
-  functionOf,
   type GraphRow,
   markRow,
   parseRow,
+  readExpression,
   readRow,
   reconcileRows,
   rowsAfterEdit,
@@ -13,40 +12,26 @@ import {
   typedLine,
 } from './graphSyntax';
 import type { GraphElement } from './types';
-import { validGraphTerm } from './validation';
 
 describe('parseRow', () => {
   it.each([
-    ['y=0.5x^2-3', '0.5*x^2-3'],
-    ['f(x)=sin (2x)', 'sin(2*x)'],
-    ['y=2sin x+cos x', '2*sin(x)+cos(x)'],
-    ['y=cos ^2x', 'cos(x)^2'],
-    ['y=(x^2)/(16)', 'x^2/16'],
-    ['y=e^(-x) * pi', 'e^(-x)*pi'],
-    ['y=|x-1|', 'abs(x-1)'],
-    ['y=x-(x-1)', 'x-(x-1)'],
-    ['x^2', 'x^2'],
-  ])('reads %s as a function', (row, term) => {
-    const parsed = parseRow(row);
-    expect(parsed).toEqual({ domain: undefined, kind: 'function', term });
-    expect(validGraphTerm(term)).toBe(true);
-  });
-
-  it('reads a restriction as the domain', () => {
-    expect(parseRow('y=sqrt(x){0<=x<=4}')).toEqual({
-      domain: [0, 4],
-      kind: 'function',
-      term: 'sqrt(x)',
-    });
+    'y=0.5x^{2}-3',
+    'f\\left(x\\right)=\\sin\\left(2x\\right)',
+    'x^2',
+    'x^{2}-y^{2}=0',
+    'x=3',
+    'y=x\\left\\lbrace 0\\le x\\le 2\\right\\rbrace',
+  ])('keeps the formula row %s as typed', (latex) => {
+    expect(parseRow(latex)).toEqual({ kind: 'expression', latex });
   });
 
   it('reads named and unnamed points, evaluating constant coordinates', () => {
-    expect(parseRow('A=(-2,-1)')).toEqual({
+    expect(parseRow('A=\\left(-2,-1\\right)')).toEqual({
       coords: [-2, -1],
       kind: 'point',
       name: 'A',
     });
-    expect(parseRow('P_1=(1/2, 3)')).toMatchObject({
+    expect(parseRow('P_{1}=\\left(\\frac{1}{2},3\\right)')).toMatchObject({
       coords: [0.5, 3],
       name: 'P_1',
     });
@@ -58,8 +43,8 @@ describe('parseRow', () => {
     expect(parseRow('C=(1,2')).toMatchObject({ coords: [1, 2], name: 'C' });
   });
 
-  it('reads commands, including MathLive spelling names letter by letter', () => {
-    expect(parseRow('s e g m e n t (A,B)')).toEqual({
+  it('reads commands, upright as MathLive writes them or plain', () => {
+    expect(parseRow('\\operatorname{segment}\\left(A,B\\right)')).toEqual({
       command: 'segment',
       kind: 'command',
       points: ['A', 'B'],
@@ -74,15 +59,83 @@ describe('parseRow', () => {
   });
 
   it.each([
-    ['y=2sin x+', 'unfinished'],
+    ['y=2\\sin x+', 'unfinished'],
+    ['y=\\frac{1}{\\placeholder{}}', 'unfinished'],
     ['y=x+k', 'undefined'],
+    ['y=x_{1}', 'undefined'],
     ['segment(A)', 'points'],
     ['y<x+2', 'not yet'],
-    ['x=2', 'not yet'],
     ['circle(A, -1)', 'radius'],
-    ['y=x{x>0}', 'restriction'],
+    ['y=x\\left\\lbrace 0<x<y\\right\\rbrace', 'restriction'],
   ])('refuses %s', (row) => {
     expect(() => parseRow(row)).toThrow();
+  });
+});
+
+describe('readExpression', () => {
+  it.each([
+    ['y=0.5x^{2}-3', 2, -1],
+    ['f\\left(x\\right)=\\sin\\left(2x\\right)', Math.PI / 4, 1],
+    ['y=2\\sin x+\\cos x', 0, 1],
+    ['y=\\cos^{2}x', 0, 1],
+    ['y=\\frac{x^{2}}{16}', 4, 1],
+    ['y=\\sqrt{x}', 9, 3],
+    ['y=\\sqrt[3]{x}', -8, -2],
+    ['y=\\left|x-1\\right|', -1, 2],
+    ['y=e^{-x}\\cdot\\pi', 0, Math.PI],
+    ['y=2\\pi x', 1, 2 * Math.PI],
+    ['y=3\\times x^{10}', 1, 3],
+    ['y=\\ln x+\\exp\\left(x\\right)', 1, Math.E],
+    ['y=\\log x', 100, 2],
+    ['y=\\log_{2}x', 8, 3],
+    ['y=\\log_2\\left(x\\right)', 8, 3],
+    ['y=\\sin^{-1}x', 1, Math.PI / 2],
+    ['y=\\sec x+\\csc x+\\cot x', Math.PI / 4, 2 * Math.SQRT2 + 1],
+    ['y=\\sinh x+\\cosh x-\\tanh x', 0, 1],
+    ['y=\\left\\lfloor x\\right\\rfloor+\\lceil x\\rceil', 1.5, 3],
+    ['y=2|x|', -3, 6],
+    ['y=\\left\\lbrack x+1\\right\\rbrack^{2}', 1, 4],
+    ['y=x^23', 2, 12],
+    ['y=x^{23}', 1, 1],
+    ['y=\\arctan x', 1, Math.PI / 4],
+    ['y=\\operatorname{floor}\\left(x\\right)', 1.5, 1],
+    ['y=\\left(x+1\\right)\\left(x-1\\right)', 2, 3],
+    ['3x+1', 1, 4],
+  ])('reads %s as a function of x', (latex, x, value) => {
+    const read = readExpression(latex);
+    expect(read.kind).toBe('function');
+    if (read.kind !== 'function') return;
+    expect(read.at(x)).toBeCloseTo(value);
+  });
+
+  it('reads any other equation in x and y as an implicit curve, left less right', () => {
+    const lines = readExpression('x^{2}-y^{2}=0');
+    expect(lines.kind).toBe('equation');
+    expect(lines.at(1, 1)).toBe(0);
+    expect(lines.at(2, 1)).toBe(3);
+    const circle = readExpression('x^2+y^2=4');
+    expect(circle.at(0, 2)).toBe(0);
+    expect(readExpression('x=3').at(3, 7)).toBe(0);
+    // y on both sides is no function of x.
+    expect(readExpression('y=xy+1').kind).toBe('equation');
+  });
+
+  it('reads a restriction on x', () => {
+    expect(
+      readExpression('y=\\sqrt{x}\\left\\lbrace 0\\le x\\le 4\\right\\rbrace')
+        .domain
+    ).toEqual([0, 4]);
+    expect(readExpression('y=x{0<=x<=4}').domain).toEqual([0, 4]);
+    // One side, as Desmos: the other bound open.
+    expect(
+      readExpression('y=x\\left\\lbrace x\\ge0\\right\\rbrace').domain
+    ).toEqual([0, Number.POSITIVE_INFINITY]);
+    expect(
+      readExpression('y=x\\left\\lbrace x<3\\right\\rbrace').domain
+    ).toEqual([Number.NEGATIVE_INFINITY, 3]);
+    expect(
+      readExpression('y=x\\left\\lbrace 2\\ge x\\right\\rbrace').domain
+    ).toEqual([Number.NEGATIVE_INFINITY, 2]);
   });
 });
 
@@ -94,10 +147,9 @@ const elements: GraphElement[] = [
   { id: 'g', label: 'x°', points: ['b', 'a', 'c'], type: 'angle' },
   {
     dash: true,
-    domain: [0, 4],
     id: 'f',
-    term: '0.5*x^2-3',
-    type: 'functiongraph',
+    latex: 'y=0.5x^{2}-3\\left\\lbrace 0\\le x\\le 4\\right\\rbrace',
+    type: 'expression',
   },
   { coords: [5, 0.2], id: 't', text: '8 cm', type: 'text' },
 ];
@@ -123,6 +175,12 @@ describe('rows and elements', () => {
       '8 cm',
     ]);
     expect(buildElements(rows)).toEqual({ elements, errors: new Map() });
+  });
+
+  it('reads back each row it writes as the element it came from', () => {
+    for (const row of rowsFromElements(elements))
+      if (row.kind === 'expression')
+        expect(parseRow(row.latex)).toEqual(row.parsed);
   });
 
   it('keeps free marks, an arrow and a label size it has no row for', () => {
@@ -265,25 +323,12 @@ describe('scientific numbers', () => {
     expect(row.kind === 'expression' && row.latex).toBe(
       'A=\\left(6.02\\cdot 10^{23},3\\cdot 10^{-7}\\right)'
     );
-    // MathLive's ASCII for that row reads back to the same point.
-    expect(parseRow('A=(6.02 * 10^(23),3 * 10^(-7))')).toEqual({
+    // That row reads back to the same point.
+    expect(parseRow(row.kind === 'expression' ? row.latex : '')).toEqual({
       coords: [6.02e23, 3e-7],
       kind: 'point',
       name: 'A',
     });
-    expect(displayNumber(-6.02e23)).toBe('-6.02 · 10²³');
-    expect(displayNumber(150_000_000)).toBe('150000000');
-  });
-});
-
-describe('functionOf', () => {
-  it('evaluates a row term at x, with natural log as the graph draws it', () => {
-    const row = parseRow('y=2sin(x)+ln(x)');
-    if (row.kind !== 'function') throw new Error(row.kind);
-    expect(functionOf(row.term)(Math.PI / 2)).toBeCloseTo(
-      2 + Math.log(Math.PI / 2)
-    );
-    expect(functionOf('x^2/4 - 3')(2)).toBeCloseTo(-2);
   });
 });
 
@@ -293,7 +338,7 @@ describe('rows after a tool', () => {
     kind: 'expression',
     latex,
     style: {},
-    ...readRow(latex, latex),
+    ...readRow(latex),
   });
   const rows = [
     typed('A', 'A=(1,2)'),
@@ -366,5 +411,13 @@ describe('rows after a tool', () => {
     expect(
       markRow({ center: [0, 0], id: 'e', radii: [1, 1], type: 'ellipse' })
     ).toEqual({ text: 'Ellipse', typed: false });
+  });
+});
+
+// Epo 2026-11-18 ("never show this"): a row still being typed says nothing.
+it('reads a row still being typed as no element and no issue', () => {
+  expect(readRow('y=2x+')).toEqual({
+    error: undefined,
+    parsed: undefined,
   });
 });

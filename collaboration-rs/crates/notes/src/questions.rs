@@ -21,8 +21,8 @@ pub use crate::catalog::{
     QUESTION_CHART_LABELS_MAX, QUESTION_CHART_SERIES_MAX, QUESTION_CHART_SERIES_NAME_MAX,
     QUESTION_CHART_TITLE_MAX, QUESTION_CHART_VALUE_MAX, QUESTION_DESCRIPTION_MAX,
     QUESTION_GRAPH_DIMENSION_MAX, QUESTION_GRAPH_DIMENSION_MIN, QUESTION_GRAPH_ELEMENTS_MAX,
-    QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_LATEX_MAX, QUESTION_GRAPH_NAME_MAX,
-    QUESTION_GRAPH_PATH_MAX, QUESTION_GRAPH_POLYGON_MAX, QUESTION_GRAPH_TERM_MAX,
+    QUESTION_GRAPH_EXPRESSION_MAX, QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_LATEX_MAX,
+    QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_PATH_MAX, QUESTION_GRAPH_POLYGON_MAX,
     QUESTION_GRAPH_TEXT_SIZE_MAX, QUESTION_GRAPH_TEXT_SIZE_MIN, QUESTION_ID_MAX,
     QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
     QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_LABEL_MAX,
@@ -358,11 +358,6 @@ static QUANTITY: LazyLock<Regex> = LazyLock::new(|| {
         r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:\s*/\s*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)?$",
     )
 });
-static TERM_TOKENS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[A-Za-z]+|[+\-*/^(),]")
-        .expect("valid regex")
-});
-static WHITESPACE: LazyLock<Regex> = LazyLock::new(|| js_regex(r"\s"));
 static GAP_MARKER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\(([0-9]+)\) ?_{3,}").expect("valid regex"));
 /// `validQuantityValue`: values only; a fraction's denominator not zero.
@@ -378,24 +373,6 @@ pub fn valid_quantity_value(value: &str) -> bool {
             mantissa.chars().any(|c| ('1'..='9').contains(&c))
         }
     }
-}
-
-/// `validGraphTerm`.
-pub fn valid_graph_term(term: &str) -> bool {
-    if term.is_empty() || utf16_len(term) > QUESTION_GRAPH_TERM_MAX {
-        return false;
-    }
-    let tokens: Vec<&str> = TERM_TOKENS.find_iter(term).map(|m| m.as_str()).collect();
-    if tokens.is_empty() || tokens.concat() != WHITESPACE.replace_all(term, "") {
-        return false;
-    }
-    const NAMES: [&str; 19] = [
-        "x", "pi", "e", "sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "abs", "exp", "log",
-        "ln", "floor", "ceil", "pow", "min", "max",
-    ];
-    tokens
-        .iter()
-        .all(|t| !t.starts_with(|c: char| c.is_ascii_alphabetic()) || NAMES.contains(t))
 }
 
 /* ----------------------------------------------------------- the schema */
@@ -430,7 +407,6 @@ struct GraphElement {
     kind: &'static str,
     points: Vec<String>,
     center: Option<String>,
-    domain: Option<(f64, f64)>,
 }
 
 /// One graph element as a writer writes it (a live figure's entry,
@@ -445,28 +421,14 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
     let mut points = Vec::new();
     let mut center = None;
-    let mut domain = None;
     let kind: &'static str = match kind {
-        "functiongraph" => {
-            strict(
-                map,
-                what,
-                &["id", "term", "type"],
-                &["domain", "dash", "hidden"],
-            )?;
-            if let Some(d) = present(map, "domain") {
-                coords(d, what)?;
-                let d = d
-                    .as_array()
-                    .map(|a| (a[0].as_f64().unwrap_or(0.0), a[1].as_f64().unwrap_or(0.0)));
-                domain = d;
-            }
-            match map["term"].as_str() {
-                Some(term) if valid_graph_term(term) => {}
-                _ => return fail("Use a supported mathematical expression."),
-            }
+        // A formula row's LaTeX as typed (Epo 2026-11-18): browsers read what
+        // it draws, so no grammar is checked here.
+        "expression" => {
+            strict(map, what, &["id", "latex", "type"], &["dash", "hidden"])?;
+            latex(map, QUESTION_GRAPH_EXPRESSION_MAX, what)?;
             style(map, what)?;
-            "functiongraph"
+            "expression"
         }
         "point" => {
             strict(map, what, &["coords", "id", "type"], &["hidden", "name"])?;
@@ -628,13 +590,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
                 &["hidden", "size"],
             )?;
             coords(&map["coords"], what)?;
-            text(&map["latex"], what)?;
-            if map["latex"]
-                .as_str()
-                .is_some_and(|raw| code_points(raw) > QUESTION_GRAPH_LATEX_MAX)
-            {
-                return fail(format!("{what}: Text is too long."));
-            }
+            latex(map, QUESTION_GRAPH_LATEX_MAX, what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
             optional(map, "size", |v| text_size(v, what))?;
             "formula"
@@ -647,8 +603,19 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         kind,
         points,
         center,
-        domain,
     })
+}
+
+/// A formula row's or a formula's LaTeX: not blank, within the cap.
+fn latex(map: &Map<String, Value>, cap: usize, what: &str) -> Check {
+    text(&map["latex"], what)?;
+    if map["latex"]
+        .as_str()
+        .is_some_and(|raw| code_points(raw) > cap)
+    {
+        return fail(format!("{what}: Text is too long."));
+    }
+    Ok(())
 }
 
 /// A figure's optional description: a non-blank text when present (optional
@@ -906,7 +873,6 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 kind,
                 points,
                 center,
-                domain,
             } in &elements
             {
                 if !ids.insert(id.as_str()) {
@@ -929,11 +895,6 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                         || (has_points && points.contains(center)))
                 {
                     return fail("Circle centers must refer to existing points.");
-                }
-                if let Some((from, to)) = domain
-                    && from >= to
-                {
-                    return fail("Function domain must be increasing.");
                 }
             }
             Ok(Block {
@@ -1080,11 +1041,6 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
                 QUESTION_GRAPH_ELEMENTS_MAX,
                 what,
             )?) {
-                if let Some(term) = element.get("term").and_then(Value::as_str)
-                    && utf16_len(term) > QUESTION_GRAPH_TERM_MAX
-                {
-                    return fail("Use a supported mathematical expression.");
-                }
                 cap_meta(element, "name", what)?;
                 cap_meta(element, "label", what)?;
                 cap_text(element.get("text"), what)?;

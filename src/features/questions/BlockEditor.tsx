@@ -25,7 +25,6 @@ import {
   StringList,
 } from './editorFields';
 import { type FigureBinding, useBoundFigure } from './figureBinding';
-import { GraphEditor } from './GraphEditor';
 import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
 import { repairFigureBlock } from './repair';
@@ -952,8 +951,7 @@ export function BlockEditor({
   onBusyChange?: (busy: boolean) => void;
   /** What an empty text block shows, by where it sits. */
   textPlaceholder?: string;
-  /** The block's heading row: a graph's zoom tools and a table cell's
-   * formula tools go there. */
+  /** The block's heading row: a table cell's formula tools go there. */
   toolbarTarget?: HTMLElement | null;
   /** A gaps part's text block: the number of its first blank, its blanks'
    * accepted answers in order, and a change of either. */
@@ -1039,14 +1037,9 @@ export function BlockEditor({
     ) : (
       <QuestionBlockView block={block} />
     );
+  // A graph fills its own dialog (BlockDialog).
   if (block.type === 'graph')
-    return (
-      <GraphEditor
-        binding={figure()}
-        descriptionMax={descriptionMax}
-        toolbarTarget={toolbarTarget}
-      />
-    );
+    throw new Error('A graph is edited in its own dialog');
   if (block.type === 'image')
     return (
       <div className="space-y-4">

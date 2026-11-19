@@ -22,10 +22,18 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
     search,
+    to,
   }: {
     children: ReactNode;
     search: Record<string, string>;
-  }) => <a href={`?${new URLSearchParams(search)}`}>{children}</a>,
+    to?: string;
+  }) => (
+    <a
+      href={`${(to ?? '').replace('/workspaces/$workspaceId', '')}?${new URLSearchParams(search)}`}
+    >
+      {children}
+    </a>
+  ),
   useNavigate: () => vi.fn(),
 }));
 
@@ -276,7 +284,7 @@ it('opens an assigned row on its assignment', () => {
     members: 7,
     ownerName: 'Ms Wong',
   };
-  expect(render()).toContain('href="?assignment=as_1&amp;study=assignments"');
+  expect(render()).toContain('href="/assignments?assignment=as_1"');
 });
 
 it('writes times as the boards do', () => {

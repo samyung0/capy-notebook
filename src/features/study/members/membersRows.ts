@@ -24,8 +24,16 @@ const key = (t: { group: string; topicId?: string }) => t.topicId ?? t.group;
 export const standingIn = (member: MemberProgress, topic: MembersTopic) =>
   member.topics.find((t) => key(t) === key(topic));
 
+/** The share of a topic's latest answers missed, a partial counting half. */
+const missedShare = (t: SummaryTopic) =>
+  t.asked ? (t.wrong + t.partial / 2) / t.asked : 0;
+
+/** The topics labelled Needs practice, most missed first (Epo 2026-11-19); more
+ * answers break a tie, then the workspace's order. */
 export const needsPractice = (member: MemberProgress) =>
-  member.topics.filter((t) => t.label === 'needs_practice');
+  member.topics
+    .filter((t) => t.label === 'needs_practice')
+    .sort((a, b) => missedShare(b) - missedShare(a) || b.asked - a.asked);
 
 /** A topic column's key, for its `topic:` sort. */
 export const topicKey = key;

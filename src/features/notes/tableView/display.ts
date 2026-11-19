@@ -59,8 +59,9 @@ export const COLUMN_WIDTH: Record<ColumnKind, readonly [number, number]> = {
   title: [140, 220],
 };
 
-/** The editor's + column, after the rest. */
-export const ADD_COLUMN_WIDTH = 36;
+/** The end column after the rest (the editor's + sits in it): at least this
+ * wide, and it takes whatever room the columns leave, as AFFiNE's does. */
+export const END_COLUMN_WIDTH = 36;
 
 /** Widths as the `--w-phone` and `--w-wide` that `WIDTH_CLASS` reads. */
 export const widthVars = ([phone, wide]: readonly [number, number]) =>
@@ -71,17 +72,21 @@ export const widthVars = ([phone, wide]: readonly [number, number]) =>
 
 export const WIDTH_CLASS = 'w-(--w-phone) sm:w-(--w-wide)';
 
-/** The table's width: its columns', plus `extra` px. */
-export const tableWidth = (columns: TableViewColumn[], extra = 0) =>
+/** The table's least width: its columns' and the end column's. */
+export const tableWidth = (columns: TableViewColumn[]) =>
   ([0, 1] as const).map((at) =>
-    columns.reduce((sum, { kind }) => sum + COLUMN_WIDTH[kind][at], extra)
+    columns.reduce(
+      (sum, { kind }) => sum + COLUMN_WIDTH[kind][at],
+      END_COLUMN_WIDTH
+    )
   ) as unknown as readonly [number, number];
 
-/** Exactly its fixed columns, never stretched to the note (a stretch would
- * share out differently with and without the editor's + column): past the
- * note's width, the columns after the title scroll sideways. */
+/** As wide as the note, its columns at their fixed widths and the end column
+ * (a `<col>` with no width) taking the rest, so each row's line runs the
+ * block's width (AFFiNE's look, Epo 2026-11-12); past the note's width the
+ * columns after the title scroll sideways. */
 export const TABLE_CLASS =
-  'w-(--w-phone) table-fixed border-separate border-spacing-0 text-sm sm:w-(--w-wide)';
+  'w-[max(100%,var(--w-phone))] table-fixed border-separate border-spacing-0 text-sm sm:w-[max(100%,var(--w-wide))]';
 
 /** A header or body cell; its content draws the padding. */
 export const CELL_CLASS = 'h-9 border-line border-b p-0 align-middle';

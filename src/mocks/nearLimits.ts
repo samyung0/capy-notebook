@@ -124,11 +124,15 @@ export function nearLimitPlot(): PlotBlock {
 export function nearLimitGraph(): GraphBlock {
   const points = 30;
   const name = (i: number) => filled(`P${i} `, limits.QUESTION_GRAPH_NAME_MAX);
-  const term = (k: number) => {
-    let out = `${k}`;
+  const restriction = '\\left\\lbrace -10\\le x\\le 10\\right\\rbrace';
+  const latex = (k: number) => {
+    let out = `y=${k}`;
     for (let n = 1; ; n++) {
-      const next = `${out}+0.${n}*sin(${n}*x)`;
-      if (next.length > limits.QUESTION_GRAPH_TERM_MAX) return out;
+      const next = `${out}+0.${n}\\sin\\left(${n}x\\right)`;
+      if (
+        [...next, ...restriction].length > limits.QUESTION_GRAPH_EXPRESSION_MAX
+      )
+        return out + restriction;
       out = next;
     }
   };
@@ -157,10 +161,9 @@ export function nearLimitGraph(): GraphBlock {
     ...Array.from(
       { length: 8 },
       (_, k): GraphElement => ({
-        domain: [-10, 10],
         id: `f${k}`,
-        term: term(k - 4),
-        type: 'functiongraph',
+        latex: latex(k - 4),
+        type: 'expression',
       })
     ),
     ...Array.from(

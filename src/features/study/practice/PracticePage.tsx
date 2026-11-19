@@ -10,7 +10,6 @@ import type {
   Practice,
   PracticeItem,
   PracticeReview,
-  ReviewMode,
   SessionScore,
   Topic,
 } from '@/api/types';
@@ -27,6 +26,7 @@ import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
+import { type PracticeSearch, studyLink } from '../studyRoutes';
 import { MakePractice } from './MakePractice';
 import { scoreText, sizeLabel } from './practiceText';
 import { SuggestedList } from './SuggestedList';
@@ -47,18 +47,9 @@ import {
 } from './TopicPractice';
 import { TopicsSection, weakestTopicId } from './TopicsSection';
 
-/** The Practice page's URL, under `study=practice`: a topic session to
- * start (group, topic, a suggestion's mode) or a finished one's result. */
-export type PracticeSearch = {
-  group?: 'topic' | 'others' | 'workspace';
-  topicId?: string;
-  reviewMode?: ReviewMode;
-  review?: string;
-};
-
 /** Practice (Epo 2026-11-03, boards P1 and P2; who sees what, board U3; its own
- * page on the rail since Epo 2026-11-11), the workspace's centre page while
- * `study=practice` is in its URL. Whoever practises gets Suggested, Topics and
+ * page on the rail since Epo 2026-11-11), the workspace's centre page at
+ * `study/practice` (Overview's too, for whoever practises). Whoever practises gets Suggested, Topics and
  * every quiz and set with their best score, the row starting it; a class's owner and teaching
  * assistants the same list with how members use it. A topic session (F1, F1b)
  * and its result (F4) keep the page's place: the rail shows Practice. */
@@ -71,11 +62,7 @@ export function PracticePage({
 }) {
   const navigate = useNavigate();
   const go = (next: PracticeSearch, replace = false) =>
-    navigate({
-      replace,
-      search: { study: 'practice' as const, ...next },
-      to: '.',
-    });
+    navigate({ ...studyLink(workspaceId, 'practice', next), replace });
   const start: PracticeStart | null = search.group
     ? {
         group: search.group,
@@ -159,10 +146,10 @@ function PracticeList({
             iconLeft="plus"
             onClick={() =>
               canEdit
-                ? void navigate({
-                    search: { make: 'files', makeFrom: 'practice' },
-                    to: '.',
-                  })
+                ? void navigate(
+                    // Make a quiz over Practice, which closing returns to.
+                    studyLink(workspaceId, 'practice', { make: 'files' })
+                  )
                 : setMaking(true)
             }
           >
@@ -170,7 +157,11 @@ function PracticeList({
           </PageButton>
         </span>
       </div>
-      <StudyTabs staff={staff} value={staff ? 'practice' : 'summary'} />
+      <StudyTabs
+        staff={staff}
+        value={staff ? 'practice' : 'summary'}
+        workspaceId={workspaceId}
+      />
       {loading ? (
         <SkeletonList className="mt-6" count={6} rowHeight={40} />
       ) : isError ? (
@@ -214,6 +205,7 @@ function PracticeList({
             title={!staff}
             topicName={topicName}
             topics={topics ?? []}
+            workspaceId={workspaceId}
           />
         </div>
       )}
@@ -262,6 +254,7 @@ function AllPractice({
   title,
   topicName,
   topics,
+  workspaceId,
 }: {
   /** A class's staff open a quiz or set from its row, to edit it. */
   canEdit: boolean;
@@ -272,6 +265,7 @@ function AllPractice({
   title: boolean;
   topicName: (id?: string | null) => string | undefined;
   topics: Topic[];
+  workspaceId: string;
 }) {
   const navigate = useNavigate();
   const [picked, setPicked] = useState<string[]>([]);
@@ -328,7 +322,11 @@ function AllPractice({
       return onStart({ group: row.review.group, topicId: row.review.topicId });
     if (staff)
       return canEdit
-        ? navigate({ search: { material: row.item.id }, to: '.' })
+        ? navigate({
+            params: { workspaceId },
+            search: { material: row.item.id },
+            to: '/workspaces/$workspaceId',
+          })
         : undefined;
     return row.item.kind === 'quiz'
       ? navigate({

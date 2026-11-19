@@ -145,6 +145,7 @@ import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
 import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
 import { queryHeadings } from './tocHeadings';
+import { PLACEHOLDER_CLASS, trailingHintPlugin } from './trailingHint';
 import { VoidBlockBreakPlugin } from './voidBlockBreak';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
@@ -675,10 +676,10 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
       },
     }),
     trailingBlockPlugin,
+    trailingHintPlugin,
     BlockPlaceholderPlugin.configure({
       options: {
-        className:
-          'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
+        className: PLACEHOLDER_CLASS,
         placeholders: { [KEYS.p]: m.editor_placeholder() },
         query: ({ path }) => path.length === 1,
       },

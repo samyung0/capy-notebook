@@ -802,7 +802,7 @@ export const SetAssignmentGradeParams = zod.object({
 
 export const setAssignmentGradeBodyPointsMin = 0;
 export const setAssignmentGradeBodyPointsMax = 1000;
-export const setAssignmentGradeBodyPointsMultipleOf = 0.5;
+export const setAssignmentGradeBodyPointsMultipleOf = 0.1;
 
 
 

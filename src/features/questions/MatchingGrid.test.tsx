@@ -65,7 +65,9 @@ it('only reads without onPick, a checked answer showing its picks', async () => 
   ]);
 });
 
-it("names a checked answer's right, wrong and missed cells", async () => {
+// A missed correct cell is not marked (Epo 2026-11-18): the correct answer
+// lists apart under the grid.
+it("names a checked answer's right and wrong picks", async () => {
   const grid = await show({ correct: [0, 1], value: [0, 2] });
   expect(
     grid.map((row) => row.map((cell) => cell.getAttribute('aria-label')))
@@ -77,7 +79,7 @@ it("names a checked answer's right, wrong and missed cells", async () => {
     ],
     [
       'Mitochondrion: Stores DNA',
-      'Mitochondrion: Makes ATP, correct answer',
+      'Mitochondrion: Makes ATP',
       'Mitochondrion: Builds proteins, your answer, incorrect',
     ],
   ]);

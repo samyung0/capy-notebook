@@ -59,17 +59,17 @@ func TestGradeAttemptMarksClosedPartsAndHoldsOpenOnes(t *testing.T) {
 	}
 }
 
-// TestApplyPartMarks: the owner's marks clear the wait, in half marks up to the
+// TestApplyPartMarks: the owner's marks clear the wait, in tenths up to the
 // marks, and a closed part's mark changes too.
 func TestApplyPartMarks(t *testing.T) {
 	graded, _ := gradeAttempt(frozenFixture(t), map[string]any{"p1": []any{float64(0)}, "p3": "Water moves in"})
 	now := time.Now()
 	open := graded[2]
-	changed, err := applyPartMarks(open, []AssignmentPartMark{{PartID: "p3", Items: []float64{1.5, 1}}}, "owner", now)
+	changed, err := applyPartMarks(open, []AssignmentPartMark{{PartID: "p3", Items: []float64{1.2, 0.3}}}, "owner", now)
 	if err != nil || !changed["p3"] || questionWaiting(open) {
 		t.Fatalf("changed %v, waiting %v, err %v", changed, questionWaiting(open), err)
 	}
-	if awarded, _ := questionMarks(open); awarded != 2.5 {
+	if awarded, _ := questionMarks(open); awarded != 1.5 {
 		t.Fatalf("open part awarded %v", awarded)
 	}
 	mark := 1.0
@@ -82,7 +82,7 @@ func TestApplyPartMarks(t *testing.T) {
 	}
 	for _, bad := range []AssignmentPartMark{
 		{PartID: "p3", Items: []float64{3, 0}},
-		{PartID: "p3", Items: []float64{0.25, 0}},
+		{PartID: "p3", Items: []float64{0.25, 0}}, // two decimal places
 		{PartID: "p3", Items: []float64{1}},
 		{PartID: "missing", Items: []float64{1, 1}},
 	} {

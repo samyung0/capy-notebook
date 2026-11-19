@@ -1852,7 +1852,7 @@ func (s *Store) ReleaseAssignmentGrades(ctx context.Context, actorID, id string,
 		if err != nil {
 			return err
 		}
-		href := "/workspaces/" + wsID + "?study=assignments&assignment=" + id
+		href := "/workspaces/" + wsID + "/assignments?assignment=" + id
 		for _, member := range members {
 			n, err := CreateNotificationTx(ctx, tx, NotificationParams{
 				UserID: member, Kind: NotifSystem, Data: data, Href: href, WorkspaceID: wsID, At: now,
@@ -2929,10 +2929,11 @@ type AssignmentPartMark struct {
 	Mark   *float64  `json:"mark,omitempty"`
 }
 
-// validHalfMark: a mark from 0 to the marks, in half marks.
-func validHalfMark(v, marks float64) bool {
-	doubled := v * 2
-	return v >= 0 && v <= marks && doubled == float64(int64(doubled))
+// validMark: a mark from 0 to the marks with at most one decimal place
+// (Epo 2026-11-18, typed marks).
+func validMark(v, marks float64) bool {
+	tenths := v * 10
+	return v >= 0 && v <= marks && math.Abs(tenths-math.Round(tenths)) < 1e-9
 }
 
 // MarkAssignmentAnswer applies an owner's or editor member's marks: a waiting
@@ -3064,17 +3065,19 @@ func applyPartMarks(question map[string]any, marks []AssignmentPartMark, actorID
 				return nil, assignmentInput("give a mark for every marking point")
 			}
 			for i, v := range mark.Items {
-				if !validHalfMark(v, itemMarks[i]) {
+				if !validMark(v, itemMarks[i]) {
 					return nil, assignmentInput("a mark is out of range")
 				}
 				awarded += v
 			}
+			// Tenths summed in floats drift (0.1+0.2); a part's mark keeps one place.
+			awarded = math.Round(awarded*10) / 10
 			if awarded > partMarks {
 				awarded = partMarks
 			}
 			p["itemAwards"] = mark.Items
 		} else {
-			if mark.Mark == nil || !validHalfMark(*mark.Mark, partMarks) {
+			if mark.Mark == nil || !validMark(*mark.Mark, partMarks) {
 				return nil, assignmentInput("a mark is out of range")
 			}
 			awarded = *mark.Mark

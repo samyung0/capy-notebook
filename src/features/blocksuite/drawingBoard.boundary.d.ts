@@ -28,6 +28,7 @@ export type DrawingBoardOptions = {
   images?: import('./boardImages').BoardImages;
   onChange?: () => void;
   onEditor?: (cardId: string | null) => void;
+  openPlane?: import('@/features/graph/planeEditing').PlaneOpener;
   plane?: boolean;
   readOnly?: boolean;
   locked?: boolean;

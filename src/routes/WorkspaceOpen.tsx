@@ -1,5 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import {
+  Navigate,
+  Outlet,
+  useChildMatches,
   useNavigate,
   useParams,
   useRouter,
@@ -73,6 +76,12 @@ import {
 } from '@/features/materials/openItem';
 import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
+import {
+  assignmentsLink,
+  membersLink,
+  studyLink,
+  studyTabPage,
+} from '@/features/study/studyRoutes';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
 import type { AddSourceMode } from '@/features/workspace/AddSourceDialog';
 import {
@@ -108,12 +117,6 @@ import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 const WorkspaceCanvas = lazy(() => import('@/routes/WorkspaceCanvas'));
-// Study's tabs load as one page (Epo 2026-11-16).
-const StudyTabsPage = lazy(() =>
-  import('@/features/study/practice/StudyTabsPage').then((mod) => ({
-    default: mod.StudyTabsPage,
-  }))
-);
 const AddPracticeDialog = lazy(() =>
   import('@/features/study/practice/AddPractice').then((mod) => ({
     default: mod.AddPracticeDialog,
@@ -126,17 +129,6 @@ const choiceSearch = ({ answers, paper }: MakeQuizChoice) => ({
   answers: answers.join(',') || undefined,
   paper: paper.join(',') || undefined,
 });
-
-const MembersPage = lazy(() =>
-  import('@/features/study/members/MembersPage').then((mod) => ({
-    default: mod.MembersPage,
-  }))
-);
-const AssignmentsPage = lazy(() =>
-  import('@/features/study/assignments/AssignmentsPage').then((mod) => ({
-    default: mod.AssignmentsPage,
-  }))
-);
 
 // The section panel beside the rail: one default for every section (Epo
 // 2026-11-04). It can be dragged as wide as half the group, as the right panel
@@ -354,22 +346,32 @@ function WorkspaceOpen() {
   const railShown = useMediaQuery('(min-width: 768px)');
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
-  // A link to a page this person doesn't have opens Practice.
-  // Make a quiz's dialog opened from a page (Add practice, a new assignment)
-  // keeps that page behind it; from a link it opens over the Dashboard.
-  const shownStudy =
-    search.study ?? (search.make ? search.makeFrom : undefined);
-  const studyPage: StudyPage | null =
-    searchedOpenItem || !shownStudy
-      ? null
-      : studyView(ws).pages.includes(shownStudy)
-        ? shownStudy
-        : 'practice';
-  // Make a quiz from a link: its dialog opens over the Dashboard, on its pages or run
+  // The page a child route draws in the centre (Assignments, Members, Study's
+  // tabs); an open file or material is the Files page instead.
+  const routePage = useChildMatches({
+    select: (matches): StudyPage | null => {
+      const match = matches[0];
+      if (match?.routeId === '/auth-shell/workspaces/$workspaceId/study/$tab')
+        return studyTabPage(match.params.tab);
+      if (match?.routeId === '/auth-shell/workspaces/$workspaceId/assignments')
+        return 'assignments';
+      if (match?.routeId === '/auth-shell/workspaces/$workspaceId/members')
+        return 'members';
+      return null;
+    },
+  });
+  const studyPage = searchedOpenItem ? null : routePage;
+  // Make a quiz's dialog: opened from a page (Add practice) it keeps that page
+  // behind it; from a link it opens over the Dashboard, on its pages or run
   // (Epo 2026-11-05).
   const quizDialogKey = useQuizDialogKey((state) => state.key);
-  const makeLink =
-    !readOnly && !searchedOpenItem && !search.study && !!search.make;
+  const making = !readOnly && !searchedOpenItem && !!search.make;
+  // The workspace's own URL: the Dashboard, the Files and Chat pages, an open
+  // item, the canvas.
+  const home = {
+    params: { workspaceId },
+    to: '/workspaces/$workspaceId',
+  } as const;
   const openKey = searchedOpenItem
     ? `${searchedOpenItem.kind}:${searchedOpenItem.id}`
     : null;
@@ -432,7 +434,7 @@ function WorkspaceOpen() {
     const latest = router.latestLocation.search as WorkspaceOpenSearch;
     if (latest.view === 'chat' && !openItemFromSearch(latest)) return;
     chatPagePushed.current = true;
-    navigate({ search: { view: 'chat' }, to: '.' });
+    navigate({ ...home, search: { view: 'chat' } });
   }
 
   const [citationTarget, setCitationTarget] = useState<{
@@ -460,11 +462,7 @@ function WorkspaceOpen() {
   const keepChat = lg && chatOver ? { view: 'chat' as const } : {};
   function setOpenItem(item: OpenItem | null) {
     setCitationTarget(null);
-    navigate({
-      replace: true,
-      search: searchFromOpenItem(item),
-      to: '.',
-    });
+    navigate({ ...home, replace: true, search: searchFromOpenItem(item) });
   }
 
   /** The chat over the viewer: `view=chat` in the URL. Opening adds a history
@@ -544,13 +542,15 @@ function WorkspaceOpen() {
   /** To do, Practice, Members or Study takes the centre pane; Back returns here. */
   function openStudy(page: StudyPage) {
     setCitationTarget(null);
-    navigate({ search: { study: page }, to: '.' });
+    if (page === 'assignments') navigate(assignmentsLink(workspaceId));
+    else if (page === 'members') navigate(membersLink(workspaceId));
+    else navigate(studyLink(workspaceId, page));
   }
 
   /** The landing: the workspace's Dashboard. */
   function openDashboard() {
     setCitationTarget(null);
-    navigate({ search: {}, to: '.' });
+    navigate({ ...home, search: {} });
   }
 
   /** A rail section opens its page; pressing the shown Files or Agent again
@@ -567,6 +567,7 @@ function WorkspaceOpen() {
     else if (next === 'dashboard') openDashboard();
     else
       navigate({
+        ...home,
         search: {
           view:
             next === 'canvas'
@@ -577,7 +578,6 @@ function WorkspaceOpen() {
                   ? 'chat'
                   : 'chats',
         },
-        to: '.',
       });
   }
 
@@ -595,10 +595,10 @@ function WorkspaceOpen() {
         regions: [],
       });
       navigate({
+        ...home,
         replace: true,
         resetScroll: false,
         search: { material: citation.materialId, ...keepChat },
-        to: '.',
       });
       return;
     }
@@ -625,13 +625,13 @@ function WorkspaceOpen() {
     // the route's loader would refetch the open file and re-render the
     // workspace as the scroll starts (Q493).
     if (
-      router.buildLocation({ search, to: '.' }).href ===
+      router.buildLocation({ ...home, search }).href ===
       router.latestLocation.href
     )
       return;
     // The router's scroll reset would abort the viewer's smooth scroll to
     // the cited box.
-    navigate({ replace: true, resetScroll: false, search, to: '.' });
+    navigate({ ...home, replace: true, resetScroll: false, search });
   }
 
   const [topicForm, setTopicForm] = useState<
@@ -664,20 +664,19 @@ function WorkspaceOpen() {
   // The tour (features/guide/Tour.tsx) opens Files and the chats through these
   // while this page is open; when it stops, the page goes back as it was.
   const tourPanels = useRef<TourPanels | null>(null);
-  const beforeTour = useRef<WorkspaceOpenSearch | null>(null);
+  const beforeTour = useRef<string | null>(null);
   useEffect(() => {
     const show = (to: WorkspaceOpenSearch) => {
-      beforeTour.current ??= router.latestLocation
-        .search as WorkspaceOpenSearch;
+      beforeTour.current ??= router.latestLocation.href;
       setSideOpen(true);
-      navigate({ replace: true, search: to, to: '.' });
+      navigate({ ...home, replace: true, search: to });
     };
     tourPanels.current = {
       restore: () => {
         const before = beforeTour.current;
         if (!before) return;
         beforeTour.current = null;
-        navigate({ replace: true, search: before, to: '.' });
+        navigate({ href: before, replace: true });
       },
       showChats: () => show({ view: lg ? 'chat' : 'chats' }),
       showFiles: () => show({ view: 'files' }),
@@ -781,10 +780,7 @@ function WorkspaceOpen() {
   /** Where the workspace is shared and people are invited: Members. */
   function openInvite() {
     setCitationTarget(null);
-    navigate({
-      search: { study: 'members' },
-      to: '.',
-    });
+    navigate(membersLink(workspaceId));
   }
   // The rail avatar's workspace part: Invite (sharing is managed by owners
   // and editors), Workspace settings, and Clone for readers who may.
@@ -879,43 +875,18 @@ function WorkspaceOpen() {
     </div>
   );
   // These pages fill the centre without a file header from lg (boards P1,
-  // P2); one column keeps its header for the Files dropdown and ⋮.
+  // P2); one column keeps its header for the Files dropdown and ⋮. A link to
+  // a page this person doesn't have goes to Practice.
   const studyContent =
     studyPage &&
-    (studyPage === 'members' ? (
+    (studyView(ws).pages.includes(studyPage) ? (
       <Suspense fallback={null}>
-        <MembersPage workspaceId={workspaceId} />
-      </Suspense>
-    ) : studyPage === 'assignments' ? (
-      <Suspense fallback={null}>
-        <AssignmentsPage
-          search={{
-            assignment: search.assignment,
-            attempt: search.attempt,
-            by: search.by,
-            member: search.member,
-            own: search.own,
-            question: search.question,
-            show: search.show,
-            tab: search.tab,
-          }}
-          workspaceId={workspaceId}
-        />
+        <Outlet />
       </Suspense>
     ) : (
-      <Suspense fallback={null}>
-        <StudyTabsPage
-          page={studyPage}
-          search={search}
-          workspaceId={workspaceId}
-        />
-      </Suspense>
+      <Navigate {...studyLink(workspaceId, 'practice')} replace />
     ));
-  const makeChoice = {
-    answers: search.answers,
-    makeFrom: search.makeFrom,
-    paper: search.paper,
-  };
+  const makeChoice = { answers: search.answers, paper: search.paper };
   /** Make a quiz from a file's dialog, which Add practice wraps in its tabs:
    * every step is an address under `make`. */
   const makeQuizProps = (
@@ -926,20 +897,20 @@ function WorkspaceOpen() {
       answers: splitIds(search.answers),
       paper: splitIds(search.paper),
     },
-    onClose: () =>
-      search.makeFrom
-        ? void navigate({ search: { study: search.makeFrom }, to: '.' })
-        : openDashboard(),
+    // Back to the page behind it, the Dashboard when none. A move to another
+    // path (Add practice opening its new quiz, Back off Practice) already
+    // closed it: the dialog reports that close too, and navigating again
+    // would drop where the move went.
+    onClose: () => {
+      if (!('make' in router.latestLocation.search)) return;
+      void navigate({ search: {}, to: '.' });
+    },
     onConfirmed: (run, choice) => {
       addQuizRun({ ...choice, id: run.id, workspaceId });
       openDashboard();
     },
     onDone: (quizId) =>
-      void navigate({
-        replace: true,
-        search: { material: quizId },
-        to: '.',
-      }),
+      void navigate({ ...home, replace: true, search: { material: quizId } }),
     onFile: (file) =>
       void navigate({
         // A phone's Back returns to the list; wider, the list stays beside it.
@@ -958,7 +929,6 @@ function WorkspaceOpen() {
         search: {
           ...choiceSearch(choice),
           make: 'files',
-          makeFrom: search.makeFrom,
         },
         to: '.',
       }),
@@ -967,7 +937,6 @@ function WorkspaceOpen() {
         search: {
           ...choiceSearch(choice),
           make: 'pages',
-          makeFrom: search.makeFrom,
         },
         to: '.',
       }),
@@ -976,7 +945,6 @@ function WorkspaceOpen() {
         search: {
           ...choiceSearch(choice),
           make: 'run',
-          makeFrom: search.makeFrom,
           run,
         },
         to: '.',
@@ -1052,7 +1020,10 @@ function WorkspaceOpen() {
               </ToolbarButton>
             )}
           </div>
-        ) : lg && pageContent ? (
+        ) : (lg || (railShown && page !== 'files')) && pageContent ? (
+          // Beside the rail a page has no header but the Files page's, which
+          // holds Add file and Add topic; the rail has the rest (Epo
+          // 2026-11-17). Phones keep theirs for its ⋮ and Back.
           pageContent
         ) : (
           <CenterContent
@@ -1066,7 +1037,7 @@ function WorkspaceOpen() {
                 <ToolbarButton
                   label={m.workspace_tab_files()}
                   onClick={() =>
-                    void navigate({ search: { view: 'files' }, to: '.' })
+                    void navigate({ ...home, search: { view: 'files' } })
                   }
                 >
                   <Icon name="navigationBack" />
@@ -1214,13 +1185,13 @@ function WorkspaceOpen() {
                     off: page !== 'files',
                     office: officeOpen,
                     onExpand: () =>
-                      void navigate({ search: { view: 'chat' }, to: '.' }),
+                      void navigate({ ...home, search: { view: 'chat' } }),
                     onPageOpen: setChatPageOpen,
                     pageOpen: chatOpen,
                   }}
                   // The dialog and the canvas take the screen; hidden, the chat
                   // keeps its draft and stream.
-                  hidden={makeLink || page === 'canvas'}
+                  hidden={making || page === 'canvas'}
                   onActiveChange={setActiveChat}
                   onOpenCitation={openCitation}
                   onOpenResource={openChatResource}
@@ -1277,7 +1248,7 @@ function WorkspaceOpen() {
           title={topicForm.mode === 'add' ? m.topic_new() : m.topic_rename()}
         />
       )}
-      {makeLink && search.make && (
+      {making && search.make && (
         <Suspense fallback={null}>
           {/* Add quiz from Study's Add practice and the Dashboard's Make a quiz
               (Epo 2026-11-14). */}
@@ -1285,7 +1256,7 @@ function WorkspaceOpen() {
             key={quizDialogKey}
             make={makeQuizProps(search.make)}
             onOpenQuiz={(quizId) =>
-              void navigate({ search: { material: quizId }, to: '.' })
+              void navigate({ ...home, search: { material: quizId } })
             }
           />
         </Suspense>

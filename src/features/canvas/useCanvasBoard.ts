@@ -25,6 +25,7 @@ import {
   itemEditingStopped,
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
+import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { m } from '@/i18n';
 import { base64ToBytes } from '@/lib/base64';
 import { errorCopy, errorKind, unexpectedErrorId } from '@/lib/errors';
@@ -138,6 +139,8 @@ export function useCanvasBoard(
     gone?: () => boolean;
     /** The board as it mounts, and null as it goes. */
     onBoard?: (board: CanvasBoard | null) => void;
+    /** Where its plane cards open (`usePlaneEditor`). */
+    openPlane?: PlaneOpener;
     /** A workspace canvas's quizzes and sets for its cards. */
     workspace?: DrawingBoardOptions['workspace'];
     /** The page's URL for what fills the screen (Epo 2026-11-13): a plane's or
@@ -378,6 +381,7 @@ export function useCanvasBoard(
           // Done: the URL still names it. Closed by the URL: it no longer does.
           else if (before && link.opened === before) link.close();
         },
+        openPlane: latest.current.openPlane,
         readOnly: !tools,
         room: { doc },
         title: () => title.current,

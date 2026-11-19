@@ -2007,7 +2007,7 @@ and never show it. The sidebar (the rail, the phone nav drawer) shows
 popover lists Upload a file, Chat with Capy and Practise a topic; a row opens
 its step in the workspace on screen, or else the latest one, through one-shot
 params the workspace page takes and drops: `?add=upload` (the Add file
-dialog), `?chat=new` (a new chat), `?study=practice` (Practice). A step ticks
+dialog), `?chat=new` (a new chat), and the `study/practice` route (Practice). A step ticks
 when it happens in this browser: an upload finishes, a chat message is sent, a
 topic session's first answer is checked. The starter workspace counts as made, so there is no create
 step.

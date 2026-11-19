@@ -3,7 +3,6 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef } from 'react';
 import { qk } from '@/api/client';
 import { useCreateMaterial } from '@/api/hooks';
-import { userToast } from '@/components/ui/userToast';
 import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
 import {
   CanvasBoardPanel,
@@ -19,6 +18,7 @@ import {
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
+import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -116,8 +116,7 @@ function CanvasBoard({
         replace,
         search: (previous) => ({ ...previous, open: next }),
         to: '.',
-      }),
-    () => userToast({ title: m.canvas_open_gone() })
+      })
   );
   const materials = useCanvasMaterials(workspaceId);
   // The item dialog's saves go through its live room, not the cards' snapshot
@@ -155,10 +154,12 @@ function CanvasBoard({
     materials: linked,
     open: onOpenMaterial,
   });
+  const { openPlane, planeEditor } = usePlaneEditor();
   const state = useCanvasBoard(container, id, {
     gone,
     link,
     onBoard,
+    openPlane,
     workspace: links,
   });
   // The placed quizzes and sets run in the page's own tree, through portals into the
@@ -173,6 +174,7 @@ function CanvasBoard({
         <CanvasBoardPanel onRetry={onRetry} state={state} />
         <CanvasMaterialCards link={link} materials={materials} />
         <BoardPresenceMarks presence={state.presence} />
+        {planeEditor}
       </div>
       <CanvasBoardStrip strip={state.strip} />
     </>

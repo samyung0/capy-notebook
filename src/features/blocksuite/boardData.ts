@@ -2,7 +2,6 @@ import { BOARD_CATALOG } from '@/api/board.generated';
 import { EXPORT_PAPER, PAPER, type Paper } from '@/features/graph/paper';
 import type { Box } from './boardGeometry';
 
-export { functionRuns, markFunction } from '@/features/graph/curves';
 export { INK, NUMBER, PAPER, type Paper, TEXT } from '@/features/graph/paper';
 
 /** What a saved board's cards hold, and their limits, apart from the editor: the

@@ -135,52 +135,12 @@ describe('document mode cache', () => {
     expect(() => saveDocumentMode(item, 'edit')).not.toThrow();
   });
 
-  it('opens settings at a tab and Practice with its session or result from the URL, ignoring other values', () => {
-    expect(
-      parseWorkspaceOpenSearch({ settings: 'others', study: 'practice' })
-    ).toMatchObject({ settings: 'others', study: 'practice' });
-    expect(
-      parseWorkspaceOpenSearch({
-        group: 'topic',
-        reviewMode: 'fading',
-        study: 'practice',
-        topicId: 't1',
-      })
-    ).toMatchObject({
-      group: 'topic',
-      reviewMode: 'fading',
-      study: 'practice',
-      topicId: 't1',
-    });
-    expect(
-      parseWorkspaceOpenSearch({ review: 's1', study: 'practice' })
-    ).toMatchObject({ review: 's1', study: 'practice' });
+  it('opens settings at a tab over any page, ignoring an unknown one', () => {
     expect(
       parseWorkspaceOpenSearch({ file: 'f1', settings: 'danger' })
     ).toMatchObject({ file: 'f1', settings: 'danger' });
-    expect(
-      parseWorkspaceOpenSearch({
-        group: 'topic',
-        settings: 'bogus',
-        study: 'yes',
-      })
-    ).toEqual({
-      group: undefined,
-      review: undefined,
-      reviewMode: undefined,
-      settings: undefined,
-      study: undefined,
-      topicId: undefined,
-    });
-  });
-
-  it("opens a class staff's Study on Topics and a member's profile", () => {
-    expect(
-      parseWorkspaceOpenSearch({
-        member: 'u1',
-        show: 'topics',
-        study: 'summary',
-      })
-    ).toMatchObject({ member: 'u1', show: 'topics', study: 'summary' });
+    expect(parseWorkspaceOpenSearch({ settings: 'bogus' }).settings).toBe(
+      undefined
+    );
   });
 });

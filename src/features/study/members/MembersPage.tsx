@@ -1,4 +1,4 @@
-import { Navigate, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
 import { useMembersProgress, useWorkspace } from '@/api/hooks';
 import type {
@@ -17,6 +17,11 @@ import {
 } from '@/components/app/SortHeader';
 import { Avatar } from '@/components/ui/Avatar';
 import { SkeletonList } from '@/components/ui/feedback';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -24,6 +29,7 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { percentText } from '../assignments/assignmentText';
 import { ListRow, PracticeFrame, RowScore } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
+import { studyLink } from '../studyRoutes';
 import { LabelPill } from '../topicLabels';
 import { MemberProfilePage } from './MemberProfile';
 import { MembersRoster } from './MembersRoster';
@@ -43,13 +49,11 @@ import {
 /** Members (its own page on the rail since Epo 2026-11-11): the people, with
  * sharing and invitations (`MembersRoster`). A class's owner and teaching
  * assistants manage them there; their marks are on Study (Epo 2026-11-13).
- * Every other member gets the list without marks. A visitor who is no member
- * is sent to Practice. */
+ * Every other member gets the list without marks; a visitor who is no member
+ * has no Members (`studyView`). */
 export function MembersPage({ workspaceId }: { workspaceId: string }) {
   const { data: ws } = useWorkspace(workspaceId);
   if (!ws) return null;
-  if (!ws.role)
-    return <Navigate replace search={{ study: 'practice' }} to="." />;
   return studyView(ws).manages ? (
     <StaffRoster workspace={ws} />
   ) : (
@@ -133,14 +137,11 @@ function MembersList({
       order.ascending
     );
   const open = (member: MemberProgress) =>
-    navigate({
-      search: {
+    navigate(
+      studyLink(workspaceId, tab === 'topics' ? 'topics' : 'summary', {
         member: member.userId,
-        show: tab === 'topics' ? ('topics' as const) : undefined,
-        study: 'summary' as const,
-      },
-      to: '.',
-    });
+      })
+    );
   const topics = tab === 'topics';
   return (
     <PracticeFrame className="@container">
@@ -276,7 +277,7 @@ function SummaryList({
                 ? questionsText(member.practiceWeek)
                 : '–'}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               <FocusCell member={member} />
             </div>
           </li>
@@ -425,18 +426,33 @@ function AssignmentsCell({ member }: { member: MemberProgress }) {
 const CHIP =
   't-meta inline-flex h-5.5 items-center whitespace-nowrap rounded-md px-1.75 font-semibold';
 
+/** How many flagged topics a line names before "+n" (Epo 2026-11-19, mock A). */
+const FOCUS_SHOWN = 2;
+
 function FocusCell({ member }: { member: MemberProgress }) {
   const focus = focusOf(member);
   switch (focus.kind) {
     case 'topics':
-      return focus.topics.map((t: SummaryTopic) => (
-        <span
-          className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}
-          key={t.topicId ?? t.group}
-        >
-          {topicName(t)}
-        </span>
-      ));
+      return (
+        <>
+          {focus.topics.slice(0, FOCUS_SHOWN).map((t: SummaryTopic) => (
+            // Two long names share the line, each cut only by what doesn't fit.
+            <span
+              className={cn(
+                CHIP,
+                'min-w-0 shrink bg-tint-warning text-tint-warning-fg'
+              )}
+              key={t.topicId ?? t.group}
+              title={topicName(t)}
+            >
+              <span className="min-w-0 truncate">{topicName(t)}</span>
+            </span>
+          ))}
+          {focus.topics.length > FOCUS_SHOWN && (
+            <MoreTopics topics={focus.topics.slice(FOCUS_SHOWN)} />
+          )}
+        </>
+      );
     case 'not_started':
       return (
         <span className="font-semibold text-fg-muted">
@@ -450,6 +466,31 @@ function FocusCell({ member }: { member: MemberProgress }) {
         </span>
       );
   }
+}
+
+/** "+3": hover, focus or tap lists the rest; the profile has them all. */
+function MoreTopics({ topics }: { topics: SummaryTopic[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Tooltip onOpenChange={setOpen} open={open}>
+      <TooltipTrigger
+        className="t-meta shrink-0 cursor-default rounded-sm px-0.5 font-semibold text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
+        onClick={(event) => {
+          // A tap toggles it; it never opens the member's profile.
+          event.stopPropagation();
+          setOpen((was) => !was);
+        }}
+        render={<button type="button" />}
+      >
+        {m.members_more_topics({ count: topics.length })}
+      </TooltipTrigger>
+      <TooltipContent className="text-left">
+        {topics.map((t) => (
+          <div key={t.topicId ?? t.group}>{topicName(t)}</div>
+        ))}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 const COUNT: Record<SummaryTopic['label'], (count: number) => string> = {

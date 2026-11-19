@@ -6,7 +6,6 @@ import {
   useWorkspaces,
 } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
-import { userToast } from '@/components/ui/userToast';
 import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
 import {
   CanvasBoardPanel,
@@ -25,6 +24,7 @@ import {
   useCanvasMaterials,
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
+import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { m } from '@/i18n';
 import { useOpenLink } from '@/lib/openLink';
 
@@ -52,8 +52,7 @@ function OwnCanvas({
         replace,
         search: (previous) => ({ ...previous, open: next }),
         to: '/canvas',
-      }),
-    () => userToast({ title: m.canvas_open_gone() })
+      })
   );
   const materials = useCanvasMaterials();
   const { data: workspaces } = useWorkspaces();
@@ -105,10 +104,12 @@ function OwnCanvas({
       setEditing({ id: known.id, kind: known.kind, title: known.title });
     },
   });
+  const { openPlane, planeEditor } = usePlaneEditor();
   const state = useCanvasBoard(container, id, {
     gone,
     link,
     onBoard,
+    openPlane,
     workspace: links,
   });
   return (
@@ -120,6 +121,7 @@ function OwnCanvas({
         <CanvasBoardPanel onRetry={onRetry} state={state} />
         <CanvasMaterialCards link={link} materials={materials} />
         <BoardPresenceMarks presence={state.presence} />
+        {planeEditor}
         <CanvasMaterialDialog
           material={editing}
           onClose={() => setEditing(null)}

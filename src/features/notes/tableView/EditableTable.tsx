@@ -19,7 +19,6 @@ import { ColumnMenu } from './ColumnMenu';
 import { CellText, CheckboxMark, ColumnLabel } from './cells';
 import { type TableViewEdit, useTableView } from './context';
 import {
-  ADD_COLUMN_WIDTH,
   CELL_CLASS,
   CELL_CONTENT_CLASS,
   COLUMN_WIDTH,
@@ -325,7 +324,7 @@ const Row = memo(
             )}
           </td>
         ))}
-        {write && <td className={cn(CELL_CLASS, DIVIDED_CLASS)} />}
+        <td className={cn(CELL_CLASS, DIVIDED_CLASS)} />
       </tr>
     );
   },
@@ -374,10 +373,7 @@ export function EditableTable({
   return (
     <>
       <div className="overflow-x-auto">
-        <table
-          className={TABLE_CLASS}
-          style={widthVars(tableWidth(columns, write ? ADD_COLUMN_WIDTH : 0))}
-        >
+        <table className={TABLE_CLASS} style={widthVars(tableWidth(columns))}>
           <colgroup>
             {columns.map((column) => (
               <col
@@ -386,7 +382,7 @@ export function EditableTable({
                 style={widthVars(COLUMN_WIDTH[column.kind])}
               />
             ))}
-            {write && <col className="w-9" />}
+            <col />
           </colgroup>
           <thead>
             <tr>
@@ -411,11 +407,11 @@ export function EditableTable({
                   )}
                 </th>
               ))}
-              {write && (
-                <th className={cn(CELL_CLASS, DIVIDED_CLASS)}>
+              <th className={cn(CELL_CLASS, DIVIDED_CLASS)}>
+                {write && (
                   <button
                     aria-label={m.table_view_add_column()}
-                    className="flex h-9 w-full items-center justify-center text-fg-muted outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:bg-surface-hover-bg disabled:opacity-40"
+                    className="flex h-9 w-9 items-center justify-center text-fg-muted outline-none hover:text-fg focus-visible:text-fg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset disabled:opacity-40"
                     disabled={!canAddColumn(block)}
                     onClick={addColumn}
                     title={m.table_view_add_column()}
@@ -423,8 +419,8 @@ export function EditableTable({
                   >
                     <Icon name="plus" />
                   </button>
-                </th>
-              )}
+                )}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -447,7 +443,7 @@ export function EditableTable({
       </div>
       {write && (
         <button
-          className="flex h-10 w-full items-center gap-1.5 border-line border-b px-2.5 text-left text-fg-muted text-sm outline-none hover:bg-surface-hover-bg/60 hover:text-fg focus-visible:bg-surface-hover-bg disabled:opacity-40 sm:h-9"
+          className="flex h-10 w-full items-center gap-1.5 border-line border-b px-2.5 text-left text-fg-muted text-sm outline-none hover:text-fg focus-visible:text-fg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset disabled:opacity-40 sm:h-9"
           disabled={!room}
           onClick={onNewRecord}
           type="button"

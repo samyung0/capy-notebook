@@ -83,7 +83,7 @@ export function SettingsNav<T extends string>({
     <nav aria-label={label} className={cn('flex shrink-0 flex-col', className)}>
       {/* PanelSearch pads itself for a panel; here the field lines up with the
           tabs. */}
-      <div className="-mx-2.5 -mt-2.5">
+      <div className="-mx-2.5">
         <PanelSearch
           label={m.workspace_settings_search()}
           onChange={setSearch}

@@ -13,6 +13,7 @@ import { materialIconName } from '@/lib/fileIcons';
 import { PREF_KEYS, writePref } from '@/lib/localPrefs';
 import { ContinueLink } from './ContinueLink';
 import { groupName } from './reviewText';
+import { studyLink } from './studyRoutes';
 
 const CONTINUE_SHOWN = 3;
 
@@ -33,10 +34,7 @@ export function ContinueCards({ workspaceId }: { workspaceId?: string }) {
           noArrow
           onClick={() =>
             workspaceId
-              ? navigate({
-                  search: { status: 'open', study: 'history' as const },
-                  to: '.',
-                })
+              ? navigate(studyLink(workspaceId, 'history', { status: 'open' }))
               : navigate({
                   search: { status: 'open', tab: 'history' as const },
                   to: '/learning',

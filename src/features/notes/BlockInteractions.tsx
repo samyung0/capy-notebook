@@ -47,7 +47,6 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/DropdownMenu';
-import { MATERIAL_REF_TYPE } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -251,7 +250,6 @@ function DraggableBlock(props: PlateElementProps) {
 
   const isInColumn = path.length === 3;
   const isInTable = path.length === 4;
-  const isMaterialRef = element.type === MATERIAL_REF_TYPE;
 
   const [previewTop, setPreviewTop] = React.useState(0);
   const [handleTop, setHandleTop] = React.useState(3);
@@ -285,7 +283,7 @@ function DraggableBlock(props: PlateElementProps) {
       data-slot="block-wrapper"
       onMouseEnter={(event) => {
         approach();
-        if (isDragging || isMaterialRef) return;
+        if (isDragging) return;
         const middle = firstLineMiddle(editor, element, event.currentTarget);
         // Center the 24px handle on the first line.
         if (middle !== null) setHandleTop(middle - 12);
@@ -294,13 +292,7 @@ function DraggableBlock(props: PlateElementProps) {
     >
       {near && !isInTable && (
         <Gutter>
-          <div
-            className={cn(
-              'flex h-[1.5em]',
-              isInColumn && 'h-4',
-              isMaterialRef && 'h-full'
-            )}
-          >
+          <div className={cn('flex h-[1.5em]', isInColumn && 'h-4')}>
             {/* + beside the grip (Epo 2026-11-10, mock H1): a line below, with
              * the slash menu open on it. From `sm`, where the 40px gutter
              * holds both (18px each and the grip's 4px); a nested block
@@ -330,9 +322,7 @@ function DraggableBlock(props: PlateElementProps) {
                   }}
                   // The note keeps its selection until the new line takes it.
                   onMouseDown={(event) => event.preventDefault()}
-                  style={{
-                    top: isMaterialRef ? 'calc(50% - 12px)' : `${handleTop}px`,
-                  }}
+                  style={{ top: `${handleTop}px` }}
                   type="button"
                 >
                   <EditorIcon name="plus" />
@@ -351,9 +341,7 @@ function DraggableBlock(props: PlateElementProps) {
                 contentEditable={false}
                 data-plate-prevent-deselect
                 ref={handleRef}
-                style={{
-                  top: isMaterialRef ? 'calc(50% - 12px)' : `${handleTop}px`,
-                }}
+                style={{ top: `${handleTop}px` }}
                 type="button"
               >
                 <DragHandle

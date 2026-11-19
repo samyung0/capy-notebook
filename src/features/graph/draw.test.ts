@@ -27,6 +27,21 @@ const drawn = (...elements: GraphElement[]) =>
     measure
   );
 
+const formula = (latex: string) => ({
+  id: 'f',
+  latex,
+  type: 'expression' as const,
+});
+
+const PATH_GAPS = /[ML ]/;
+/** A path's points: its moves and lines are number pairs. */
+const pointsOf = (path: string): [number, number][] => {
+  const numbers = path.split(PATH_GAPS).filter(Boolean).map(Number);
+  return numbers.flatMap((x, i) =>
+    i % 2 ? [] : [[x, numbers[i + 1]] as [number, number]]
+  );
+};
+
 /** The ink's path data, stroked or filled. */
 const ink = (svg: string) =>
   [...svg.matchAll(/<path d="([^"]+)"[^>]*(?:stroke|fill)="#000"/g)].map(
@@ -44,24 +59,50 @@ describe('each element kind draws its path', () => {
   });
 
   it('a function runs across the view, a straight one thinned to its ends', () => {
-    expect(ink(drawn({ id: 'f', term: 'x', type: 'functiongraph' }))).toEqual([
-      'M0 200L200 0',
-    ]);
-    const parabola = ink(
-      drawn({ id: 'f', term: 'x^2', type: 'functiongraph' })
-    );
+    expect(ink(drawn(formula('y=x')))).toEqual(['M0 200L200 0']);
+    const parabola = ink(drawn(formula('f\\left(x\\right)=x^{2}')));
     expect(parabola).toHaveLength(1);
     expect(parabola[0].split(' ').length).toBeGreaterThan(40);
   });
 
-  it('a function with a domain draws only over it, and breaks at an asymptote', () => {
+  it('a function with a restriction draws only over it, and breaks at an asymptote', () => {
     expect(
-      ink(drawn({ domain: [0, 2], id: 'f', term: '1', type: 'functiongraph' }))
+      ink(drawn(formula('y=1\\left\\lbrace 0\\le x\\le 2\\right\\rbrace')))
     ).toEqual(['M100 60L180 60']);
-    const [hyperbola] = ink(
-      drawn({ id: 'f', term: '1/x', type: 'functiongraph' })
-    );
+    const [hyperbola] = ink(drawn(formula('\\frac{1}{x}')));
     expect(hyperbola.match(/M/g)).toHaveLength(2);
+  });
+
+  // Epo 2026-11-18: any other equation in x and y is an implicit curve.
+  it('an equation in x and y draws where it holds, edge to edge', () => {
+    const lines = ink(drawn(formula('x^{2}-y^{2}=0'))).flatMap(pointsOf);
+    // Both diagonals, every point on one of them, out to the corners.
+    for (const [x, y] of lines)
+      expect(Math.abs(Math.abs(x - 100) - Math.abs(y - 100))).toBeLessThan(1);
+    expect(lines.some(([x, y]) => x < 2 && y < 2)).toBe(true);
+    expect(lines.some(([x, y]) => x < 2 && y > 198)).toBe(true);
+    expect(lines.some(([x, y]) => x > 198 && y < 2)).toBe(true);
+    expect(lines.some(([x, y]) => x > 198 && y > 198)).toBe(true);
+  });
+
+  it('a circle typed as an equation is a closed loop of radius 2', () => {
+    const paths = ink(drawn(formula('x^2+y^2=4')));
+    expect(paths).toHaveLength(1);
+    const loop = pointsOf(paths[0]);
+    expect(loop.length).toBeGreaterThan(40);
+    expect(loop[0]).toEqual(loop.at(-1));
+    for (const [x, y] of loop)
+      expect(Math.hypot(x - 100, y - 100)).toBeCloseTo(80, 0);
+  });
+
+  it('an equation draws no line across a pole', () => {
+    // x / (y − 0.03) = 1 is the line x = y − 0.03, its pole the line y = 0.03.
+    const drawnPoints = ink(drawn(formula('\\frac{x}{y-0.03}=1'))).flatMap(
+      pointsOf
+    );
+    expect(drawnPoints.length).toBeGreaterThan(0);
+    for (const [x, y] of drawnPoints)
+      expect(Math.abs(x - 100 - (100 - y) + 1.2)).toBeLessThan(1);
   });
 
   it('a line crosses the whole frame, a segment stops at its points', () => {
@@ -216,16 +257,19 @@ describe('each element kind draws its path', () => {
   });
 
   it('a hidden element draws nothing, a dashed one dashes', () => {
-    expect(
-      ink(drawn({ hidden: true, id: 'f', term: 'x', type: 'functiongraph' }))
-    ).toEqual([]);
-    expect(
-      drawn({ dash: true, id: 'f', term: 'x', type: 'functiongraph' })
-    ).toContain('stroke-dasharray="7 5"');
+    expect(ink(drawn({ ...formula('y=x'), hidden: true }))).toEqual([]);
+    expect(drawn({ ...formula('y=x'), dash: true })).toContain(
+      'stroke-dasharray="7 5"'
+    );
   });
 });
 
-it('draws the grid and numbered axes, the numbers leaving with their axis', () => {
+const NUMBER_ON_LEFT_EDGE = /<text x="4" y="40"[^>]*>58<\/text>/;
+const NUMBER_ON_BOTTOM_EDGE = /<text x="160" y="192"[^>]*>108<\/text>/;
+
+// Epo 2026-11-18 ("do what other apps do"): an axis out of view leaves its
+// numbers on the edge it left by, as Desmos does.
+it('draws the grid and numbered axes, numbers kept on the edge', () => {
   const board = (bbox: [number, number, number, number]) =>
     graphSvg(
       {
@@ -239,9 +283,11 @@ it('draws the grid and numbered axes, the numbers leaving with their axis', () =
   const centred = board([-5, 5, 5, -5]);
   expect(centred).toContain('>4</text>');
   expect(centred).toContain('>–4</text>');
-  // x from 100 to 110: the y axis and its numbers are out of view.
+  // x 100…110, y 50…60: both axes are out of view, below and to the left;
+  // the y numbers sit on the left edge, the x numbers on the bottom.
   const away = board([100, 60, 110, 50]);
-  expect(away).not.toContain('<text');
+  expect(away).toMatch(NUMBER_ON_LEFT_EDGE);
+  expect(away).toMatch(NUMBER_ON_BOTTOM_EDGE);
 });
 
 it('wraps labels at word breaks, splitting words wider than a line', () => {

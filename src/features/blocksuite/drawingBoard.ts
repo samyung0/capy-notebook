@@ -130,6 +130,7 @@ import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
 import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
 import { BOARD_OFFLINE_MARGIN } from '@/features/collaboration/itemRoom';
+import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { contentSizeKilobytes } from '@/features/notes/documentStats';
 import { m } from '@/i18n';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
@@ -169,8 +170,8 @@ import { keepToCatalog, savedCopy } from './boardKeep';
 import { type BoardKind, checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
+import { setPlaneOpener } from './boardPlaneEditor';
 import { boardPresenceView } from './boardPresenceView';
-import './boardPlaneEditor';
 import { readOnlyCopy, TapPanTool } from './boardReadOnly';
 import {
   boardToolbar,
@@ -369,6 +370,9 @@ export type DrawingBoardOptions = {
   onChange?: () => void;
   /** Where its image files come from and go: none keeps them on the page only. */
   images?: BoardImages;
+  /** Shows a plane card in the page's graph editor; a board that can be edited
+   * needs it. */
+  openPlane?: PlaneOpener;
   /** A fresh board starts with a plane card: the dev pages. Every answer starts on the
    * same plain board (Epo 2026-11-06). */
   plane?: boolean;
@@ -696,6 +700,7 @@ export function mountDrawingBoard(
   container.prepend(board);
   render(std.render(), board, { renderBefore: drawnEnd });
   const gfx = std.get(GfxControllerIdentifier);
+  if (options.openPlane) setPlaneOpener(gfx, options.openPlane);
   const unguard = tools
     ? keepToCatalog(store, gfx.surface, options.board)
     : null;
@@ -1028,14 +1033,20 @@ export function mountDrawingBoard(
       getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
     );
   };
-  /** What the image draws: everything, far groups drawn nearer (FAR_GAP) on the
-   * marking image, with an 8-unit margin. `bound` is in board units. */
+  /** What the image draws: everything, a quiz drawing's far groups drawn nearer
+   * (FAR_GAP) on the marking image, with an 8-unit margin. `bound` is in board
+   * units. */
   const framing = (nearer = true) => {
     const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
     // Turned items by the box they turn into.
     const bounds = items.map((item) => item.elementBound);
     const whole = everything();
-    const far = nearer && Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
+    // A quiz's drawing only (Epo 2026-11-18): a workspace canvas has no
+    // answer area to keep the rest near.
+    const far =
+      nearer &&
+      options.board === 'question' &&
+      Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
     const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
     const placed = bounds.map(
       (box, i) =>
@@ -1268,7 +1279,8 @@ export function mountDrawingBoard(
       if (element instanceof PlaneElementModel) openPlane(gfx, element);
       else if (element instanceof ChartElementModel) openChart(gfx, element);
       else return false;
-      return !!board.querySelector('.capy-plane-editor');
+      // A plane's editor (the page's, `.capy-graph-editor`) or a chart's.
+      return !!board.querySelector('.capy-graph-editor, .capy-plane-editor');
     },
     /** What a canvas's presence reads of the board (boardPresenceView.ts): its
      * viewport, selection and text caret, and where others' marks go. */

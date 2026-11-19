@@ -1,6 +1,6 @@
 /* The camera every graph surface shares, and the number rules of its axes. */
-import { markFunction } from './curves';
-import type { Board, Graph, Vec } from './model';
+import { functionReach } from './curves';
+import type { Board, Vec } from './model';
 
 /** The plane's left and top edges in its own units, and screen pixels per
  * unit on each axis (a quiz graph may stretch one). */
@@ -125,67 +125,25 @@ export function axisNumber(value: number, step: number) {
   return format.format(value).replace(LEADING_MINUS, '–');
 }
 
-/** The area every element occupies with a 10% margin, or null when nothing
- * has a position. Functions count over the other elements' x range, or
- * `seen`'s (the current view) when there is none. */
-export function elementBounds({ elements }: Graph, seen: Bbox): Bbox | null {
-  const xs: number[] = [];
-  const ys: number[] = [];
-  const at = new Map(
-    elements.flatMap((element) =>
-      element.type === 'point' ? [[element.id, element.coords] as const] : []
-    )
-  );
-  const add = ([x, y]: Vec) => {
-    xs.push(x);
-    ys.push(y);
-  };
-  for (const element of elements) {
-    if (element.hidden) continue;
-    if (
-      element.type === 'point' ||
-      element.type === 'text' ||
-      element.type === 'formula'
-    )
-      add(element.coords);
-    else if (element.type === 'polyline' || element.type === 'curve')
-      element.coords.forEach(add);
-    else if (element.type === 'ellipse') {
-      const [[cx, cy], [rx, ry]] = [element.center, element.radii];
-      add([cx - rx, cy - ry]);
-      add([cx + rx, cy + ry]);
-    } else if (element.type === 'circle') {
-      const center = at.get(element.center);
-      if (!center) continue;
-      add([center[0] - element.radius, center[1] - element.radius]);
-      add([center[0] + element.radius, center[1] + element.radius]);
-    } else if (element.type === 'functiongraph' && element.domain)
-      xs.push(...element.domain);
-  }
-  const [from, to] = xs.length
-    ? [Math.min(...xs), Math.max(...xs)]
-    : [seen[0], seen[2]];
-  for (const element of elements) {
-    if (element.type !== 'functiongraph' || element.hidden) continue;
-    const fn = markFunction(element.term);
-    if (!fn) continue;
-    const [lo, hi] = element.domain ?? [from, to];
-    for (let i = 0; i <= 100; i++) {
-      const y = fn(lo + ((hi - lo) * i) / 100);
-      if (Number.isFinite(y) && Math.abs(y) < 1e6) ys.push(y);
-    }
-    xs.push(lo, hi);
-  }
-  if (!(xs.length && ys.length)) return null;
-  const [l, r, b, t] = [
-    Math.min(...xs),
-    Math.max(...xs),
-    Math.min(...ys),
-    Math.max(...ys),
-  ];
-  const padX = Math.max(r - l, 1) * 0.1;
-  const padY = Math.max(t - b, 1) * 0.1;
-  return [l - padX, t + padY, r + padX, b - padY];
+/** The view moved up or down to a typed function wholly above or below it
+ * across the x range shown (y = 3x + 10000 round the origin), its middle value
+ * there in the middle, scale kept (Epo 2026-11-18, "Move the view", though
+ * Desmos and GeoGebra stay put). Null when any of it is shown, or crosses,
+ * and for an implicit curve. */
+export function revealed(
+  element: { hidden?: boolean; latex: string },
+  view: View,
+  w: number,
+  h: number
+): View | null {
+  if (element.hidden) return null;
+  const bottom = view.top - h / view.ppuY;
+  const ys = functionReach(element, view.left, view.left + w / view.ppuX)?.ys;
+  if (!ys || !(ys.every((y) => y > view.top) || ys.every((y) => y < bottom)))
+    return null;
+  const sorted = [...ys].sort((a, b) => a - b);
+  const y = sorted[Math.floor(sorted.length / 2)];
+  return { ...view, top: y + h / 2 / view.ppuY };
 }
 
 /** The view framing `box` on `w` × `h` pixels, keeping the x and y units'

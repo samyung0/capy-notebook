@@ -2,7 +2,7 @@ import { parseHTML } from 'linkedom';
 import { act } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Assignment, AssignmentMemberRow } from '@/api/types';
-import { getLocale, m } from '@/i18n';
+import { getLocale } from '@/i18n';
 
 getLocale();
 const { document, window } = parseHTML(
@@ -67,11 +67,9 @@ it('saves a grade on leaving the field', async () => {
   act(() => root.unmount());
 });
 
-it('refuses a grade above the points', async () => {
+it('refuses a grade above the points as it is typed', async () => {
   const root = await enter('25');
-  await vi.waitFor(() =>
-    expect(host.textContent).toContain(m.assignment_grade_max({ points: '20' }))
-  );
+  expect(host.querySelector('input')?.value).toBe('');
   expect(grade).not.toHaveBeenCalled();
   act(() => root.unmount());
 });

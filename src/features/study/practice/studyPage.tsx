@@ -9,6 +9,7 @@ import {
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { type StudyTab, studyLink } from '../studyRoutes';
 
 /** The Study pages' padding: the page gutter (`page-px`), 28px above from lg. */
 export function PracticeFrame({
@@ -163,34 +164,26 @@ export function TopicsCell({
   );
 }
 
-export type StudyTab = 'summary' | 'topics' | 'practice' | 'bank' | 'history';
-
-/** Study's tabs (Epo 2026-11-13): Overview (`summary`) and History for whoever
- * practises; a class's staff get Overview and Topics, every member's marks
- * (`summary`, `show=topics`), Practice and the class's Question bank (Epo
+/** Study's tabs (Epo 2026-11-13), each `study/<tab>`: Overview (`summary`) and
+ * History for whoever practises; a class's staff get Overview and Topics,
+ * every member's marks, Practice and the class's Question bank (Epo
  * 2026-11-14, mock A). Inside the page's padding, laid
  * out as the account Study's tab row: the first label under the title, the
  * underline edge to edge. */
 export function StudyTabs({
   staff,
   value,
+  workspaceId,
 }: {
   staff: boolean;
   value: StudyTab;
+  workspaceId: string;
 }) {
   const navigate = useNavigate();
   return (
     <Tabs
       className="page-bleed page-tabs-px mt-3 w-auto"
-      onChange={(next) =>
-        navigate({
-          search:
-            next === 'topics'
-              ? { show: 'topics' as const, study: 'summary' as const }
-              : { study: next as Exclude<StudyTab, 'topics'> },
-          to: '.',
-        })
-      }
+      onChange={(next) => navigate(studyLink(workspaceId, next as StudyTab))}
       tabs={[
         { label: m.learning_tab_overview(), value: 'summary' },
         ...(staff

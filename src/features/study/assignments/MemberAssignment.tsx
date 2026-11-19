@@ -28,11 +28,7 @@ export function MemberAssignment({ assignment }: { assignment: Assignment }) {
 function StartMarked({ assignment }: { assignment: Assignment }) {
   const navigate = useNavigate();
   const backToList = () =>
-    void navigate({
-      replace: true,
-      search: { study: 'assignments' as const },
-      to: '.',
-    });
+    void navigate({ replace: true, search: {}, to: '.' });
   const { dialog, start, starting } = useAssignmentStart(
     assignment.workspaceId,
     backToList
@@ -47,11 +43,7 @@ function StartMarked({ assignment }: { assignment: Assignment }) {
     if (attempt) {
       void navigate({
         replace: true,
-        search: {
-          assignment: assignment.id,
-          attempt,
-          study: 'assignments' as const,
-        },
+        search: { assignment: assignment.id, attempt },
         to: '.',
       });
       return;

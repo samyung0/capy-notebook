@@ -54,9 +54,10 @@ export function quizImageUpload(quizId: string): UploadQuestionAsset {
 }
 
 /** A note's quiz in Edit (Epo 2026-11-15, in place of the question dialog):
- * the quiz page's cards in the note, the open one editing in place, Undo,
- * Redo and the live state above them. Every change writes to the quiz's
- * documents at once; removing the last question removes the block. */
+ * the quiz page's cards in the note, the open one editing in place. Every
+ * change writes to the quiz's documents at once; removing the last question
+ * removes the block. A host without its own Undo shows Undo, Redo and the
+ * live state above them. */
 export function QuizForm({
   content,
   keys,
@@ -94,7 +95,8 @@ export function QuizForm({
   return (
     // The tour opens its first question.
     <div className="grid gap-3" data-note-quiz="">
-      {/* A canvas card's toolbar holds its Undo and Redo instead
+      {/* A note (its toolbar and header, embedUndo and embedStatus) and a
+          canvas card's toolbar hold its Undo, Redo and state instead
           (`useLendUndo`). */}
       {!hosted && (
         <div className="flex items-center justify-end gap-2">

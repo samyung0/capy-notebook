@@ -32,7 +32,8 @@ import {
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
- * the marking image is: everything on the board, far groups drawn nearer, on white.
+ * the marking image is: everything on the board, on white, a quiz drawing's far groups
+ * drawn nearer.
  * Strokes are plain lines, connectors straight, formulas their LaTeX, notes a line per
  * paragraph, a placed quiz or set its title and kind, pasted images a grey box, plane
  * cards as the graph engine draws them (numbers included) without their labels and
@@ -113,8 +114,10 @@ export function drawBoardPreview(
 
   const boxes = items.map((item) => item.box);
   const whole = unite(boxes);
+  // Only a quiz's drawing draws far groups nearer: its answer has an area to
+  // stay near. A workspace canvas is shown where it is (Epo 2026-11-18).
   const shifts =
-    Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX
+    board === 'question' && Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX
       ? closeUp(boxes)
       : boxes.map(() => ({ dx: 0, dy: 0 }));
   const all = unite(

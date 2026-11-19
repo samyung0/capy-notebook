@@ -99,7 +99,7 @@ export function newQuestionBlock(type: AddableBlock): QuestionBlock {
         description: '',
         // A new graph starts drawing y = x (Epo 2026-10-26).
         elements: [
-          { id: crypto.randomUUID(), term: 'x', type: 'functiongraph' },
+          { id: crypto.randomUUID(), latex: 'y=x', type: 'expression' },
         ],
         height: 400,
         type,

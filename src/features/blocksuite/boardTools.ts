@@ -132,6 +132,7 @@ import {
   addPlane,
   fitCard,
   openPlane,
+  PLANE_HOME_PPU,
   type PlaneElementModel,
 } from './boardPlane';
 
@@ -1656,7 +1657,7 @@ export function setFormulaOpener(open: typeof openFormula) {
   openFormula = open;
 }
 
-const NEW_PLANE = { h: 320, ppu: 30, w: 480 };
+const NEW_PLANE = { h: 320, ppu: PLANE_HOME_PPU, w: 480 };
 const NEW_CHART = {
   bar: { h: 300, w: 420 },
   pie: { h: 300, w: 300 },

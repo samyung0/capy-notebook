@@ -30,8 +30,99 @@ export function closeBoardEditor(gfx: GfxController) {
   closing.get(gfx)?.();
 }
 
-/** A full-board editor for one card. While it's open undo reaches only what was done in
- * it, as what's on the canvas is out of sight. */
+/** The board's side of editing one card, whatever draws the editor: the board's
+ * slot keys and menu step aside, and undo reaches only what was done in it, as
+ * what's on the canvas is out of sight. `close` runs `onClose`, then gives the
+ * board its history back; it runs once, from the editor or the page
+ * (`closeBoardEditor`, through `fromPage` when given). */
+export function boardEditorSession(
+  gfx: GfxController,
+  cardId: string,
+  onClose: () => void,
+  /** How the page's close reaches it, when the editor has to hand over first. */
+  fromPage?: () => void
+) {
+  const board = gfx.std.host.closest('.capy-board');
+  // A teacher's board opens nothing for editing.
+  if (gfx.doc.readonly || !board || board.hasAttribute('data-editor-open'))
+    return null;
+  gfx.selection.clear();
+  board.setAttribute('data-editor-open', '');
+  // The double click that opened it is used up. The editor covers the board, so
+  // the board sees no press until it closes, and within 500 ms the first press
+  // of a double click on the card was that one's third: a triple click, which
+  // opens nothing (vendor local change 64).
+  gfx.std.event.endClickRun();
+
+  const undo = gfx.doc.get(HistoryExtension).undoManager;
+  gfx.doc.captureSync();
+  const earlier = { redo: undo.redoStack, undo: undo.undoStack };
+  let changed = false;
+  /** The undo buttons read the stacks only when told. */
+  const stacksSwapped = () =>
+    undo.emit('stack-cleared', [
+      { redoStackCleared: true, undoStackCleared: true },
+    ]);
+  undo.undoStack = [];
+  undo.redoStack = [];
+  stacksSwapped();
+
+  let open = true;
+  let stepping = false;
+  const close = () => {
+    if (!open) return;
+    open = false;
+    onClose();
+    gfx.doc.captureSync();
+    undo.undoStack = [...earlier.undo, ...undo.undoStack];
+    undo.redoStack = changed
+      ? undo.redoStack
+      : [...earlier.redo, ...undo.redoStack];
+    stacksSwapped();
+    board.removeAttribute('data-editor-open');
+    closing.delete(gfx);
+    gfx.selection.set({ editing: false, elements: [cardId] });
+    watchers.get(gfx)?.(null);
+  };
+  closing.set(gfx, fromPage ?? close);
+  watchers.get(gfx)?.(cardId);
+
+  return {
+    board,
+    close,
+    /** What the editor's Undo and Redo act on: this session's steps. */
+    history: {
+      canRedo: () => gfx.doc.canRedo,
+      canUndo: () => gfx.doc.canUndo,
+      redo: () => gfx.doc.redo(),
+      subscribe: (notify: () => void) => {
+        const updates = gfx.doc
+          .get(HistoryExtension)
+          .onUpdated.subscribe(notify);
+        return () => updates.unsubscribe();
+      },
+      undo: () => gfx.doc.undo(),
+    },
+    /** One undo step: what's written in the same task joins it, and with
+     * `join` it joins the step before (a row typed into, however slowly). */
+    write: (change: () => void, join = false) => {
+      changed = true;
+      // Yjs adds a change to the last step while its last change is recent.
+      if (join && undo.undoStack.length) undo.lastChange = Date.now();
+      else if (!stepping) {
+        stepping = true;
+        gfx.doc.captureSync();
+        queueMicrotask(() => {
+          stepping = false;
+          gfx.doc.captureSync();
+        });
+      }
+      change();
+    },
+  };
+}
+
+/** A full-board editor for one card, drawn by the board itself (the chart's). */
 export function openBoardEditor(
   gfx: GfxController,
   cardId: string,
@@ -52,12 +143,6 @@ export function openBoardEditor(
     onUpdate: () => void;
   }
 ) {
-  const board = gfx.std.host.closest('.capy-board');
-  // A teacher's board opens nothing for editing.
-  if (gfx.doc.readonly || !board || board.querySelector('.capy-plane-editor'))
-    return null;
-  gfx.selection.clear();
-
   const root = document.createElement('div');
   root.className = 'capy-plane-editor';
   const canvas = document.createElement('canvas');
@@ -69,26 +154,20 @@ export function openBoardEditor(
   root.append(canvas, controls, top);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  board.append(root);
-  board.setAttribute('data-editor-open', '');
-  // The double click that opened it is used up. The editor covers the board, so
-  // the board sees no press until it closes, and within 500 ms the first press
-  // of a double click on the card was that one's third: a triple click, which
-  // opens nothing (vendor local change 64).
-  gfx.std.event.endClickRun();
 
-  const undo = gfx.doc.get(HistoryExtension).undoManager;
-  gfx.doc.captureSync();
-  const earlier = { redo: undo.redoStack, undo: undo.undoStack };
-  let changed = false;
-  /** The undo buttons read the stacks only when told. */
-  const stacksSwapped = () =>
-    undo.emit('stack-cleared', [
-      { redoStackCleared: true, undoStackCleared: true },
-    ]);
-  undo.undoStack = [];
-  undo.redoStack = [];
-  stacksSwapped();
+  const session = boardEditorSession(gfx, cardId, () => {
+    hooks.onLeave();
+    window.removeEventListener('keydown', onKey, true);
+    updates?.unsubscribe();
+    unwatchTheme();
+    history.unsubscribe();
+    menu.dispose();
+    render(null, controls);
+    root.remove();
+  });
+  if (!session) return null;
+  const { close, write } = session;
+  session.board.append(root);
 
   const box = () => root.getBoundingClientRect();
 
@@ -134,29 +213,6 @@ export function openBoardEditor(
   const history = gfx.doc
     .get(HistoryExtension)
     .onUpdated.subscribe(() => menu.open && menu.draw());
-
-  const close = () => {
-    hooks.onLeave();
-    gfx.doc.captureSync();
-    undo.undoStack = [...earlier.undo, ...undo.undoStack];
-    undo.redoStack = changed
-      ? undo.redoStack
-      : [...earlier.redo, ...undo.redoStack];
-    stacksSwapped();
-    window.removeEventListener('keydown', onKey, true);
-    updates?.unsubscribe();
-    unwatchTheme();
-    history.unsubscribe();
-    menu.dispose();
-    render(null, controls);
-    root.remove();
-    board.removeAttribute('data-editor-open');
-    closing.delete(gfx);
-    gfx.selection.set({ editing: false, elements: [cardId] });
-    watchers.get(gfx)?.(null);
-  };
-  closing.set(gfx, close);
-  watchers.get(gfx)?.(cardId);
 
   // The board listens on the document, so its shortcuts stop here. Typing elsewhere on
   // the page isn't this editor's, and a field in it keeps its own undo.
@@ -230,13 +286,7 @@ export function openBoardEditor(
       ctx.clearRect(0, 0, width, height);
       return { height, width };
     },
-    /** One undo step. */
-    write: (change: () => void) => {
-      changed = true;
-      gfx.doc.captureSync();
-      change();
-      gfx.doc.captureSync();
-    },
+    write,
   };
 }
 

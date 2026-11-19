@@ -965,17 +965,17 @@ fn figure_fields_past_their_caps_are_refused_at_admission() {
     refused(
         Kind::Quiz,
         |doc| {
-            let term = "x+".repeat(100) + "x";
+            let latex = "x+".repeat(1000) + "x";
             map_in(doc, &elements).insert(
                 &mut doc.transact_mut(),
                 "f9",
                 element(
-                    json!({ "type": "functiongraph", "id": "f9", "term": term }),
+                    json!({ "type": "expression", "id": "f9", "latex": latex }),
                     "b00",
                 ),
             );
         },
-        "supported mathematical expression",
+        "latex too long",
     );
     refused(
         Kind::Quiz,
@@ -984,7 +984,7 @@ fn figure_fields_past_their_caps_are_refused_at_admission() {
                 &mut doc.transact_mut(),
                 "f9",
                 element(
-                    json!({ "type": "functiongraph", "id": "other", "term": "x" }),
+                    json!({ "type": "expression", "id": "other", "latex": "y=x" }),
                     "b00",
                 ),
             );

@@ -193,8 +193,9 @@ it("opens a member's profile from their row", async () => {
   const ann = host.querySelector('ul li');
   await press(ann);
   expect(navigate).toHaveBeenLastCalledWith({
-    search: { member: 'ann', show: undefined, study: 'summary' },
-    to: '.',
+    params: { tab: 'summary', workspaceId: 'ws' },
+    search: { member: 'ann' },
+    to: '/workspaces/$workspaceId/study/$tab',
   });
   await act(async () => root.unmount());
 });

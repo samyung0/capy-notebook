@@ -100,7 +100,7 @@ export const kindOf = (element: GraphElement) =>
     ? element.arrow
       ? 'vector'
       : 'line'
-    : element.type === 'functiongraph'
+    : element.type === 'expression'
       ? 'function'
       : element.type === 'text'
         ? 'label'
@@ -683,7 +683,7 @@ export function graphTools(host: ToolHost) {
   ) => {
     stroke(mark, list, HALO, 10);
     stroke(mark, list, BLUE, 2);
-    if (mark.type === 'functiongraph') return;
+    if (mark.type === 'expression') return;
     if (mark.type === 'formula') {
       const box = boxOf(mark);
       if (!box) return;
@@ -1032,7 +1032,8 @@ export function graphTools(host: ToolHost) {
         host.redraw();
         return;
       }
-      if (picked.type === 'functiongraph') return;
+      // A formula row's curve is not dragged: its row is retyped.
+      if (picked.type === 'expression') return;
       const [from, to] = [plane(grab.start), plane(at)];
       // A whole mark lands its first point (an ellipse its middle) on the grid, a polar
       // one's rings and spokes included, so one off it from before comes back. A label
@@ -1268,13 +1269,16 @@ export function graphTools(host: ToolHost) {
         host.changed();
         return true;
       }
-      if (selected.size) {
+      // Only what is still there counts: a row deleted from the list may
+      // have left its id selected.
+      if (elements().some(({ id }) => selected.has(id))) {
         selected = new Set();
         editing = null;
         host.changed();
         host.redraw();
         return true;
       }
+      selected = new Set();
       if (!openMark()) return false;
       finish();
       return true;
@@ -1298,6 +1302,21 @@ export function graphTools(host: ToolHost) {
       if (!list.every(whole)) write(list.filter(whole));
     },
     pick,
+    /** Selects one element, as a click on it does (a label row's field
+     * focused, Epo 2026-11-18). */
+    select(id: string | null, add = false) {
+      // Only under Select, as a click picks, and only what the graph holds;
+      // null lets go of it all, as a click on nothing does.
+      if (tool !== 'select') return;
+      if (id && !elements().some((each) => each.id === id)) return;
+      const next = new Set(add ? selected : []);
+      if (id) next.add(id);
+      if (!editing && sameSet(next, selected)) return;
+      selected = next;
+      editing = null;
+      host.changed();
+      host.redraw();
+    },
     /** Whether a row's element is selected. */
     selected: (id: string) => selected.has(id),
     /** Lights a row's element on the graph, or none. */
@@ -1319,3 +1338,6 @@ export function graphTools(host: ToolHost) {
     typing: () => typing,
   };
 }
+
+const sameSet = (a: Set<string>, b: Set<string>) =>
+  a.size === b.size && [...a].every((each) => b.has(each));

@@ -10,17 +10,18 @@ import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { AccountVoiceOverlay } from '@/features/voice/VoiceCard';
 import { startDraftSweeps } from '@/lib/editDrafts';
 import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
+import { workspaceOfPath } from '@/lib/workspacePath';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { InShellMain } from './AppErrorBoundary';
 import { Sidebar } from './Sidebar';
 import { ThemeDrawer } from './ThemeDrawer';
 import { useThemeDrawer } from './themeDrawerSearch';
 
-const WORKSPACE_PATH_PATTERN = /^\/workspaces\/([^/]+)$/;
-
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  useEventStream(WORKSPACE_PATH_PATTERN.exec(pathname)?.[1] ?? '');
+  // Its pages (Assignments, Members, Study) are child routes: the stream keeps
+  // its workspace across them.
+  useEventStream(workspaceOfPath(pathname));
   // Opened-workspace view drops the nav to relieve crowding. Selected from the
   // committed matches, not `location`: `location` flips to the target as soon
   // as navigation starts, which would strip the nav off the outgoing page while

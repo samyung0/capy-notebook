@@ -264,10 +264,14 @@ it dirtied. The trailing paragraph comes with the first edit, written straight
 into the document under its own origin so it is no part of that edit's Undo
 (as an ordinary edit, the Undo would bring it back as a new edit and empty
 Redo). Later, `trailingBlockPlugin` adds one only behind a real edit in the same
-batch, never for a co-editor's or an agent's change. A click below the last
-block, where a note not ending in a paragraph has nothing to click on, adds the
-paragraph and puts the caret in it (`openTrailingParagraph`), which counts as
-the first edit; from the keyboard Mod+Enter leaves the last block as before. The
+batch, never for a co-editor's or an agent's change. The note always ends
+with "Type / for commands" (Epo 2026-11-17, `trailingHint.ts`): an empty last
+paragraph shows it whether or not the caret is in it, and a note ending in
+anything else draws it after its last block (`data-trailing-hint` on the
+editable, the column's `::after` in `tailwind.css`), written nowhere. A click
+below the last block puts the caret in that empty paragraph, or adds one and
+puts the caret in it (`openTrailingParagraph`), which counts as the first edit;
+from the keyboard Mod+Enter leaves the last block as before. The
 checkpoint debounce starts only for a real edit (this person's or an Undo's,
 `takeLocalEdit`): a co-editor's change no longer reads Syncing or asks for a
 receipt here.
@@ -774,9 +778,22 @@ nested (a paste) is lifted to the top level by the plugin's normalizer. Blocks
 pasted while the caret is on a void block (a quiz, an image, an embed) go in
 right after that block with the caret following them (`VoidBlockPastePlugin`
 in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Quiz
-and set edits go to the item's own rooms, so note undo covers only inserting
-and removing the reference (the question and card dialogs have their own Undo
-and Redo). An agent or API write to an embedded item lands in its rooms, which
+and set edits go to the item's own rooms, so the note's own history covers only
+inserting and removing the reference. In Edit the embed shows no Undo, Redo or
+Saved of its own (Epo 2026-11-17): the embed last pressed lends its quiz's or
+set's history to the note (`embedUndo.tsx`: `EmbedUndoLender` around
+`AppEmbedEdit` gives its `UndoSink` the embed's box, and `EmbedUndoHost` in
+`NoteEditorCore` keeps the one pressed), so the toolbar's Undo and Redo and ⌘Z
+and ⇧⌘Z (Ctrl+Y) on the page, not in a field nor a portaled dialog, act on it
+as a canvas card's do; a press anywhere else (the note's title, its text,
+another block, or outside the note) or the caret moving into the note's text
+gives them back to the note. An embed lends only while it edits (not read-only,
+in recovery or stopped), and one pressed while still loading lends once it can. The embeds report
+their rooms' save state (`embeds/embedStatus.ts`) to the note's frame
+(`PaintedFrame`), and the header shows the most pressing of the note's and
+theirs (Saved, then Syncing, a draft syncing, Offline, Unsaved, Error); a note
+still connecting or opening says so alone, and an embed still opening says
+nothing. A question's or card's dialog keeps its own Undo. An agent or API write to an embedded item lands in its rooms, which
 every open editor and reader holds, so nothing refetches: the `embed-changed`
 broadcast of 2026-10-07 is gone (live-items). Go and the collaboration server reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
@@ -1175,9 +1192,20 @@ as a large field, every other column a labelled row with the same editors, and
 Delete record (the app's Dialog, a full-screen page on phones). The editor's
 table and the read-only `TableViewTable` (View, Preview, share pages) share
 their layout through `display.ts` and `cells.tsx`: fixed column widths (the
-title 140px on phones), 36px rows, one-line cells cut with an ellipsis, so a
+title 140px on phones) and an end column (the editor's + sits in it) that takes
+the rest, so every row's line runs the block's width as AFFiNE's does (Epo
+2026-11-12), 36px rows, one-line cells cut with an ellipsis, so a
 note's table keeps its shape between View and the editor. The open view is
-each reader's own state; Sort and Group by are stored on the view. A Kanban
+each reader's own state; Sort and Group by are stored on the view. The block's
+own buttons (+ view, Sort, Group by, New record above it, + column, the
++ New record row and a Kanban lane's + New) are muted and take the text's ink
+on hover with no background (Epo 2026-11-19); tabs and cells keep theirs. A view's
+menu (its name and Delete view, never the last view) opens on a press on the
+open tab or a right-click on any tab, which also opens that view, as Notion's
+and AFFiNE's do (Epo 2026-11-17); the right-click is the tab's alone, not the
+block's menu. A selected table view, like a figure, draws the block
+selection's tint: a void block keeps the overlay in its spacer span, which the
+tint rule in `tailwind.css` also reads. A Kanban
 card drags with its own data type (`application/x-capy-table-view-record`) and
 stops the event, so neither Slate's drop nor the block drag reads it. A
 read-only note draws the same component with only its tabs live. The slash
@@ -2240,7 +2268,9 @@ design, option d), and the nudge's release file on 2026-10-17.
     fetch change nothing.
   - When it differs from `VITE_RELEASE_SHA`, the next path change becomes a
     full page load, with nothing shown. A `?file=` or other search change
-    stays in the page, so a streaming chat turn is not cut. While offline the
+    stays in the page, as does a move between one workspace's pages
+    (`/workspaces/<id>/study/practice` and the like, `workspaceOfPath`), so
+    a streaming chat turn and the docked chat's draft are not cut. While offline the
     page stays (a load would land on the browser's offline page); the first
     path change back online loads.
   - It loads once per served release per tab (sessionStorage
@@ -4256,12 +4286,13 @@ show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
 (`src/share/main.tsx`); the edge-cached HTML stays the same for everyone.
 
-Both picks also have shortcuts in the top right corner of a note's scroll area,
-in View and Edit alike (`NoteDisplayToggles.tsx`): an Aa button flips the font
-and a ↔ button (from `md`, where the width shows) flips the width, each saving
-at once like Apply. Their icons stay the same either way; the note shows which
-pick is on. They sit in the scroll area, not the toolbar, so they scroll away
-with the note's top. In Edit a bolt button leads them and shows or hides the
+The width pick also has a shortcut in the top right corner of a note's scroll
+area, in View and Edit alike (`NoteDisplayToggles.tsx`): a ↔ button (from `md`,
+where the width shows) flips it, saving at once like Apply. Its icon stays the
+same either way; the note shows which pick is on. The font is picked in Editor
+settings alone (Epo 2026-11-17 removed the Aa shortcut). It sits in the scroll
+area, not the toolbar, so it scrolls away with the note's top. In Edit a pencil
+button (a bolt until Epo 2026-11-17) leads it and shows or hides the
 note's toolbar, which starts hidden (Epo 2026-10-27); the choice is this
 browser's (`PREF_KEYS.noteToolbar` in localStorage, Q461): no key, or storage
 blocked, means hidden, and it holds across the editor's remounts and later
@@ -4758,7 +4789,8 @@ that branch.
   was typed in is saved, so leaving the field never undoes a rename made
   elsewhere, which shows there. A name is one line: pasted line breaks become
   spaces, and a long name wraps and re-wraps with the column. Under it a
-  collapsed Info row opens Topic (a press moves the note to another topic),
+  collapsed Info row (quiet: no rules above and below, a ghost button as wide
+  as its label, muted until hovered, Epo 2026-11-17) opens Topic (a press moves the note to another topic),
   Created, Updated and Words, counted when it opens. A reader, and a note outside
   a workspace, see Topic as text; a reader's title cannot be typed in.
 
@@ -4772,10 +4804,10 @@ aligned while Plate stays in the app). Built so far:
 - **Rhythm** (`tailwind.css`, `.note-editor`): text blocks 8px apart on a 1.5
   line in either note font; the font setting changes the font and its weight
   only.
-- **Column** (`note-column` in `tailwind.css`): 96px margins from a box wider
-  than 640px, capped at 912px unless Full width, in the editor
+- **Column** (`note-column` in `tailwind.css`): 96px margins from a box 880px
+  wide and 48px from 640px (a tablet's pane, Epo 2026-11-19), capped at 912px unless Full width, in the editor
   (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
-  and their footers. The step is a padding clamp on the parent's width, so no
+  and their footers. The steps are a padding max/min on the parent's width, so no
   container is declared. A narrower box keeps Plate's gutters (20px on a
   phone and 40px from `sm`, and always 40px on the editor's right for its
   thread buttons) where the BlockSuite note uses 16px. As in the BlockSuite
@@ -4813,7 +4845,9 @@ aligned while Plate stays in the app). Built so far:
   WebKit 26.5; `e2e/sharing/live-note-view.spec.ts` runs that reader in
   WebKit). The BlockSuite note's title still declares its container.
 - **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
-  a top-level block. It adds a paragraph below and types the slash, so the
+  a top-level block, both on its first line (an embedded quiz or set too,
+  Epo 2026-11-17, no longer centred on the block's height). It adds a
+  paragraph below and types the slash, so the
   slash plugin opens its menu; left without a pick or a search, the line
   stays empty (`gutterSlash.ts` marks the input node, `SlashInput.tsx` skips
   writing the slash back). A click on the grip opens the block menu under it
@@ -5023,7 +5057,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   image with no special case. Its marks are the graph model's elements
   (`src/features/graph/model.ts`, D1/D16): a `point`, a `polyline` (a line; with
   `arrow`, a two-point vector), a `curve` with optional `handles`, an `ellipse`
-  (`center`, `radii`), a `text` label with `size`, a `formula` and a `functiongraph`
+  (`center`, `radii`), a `text` label with `size`, a `formula` and an `expression`
   (`boardData.ts` `PlaneElement`). They are stored in the card's `elements` field, a
   `Y.Map` of element id to `{ element, order }` (an order key, `src/lib/orderKey.ts`),
   as BlockSuite's mind map keeps its nodes (`propsToY` turns a pasted card's plain
@@ -5046,17 +5080,39 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
   which the vendored eraser reads: local change 30), while a connector meets its edge
   at four anchors as on a shape. A fresh board starts
-  with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
+  with one. Double click, double tap or the pen opens it. A card starts at **Custom size**, the
+  size it is placed at, which nothing changes but a corner drag (Epo 2026-11-18); the size
+  never decides what of the plane shows: each time the plane is left, the plane in it is
+  framed round its marks, the size kept, as a graph figure's window is (`fitView` over
+  `fitWindow`), starting from the card's home window (origin near its bottom left at
+  30 px a unit, `PLANE_HOME_PPU`), never from where the editor was left, so the frame
+  comes from what is drawn alone; functions count over the home window's x range;
+  nothing to frame keeps the editor's view (Epo 2026-11-18). **Fit to
+  size**, turned on from its toolbar:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
-  40 px (a label's or formula's text counted in pixels round its point), its top left
-  staying put; past 1600 px it zooms out instead. Dragging a corner
+  40 px (a label's or formula's text counted in pixels round its point; not the origin,
+  Epo 2026-11-18, as other apps fit to what is drawn), its top left
+  staying put; past 1600 px it zooms out instead (`fitMarks`, shared with a quiz or note
+  graph's dialog, Epo 2026-11-18). Functions count as sampled (`functionReach`, an
+  asymptote's spikes left out) and only within the y range the card showed, or whole when
+  never within it (y = 3x + 10000), so the card moves to it. Dragging a corner
   makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
   strokes over a card stay where they are, so they can stop lining up. A **polar** card
   (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
   0°, and spokes every 15° (darker every 30°, the axes every 90°) labelled where they
   leave the card; its marks are stored as on any plane, and its editor snaps them to where
   a ring crosses a spoke.
-- **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
+- **Editing a plane** (Epo 2026-11-17: one graph editor for the canvas, notes and
+  quizzes): the plane opens in `GraphEditor` (`src/features/questions/GraphEditor.tsx`),
+  the editor quiz and note graphs use. `boardPlaneEditor.ts` gives it the card as a
+  `FigureBinding` (`planeBinding`: one undo step per task, `boardEditorSession`'s
+  `write`) and a root over the board; the page that mounted the board renders the
+  editor there (`openPlane` in `mountDrawingBoard`'s options, `usePlaneEditor` in
+  `PlaneEditorHost.tsx`, on the workspace and account Canvas pages, the answer board
+  and the dev board). `boardEditorSession` (`boardEditorShell.ts`) keeps the board's
+  side: undo reaches only the editor's steps while it is open, the board's menu and
+  slot keys step aside, and closing (Done, an Escape nothing else took, the page)
+  writes the camera outside the history and, for a fitting card, `fitCard`. It
   opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
   has one, Undo, Redo, Clear all, and − and + where it zooms; the board's menu hides
   meanwhile)
@@ -5069,12 +5125,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   The tools are every graph editor's (Epo 2026-11-16, D12): `graphTools` in
   `src/features/graph/tools.ts` (no React, no BlockSuite) holds their state machines,
   hit-testing (`distanceTo` and `movedGroup` in `marks.ts`, constructions included),
-  handles, selection and overlay, and writes whole element lists through its host, here
-  the plane's rows and `writeList` as one undo step; the quiz/note graph dialog hosts
-  the same controller. The plane's strip floats over its foot; the dialog's sits
-  centred in its own row under the graph, wrapping when narrow, since the dialog's
-  graph is the figure's real size and a strip over it hid the x-axis title and
-  numbers (Epo 2026-11-17); its Finish sits at the graph's foot.
+  handles, selection and overlay, and writes whole element lists through the editor's
+  rows. The strip floats over the plane's foot with Finish above it.
   Point names each point it places (Epo 2026-11-17, `freePointName`): the first of
   A … Z, then A_1 … Z_1, A_2 …, that no point in the graph has (a peer's included),
   so a row such as `segment(A, B)` can use it; the name draws beside the point.
@@ -5144,7 +5196,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   and `axisNumber` in `src/features/graph/view.ts`; the plane draws through the engine,
   its editor adding only what it shows on top: the picked mark's blue halo
   (`strokeElement`), the points of the mark under the pointer, held or open, handles,
-  frames and chips). Numbers leave with their axis and
+  frames and chips). Numbers keep to the edge their axis left by (Epo 2026-11-18) and
   marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
   fine to draw goes blank. Each click is written at once, one undo step, and undo
   shortens a line or curve still taking clicks. While a plane or chart is open, undo and
@@ -5171,21 +5223,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   out-handle (`pairOf`). Moving a point carries its handles; moving the curve moves
   them all. `fitCard` counts handles.
 - **Functions and the objects list** (Epo 2026-11-13, L2, workspace canvases only): a
-  `function` mark holds the typed LaTeX and the graph dialog's `term` (and an optional
-  domain from `{a <= x <= b}`), read with `functionOf` in `graphSyntax.ts` (natural
-  log, as every graph surface; a command such as `line(x)` is refused) and drawn across
-  whatever is shown by `functionRuns` (`src/features/graph/curves.ts`): a sample every 2 px, at most 4000, breaking where the
-  value isn't finite or jumps (a leap past the canvas height whose middle isn't between,
-  as at tan's asymptote; a steep line keeps drawing). It can't be dragged; its row edits
-  it, and `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
+  formula row is an `expression` element holding its LaTeX as typed (Epo 2026-11-18;
+  a restriction `\left\lbrace a\le x\le b\right\rbrace` inside it), read with
+  `readExpression` in `graphSyntax.ts` (read as Desmos reads it, as every graph surface; a command
+  such as `line(x)` is refused). A function of x is drawn across whatever is shown by
+  `functionRuns` (`src/features/graph/curves.ts`): a sample every 2 px, at most 4000,
+  breaking where the value isn't finite or jumps (a leap past the canvas height whose
+  middle isn't between, as at tan's asymptote; a steep line keeps drawing). Any other
+  equation in x and y is an implicit curve drawn by `equationRuns` (marching squares,
+  [question-bank.md](../question-bank.md)). It can't be dragged; its row edits it, and
+  `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
   at the editor's top left: a 300 px card floating below it, open by default from 640 px
   (`listChoice` remembers a toggle for the session), and under 640 px a sheet over the
   lower 48% with the tools and Finish riding above it; its "+ Label" is a ghost button
-  (no border, the hover fill marks it). Rows are the graph dialog's rows (Epo 2026-11-16,
+  (no border, the hover fill marks it). The answer board's plane has no list. Rows are
+  the graph editor's rows (Epo 2026-11-16,
   D12: `graphSyntax.ts`'s one parser, `buildElements`, `reconcileRows` and
   `rowsAfterEdit`, no second syntax), laid out compact (36 px, 14 px text, 15 px
-  formulas; kind icon, ⋮ with Delete). Every row the dialog takes (a function with its
-  domain, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
+  formulas; kind icon as the field's label, ⋮ with style, Hide and Delete). Every row the dialog takes (a function with its
+  restriction, an equation in x and y, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
   `sector`, `polygon`) is a MathLive field (loaded when the list first opens) that draws
   as it's typed and writes on Enter or leaving, one undo step; emptied it goes. A point a
   tool places is a named `A = (a, b)` row; a line's or vector's `(a, b) to (c, d)` and a
@@ -5198,8 +5254,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   takes what's built on it too, while deleting its row in the list leaves those rows
   with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) a tool or a new row
   is refused with `drawing_board_plane_full` on the new row's icon. "+ Label" adds a label in
-  the middle of what's in view and selects its text. Hovering a row lights its mark;
-  selected marks light their rows. The answer board has no list button and no
+  the middle of what's in view and selects its text. Hovering a row lights its mark,
+  focusing a label row selects only its label (Shift/⌘/Ctrl adds it), focusing any other row
+  clears the selection; selected marks light their rows. The answer board has no list button and no
   functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
@@ -5260,7 +5317,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the device's scale. A note scrolled out of view is shown for the capture: BlockSuite
   hides it with no size, which html2canvas drew as nothing and the capture threw on. On a board wider or taller than 1,568 px, groups of elements more than
   400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
-  the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
+  the board itself stays as it is. Only a quiz's board (`question`) does this, for its
+  answer area: a workspace canvas is framed where everything is (Epo 2026-11-18). The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
   encode runs in a worker while the drawing stays on the page, and
   comes back as a `File`. `stats().span` is that image's longest side in board units
   (after the far groups are drawn nearer, with the margin), for the answer flow's wide-board
@@ -5865,7 +5923,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
   limits and chart geometry, `boardGeometry.ts` the framing, and the graph engine,
   `src/features/graph/`, for plane cards). Framed as the marking image is (everything, far
-  groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
+  groups drawn nearer on a quiz's board only, 8 px round, on white), stacked by index with a note over a stroke
   at the same index. Strokes are plain lines thinned to one point per preview pixel and
   never thinner than a pixel; shapes their outline, fill and text; connectors straight
   from end to end with their arrowheads; text and shape labels a line per line break;
@@ -5954,7 +6012,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   open state from `OpenLinkContext` (`useOpenView` in `src/lib/openLink.ts`,
   scoped per card by `scopedOpenLink`), elsewhere it stays local. A link naming a
   card no longer on the canvas, a quiz no longer listed or a part the quiz no longer
-  has says "That isn't on this canvas anymore" and leaves the URL; a card off screen
+  has silently leaves the URL (no toast, Epo 2026-11-18); a card off screen
   is brought into view so its runner mounts. A nested board (the drawing answer's
   own plane) keeps its editor out of the URL.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a

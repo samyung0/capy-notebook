@@ -84,13 +84,13 @@ it("reads a pie angle clockwise from 12 o'clock", () => {
   }
 });
 
-const plotted = (term: string) => functionRuns({ term }, -5, 5, 0.04, 16);
+const plotted = (latex: string) => functionRuns({ latex }, -5, 5, 0.04, 16);
 
 it('draws a steep line whole, and breaks a function at its asymptote', () => {
-  expect(plotted('1000*x')).toHaveLength(1);
-  expect(plotted('tan(x)').length).toBeGreaterThan(2);
+  expect(plotted('y=1000x')).toHaveLength(1);
+  expect(plotted('y=\\tan x').length).toBeGreaterThan(2);
   // A command's name reads as a call but plots nothing.
-  expect(plotted('1+line(x)')).toEqual([]);
+  expect(plotted('y=1+\\operatorname{line}\\left(x\\right)')).toEqual([]);
 });
 
 it("gives a loop's seam both handles, smooth across it", () => {

@@ -2,11 +2,10 @@ import { expect, it } from 'vitest';
 import {
   axisNumber,
   bboxOf,
-  elementBounds,
-  framed,
   PLANE_ZOOM,
   panned,
   QUESTION_ZOOM,
+  revealed,
   snapped,
   tickStep,
   toPlane,
@@ -65,27 +64,14 @@ it('numbers axes like GeoGebra', () => {
   expect(axisNumber(0, 2)).toBe('');
 });
 
-it('frames every element with a margin, keeping the units’ ratio', () => {
-  const graph = {
-    board: {
-      axis: true,
-      bbox: [-5, 5, 5, -5] as [number, number, number, number],
-      grid: true,
-    },
-    elements: [
-      { coords: [0, 0] as [number, number], id: 'a', type: 'point' as const },
-      { coords: [10, 4] as [number, number], id: 'b', type: 'point' as const },
-      { center: 'b', id: 'c', radius: 1, type: 'circle' as const },
-    ],
-  };
-  const box = elementBounds(graph, graph.board.bbox);
-  for (const [i, edge] of [-1.1, 5.5, 12.1, -0.5].entries())
-    expect(box?.[i]).toBeCloseTo(edge);
-  const fitted = framed(box ?? graph.board.bbox, view, 200, 100);
-  expect(fitted.ppuX / fitted.ppuY).toBeCloseTo(view.ppuX / view.ppuY);
-  const [l, t, r, b] = bboxOf(fitted, 200, 100);
-  expect(l).toBeLessThanOrEqual(-1.09);
-  expect(r).toBeGreaterThanOrEqual(12.09);
-  expect(t).toBeGreaterThanOrEqual(5.49);
-  expect(b).toBeLessThanOrEqual(-0.49);
+// Epo 2026-11-18 ("Move the view"): a typed function wholly off the view
+// brings the view to it; one shown, or crossing it, leaves it be.
+it('moves the view to a typed function off it', () => {
+  const near = viewOf([-1, 7.5, 15, -3.2], 480, 320);
+  const moved = revealed({ latex: 'y=3x+10000' }, near, 480, 320);
+  // Its middle value over x −1…15 is 10021, in the middle, at the same scale.
+  expect(moved?.ppuY).toBe(near.ppuY);
+  expect(moved && moved.top - 160 / moved.ppuY).toBeCloseTo(10_021);
+  expect(revealed({ latex: 'y=x^{2}' }, near, 480, 320)).toBeNull();
+  expect(revealed({ latex: 'y=1000x' }, near, 480, 320)).toBeNull();
 });

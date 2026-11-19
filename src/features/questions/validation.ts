@@ -12,7 +12,6 @@ import {
   type QuestionBlock,
 } from './types';
 
-const letterStart = /^[A-Za-z]/;
 const trailingSlash = /\/$/;
 
 export type QuestionPolicy = {
@@ -106,36 +105,13 @@ export function validQuantityValue(value: string): boolean {
   );
 }
 
-export function validGraphTerm(term: string): boolean {
-  if (!term || term.length > limits.QUESTION_GRAPH_TERM_MAX) return false;
-  const tokens = term.match(
-    /(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[A-Za-z]+|[+\-*/^(),]/g
-  );
-  if (!tokens || tokens.join('') !== term.replace(/\s/g, '')) return false;
-  const names = new Set([
-    'x',
-    'pi',
-    'e',
-    'sin',
-    'cos',
-    'tan',
-    'asin',
-    'acos',
-    'atan',
-    'sqrt',
-    'abs',
-    'exp',
-    'log',
-    'ln',
-    'floor',
-    'ceil',
-    'pow',
-    'min',
-    'max',
-  ]);
-  return tokens.every((token) => !letterStart.test(token) || names.has(token));
-}
-
+// A formula row's or a formula's LaTeX: not blank, within its cap.
+const graphLatex = (cap: number) =>
+  z
+    .string()
+    .refine((value) => value.trim().length > 0 && [...value].length <= cap, {
+      error: () => m.question_validation_text_too_long(),
+    });
 const textSize = z
   .number()
   .int()
@@ -149,13 +125,12 @@ const pathPoints = z.array(coords).min(1).max(limits.QUESTION_GRAPH_PATH_MAX);
  * `questions.graph` and Rust `questions::graph_element` are the same, on the
  * shared fixtures. */
 export const graphElementSchema = z.discriminatedUnion('type', [
+  // A formula row's LaTeX as typed (Epo 2026-11-18); what it draws is read
+  // where it is drawn, so no grammar is checked here.
   z.strictObject({
-    domain: coords.optional(),
     id: identifier,
-    term: z.string().refine(validGraphTerm, {
-      error: () => m.question_validation_graph_term(),
-    }),
-    type: z.literal('functiongraph'),
+    latex: graphLatex(limits.QUESTION_GRAPH_EXPRESSION_MAX),
+    type: z.literal('expression'),
     ...style,
   }),
   z.strictObject({
@@ -259,14 +234,7 @@ export const graphElementSchema = z.discriminatedUnion('type', [
     coords,
     hidden: z.boolean().optional(),
     id: identifier,
-    latex: z
-      .string()
-      .refine(
-        (value) =>
-          value.trim().length > 0 &&
-          [...value].length <= limits.QUESTION_GRAPH_LATEX_MAX,
-        { error: () => m.question_validation_text_too_long() }
-      ),
+    latex: graphLatex(limits.QUESTION_GRAPH_LATEX_MAX),
     size: textSize.optional(),
     type: z.literal('formula'),
   }),
@@ -274,8 +242,8 @@ export const graphElementSchema = z.discriminatedUnion('type', [
 
 /** What breaks across a graph's elements, past each one's own check: an id
  * used twice, a construction naming a missing or repeated point or a center
- * among its points, a function's domain not increasing. */
-export type GraphElementsIssue = 'center' | 'domain' | 'ids' | 'points';
+ * among its points. */
+export type GraphElementsIssue = 'center' | 'ids' | 'points';
 export function graphElementsIssue(
   elements: readonly GraphElement[]
 ): GraphElementsIssue | null {
@@ -299,12 +267,6 @@ export function graphElementsIssue(
       (!points.has(element.center) || named.includes(element.center))
     )
       return 'center';
-    if (
-      element.type === 'functiongraph' &&
-      element.domain &&
-      element.domain[0] >= element.domain[1]
-    )
-      return 'domain';
   }
   return null;
 }
@@ -413,7 +375,6 @@ const plotSchema = (live: boolean) =>
 
 const graphIssueMessages = {
   center: m.question_validation_graph_circles,
-  domain: m.question_validation_graph_domain,
   ids: m.question_validation_graph_ids,
   points: m.question_validation_graph_lines,
 } satisfies Record<GraphElementsIssue, () => string>;

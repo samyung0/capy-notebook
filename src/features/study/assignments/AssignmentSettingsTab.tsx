@@ -226,11 +226,7 @@ export function AssignmentSettingsTab({
           onConfirm={() =>
             remove(id, {
               onError: failed,
-              onSuccess: () =>
-                void navigate({
-                  search: { study: 'assignments' as const },
-                  to: '.',
-                }),
+              onSuccess: () => void navigate({ search: {}, to: '.' }),
             })
           }
           open

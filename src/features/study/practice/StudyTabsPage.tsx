@@ -1,5 +1,5 @@
 import { WorkspaceBankPage } from '@/features/itemBanks/WorkspaceBankPage';
-import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
+import type { StudySearch, StudyTab } from '../studyRoutes';
 import { HistoryPage } from './HistoryPage';
 import { PracticePage } from './PracticePage';
 import { SummaryPage } from './SummaryPage';
@@ -9,23 +9,26 @@ import { SummaryPage } from './SummaryPage';
  * tab switch never waits on code, so the page never blanks between tabs.
  * Editors stay out: each loads only when it renders. */
 export function StudyTabsPage({
-  page,
   search,
+  tab,
   workspaceId,
 }: {
-  page: 'summary' | 'history' | 'bank' | 'practice';
-  search: WorkspaceOpenSearch;
+  search: StudySearch;
+  tab: StudyTab;
   workspaceId: string;
 }) {
-  if (page === 'summary')
+  if (tab === 'summary' || tab === 'topics')
     return (
       <SummaryPage
-        search={{ member: search.member, show: search.show }}
+        search={{
+          member: search.member,
+          show: tab === 'topics' ? 'topics' : undefined,
+        }}
         workspaceId={workspaceId}
       />
     );
-  if (page === 'history') return <HistoryPage workspaceId={workspaceId} />;
-  if (page === 'bank') return <WorkspaceBankPage workspaceId={workspaceId} />;
+  if (tab === 'history') return <HistoryPage workspaceId={workspaceId} />;
+  if (tab === 'bank') return <WorkspaceBankPage workspaceId={workspaceId} />;
   return (
     <PracticePage
       search={{

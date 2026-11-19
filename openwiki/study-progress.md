@@ -355,12 +355,29 @@ follows the workspace's kind (board U3, the map in
 `studyView` in `src/features/study/practice/studyView.ts`. Every quiz members can
 see is practice: until hidden quizzes exist, every untrashed, top-level quiz.
 The page is `src/features/study/practice/PracticePage.tsx`, loaded into
-the centre with Study's other tabs as one lazy page (`StudyTabsPage`: Overview
+the centre with Study's other tabs as one page (`StudyTabsPage`: Overview
 and Topics, History, Question bank and Practice load together, as the Files
 page's tabs do, so a tab switch never blanks the page; Epo 2026-11-16; editors
-stay out of it, e.g. the bank's `QuestionDialog` loads when it opens) while
-nothing is open and the URL has `study=practice`
-(`parseWorkspaceOpenSearch`). From lg it fills the centre panel without a
+stay out of it, e.g. the bank's `QuestionDialog` loads when it opens) at
+`/workspaces/<id>/study/practice`.
+
+Assignments, Members and Study's tabs are routes under the workspace's (Epo
+2026-11-18, `src/router.ts`): `/workspaces/<id>/assignments`,
+`/workspaces/<id>/members` and `/workspaces/<id>/study/<tab>`, the tab one of
+`summary` (Overview), `topics`, `practice`, `bank` and `history`, all one
+route so a tab switch keeps the page mounted. `WorkspaceOpen` stays mounted
+across them (rail, chat, side panels) and draws the route's page through an
+`<Outlet/>` in its centre (`useChildMatches` names the page); the router loads
+a page's code before it commits, so a first open keeps the page before on
+screen instead of a blank centre. Each route parses its own search
+(`src/features/study/studyRoutes.ts`: `parseAssignmentsSearch`,
+`parseStudySearch`), and `assignmentsLink`, `membersLink` and `studyLink`
+build every link to them. An open file or material (`file`, `material`) is
+the Files page at the workspace's own URL, whose other pages (Dashboard,
+`view=files`, `view=chat`, `view=canvas`) stay search values. A page this
+person doesn't have redirects to Practice (`studyView(ws).pages`, in
+`WorkspaceOpen`), as does an unknown Study tab (the route's params parser).
+From lg it fills the centre panel without a
 file header (28px 36px padding); one column keeps the header for the Files
 dropdown and ⋮, which with the dropdown's foot lead to the same pages as the
 rail, each only for whoever has that page. The rail lists them
@@ -368,12 +385,12 @@ rail, each only for whoever has that page. The rail lists them
 that listed them went): Assignments, Members and Study for a class's owner and
 editor members; To do, Members and Study for every other member, in a class or a
 personal workspace. Study has tabs (Epo 2026-11-13, `StudyTabs`). Whoever
-practises gets **Overview** (`study=summary`, or `study=practice`: the same
-page) and **History** (`study=history`, `HistoryPage.tsx`: the account
+practises gets **Overview** (`study/summary`, or `study/practice`: the same
+page) and **History** (`study/history`, `HistoryPage.tsx`: the account
 History's table, `StudyHistory` with `workspaceId`, so without the Workspace
 filter and column). A class's staff get Overview and Topics (every member's
-marks, Members' tabs until then), Practice (`study=practice`) and the class's
-**Question bank** (`study=bank`, Epo 2026-11-14; see
+marks, Members' tabs until then), Practice (`study/practice`) and the class's
+**Question bank** (`study/bank`, Epo 2026-11-14; see
 [question-bank.md](question-bank.md#item-banks)). The account's Study page
 (`/learning`) has Overview, History and My bank's Question bank (`tab=bank`).
 `PAGE_SECTION` lights Study on the rail for any of them. A link or public visitor has no Members,
@@ -434,8 +451,9 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
 - Add practice (whoever may edit: a class's staff, a personal workspace's owner
   and editors, whose quiz rows also open the quiz; off in a frozen workspace)
   opens Add quiz, one dialog with four tabs (Epo 2026-11-11, `AddPractice.tsx`,
-  at `?make=files&makeFrom=practice`, so Study stays behind it and Cancel
-  returns there; the Dashboard's Make a quiz opens it too, at `?make=files`).
+  at `study/practice?make=files`, so Study stays behind it and Cancel
+  returns there; the Dashboard's Make a quiz opens it too, at `?make=files`
+  on the workspace's own URL).
   The tabs run Convert to quiz, Generate quiz, From the bank, Create blank
   (Epo 2026-11-16), and share one height (680px, at most 88dvh; phones full
   screen): a tab's body scrolls inside it, so switching tabs or adding files
@@ -484,9 +502,9 @@ and G2 on the study-tracking canvas, Epo 2026-11-02/03; built 2026-11-08), for a
 class's owner and teaching assistants (editor members) only: every other member
 gets the people without marks (above), a visitor is sent to Practice, and the
 routes refuse both. Since Epo 2026-11-13 they are Study's tabs for staff,
-beside Practice: **Overview** (`study=summary`), the Overview below, and
-**Topics** (`show=topics`), the By topic grid below; a member's profile is
-`member`. Members (`study=members`) is then the roster page alone, no tabs:
+beside Practice: **Overview** (`study/summary`), the Overview below, and
+**Topics** (`study/topics`), the By topic grid below; a member's profile is
+`member` on either. Members (`members`) is then the roster page alone, no tabs:
 link sharing, the invite row and each person's role and Remove, where a
 class's roles read Member and Teaching assistant and on phones a row's
 dropdown and button go under the name. The heading has no New assignment (Epo
@@ -498,7 +516,11 @@ under the workspace's `study` key).
 - **Overview** (Main): one 52px line per member: Assignments ("76% · 3 of
   4 done", then "2 missing"), Practice this week (questions checked in quizzes
   and reviews over the last seven days, never assignments; "–" for none) and
-  Needs practice (the topics labelled so, as amber chips; else Not started
+  Needs practice (the topics labelled so, as amber chips on one line: the two
+  most missed, the share of latest answers wrong with a partial counting half,
+  more answers then the workspace's order breaking ties, each chip cut with "…"
+  only by what doesn't fit, then "+n" whose hover or tap lists the rest, Epo
+  2026-11-19, mock A; else Not started
   before any answer, Nothing flagged otherwise: Attempted shows only on
   Topics, Epo 2026-11-12). Overall is the counted submission's mark after any late
   penalty (`countedAttemptOrder`, `attemptMarkSQL`) over the marks decided so
@@ -698,7 +720,7 @@ session.
   before any answer goes back to Practice. Leaving refreshes Practice and
   progress once. The first check marks the Get started list's Practise a
   topic step.
-- **Session done (F4):** `study=practice&review=<id>` reads
+- **Session done (F4):** `study/practice?review=<id>` reads
   `GET /api/review/sessions/{id}/result`: the title with Done, "n of m right"
   (full marks among the answered questions), QUESTIONS with each number, a
   result square and word (Right, Partly, Wrong; the square alone on phones),
@@ -858,7 +880,7 @@ a grid (one column on phones, two from `sm`, three from `lg`). The server sends
 up to 6, so a removed card's place fills at once from the spares instead of
 after the refetch (Epo 2026-11-13). See all (top right, an underline link without an arrow) opens History filtered
 to In progress: the account's (`?tab=history&status=open`) from Learning, the
-workspace Study's History tab (`?study=history&status=open`) from a Dashboard, Continue's removed and older rows included. A card shows the
+workspace Study's History tab (`study/history?status=open`) from a Dashboard, Continue's removed and older rows included. A card shows the
 kind's icon and name ("Limits revision", a quiz or set's title), its workspace,
 a progress bar in the theme's accent (`ProgressBar` tone `accent`) with "3 of 9 checked" (quiz), "4 of 10 cards" (set) or "5 of 12
 answered" (revision) and when it was left. The whole card continues it as
@@ -1024,7 +1046,7 @@ Q663 A). `SrsState` is a hand-written type in `src/lib/srs.ts`.
 Work a class's owner and teaching assistants give its members (Epo 2026-11-03,
 `todo-study-tracking.md` §4, §5, §7; boards A0 to A5, W1 to W4, G3, G3m). The
 page is `src/features/study/assignments/AssignmentsPage.tsx`, the centre page
-while the URL has `study=assignments` (`parseAssignments` in `openItem.ts`), and
+at `/workspaces/<id>/assignments` (`parseAssignmentsSearch` in `studyRoutes.ts`), and
 every workspace has it (Epo 2026-11-11): the rail calls it Assignments for a
 class's owner and editors and To do for everyone else, whose page is headed To
 do and says "Nothing to do" when empty, as the To do page does. The rail's
@@ -1118,7 +1140,7 @@ unique.
 | `assignment_files` | An unmarked assignment's files and materials, in order; a file moved to another workspace leaves (`moveFileTx`) |
 | `assignment_done` | A member's tick |
 | `assignments.points` | A graded Assignment's points, 1 to `fieldlimits.AssignmentPoints` (1000); null is not graded; only on a class's unmarked one (migration 0176) |
-| `assignment_grades` | A member's grade on a graded Assignment: `points` (half points), `graded_by`, `graded_at`; apart from the tick, so Undo hand in keeps it (migration 0176) |
+| `assignment_grades` | A member's grade on a graded Assignment: `points` (one decimal place at most), `graded_by`, `graded_at`; apart from the tick, so Undo hand in keeps it (migration 0176) |
 | `editor_assets.assignment_id` | A frozen copy's image rows (an own task's have no `workspace_id` either: migration 0168 lets the assignment alone own a row) |
 | `assignments.frozen_by`, `frozen_bytes` | Who pays for the frozen question JSON and its size (migration `0149_assignment_storage.sql`) |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
@@ -1439,7 +1461,7 @@ Reopening hides the keys again.
   marks, and Approve then says the member deleted it (F2). As a member leaves
   the class, their read papers with nothing waiting and their hand-ins go, as
   their marked drawings do (`dropLeaverSubmissionsTx`, finding 11).
-- Releasing grades rings each member who handed in (`grades_released`).
+- Releasing grades rings each member who handed in (`grades_released`, linking to `/workspaces/<id>/assignments?assignment=<id>`).
 
 **Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
 same switch on an Unmarked assignment (C2: Files below Due and Assign to, then
@@ -1542,7 +1564,10 @@ assignment's Preview tab (`tab=preview`) shows the member's page
 `/workspaces/{id}/study/assignments/{id}` redirect to this URL.
 
 **Marks.** `POST /api/assignment-attempts/{id}/marks` sets one question's marks,
-in half marks up to each point's or closed part's marks, and its comment.
+from 0 up to each point's or closed part's marks with at most one decimal place
+(Epo 2026-11-18; staff type them in `MarkField`, on the member's result and the
+Approve tab, which refuses keys past one decimal place or above the marks,
+with no message, as `GradeField` does for a grade), and its comment.
 Totals move in the same transaction. A row the AI marked reads its mark and its
 pane starts from it, so Approve saves what shows; changing a mark approves it too.
 A rule the answer broke shows as a warning above its marking points (red for copying
@@ -1604,7 +1629,8 @@ grades (in Advanced; Settings' Marking and results) and the late penalty, and an
 ungraded one sends Show grades Automatic and no penalty. Its staff enter each
 member's grade on the report's Members tab, on the member's row where the
 hand-in's files open (`GradeField`: a Grade column on `HandInMembers`, a field at
-the end of a plain one's row), in half points from 0 to the points, saved on
+the end of a plain one's row), from 0 to the points with at most one decimal
+place, saved on
 Enter or on leaving the field, emptied to clear it (`PUT
 /api/assignments/{id}/grades/{userId}`, `SetAssignmentGrade`: staff only, as
 quiz marks, for anyone it went to, ticked or not, open or closed; a draft or an
