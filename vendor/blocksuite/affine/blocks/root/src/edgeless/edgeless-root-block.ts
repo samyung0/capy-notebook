@@ -16,7 +16,6 @@ import {
 } from '@blocksuite/affine-model';
 import {
   EditorSettingProvider,
-  EditPropsStore,
   FontLoaderService,
   ThemeProvider,
   ViewportElementProvider,
@@ -28,7 +27,7 @@ import {
   requestThrottledConnectedFrame,
 } from '@blocksuite/affine-shared/utils';
 import { IS_WINDOWS } from '@blocksuite/global/env';
-import { Bound, Point, Vec } from '@blocksuite/global/gfx';
+import { Point, Vec } from '@blocksuite/global/gfx';
 import {
   BlockComponent,
   type GfxBlockComponent,
@@ -302,30 +301,13 @@ export class EdgelessRootBlockComponent extends BlockComponent<
         }
       }
 
-      const storedViewport = std.get(EditPropsStore).getStorage('viewport');
-      if (storedViewport) {
-        if ('xywh' in storedViewport) {
-          const bound = Bound.deserialize(storedViewport.xywh);
-          gfx.viewport.setViewportByBound(bound, storedViewport.padding);
-        } else {
-          const { zoom, centerX, centerY } = storedViewport;
-          gfx.viewport.setViewport(zoom, [centerX, centerY]);
-        }
-        return;
-      }
-
-      this.gfx.fitToScreen();
+      // Capy (local change 73): no stored view. Its key is the store's id,
+      // 'board' on every board, so each board opened at the last one's view;
+      // the board sets its own first view (drawingBoard.ts).
+      gfx.fitToScreen();
     };
 
     run();
-
-    this._disposables.add(() => {
-      std.get(EditPropsStore).setStorage('viewport', {
-        centerX: gfx.viewport.centerX,
-        centerY: gfx.viewport.centerY,
-        zoom: gfx.viewport.zoom,
-      });
-    });
   }
 
   private _initWheelEvent() {

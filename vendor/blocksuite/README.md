@@ -798,6 +798,32 @@ Outside this directory, for BlockSuite:
     Pinned by "a viewer's board selects and copies…" in
     `e2e/editor/canvas-read-only.spec.ts`.
 
+72. Blocks are drawn into images by html2canvas-pro (`affine/blocks/surface`
+    `extensions/export-manager/export-manager.ts` and `package.json`, `affine/blocks/root`
+    `edgeless/clipboard/clipboard.ts` and `package.json`, marked `Capy (local change
+    72)`; 2026-11-19), the fork the app's note export already uses, in place of
+    html2canvas 1.4.1. Chrome computes a `color-mix()` as a `color(srgb …)` value,
+    which html2canvas 1.4.1 cannot read: it threw on every note, whose fill is a
+    `color-mix()` (local change 52), so the board's marking image and its Download as
+    image failed on any board with a note. The options and the cloned-document fixes
+    are unchanged. Pinned by "the image stacks as the screen does" and "a note
+    scrolled out of view still reaches the image" in
+    `e2e/editor/drawing-board.spec.ts`.
+
+73. The edgeless root keeps no view of its own (`affine/blocks/root`
+    `edgeless/edgeless-root-block.ts` `_initViewport`, marked `Capy (local change
+    73)`; Epo 2026-11-19, Q32). Upstream read a stored viewport as it mounted and wrote
+    one as it went, in sessionStorage under `blocksuite:<store id>:edgelessViewport`.
+    Every board's store id is `board`, so each board opened at the view of the last
+    one shown in the tab, whatever its canvas, until the board set its own first view on
+    its first animation frame. The root now only fits the screen; the board sets the
+    view it opens at on that frame (`DrawingBoardOptions.view` and `kept`: on a canvas,
+    the view this device kept for it, `src/features/canvas/canvasViews.ts`; otherwise
+    its fit), so the change is to what the root shows before that frame. No test pins
+    it: the e2e specs read the view only after the board's first view, which is the
+    same with or without the stored one. The page-mode writers (`frame-panel`,
+    `surface-ref`) still write the key, which nothing reads now.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 
 /**
  * The drawing answer's board on its dev route: BlockSuite's edgeless editor with a
@@ -271,7 +271,7 @@ test('a note takes typing, leaves $$ as text and turns from inline to a card and
     ) as unknown as {
       gfx: {
         layer: { blocks: { id: string }[] };
-        selection: { set(selection: object): void };
+        selection: { clear(): void; set(selection: object): void };
       };
     };
     gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
@@ -329,9 +329,11 @@ test('the shapes panel draws an outline, a hexagon shape and a preset that reope
   await expect(page.locator('capy-shape-panel')).toHaveCount(0);
   await expect.poll(() => canvas(page)).toEqual(['plane', 'shape', 'shape']);
 
+  // The panel stays open while the cube follows the pointer, over the card's
+  // lower part: the click places it above the panel.
   await page.locator('capy-shape-button').first().click();
   await page.getByRole('button', { name: 'Cube' }).click();
-  await page.mouse.click(...at(0.7, 0.7));
+  await page.mouse.click(...at(0.55, 0.45));
   await expect.poll(() => canvas(page)).toContain('connector');
   await expect.poll(() => canvas(page)).toContain('group');
   // The preset's connector and group store no place, and the board still reopens.
@@ -352,9 +354,27 @@ test("a shape's switcher offers every shape, and Clear all empties a plane and t
   await page.mouse.click(...at(0.7, 0.3));
   await expect.poll(() => canvas(page)).toEqual(['plane', 'shape']);
   // Epo 2026-11-13: the switcher lists the shapes panel's ten, polygons included.
-  await page.mouse.click(...at(0.7, 0.3));
-  await page.getByRole('button', { name: 'Switch shape type' }).click();
-  await page.getByRole('button', { name: 'Pentagon' }).click();
+  // Placed, the hexagon is selected with its toolbar; another click on it at
+  // once would be a double click, which types in it. The shapes panel may still
+  // be closing, with its own Pentagon.
+  const switcher = page.getByLabel('switch shape type-menu');
+  await switcher.getByRole('button', { name: 'Switch shape type' }).click();
+  for (const name of [
+    'Square',
+    'Ellipse',
+    'Diamond',
+    'Triangle',
+    'Rounded rectangle',
+    'Right triangle',
+    'Parallelogram',
+    'Trapezium',
+    'Pentagon',
+    'Hexagon',
+  ])
+    await expect(
+      switcher.getByRole('button', { exact: true, name })
+    ).toBeVisible();
+  await switcher.getByRole('button', { name: 'Pentagon' }).click();
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -789,16 +809,17 @@ test("a selected line's point still moves alone, and Fit shows ten units of an e
       };
     });
 
-  // Epo 2026-11-13: Fit on nothing showed one unit across the screen.
+  // Epo 2026-11-13: Fit on nothing showed one unit across the screen. Ten
+  // units span the editor's shorter side.
+  const editor = await planeEditor(page).boundingBox();
+  if (!editor) throw new Error('no plane');
   await (await planeMenu(page))
     .getByRole('button', { name: 'Fit to screen' })
     .click();
   await page.getByRole('button', { name: 'Done' }).click();
-  const viewport = page.viewportSize();
-  if (!viewport) throw new Error('no viewport');
   await expect
     .poll(async () => (await card()).ppu)
-    .toBeLessThanOrEqual((viewport.height - 160) / 10 + 1);
+    .toBeLessThanOrEqual(Math.min(editor.width, editor.height) / 10 + 1);
 
   // A line, selected, then its first point dragged: the other end stays put.
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
@@ -1402,6 +1423,55 @@ test('a phone has the menu at the top and the toolbar at full width', async ({
 test.describe('with a finger', () => {
   test.use({ deviceScaleFactor: 3, hasTouch: true, isMobile: true });
 
+  test("a tap on a note's link opens it from its chip, with the note's foot over the tool row", async ({
+    context,
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize({ height: 800, width: 390 });
+    await context.route('https://example.com/**', (route) =>
+      route.fulfill({
+        body: '<title>Osmosis</title>',
+        contentType: 'text/html',
+      })
+    );
+    await openBoard(page);
+    // The dev scenario panel sits over the board's foot.
+    await page.addStyleTag({
+      content: '[data-testid="mock-scenario-panel"] { display: none; }',
+    });
+    const at = await onCard(page);
+    await page.locator('capy-note-button').first().tap();
+    await page
+      .locator('edgeless-note-menu edgeless-tool-icon-button')
+      .first()
+      .tap();
+    await page.touchscreen.tap(...at(0.5, 0.5));
+    await page.waitForFunction(
+      () => document.activeElement?.closest('affine-edgeless-note') != null
+    );
+    await page.keyboard.type('Read osmosis notes');
+    await page.keyboard.press('Escape');
+    await linkNoteText(page, 5, 7, 'https://example.com/osmosis');
+    await onNote(page, 'over the tools');
+    // A tap on a selected note types in it, where its own link popup shows.
+    await onNote(page, 'unselect');
+
+    // The tap shows the chip and selects the note: no room below it, the chip
+    // stays inside the board, over the tool row, and Open opens the page.
+    await page.touchscreen.tap(
+      ...(await centreOf(page.locator('affine-edgeless-note affine-link')))
+    );
+    const chip = page.locator('.capy-link-chip');
+    await expect(chip).toContainText('example.com/osmosis');
+    const covered = await chipCovers(page);
+    expect(covered).not.toContain('tool row');
+    expect(covered).not.toContain('past the board');
+    const opened = context.waitForEvent('page');
+    await chip.getByRole('link', { name: 'Open' }).tap();
+    expect((await opened).url()).toBe('https://example.com/osmosis');
+  });
+
   test('a double tap opens the plane, and a big board still makes an image', async ({
     page,
   }) => {
@@ -1540,6 +1610,143 @@ test('the workspace canvas keeps its plane on reload', async ({ page }) => {
       .canvas.includes('plane')
   );
   await expect.poll(() => marks(page)).toBe(1);
+});
+
+test('a canvas opens again at the view its person left it at, and a first open fits everything', async ({
+  browser,
+  page,
+}) => {
+  test.slow();
+  type View = { centre: [number, number]; zoom: number };
+  type Shown = {
+    __board?: { fit(room: number[]): void; view(): View | null };
+  };
+  const viewOf = (on: Page) =>
+    on.evaluate(() => (window as Shown).__board?.view() ?? null);
+  /** The view once the board has its first: a reload under load joins the
+   * room and mounts the board in more than the 5 s a poll waits by default. */
+  const opened = async (on = page) => {
+    await expect.poll(() => viewOf(on), { timeout: 20_000 }).not.toBeNull();
+    return (await viewOf(on)) as View;
+  };
+  /** The board's own first fit on this screen, with the room a canvas page
+   * leaves on a wide one (drawingBoard.ts `fitView`). */
+  const fitOf = (on: Page) =>
+    on.evaluate(() => {
+      const board = (window as Shown).__board;
+      board?.fit([90, 40, 130, 40]);
+      return board?.view() ?? null;
+    }) as Promise<View>;
+  const near = (seen: View, wanted: View, step: string) => {
+    expect(seen.zoom, step).toBeCloseTo(wanted.zoom, 4);
+    expect(seen.centre[0], step).toBeCloseTo(wanted.centre[0], 1);
+    expect(seen.centre[1], step).toBeCloseTo(wanted.centre[1], 1);
+  };
+  /** What the view settles on once it has left `from`: a pinch's zoom eases in. */
+  const settled = async (from: View) => {
+    await expect.poll(() => opened(), 'the view moves').not.toEqual(from);
+    let now = await opened();
+    await expect
+      .poll(async () => {
+        const next = await opened();
+        const still = JSON.stringify(next) === JSON.stringify(now);
+        now = next;
+        return still;
+      })
+      .toBe(true);
+    return now;
+  };
+  const box = async () => {
+    const board = await page.locator('affine-edgeless-root').boundingBox();
+    if (!board) throw new Error('no board');
+    return board;
+  };
+
+  // A first open on this device fits: what the board's own fit shows.
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  const first = await opened();
+  near(first, await fitOf(page), 'a first open');
+
+  // A stroke in the middle, so a view holds something (Q35), stored by the room.
+  await page.addStyleTag({
+    content: '[data-testid="mock-scenario-panel"] { display: none; }',
+  });
+  await page.locator('edgeless-pen-tool-button').first().click();
+  const board = await box();
+  await page.mouse.move(
+    board.x + board.width * 0.4,
+    board.y + board.height * 0.4
+  );
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step++)
+    await page.mouse.move(
+      board.x + board.width * (0.4 + step * 0.02),
+      board.y + board.height * (0.4 + step * 0.015)
+    );
+  await page.mouse.up();
+  await expect.poll(() => canvas(page)).toEqual(['brush']);
+  await expect.poll(() => roomStored(page)).toBe(true);
+
+  // Panned by scrolling and zoomed by a pinch over the board.
+  await page.mouse.move(board.x + board.width / 2, board.y + board.height / 2);
+  await page.mouse.wheel(240, 160);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -120);
+  await page.keyboard.up('Control');
+  const left = await settled(first);
+
+  // Away to another page of the workspace and back: the view this device
+  // kept, not a fit (Epo 2026-11-19, Q32).
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  near(await opened(), left, 'back');
+
+  // Panned again and reloaded, with no unmount on the way: the view kept as
+  // the page was hidden.
+  await page.mouse.move(board.x + board.width / 2, board.y + board.height / 2);
+  await page.mouse.wheel(-120, -80);
+  const again = await settled(left);
+  await page.reload();
+  near(await opened(), again, 'reloaded');
+
+  // Another person moves everything far off: nothing lies inside the kept
+  // view, so the next open fits instead (Epo 2026-11-19, Q35).
+  await page.evaluate(async () => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockBoardPeer } = (await import(
+      modulePath
+    )) as typeof import('../../src/mocks/collaboration');
+    const peer = mockBoardPeer('cv_ws_bio_1');
+    Object.assign(window, { peer });
+    for (const [id, element] of Object.entries(peer.elements())) {
+      const [x, y, w, h] = JSON.parse(String(element.xywh)) as number[];
+      peer.change(id, { xywh: JSON.stringify([x + 8000, y + 8000, w, h]) });
+    }
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const { gfx } = document.querySelector(
+          'affine-edgeless-root'
+        ) as unknown as { gfx: { layer: { canvasElements: { x: number }[] } } };
+        return gfx.layer.canvasElements[0]?.x ?? 0;
+      })
+    )
+    .toBeGreaterThan(4000);
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  const moved = await opened();
+  expect(moved.centre[0], 'not the kept view').toBeGreaterThan(4000);
+  near(moved, await fitOf(page), 'nothing in the kept view');
+
+  // Another device keeps nothing: its first open fits.
+  const device = await browser.newContext({ viewport: page.viewportSize() });
+  const other = await device.newPage();
+  await other.goto(new URL('/workspaces/ws_bio?view=canvas', page.url()).href);
+  near(await opened(other), await fitOf(other), 'another device');
+  await device.close();
 });
 
 test('an image pasted or picked on the workspace canvas is stored as its asset and opens from it', async ({
@@ -1763,7 +1970,7 @@ test("the note menu's Link places a link card", async ({ page }) => {
   await expect(page.locator('capy-link-add')).toHaveCount(0);
 });
 
-test("a plane's editor is in the canvas's URL: Back closes it, and a missing one says so", async ({
+test("a plane's editor is in the canvas's URL: Back closes it, and a missing one leaves it", async ({
   page,
 }) => {
   test.slow();
@@ -1783,12 +1990,11 @@ test("a plane's editor is in the canvas's URL: Back closes it, and a missing one
   // Done steps back out of it.
   await editor.getByRole('button', { exact: true, name: 'Done' }).click();
   await expect(page).not.toHaveURL(/[?&]open=/);
-  // A link to something no longer on the canvas.
+  // A link to something no longer on the canvas leaves the URL, silently (Epo
+  // 2026-11-18).
   await page.goto('/workspaces/ws_bio?view=canvas&open=gone-card');
-  await expect(
-    page.getByText("That isn't on this canvas anymore")
-  ).toBeVisible();
   await expect(page).not.toHaveURL(/[?&]open=/);
+  await expect(page.locator('.capy-board')).toBeVisible();
 });
 
 test("leaving the canvas with a plane's editor open keeps what the editor writes as it closes", async ({
@@ -1812,9 +2018,10 @@ test("leaving the canvas with a plane's editor open keeps what the editor writes
     });
   const before = await scale();
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
-  await expect(page.locator('.capy-plane-editor')).toBeVisible();
-  await page.locator('.capy-plane-editor .capy-menu-button').click();
-  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await expect(planeEditor(page)).toBeVisible();
+  await (await planeMenu(page))
+    .getByRole('button', { name: 'Zoom in' })
+    .click();
   await page.keyboard.press('Escape');
   // The card takes the editor's view only as the editor closes.
   expect(await scale()).toBe(before);
@@ -1851,7 +2058,7 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
               elementList: {
                 coords?: Vec[];
                 handles?: [Vec, Vec][];
-                term?: string;
+                latex?: string;
                 type: string;
               }[];
               type: string;
@@ -1902,10 +2109,15 @@ test("a plane's curve bends by its stroke, and the workspace's objects list plot
     await page.keyboard.type(text);
     await page.keyboard.press('Enter');
   };
+  // A formula row is stored as its typed LaTeX (Epo 2026-11-18).
   await typeRow('sin(x)');
   await expect
-    .poll(async () => (await marks()).map(({ term }) => term))
-    .toContain('sin(x)');
+    .poll(async () =>
+      (await marks()).flatMap(({ latex, type }) =>
+        type === 'expression' ? [latex] : []
+      )
+    )
+    .toEqual([expect.stringContaining('\\sin')]);
   // It takes the graph dialog's rows too: named points and what's built on them.
   for (const row of ['A=(1,2)', 'B=(4,3)', 'segment(A,B)']) await typeRow(row);
   await expect
@@ -2065,6 +2277,104 @@ test('a double click places an inline note on the workspace canvas', async ({
   await expect(note).toHaveCount(3);
 });
 
+/** Links `length` characters at `index` of the note's text to `href`, as the
+ * text toolbar's link button would. */
+const linkNoteText = (
+  page: Page,
+  index: number,
+  length: number,
+  href: string
+) =>
+  page.evaluate(
+    ([at, count, link]) => {
+      const text = document.querySelector(
+        'affine-edgeless-note rich-text'
+      ) as unknown as {
+        inlineEditor: { formatText(range: object, attributes: object): void };
+      };
+      text.inlineEditor.formatText({ index: at, length: count }, { link });
+    },
+    [index, length, href] as const
+  );
+
+/** Acts on the board's one note: selects it or nothing, turns it to so many
+ * degrees, or unturns it with its foot just over the bottom tool row (no room
+ * for the link chip below it). Answers its turn. */
+const onNote = (
+  page: Page,
+  action?: 'select' | 'unselect' | 'over the tools' | number
+) =>
+  page.evaluate((act) => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      getBoundingClientRect(): DOMRect;
+      gfx: {
+        selection: { clear(): void; set(selection: object): void };
+        updateElement(id: string, props: object): void;
+        viewport: { toModelCoord(x: number, y: number): [number, number] };
+      };
+    };
+    const { gfx } = root;
+    const { model } = document.querySelector(
+      'affine-edgeless-note'
+    ) as unknown as { model: { id: string; rotate: number; xywh: string } };
+    if (act === 'select')
+      gfx.selection.set({ editing: false, elements: [model.id] });
+    else if (act === 'unselect') gfx.selection.clear();
+    else if (typeof act === 'number')
+      gfx.updateElement(model.id, { rotate: act });
+    else if (act) {
+      const tools = document.querySelector('edgeless-toolbar-widget');
+      if (!tools) throw new Error('the board has no tool row');
+      const [x, , w, h] = JSON.parse(model.xywh) as number[];
+      const [, foot] = gfx.viewport.toModelCoord(
+        0,
+        tools.getBoundingClientRect().top - root.getBoundingClientRect().top - 8
+      );
+      gfx.updateElement(model.id, {
+        rotate: 0,
+        xywh: JSON.stringify([x, foot - h, w, h]),
+      });
+    }
+    return model.rotate;
+  }, action);
+
+/** What the link chip covers that it must keep off: the note as drawn, its
+ * frame's squares, bars and knob, the bottom tool row, or past the board. */
+const chipCovers = (page: Page) =>
+  page.evaluate(() => {
+    const chip = document.querySelector('.capy-link-chip') as HTMLElement;
+    const box = chip.getBoundingClientRect();
+    const meets = (other: DOMRect) =>
+      other.width > 0 &&
+      other.height > 0 &&
+      box.left < other.right &&
+      other.left < box.right &&
+      box.top < other.bottom &&
+      other.top < box.bottom;
+    const covered: string[] = [];
+    const note = document.querySelector(
+      'affine-edgeless-note [data-testid="edgeless-note-container"]'
+    );
+    if (note && meets(note.getBoundingClientRect())) covered.push('note');
+    for (const handle of document.querySelectorAll(
+      'edgeless-selected-rect .handle'
+    ))
+      if (meets(handle.getBoundingClientRect()))
+        covered.push(handle.getAttribute('aria-label') ?? 'handle');
+    const tools = document.querySelector('edgeless-toolbar-widget');
+    if (tools && meets(tools.getBoundingClientRect())) covered.push('tool row');
+    const board = (chip.parentElement as HTMLElement).getBoundingClientRect();
+    if (box.top < board.top || box.bottom > board.bottom)
+      covered.push('past the board');
+    return covered;
+  });
+
+const centreOf = async (element: Locator) => {
+  const box = await element.boundingBox();
+  if (!box) throw new Error('not drawn');
+  return [box.x + box.width / 2, box.y + box.height / 2] as const;
+};
+
 test("a note's link shows its address on hover, and the frame's knob turns the note", async ({
   page,
 }) => {
@@ -2080,50 +2390,46 @@ test("a note's link shows its address on hover, and the frame's knob turns the n
   await page.waitForFunction(
     () => document.activeElement?.closest('affine-edgeless-note') != null
   );
+  // Two lines, with a link on each: "osmosis" above "diffusion".
   await page.keyboard.type('Read osmosis notes');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('See diffusion too');
   await page.keyboard.press('Escape');
-  // "osmosis" links to a page, as the text toolbar's link button would.
-  await page.evaluate(() => {
-    const text = document.querySelector(
-      'affine-edgeless-note rich-text'
-    ) as unknown as {
-      inlineEditor: {
-        formatText(range: object, attributes: object): void;
-      };
-    };
-    text.inlineEditor.formatText(
-      { index: 5, length: 7 },
-      { link: 'https://example.com/osmosis' }
-    );
-  });
+  await linkNoteText(page, 5, 7, 'https://example.com/osmosis');
+  await linkNoteText(page, 23, 9, 'https://example.com/diffusion');
   await page.mouse.click(...at(0.05, 0.05));
 
   // L1 (Epo 2026-11-13): hovering it, with nothing being typed, shows its address
   // and Open, a new tab.
-  const link = await page
-    .locator('affine-edgeless-note affine-link')
-    .boundingBox();
-  if (!link) throw new Error('the link is not drawn');
-  await page.mouse.move(link.x + link.width / 2, link.y + link.height / 2);
+  const links = page.locator('affine-edgeless-note affine-link');
+  await page.mouse.move(...(await centreOf(links.first())));
   const chip = page.locator('.capy-link-chip');
+  const open = chip.getByRole('link', { name: 'Open' });
   await expect(chip).toContainText('example.com/osmosis');
-  await expect(chip.getByRole('link', { name: 'Open' })).toHaveAttribute(
-    'href',
-    'https://example.com/osmosis'
-  );
+  await expect(open).toHaveAttribute('href', 'https://example.com/osmosis');
 
-  // F1: the selected note's frame has a knob above its middle that turns it.
-  await page.evaluate(() => {
-    const { gfx } = document.querySelector(
-      'affine-edgeless-root'
-    ) as unknown as {
-      gfx: {
-        layer: { blocks: { id: string }[] };
-        selection: { set(selection: object): void };
-      };
-    };
-    gfx.selection.set({ editing: false, elements: [gfx.layer.blocks[0].id] });
-  });
+  // F1: the selected note's frame has a knob above its middle that turns it;
+  // the chip moves past the frame, off its squares, bars and knob.
+  await onNote(page, 'select');
+  await expect.poll(() => chipCovers(page)).toEqual([]);
+
+  // On the way from the link to its chip, crossing the other link leaves the
+  // chip on this one, and coming back to the chip ends a hide under way.
+  const diffusion = await centreOf(links.nth(1));
+  const onOpen = await centreOf(open);
+  await page.mouse.move(...diffusion, { steps: 4 });
+  await page.mouse.move(...onOpen, { steps: 4 });
+  await expect(chip).toContainText('example.com/osmosis');
+  await page.mouse.move(...at(0.05, 0.05));
+  await page.mouse.move(...onOpen);
+  // Past the chip's 150 ms hide.
+  await page.waitForTimeout(400);
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText('example.com/osmosis');
+  // Resting on the other link gives it the chip.
+  await page.mouse.move(...diffusion, { steps: 4 });
+  await expect(chip).toContainText('example.com/diffusion');
+
   const knob = await page
     .locator('edgeless-selected-rect .handle[aria-label="rotate"]')
     .boundingBox();
@@ -2132,15 +2438,29 @@ test("a note's link shows its address on hover, and the frame's knob turns the n
   await page.mouse.down();
   await page.mouse.move(knob.x + 80, knob.y + 40, { steps: 6 });
   await page.mouse.up();
-  const turned = await page.evaluate(
-    () =>
-      (
-        document.querySelector('affine-edgeless-note') as unknown as {
-          model: { rotate: number };
-        }
-      ).model.rotate
-  );
-  expect(turned).not.toBe(0);
+  expect(await onNote(page)).not.toBe(0);
+
+  // Turned a quarter, the chip still sits past the turned frame (local change
+  // 56 turns the note's inner box, not its element).
+  await onNote(page, 90);
+  await page.mouse.move(...at(0.05, 0.05));
+  await expect(chip).toBeHidden();
+  await page.mouse.move(...(await centreOf(links.first())));
+  await expect(chip).toContainText('example.com/osmosis');
+  await expect.poll(() => chipCovers(page)).toEqual([]);
+
+  // With no room below the note (its foot over the tool row), the chip sits
+  // beside it, still clear of the frame, inside the board and over the tool row.
+  await onNote(page, 'over the tools');
+  await page.mouse.move(...at(0.05, 0.05));
+  await expect(chip).toBeHidden();
+  const osmosis = await links.first().boundingBox();
+  if (!osmosis) throw new Error('the link is not drawn');
+  await page.mouse.move(...(await centreOf(links.first())));
+  await expect(chip).toContainText('example.com/osmosis');
+  await expect.poll(() => chipCovers(page)).toEqual([]);
+  const beside = await chip.boundingBox();
+  expect(beside?.y).toBeLessThan(osmosis.y + osmosis.height);
 });
 
 test("the Canvas page's Misc lists every quiz with its workspace, and New opens a quiz in no workspace in a dialog", async ({

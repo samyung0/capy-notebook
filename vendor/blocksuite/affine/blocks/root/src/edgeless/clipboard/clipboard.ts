@@ -460,7 +460,9 @@ export class EdgelessClipboardController extends PageClipboard {
     const rootModel = this.doc.root;
     if (!rootModel) return;
 
-    const html2canvas = (await import('html2canvas')).default;
+    // Capy (local change 72): html2canvas-pro, which reads the color() values
+    // Chrome computes for color-mix() (a note's fill), where html2canvas threw.
+    const html2canvas = (await import('html2canvas-pro')).default;
     if (!(html2canvas instanceof Function)) return;
     if (!this.surface) return;
 

@@ -1759,9 +1759,9 @@ importers:
       dompurify:
         specifier: 3.4.17
         version: 3.4.17
-      html2canvas:
-        specifier: 1.4.1
-        version: 1.4.1
+      html2canvas-pro:
+        specifier: 2.3.3
+        version: 2.3.3
       lit:
         specifier: 3.3.0
         version: 3.3.0
@@ -1801,9 +1801,9 @@ importers:
       fractional-indexing:
         specifier: 3.2.0
         version: 3.2.0
-      html2canvas:
-        specifier: 1.4.1
-        version: 1.4.1
+      html2canvas-pro:
+        specifier: 2.3.3
+        version: 2.3.3
       lit:
         specifier: 3.3.0
         version: 3.3.0
@@ -12770,13 +12770,6 @@ packages:
       }
     engines: { node: ">=16.0.0" }
 
-  html2canvas@1.4.1:
-    resolution:
-      {
-        integrity: sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==,
-      }
-    engines: { node: ">=8.0.0" }
-
   htmlparser2@10.1.0:
     resolution:
       {
@@ -23403,11 +23396,6 @@ snapshots:
   html-whitespace-sensitive-tag-names@3.0.1: {}
 
   html2canvas-pro@2.3.3:
-    dependencies:
-      css-line-break: 2.1.0
-      text-segmentation: 1.0.3
-
-  html2canvas@1.4.1:
     dependencies:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3
