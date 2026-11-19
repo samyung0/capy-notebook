@@ -7,6 +7,7 @@ import type {
 } from '@/features/blocksuite/drawingBoard';
 import { PEER_COLORS } from '@/features/collaboration/PresenceMarks';
 import type { PresenceConnection } from '@/features/collaboration/presence';
+import { onRenamed } from '@/features/collaboration/renameClient';
 import { CURSOR_SEND_MS } from '@/features/notes/cursorThrottle';
 import {
   decodePosition,
@@ -274,10 +275,14 @@ export function sendBoardPresence(
   host.addEventListener('pointerleave', leave);
   page.addEventListener('visibilitychange', hidden);
   tab?.addEventListener('blur', leave);
-  const offSelection = view.onSelection(() => {
+  const reselected = () => {
     selectionChanged = true;
     sender.schedule();
-  });
+  };
+  const offSelection = view.onSelection(reselected);
+  // The caret names a text's item ids, which a rename of the early edits
+  // changes (Q38).
+  const offRenamed = onRenamed(awareness.doc, reselected);
   // An image started or stopped going up, or the board locked.
   const offUploads = view.onUploads(() => sender.schedule());
   // The board moved under a still pointer.
@@ -296,6 +301,7 @@ export function sendBoardPresence(
     page.removeEventListener('visibilitychange', hidden);
     tab?.removeEventListener('blur', leave);
     offSelection();
+    offRenamed();
     offUploads();
     offView();
     awareness.setLocalState(null);

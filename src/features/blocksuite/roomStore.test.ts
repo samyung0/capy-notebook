@@ -10,9 +10,13 @@ import { MemoryBlobSource } from '@blocksuite/affine/sync';
 import { expect, it } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import {
+  adoptClientId,
+  renameClients,
+} from '@/features/collaboration/renameClient';
 import { boardFirstState } from './boardFirstState';
 import { unknownStore } from './boardUnknown';
-import { BLOCKS_ROOT, openRoomStore } from './roomStore';
+import { BLOCKS_ROOT, followTextEditors, openRoomStore } from './roomStore';
 
 /* The canvas's store over its room's document, as `mountDrawingBoard` opens
  * it: BlockSuite's store and canvas model, without the editor's view. */
@@ -110,6 +114,86 @@ it('undoes its own edits after the client id changes', () => {
   store.undo();
   expect(surface.hasElementById(id)).toBe(false);
   dispose();
+});
+
+/** What `renameClients` checks `doc` against, as an early board painted it. */
+const painted = (doc: Y.Doc) => ({
+  history: new Set(doc.store.clients.keys()),
+  painted: Y.decodeStateVector(Y.encodeStateVector(doc)),
+});
+
+it('undoes an early edit after the rename of its client id', () => {
+  const doc = room();
+  const base = painted(doc);
+  const { dispose, store } = open(doc);
+  const surface = surfaceOf(store);
+  const id = surface.addElement(stroke);
+  renameClients(doc, [doc.clientID], 4242, base);
+  store.undo();
+  expect(surface.hasElementById(id)).toBe(false);
+  dispose();
+});
+
+it("keeps an open label editor's Undo and caret through the rename of the early edits", () => {
+  const doc = room();
+  const base = painted(doc);
+  const { dispose, store } = open(doc);
+  const label = doc.getText('label');
+  // As BlockSuite's `rich-text` makes its own manager and its inline editor
+  // writes and keeps its caret.
+  const undoManager = new Y.UndoManager(label, {
+    trackedOrigins: new Set([doc.clientID]),
+  });
+  const type = (text: string) => {
+    doc.transact(() => label.insert(0, text), doc.clientID);
+    undoManager.stopCapturing();
+  };
+  type('Mitosis');
+  const inlineEditor = {
+    lastEndRelativePosition: Y.createRelativePositionFromTypeIndex(label, 7),
+    lastStartRelativePosition: Y.createRelativePositionFromTypeIndex(label, 3),
+  };
+  const editors = [
+    { inlineEditor, undoManager },
+    { inlineEditor: null, undoManager: store.history.undoManager },
+  ];
+  const stop = followTextEditors(
+    { querySelectorAll: () => editors } as unknown as ParentNode,
+    doc
+  );
+  renameClients(doc, [doc.clientID], 4242, base);
+  const index = (position: Y.RelativePosition) =>
+    Y.createAbsolutePositionFromRelativePosition(position, doc)?.index;
+  expect(index(inlineEditor.lastStartRelativePosition)).toBe(3);
+  expect(index(inlineEditor.lastEndRelativePosition)).toBe(7);
+  type('Early ');
+  undoManager.undo();
+  expect(label.toString()).toBe('Mitosis');
+  undoManager.undo();
+  expect(label.toString()).toBe('');
+  stop();
+  undoManager.destroy();
+  dispose();
+});
+
+it("keeps an open label editor's Undo when the document takes another id with nothing renamed", () => {
+  const doc = room();
+  const label = doc.getText('label');
+  const undoManager = new Y.UndoManager(label, {
+    trackedOrigins: new Set([doc.clientID]),
+  });
+  const stop = followTextEditors(
+    {
+      querySelectorAll: () => [{ inlineEditor: null, undoManager }],
+    } as unknown as ParentNode,
+    doc
+  );
+  adoptClientId(doc, 4242);
+  doc.transact(() => label.insert(0, 'Mitosis'), doc.clientID);
+  undoManager.undo();
+  expect(label.toString()).toBe('');
+  stop();
+  undoManager.destroy();
 });
 
 it('opens read-only for a viewer and writes nothing', () => {

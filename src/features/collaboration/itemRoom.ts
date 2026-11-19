@@ -28,9 +28,10 @@ import {
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import { BOARD_OFFLINE_MARGIN, MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
-import type { DraftRef } from '@/lib/draftStore';
+import { type DraftRef, mergedRows } from '@/lib/draftStore';
 import {
   applyDrafts,
+  claimLateRows,
   DRAFT_SEND_WAIT_MS,
   type DraftRecorder,
   type DraftSender,
@@ -41,6 +42,7 @@ import {
   dropExpiredGroup,
   type EditDraft,
   heldDraftSessions,
+  markDraftsRefused,
   readDrafts,
   recordDrafts,
   recoveryDocument,
@@ -49,16 +51,20 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { dropDeviceCopies } from '@/lib/sourceCache';
 import { copyOf, hiddenEdits } from './boardHidden';
-import {
-  type CopyLabel,
-  keepDeviceCopy,
-  type RoomSeed,
-  readRoomSeed,
-} from './deviceCopy';
+import { type CopyLabel, keepDeviceCopy, type RoomSeed } from './deviceCopy';
 import { offerExpiredDrafts } from './expiredDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { tokenClientIds } from './protocol';
+import {
+  adoptClientId,
+  type EarlySession,
+  earlyChain,
+  mergeInputs,
+  type RenameBase,
+  renameClients,
+  renameRefusal,
+} from './renameClient';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
 import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
@@ -89,7 +95,7 @@ export type ItemRoomStatus =
 
 export interface ItemRecovery {
   doc: Y.Doc;
-  /** An early board's edits the re-apply could not show (made to something
+  /** An early board's edits the room's state hides (made to something
    * another person deleted meanwhile, Q33): the room runs on its document
    * beside them, and Reload drops them and shows it. */
   merged?: boolean;
@@ -107,7 +113,7 @@ export interface ItemRoomSnapshot {
   delayed: boolean;
   /** A board painted from its device copy takes edits before its join (Epo
    * 2026-11-19, Q27 b1, Q31): under its document's own client id, kept as
-   * drafts, re-authored under the room's at the join (`reauthor`). */
+   * drafts, renamed to the room's in place at the join (`rename`, Q38). */
   early: boolean;
   /** Bumped when the readers' lists change (`lists`). */
   listsVersion: number;
@@ -130,7 +136,7 @@ export interface ItemRoomSnapshot {
   /** Edits that cannot join this room, shown for copying until Reload. */
   recovery: ItemRecovery | null;
   /** Stored steps of never-accepted sessions are in the draft send (Q319),
-   * or an early board's edits are being re-authored (`reauthor`): view-only
+   * or an early board's edits wait to be renamed (`unloaded`): view-only
    * until it settles. */
   sending: boolean;
   /** Joined, its answer waiting on the user's open budget (Epo 2026-10-20):
@@ -143,9 +149,10 @@ export interface ItemRoomSnapshot {
   stopped: boolean;
   /** The document holds the room's state (painted from it, editable). */
   synced: boolean;
-  /** An early board's re-apply could not load its merge code (Q295, Q398):
-   * its edits stay, read-only, until Retry or the browser's reconnect loads
-   * it, as a note's (`late-unloaded`). */
+  /** An early board's rows could not be flagged before the rename, or the
+   * merge it paints them with did not load (Q295, Q398): its edits stay,
+   * read-only, until Retry or the browser's reconnect tries again, as a
+   * note's (`late-unloaded`). */
   unloaded: boolean;
   /** The join has not answered 30 s after it began, the browser online
    * (Epo 2026-11-04, D5, C9): the page offers Retry (`ItemRoom.retry`). */
@@ -186,8 +193,6 @@ function createItemProvider(config: RoomProviderConfig): ItemProvider {
 }
 
 const RESTORE_ORIGIN = Symbol('restore');
-/** An early board's edits as the room's document takes them anew. */
-const REAUTHOR_ORIGIN = Symbol('reauthor');
 /** Closes a client rejoins after with a fresh token; any other close
  * refused this channel's update (an eviction goes by its mode). */
 const TRANSIENT_CLOSES = new Set([
@@ -199,21 +204,41 @@ const EVICTED = 'collaboration room evicted';
 
 /** Stored rows another open tab records now (its session's lock held) that
  * only it may apply: edits under an id no room assigned (`late`), which that
- * tab re-authors at its own join. */
+ * tab renames at its own join. */
 async function leaveLiveRows(rows: EditDraft[]) {
   if (!rows.some((row) => row.late)) return rows;
   const live = await heldDraftSessions();
   return rows.filter((row) => !(row.late && live.has(row.session)));
 }
 
-/** The document an early board's edits are re-authored onto, joining. */
-interface Joining {
-  /** The accepted rows applied to it, which its recorder adopts. */
-  adopted: EditDraft[];
-  doc: Y.Doc;
-  key: string;
-  /** It holds the room's state. */
-  synced: boolean;
+/** The early sessions whose late rows `rows` are (Q38): each one's
+ * temporary id and what it painted, which a row naming none leaves empty (it
+ * shows the session followed nothing). */
+function earlySessions(rows: EditDraft[]) {
+  const sessions = new Map<string, EarlySession>();
+  for (const { client, painted, session } of rows)
+    if (client !== undefined && !sessions.has(session))
+      sessions.set(session, {
+        client,
+        earlier: painted?.earlier ?? [],
+        state: painted ? Y.decodeStateVector(painted.state) : new Map(),
+      });
+  return [...sessions.values()];
+}
+
+/** An early board's edits renamed in place, until the room's state is in
+ * (`settleRename`). */
+interface Renamed {
+  /** The document as it was: its whole state, then this tab's edits until
+   * the room's first frame. */
+  before: Uint8Array[];
+  /** The room's state deleted something under the new id: only an edit of
+   * something another person deleted, or a field both changed, can be. */
+  deleted: boolean;
+  /** The renamed state's write. */
+  landing: Promise<boolean>;
+  stop: () => void;
+  to: number;
 }
 
 export interface ItemRoomOptions {
@@ -258,12 +283,8 @@ export interface ItemRoomOptions {
 }
 
 export class ItemRoom {
-  /** The document the page shows and edits: an early board's swaps for the
-   * one that joined once its edits are re-authored onto it (`reauthor`). */
-  private document: Y.Doc;
-  get doc() {
-    return this.document;
-  }
+  /** The document the page shows and edits, for the room's whole life. */
+  readonly doc: Y.Doc;
   /** `ItemRoomOptions.awareness`: what the room's editors tell each other. */
   readonly awareness: Awareness | null;
   /** None for a board, whose editor keeps its own (`ItemRoomOptions.board`). */
@@ -309,36 +330,66 @@ export class ItemRoom {
   private earlyOpen: Promise<boolean> | null = null;
   /** The current recorder's mark: while `late`, its document writes under
    * its own client id, which no room assigned, so its rows are `late` and the
-   * join re-authors them. Each recorder keeps its own. */
+   * join renames them. Each recorder keeps its own. */
   private rowsLate: { late: boolean } | null = null;
+  /** The early merge waits for its code (`mergeLater`): tries again, or
+   * not as the room goes. */
+  private mergeWait: ((again: boolean) => void) | null = null;
+  /** The token's answer for a merge still running (`answerMerge`). */
+  private mergeAnswer: boolean | null = null;
+  /** Releases the locks of the late rows a refused early board shows for
+   * copying (`keepStored`). */
+  private keptLate: (() => void) | null = null;
+  /** What an early board painted (Q38): the temporary ids of the earlier
+   * sessions' late rows it took, oldest first (`chain`), its own (`own`, the
+   * document's id then), and what the rename is checked against (`base`:
+   * the copy's clients, and the document's state vector before its first
+   * edit). */
+  private earlyPaint: {
+    base: RenameBase;
+    chain: number[];
+    own: number;
+  } | null = null;
+  /** Stops the late merge's worker when the room goes (`mergeEarly`). */
+  private readonly stopMerge = new AbortController();
   /** Rows an early board painted that sessions with a room's id wrote (one
    * that joined, or one whose token answered, Q326): at the join, accepted
    * ones apply (`apply`) and never-accepted ones go through the draft send
    * (`send`), as at any open. */
   private earlyRows: { apply: EditDraft[]; send: EditDraft[] } | null = null;
-  /** The early board's document joins as it is and holds `earlyRows.send`
-   * steps under an id its channel does not hold: its JOIN waits for the
-   * draft send to take them. */
+  /** The early board's document holds `earlyRows.send` steps under an id
+   * its channel does not hold: its JOIN waits for the draft send to take
+   * them. */
   private sendFirst = false;
-  /** The document that joins while an early board's edits wait on the one
-   * it shows, to be re-authored onto it once it synced (`reauthor`). */
-  private joining: Joining | null = null;
-  /** A re-author's merge is running. */
-  private merging = false;
-  /** Ends the reconnect watch of a merge whose code did not load. */
+  /** An early board's edits to rename before it connects (`rename`): the
+   * accepted rows it painted, which the renamed session adopts, its drafts'
+   * key, and the token whose id it takes. */
+  private renaming: { apply: EditDraft[]; key: string; token: string } | null =
+    null;
+  /** Opens once the early edits are renamed: no JOIN goes before, whatever
+   * asks the provider to connect (`beforeJoin`, review M3). */
+  private renamedGate: { open: () => void; opened: Promise<void> } | null =
+    null;
+  /** The early rows are being flagged before the rename. */
+  private flagging = false;
+  /** Ends the reconnect watch of a rename whose rows could not be flagged. */
   private stopUnloaded: (() => void) | null = null;
-  /** The early board's document, kept for its page's board to leave. */
-  private retired: Y.Doc | null = null;
-  /** The early recorder whose rows the re-authored edit stands for: its rows
-   * go once that edit is stored on this device or by the room. */
+  /** Renamed, the room's state not in yet. */
+  private renamed: Renamed | null = null;
+  /** The early recorder whose rows the renamed edit stands for: its rows go
+   * once that edit is stored on this device or by the room. */
   private replaced: DraftRecorder | null = null;
-  /** The replaced rows are still the only stored copy of edits the re-apply
-   * could not show: they stay until that copy is stored. */
+  /** The replaced rows may still be the only stored copy of edits the
+   * room's state hides: they stay until the room's state is in and that
+   * copy is stored, a receipt before then included (review m4: the room may
+   * take the renamed edits and answer its receipt while it holds its own
+   * state back for the open budget). */
   private replacedHolds = false;
-  /** The re-authored edit's local count, for the receipt that covers it. */
-  private reauthoredAt = 0;
-  /** Stops a re-author's merge when the room goes. */
-  private readonly merge = new AbortController();
+  /** A receipt covered the renamed edit: the replaced rows go as soon as
+   * they no longer hold (`dropReplacedOn`). */
+  private replacedStored = false;
+  /** The renamed edit's local count, for the receipt that covers it. */
+  private renamedAt = 0;
   private readonly listeners = new Set<() => void>();
   private readonly materialId: string;
   private options: ItemRoomOptions;
@@ -393,7 +444,7 @@ export class ItemRoom {
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
     this.options = options;
-    this.document = options.seed?.doc ?? new Y.Doc();
+    this.doc = options.seed?.doc ?? new Y.Doc();
     this.canOpenEarly = !!(
       options.board &&
       options.drafts &&
@@ -508,8 +559,7 @@ export class ItemRoom {
 
   /** A board's first measure, before any receipt: one encode once the tab is
    * idle (about 40 ms at 4 MiB on an M1). `provisional`: the size it holds
-   * until then (a copy's, or the board's before a swap), so the removals-only
-   * gate holds meanwhile. */
+   * until then (a copy's), so the removals-only gate holds meanwhile. */
   private measure(provisional?: number) {
     if (!this.options.board) return;
     if (provisional !== undefined) {
@@ -517,11 +567,9 @@ export class ItemRoom {
       this.sized();
     } else if (this.measured) return;
     const measuring = this.measured;
-    const doc = this.doc;
     const run = () => {
-      // A receipt's measure, or another document's, came first.
-      if (this.destroyed || this.measured !== measuring || this.doc !== doc)
-        return;
+      // A receipt's measure came first.
+      if (this.destroyed || this.measured !== measuring) return;
       this.measured = {
         base: Y.encodeStateAsUpdate(this.doc).byteLength,
         since: 0,
@@ -554,8 +602,10 @@ export class ItemRoom {
       // Offline or a server error: paused until it can join (REVIEW5 B1).
       const refusal = roomRefusal('', error);
       if (refusal === 'notFound' || refusal === 'forbidden') {
-        // An early board's edits, waiting ones too, stay to copy.
-        await this.earlyOpen;
+        // An early board's edits, waiting ones too, stay to copy: painted
+        // ones with the board (`keepEarly`), the rest as stored.
+        this.answerMerge(false);
+        if (this.earlyOpen && !(await this.earlyOpen)) await this.keepStored();
         this.refusedAccess();
       } else this.startLater();
       return;
@@ -568,6 +618,9 @@ export class ItemRoom {
     }
     this.room = first.room;
     const access = first.access === 'write' ? 'write' : 'read';
+    // An early merge whose code did not load tries again before the join
+    // (review re-check R2), unless its person may no longer edit.
+    this.answerMerge(access === 'write');
     // An early board's edits are its drafts already; a person who may no
     // longer edit loses them as any read-only turn does.
     const early = !!(await this.earlyOpen);
@@ -584,39 +637,29 @@ export class ItemRoom {
       return;
     }
     if (this.destroyed) return;
-    // The document the room joins with. An early board's edits are under its
-    // copy's own client id, which no room assigned (Q31, as a note's late
-    // rows are re-authored, Q406): a document of the room's joins
-    // instead and takes them anew once synced (`reauthor`). With none yet,
-    // the copy's document takes the token's id now, so what is drawn from
-    // here on goes as it is, and it joins as any. Rows of sessions that held
-    // a room's id go as at any open (Q326): accepted ones with the document,
-    // never-accepted ones through the draft send.
-    let joined = this.doc;
-    let storedFrom = this.options.seed?.version;
+    // The room joins with the document the board shows. An early board's
+    // edits under ids no room assigned (its own and earlier tabs' late rows,
+    // Q31) are renamed in place to the token's id before it connects
+    // (`rename`, Q38); with none, the document takes the token's id now, so
+    // what is drawn from here on goes as it is (`adopt`). Either way it then
+    // joins as any. Rows of sessions that held a room's id go as at any open
+    // (Q326): accepted ones with the document, never-accepted ones through
+    // the draft send, which its JOIN waits for, as the document holds them.
     if (early && access === 'write' && key) {
       const waiting = this.earlyRows ?? { apply: [], send: [] };
       this.earlyRows = null;
       if (this.recorder?.unsaved) {
-        const next = await this.roomCopy(first.room);
-        if (this.destroyed || this.ended) {
-          next?.doc.destroy();
-          return;
-        }
-        joined = next?.doc ?? new Y.Doc({ gc: true });
-        applyDrafts(joined, waiting.apply, RESTORE_ORIGIN);
-        storedFrom = next?.version;
-        this.joining = {
-          adopted: waiting.apply,
-          doc: joined,
-          key,
-          synced: false,
-        };
+        this.renaming = { apply: waiting.apply, key, token: first.token };
+        let open!: () => void;
+        const opened = new Promise<void>((resolve) => {
+          open = resolve;
+        });
+        this.renamedGate = { open, opened };
       } else {
         this.adopt(first.token);
         this.recorder?.adopt(waiting.apply);
-        this.sendFirst = waiting.send.length > 0;
       }
+      this.sendFirst = waiting.send.length > 0;
       if (waiting.send.length) this.sendDrafts(key, waiting.send);
     }
     let cached: string | null = first.token;
@@ -625,12 +668,15 @@ export class ItemRoom {
       // While its never-accepted steps are held, a JOIN waits for the draft
       // send to take them (Q327).
       beforeJoin: () => {
+        // An early board's edits are renamed before any JOIN (Q38, review
+        // M3): one sent first would carry them under ids no room assigned.
+        if (this.renaming) return this.renamedGate?.opened;
         if (!(this.heldSteps || this.sendFirst)) return;
         // The hold's connect asks for a send at once (Q328, Q360).
         this.sender?.now();
         return this.sender?.settled;
       },
-      document: joined,
+      document: this.doc,
       name: first.room,
       onAuthenticationFailed: ({ reason }) => {
         // Gone or no longer this user's (the server's reason, or the API's
@@ -718,11 +764,6 @@ export class ItemRoom {
         slowed ? this.slowed() : this.set({ slowed: false }),
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
-        if (state && this.joining) {
-          this.joining.synced = true;
-          this.reauthor();
-          return;
-        }
         if (state) {
           this.accessChanged = false;
           if (this.snapshot.offline || this.heldEpisode)
@@ -740,6 +781,7 @@ export class ItemRoom {
             synced: true,
             unreachable: false,
           });
+          this.settleRename();
           this.measure();
           this.requestReceipt();
           // A first sync after DRAFT_SEND_WAIT_MS still takes the held
@@ -759,7 +801,7 @@ export class ItemRoom {
       },
       parent: this.options.inside ?? undefined,
       sleepsHidden: true,
-      storedFrom,
+      storedFrom: this.options.seed?.version,
       token: async (previousToken) => {
         if (cached) {
           this.lastToken = cached;
@@ -796,27 +838,10 @@ export class ItemRoom {
     });
     if (this.provider instanceof RoomProvider)
       this.options.seat?.attach(this.provider);
-    this.keepCopy(joined, storedFrom !== undefined);
+    this.keepCopy();
     globalThis.document?.addEventListener('visibilitychange', this.shown);
-    this.provider.connect();
-  }
-
-  /** The device copy of the room again, for the document an early board's
-   * edits are re-authored onto: what the room confirmed, so the JOIN names
-   * its version and only the difference downloads (another tab may have
-   * kept a newer one meanwhile). None when it went or names another room. */
-  private async roomCopy(room: string) {
-    const owner = this.options.drafts?.actorId;
-    const read = owner
-      ? await readRoomSeed(owner, this.materialId, this.copyDocument()).catch(
-          () => null
-        )
-      : null;
-    if (read && read.room !== room) {
-      read.doc.destroy();
-      return null;
-    }
-    return read;
+    if (this.renaming) void this.rename();
+    else this.provider.connect();
   }
 
   /** An early board with no edits yet, its token answered (a slow join, or
@@ -825,10 +850,10 @@ export class ItemRoom {
    * would for any document that never wrote. That id is recorded to no one,
    * in no history and bound by no live channel, so the JOIN binds it and its
    * edits go as any session's (`ClientIds::holds`, Q236): nothing is
-   * re-applied, and the board stays. Its drafts keep that token (Q288). */
+   * renamed, and the board stays. Its drafts keep that token (Q288). */
   private adopt(token: string) {
     try {
-      this.doc.clientID = tokenClientIds(token).clientId;
+      adoptClientId(this.doc, tokenClientIds(token).clientId);
     } catch {
       // No id offered: the provider's JOIN refuses it as it is.
       return;
@@ -837,104 +862,202 @@ export class ItemRoom {
     this.lastToken = token;
   }
 
-  /** The joined document synced: an early board's edits, made under its
-   * copy's own client id, are merged onto it as new edits under the id the
-   * room assigned (`mergeLate` re-authoring, the late merge's WASM placing
-   * list items and map values alike, as a note's re-author does), and the
-   * page's board moves onto it. The board takes no edits meanwhile, nor
-   * while a draft send of earlier sessions' steps runs (it goes first). A
-   * merge whose code did not load keeps everything and tries again on Retry
-   * and on the browser's reconnect (Q295, Q398); one that ran and failed
-   * goes to the copy-only recovery with everything kept (Q281). The early
-   * rows are flagged copy-only before the merged update goes, since a
-   * second re-apply of them would put text and new blocks in twice (review
-   * b2 re-check N2); flags that cannot be stored hold it all the same way. */
-  private reauthor() {
-    const joining = this.joining;
-    if (!joining?.synced || this.merging || this.sender) return;
-    this.merging = true;
-    this.stopUnloaded?.();
-    this.accessChanged = false;
-    if (this.snapshot.offline) this.recorder?.connected();
-    this.boardFull = false;
-    this.reconnector.connected();
-    this.delay.connected();
-    this.set({
-      offline: null,
-      sending: true,
-      slowed: false,
-      status: 'syncing',
-      stopped: false,
-      unloaded: false,
-      unreachable: false,
-    });
-    // What the page has yet to write into the board's document (an open
-    // plane or chart closing) goes in first.
-    try {
-      this.options.onLeave?.();
-    } catch (error) {
-      console.warn('Leaving the board failed:', error);
-    }
-    const old = Y.encodeStateAsUpdate(this.doc);
+  /** An early board's edits, made under ids no room assigned, become the
+   * room's in place before it connects (Epo 2026-11-19, Q38, "Yes, rename in
+   * place"; "make sure this step is invisible, nothing ever reloads,
+   * never"): the rows are flagged copy-only first, since the same edits
+   * under two ids would go in twice (review b2 re-check N2); then every
+   * struct under those ids takes the id the token offers, in the document
+   * the board shows, its undo history with it (renameClient.ts), and a
+   * session under that id records from there, its first row the document
+   * whole. The board takes edits throughout. Flags that cannot be stored
+   * keep the edits as they are, read-only under the note's strip, and try
+   * again on Retry and on the browser's reconnect (Q295, Q398); a rename
+   * that would not be sound (the id in the document already, a temporary
+   * one in the room's history, updates pending) keeps them all for copying,
+   * the strip saying so, nothing the room refused. A draft send of earlier
+   * sessions' steps goes first (the board takes no edits meanwhile), since
+   * it takes every never-accepted row of the lineage, the renamed session's
+   * among them: asked now, it tries again at once after a failed try, as a
+   * JOIN waiting for it asks (Q328), and calls this again as it settles. */
+  private async rename() {
+    const renaming = this.renaming;
     const early = this.recorder;
-    const { signal } = this.merge;
-    const current = () =>
-      !(this.destroyed || this.ended || this.joining !== joining);
-    void (async () => {
-      let merging: typeof import('./lateMerge/lateMerge');
-      try {
-        merging = await import('./lateMerge/lateMerge');
-      } catch (error) {
-        this.merging = false;
-        if (current()) this.unloaded('The late merge did not load:', error);
+    if (!(renaming && early) || this.flagging) return;
+    if (this.sender) {
+      this.sender.now();
+      return;
+    }
+    this.flagging = true;
+    this.stopUnloaded?.();
+    const flagged = await early.flagCopyOnly();
+    this.flagging = false;
+    if (
+      this.destroyed ||
+      this.ended ||
+      this.renaming !== renaming ||
+      this.recorder !== early
+    )
+      return;
+    if (!flagged) {
+      this.unloaded('The early edits could not be flagged:', null);
+      return;
+    }
+    let to: number | null = null;
+    try {
+      to = tokenClientIds(renaming.token).clientId;
+    } catch {
+      // No id offered: refused below.
+    }
+    // The ids in causal order, this tab's own (as it painted, whatever the
+    // document's id is now) last.
+    const painted = this.earlyPaint;
+    const temporary = painted ? [...painted.chain, painted.own] : [];
+    const refusal =
+      to === null
+        ? 'the token offers no client id'
+        : painted
+          ? renameRefusal(this.doc, temporary, to, painted.base)
+          : 'the board painted nothing early';
+    if (to === null || !painted || refusal) {
+      console.warn('The early edits cannot be renamed:', refusal);
+      this.refused(false);
+      return;
+    }
+    // The rename and the renamed state's encode run on the main thread
+    // (`canvas:rename`, measured near the cap by canvas-room-states.spec.ts).
+    const started = performance.now();
+    renameClients(this.doc, temporary, to, painted.base);
+    this.renaming = null;
+    this.renamedGate?.open();
+    early.handOver();
+    this.replaced = early;
+    this.replacedHolds = true;
+    const recorder = this.record(renaming.key, renaming.apply);
+    this.adopt(renaming.token);
+    const state = Y.encodeStateAsUpdate(this.doc);
+    performance.measure('canvas:rename', { start: started });
+    const landing = recorder.renamed(state);
+    this.renamedAt = recorder.sequence;
+    this.watchRenamed(state, to, landing);
+    if (this.snapshot.unloaded) {
+      this.reconnector.started();
+      this.set({ sending: !!this.sender, unloaded: false });
+    }
+    this.provider?.connect();
+  }
+
+  /** Until the room's state is in: the document as it was before it (the
+   * renamed state, then this tab's edits until the room's first frame), and
+   * whether it deleted anything under the new id (`Renamed`). */
+  private watchRenamed(
+    state: Uint8Array,
+    to: number,
+    landing: Promise<boolean>
+  ) {
+    let roomSeen = false;
+    const seen = (
+      update: Uint8Array,
+      _origin: unknown,
+      _doc: Y.Doc,
+      transaction: Y.Transaction
+    ) => {
+      if (transaction.local) {
+        if (!roomSeen) renamed.before.push(update);
         return;
       }
-      try {
-        const { hidden, merged } = await merging.mergeLate(
-          old,
-          () => Y.encodeStateAsUpdate(joining.doc),
-          joining.doc.clientID,
-          signal
-        );
-        if (!current()) {
-          this.merging = false;
-          return;
-        }
-        // With no recorder there are no rows to flag.
-        const flagged = early ? await early.reauthoring() : true;
-        this.merging = false;
-        if (!current()) return;
-        if (!flagged) {
-          this.unloaded('The early edits could not be flagged:', null);
-          return;
-        }
-        this.swap(
-          joining,
-          (doc) => merging.applyMerged(doc, merged, REAUTHOR_ORIGIN, true),
-          hidden.length > 0
-        );
-      } catch (error) {
-        this.merging = false;
-        if (signal.aborted || !current()) return;
-        if (error instanceof merging.LateMergeUnloaded) {
-          this.unloaded('The late merge did not load:', error);
-          return;
-        }
-        console.warn('Re-authoring the early edits failed:', error);
-        // Kept to copy; the strip says so, nothing the room refused.
-        this.refused(false);
-      }
+      roomSeen = true;
+      if (transaction.deleteSet.clients.has(to)) renamed.deleted = true;
+    };
+    const renamed: Renamed = {
+      before: [state],
+      deleted: false,
+      landing,
+      stop: () => this.doc.off('update', seen),
+      to,
+    };
+    this.doc.on('update', seen);
+    this.renamed = renamed;
+  }
+
+  /** The room's state is in after a rename: what it hides of the early
+   * edits (made to an element or block another person deleted meanwhile,
+   * Q33) is found per element and block by the board before it against the
+   * board now (`boardHidden.ts`) and kept apart for copying, while a field
+   * both changed takes Yjs's pick. The early rows go once the renamed state
+   * landed (or a receipt covered it) and what is hidden is stored. */
+  private settleRename() {
+    const renamed = this.renamed;
+    const recorder = this.recorder;
+    if (!renamed) return;
+    this.renamed = null;
+    renamed.stop();
+    let hidden: Y.Doc | null = null;
+    if (renamed.deleted && recorder) {
+      const before = new Y.Doc();
+      for (const update of renamed.before) Y.applyUpdate(before, update);
+      const held = Y.decodeStateVector(Y.encodeStateVector(before));
+      held.delete(renamed.to);
+      hidden = hiddenEdits(before, this.doc, held);
+      before.destroy();
+    }
+    const done = () => {
+      this.replacedHolds = false;
+      this.dropReplacedOn(renamed.landing);
+    };
+    if (hidden && recorder) this.keepHiddenBeside(hidden, recorder, done);
+    else done();
+  }
+
+  /** Early edits the board no longer shows (Q33), kept beside the live
+   * board for copying; `stored` runs once that copy is stored on this
+   * device. Until then the rows they came from stay, as their copy. */
+  private keepHiddenBeside(
+    hidden: Y.Doc,
+    recorder: DraftRecorder,
+    stored: () => void
+  ) {
+    this.set({
+      recovery: { doc: hidden, merged: true, refused: false, rows: [] },
+    });
+    void (async () => {
+      const kept = await recorder.keepHidden(Y.encodeStateAsUpdate(hidden));
+      if (!kept) return;
+      const { recovery } = this.snapshot;
+      // Reloaded meanwhile: the copy went with the recovery.
+      if (recovery?.doc === hidden)
+        this.set({ recovery: { ...recovery, rows: [kept] } });
+      else void deleteDrafts([kept]).catch(() => undefined);
+      stored();
     })();
   }
 
-  /** The merge's code did not load (or its rows could not be flagged): the
-   * early board's edits stay as they are, read-only, under the note's strip
-   * (`late-unloaded`) until Retry or the browser's reconnect tries again
-   * (Q295, Q398). */
+  /** The room goes before its state came in after a rename: the write it
+   * ends with holds the renamed edits whole, so the early rows go once that
+   * landed. */
+  private leaveRenamed() {
+    if (!this.renamed) return;
+    this.renamed.stop();
+    this.renamed = null;
+    this.replacedHolds = false;
+  }
+
+  /** The rows could not be flagged: the early board's edits stay as they
+   * are, read-only, under the note's strip (`late-unloaded`) until Retry or
+   * the browser's reconnect tries again (Q295, Q398). */
   private unloaded(warning: string, error: unknown) {
     console.warn(warning, error);
-    this.set({ unloaded: true });
-    const again = () => this.reauthor();
+    // It waits on this device, not on the room (its token answered): no
+    // join is stuck, and its strip shows over the offline one.
+    this.reconnector.connected();
+    if (this.snapshot.offline) this.recorder?.connected();
+    this.set({
+      offline: null,
+      sending: true,
+      status: 'syncing',
+      unloaded: true,
+    });
+    const again = () => void this.rename();
     globalThis.addEventListener?.('online', again);
     this.stopUnloaded = () => {
       globalThis.removeEventListener?.('online', again);
@@ -942,83 +1065,25 @@ export class ItemRoom {
     };
   }
 
-  /** The joined document holds the room's state and now takes the early
-   * board's edits (`apply`) as this session's first: it records from here,
-   * the page's board moves onto it, and the early rows go once that edit is
-   * stored. What the re-apply could not show (made to an element or block
-   * another person deleted meanwhile) is kept apart for copying (Q33). */
-  private swap(
-    joining: Joining,
-    apply: (doc: Y.Doc) => void,
-    reported: boolean
-  ) {
-    const { adopted, doc: joined, key } = joining;
-    const replaced = this.recorder;
-    const early = this.doc;
-    const held = Y.decodeStateVector(Y.encodeStateVector(joined));
-    const recorder = this.record(key, adopted, joined);
-    apply(joined);
-    this.reauthoredAt = recorder.sequence;
-    // What the merge hides that this check does not find keeps the whole
-    // early board to copy too: nothing goes unsaid.
-    const hidden =
-      hiddenEdits(early, joined, held) ?? (reported ? copyOf(early) : null);
-    this.replaced = replaced;
-    this.replacedHolds = !!hidden;
-    // The size the board had, until the joined document's own measure.
-    const size = this.size()?.bytes;
-    this.document.off('update', this.grew);
-    this.retired = early;
-    this.document = joined;
-    this.joining = null;
-    joined.on('update', this.grew);
-    this.measured = null;
-    this.measure(size);
-    this.set({
-      early: false,
-      recovery: hidden
-        ? { doc: hidden, merged: true, refused: false, rows: [] }
-        : null,
-      sending: false,
-      status: this.live(),
-      synced: true,
-    });
-    void (async () => {
-      if (hidden) {
-        const kept = await recorder.keepHidden(Y.encodeStateAsUpdate(hidden));
-        // Not stored: the early rows, flagged copy-only, stay as its copy.
-        if (!kept) return;
-        const { recovery } = this.snapshot;
-        // Reloaded meanwhile: the copy went with the recovery.
-        if (recovery?.doc === hidden)
-          this.set({ recovery: { ...recovery, rows: [kept] } });
-        else {
-          void deleteDrafts([kept]).catch(() => undefined);
-        }
-        this.replacedHolds = false;
-      }
-      // The whole document, or what a refusal, a move or the leave wrote
-      // meanwhile (its recording stopped).
-      this.dropReplacedOn(recorder.stored());
-    })();
-    this.requestReceipt();
-  }
-
-  /** The early rows the re-authored edit stands for go, unless they still
-   * hold the only stored copy of what the re-apply could not show. */
+  /** The early rows the renamed edit stands for go, unless they may still
+   * hold the only stored copy of what the room's state hides. */
   private dropReplaced() {
     if (this.replacedHolds) return;
     void this.replaced?.discard();
     this.replaced = null;
   }
 
-  /** The early rows go once `landed`, a write holding the re-authored edit,
-   * did; never on one that failed, so storage failing never deletes their
-   * only copy (review b2 re-check N1). A receipt that covers the edit drops
-   * them too. */
+  /** The early rows go once `landed`, a write holding the renamed edit, did;
+   * never on one that failed, so storage failing never deletes their only
+   * copy (review b2 re-check N1). A receipt that covers the edit drops them
+   * too. */
   private dropReplacedOn(landed: Promise<boolean>) {
     const replaced = this.replaced;
     if (!replaced) return;
+    if (this.replacedStored) {
+      this.dropReplaced();
+      return;
+    }
     void landed.then((ok) => {
       if (ok && this.replaced === replaced) this.dropReplaced();
     });
@@ -1057,16 +1122,12 @@ export class ItemRoom {
       this.keeper?.relabel();
   }
 
-  /** The room's confirmed state in `doc` goes on the device: on hide and at
-   * the end, when nothing of this device's is unsent. `seeded`: it starts
-   * from a copy. */
-  private keepCopy(
-    doc = this.joining?.doc ?? this.doc,
-    seeded = !!this.options.seed
-  ) {
+  /** The room's confirmed state goes on the device: on hide and at the end,
+   * when nothing of this device's is unsent. */
+  private keepCopy() {
     const { keep } = this.options;
     if (!keep) return;
-    this.keeper = keepDeviceCopy(doc, {
+    this.keeper = keepDeviceCopy(this.doc, {
       clean: () =>
         this.snapshot.synced &&
         !this.ended &&
@@ -1084,7 +1145,7 @@ export class ItemRoom {
             ? this.provider.reportedVersion
             : 0,
       }),
-      seeded,
+      seeded: !!this.options.seed,
     });
   }
 
@@ -1146,19 +1207,18 @@ export class ItemRoom {
       this.hold = null;
       this.heldSteps = false;
       this.sendFirst = false;
-      this.set({ sending: false });
+      // An early board waiting on its rows' flags stays read-only.
+      this.set({ sending: this.snapshot.unloaded });
       // A group the room did not take, its steps not applied here: a fresh
       // room opens it copy-only (Q360). Held ones the JOIN's refusal takes.
       if (sender.kept && !held) {
         this.moved();
         return;
       }
-      // An early board's edits are re-authored once the room holds the
-      // steps it painted, which its joined document then holds too, so the
-      // merge leaves them as they are.
-      if (this.joining) {
-        applyDrafts(this.joining.doc, pending, RESTORE_ORIGIN);
-        this.reauthor();
+      // An early board's edits are renamed once the room holds the steps
+      // it painted (`rename`).
+      if (this.renaming) {
+        void this.rename();
         return;
       }
       if (this.snapshot.synced && this.snapshot.status !== 'offline')
@@ -1199,7 +1259,7 @@ export class ItemRoom {
    * document (synced on connect), a refused or other-lineage group opens in
    * recovery instead of the room. False when the room stays in recovery. */
   private async restore(key: string) {
-    let rows = await readDrafts(key).then(
+    const rows = await readDrafts(key).then(
       // Item rooms merge late rows only as an early board's (`openEarly`):
       // here they open read-only for copying, never applied raw, unless
       // another tab records them.
@@ -1212,69 +1272,81 @@ export class ItemRoom {
         return [] as EditDraft[];
       }
     );
+    const current = await this.offerGroups(rows, this.room);
+    if (!current) return false;
+    // Accepted sessions' rows apply here; never-accepted ones with stored
+    // tokens go through the draft send (Q326).
+    const { apply, send } = splitOpenDrafts(current);
+    applyDrafts(this.doc, apply, RESTORE_ORIGIN);
+    this.record(key, apply);
+    if (send.length) this.sendDrafts(key, send);
+    return true;
+  }
+
+  /** Shows the first group of `stored` the room (`lineage`) cannot take for
+   * copying, read-only, as recovery; one past the 7-day expiry a toast
+   * offers instead (D14), and one that cannot be read is told lost and
+   * deleted. Answers the rest (the current rows), or null once one shows or
+   * the room went. */
+  private async offerGroups(stored: EditDraft[], lineage: string) {
+    let rows = stored;
     for (;;) {
-      if (this.destroyed) return false;
+      if (this.destroyed) return null;
       const { current, expired, recovery, refused } = await draftGroups(
         rows,
-        this.room
+        lineage
       );
       // Destroyed while the drafts worker answered: nothing starts (r6 S1).
-      if (this.destroyed) return false;
-      if (recovery.length) {
-        const doc = recoveryDocument(recovery);
-        // Past the 7-day expiry: the room opens, and a toast offers them (D14).
-        if (doc && expired) {
-          offerExpiredDrafts({
-            doc,
-            document: this.options.document,
-            materialId: this.materialId,
-            onGone: () =>
-              dropExpiredGroup(
-                recovery,
-                editIncidentReporter('material', this.materialId)
-              ),
-            // Read at the download: the page may name it after this opens.
-            title: () => this.options.keep?.title ?? this.materialId,
-          });
-          rows = rows.filter((row) => !recovery.includes(row));
-          continue;
-        }
-        if (doc) {
-          this.set({
-            recovery: { doc, refused, rows: recovery },
-            status: 'saved',
-            synced: true,
-          });
-          return false;
-        }
+      if (this.destroyed) return null;
+      if (!recovery.length) return current;
+      const doc = recoveryDocument(recovery);
+      if (doc && !expired) {
+        this.set({
+          recovery: { doc, refused, rows: recovery },
+          status: 'saved',
+          synced: true,
+        });
+        return null;
+      }
+      // Past the 7-day expiry: the room opens, and a toast offers them (D14).
+      if (doc)
+        offerExpiredDrafts({
+          doc,
+          document: this.options.document,
+          materialId: this.materialId,
+          onGone: () =>
+            dropExpiredGroup(
+              recovery,
+              editIncidentReporter('material', this.materialId)
+            ),
+          // Read at the download: the page may name it after this opens.
+          title: () => this.options.keep?.title ?? this.materialId,
+        });
+      else {
         toastDraftsLost();
         await deleteDrafts(recovery).catch(() => undefined);
-        rows = rows.filter((row) => !recovery.includes(row));
-        continue;
       }
-      // Accepted sessions' rows apply here; never-accepted ones with stored
-      // tokens go through the draft send (Q326).
-      const { apply, send } = splitOpenDrafts(current);
-      applyDrafts(this.doc, apply, RESTORE_ORIGIN);
-      this.record(key, apply);
-      if (send.length) this.sendDrafts(key, send);
-      return true;
+      rows = rows.filter((row) => !recovery.includes(row));
     }
   }
 
-  /** Records this session's edits in `doc` as drafts on this device;
-   * `late`: under a client id no room assigned (`rowsLate`). */
+  /** Records this session's edits as drafts on this device; `early`: under
+   * a client id no room assigned (`rowsLate`), with what the board painted
+   * and the locks of the late rows it adopted. */
   private record(
     key: string,
     adopted: EditDraft[],
-    doc = this.doc,
-    late = false
+    early?: {
+      claimed: () => void;
+      painted: NonNullable<EditDraft['painted']>;
+    }
   ) {
-    const mark = { late };
+    const mark = { late: !!early };
     this.rowsLate = mark;
     this.recorder = recordDrafts({
       adopted,
-      doc,
+      claimed: early?.claimed,
+      doc: this.doc,
       ignore: (origin) =>
         origin === RESTORE_ORIGIN ||
         (origin !== null && origin === this.provider),
@@ -1292,6 +1364,7 @@ export class ItemRoom {
         this.armLeave(!ok);
         this.showOffline();
       },
+      painted: early?.painted,
       report: editIncidentReporter('material', this.materialId),
       token: () => this.lastToken,
       unassigned: () => mark.late,
@@ -1302,39 +1375,240 @@ export class ItemRoom {
   /** An early board (`canOpenEarly`) starts recording before its join,
    * under its copy's own client id. The rows earlier sessions here left
    * paint with the copy: ones made the same way (a reload before the join)
-   * are its person's own edits, re-authored with this session's at the join
-   * as a note's copy draft is (Q229); ones of a session that held a room's id
-   * (it joined, or its token answered) go at the join as at any open, applied
-   * or sent (`earlyRows`, Q326); another open tab's stay its own. Rows to
-   * copy keep the board waiting for the join. Its size is the copy's. */
+   * are its person's own edits, renamed with this session's at the join, as
+   * a note's copy draft goes with its edits (Q229); ones of a session that
+   * held a room's id (it joined, or its token answered) go at the join as at
+   * any open, applied or sent (`earlyRows`, Q326); another open tab's stay
+   * its own, and so do the late rows it took (their sessions' locks held
+   * from here, `claimLateRows`, review m1). Rows to copy keep the board
+   * waiting for the join. Its size is the copy's. */
   private async openEarly() {
     const key = this.draftKey();
     const { seed } = this.options;
     if (!(key && seed)) return false;
-    const rows = await readDrafts(key)
-      .then(leaveLiveRows)
+    const claim = await readDrafts(key)
+      .then(claimLateRows)
       .catch(() => null);
-    if (!rows || this.destroyed || this.ended || this.provider) return false;
+    if (!claim) return false;
+    let waited = false;
+    let opened = await this.paintEarly(key, seed, claim);
+    while (opened === 'unloaded') {
+      waited = true;
+      opened =
+        (await this.mergeLater()) && (await this.paintEarly(key, seed, claim));
+    }
+    if (!opened) claim.release();
+    // Painted, or given up (read, refused or gone, review re-check 2 m5).
+    if (waited) {
+      this.set({ unloaded: false });
+      // The join's 30 s run from here.
+      this.reconnector.started();
+    }
+    return opened;
+  }
+
+  /** The early merge's code did not load (offline with nothing cached; Q295,
+   * Q398, review re-check R2): the board shows the copy, read-only, under the
+   * note's strip ("Couldn't sync your edits. Retry or reload the page."),
+   * and Retry, the browser's reconnect and the join try again
+   * (`mergeWait`), which paints in place, on the document as it is then.
+   * False once the room goes, or the token says read or is refused. A token
+   * that answered while the merge ran is its answer at once (`answerMerge`). */
+  private mergeLater() {
+    const answered = this.mergeAnswer;
+    this.mergeAnswer = null;
+    if (answered !== null) return Promise.resolve(answered);
+    // It waits on this device, not on the room: no join is stuck.
+    this.reconnector.connected();
+    this.set({ unloaded: true });
+    return new Promise<boolean>((resolve) => {
+      const again = () => this.mergeWait?.(true);
+      globalThis.addEventListener?.('online', again);
+      this.mergeWait = (go) => {
+        globalThis.removeEventListener?.('online', again);
+        this.mergeWait = null;
+        resolve(go);
+      };
+    });
+  }
+
+  /** The token's answer for the early merge waiting on its code. One that
+   * comes while the merge still runs is kept for it, so a merge that then
+   * fails answers it at once (review re-check 2). */
+  private answerMerge(again: boolean) {
+    if (this.mergeWait) this.mergeWait(again);
+    else this.mergeAnswer = again;
+  }
+
+  /** A refused early board's stored rows (404, 403), when it painted none:
+   * its merge's code did not load, the merge failed, or a group waits for
+   * copying (`paintEarly`). No join offers them, so they show here, none left
+   * unsaid (review re-check 3 m6): the first group the room cannot take as
+   * `restore` shows it, else the rows over the copy, as Yjs merges them,
+   * under the refused toast, until Reload, which asks first. Their late
+   * sessions' locks hold until the room goes. */
+  private async keepStored() {
+    const key = this.draftKey();
+    const { seed } = this.options;
+    if (!(key && seed)) return;
+    const claim = await readDrafts(key)
+      .then(claimLateRows)
+      .catch(() => null);
+    if (!claim) return;
+    if (this.destroyed || this.ended) {
+      claim.release();
+      return;
+    }
+    this.keptLate = claim.release;
+    const current = await this.offerGroups(claim.rows, seed.room);
+    if (!current?.length || this.destroyed) return;
+    const doc = copyOf(this.doc);
+    applyDrafts(doc, current, null);
+    this.toastRefused();
+    this.set({ recovery: { doc, refused: true, rows: current } });
+  }
+
+  /** `openEarly`'s paint. The late rows' sessions go in causal order
+   * (`earlyChain`, review M1); one that edited beside something it never saw
+   * (two tabs early at once, both closed before their joins; one that painted
+   * an older copy than the rest) is merged anew first (`mergeEarly`, review
+   * M2), off the common path: one session's rows, or a chain, load no
+   * worker. */
+  private async paintEarly(
+    key: string,
+    seed: RoomSeed,
+    { release, rows }: Awaited<ReturnType<typeof claimLateRows>>
+  ): Promise<boolean | 'unloaded'> {
+    const gone = () => this.destroyed || this.ended || !!this.provider;
+    if (gone()) return false;
     const { current, recovery } = rows.length
       ? await draftGroups(rows, seed.room)
       : { current: [], recovery: [] };
-    if (this.destroyed || this.ended || this.provider) return false;
-    if (recovery.length) return false;
+    const late = current.filter((row) => row.late);
+    // Each late row names the id it was written under (Q38).
+    if (
+      gone() ||
+      recovery.length ||
+      late.some((row) => row.client === undefined)
+    )
+      return false;
     this.room = seed.room;
     // Its size is the copy's at once, so the removals-only gate holds from
     // the first edit (review b1 finding 10); the waiting rows add theirs.
     this.measure(seed.row.size);
-    applyDrafts(this.doc, current, RESTORE_ORIGIN);
+    const history = new Set(this.doc.store.clients.keys());
+    const update = current.length ? mergedRows(current) : null;
+    // What the copy and every row hold, read off the rows without applying
+    // them.
+    const all = Y.decodeStateVector(Y.encodeStateVector(this.doc));
+    for (const [client, clock] of update ? Y.parseUpdateMeta(update).to : [])
+      all.set(client, Math.max(clock, all.get(client) ?? 0));
+    const { chain, offending } = earlyChain(all, earlySessions(late));
+    const merged =
+      offending.length && update
+        ? await this.mergeEarly(key, update, offending, late)
+        : null;
+    if (merged === 'unloaded') return merged;
+    if (offending.length && !merged) return false;
+    if (!merged && update) Y.applyUpdate(this.doc, update, RESTORE_ORIGIN);
     this.earlyRows = splitOpenDrafts(current.filter((row) => !row.late));
-    this.record(
-      key,
-      current.filter((row) => row.late),
-      this.doc,
-      true
-    );
+    const state = Y.encodeStateVector(this.doc);
+    this.earlyPaint = {
+      base: { history, painted: Y.decodeStateVector(state) },
+      chain,
+      own: this.doc.clientID,
+    };
+    const recorder = this.record(key, late, {
+      claimed: release,
+      painted: { earlier: chain, state },
+    });
+    if (merged) {
+      // This session's rows hold the merged edits once its whole document
+      // landed: the rows they replace go then, and what the merge hides is
+      // kept apart first (Q33).
+      const landed = recorder.stored();
+      const drop = async () => {
+        if (await landed)
+          await deleteDrafts(merged.rows).catch(() => undefined);
+      };
+      if (merged.hidden)
+        this.keepHiddenBeside(merged.hidden, recorder, () => void drop());
+      else void drop();
+    }
     this.set({ early: true });
     if (this.snapshot.status === 'offline') this.goOffline();
     return true;
+  }
+
+  /** The edits of `offending` temporary ids, against which some conflict
+   * may have been settled, written anew under this tab's own id on top of
+   * everything else painted (`update`), by the late merge in its worker,
+   * placed where the document shows them: then every early edit comes after
+   * everything else, as the rename needs (review M2). Assigned ids' structs
+   * are never written anew (the room may hold them). Their rows are flagged
+   * refused first, since the same edits under two ids would go in twice.
+   * Answers what the merge would hide and the rows it replaced; `unloaded`
+   * when its code did not load, nothing painted (`mergeLater`); or null when
+   * it failed: the board then waits for its join, which offers the rows for
+   * copying. */
+  private async mergeEarly(
+    key: string,
+    update: Uint8Array,
+    offending: number[],
+    late: EditDraft[]
+  ) {
+    const all = copyOf(this.doc);
+    Y.applyUpdate(all, update);
+    const inputs =
+      all.store.pendingStructs || all.store.pendingDs
+        ? null
+        : mergeInputs(all, offending);
+    const rows = late.filter(
+      (row) => row.client !== undefined && offending.includes(row.client)
+    );
+    const gone = () => this.destroyed || this.ended || !!this.provider;
+    let merging: typeof import('./lateMerge/lateMerge') | null = null;
+    try {
+      if (!inputs) throw new Error('the rows wait on structs no row holds');
+      const { rest } = inputs;
+      merging = await import('./lateMerge/lateMerge');
+      const { hidden, merged } = await merging.mergeLate(
+        inputs.old,
+        () => Y.encodeStateAsUpdate(rest),
+        this.doc.clientID,
+        this.stopMerge.signal
+      );
+      if (gone()) return null;
+      await markDraftsRefused(
+        key,
+        rows.map((row) => row.id)
+      );
+      if (gone()) return null;
+      Y.applyUpdate(this.doc, Y.encodeStateAsUpdate(rest), RESTORE_ORIGIN);
+      merging.applyMerged(this.doc, merged, RESTORE_ORIGIN, true);
+      const held = Y.decodeStateVector(Y.encodeStateVector(rest));
+      return {
+        // What the merge says it hides that this check does not find keeps
+        // the whole board as it would have painted, so nothing goes unsaid.
+        hidden:
+          hiddenEdits(all, this.doc, held) ??
+          (hidden.length ? copyOf(all) : null),
+        rows,
+      };
+    } catch (error) {
+      if (
+        inputs &&
+        !gone() &&
+        (!merging || error instanceof merging.LateMergeUnloaded)
+      )
+        return 'unloaded';
+      if (!this.stopMerge.signal.aborted)
+        console.warn('The early edits could not be merged:', error);
+      return null;
+    } finally {
+      all.destroy();
+      inputs?.rest.destroy();
+    }
   }
 
   private showOffline() {
@@ -1419,8 +1693,12 @@ export class ItemRoom {
         this.delay.retain(this.pending.keys());
         this.set({ delayed: false });
         void this.recorder?.covered(covered);
-        // The room stored the re-authored edit: the early rows go.
-        if (this.replaced && covered >= this.reauthoredAt) this.dropReplaced();
+        // The room stored the renamed edit: the early rows go, once they no
+        // longer hold what its state may hide (`replacedHolds`).
+        if (this.replaced && covered >= this.renamedAt) {
+          this.replacedStored = true;
+          this.dropReplaced();
+        }
         if (this.snapshot.synced && this.snapshot.status !== 'offline')
           this.set({ status: this.live() });
         return;
@@ -1446,8 +1724,6 @@ export class ItemRoom {
   /** Asks for a receipt once the server acknowledged every update: it
    * answers when the room stored them, and the stored drafts they cover go. */
   private requestReceipt() {
-    // A document joining for an early board holds none of its edits yet.
-    if (this.joining) return;
     if (!(this.recorder?.unsaved && this.unsynced === 0 && this.provider))
       return;
     const id = crypto.randomUUID();
@@ -1468,12 +1744,13 @@ export class ItemRoom {
   /** The server refused this channel's update (or discarded the room's
    * unsaved state): the edits are kept as a refused draft to copy, and a
    * fresh room replaces this one. It never rejoins with what was refused.
-   * `toast`: say the room refused them (not for a re-apply that failed here,
-   * whose recovery strip says it). */
+   * `toast`: say the room refused them (not for a rename that could not go
+   * here, whose recovery strip says it). */
   private refused(toast = true) {
     if (this.ended || this.destroyed) return;
     this.ended = true;
     this.dropCopy();
+    this.leaveRenamed();
     const recorder = this.recorder;
     const kept = recorder?.unsaved ?? false;
     if (kept && recorder) {
@@ -1481,8 +1758,8 @@ export class ItemRoom {
       if (toast) this.toastRefused();
     } else if (this.unsynced > 0) toastSaveUndone();
     this.recorder = null;
-    // The early rows go once the refused row, which holds the re-authored
-    // edit, landed; with nothing unsaved the room stored it already.
+    // The early rows go once the refused row, which holds the renamed edit,
+    // landed; with nothing unsaved the room stored it already.
     if (this.replaced && kept && recorder)
       this.dropReplacedOn(recorder.stored());
     else this.dropReplaced();
@@ -1495,7 +1772,8 @@ export class ItemRoom {
     if (this.ended || this.destroyed) return;
     this.ended = true;
     this.dropCopy();
-    // Its rows hold the re-authored edit once its whole document landed.
+    this.leaveRenamed();
+    // Its rows hold the renamed edit once its whole document landed.
     if (this.recorder && this.replaced)
       this.dropReplacedOn(this.recorder.stored());
     void this.recorder?.dispose();
@@ -1505,8 +1783,8 @@ export class ItemRoom {
 
   /** `after`: what the fresh room waits for before it starts. */
   private end(after?: Promise<unknown>) {
-    this.merge.abort();
     this.stopUnloaded?.();
+    this.mergeWait?.(false);
     this.delay.dispose();
     this.sender?.stop();
     this.stopHold?.();
@@ -1533,7 +1811,8 @@ export class ItemRoom {
     this.set({ access: 'read', readOnlyCode: code ?? null });
     const discarded = this.recorder?.discard();
     this.recorder = null;
-    // The early rows a re-authored edit stood for go with it.
+    // The early rows a renamed edit stood for go with it.
+    this.leaveRenamed();
     this.replacedHolds = false;
     this.dropReplaced();
     this.armLeave(false);
@@ -1578,25 +1857,38 @@ export class ItemRoom {
     this.unavailable();
   }
 
-  /** The item is gone or no longer this user's: the room stops for good. An
-   * early board's own edits, which no room holds, stay to copy ("reject
-   * nothing", Epo 2026-11-18). */
+  /** The item is gone or no longer this user's: the room stops for good.
+   * Edits no room holds stay to copy ("reject nothing", Epo 2026-11-18)
+   * while nothing has synced: an early board's, and the rows `restore`
+   * applied, which no later open could show, the device copy dropped here
+   * (review re-check 4 m7). A synced board stays on screen. */
   private unavailable() {
     if (this.destroyed) return;
     this.dropCopy();
     this.reconnector.dispose();
     this.provider?.disconnect();
-    if (this.snapshot.early && this.recorder?.unsaved) this.keepEarly();
+    // Rows it painted hold edits too, though none was made here.
+    const painted = this.earlyRows;
+    if (
+      !this.snapshot.synced &&
+      (this.recorder?.unsaved || painted?.apply.length || painted?.send.length)
+    )
+      this.keepEarly();
     this.set({ status: 'unavailable' });
   }
 
-  /** The early board's edits as one refused row, shown for copying until
+  /** The edits no room holds (an early board's, or the rows `restore`
+   * applied before any sync) as one refused row, shown for copying until
    * Reload, which asks first. */
   private keepEarly() {
-    if (!this.recorder) return;
+    const { recorder } = this;
+    if (!recorder) return;
     const doc = copyOf(this.doc);
-    const kept = this.recorder.refuse();
+    const kept = recorder.refuse();
     this.recorder = null;
+    // Renamed already: the early rows go once the refused row landed.
+    this.leaveRenamed();
+    if (this.replaced) this.dropReplacedOn(recorder.stored());
     // The rows it painted are in the refused one now.
     const painted = this.earlyRows;
     this.earlyRows = null;
@@ -1622,8 +1914,18 @@ export class ItemRoom {
    * answered joins again, each with 30 s more. */
   retry() {
     if (this.destroyed || this.ended) return;
-    if (this.snapshot.unloaded) {
-      this.reauthor();
+    // An early merge whose code did not load tries again (review re-check
+    // R2); a token that never answered is asked again below.
+    this.mergeWait?.(true);
+    // An early board's edits are renamed before anything joins (Q38, review
+    // M3): Retry tries that again, flags that could not be stored or the
+    // draft send it waits for, which connects once it is done.
+    if (this.renaming) {
+      if (!this.snapshot.unloaded) {
+        this.set({ unreachable: false });
+        this.reconnector.started();
+      }
+      void this.rename();
       return;
     }
     this.set({ unreachable: false });
@@ -1642,7 +1944,7 @@ export class ItemRoom {
   async reload() {
     const { recovery } = this.snapshot;
     await deleteDrafts(recovery?.rows ?? []).catch(() => undefined);
-    // Beside a live room (a re-apply's hidden edits): the room shows.
+    // Beside a live room (early edits its state hides): the room shows.
     if (recovery?.merged && !(this.ended || this.destroyed)) {
       if (this.snapshot.recovery === recovery) this.set({ recovery: null });
       return;
@@ -1663,6 +1965,7 @@ export class ItemRoom {
     globalThis.document?.removeEventListener('visibilitychange', this.shown);
     this.keeper?.close();
     this.destroyed = true;
+    this.stopMerge.abort();
     this.delay.dispose();
     this.doc.off('update', this.grew);
     this.sizeListeners.clear();
@@ -1671,11 +1974,13 @@ export class ItemRoom {
     this.waiting?.();
     this.reconnector.dispose();
     this.armLeave(false);
-    this.merge.abort();
     this.stopUnloaded?.();
-    // The early rows a re-authored edit stands for go once a whole document
-    // holding it landed, unless they hold the only copy of what it could not
-    // show; until then they stay, flagged copy-only, never re-applied.
+    this.mergeWait?.(false);
+    this.keptLate?.();
+    // The early rows a renamed edit stands for go once a whole document
+    // holding it landed, unless they hold the only copy of what the room's
+    // state hides; until then they stay, flagged copy-only, never applied.
+    this.leaveRenamed();
     if (this.recorder && this.replaced)
       this.dropReplacedOn(this.recorder.stored());
     void this.recorder?.dispose();
@@ -1685,8 +1990,6 @@ export class ItemRoom {
     this.awareness?.destroy();
     this.undoManager?.destroy();
     this.doc.destroy();
-    this.joining?.doc.destroy();
-    this.retired?.destroy();
     this.snapshot.recovery?.doc.destroy();
     this.listeners.clear();
   }

@@ -189,7 +189,7 @@ import {
 import { unknownStore } from './boardUnknown';
 import { unknownViews } from './boardUnknownView';
 import { BoardUploads, boardUploads } from './boardUploads';
-import { openRoomStore } from './roomStore';
+import { followTextEditors, openRoomStore } from './roomStore';
 
 // BlockSuite's notices show in the app's own toast (local change 33), in the
 // app's language (chromeLabels.ts). They come as bare English strings, a refusal
@@ -389,10 +389,6 @@ export type DrawingBoardOptions = {
    * first fit, as a peer may have moved or removed what was there (Epo
    * 2026-11-19, Q35). */
   kept?: BoardView;
-  /** What is selected as it opens, of what it holds: what its person had
-   * selected on the board this one replaces (a canvas's early edits
-   * re-applied, Q31). */
-  selected?: readonly string[];
   /** A question's answer board or the workspace canvas: what it may hold and its
    * tools (the board catalog). */
   board: BoardKind;
@@ -708,6 +704,11 @@ export function mountDrawingBoard(
   const drawnEnd = board.appendChild(document.createComment(''));
   container.prepend(board);
   render(std.render(), board, { renderBefore: drawnEnd });
+  // An editor open as the room renames the early edits keeps its Undo and
+  // caret (Q38).
+  const unfollow = options.room
+    ? followTextEditors(board, options.room.doc)
+    : null;
   const gfx = std.get(GfxControllerIdentifier);
   if (options.openPlane) setPlaneOpener(gfx, options.openPlane);
   const unguard = tools
@@ -1120,15 +1121,13 @@ export function mountDrawingBoard(
       );
       store.resetHistory();
     }
-    const { kept, selected, view } = options;
+    const { kept, view } = options;
     const opening = view ?? (kept && shows(kept) ? kept : undefined);
     if (opening) {
       gfx.viewport.setViewport(opening.zoom, opening.centre);
       place();
       fitted = true;
     } else fitView();
-    const elements = selected?.filter((id) => gfx.getElementById(id)) ?? [];
-    if (elements.length) gfx.selection.set({ editing: false, elements });
   });
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
@@ -1426,6 +1425,7 @@ export function mountDrawingBoard(
         board.removeEventListener(type, refuseAdd, true);
       window.removeEventListener('keydown', cardKeys, true);
       unwatchEditor?.();
+      unfollow?.();
       menu.dispose();
       chrome.remove();
       uploads?.dispose();

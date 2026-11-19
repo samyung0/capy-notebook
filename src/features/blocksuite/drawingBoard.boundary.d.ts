@@ -34,7 +34,6 @@ export type DrawingBoardOptions = {
   locked?: boolean;
   view?: BoardView;
   kept?: BoardView;
-  selected?: readonly string[];
   saved?: string;
   room?: { doc: import('yjs').Doc };
 };
