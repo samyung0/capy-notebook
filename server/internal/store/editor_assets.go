@@ -606,7 +606,9 @@ func (s *Store) frozenAssetReadable(ctx context.Context, q rowQueryer, actorID s
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
 // the payer: the actor, who pays for the images and audio it adds, as for a
 // file (Epo 2026-10-24, M16). A workspace asset needs workspace edit access; a
-// standalone material is edited only by its owner. Nobody adds to a material
+// standalone material is edited only by its owner, but for a canvas shared
+// with its workspace, which also takes the images of the members who edit it
+// (materialAccessRow.canvasRole, Epo 2026-11-18). Nobody adds to a material
 // whose own payer is frozen: its view-only state follows that payer alone.
 // Accounts lock before the material row, matching material saves.
 func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
@@ -644,16 +646,17 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		return actorID, nil
 	}
 	var ownerID string
-	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
-		WHERE id=$1 AND workspace_id IS NULL AND trashed_at IS NULL`, materialID).Scan(&ownerID)
-	if isNoRows(err) || (err == nil && ownerID != actorID) {
+	var kind MaterialKind
+	err := tx.QueryRow(ctx, `SELECT owner_user_id, kind FROM materials
+		WHERE id=$1 AND workspace_id IS NULL AND trashed_at IS NULL`, materialID).Scan(&ownerID, &kind)
+	if isNoRows(err) || (err == nil && ownerID != actorID && kind != MaterialCanvas) {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", err
 	}
-	if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
-		return "", err
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
+		return "", HideOtherAccountLock(err, actorID)
 	}
 	var lockedOwnerID string
 	err = tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
@@ -664,10 +667,21 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 	if err != nil {
 		return "", err
 	}
-	if err := s.assertEditableTx(ctx, tx, ownerID); err != nil {
-		return "", err
+	// Someone else's canvas: read under its row lock, so an unshare has
+	// landed or waits.
+	if ownerID != actorID {
+		role, err := materialEffectiveAccess(ctx, tx, actorID, materialID)
+		if err != nil {
+			return "", err
+		}
+		if !RoleCanEdit(role) {
+			return "", ErrForbidden
+		}
 	}
-	return ownerID, nil
+	if err := s.assertEditableTx(ctx, tx, ownerID, actorID); err != nil {
+		return "", HideOtherAccountLock(err, actorID)
+	}
+	return actorID, nil
 }
 
 // EditorAssetItem is an image or audio clip the caller pays for, wherever it
@@ -750,10 +764,10 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 	args = append(args, limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
 			CASE WHEN l.lost THEN '' ELSE COALESCE(top.id, '') END, COALESCE(top.kind, 'quiz'),
-			COALESCE(`+workspaceNameSQL("top.workspace_id", "top.title")+`, ''),
-			COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id),
-				`+workspaceNameSQL("COALESCE(top.workspace_id, q.workspace_id)", "COALESCE(top.workspace_name, bw.name, '')")+`),
+			COALESCE(`+embedHomeTitleSQL("top", "$1")+`, ''),
 			-- A canvas's image is filed under the workspace it is the Canvas tab of.
+			`+workspaceNameSQL("COALESCE(top.workspace_id, top.canvas_workspace_id, q.workspace_id)",
+		"COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id), top.workspace_name, bw.name, '')")+`,
 			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id, top.canvas_workspace_id, q.workspace_id, '') END, l.lost,
 			COALESCE(a.thumbnail_key,''), q.id IS NOT NULL
 		FROM editor_assets a
@@ -761,7 +775,7 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 		LEFT JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
 		LEFT JOIN item_bank_questions q ON q.id=a.bank_question_id
 		LEFT JOIN workspaces bw ON bw.id=q.workspace_id
-		CROSS JOIN LATERAL (SELECT CASE WHEN q.id IS NULL THEN `+lostAccessSQL("top.workspace_id", "$1")+`
+		CROSS JOIN LATERAL (SELECT CASE WHEN q.id IS NULL THEN `+embedHomeLostSQL("top", "$1")+`
 			ELSE q.workspace_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workspaces sw WHERE sw.id=q.workspace_id
 				AND `+liveWorkspaceSQL("sw.id")+` AND (sw.user_id=$1 OR EXISTS (SELECT 1 FROM workspace_members sm
 					WHERE sm.workspace_id=sw.id AND sm.user_id=$1 AND sm.role IN ('owner','editor')))) END AS lost) l

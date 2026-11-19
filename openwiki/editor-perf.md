@@ -79,7 +79,9 @@ builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
 with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
-minutes. It covers one small and one large file per format:
+minutes. Its web server, [`office-server.mjs`](../bench/editor/scripts/office-server.mjs),
+is a Node script so the bench starts on Windows as on Linux. It covers one small
+and one large file per format:
 
 | Format | Small | Large |
 | --- | --- | --- |
@@ -170,6 +172,38 @@ Per file it reports:
   ([frontend/office-files.md](frontend/office-files.md)), so it can run ahead
   of what an engine holds by one step. `performance.measureUserAgentSpecificMemory` would
   need cross-origin isolation, which the app does not have;
+- downloads (`downloads`, report-only): what every fetch of every realm (the
+  host page, the runtime frames and their workers) downloaded during the open,
+  from the workspace's load to the Edit click (`open`, so the app shell is in
+  it), and during View to Edit, from that click to 5 s after the edit's
+  `ready` (`edit`, so fonts that load after the first paint count). Per kind
+  (`appJsCss`, `officeRuntimeJs` from the runtime's origin, `engineWasm` with
+  each module in `engineWasmModules`, `fonts` with the CJK slice indexes
+  (`slices.json`), `fontDecoder` for `fontpack.wasm`, `sourceFile`, `other`
+  with the MSW answers, and `total`; `downloads.ts`): `requests`,
+  `bodiesSent` (fetches whose body crossed the wire), `encodedKiB` (bodies as
+  encoded, also those not sent), `transferredKiB` (what vite preview sent,
+  headers included: it gzips text, JavaScript, CSS and JSON responses over
+  1 KB and sends WASM, fonts and other binaries as built) and
+  `withStoredBrotliKiB` (the same with each WASM and TTF body sent at the
+  brotli-11 `.br` the Office Worker stores and serves; packed `.zst` faces
+  go as stored either way, and the gzipped text stays as vite preview sent
+  it, where production's edge compresses with brotli). A fetch the HTTP
+  cache or
+  MSW's service worker answered (the app's origin only: its API, the source
+  file and most app chunks, bench only) transfers nothing in its realm's
+  timing, and a revalidation (vite preview sends ETags) only its headers. The
+  test's context starts cold and keeps no disk cache, so `docx_edit` downloads
+  twice per DOCX View to Edit here (harness `2026-11-11-q691/REPORT.md`,
+  section 7), and Edit, a frame of its own, asks again for the CJK slices
+  the View loaded, which the cache answers with headers only. The web server stages the build with
+  `workers/office/stage.mjs` into `.results/office-stage` for those sizes,
+  which adds about a minute before the tests. Each realm raises its
+  resource-timing buffer and sends its resource and navigation entries to
+  the test as console messages as fetches end: the DOCX viewer worker ends as
+  soon as it answers and the View's frame goes at View to Edit, so a read at
+  the end would miss them. Workers get the probe once Playwright reports
+  them; one that ends first counts in `unprobedWorkers`;
 - `runner`: the CPU model and core count of the machine that ran it, in every
   Office result (the shared runner pool mixes EPYC models);
 - view-mode heap over full passes (a second case per file, for the view-mode
@@ -295,8 +329,9 @@ The bench's earlier medians (2026-10-04, before the 0.5.1 pin) are in its
 history; the PC baseline the second BetterOffice sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
-Heap figures stay report-only: they go to the results JSON (`budget.heap`,
-and `budget: "report-only"` in the heap and co-editor cases), the job summary
+Heap and download figures stay report-only: they go to the results JSON
+(`budget.heap`, `budget.downloads`, and `budget: "report-only"` in the heap and
+co-editor cases), the job summary
 and the artifact, and fail nothing. Fields are only ever added to these
 files, so a result compares with an older run's field by field.
 TODO: decide what a heap ceiling means (retained
@@ -387,6 +422,31 @@ the link from 927 to 740 ms. The probe also times Draw with the module already
 evaluated (`/dev/drawing?unmounted`): the first mount on the page, a second one,
 and showing a board mounted ahead out of sight, with the JS heap and DOM nodes a
 board adds.
+
+A canvas at its size cap is measured apart, by hand, by
+[`board-open.cap.ts`](../bench/editor/scripts/board-open.cap.ts)
+(`node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts`,
+report only, in no workflow): a production build with MSW opens a blank canvas
+and boards of about 2 MiB and 4 MiB (`CANVAS_BOARD_MAX`) of the growth bench's
+mixed hour through the mock collaboration room, and the same states with no
+room on `/dev/drawing`. On the Mac at 28a77f5f0 (2026-11-18, medians of 3),
+first paint through the room was 2,210 ms blank, 2,726 ms at 2 MiB and 3,312 ms
+at 4 MiB; the last long frame ended at 2,210, 2,927 and 3,526 ms; the longest
+frame was 176, 678 and 1,186 ms; the JS heap after a GC 30, 94 and 155 MB (27,
+67 and 104 MB with no room). At 4x CPU the 4 MiB board painted at 9.4 s and
+settled at 12.5 s. MSW's latency is in every total, and the service, a network,
+phones and typing on the open board were not measured:
+[report](../bench/editor/reports/2026-11-18-board-open-at-cap.md).
+After the trace's fixes (the same day, at 75feaf8f6 plus the fixes): a build's
+`/assets/` chunks pass MSW by, the mock room encodes once per join and skips
+its probe for an empty tab, and vendored BlockSuite's local changes 66 to 69
+(no selection read after a rangeless editor's render, the surface found once
+per store, one grid search for the views added in one go, no draw before the
+fit). At 4x CPU the 4 MiB board then painted at 5.7 s and settled at 9.0 s
+(10.0 and 13.3 s at HEAD; 6.4 and 9.6 s with the mock fixes alone), its longest
+frame 2.95 s (5.0 s); the bench now opens three times at 4x and waits for the
+machine's load under `PERF_CAP_MAX_LOAD`:
+[report](../bench/editor/reports/2026-11-18-board-open-fixes.md).
 
 ## Formula parity audit (`pnpm bench:formula`)
 

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 import { clickTextEnd } from './helpers';
 
@@ -349,6 +349,14 @@ test('Preview and back leaves a chat citation where it finished', async ({
   ).toBeUndefined();
 });
 
+/** A quiz embed's first card in Edit, which shows once its rooms synced
+ * (`EmbedQuizEditor`'s QuizForm). */
+const firstCard = (embed: Locator) =>
+  embed.getByRole('button', {
+    exact: true,
+    name: m.question_ui_edit_question_number({ number: 1 }),
+  });
+
 /** The matrix note with its quiz embed's room open in the hidden editor. */
 async function openNearEmbed(page: Page) {
   await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
@@ -357,9 +365,7 @@ async function openNearEmbed(page: Page) {
     .locator('[data-note-mount="live"] .slate-material_ref')
     .first();
   await embed.scrollIntoViewIfNeeded();
-  await expect(embed.locator('[data-question-edit]').first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(firstCard(embed)).toBeVisible({ timeout: 30_000 });
 }
 
 function watchTokens(page: Page) {
@@ -441,9 +447,7 @@ test('an embed that was never near opens one room, which the editor then shares'
   const embed = page
     .locator('[data-note-mount="live"] .slate-material_ref')
     .first();
-  await expect(embed.locator('[data-question-edit]').first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(firstCard(embed)).toBeVisible({ timeout: 30_000 });
   // Its content room is shared; only the keys room is new.
   await page.waitForTimeout(1500);
   expect(quiz()).toHaveLength(2);

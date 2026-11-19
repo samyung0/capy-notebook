@@ -524,7 +524,10 @@ test('Add file does not arrive once the user has moved elsewhere', async ({
     .click();
   const waiting = page.locator('[data-toast="loading"]');
   await expect(waiting).toBeVisible({ timeout: 1000 });
-  await page.getByRole('heading', { exact: true, name: 'Biology 101' }).click();
+  await page
+    .getByRole('navigation', { name: m.workspace_rail_label() })
+    .getByRole('button', { exact: true, name: m.workspace_section_dashboard() })
+    .click();
   await expect(waiting).toHaveCount(0);
   await release();
   await page.waitForTimeout(1500);

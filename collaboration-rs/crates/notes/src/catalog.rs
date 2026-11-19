@@ -22,6 +22,7 @@ pub const TABLE_VIEW_OPTIONS_MAX: usize = 50;
 pub const TABLE_VIEW_MAX_COUNT: usize = 20;
 pub const CARD_FRONT_MAX: usize = 200;
 pub const CARD_BACK_MAX: usize = 1000;
+pub const CANVAS_BOARD_MAX: usize = 4194304;
 pub const DRAWING_BOARD_MAX: usize = 256000;
 pub const DRAWING_IMAGE_MAX: usize = 307200;
 pub const DRAWING_IMAGE_SIDE_MAX: usize = 1568;
@@ -622,13 +623,13 @@ pub const ELEMENTS: &[Element] = &[
         void: true,
         inline: false,
         top_level: true,
-        required: &["id", "boardAssetId", "version", "images"],
-        fields: Some(&["type", "id", "children", "boardAssetId", "version", "images"]),
+        required: &["id", "version", "images"],
+        fields: Some(&["type", "id", "children", "version", "images"]),
         forbidden: &["color", "backgroundColor", "fontSize", "fontFamily"],
         shared_text: &[],
         shared_map: &[],
         shared_lists: &[],
-        assets: &["boardAssetId", "images[].assetId"],
+        assets: &["images[].assetId"],
         resizable: false,
         children: &[],
         materials: &["canvas"],

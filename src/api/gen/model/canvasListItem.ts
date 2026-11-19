@@ -6,7 +6,13 @@
  */
 
 export interface CanvasListItem {
+  /** Who made it, on another member's canvas; absent on the caller's own */
+  creatorName?: string;
   id: string;
+  /** The caller made it */
+  own: boolean;
+  /** Shared with its workspace: the members hold it by their workspace role */
+  shared: boolean;
   title: string;
   updatedAt: string;
   workspaceIconId?: string;

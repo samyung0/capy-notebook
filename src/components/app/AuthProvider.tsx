@@ -7,6 +7,7 @@ import { startQueryPersistence } from '@/api/queryPersistence';
 import type { User } from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
 import { signInHref } from '@/features/auth/clerk';
+import { forgetMadeMaterials } from '@/features/canvas/useCanvasMaterials';
 import { dropSourceOpens } from '@/features/files/sourceOpen';
 import { forgetAssetLinks } from '@/features/materials/resolvedAssetLinks';
 import { claimAccountData } from '@/lib/accountData';
@@ -40,6 +41,7 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
     if (identity === undefined) return;
     if (previousIdentity.current !== identity) {
       queryClient.clear();
+      forgetMadeMaterials();
       forgetAssetLinks();
       dropSourceOpens();
       claimSentOpens(identity);

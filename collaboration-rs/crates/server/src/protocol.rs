@@ -154,13 +154,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 30;
+pub const CLIENT_PROTOCOL: u32 = 31;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
-/// mindmaps, diagrams, quizzes, quiz keys, flashcard sets).
-pub const MIN_MATERIAL: u32 = 30;
+/// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
+pub const MIN_MATERIAL: u32 = 31;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 28;
+pub const MIN_SOURCE: u32 = 30;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -494,13 +494,13 @@ mod tests {
         assert!(outdated(CLIENT_PROTOCOL + 1, Some(CLIENT_PROTOCOL)));
     }
 
-    /// A quiz tab from before figures were held as maps (protocol 29) writes
-    /// a chart, plot or graph as one value, which quiz rooms refuse; material
-    /// rooms refuse it as outdated and it reloads.
+    /// A tab from before canvas rooms (protocol 30) saves a canvas as a board
+    /// asset, which the room replaced; material rooms refuse it as outdated
+    /// and it reloads.
     #[test]
-    fn a_material_tab_from_before_quiz_figure_maps_is_outdated() {
-        assert!(outdated(MIN_MATERIAL, Some(29)));
-        assert!(!outdated(MIN_MATERIAL, Some(30)));
+    fn a_material_tab_from_before_canvas_rooms_is_outdated() {
+        assert!(outdated(MIN_MATERIAL, Some(30)));
+        assert!(!outdated(MIN_MATERIAL, Some(31)));
     }
 
     #[test]

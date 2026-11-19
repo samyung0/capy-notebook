@@ -89,10 +89,8 @@ fn documents() -> BTreeMap<&'static str, Vec<Value>> {
         { "type": "mermaid_caption", "children": [{ "text": "Cells" }] },
     ] }),
     ];
-    let canvas = vec![
-        json!({ "type": "canvas_board", "id": "canvas", "boardAssetId": "asset_board",
-        "version": 1, "images": [{ "assetId": "asset_2" }], "children": leaf() }),
-    ];
+    let canvas = vec![json!({ "type": "canvas_board", "id": "canvas",
+        "version": 1, "images": [{ "assetId": "asset_2" }], "children": leaf() })];
     BTreeMap::from([
         ("note", note),
         ("quiz", quiz),
@@ -703,8 +701,8 @@ fn admission_checks_placement_values_and_the_embed_count() {
         );
     }
 
-    // A canvas's block names its board by a string, counts whole saves and
-    // lists its images by asset id.
+    // A canvas's block counts its board's version in whole numbers and lists
+    // its images by asset id.
     let canvas = self::room(&docs["canvas"]);
     let board = |key: &'static str, value: Value| {
         let update = edit(&canvas, 13, |peer| {
@@ -718,7 +716,6 @@ fn admission_checks_placement_values_and_the_embed_count() {
         Validator::new("canvas").admit(&canvas, &Update::decode_v1(&update).unwrap())
     };
     for (key, value) in [
-        ("boardAssetId", json!(1)),
         ("version", json!(-1)),
         ("version", json!(1.5)),
         ("images", json!("asset_2")),
@@ -730,7 +727,6 @@ fn admission_checks_placement_values_and_the_embed_count() {
         );
     }
     for (key, value) in [
-        ("boardAssetId", json!("")),
         ("version", json!(2)),
         ("images", json!([{ "assetId": "asset_3" }])),
     ] {

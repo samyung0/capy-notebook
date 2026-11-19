@@ -152,6 +152,15 @@ class ClickController extends PointerControllerBase {
 
   private _pointerDownCount = 0;
 
+  // Capy (local change 64): the presses so far are used up, so the next one
+  // counts as a first press. A double click that opens something over the host
+  // calls it: the host sees no press while that is open, and a press at the
+  // same place within 500 ms of the double click was a third, a triple click.
+  endRun() {
+    this._pointerDownCount = 0;
+    this._downPointerState = null;
+  }
+
   private readonly _up = (event: PointerEvent) => {
     if (!this._downPointerState) return;
 
@@ -614,10 +623,14 @@ export class PointerControl {
 
   private readonly controllers: PointerControllerBase[];
 
+  // Capy (local change 64): kept by name for `endClickRun`.
+  private readonly _click: ClickController;
+
   constructor(private readonly _dispatcher: UIEventDispatcher) {
+    this._click = new ClickController(_dispatcher, this._getRect);
     this.controllers = [
       new PointerEventForward(_dispatcher, this._getRect),
-      new ClickController(_dispatcher, this._getRect),
+      this._click,
       new DragController(_dispatcher, this._getRect),
       new PanController(_dispatcher, this._getRect),
       new PinchController(_dispatcher, this._getRect),
@@ -637,6 +650,10 @@ export class PointerControl {
   protected _updateRect() {
     if (!this._dispatcher.host) return;
     this._cachedRect = this._dispatcher.host.getBoundingClientRect();
+  }
+
+  endClickRun() {
+    this._click.endRun();
   }
 
   dispose() {

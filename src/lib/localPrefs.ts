@@ -12,6 +12,9 @@ import { useState } from 'react';
 export const PREF_KEYS = {
   /** An assignment's Files: grid or list (AssignmentFiles.tsx). */
   assignmentFilesView: 'capy.assignmentFiles.view',
+  /** Each canvas's last view on this device, with the account it belongs to
+   * (canvasViews.ts). */
+  canvasViews: 'capy.canvas.views',
   /** Agent's panel shows a chat rather than the history: kept while it is on
    * screen, so coming back to the workspace finds it (Epo 2026-10-27, T19),
    * and gone when Agent moves off it. */

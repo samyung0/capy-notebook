@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { memo, useCallback, useContext, useState } from 'react';
+import { qk } from '@/api/client';
 import {
   usePurgeTrashed,
   useRestoreTrashed,
@@ -118,14 +120,22 @@ export default function Files() {
 }
 
 /** Where a trashed item opens read-only: the file page Files opens it on. A
- * board opens only live, on its workspace. */
+ * canvas opens on its own canvas page, the account's or its workspace's,
+ * under the Trash strip with Restore. */
 function trashLink(item: TrashItem) {
   if (item.kind === 'source_file')
     return linkOptions({
       params: { fileId: item.id },
       to: '/files/$fileId',
     });
-  if (item.materialKind === 'canvas') return;
+  if (item.materialKind === 'canvas')
+    return item.workspaceId
+      ? linkOptions({
+          params: { workspaceId: item.workspaceId },
+          search: { c: item.id, view: 'canvas' },
+          to: '/workspaces/$workspaceId',
+        })
+      : linkOptions({ search: { c: item.id }, to: '/canvas' });
   return linkOptions({
     params: { materialId: item.id },
     to: '/materials/$materialId',
@@ -149,6 +159,22 @@ const TrashCard = memo(function TrashCard({
   workspaceIconId?: string;
 }) {
   const busy = !!useContext(ItemPick)?.busy;
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const link = trashLink(item);
+  // Its reads cached while it was live would paint it live first (a PDF's
+  // marks, a note's room), so it opens on a fresh read.
+  const open = link
+    ? () => {
+        queryClient.removeQueries({
+          queryKey:
+            item.kind === 'source_file'
+              ? qk.file(item.id)
+              : qk.material(item.id),
+        });
+        void navigate(link);
+      }
+    : undefined;
   return (
     <ItemCard
       actions={
@@ -179,9 +205,8 @@ const TrashCard = memo(function TrashCard({
       details={formatFileSize(item.sizeBytes)}
       icon={trashIconName(item)}
       // An item whose workspace the payer left stays shut, as in Files.
-      link={item.lostAccess ? undefined : trashLink(item)}
       meta={formatDate(item.purgeAfter)}
-      onOpen={item.lostAccess ? toastLostAccess : undefined}
+      onOpen={item.lostAccess ? toastLostAccess : open}
       pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
       selected={selected}
       thumbnail={{

@@ -117,9 +117,8 @@ func (a *api) materialResponse(
 	readOnly, full bool,
 ) (*materialOutput, error) {
 	material.IsOwner = role == store.RoleOwner
-	material.Capabilities = store.CapabilitiesForRole(role, true)
-	material.Capabilities.CanEdit = material.Capabilities.CanEdit && !readOnly
-	material.Capabilities.CanEditContent = material.Capabilities.CanEdit && !full
+	var storageFull store.StorageFullBy
+	material.Capabilities, storageFull = editingOf(role, readOnly, full, material.OwnerUserID, userID(ctx))
 	if role == "" {
 		material.Role = nil
 	} else {
@@ -148,10 +147,25 @@ func (a *api) materialResponse(
 	if body.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, body.Content.EditorAssetIDs()); err != nil {
 		return nil, hErr(err)
 	}
-	if store.RoleCanEdit(role) && !readOnly {
-		body.StorageFull = store.FullBy(full, material.OwnerUserID, userID(ctx))
-	}
+	body.StorageFull = storageFull
 	return &materialOutput{Body: body}, nil
+}
+
+// editingOf is what a material's response says of the caller's editing, for a
+// caller holding role on a material payerID pays for: its capabilities, with
+// editing off where readOnly (api.readOnly: a frozen account) and content
+// editing off where full (api.ownerFull: the payer at its storage limit), and,
+// for an editor no frozen account stops, whose full storage that is. A canvas
+// says the same (canvasResponse).
+func editingOf(role store.WorkspaceRole, readOnly, full bool, payerID, viewerID string) (store.AccessCapabilities, store.StorageFullBy) {
+	capabilities := store.CapabilitiesForRole(role, true)
+	capabilities.CanEdit = capabilities.CanEdit && !readOnly
+	capabilities.CanEditContent = capabilities.CanEdit && !full
+	var storageFull store.StorageFullBy
+	if store.RoleCanEdit(role) && !readOnly {
+		storageFull = store.FullBy(full, payerID, viewerID)
+	}
+	return capabilities, storageFull
 }
 
 func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materialRefsOutput, error) {

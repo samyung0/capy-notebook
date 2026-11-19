@@ -11,14 +11,20 @@ import {
   removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import { BOARD_CATALOG } from '@/api/board.generated';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { Material } from '@/api/types';
+import {
+  encodeCaret,
+  readBoardPresence,
+} from '@/features/canvas/boardPresence';
 import {
   type ItemProvider,
   registerMockItemProvider,
 } from '@/features/collaboration/itemRoom';
 import type { PresenceConnection } from '@/features/collaboration/presence';
+import { tokenClientIds } from '@/features/collaboration/protocol';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
 import {
   registerMockSourceProvider,
@@ -39,8 +45,10 @@ import {
   COLLABORATION_LATE_REASON,
   COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
+  COLLABORATION_UNASSIGNED_ID_REASON,
 } from '@/features/notes/collaborationEvents';
 import '@/features/notes/figureBinding';
+import { MAX_PRESENCE_BYTES } from '@/features/notes/notePresence';
 import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {
@@ -49,7 +57,17 @@ import {
   readQuestions,
   seedQuiz,
 } from '@/features/quizzes/liveQuiz';
-import { bytesToBase64 } from '@/lib/base64';
+import { base64ToBytes, bytesToBase64 } from '@/lib/base64';
+import {
+  demoteMockCanvas,
+  isMockCanvas,
+  mockCanvasAccess,
+  mockCanvasViewer,
+  narrowMockCanvas,
+  projectMockCanvas,
+  setMockStoredBoard,
+  unshareMockCanvas,
+} from './canvas';
 import * as db from './db';
 import { draftQuizQuestions } from './extraction';
 
@@ -62,12 +80,27 @@ import { draftQuizQuestions } from './extraction';
  * participant with an `identity` is an editor in the room's presence; one
  * with `onPresence` hears the others', as the service sends it. */
 interface Participant {
+  /** A board room's channel: a `read` one that writes is closed. */
+  access?: 'read' | 'write';
   awareness?: Awareness;
   document: Y.Doc;
   identity?: MockIdentity;
+  /** A board tab of the mock user: whether its person holds `client` (the
+   * service's admission rule, `owns`), and the ids an admitted update wrote
+   * under (`wrote`). A peer, another person, writes under its own id. */
+  ids?: {
+    owns: (client: number) => boolean;
+    wrote: (clients: number[]) => void;
+  };
   onPresence?: (connections: PresenceConnection[]) => void;
+  /** A board room refused this participant's update, which never reached
+   * it: sent on a read channel, taking the board over its cap, or writing
+   * under a client id its person holds no claim to. */
+  onRefused?: (why: BoardRefusal) => void;
   origin: object;
 }
+
+type BoardRefusal = 'read-only' | 'size' | 'unassigned';
 
 export type MockIdentity = Omit<PresenceConnection, 'clients'>;
 
@@ -91,6 +124,10 @@ function announcePresence(room: Room) {
 }
 
 export interface Room {
+  /** A board room's state in bytes, estimated as the service does: measured
+   * when the room opens and when an update would pass the cap, and grown by
+   * each update's size in between. */
+  bytes?: number;
   checkpointFailed?: boolean;
   dirty: boolean;
   document: Y.Doc;
@@ -103,6 +140,7 @@ export interface Room {
   target:
     | { kind: 'material'; id: string }
     | { kind: 'item'; id: string }
+    | { kind: 'board'; id: string }
     | { kind: 'source'; id: string };
   version: number;
 }
@@ -351,6 +389,7 @@ function persistMaterial(room: Room) {
 export function checkpointRoom(room: Room) {
   if (room.retired) return;
   if (room.target.kind === 'item') persistItem(room);
+  if (room.target.kind === 'board') projectBoard(room);
   const metrics =
     room.target.kind === 'material' ? persistMaterial(room) : undefined;
   if (room.dirty) room.version += 1;
@@ -365,6 +404,7 @@ function rememberCheckpoint(room: Room) {
     version: room.version,
   });
   room.pending = [];
+  if (room.target.kind === 'board') keepBoard(room);
   if (
     room.target.id.startsWith('mock-scenario-') &&
     typeof sessionStorage !== 'undefined'
@@ -380,7 +420,7 @@ function rememberCheckpoint(room: Room) {
 }
 
 export function sourceRoomState(room: Room): string {
-  return base64(Y.encodeStateAsUpdate(room.document));
+  return bytesToBase64(Y.encodeStateAsUpdate(room.document));
 }
 
 /** A source's last saved state, as the server's lock-free viewer read
@@ -396,16 +436,8 @@ export function savedSourceState(fileId: string): string | null {
       latest = { checkpoint, epoch };
   }
   return latest && latest.checkpoint.version > 0
-    ? base64(checkpointState(latest.checkpoint))
+    ? bytesToBase64(checkpointState(latest.checkpoint))
     : null;
-}
-
-function base64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-  }
-  return btoa(binary);
 }
 
 /** Joins the participant to the room: merges both ways, then relays document
@@ -427,18 +459,31 @@ export function join(room: Room, participant: Participant) {
       queueMicrotask(() => rejectMockNoteUpdate(room.target.id, refused));
       return;
     }
+    if (
+      room.target.kind === 'board' &&
+      !admitsBoardUpdate(room, participant, update)
+    )
+      return;
     Y.applyUpdate(room.document, update, participant);
   };
-  Y.applyUpdate(
-    room.document,
-    Y.encodeStateAsUpdate(participant.document),
-    participant
-  );
-  Y.applyUpdate(
-    participant.document,
-    Y.encodeStateAsUpdate(room.document),
-    participant.origin
-  );
+  // The room's state, encoded once: the joining document holds what it brings.
+  const state = Y.encodeStateAsUpdate(room.document);
+  // A fresh tab's document brings nothing. What a JOIN brings is admitted as
+  // any update is: a board room takes nothing from a read channel and nothing
+  // past its cap.
+  if (participant.document.store.clients.size > 0) {
+    const brought =
+      room.target.kind === 'board'
+        ? broughtToBoard(state, participant.document)
+        : null;
+    if (!brought || admitsBoardUpdate(room, participant, brought))
+      Y.applyUpdate(
+        room.document,
+        Y.encodeStateAsUpdate(participant.document),
+        participant
+      );
+  }
+  Y.applyUpdate(participant.document, state, participant.origin);
   participant.document.on('update', forward);
 
   const awareness = participant.awareness;
@@ -451,6 +496,7 @@ export function join(room: Room, participant: Participant) {
     origin: unknown
   ) => {
     if (origin === REMOTE || !awareness) return;
+    if (!relaysPresence(room, participant)) return;
     const update = encodeAwarenessUpdate(awareness, [
       ...added,
       ...updated,
@@ -465,7 +511,11 @@ export function join(room: Room, participant: Participant) {
     awareness.on('update', relay);
     // Existing presence, so a late joiner sees cursors already in the room.
     for (const other of room.participants) {
-      if (other.awareness && other !== participant) {
+      if (
+        other.awareness &&
+        other !== participant &&
+        relaysPresence(room, other)
+      ) {
         applyAwarenessUpdate(
           awareness,
           encodeAwarenessUpdate(other.awareness, [
@@ -1675,8 +1725,784 @@ class MockItemProvider implements ItemProvider {
   }
 }
 
+/* A canvas's board room (Epo 2026-11-18), as the service runs one: seeded with
+ * the editor's own first state, relaying each update to the other participants
+ * under their provider's origin, closing a read channel that writes and the
+ * writer whose update takes the board over its cap, and answering a
+ * checkpoint request with its receipt. Its state is kept across a reload (the
+ * tab's sessionStorage), as the service stores it. A presence state is
+ * relayed when the board's field list admits it (`relaysPresence`). */
+
+const BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
+const BOARD_STATE = 'capy.mock.board.';
+
+/** The editor's own first state (`boardFirstState.ts`), which the service
+ * seeds a canvas's room with. Loaded when the first board room opens: the
+ * board's modules stay out of the mocks' own. */
+const firstStateModule = import.meta.glob<{
+  boardFirstState: () => Uint8Array;
+}>('/src/features/blocksuite/boardFirstState.ts');
+async function boardFirstState() {
+  const [load] = Object.values(firstStateModule);
+  return (await load()).boardFirstState();
+}
+
+/** The service's presence check (`Fields::Board`, `on_awareness`): a board
+ * room keeps and relays a participant's state only when every field is one a
+ * board lists, within its bounds and the room's 4 KiB, and names `uploads`
+ * only from a writer (a read channel uploads nothing, REVIEW5 E2); any other
+ * is dropped and the sender hears nothing. A removal always goes. Other rooms
+ * relay what comes. */
+function relaysPresence(room: Room, participant: Participant) {
+  const state = participant.awareness?.getLocalState() ?? null;
+  if (room.target.kind !== 'board' || state === null) return true;
+  if (participant.access === 'read' && 'uploads' in state) return false;
+  return (
+    readBoardPresence(state) !== null &&
+    new TextEncoder().encode(JSON.stringify(state)).length <= MAX_PRESENCE_BYTES
+  );
+}
+
+/** Boards whose room stands at its cap as far as this tab can tell
+ * (`mockBoardAtCap`). */
+const cappedBoards = new Set<string>();
+
+/** The service's admission of a board update: whether the room takes it. A
+ * tab of the mock user adds structs only under ids its person holds (Q213,
+ * `client_ids::foreign` in collaboration-rs/crates/server/src/client_ids.rs;
+ * `a_board_refuses_structs_under_a_foreign_client_id` in its rooms.rs), and
+ * the ids an admitted update wrote under are recorded as theirs
+ * (`first_writes`). */
+function admitsBoardUpdate(
+  room: Room,
+  participant: Participant,
+  update: Uint8Array
+) {
+  const refuse = (why: BoardRefusal) => {
+    queueMicrotask(() => participant.onRefused?.(why));
+    return false;
+  };
+  if (!update.byteLength) return true;
+  if (participant.access === 'read') return refuse('read-only');
+  const { ids } = participant;
+  const written = ids ? writtenClients(room.document, update) : [];
+  if (written.some((client) => !ids?.owns(client))) return refuse('unassigned');
+  if (!fitsBoard(room, update)) return refuse('size');
+  ids?.wrote(written);
+  return true;
+}
+
+/** The client ids `update` adds structs under past what `doc` holds
+ * (`client_ids::written`): structs it holds are duplicates, and deletions
+ * are no one's. */
+function writtenClients(doc: Y.Doc, update: Uint8Array) {
+  const held = Y.decodeStateVector(Y.encodeStateVector(doc));
+  const clients = new Set<number>();
+  for (const struct of Y.decodeUpdate(update).structs) {
+    const { client, clock } = struct.id;
+    if (clock + struct.length > (held.get(client) ?? 0)) clients.add(client);
+  }
+  return [...clients];
+}
+
+/** Whether the board stays within its cap with `update`, as the service
+ * measures it. */
+function fitsBoard(room: Room, update: Uint8Array) {
+  const measured = () => Y.encodeStateAsUpdate(room.document).byteLength;
+  if (cappedBoards.has(room.target.id)) {
+    const probe = new Y.Doc();
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(room.document));
+    Y.applyUpdate(probe, update);
+    const grows = Y.encodeStateAsUpdate(probe).byteLength > measured();
+    probe.destroy();
+    if (grows) return false;
+  }
+  room.bytes ??= measured();
+  if (room.bytes + update.byteLength > BOARD_MAX) {
+    room.bytes = measured();
+    if (room.bytes + update.byteLength > BOARD_MAX) {
+      // Exactly, as the service near its cap: the state with it fits, or is
+      // no larger than without it (a deletion).
+      const probe = new Y.Doc();
+      Y.applyUpdate(probe, Y.encodeStateAsUpdate(room.document));
+      Y.applyUpdate(probe, update);
+      const after = Y.encodeStateAsUpdate(probe).byteLength;
+      probe.destroy();
+      if (after > BOARD_MAX && after > room.bytes) return false;
+      room.bytes = after;
+      return true;
+    }
+  }
+  room.bytes += update.byteLength;
+  return true;
+}
+
+/** The client ids recorded to the mock user on each canvas, as the
+ * service's `ClientIds` keeps them (client_ids.rs): recorded at an id's
+ * first accepted write, expired at a clean Leave of the channel whose token
+ * offered it (`left_clean`). Kept across a reload, as the room's state is. */
+const BOARD_IDS = 'capy.mock.board.ids.';
+const recordedBoardIds = new Map<string, Set<number>>();
+function boardIds(materialId: string) {
+  let ids = recordedBoardIds.get(materialId);
+  if (!ids) {
+    const kept = browser
+      ? sessionStorage.getItem(BOARD_IDS + materialId)
+      : null;
+    ids = new Set(kept ? (JSON.parse(kept) as number[]) : []);
+    recordedBoardIds.set(materialId, ids);
+  }
+  return ids;
+}
+function keepBoardIds(materialId: string) {
+  if (browser)
+    sessionStorage.setItem(
+      BOARD_IDS + materialId,
+      JSON.stringify([...boardIds(materialId)])
+    );
+}
+
+/** The service's JOIN refusal for an id another live channel holds
+ * (`client_ids::REFUSED_REASON`). */
+const CLIENT_ID_REFUSED = 'collaboration-client-id';
+/** The service's close reason for an update under an id its writer holds no
+ * claim to (`client_ids::FOREIGN_UPDATE`). */
+const FOREIGN_UPDATE = 'update under a client id the writer was not assigned';
+
+/** A board room's stored state, as the gateway answers a trashed canvas's
+ * board: the open room's, else the last stored one; none for a canvas never
+ * opened. */
+function storedBoardUpdates(materialId: string) {
+  const name = `material:${materialId}:schema:1`;
+  const room = rooms.get(name);
+  if (room) return [bytesToBase64(Y.encodeStateAsUpdate(room.document))];
+  const checkpoint = checkpoints.get(name);
+  if (checkpoint) return [bytesToBase64(checkpointState(checkpoint))];
+  const kept = browser ? sessionStorage.getItem(BOARD_STATE + name) : null;
+  return kept ? [(JSON.parse(kept) as { state: string }).state] : [];
+}
+
+/** What a joining document holds that its board room does not, as one update;
+ * an empty one when it brings nothing (a fresh tab, a tab back from a drop
+ * that drew nothing meanwhile). */
+function broughtToBoard(roomState: Uint8Array, joining: Y.Doc) {
+  const probe = new Y.Doc();
+  Y.applyUpdate(probe, roomState);
+  let brought: Uint8Array = new Uint8Array();
+  probe.on('update', (update: Uint8Array) => {
+    brought = update;
+  });
+  Y.applyUpdate(probe, Y.encodeStateAsUpdate(joining));
+  probe.destroy();
+  return brought;
+}
+
+/** The service's projection: the images the board holds, each id once, in
+ * order, at the room's stored version. */
+function projectBoard(room: Room) {
+  if (!room.dirty) return;
+  const ids = new Set<string>();
+  for (const block of room.document.getMap<unknown>('blocks').values()) {
+    if (!(block instanceof Y.Map)) continue;
+    if (block.get('sys:flavour') !== 'affine:image') continue;
+    const id: unknown = block.get('prop:sourceId');
+    if (typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id)) ids.add(id);
+  }
+  projectMockCanvas(room.target.id, room.version + 1, [...ids].sort());
+}
+
+/** A board room's stored state, kept for the tab: a reload opens it again.
+ * A tab's sessionStorage holds about 5 MB, less than a board near its cap
+ * takes as text: such a board is kept for the page's life alone, and its
+ * older copy goes so a reload cannot open a stale one. */
+function keepBoard(room: Room) {
+  if (!browser) return;
+  const key = BOARD_STATE + room.name;
+  try {
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        state: bytesToBase64(Y.encodeStateAsUpdate(room.document)),
+        version: room.version,
+      })
+    );
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'QuotaExceededError'))
+      throw error;
+    sessionStorage.removeItem(key);
+  }
+}
+
+function boardRoom(name: string, firstState: Uint8Array): Room {
+  const existing = rooms.get(name);
+  if (existing) return existing;
+  // The page holds its rooms' states as bytes; the tab's text copy is read
+  // on the page's first open alone.
+  const kept =
+    browser && !checkpoints.has(name)
+      ? sessionStorage.getItem(BOARD_STATE + name)
+      : null;
+  if (kept) {
+    const { state, version } = JSON.parse(kept) as {
+      state: string;
+      version: number;
+    };
+    checkpoints.set(name, { updates: [base64ToBytes(state)], version });
+  }
+  const room = createRoom(name, {
+    id: name.split(':')[1] ?? '',
+    kind: 'board',
+  });
+  // A first open: the page and its canvas, under the seed's own client id.
+  if (!checkpoints.has(name)) Y.applyUpdate(room.document, firstState);
+  room.dirty = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  room.document.on('update', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (rooms.get(name) === room) checkpointRoom(room);
+    }, 300);
+  });
+  return room;
+}
+
+const boardProviders = new Set<MockBoardProvider>();
+
+class MockBoardProvider implements ItemProvider {
+  private readonly config: RoomProviderConfig;
+  private leave: (() => void) | null = null;
+  /** The channel the tab holds in the room now; none while it is out. */
+  channel: 'read' | 'write' | null = null;
+  /** Connected unless disconnected on purpose. */
+  private wanted = false;
+  private joining = false;
+  private down = false;
+  private previousToken: string | undefined;
+  /** The client id the tab took from a token, which its document keeps once
+   * it wrote under it (Q236), as the room provider's. */
+  private adopted: number | null = null;
+  /** The id its channel is bound to, and whether its token offered it. */
+  private bound: { client: number; offered: boolean } | null = null;
+  /** Receipts the room holds back while its stores fail
+   * (`mockBoardStoreFails`). */
+  private held: string[] | null = null;
+  /** The room holds an update of this tab's as soon as it took it: nothing
+   * stays unacknowledged, and the room is asked for its receipt. */
+  private readonly sent = (_: Uint8Array, origin: unknown) => {
+    if (origin === this) return;
+    queueMicrotask(() => {
+      if (this.leave) this.config.onUnsyncedChanges?.({ number: 0 });
+    });
+  };
+
+  constructor(config: RoomProviderConfig) {
+    this.config = config;
+    boardProviders.add(this);
+  }
+
+  get materialId() {
+    return this.config.name.split(':')[1] ?? '';
+  }
+
+  /** What the tab says of itself, relayed or not; null while it says nothing. */
+  get presence() {
+    return this.config.awareness?.getLocalState() ?? null;
+  }
+
+  connect() {
+    this.wanted = true;
+    void this.join();
+  }
+
+  /** A JOIN, as the room provider's: a fresh token first, whose refusal is
+   * the join's; then the room, by the access the mock user has now. */
+  private async join() {
+    if (this.leave || this.joining || this.down) return;
+    this.joining = true;
+    try {
+      let firstState: Uint8Array;
+      try {
+        this.previousToken = await this.config.token(this.previousToken);
+        firstState = await boardFirstState();
+      } catch (error) {
+        if (this.wanted)
+          this.config.onAuthenticationFailed?.({
+            reason: `Failed to get token: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        return;
+      }
+      // A JOIN waits for the page's draft send, as the room provider's does
+      // (`beforeJoin`, Q327).
+      const before = this.config.beforeJoin?.();
+      if (before) await before;
+      if (!this.wanted || this.down) return;
+      // The token's claims no longer pass (it expired while the JOIN
+      // waited, `mockExpireBoardJoin`): refused as the service refuses it,
+      // which the room reads as one to join again from (`TokenError::Claims`).
+      if (expiringJoins.delete(this.materialId)) {
+        this.config.onAuthenticationFailed?.({ reason: TOKEN_CLAIMS_REASON });
+        return;
+      }
+      // A spent open budget (`setCollaborationSlowed`): the join waits, told
+      // so, until the flag clears.
+      if (browser && sessionStorage.getItem(SLOWED) === 'true') {
+        this.config.onSlowed?.(true);
+        window.addEventListener(REACHABILITY, () => void this.join(), {
+          once: true,
+        });
+        return;
+      }
+      const access = mockCanvasAccess(this.materialId);
+      if (!access) {
+        this.config.onAuthenticationFailed?.(refused);
+        return;
+      }
+      const room = boardRoom(this.config.name, firstState);
+      const refusal = this.bind(room);
+      if (refusal) {
+        // A fresh token next, as the room provider asks for one (Q475).
+        if (refusal === CLIENT_ID_REFUSED) this.previousToken = undefined;
+        this.config.onAuthenticationFailed?.({ reason: refusal });
+        return;
+      }
+      // A viewer sends no presence and hears none; a narrowed editor's read
+      // channel keeps its presence, uploads aside.
+      const viewer = mockCanvasViewer(this.materialId);
+      this.channel = access;
+      this.leave = join(room, {
+        access,
+        awareness: (!viewer && this.config.awareness) || undefined,
+        document: this.config.document,
+        ids: {
+          owns: (client) => this.owns(client),
+          wrote: (clients) => {
+            const ids = boardIds(this.materialId);
+            for (const client of clients) ids.add(client);
+            keepBoardIds(this.materialId);
+          },
+        },
+        onPresence: viewer ? undefined : this.config.onPresence,
+        onRefused: (why) => this.refusedUpdate(why),
+        origin: this,
+      });
+      this.config.document.on('update', this.sent);
+      this.config.onSynced?.({ state: true });
+    } finally {
+      this.joining = false;
+    }
+  }
+
+  /** The JOIN's client id, as the room provider declares it: the token's,
+   * unless the document wrote under the one it took. Then the service's rule
+   * for binding it (`ClientIds::holds`, client_ids.rs; Q213, Q236): an id
+   * recorded to this person binds; one not recorded must be the one its
+   * token offers and have no structs in the room's history (else
+   * `collaboration-unassigned-id`, as `a_clean_leave_expires_the_sessions_row`
+   * refuses an expired id offered again), and no live channel may hold it
+   * (`collaboration-client-id`). Answers the refusal, or null once bound. */
+  private bind(room: Room) {
+    const { document } = this.config;
+    const { clientId: offered } = tokenClientIds(this.previousToken ?? '');
+    const wrote =
+      this.adopted !== null && Y.getState(document.store, this.adopted) > 0;
+    if (!wrote) {
+      this.adopted = offered;
+      document.clientID = offered;
+      const awareness = this.config.awareness;
+      if (awareness && awareness.clientID !== offered) {
+        const state = awareness.getLocalState();
+        removeAwarenessStates(awareness, [awareness.clientID], this);
+        awareness.clientID = offered;
+        if (state !== null) awareness.setLocalState(state);
+      }
+    }
+    const client = document.clientID;
+    this.bound = { client, offered: client === offered };
+    if (boardIds(this.materialId).has(client)) return null;
+    if (client !== offered || Y.getState(room.document.store, client) > 0)
+      return COLLABORATION_UNASSIGNED_ID_REASON;
+    const live = [...room.participants].some(
+      (participant) => participant.document.clientID === client
+    );
+    return live ? CLIENT_ID_REFUSED : null;
+  }
+
+  /** Whether this person may add structs under `client`: recorded to them,
+   * or bound to one of their live channels (the room's admission). */
+  private owns(client: number) {
+    if (boardIds(this.materialId).has(client)) return true;
+    for (const provider of boardProviders)
+      if (
+        provider.materialId === this.materialId &&
+        (provider === this || provider.leave) &&
+        provider.bound?.client === client
+      )
+        return true;
+    return false;
+  }
+
+  private refusedUpdate(why: BoardRefusal) {
+    if (!this.leave) return;
+    if (why === 'unassigned') {
+      // The browser keeps them to re-apply under an assigned id (Epo
+      // 2026-10-24): `foreign_update_refused`.
+      this.config.onStateless?.({
+        payload: JSON.stringify({
+          code: 'unassigned',
+          materialId: this.materialId,
+          room: this.config.name,
+          type: 'document-rejected',
+        }),
+      });
+      this.close(4400, FOREIGN_UPDATE);
+      return;
+    }
+    if (why === 'size') {
+      this.config.onStateless?.({
+        payload: JSON.stringify({
+          code: 'document_size_exceeded',
+          limits: { maxContentBytes: BOARD_MAX },
+          room: this.config.name,
+          type: 'document-rejected',
+        }),
+      });
+      this.close(4400, 'document rejected');
+      return;
+    }
+    this.close(4400, 'read-only connection sent a document update');
+  }
+
+  /** The service closed this channel alone. */
+  close(code: number, reason: string) {
+    if (!this.leave) return;
+    this.drop();
+    this.config.onClose?.({ code, reason });
+  }
+
+  /** The tab's socket dropped, or is back (`mockBoardSocket`): while it is
+   * down nothing is sent or heard, and the tab joins again as it returns. */
+  socket(up: boolean) {
+    this.down = !up;
+    if (up) {
+      if (this.wanted) void this.join();
+    } else this.close(1006, 'socket closed');
+  }
+
+  /** A checkpoint request: the room stores now and answers its receipt,
+   * with the board's size as the service measures it. While its stores fail
+   * the request waits for the next one that lands. */
+  sendStateless(payload: string) {
+    const request = JSON.parse(payload) as { id?: string; type?: string };
+    if (request.type !== 'checkpoint-request' || !request.id) return;
+    if (this.held) {
+      this.held.push(request.id);
+      return;
+    }
+    this.receipt([request.id]);
+  }
+
+  private receipt(ids: string[]) {
+    const room = rooms.get(this.config.name);
+    if (!(room && this.leave)) return;
+    checkpointRoom(room);
+    const receipt = JSON.stringify({
+      checkpointIds: ids,
+      materialId: this.materialId,
+      metrics: {
+        contentBytes: Y.encodeStateAsUpdate(room.document).byteLength,
+        maxDepth: 0,
+        nodeCount: 0,
+      },
+      type: 'checkpoint-persisted',
+      yjsVersion: room.version,
+    });
+    queueMicrotask(() => {
+      if (this.leave) this.config.onStateless?.({ payload: receipt });
+    });
+  }
+
+  /** The room's stores fail, or land again (`mockBoardStoreFails`): failing,
+   * it says so and answers nothing; back, it answers what waited. */
+  storeFails(failing: boolean) {
+    if (failing) {
+      this.held ??= [];
+      this.config.onStateless?.({
+        payload: JSON.stringify({
+          materialId: this.materialId,
+          type: 'checkpoint-failed',
+        }),
+      });
+      return;
+    }
+    const ids = this.held ?? [];
+    this.held = null;
+    if (ids.length) this.receipt(ids);
+  }
+
+  wake() {}
+
+  private drop() {
+    this.config.document.off('update', this.sent);
+    this.leave?.();
+    this.leave = null;
+    this.channel = null;
+  }
+
+  /** A Leave. A clean one (nothing of the tab's unsent) expires the id its
+   * token offered, so it never binds again (`left_clean`; Q236); an id it
+   * bound otherwise stays. */
+  disconnect() {
+    this.wanted = false;
+    if (!this.leave) return;
+    if (this.bound?.offered && !this.config.unsent?.()) {
+      boardIds(this.materialId).delete(this.bound.client);
+      keepBoardIds(this.materialId);
+    }
+    this.drop();
+    this.config.onDisconnect?.();
+  }
+
+  destroy() {
+    this.disconnect();
+    boardProviders.delete(this);
+  }
+}
+
+/** The open board room of a canvas. */
+function openBoard(materialId: string) {
+  const room = rooms.get(`material:${materialId}:schema:1`);
+  if (!room) throw new Error(`Mock board room for ${materialId} is not open`);
+  return room;
+}
+
+/** Another person on a canvas, headless (e2e): its own document and presence
+ * in the canvas's mock room, to draw and set awareness as a peer would. With
+ * an `identity` the room's presence names them, so their marks are drawn. */
+export function mockBoardPeer(materialId: string, identity?: MockIdentity) {
+  const document = new Y.Doc();
+  const awareness = new Awareness(document);
+  const leave = join(openBoard(materialId), {
+    access: 'write',
+    awareness,
+    document,
+    identity,
+    origin: {},
+  });
+  /** The canvas's elements by id, as the board's surface block keeps them. */
+  const canvas = () => {
+    for (const block of document.getMap<unknown>('blocks').values()) {
+      if (!(block instanceof Y.Map)) continue;
+      if (block.get('sys:flavour') !== 'affine:surface') continue;
+      const elements: unknown = block.get('prop:elements');
+      const value = elements instanceof Y.Map ? elements.get('value') : null;
+      if (value instanceof Y.Map) return value as Y.Map<Y.Map<unknown>>;
+    }
+    throw new Error('The board room holds no canvas');
+  };
+  return {
+    /** Draws a canvas element with these fields under `id` (`type`, `xywh`,
+     * `index`…, as the board stores one). */
+    add: (id: string, fields: Record<string, unknown>) => {
+      const element = new Y.Map<unknown>();
+      // A connector's label is a text of its own.
+      for (const [key, value] of Object.entries({ ...fields, id }))
+        element.set(
+          key,
+          key === 'text' && typeof value === 'string'
+            ? new Y.Text(value)
+            : value
+        );
+      canvas().set(id, element);
+    },
+    awareness,
+    /** A caret `index` characters into the block text that reads `words` (a
+     * note's paragraph), with `end` a range from there to it, as a tab's
+     * presence holds them (boardPresence.ts). */
+    caret: (words: string, index: number, end?: number) => {
+      for (const block of document.getMap<unknown>('blocks').values()) {
+        const text = block instanceof Y.Map ? block.get('prop:text') : null;
+        if (!(text instanceof Y.Text && text.toString() === words)) continue;
+        return {
+          f: end === undefined ? undefined : encodeCaret({ index: end, text }),
+          s: encodeCaret({ index, text }),
+        };
+      }
+      throw new Error(`The board room holds no text "${words}"`);
+    },
+    /** Changes fields of the element `id` (moves it, by its `xywh`). */
+    change: (id: string, fields: Record<string, unknown>) => {
+      const element = canvas().get(id);
+      if (!element) throw new Error(`The board room holds no element ${id}`);
+      document.transact(() => {
+        for (const [key, value] of Object.entries(fields))
+          element.set(key, value);
+      });
+    },
+    /** The peer's own document. */
+    document,
+    /** The canvas's elements as the peer holds them, by id. */
+    elements: () =>
+      canvas().toJSON() as Record<string, Record<string, unknown>>,
+    /** Pastes an image block `id` whose file is stored as `sourceId`, as a
+     * peer's tab adds one. */
+    image: (id: string, sourceId: string) => {
+      const blocks = document.getMap<Y.Map<unknown>>('blocks');
+      const surface = [...blocks.values()].find(
+        (block) => block.get('sys:flavour') === 'affine:surface'
+      );
+      const children = surface?.get('sys:children');
+      if (!(children instanceof Y.Array))
+        throw new Error('The board room holds no canvas');
+      const block = new Y.Map<unknown>();
+      for (const [key, value] of Object.entries({
+        'prop:height': 540,
+        'prop:index': 'a0',
+        'prop:rotate': 0,
+        'prop:size': 1240,
+        'prop:sourceId': sourceId,
+        'prop:width': 960,
+        'prop:xywh': '[0,0,320,180]',
+        'sys:children': new Y.Array<string>(),
+        'sys:flavour': 'affine:image',
+        'sys:id': id,
+        'sys:version': 1,
+      }))
+        block.set(key, value);
+      document.transact(() => {
+        blocks.set(id, block);
+        children.push([id]);
+      });
+    },
+    leave,
+    remove: (id: string) => canvas().delete(id),
+  };
+}
+
+/** The canvas's maker took it back from the workspace while the mock user was
+ * in (e2e): the service closes the channels of the people it took something
+ * from (4403), and their next token is refused. */
+export function mockRevokeBoard(materialId: string) {
+  unshareMockCanvas(materialId);
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId && !mockCanvasAccess(materialId))
+      provider.close(4403, 'collaboration access changed');
+}
+
+/** Fills a canvas's open room to the edge of its cap (e2e), as a peer's
+ * drawing would: one element no editor reads, which a board keeps and draws
+ * as a placeholder. The next stroke anyone draws is refused for size. */
+export function mockFillBoard(materialId: string) {
+  const room = openBoard(materialId);
+  const peer = mockBoardPeer(materialId);
+  const held = Y.encodeStateAsUpdate(room.document).byteLength;
+  peer.add('filler', {
+    index: 'a0',
+    pad: 'x'.repeat(BOARD_MAX - held - 300),
+    type: 'capy:filler',
+    xywh: '[0,-400,40,40]',
+  });
+  peer.leave();
+  if (Y.encodeStateAsUpdate(room.document).byteLength < BOARD_MAX - 1000)
+    throw new Error('The mock room refused its filler');
+}
+
+const TOKEN_CLAIMS_REASON = 'invalid collaboration token claims';
+const expiringJoins = new Set<string>();
+/** The next JOIN to a canvas's room is refused for its token's claims, as an
+ * expired token is (auth.rs `TokenError::Claims`). */
+export function mockExpireBoardJoin(materialId: string) {
+  expiringJoins.add(materialId);
+}
+
+/** A draft group the service admitted into a canvas's open room (the
+ * `/drafts` stub): its update goes in, and the ids it wrote under are this
+ * person's from then on, as the service records a draft's first writes. */
+export function admitMockBoardDrafts(materialId: string, update: Uint8Array) {
+  const room = openBoard(materialId);
+  const ids = boardIds(materialId);
+  for (const client of writtenClients(room.document, update)) ids.add(client);
+  keepBoardIds(materialId);
+  Y.applyUpdate(room.document, update);
+}
+
+/** The mock user's socket to a canvas's room drops, or returns (e2e): while it
+ * is down their tab draws on its own, and what it and the others drew meets
+ * when it joins again. */
+export function mockBoardSocket(materialId: string, up: boolean) {
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId) provider.socket(up);
+}
+
+/** The mock user's tab on a canvas (e2e). */
+function boardTab(materialId: string) {
+  for (const provider of boardProviders)
+    if (provider.materialId === materialId) return provider;
+  throw new Error(`Mock board room for ${materialId} has no tab`);
+}
+
+/** What the mock user's tab says of itself on a canvas (e2e): its own presence
+ * state, null while it has set none. The room relays nothing a read channel
+ * says, so only this shows what its tab said. */
+export const mockBoardOwnPresence = (materialId: string) =>
+  boardTab(materialId).presence;
+
+/** The channel the mock user's tab holds in a canvas's room (e2e): `read`,
+ * `write`, or null while it is out of the room. */
+export const mockBoardChannel = (materialId: string) =>
+  boardTab(materialId).channel;
+
+/** The mock user's account is frozen, or a storage full, while they are on
+ * a canvas they may edit (e2e): the service closes their channel (4403) and
+ * their next token reads. */
+export function mockNarrowBoard(
+  materialId: string,
+  how?: Parameters<typeof narrowMockCanvas>[1]
+) {
+  narrowMockCanvas(materialId, how);
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId)
+      provider.close(4403, 'collaboration access changed');
+}
+
+/** The mock user's role on another member's canvas drops to viewer while
+ * they are on it (e2e): the service closes their channel (4403) and their
+ * next token reads. */
+export function mockDemoteBoard(materialId: string) {
+  demoteMockCanvas(materialId);
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId)
+      provider.close(4403, 'collaboration access changed');
+}
+
+/** The canvas room's stores fail while the mock user is on it, or land again
+ * (e2e): failing, the room says so and answers no checkpoint request. */
+export function mockBoardStoreFails(materialId: string, failing: boolean) {
+  for (const provider of [...boardProviders])
+    if (provider.materialId === materialId) provider.storeFails(failing);
+}
+
+/** The canvas's room stands at its cap while set (e2e): it refuses any update
+ * that grows the board, as when another tab filled it a moment before this
+ * one's stroke, before this tab heard of it. Deletions still land. */
+export function mockBoardAtCap(materialId: string, atCap: boolean) {
+  if (atCap) cappedBoards.add(materialId);
+  else cappedBoards.delete(materialId);
+}
+
+/** Whether the canvas's open mock room has stored every update it took (e2e:
+ * a reload opens what was stored). */
+export function mockBoardStored(materialId: string) {
+  const room = openBoard(materialId);
+  return !room.dirty && room.pending.length === 0;
+}
+
 export function registerMockCollaborationProvider() {
+  setMockStoredBoard(storedBoardUpdates);
   registerProviderType('mock', MockCollaborationProvider);
   registerMockSourceProvider((config) => new MockSourceProvider(config));
-  registerMockItemProvider((config) => new MockItemProvider(config));
+  registerMockItemProvider((config) =>
+    isMockCanvas(config.name.split(':')[1] ?? '')
+      ? new MockBoardProvider(config)
+      : new MockItemProvider(config)
+  );
 }

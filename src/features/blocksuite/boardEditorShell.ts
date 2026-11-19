@@ -48,6 +48,11 @@ export function boardEditorSession(
     return null;
   gfx.selection.clear();
   board.setAttribute('data-editor-open', '');
+  // The double click that opened it is used up. The editor covers the board, so
+  // the board sees no press until it closes, and within 500 ms the first press
+  // of a double click on the card was that one's third: a triple click, which
+  // opens nothing (vendor local change 64).
+  gfx.std.event.endClickRun();
 
   const undo = gfx.doc.get(HistoryExtension).undoManager;
   gfx.doc.captureSync();

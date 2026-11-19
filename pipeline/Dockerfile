@@ -35,9 +35,11 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
 # heif-dec (libheif-examples) converts an imported HEIC to JPEG in the decode
 # sandbox (pipeline/ingest/decode.py, Epo 2026-10-24, Q353): libheif and its
 # libde265 decoder plugin are LGPL-3.0, and without recommends no x265
-# encoder comes with them.
+# encoder comes with them. zlib1g is named so the image takes trixie's
+# 1.3.1-1+deb13u1 (CVE-2026-85091, gz_vacate overflow) before the floating
+# python:3.11-slim base is rebuilt with it; drop it from the list then.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libheif-examples libheif-plugin-libde265 \
+    && apt-get install -y --no-install-recommends ffmpeg libheif-examples libheif-plugin-libde265 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 # Smoke: the tool converts the shared HEIC fixture, so a packaging slip fails
 # the build instead of refusing every imported HEIC.

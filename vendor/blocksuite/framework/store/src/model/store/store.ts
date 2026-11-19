@@ -8,6 +8,7 @@ import * as Y from 'yjs';
 import type { ExtensionType } from '../../extension/extension.js';
 import {
   BlockSchemaIdentifier,
+  BlockStandInIdentifier,
   type Doc,
   HistoryExtension,
   StoreExtensionIdentifier,
@@ -182,6 +183,12 @@ export type StoreSlots = {
 };
 
 const internalExtensions = [StoreSelectionExtension, HistoryExtension];
+
+/* Capy (vendor/blocksuite/README.md, local change 62): a block by its own key. An
+ * id a peer writes may be `__proto__` or `toString`, which a plain lookup answers
+ * with something that is no block. */
+const ownBlock = (blocks: Record<string, Block>, id: string) =>
+  Object.hasOwn(blocks, id) ? blocks[id] : undefined;
 
 /**
  * Core store class that manages blocks and their lifecycle in BlockSuite
@@ -586,6 +593,9 @@ export class Store {
     this._provider.getAll(BlockSchemaIdentifier).forEach(schema => {
       this._schema.register([schema]);
     });
+    // Capy (local change 62): a stored block this editor can't read.
+    this._schema.standIn =
+      this._provider.getOptional(BlockStandInIdentifier) ?? undefined;
     this._doc = this._provider.get(DocIdentifier);
     this._crud = new DocCRUD(this._yBlocks, this._schema);
     if (readonly !== undefined) {
@@ -988,7 +998,7 @@ export class Store {
    * @category Block CRUD
    */
   getBlock(id: string): Block | undefined {
-    return this._blocks.peek()[id];
+    return ownBlock(this._blocks.peek(), id);
   }
 
   /**
@@ -999,7 +1009,7 @@ export class Store {
    * @category Block CRUD
    */
   getBlock$(id: string): Block | undefined {
-    return this._blocks.value[id];
+    return ownBlock(this._blocks.value, id);
   }
 
   /**
@@ -1064,7 +1074,7 @@ export class Store {
     const parentId = this._crud.getParent(targetId);
     if (!parentId) return null;
 
-    const parent = this._blocks.peek()[parentId];
+    const parent = ownBlock(this._blocks.peek(), parentId);
     if (!parent) return null;
 
     return parent.model;
@@ -1136,7 +1146,7 @@ export class Store {
    * @category Block CRUD
    */
   hasBlock(id: string) {
-    return id in this._blocks.peek();
+    return Object.hasOwn(this._blocks.peek(), id);
   }
 
   /**

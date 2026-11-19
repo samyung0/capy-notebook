@@ -1,5 +1,21 @@
 # The workspace canvas stored on the server
 
+Superseded in part on 2026-11-18 (the canvas collaboration build, branch
+`claude/canvas-collab`): a canvas's board now lives in a collaboration room, one per
+canvas, and a canvas drawn in a workspace can be shared with it. What that made untrue
+below: the canvas is no longer personal only (`materials.canvas_shared`, migration
+0182, a "Shared with workspace" switch in the picker; members hold a shared canvas by
+their workspace role); sections 2 and 3 are gone (no `board` asset, no `boardAssetId`,
+no `PUT /api/canvases/{id}`, no autosave, no 409, no `drawingDrafts` copy: the room's
+projection writes the `canvas_board` block, `{ id: "board", version, images }`); the
+cap is 4 MiB of the room's live Yjs state (Epo 2026-11-18), not 2 MiB of a saved copy,
+and the board's stored Yjs bytes are charged to its creator (migration 0183); an
+editor's image on a shared canvas is charged to the editor; migration 0181 deleted
+every canvas saved the old way. Sections 1, 4 and 5 still describe the material, its
+images and its cards. Current behaviour: `openwiki/frontend/plate-editor.md` (The
+canvas's room), `openwiki/authorization-permissions-lifecycles.md` (Workspace
+canvases), `openwiki/backend-storage-quota.md` (Canvases).
+
 Status: steps 1 and 2 built 2026-11-09 (server: migration 0164, kind, catalog block, routes; browser: `WorkspaceCanvas.tsx` opens, autosaves, keeps a device copy; the Canvas tab ships); step 3 built 2026-11-10 (images upload at once as the canvas's image assets, `boardBlobs.ts`, `assetImages`). Step 4 built 2026-11-10: the Files page lists a member's canvas with their blocks (`items.go`, under the workspace it is the Canvas tab of, with its board's size), its card draws the saved board (`canvasPreview.ts`, from the stored preview's `boardAssetId`), its menu is Open and Delete, and Trash shows it with the canvas icon. Epo 2026-11-10: the canvas got its own account-level page instead (`/canvas`, mock B: the page is a board of the person's own in no workspace, migration 0167, with a panel listing every canvas), and the Files rows are gone. Decided by Epo 2026-11-09 (human/frontend/
 plate-editor.md): the canvas is **personal**: one per member per workspace, seen by its
 owner alone, no sharing, no view or preview mode, one BlockSuite editor over the whole
@@ -51,7 +67,7 @@ message; it ships behind the answer flow's gate, which has landed.
 - **Alternative, not chosen:** a workspace material with a new owner-only rule in every
   material read and list path.
 
-### 2. The content and the board asset
+### 2. The content and the board asset (superseded 2026-11-18: the room)
 
 - `content` is a one-block document: `canvas_board { boardAssetId, version, bytes,
   imageAssetIds }`. Naming the board asset and every image asset keeps them past the
@@ -67,7 +83,7 @@ message; it ships behind the answer flow's gate, which has landed.
   fetched and inflated as `DrawnSample.tsx` does, then
   `mountDrawingBoard(host, { board: 'workspace', saved })`. No asset yet: an empty board.
 
-### 3. Saving
+### 3. Saving (superseded 2026-11-18: every change goes to the room)
 
 - Autosave: `onChange` debounced (2 s idle, and on leave with `keepalive`): gzip
   `save()`, upload the new board asset, then `PATCH` the material's content with the
@@ -114,4 +130,13 @@ Decided (Epo 2026-11-09): autosave 2 s after the last change and on leaving the 
 
 ## Decisions still open
 
-None.
+From the 2026-11-18 build, with Epo:
+
+- A shared canvas whose creator leaves the workspace or is removed. Built for now:
+  every canvas of a leaver is deleted, shared ones included.
+- Who may share, rename and delete a shared canvas, and whether a workspace viewer may
+  share their own. Built for now: the creator alone, sharing only while an owner or
+  editor of the workspace.
+- The words of the full-canvas toast ("This canvas is full. Delete something to keep
+  drawing."), where the "You no longer have access" strip sits, and the presence
+  marks, which have no mock.

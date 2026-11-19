@@ -113,7 +113,7 @@ func catalogDocuments(t *testing.T) map[string][]map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canvas, err := CanvasDocument(CanvasBoard{BoardAssetID: "asset_board", Version: 1, ImageAssetIDs: []string{"asset_2"}})
+	canvas, err := CanvasDocument(CanvasBoard{Version: 1, ImageAssetIDs: []string{"asset_2"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -65,11 +65,12 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "betteroffice-docx-edit"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-docx-layout",
  "betteroffice-docx-parse",
  "betteroffice-ooxml-text",
+ "libm",
  "ryu-js",
  "serde",
  "serde_json",
@@ -79,10 +80,13 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-docx-layout"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-ooxml-text",
+ "foldhash",
+ "js-sys",
+ "libm",
  "serde",
  "serde_json",
  "unicode-segmentation",
@@ -92,12 +96,14 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-docx-parse"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "betteroffice-drawingml",
  "betteroffice-opc",
  "indexmap",
+ "libm",
+ "memchr",
  "quick-xml",
  "ryu-js",
  "serde",
@@ -108,26 +114,40 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-drawingml"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
+ "libm",
  "serde",
  "tiff",
  "weezl",
 ]
 
 [[package]]
+name = "betteroffice-metafile"
+version = "0.5.1"
+dependencies = [
+ "betteroffice-drawingml",
+ "libm",
+]
+
+[[package]]
 name = "betteroffice-office-service"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "betteroffice-docx-edit",
  "betteroffice-docx-parse",
  "betteroffice-opc",
  "betteroffice-pptx-edit",
+ "betteroffice-pptx-parse",
  "betteroffice-xlsx",
+ "betteroffice-xlsx-calc",
+ "betteroffice-xlsx-ops",
+ "betteroffice-xlsx-parse",
+ "betteroffice-xlsx-render",
  "icu_calendar",
  "icu_datetime",
  "icu_locale_core",
@@ -140,9 +160,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "betteroffice-ooxml-text"
-version = "0.2.0"
+name = "betteroffice-ooxml-raster"
+version = "0.5.1"
 dependencies = [
+ "betteroffice-drawingml",
+ "betteroffice-ooxml-text",
+ "png",
+ "tiny-skia",
+]
+
+[[package]]
+name = "betteroffice-ooxml-text"
+version = "0.5.1"
+dependencies = [
+ "betteroffice-drawingml",
  "rustybuzz",
  "serde",
  "serde_json",
@@ -153,18 +184,20 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-opc"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
+ "js-sys",
  "quick-xml",
  "zip",
 ]
 
 [[package]]
 name = "betteroffice-pptx-edit"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "betteroffice-drawingml",
+ "betteroffice-metafile",
  "betteroffice-opc",
  "betteroffice-pptx-parse",
  "serde",
@@ -176,11 +209,12 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-pptx-parse"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "betteroffice-drawingml",
  "betteroffice-opc",
+ "libm",
  "quick-xml",
  "serde",
  "thiserror",
@@ -188,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-opc",
@@ -206,30 +240,33 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx-calc"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-xlsx-model",
+ "libm",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-model"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
+ "libm",
  "serde",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-ops"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-xlsx-calc",
  "betteroffice-xlsx-model",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-parse"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-xlsx-model",
@@ -238,22 +275,26 @@ dependencies = [
 
 [[package]]
 name = "betteroffice-xlsx-raster"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
+ "betteroffice-ooxml-raster",
  "betteroffice-xlsx-render",
- "png",
+ "libm",
  "rustybuzz",
  "tiny-skia",
+ "unicode-segmentation",
 ]
 
 [[package]]
 name = "betteroffice-xlsx-render"
-version = "0.2.0"
+version = "0.5.1"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-xlsx-model",
  "hashbrown 0.17.1",
+ "libm",
  "serde",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -312,6 +353,12 @@ name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+
+[[package]]
+name = "cfg_aliases"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "core_detect"
@@ -502,6 +549,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c92d9081c7ab3bd83ef1eecdfad090f3d966e3ce74106779664114cfe1a6274"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "futures-core"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
+
+[[package]]
+name = "futures-task"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
+
+[[package]]
+name = "futures-util"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "pin-project-lite",
+ "slab",
 ]
 
 [[package]]
@@ -768,6 +839,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7883d941dae510fb2d978fc3fe018c71c9e2892fd38854de3e8b92c2e5ad9cc5"
 dependencies = [
  "cfg-if",
+ "futures-util",
  "wasm-bindgen",
 ]
 
@@ -779,9 +851,9 @@ checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
 
 [[package]]
 name = "libm"
-version = "0.2.16"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "litemap"
@@ -835,6 +907,18 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
 
 [[package]]
 name = "office-room-memory"
@@ -1077,6 +1161,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "slab"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
 name = "smallstr"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1216,9 +1306,9 @@ dependencies = [
 
 [[package]]
 name = "typed-path"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
+checksum = "54ec2755506471f54baf5e4bb5499d8e510cc1caf271270e778a736bd2d7336c"
 
 [[package]]
 name = "typenum"
@@ -1350,7 +1440,6 @@ dependencies = [
 name = "ydoc"
 version = "0.1.0"
 dependencies = [
- "serde",
  "thiserror",
  "yrs",
 ]
@@ -1472,14 +1561,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
 ]
 

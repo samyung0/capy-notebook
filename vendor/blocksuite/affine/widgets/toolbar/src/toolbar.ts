@@ -208,6 +208,11 @@ export class AffineToolbarWidget extends WidgetComponent {
 
       // Should double check
       activated &&= Boolean(elements.length);
+      // Capy (local change 62): a placeholder for what the editor can't read has
+      // no toolbar (its model sets `toolbar` to false); alone, it shows none.
+      activated &&= elements.some(
+        model => (model as { toolbar?: boolean }).toolbar !== false
+      );
 
       hasLocked = elements.some(e => e.isLocked());
 

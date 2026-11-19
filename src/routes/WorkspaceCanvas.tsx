@@ -1,9 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef } from 'react';
-import { canvasById, saveCanvas } from '@/api/canvas';
 import { qk } from '@/api/client';
 import { useCreateMaterial } from '@/api/hooks';
+import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
+import {
+  CanvasBoardPanel,
+  CanvasBoardStrip,
+  CanvasOpening,
+} from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
@@ -12,7 +17,6 @@ import {
   useCanvasMaterials,
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
-import { FileError } from '@/features/files/FileStates';
 import type { WorkspaceOpenSearch } from '@/features/materials/openItem';
 import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { nextGenerateTitle } from '@/features/workspace/generateTitle';
@@ -29,10 +33,11 @@ type BoardProps = {
   workspaceName: string;
 };
 
-/** A member's canvases in the workspace (Epo 2026-11-09,
- * todo-workspace-canvas-storage.md; several since Epo 2026-11-12): the one the
- * URL's `c` names, under the canvas picker the account's Canvas page has. The
- * first is made with the workspace's name. */
+/** A member's canvases in the workspace and the other members' shared ones
+ * (Epo 2026-11-09, todo-workspace-canvas-storage.md; several since Epo
+ * 2026-11-12; shared since Epo 2026-11-18): the one the URL's `c` names, under
+ * the canvas picker the account's Canvas page has. A member's first is made
+ * with the workspace's name. */
 export default function WorkspaceCanvas({
   besideBack,
   ...props
@@ -69,12 +74,17 @@ export default function WorkspaceCanvas({
       {none && (
         <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
       )}
+      {!(current || none) && <CanvasOpening />}
       {picker && (
-        // On a phone the row stops short of the board's own menu at the top right.
+        // The row stops 8px short of the board's status and ☰ at the top right
+        // (--capy-board-chrome, useCanvasBoard): a phone's picker fills it, a
+        // wider screen's shrinks into it.
         <div
           className={cn(
-            'absolute top-2 right-12 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden',
-            besideBack ? 'left-12' : 'left-2'
+            'absolute top-2 right-[calc(var(--capy-board-chrome,32px)+16px)] flex sm:right-auto [&>[data-slot=popover-anchor]]:min-w-0 [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-initial [[data-workspace-canvas]:has(.capy-board[data-editor-open])_&]:hidden',
+            besideBack
+              ? 'left-12 sm:max-w-[calc(100%-var(--capy-board-chrome,32px)-64px)]'
+              : 'left-2 sm:max-w-[calc(100%-var(--capy-board-chrome,32px)-24px)]'
           )}
         >
           {picker}
@@ -108,7 +118,7 @@ function CanvasBoard({
         to: '.',
       })
   );
-  const materials = useCanvasMaterials(workspaceId);
+  const { materials, readAt } = useCanvasMaterials(workspaceId);
   // The item dialog's saves go through its live room, not the cards' snapshot
   // query: when the dialog closes or moves on, the material it showed is read
   // again by any card in view (a card's own Edit does the same on Done).
@@ -127,44 +137,52 @@ function CanvasBoard({
     [materials]
   );
   // Its quiz and flashcard cards (Epo 2026-11-09).
-  const { links, onBoard } = useCanvasLinks({
+  const {
+    links,
+    materials: listed,
+    onBoard,
+  } = useCanvasLinks({
     // The New tile: an unfiled quiz or set, named as the Create page names
-    // one ("Biology 101 quiz 2").
+    // one ("Biology 101 quiz 2"), past one just made too.
     create: async (kind) => {
       const made = await createMaterial({
         kind,
         title: nextGenerateTitle(
           kind,
           workspaceName,
-          (materials ?? []).map(({ title }) => title)
+          (links.materials() ?? []).map(({ title }) => title)
         ),
       });
       return { id: made.id, title: made.title };
     },
     materials: linked,
     open: onOpenMaterial,
+    readAt,
+    workspaceId,
   });
   const { openPlane, planeEditor } = usePlaneEditor();
-  const failed = useCanvasBoard(
-    container,
-    {
-      key: id,
-      open: () => canvasById(id),
-      save: (body) => saveCanvas(id, body),
-    },
-    { gone, link, onBoard, openPlane, workspace: links }
-  );
+  const state = useCanvasBoard(container, id, {
+    gone,
+    link,
+    onBoard,
+    openPlane,
+    workspace: links,
+  });
   // The placed quizzes and sets run in the page's own tree, through portals into the
   // board's card hosts (Epo 2026-11-09).
   return (
-    <div
-      className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
-      ref={container}
-    >
-      {/* Reopening the canvas tries again. */}
-      {failed && <FileError message={failed} onRetry={onRetry} />}
-      <CanvasMaterialCards link={link} materials={materials} />
-      {planeEditor}
-    </div>
+    <>
+      <div
+        className="h-full w-full overflow-hidden rounded-card-xl [&>div]:h-full"
+        ref={container}
+      >
+        {/* Reopening the canvas tries again. */}
+        <CanvasBoardPanel onRetry={onRetry} state={state} />
+        <CanvasMaterialCards link={link} materials={listed} />
+        <BoardPresenceMarks presence={state.presence} />
+        {planeEditor}
+      </div>
+      <CanvasBoardStrip strip={state.strip} />
+    </>
   );
 }

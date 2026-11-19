@@ -60,12 +60,13 @@ impl Refused {
 /// Why a quiz's projection is refused.
 const UNREADABLE_QUIZ: &str = "the quiz holds a block this version cannot read";
 
-/// The Plate envelope of a document, off the room's thread.
-pub async fn content_of(doc: Doc, model: Model) -> Result<Value, String> {
+/// The Plate envelope of a document holding the stored `version`, off the
+/// room's thread.
+pub async fn content_of(doc: Doc, model: Model, version: i64) -> Result<Value, String> {
     tokio::task::spawn_blocking(move || {
         use yrs::Transact;
         let txn = doc.transact();
-        let value = model.value(&txn)?;
+        let value = model.projection(&txn, version)?;
         Ok(json!({ "schemaVersion": 1, "value": value }))
     })
     .await
@@ -80,7 +81,7 @@ pub async fn project_doc(
     doc: Doc,
     model: Model,
 ) -> Result<(), String> {
-    let content = content_of(doc, model).await?;
+    let content = content_of(doc, model, version).await?;
     project(app, material_id, version, &content, None).await
 }
 
@@ -236,7 +237,10 @@ fn projected(durable: &note_store::Durable) -> Result<Option<Projected>, String>
                 Some(items::quiz::asset_ids(&content, &keys)),
             )
         }
-        None => (Model::of(&durable.kind).value(&doc.transact())?, None),
+        None => (
+            Model::of(&durable.kind).projection(&doc.transact(), durable.version)?,
+            None,
+        ),
     };
     Ok(Some((
         json!({ "schemaVersion": 1, "value": value }),
@@ -307,7 +311,31 @@ mod tests {
     use serde_json::json;
 
     use super::{Refused, projected};
+    use crate::model::Model;
     use crate::note_store::Durable;
+
+    /// What a canvas's projection sends Go: its one `canvas_board` block,
+    /// `version` the stored version projected, and no asset list beside it
+    /// (Go reads the assets from the block).
+    #[test]
+    fn a_canvas_projects_its_board_block_at_the_stored_version() {
+        let durable = Durable {
+            version: 7,
+            base: Model::Board.state_from_value(&[]),
+            rows: Vec::new(),
+            kind: "canvas".into(),
+            keys: None,
+        };
+        let (content, asset_ids) = projected(&durable).unwrap().unwrap();
+        assert_eq!(
+            content,
+            json!({ "schemaVersion": 1, "value": [{
+                "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+                "version": 7, "images": [],
+            }] })
+        );
+        assert_eq!(asset_ids, None);
+    }
 
     /// A quiz holding a block this version cannot read projects to nothing
     /// (the projection would drop the block), and its refusal is held per

@@ -63,9 +63,9 @@ const (
 	Flashcards = "flashcards"
 	Mindmap    = "mindmap"
 	Diagram    = "diagram"
-	// Canvas is a member's personal workspace canvas (Epo 2026-11-09): its
-	// document is one canvas_board block naming the board asset and the
-	// canvas's images; the drawing itself is that asset, never a room.
+	// Canvas is a member's canvas (Epo 2026-11-09), drawn in a collaboration
+	// room (Epo 2026-11-18): its document is one canvas_board block the room's
+	// projection writes, naming the stored version and the board's images.
 	Canvas = "canvas"
 )
 
@@ -357,13 +357,13 @@ func elementTypes() []Element {
 	video.Forbidden = []string{"assetId", "url", "src"}
 	video.Resizable = true
 
-	// A canvas's one block: its board asset, the save's version and its
-	// images, all editor assets of the canvas material.
+	// A canvas's one block, written by its room's projection: the stored
+	// version projected and the board's images, editor assets of the canvas.
 	canvas := void("canvas_board", IndexNone)
 	canvas.TopLevel = true
-	canvas.Required = []string{"id", "boardAssetId", "version", "images"}
-	canvas.Fields = []string{"type", "id", "children", "boardAssetId", "version", "images"}
-	canvas.Assets = []string{"boardAssetId", "images[].assetId"}
+	canvas.Required = []string{"id", "version", "images"}
+	canvas.Fields = []string{"type", "id", "children", "version", "images"}
+	canvas.Assets = []string{"images[].assetId"}
 	canvas.Materials = []string{Canvas}
 
 	// A note's table view: its block a live map whose columns, rows and views
@@ -544,6 +544,7 @@ func Limits() []Limit {
 		{"TABLE_VIEW_MAX_COUNT", TableViewMaxCount},
 		{"CARD_FRONT_MAX", fieldlimits.CardFront},
 		{"CARD_BACK_MAX", fieldlimits.CardBack},
+		{"CANVAS_BOARD_MAX", fieldlimits.CanvasBoardBytes},
 	}
 	for _, name := range fieldlimits.QuestionBoundNames() {
 		out = append(out, Limit{name, fieldlimits.QuestionBounds[name]})

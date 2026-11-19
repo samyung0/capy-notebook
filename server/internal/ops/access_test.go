@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func TestAccessVerifierChecksSignatureIssuerAudienceAndExpiry(t *testing.T) {
@@ -55,7 +55,7 @@ func TestAccessVerifierChecksSignatureIssuerAudienceAndExpiry(t *testing.T) {
 		raw, err := jwt.Signed(signer).Claims(accessClaims{
 			Claims: claims,
 			Email:  "operator@example.com",
-		}).CompactSerialize()
+		}).Serialize()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,7 +154,7 @@ func TestAccessVerifierRefreshesJWKSForUnknownKeyID(t *testing.T) {
 			Audience: jwt.Audience{"ops"},
 			IssuedAt: jwt.NewNumericDate(now.Add(-time.Minute)),
 			Expiry:   jwt.NewNumericDate(now.Add(time.Minute)),
-		}).CompactSerialize()
+		}).Serialize()
 		if err != nil {
 			t.Fatal(err)
 		}

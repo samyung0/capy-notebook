@@ -210,6 +210,7 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 //     workspace is link/public
 //   - signed-in nonmember of a link/public workspace: the share role
 //   - standalone link/public material: viewer
+//   - a canvas: materialAccessRow.canvasRole
 //
 // The owner's lifecycle hides it as workspaceRoles does. A workspace material
 // hidden from members is not found for a viewer (Epo 2026-11-03), nor is a quiz
@@ -229,17 +230,19 @@ func materialEffectiveAccess(
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
 	var linkGranted, hidden bool
+	var canvas canvasAccess
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, ''), m.parent_material_id,
 			`+materialHiddenSQL+`,
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
-				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2),
+			`+canvasAccessCols+`
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
-			ON wm.workspace_id=w.id AND wm.user_id=$2
+			ON wm.workspace_id=w.id AND wm.user_id=$2`+canvasAccessJoins+`
 		WHERE m.id=$1 AND m.trashed_at IS NULL AND owner.deleted_at IS NULL
 			AND owner.deletion_requested_at IS NULL
 			AND (owner.suspended_at IS NULL OR owner.id=$2)`, matID, userID).Scan(
@@ -253,6 +256,7 @@ func materialEffectiveAccess(
 		&parentID,
 		&hidden,
 		&linkGranted,
+		&canvas.is, &canvas.shared, &canvas.inWorkspace, &canvas.workspaceRole,
 	)
 	if isNoRows(err) {
 		return "", ErrNotFound
@@ -268,6 +272,7 @@ func materialEffectiveAccess(
 		materialOwner: materialOwner, materialPrivacy: materialPrivacy,
 		workspaceID: wsID, workspaceOwner: workspaceOwner, workspacePrivacy: workspacePrivacy,
 		shareRole: shareRole, memberRole: memberRole, hidden: hidden, linkGranted: linkGranted,
+		canvas: canvas,
 	}
 	role := row.role(userID)
 	if role == "" {
@@ -285,10 +290,62 @@ type materialAccessRow struct {
 	shareRole                                  *ShareRole
 	memberRole                                 WorkspaceRole
 	hidden, linkGranted                        bool
+	canvas                                     canvasAccess
+}
+
+// canvasAccess is what a canvas's access depends on beyond its creator
+// (materialOwner): a canvas sits in no workspace, so the one it was drawn in
+// (canvas_workspace_id) is read apart from workspaceID.
+type canvasAccess struct {
+	is, shared, inWorkspace bool
+	// workspaceRole is the caller's role in that workspace: owner, their
+	// membership's, or none, also when the workspace owner's account is not
+	// live (as liveWorkspaceSQL).
+	workspaceRole WorkspaceRole
+}
+
+// canvasAccessCols and canvasAccessJoins read canvasAccess for the materials
+// row m and the caller $2.
+const (
+	canvasAccessCols = `m.kind='canvas', m.canvas_shared, m.canvas_workspace_id IS NOT NULL,
+			CASE WHEN cwo.id IS NULL THEN '' WHEN cwo.id=$2 THEN 'owner' ELSE COALESCE(cwm.role, '') END`
+	canvasAccessJoins = `
+		LEFT JOIN workspaces cw ON cw.id=m.canvas_workspace_id
+		LEFT JOIN users cwo ON cwo.id=cw.user_id AND cwo.deleted_at IS NULL
+			AND cwo.deletion_requested_at IS NULL AND cwo.suspended_at IS NULL
+		LEFT JOIN workspace_members cwm ON cwm.workspace_id=cw.id AND cwm.user_id=$2`
+)
+
+// canvasRole is the caller's role on a canvas (Epo 2026-11-18; the
+// collaboration server's access::canvas_role is the same rule). One in no
+// workspace is its creator's alone. One drawn in a workspace follows the
+// caller's role there, so a leaver and a link or public visitor hold nothing
+// (Epo 2026-11-09): its creator owns it, and once it is shared the other
+// members hold it by their workspace role. No link, grant or hidden flag
+// applies to a canvas.
+func (r materialAccessRow) canvasRole(userID string) WorkspaceRole {
+	creator := r.materialOwner != nil && *r.materialOwner == userID
+	switch {
+	case !r.canvas.inWorkspace:
+		if creator {
+			return RoleOwner
+		}
+		return ""
+	case r.canvas.workspaceRole == "":
+		return ""
+	case creator:
+		return RoleOwner
+	case r.canvas.shared:
+		return r.canvas.workspaceRole
+	}
+	return ""
 }
 
 // role is the caller's effective role, "" when the material is out of reach.
 func (r materialAccessRow) role(userID string) WorkspaceRole {
+	if r.canvas.is {
+		return r.canvasRole(userID)
+	}
 	// A workspace material's owner_user_id is its payer (uploader pays) and
 	// grants nothing: access follows the workspace.
 	if r.workspaceID == nil && r.materialOwner != nil && *r.materialOwner == userID {
@@ -330,13 +387,14 @@ func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []st
 		SELECT wanted.id, m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, ''), `+materialHiddenSQL+`,
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
-				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2),
+			`+canvasAccessCols+`
 		FROM materials wanted
 		JOIN materials m ON m.id=COALESCE(wanted.parent_material_id, wanted.id)
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
-			ON wm.workspace_id=w.id AND wm.user_id=$2
+			ON wm.workspace_id=w.id AND wm.user_id=$2`+canvasAccessJoins+`
 		WHERE wanted.id = ANY($1::text[]) AND wanted.trashed_at IS NULL AND m.trashed_at IS NULL
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND (owner.suspended_at IS NULL OR owner.id=$2)`, ids, userID)
@@ -351,6 +409,7 @@ func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []st
 		if err := rows.Scan(
 			&id, &row.materialOwner, &row.materialPrivacy, &row.workspaceID, &row.workspaceOwner,
 			&row.workspacePrivacy, &row.shareRole, &row.memberRole, &row.hidden, &row.linkGranted,
+			&row.canvas.is, &row.canvas.shared, &row.canvas.inWorkspace, &row.canvas.workspaceRole,
 		); err != nil {
 			return nil, err
 		}
@@ -377,7 +436,8 @@ func (s *Store) UpdateStandaloneMaterialPrivacy(
 		(expectedKind != "" && string(material.Kind) != expectedKind) {
 		return Material{}, ErrNotFound
 	}
-	// A personal canvas is its owner's alone (Epo 2026-11-09): never shared.
+	// A canvas takes no link or public sharing (Epo 2026-11-09); one drawn in
+	// a workspace is shared with it through SetCanvasShared.
 	if material.Kind == MaterialCanvas {
 		return Material{}, ErrForbidden
 	}
@@ -2211,7 +2271,7 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
 // state and study progress are not copied. The cloner pays.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
-	// A personal canvas is its owner's alone (Epo 2026-11-09): never copied.
+	// A canvas is never copied (Epo 2026-11-09), shared or not.
 	if src, err := s.GetMaterial(ctx, matID); err == nil && src.Kind == MaterialCanvas {
 		return Material{}, ErrNotFound
 	}

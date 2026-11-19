@@ -131,7 +131,8 @@ export async function pasteRich(
 // During a remote layout the mirror remains mounted but clicks are gated.
 // The text cursor confirms hit testing is ready before we place the caret.
 // Mirror pages away from the viewport hold only plain text, so each attempt
-// brings the paragraph's page into view and points at its positioned glyph.
+// brings the paragraph's page into view and points at its last positioned
+// run (the editor's mirror reads whole words, Q746 A).
 async function focusParagraph(frame: FrameLocator, text: string) {
   const paragraph = frame
     .getByRole('paragraph')
@@ -140,7 +141,7 @@ async function focusParagraph(frame: FrameLocator, text: string) {
     .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
     .getByRole('paragraph')
     .filter({ hasText: new RegExp(`^${text}$`) })
-    .getByText(text.at(-1) ?? '', { exact: true })
+    .locator('.layout-run-text')
     .last();
   await expect(async () => {
     await frame

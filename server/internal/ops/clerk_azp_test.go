@@ -11,8 +11,8 @@ import (
 	"time"
 
 	clerk "github.com/clerk/clerk-sdk-go/v2"
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 // Security regression (human authorization 2026-10-21): the Ops API accepts a
@@ -58,7 +58,7 @@ func TestClerkVerifierChecksTheTokensOrigin(t *testing.T) {
 		if azp != "" {
 			builder = builder.Claims(map[string]any{"azp": azp})
 		}
-		raw, err := builder.CompactSerialize()
+		raw, err := builder.Serialize()
 		if err != nil {
 			t.Fatal(err)
 		}

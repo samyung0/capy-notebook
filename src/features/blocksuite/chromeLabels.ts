@@ -138,3 +138,25 @@ const LABELS: Record<string, () => string> = {
 setLabelTranslator((label) =>
   Object.hasOwn(LABELS, label) ? LABELS[label]() : label
 );
+
+/* BlockSuite's own notices (its `toast`, shown in the app's toast by local change
+   33) in the app's language too, by the same rule: the notice as BlockSuite writes
+   it, to the message that says it. One not listed shows as written. */
+const TOASTS: Record<string, () => string> = {
+  'Copied image to clipboard': m.chrome_toast_image_copied,
+  'Copied link to clipboard': m.chrome_toast_link_copied,
+  'Copied to clipboard': m.chrome_toast_copied,
+  'Download in progress...': m.chrome_toast_download_in_progress,
+  'Downloading image...': m.chrome_toast_image_downloading,
+  'Failed to download image!': m.chrome_toast_image_download_failed,
+  'Failed to read image size, please try another image':
+    m.chrome_toast_image_size_failed,
+  'Import failed, please try again': m.chrome_toast_import_failed,
+  'Invalid link': m.chrome_toast_invalid_link,
+  'Title can not be empty': m.chrome_toast_title_empty,
+  'Zoom to selection': m.chrome_toast_zoom_selection,
+};
+
+export function toastText(message: string) {
+  return Object.hasOwn(TOASTS, message) ? TOASTS[message]() : message;
+}

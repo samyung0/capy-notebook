@@ -1,0 +1,1051 @@
+{
+  "cap": 4194304,
+  "cpu": "Apple M1",
+  "load": {
+    "began": [
+      6.07958984375,
+      5.265625,
+      5.78515625
+    ],
+    "ended": [
+      3.599609375,
+      4.966796875,
+      5.54736328125
+    ]
+  },
+  "opens": 3,
+  "results": {
+    "blank": {
+      "board": null,
+      "memory": {
+        "errors": [],
+        "heapMb": [
+          26.76,
+          26.76,
+          26.77
+        ],
+        "holds": {
+          "brush": 0,
+          "notes": 0,
+          "shape": 0
+        },
+        "scripts": [
+          {
+            "file": "browser",
+            "ms": 168
+          },
+          {
+            "file": "main",
+            "ms": 103
+          },
+          {
+            "file": "DevDrawingBoard",
+            "ms": 43
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 19
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 753,
+        "settledMs": [
+          758,
+          730,
+          753
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [],
+        "load": [
+          [
+            4.86,
+            4.86
+          ],
+          [
+            4.86,
+            4.95
+          ],
+          [
+            4.95,
+            4.95
+          ]
+        ],
+        "longestFrameMs": [
+          173,
+          170,
+          171
+        ],
+        "mountMs": [
+          26,
+          25,
+          26
+        ],
+        "mountToPaintedMs": [
+          86,
+          73,
+          74
+        ],
+        "paintedMedianMs": 753,
+        "paintedMs": [
+          758,
+          730,
+          753
+        ],
+        "readToPaintedMedianMs": 0,
+        "readToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "settledAfterPaintedMs": [
+          0,
+          0,
+          0
+        ],
+        "totalBlockingMs": [
+          190,
+          163,
+          173
+        ],
+        "zoom": 1
+      },
+      "memoryError": null,
+      "room": {
+        "errors": [],
+        "heapMb": [
+          29.95,
+          29.95,
+          29.94
+        ],
+        "holds": {
+          "brush": 0,
+          "notes": 0,
+          "shape": 0
+        },
+        "scripts": [
+          {
+            "file": "browser",
+            "ms": 179
+          },
+          {
+            "file": "main",
+            "ms": 98
+          },
+          {
+            "file": "collaboration",
+            "ms": 51
+          },
+          {
+            "file": "Canvas",
+            "ms": 44
+          },
+          {
+            "file": "test-workspace",
+            "ms": 12
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 1736,
+        "settledMs": [
+          1770,
+          1685,
+          1736
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [
+          {
+            "pan": {
+              "inputs": 20,
+              "maxMs": 6,
+              "p50Ms": 4,
+              "p90Ms": 5
+            },
+            "pen": {
+              "inputs": 40,
+              "maxMs": 10,
+              "p50Ms": 2,
+              "p90Ms": 2
+            },
+            "write": {
+              "gcMs": 0,
+              "mockRoomMs": 0.3,
+              "otherMs": 1.2,
+              "syncMs": 0.3,
+              "writes": 5
+            }
+          }
+        ],
+        "load": [
+          [
+            4.82,
+            4.93
+          ],
+          [
+            4.93,
+            4.77
+          ],
+          [
+            4.77,
+            5.19
+          ]
+        ],
+        "longestFrameMs": [
+          189,
+          179,
+          172
+        ],
+        "mountMs": [
+          null,
+          null,
+          null
+        ],
+        "mountToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "paintedMedianMs": 1736,
+        "paintedMs": [
+          1770,
+          1685,
+          1736
+        ],
+        "readToPaintedMedianMs": 55,
+        "readToPaintedMs": [
+          71,
+          52,
+          55
+        ],
+        "settledAfterPaintedMs": [
+          0,
+          0,
+          0
+        ],
+        "totalBlockingMs": [
+          188,
+          138,
+          133
+        ],
+        "zoom": 1
+      },
+      "roomAt4x": {
+        "errors": [],
+        "heapMb": [
+          29.85,
+          30.14,
+          29.92
+        ],
+        "holds": {
+          "brush": 0,
+          "notes": 0,
+          "shape": 0
+        },
+        "scripts": [
+          {
+            "file": "browser",
+            "ms": 715
+          },
+          {
+            "file": "main",
+            "ms": 322
+          },
+          {
+            "file": "collaboration",
+            "ms": 202
+          },
+          {
+            "file": "Canvas",
+            "ms": 181
+          },
+          {
+            "file": "",
+            "ms": 69
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 3141,
+        "settledMs": [
+          3106,
+          3228,
+          3141
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [],
+        "load": [
+          [
+            4.95,
+            5.92
+          ],
+          [
+            5,
+            4.84
+          ],
+          [
+            4.84,
+            4.69
+          ]
+        ],
+        "longestFrameMs": [
+          687,
+          711,
+          713
+        ],
+        "mountMs": [
+          null,
+          null,
+          null
+        ],
+        "mountToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "paintedMedianMs": 2831,
+        "paintedMs": [
+          2831,
+          2966,
+          2740
+        ],
+        "readToPaintedMedianMs": 247,
+        "readToPaintedMs": [
+          247,
+          289,
+          233
+        ],
+        "settledAfterPaintedMs": [
+          274,
+          261,
+          401
+        ],
+        "totalBlockingMs": [
+          1262,
+          1284,
+          1247
+        ],
+        "zoom": 1
+      }
+    },
+    "2 MiB": {
+      "board": {
+        "bytes": 2086120,
+        "characters": 10560,
+        "counts": {
+          "brush": 2296,
+          "notes": 132,
+          "shape": 132
+        },
+        "gzipBytes": 301726,
+        "minutes": 328,
+        "yjs": {
+          "applyMs": 68.4,
+          "encodeMs": 23.9,
+          "structs": 54145
+        }
+      },
+      "memory": {
+        "errors": [],
+        "heapMb": [
+          70.18,
+          70.17,
+          70.17
+        ],
+        "holds": {
+          "brush": 2296,
+          "notes": 132,
+          "shape": 132
+        },
+        "scripts": [
+          {
+            "file": "main",
+            "ms": 345
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 234
+          },
+          {
+            "file": "browser",
+            "ms": 165
+          },
+          {
+            "file": "DevDrawingBoard",
+            "ms": 43
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 1418,
+        "settledMs": [
+          1408,
+          1429,
+          1418
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [],
+        "load": [
+          [
+            4.66,
+            5.09
+          ],
+          [
+            4.67,
+            5.9
+          ],
+          [
+            4.97,
+            4.97
+          ]
+        ],
+        "longestFrameMs": [
+          522,
+          512,
+          512
+        ],
+        "mountMs": [
+          251,
+          253,
+          255
+        ],
+        "mountToPaintedMs": [
+          527,
+          521,
+          506
+        ],
+        "paintedMedianMs": 1195,
+        "paintedMs": [
+          1195,
+          1208,
+          1186
+        ],
+        "readToPaintedMedianMs": 0,
+        "readToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "settledAfterPaintedMs": [
+          213,
+          221,
+          232
+        ],
+        "totalBlockingMs": [
+          599,
+          596,
+          598
+        ],
+        "zoom": 0.1
+      },
+      "memoryError": null,
+      "room": {
+        "errors": [],
+        "heapMb": [
+          93.2,
+          93.2,
+          93.19
+        ],
+        "holds": {
+          "brush": 2296,
+          "notes": 132,
+          "shape": 132
+        },
+        "scripts": [
+          {
+            "file": "collaboration",
+            "ms": 302
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 191
+          },
+          {
+            "file": "browser",
+            "ms": 185
+          },
+          {
+            "file": "main",
+            "ms": 89
+          },
+          {
+            "file": "Canvas",
+            "ms": 42
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 2361,
+        "settledMs": [
+          2425,
+          2259,
+          2361
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [
+          {
+            "pan": {
+              "inputs": 20,
+              "maxMs": 87,
+              "p50Ms": 23,
+              "p90Ms": 52
+            },
+            "pen": {
+              "inputs": 40,
+              "maxMs": 180,
+              "p50Ms": 5,
+              "p90Ms": 6
+            },
+            "write": {
+              "gcMs": 2.2,
+              "mockRoomMs": 144,
+              "otherMs": 5.7,
+              "syncMs": 2.1,
+              "writes": 5
+            }
+          }
+        ],
+        "load": [
+          [
+            4.69,
+            4.5
+          ],
+          [
+            4.5,
+            5.24
+          ],
+          [
+            4.98,
+            4.66
+          ]
+        ],
+        "longestFrameMs": [
+          462,
+          456,
+          454
+        ],
+        "mountMs": [
+          null,
+          null,
+          null
+        ],
+        "mountToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "paintedMedianMs": 2162,
+        "paintedMs": [
+          2232,
+          2064,
+          2162
+        ],
+        "readToPaintedMedianMs": 509,
+        "readToPaintedMs": [
+          510,
+          509,
+          508
+        ],
+        "settledAfterPaintedMs": [
+          194,
+          195,
+          199
+        ],
+        "totalBlockingMs": [
+          574,
+          530,
+          532
+        ],
+        "zoom": 0.1
+      },
+      "roomAt4x": {
+        "errors": [],
+        "heapMb": [
+          94.72,
+          94.73,
+          94.78
+        ],
+        "holds": {
+          "brush": 2296,
+          "notes": 132,
+          "shape": 132
+        },
+        "scripts": [
+          {
+            "file": "collaboration",
+            "ms": 1198
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 1032
+          },
+          {
+            "file": "browser",
+            "ms": 670
+          },
+          {
+            "file": "main",
+            "ms": 306
+          },
+          {
+            "file": "Canvas",
+            "ms": 169
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 5952,
+        "settledMs": [
+          5952,
+          5851,
+          6034
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [],
+        "load": [
+          [
+            4.97,
+            6.06
+          ],
+          [
+            4.89,
+            4.98
+          ],
+          [
+            4.98,
+            5.32
+          ]
+        ],
+        "longestFrameMs": [
+          1816,
+          1768,
+          1856
+        ],
+        "mountMs": [
+          null,
+          null,
+          null
+        ],
+        "mountToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "paintedMedianMs": 4605,
+        "paintedMs": [
+          4605,
+          4622,
+          4594
+        ],
+        "readToPaintedMedianMs": 2049,
+        "readToPaintedMs": [
+          2049,
+          2022,
+          2114
+        ],
+        "settledAfterPaintedMs": [
+          1347,
+          1229,
+          1440
+        ],
+        "totalBlockingMs": [
+          3146,
+          3129,
+          3200
+        ],
+        "zoom": 0.1
+      }
+    },
+    "4 MiB": {
+      "board": {
+        "bytes": 4174033,
+        "characters": 20960,
+        "counts": {
+          "brush": 4578,
+          "notes": 262,
+          "shape": 262
+        },
+        "gzipBytes": 600399,
+        "minutes": 654,
+        "yjs": {
+          "applyMs": 121.5,
+          "encodeMs": 41.8,
+          "structs": 107683
+        }
+      },
+      "memory": {
+        "errors": [],
+        "heapMb": [
+          104.2,
+          104.22,
+          104.2
+        ],
+        "holds": {
+          "brush": 4578,
+          "notes": 262,
+          "shape": 262
+        },
+        "scripts": [
+          {
+            "file": "main",
+            "ms": 602
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 350
+          },
+          {
+            "file": "browser",
+            "ms": 177
+          },
+          {
+            "file": "DevDrawingBoard",
+            "ms": 43
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 1730,
+        "settledMs": [
+          1926,
+          1730,
+          1663
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [],
+        "load": [
+          [
+            4.56,
+            4.36
+          ],
+          [
+            4.36,
+            4.33
+          ],
+          [
+            4.33,
+            4.3
+          ]
+        ],
+        "longestFrameMs": [
+          825,
+          795,
+          784
+        ],
+        "mountMs": [
+          496,
+          483,
+          465
+        ],
+        "mountToPaintedMs": [
+          828,
+          796,
+          792
+        ],
+        "paintedMedianMs": 1500,
+        "paintedMs": [
+          1700,
+          1500,
+          1435
+        ],
+        "readToPaintedMedianMs": 0,
+        "readToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "settledAfterPaintedMs": [
+          227,
+          231,
+          228
+        ],
+        "totalBlockingMs": [
+          944,
+          903,
+          882
+        ],
+        "zoom": 0.1
+      },
+      "memoryError": null,
+      "room": {
+        "errors": [],
+        "heapMb": [
+          154.05,
+          156.25,
+          155.77
+        ],
+        "holds": {
+          "brush": 4578,
+          "notes": 262,
+          "shape": 262
+        },
+        "scripts": [
+          {
+            "file": "collaboration",
+            "ms": 538
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 289
+          },
+          {
+            "file": "browser",
+            "ms": 170
+          },
+          {
+            "file": "main",
+            "ms": 76
+          },
+          {
+            "file": "Canvas",
+            "ms": 40
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 2688,
+        "settledMs": [
+          2688,
+          2571,
+          2716
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [
+          {
+            "pan": {
+              "inputs": 20,
+              "maxMs": 118,
+              "p50Ms": 47,
+              "p90Ms": 65
+            },
+            "pen": {
+              "inputs": 40,
+              "maxMs": 286,
+              "p50Ms": 8,
+              "p90Ms": 9
+            },
+            "write": {
+              "gcMs": 4.3,
+              "mockRoomMs": 266.4,
+              "otherMs": 9.8,
+              "syncMs": 3.5,
+              "writes": 5
+            }
+          }
+        ],
+        "load": [
+          [
+            4.88,
+            5.17
+          ],
+          [
+            4.76,
+            4.7
+          ],
+          [
+            4.7,
+            4.56
+          ]
+        ],
+        "longestFrameMs": [
+          784,
+          743,
+          778
+        ],
+        "mountMs": [
+          null,
+          null,
+          null
+        ],
+        "mountToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "paintedMedianMs": 2479,
+        "paintedMs": [
+          2479,
+          2376,
+          2518
+        ],
+        "readToPaintedMedianMs": 832,
+        "readToPaintedMs": [
+          839,
+          808,
+          832
+        ],
+        "settledAfterPaintedMs": [
+          209,
+          195,
+          198
+        ],
+        "totalBlockingMs": [
+          881,
+          842,
+          862
+        ],
+        "zoom": 0.1
+      },
+      "roomAt4x": {
+        "errors": [],
+        "heapMb": [
+          157.32,
+          157.05,
+          154.13
+        ],
+        "holds": {
+          "brush": 4578,
+          "notes": 262,
+          "shape": 262
+        },
+        "scripts": [
+          {
+            "file": "collaboration",
+            "ms": 2009
+          },
+          {
+            "file": "drawingBoard",
+            "ms": 1593
+          },
+          {
+            "file": "browser",
+            "ms": 722
+          },
+          {
+            "file": "main",
+            "ms": 302
+          },
+          {
+            "file": "Canvas",
+            "ms": 169
+          }
+        ],
+        "settled": [
+          true,
+          true,
+          true
+        ],
+        "settledMedianMs": 8985,
+        "settledMs": [
+          9105,
+          8985,
+          8944
+        ],
+        "storedChars": [
+          null,
+          null,
+          null
+        ],
+        "inputs": [],
+        "load": [
+          [
+            4.3,
+            4.45
+          ],
+          [
+            4.45,
+            4.07
+          ],
+          [
+            4.07,
+            3.6
+          ]
+        ],
+        "longestFrameMs": [
+          2957,
+          2950,
+          2939
+        ],
+        "mountMs": [
+          null,
+          null,
+          null
+        ],
+        "mountToPaintedMs": [
+          null,
+          null,
+          null
+        ],
+        "paintedMedianMs": 5739,
+        "paintedMs": [
+          5808,
+          5719,
+          5739
+        ],
+        "readToPaintedMedianMs": 3222,
+        "readToPaintedMs": [
+          3236,
+          3222,
+          3207
+        ],
+        "settledAfterPaintedMs": [
+          3297,
+          3266,
+          3205
+        ],
+        "totalBlockingMs": [
+          4598,
+          4604,
+          4576
+        ],
+        "zoom": 0.1
+      }
+    }
+  }
+}

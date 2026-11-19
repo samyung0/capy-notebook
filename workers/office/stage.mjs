@@ -35,7 +35,7 @@ await cp(new URL('./_headers', import.meta.url), resolve(target, '_headers'));
 // compress them on the fly at a low quality). The original is removed, so
 // only the Worker answers for it. Keep the list in step with PRECOMPRESSED in
 // index.ts and run_worker_first. Each file is logged with its sizes.
-const PRECOMPRESSED = /\.(wasm|ttf|otf)$/;
+const PRECOMPRESSED = /\.(wasm|ttf)$/;
 const compress = promisify(brotliCompress);
 const assets = resolve(target, 'assets');
 await Promise.all(

@@ -1,14 +1,22 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo, useRef, useState } from 'react';
-import { canvasById, saveCanvas } from '@/api/canvas';
 import {
   useCreateFlashcardSet,
   useCreateQuiz,
   useWorkspaces,
 } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
+import { BoardPresenceMarks } from '@/features/canvas/BoardPresenceMarks';
+import {
+  CanvasBoardPanel,
+  CanvasBoardStrip,
+  CanvasOpening,
+} from '@/features/canvas/CanvasBoardStates';
 import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
-import { CanvasMaterialDialog } from '@/features/canvas/CanvasMaterialDialog';
+import {
+  CanvasMaterialDialog,
+  type DialogMaterial,
+} from '@/features/canvas/CanvasMaterialDialog';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
   linkMaterial,
@@ -16,12 +24,11 @@ import {
   useCanvasMaterials,
 } from '@/features/canvas/useCanvasMaterials';
 import { useCanvasPicker } from '@/features/canvas/useCanvasPicker';
-import { FileError } from '@/features/files/FileStates';
 import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { m } from '@/i18n';
 import { useOpenLink } from '@/lib/openLink';
 
-/** One of the person's own canvases as the page's board, saved as a
+/** One of the person's own canvases as the page's board, in its room as a
  * workspace's is, with no workspace. Its cards are every quiz and set the person
  * can open, each tile in Misc saying its workspace; New makes one in no
  * workspace, and a card opens in a dialog (Epo 2026-11-13, mock
@@ -47,7 +54,7 @@ function OwnCanvas({
         to: '/canvas',
       })
   );
-  const materials = useCanvasMaterials();
+  const { materials, readAt } = useCanvasMaterials();
   const { data: workspaces } = useWorkspaces();
   const linked = useMemo(() => {
     const icons = new Map(workspaces?.map(({ id, iconId }) => [id, iconId]));
@@ -62,50 +69,65 @@ function OwnCanvas({
   }, [materials, workspaces]);
   const { mutateAsync: createQuiz } = useCreateQuiz();
   const { mutateAsync: createSet } = useCreateFlashcardSet();
-  const [editing, setEditing] = useState<string | null>(null);
-  const { links, onBoard } = useCanvasLinks({
+  const [editing, setEditing] = useState<DialogMaterial | null>(null);
+  const {
+    links,
+    materials: listed,
+    onBoard,
+  } = useCanvasLinks({
     account: true,
-    // Quiz 1, Quiz 2…: the first number no listed one has.
+    // Quiz 1, Quiz 2…: the first number no listed one has, one just made too.
     create: async (kind) => {
-      const taken = new Set(materials?.map(({ title }) => title));
+      const taken = new Set(links.materials()?.map(({ title }) => title));
       const title = (n: number) =>
         kind === 'quiz'
           ? m.drawing_board_new_quiz_title({ n })
           : m.drawing_board_new_set_title({ n });
       let n = 1;
       while (taken.has(title(n))) n++;
-      const made =
+      const { id, name } =
         kind === 'quiz'
           ? await createQuiz({ name: title(n) })
           : await createSet({ name: title(n) });
-      return { id: made.id, title: made.name };
+      return { id, title: name };
     },
     materials: linked,
-    open: setEditing,
+    // A card's header opens a listed one, New the one it made (listed as it
+    // lands): the dialog needs no read of its own to know which editor to show.
+    open: (materialId) => {
+      const known = links.materials()?.find(({ id }) => id === materialId);
+      // A card whose quiz or set is not listed (gone, or the list is still
+      // loading) says so itself and opens nothing.
+      if (!known) return;
+      setEditing({ id: known.id, kind: known.kind, title: known.title });
+    },
+    readAt,
   });
   const { openPlane, planeEditor } = usePlaneEditor();
-  const failed = useCanvasBoard(
-    container,
-    {
-      key: id,
-      open: () => canvasById(id),
-      save: (body) => saveCanvas(id, body),
-    },
-    { gone, link, onBoard, openPlane, workspace: links }
-  );
+  const state = useCanvasBoard(container, id, {
+    gone,
+    link,
+    onBoard,
+    openPlane,
+    workspace: links,
+  });
   return (
-    <div
-      className="h-full w-full overflow-hidden [&>div]:h-full"
-      ref={container}
-    >
-      {failed && <FileError message={failed} onRetry={onRetry} />}
-      <CanvasMaterialCards link={link} materials={materials} />
-      {planeEditor}
-      <CanvasMaterialDialog
-        materialId={editing}
-        onClose={() => setEditing(null)}
-      />
-    </div>
+    <>
+      <div
+        className="h-full w-full overflow-hidden [&>div]:h-full"
+        ref={container}
+      >
+        <CanvasBoardPanel onRetry={onRetry} state={state} />
+        <CanvasMaterialCards link={link} materials={listed} />
+        <BoardPresenceMarks presence={state.presence} />
+        {planeEditor}
+        <CanvasMaterialDialog
+          material={editing}
+          onClose={() => setEditing(null)}
+        />
+      </div>
+      <CanvasBoardStrip strip={state.strip} />
+    </>
   );
 }
 
@@ -151,9 +173,12 @@ export default function CanvasPage() {
         {none && (
           <p className="t-body m-6 pt-14 text-fg-muted">{m.canvas_none()}</p>
         )}
+        {!(current || none) && <CanvasOpening />}
         {picker && (
-          // On a phone the row stops short of the board's own menu at the top right.
-          <div className="absolute top-2 right-12 left-2 flex sm:right-auto [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-none [[data-canvas-board]:has(.capy-board[data-editor-open])_&]:hidden">
+          // The row stops 8px short of the board's status and ☰ at the top
+          // right (--capy-board-chrome, useCanvasBoard): a phone's picker fills
+          // it, a wider screen's shrinks into it.
+          <div className="absolute top-2 right-[calc(var(--capy-board-chrome,32px)+16px)] left-2 flex sm:right-auto sm:max-w-[calc(100%-var(--capy-board-chrome,32px)-24px)] [&>[data-slot=popover-anchor]]:min-w-0 [&>[data-slot=popover-anchor]]:flex-1 sm:[&>[data-slot=popover-anchor]]:flex-initial [[data-canvas-board]:has(.capy-board[data-editor-open])_&]:hidden">
             {picker}
           </div>
         )}

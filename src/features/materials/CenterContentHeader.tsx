@@ -422,11 +422,11 @@ export function Header({
     'min-w-0 truncate',
     leading ? 't-body font-semibold' : 't-subtitle'
   );
-  // Owners and editors who may change the item hide or unhide it here as from
-  // the ⋮ menu; viewers never see a hidden item.
+  // Owners and editors who may change the item share a hidden one with
+  // members here as from the ⋮ menu; viewers never see a hidden item.
   const itemReadOnly =
     readOnly || (materialCapabilities ? !materialCapabilities.canEdit : false);
-  const { dialog: unhideDialog, toggle: toggleHidden } =
+  const { dialog: shareDialog, toggle: toggleHidden } =
     useToggleHidden(workspaceId);
   // A graded quiz's own quiz is its assignment's: held from members always,
   // never moved, cloned or trashed on its own.
@@ -434,7 +434,7 @@ export function Header({
     !!material && 'assignmentId' in material && !!material.assignmentId;
   const canHide = !itemReadOnly && !!workspaceId && !owned;
   // Only a hidden item says so (Epo 2026-11-16): a visible one shows nothing,
-  // and the ⋮ menu's Hide file hides it.
+  // and the ⋮ menu's "Shared with members" switch hides it.
   const hiddenChip = (file?.hidden || material?.hidden) && (
     <>
       <HiddenChip
@@ -444,7 +444,7 @@ export function Header({
             : undefined
         }
       />
-      {unhideDialog}
+      {shareDialog}
     </>
   );
   const name = oneColumn ? (

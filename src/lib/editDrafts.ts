@@ -596,6 +596,11 @@ export interface DraftRecorderOptions {
   report?: EditIncidentReporter;
   /** The session's last signed room token, which its rows keep (Q288). */
   token?: () => string | undefined;
+  /** While true the document writes under a client id no room assigned (a
+   * canvas painted from its device copy before its join, Q31): its rows are
+   * marked `late`, so no open applies them raw and no sweep sends them; the
+   * next editor re-authors them under its assigned id. */
+  unassigned?: () => boolean;
   /** The stored version the tab reports now (`RoomProvider`), which each
    * row keeps (in-place collection). */
   version?: () => number | undefined;
@@ -625,6 +630,7 @@ export function recordDrafts({
   onStorage,
   report,
   token,
+  unassigned,
   version,
 }: DraftRecorderOptions) {
   const session = crypto.randomUUID();
@@ -662,6 +668,12 @@ export function recordDrafts({
   let over = false;
   let stopped = false;
   let storageOk = true;
+  // Whether the last whole write (`stored`, or the one row `keepAs` keeps)
+  // landed.
+  let landing: Promise<boolean> | null = null;
+  // The rows are flagged refused for a re-author under way (`reauthoring`):
+  // rows written from now on are too.
+  let reauthored = false;
   // While this session records, a sweep leaves the document alone and another
   // tab's late merge its rows (Q420).
   const releaseDocument = keep
@@ -684,7 +696,11 @@ export function recordDrafts({
     kind: EditDraft['kind'],
     seq: number,
     data: Uint8Array,
-    flag?: 'late' | 'refused',
+    flag: 'late' | 'refused' | undefined = reauthored
+      ? 'refused'
+      : unassigned?.()
+        ? 'late'
+        : undefined,
     savedAt = Date.now()
   ): EditDraft => ({
     ...grantsOf(token?.()),
@@ -841,6 +857,23 @@ export function recordDrafts({
     ...(state ? [stateRow(state.seq)] : []),
     ...pendingAdopted,
   ];
+  /** `data` (what a merge would hide) as one refused row flagged hidden,
+   * kept for copying (Q237, Q410); resolves its row, or null when it could
+   * not be stored. */
+  const keepHidden = async (data: Uint8Array): Promise<DraftRef | null> => {
+    const kept = {
+      ...row('state', sequence, data, 'refused', dated(adoptedAt())),
+      hidden: true as const,
+      id: `${session}:hidden`,
+    };
+    try {
+      await putWithBase([kept]);
+    } catch (error) {
+      failed(error);
+      return null;
+    }
+    return { id: kept.id, key: kept.key, seq: kept.seq };
+  };
   // The whole document (or `data`) as one row flagged `flag` in place of
   // every row this session wrote or adopted, dated as the newest of them
   // (or `savedAt`), with `beside`, and no more recording.
@@ -853,9 +886,15 @@ export function recordDrafts({
     const previous = ownRows();
     stop();
     const kept = row('state', sequence, data, flag, savedAt);
-    void write(
-      Promise.all([deleteDrafts(previous), putWithBase([kept, ...beside])])
+    // The delete goes first: `kept` may take the id and seq of a row it
+    // deletes.
+    const deleted = deleteDrafts(previous);
+    const put = putWithBase([kept, ...beside]);
+    landing = put.then(
+      () => true,
+      () => false
     );
+    void write(Promise.all([deleted, put]));
     return kept;
   };
 
@@ -958,6 +997,7 @@ export function recordDrafts({
       stop();
       return done;
     },
+    keepHidden,
     /** The room answered late (in-place GC): keep the whole document (or
      * `data`, the old document a re-author merges anew) as one late row,
      * which the next editor merges, and stop recording. Returns
@@ -986,6 +1026,27 @@ export function recordDrafts({
           : [];
       return keepAs('late', data, savedAt, beside);
     },
+    /** A canvas's early edits go to the room re-authored next (Q31), which
+     * is not repeat-safe: every row this session wrote or adopted, and any
+     * it writes from now on, is flagged refused first, so no later open
+     * re-authors them again; they open only for copying until a stored
+     * re-authored edit stands for them (`discard`). Resolves whether the
+     * flags landed; when they did not, the rows stay as they were. */
+    async reauthoring(): Promise<boolean> {
+      reauthored = true;
+      try {
+        await markDrafts(
+          key,
+          ownRows().map((row) => row.id),
+          'refused'
+        );
+        return true;
+      } catch (error) {
+        reauthored = false;
+        failed(error);
+        return false;
+      }
+    },
     /** A save refused for good: keep the whole document (or `data`, the
      * document the edits are in) as one refused row (shown for copying,
      * never merged) and stop recording. Returns that row, which a later
@@ -1002,6 +1063,15 @@ export function recordDrafts({
     /** Write the whole document now if unsaved work outgrew the last one:
      * edits about to open in recovery. */
     snapshot,
+    /** Writes the whole document now and resolves whether it landed (a
+     * canvas's re-authored edits then stand for the rows they came from,
+     * Q31); once recording stopped, whether the last whole write did (the
+     * row `refuse` or `late` keeps, or the last `stored`). */
+    async stored(): Promise<boolean> {
+      if (stopped) return (await landing) ?? false;
+      landing = writeState().then(() => !gap);
+      return landing;
+    },
     /** A late merge's update is applied (recorded as this session's edit):
      * the adopted rows it stands for go now rather than at a receipt, so a
      * reload never merges them again, and `hidden` (a document of the text
@@ -1014,20 +1084,7 @@ export function recordDrafts({
      * the whole document did not land the adopted rows stay for the receipt
      * that covers them. */
     async supersede(hidden?: Uint8Array, merged = true): Promise<boolean> {
-      if (hidden) {
-        // Hidden typing: its pieces say so (Q237, Q410).
-        const kept = {
-          ...row('state', sequence, hidden, 'refused', dated(adoptedAt())),
-          hidden: true as const,
-          id: `${session}:hidden`,
-        };
-        try {
-          await putWithBase([kept]);
-        } catch (error) {
-          failed(error);
-          return false;
-        }
-      }
+      if (hidden && !(await keepHidden(hidden))) return false;
       if (merged) await writeState();
       if (gap) return true;
       const previous = pendingAdopted;

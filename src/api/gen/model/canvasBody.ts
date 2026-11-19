@@ -4,22 +4,37 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AccessCapabilities } from './accessCapabilities.ts';
+import type { StorageFullBy } from './storageFullBy.ts';
+import type { Trashed } from './trashed.ts';
+import type { WorkspaceRole } from './workspaceRole.ts';
 
 export interface CanvasBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** The saved board's editor asset (gzipped Yjs update); empty before the first save */
-  boardAssetId: string;
+  capabilities: AccessCapabilities;
   /** The canvas material */
   id: string;
-  /** The canvas's images, as image editor assets */
+  /** The images on the board at its last projection, as image editor assets */
   imageAssetIds: string[];
-  /** Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name */
+  /** The caller made it */
+  own: boolean;
+  /** Every ready image asset of this canvas, one the pruner trashed included */
   ownImageAssetIds: string[];
-  /** The material's revision; a save sends the one it read */
+  /** The material's revision */
   revision: number;
+  /** The caller's role on the canvas: owner (its creator), or their workspace role on another member's shared one; absent on one opened from the Trash */
+  role?: WorkspaceRole;
+  /** Shared with its workspace: the members hold it by their workspace role */
+  shared: boolean;
+  /** The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only */
+  storageFull?: StorageFullBy;
   title: string;
+  /** The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board */
+  trash?: Trashed;
   updatedAt: string;
-  /** Counts the saves */
+  /** The room's stored version at its last projection; 0 before the first */
   version: number;
+  /** The workspace it was drawn in; none for a canvas of one's own */
+  workspaceId?: string;
 }

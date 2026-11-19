@@ -52,7 +52,7 @@ func TestSearchSectionsAreLimited(t *testing.T) {
 
 // Search finds every material by its title, canvases included (Epo
 // 2026-11-13): a name starting with the query comes before one holding it, and
-// a workspace's canvas opens on that workspace's Canvas panel.
+// a workspace's canvas opens on that workspace's Canvas panel at that canvas.
 func TestSearchFindsMaterialsAndCanvases(t *testing.T) {
 	f := newStudyFixture(t, "search-materials")
 	ctx := context.Background()
@@ -82,7 +82,7 @@ func TestSearchFindsMaterialsAndCanvases(t *testing.T) {
 	if len(sets) != 2 || sets[0] != "Cells overview" {
 		t.Fatalf("flashcard sets %v, want Cells overview first", sets)
 	}
-	if board == nil || board.ID != canvas.ID || board.Href != "/workspaces/"+f.ws.ID+"?view=canvas" {
+	if board == nil || board.ID != canvas.ID || board.Href != "/workspaces/"+f.ws.ID+"?view=canvas&c="+canvas.ID {
 		t.Fatalf("canvas hit %+v", board)
 	}
 }

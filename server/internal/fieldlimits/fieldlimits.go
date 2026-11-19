@@ -144,10 +144,11 @@ const (
 	// compression, and how many a board holds (Epo 2026-11-09).
 	BoardPictureBytes = 1 << 20
 	BoardPictures     = 10
-	// A workspace canvas's saved board, before gzip (Epo 2026-11-09): the
-	// material's own board asset, a whole personal canvas rather than one
-	// answer.
-	CanvasBoardBytes = 2 << 20
+	// A canvas room's live Yjs state in bytes, history included (Epo
+	// 2026-11-18, "for cap 4MiB sure", after the growth bench: about 10 hours
+	// of mixed drawing or 5,900 pen strokes of 40 points). It equals the
+	// largest sync message the collaboration server takes.
+	CanvasBoardBytes = 4 << 20
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
 	CardFront = 200

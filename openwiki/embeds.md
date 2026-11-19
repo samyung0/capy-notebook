@@ -49,14 +49,24 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   document holding one stays readable and editing it is refused until it is
   fixed (Epo 2026-10-13). The read-only renderer (`MaterialPreview`, which
   draws the static View, share pages and a note's live View) shows such a
-  block's text with a muted "can't be shown in this version" line under it
-  (`UnsupportedBlock.tsx`, a `belowRootNodes` plugin in the read-only kit).
+  block's text with a muted "This block cannot be shown" line under it
+  (`UnsupportedBlock.tsx`, a `belowRootNodes` plugin in the read-only kit;
+  the words a canvas's placeholder uses too, Epo 2026-11-18).
   Go refuses one in `ValidateKind`, which every write runs, while `Parse`
   (reads) passes it through; the browser's `createMaterialDocument` (saves,
   markdown import) refuses it while `parseMaterialDocument` reads it. Both
   apply the catalog's key rules generically after each element's own checks
   (`validateCatalogKeys`, `followsCatalog`), and Go's `ValidateKind` refuses
-  an element in a material kind the catalog does not list for it. The
+  an element in a material kind the catalog does not list for it. A canvas
+  material's document is one `canvas_board` block (top level, not indexed,
+  only in a `canvas`): `id` (the constant `board`), `version` and `images`
+  are required, its fields are closed, and its assets are
+  `images[].assetId`. It no longer has `boardAssetId` (Epo 2026-11-18: the
+  board is the canvas's collaboration room, not an asset), and the room's
+  projection is its only writer after `CreateCanvas`'s empty block
+  (`version` 0, no images); a canvas's room admits by size, not by this
+  catalog ([plate-editor](frontend/plate-editor.md#the-boards-tools), The
+  canvas's room). The
   browser's import keeps a reference's `pending` fence body until the row
   exists; the store refuses one. The collaboration server's store
   (`notes::material::assert_canonical`) applies the same rules as Go: each

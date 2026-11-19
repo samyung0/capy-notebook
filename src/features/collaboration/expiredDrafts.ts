@@ -6,9 +6,15 @@ import { readQuestions } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
 
 /** What an item's drafts hold, as a file a person can read: a diagram's source,
- * a set's cards as tab-separated lines, a quiz's questions as JSON. */
-function draftFile(doc: Y.Doc, document: 'keys' | undefined) {
+ * a set's cards as tab-separated lines, a quiz's questions as JSON, a canvas's
+ * blocks as JSON (its board's elements live in its surface block). */
+export function draftFile(doc: Y.Doc, document: 'keys' | undefined) {
   const shared = new Set(doc.share.keys());
+  if (shared.has('blocks'))
+    return {
+      extension: 'json',
+      text: JSON.stringify(doc.getMap('blocks').toJSON(), null, 2),
+    };
   if (document === 'keys' || shared.has('questions'))
     return {
       extension: 'json',
@@ -55,14 +61,18 @@ export function offerExpiredDrafts({
   materialId: string;
   /** The toast closed: the rows go. */
   onGone: () => void;
-  title: string;
+  /** The file's name, read when it is downloaded. */
+  title: () => string;
 }) {
   userToast({
     button: {
       label: m.editor_old_edits_download(),
       onClick: () => {
         const { extension, text } = draftFile(doc, which);
-        download(`${title} (${m.editor_old_edits_file()}).${extension}`, text);
+        download(
+          `${title()} (${m.editor_old_edits_file()}).${extension}`,
+          text
+        );
       },
     },
     description: m.editor_old_edits_body(),

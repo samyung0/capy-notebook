@@ -525,7 +525,6 @@
       "topLevel": true,
       "required": [
         "id",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -533,7 +532,6 @@
         "type",
         "id",
         "children",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -544,7 +542,6 @@
         "fontFamily"
       ],
       "assets": [
-        "boardAssetId",
         "images[].assetId"
       ],
       "materials": [
@@ -1386,6 +1383,7 @@
   ],
   "limits": {
     "BLOCK_CAPTION_MAX": 300,
+    "CANVAS_BOARD_MAX": 4194304,
     "CARD_BACK_MAX": 1000,
     "CARD_FRONT_MAX": 200,
     "DRAWING_BOARD_MAX": 256000,

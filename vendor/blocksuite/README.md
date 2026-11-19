@@ -610,6 +610,220 @@ Outside this directory, for BlockSuite:
     polygons after AFFiNE's five), drawn with the panel's outlines, so a selected
     shape's Switch shape type menu and a connector's next-shape panel reach them all.
 
+62. Content this editor can't read is kept and drawn as a placeholder (`framework/std`
+    `gfx/model/surface/surface-model.ts`, `unknown-element-model.ts` (new) and
+    `gfx/index.ts`; `framework/store` `schema/schema.ts`, `extension/schema.ts`,
+    `model/block/block.ts`, `sync-controller.ts`, `flat-sync-controller.ts` and
+    `model/store/store.ts`, marked `Capy (local change 62)`; Epo 2026-11-18: reject
+    nothing, delete nothing a person hasn't acknowledged). A shared board holds what
+    a peer or a newer version wrote, and none of this writes to or deletes a stored
+    map.
+    - Canvas elements: upstream threw `Invalid element type` for a type it has no
+      model for, when the surface loads and inside the Yjs observer when a peer
+      adds one. A stored entry is now built by `_storedCtor`: its own model, or an
+      `UnknownElementModel` (type `capy:unknown`: its place, order and turn, nothing
+      else read) when the type is unknown or the editor's `ElementReadableIdentifier`
+      check, registered on the store, says it can't read it. An entry with no place
+      to draw at (`hasPlace`), or that is no map, gets no model. An entry's id is its
+      key in the elements map, not the `id` field it holds. `addElement` of an
+      unknown type still throws. `_propsToY` takes a placeholder, so it can be moved.
+    - Blocks: upstream skips a block whose flavour has no schema. `Schema.standIn`,
+      set from a store's `BlockStandInExtension`, answers with the schema a stored
+      block is read with (`Schema.of`, which the block and both sync controllers
+      ask), so an editor can read one it doesn't know through a schema of its own
+      that declares no props. `getBlock`, `getBlock$`, `getParent` and `hasBlock`
+      answer for a block's own key only: a child id such as `__proto__` or
+      `toString` found something that is no block. A block under such an id is
+      still never built.
+    - Toolbar (`affine/widgets/toolbar` `src/toolbar.ts`): a selection of models
+      whose `toolbar` is `false` alone shows no floating toolbar. The placeholder
+      models set it: Lock and the rest are not for something unread.
+    - The board's side is `src/features/blocksuite/boardUnknown.ts` (what is read)
+      and `boardUnknownView.ts` (the placeholder), pinned by
+      `src/features/blocksuite/boardUnknown.test.ts`.
+
+63. A connector's label is placed only by the tab whose own change moved it
+    (`affine/gfx/connector` `connector-watcher.ts` and `connector-manager.ts`
+    `ConnectorPathGenerator.updatePath`, marked `Capy (local change 63)`; Epo
+    2026-11-18, the canvas's collaboration room). `labelXYWH` is a stored field, and
+    upstream's watcher wrote it whenever a connector's path was worked out: as a
+    board loads, when a peer adds a connector or moves a shape one hangs on, and
+    in a read-only store. On a shared canvas every open tab then wrote, a
+    viewer's too (the room closes a read channel that writes, so a viewer's board
+    reopened in a loop), and a peer's move landed in another editor's Undo and
+    emptied its Redo. The watcher now carries whether the change was this tab's
+    own (`local` on the surface's events, `isLocal` on a block's) to
+    `updatePath`'s new `placeLabel` argument, false on load and in a read-only
+    store: the path, which is not stored, is still drawn again everywhere, and
+    the label's place comes from the tab that made the change. A place that did
+    not move is not written again, so an Undo that put it back keeps its Redo.
+    The mind map's two callers keep the default (their connectors are local
+    ones with no label). Pinned by
+    `src/features/blocksuite/connectorLabel.test.ts`.
+
+64. A double click that opens a card's editor is used up (`framework/std`
+    `event/control/pointer.ts` `ClickController.endRun` and
+    `PointerControl.endClickRun`, `event/dispatcher.ts`
+    `UIEventDispatcher.endClickRun`, marked `Capy (local change 64)`; found
+    2026-11-18). The click counter listens on the host and adds one for each press
+    at the same place within 500 ms of the last. A plane's or chart's editor opens
+    over the board, outside the host, so its presses (the menu, Done) are not
+    seen: a double click on the card within 500 ms of the one that opened the
+    editor counted as presses three and four, a triple click, and opened nothing.
+    `openBoardEditor` (`src/features/blocksuite/boardEditorShell.ts`) calls
+    `std.event.endClickRun()` as the editor opens. Pinned by "a selected line's
+    point still moves alone" in `e2e/editor/drawing-board.spec.ts`, which closes
+    an editor and opens it again at once.
+
+65. A read-only store takes no edits from the board's keys or the select tool's
+    drag (`affine/blocks/root` `edgeless/edgeless-keyboard.ts` and
+    `edgeless/edgeless-root-block.ts`, `affine/blocks/surface`
+    `tool/default-tool.ts`, `affine/gfx/shape` `draggable/shape-draggable.ts`,
+    `affine/gfx/mindmap` `toolbar/mindmap-tool-button.ts`, marked `Capy (local
+    change 65)`; found 2026-11-18, the canvas's collaboration room). The keyboard
+    manager and the tools are made for every board, and upstream guards them with
+    the viewport's lock (`service.locked`), never the store's `readonly`, while
+    an element's field, a stash's pop and a block's props write with no
+    read-only check. On a viewer's board, or an editor's locked one, select all
+    and an arrow key moved every element, and `v` (on a locked board the
+    toolbar's own Escape too) then a press-drag moved what it pressed on: a
+    viewer's tab sent on its read channel, the room closed it and the board
+    reopened each time; a locked editor moved what was stored nowhere. While
+    `store.readonly`:
+    - The select tool's `dragStart` (`default-tool.ts`) hands the drag to no view
+      (a connector's label is moved by its view) and starts no move or clone.
+      The press still selects what is under it and a drag from empty board
+      still selects by its box, so `v` and Escape may pick the tool. A press-drag
+      on a connector's label therefore selects its connector, as one on its
+      line does.
+    - The root block's `bindHotKey` wrapper (`edgeless-root-block.ts`), which
+      replaces a selected mind map node's text with a bound letter before that
+      letter's handler runs, leaves the text and calls the handler.
+    - In `edgeless-keyboard.ts` (`_readonly`) these do nothing: the tool letters
+      `t`, `c`, `n`, `p`, `Shift-p`, `e`, `f` and `Shift-s`, the note slicer
+      (`k`, `-`), `@`, group and ungroup, Delete, Backspace and `Control-d`, the
+      arrow nudge, Enter and Tab (a label's or a text's editor, a mind map's new
+      node) and a letter that is no hotkey typed over a mind map's node. `v`,
+      `h`, Space, select all, Escape, the zoom keys and walking a mind map's
+      nodes with the arrows go on.
+    - The shape piece's `s` and the mind map button's `m` pick nothing.
+    The surface's own add, remove and update, a block's add and delete, and the
+    resize handles already refused. The guard is at the tool and not at the
+    element's stash pop, because a write that is no person's edit goes through
+    it and is left as it was: a mind map lays itself out on every board when
+    its tree changes and pops its nodes' stashed `xywh` (`mindmap.ts`
+    `stashTree`, the view's layout method). Pinned by "the keyboard and a drag move nothing on a board
+    that takes no edits" in `e2e/editor/canvas-room-states.spec.ts` (select all
+    and the arrows, then `v` or Escape and a press-drag, on a viewer's board and
+    a revoked editor's).
+
+66. An inline editor with no range reads no selection after it renders
+    (`framework/std` `inline/services/range.ts`, marked `Capy (local change 66)`;
+    found 2026-11-18, opening a full canvas). Every inline editor syncs the page's
+    selection when its render completes (`render.ts`), and with no range of its own
+    that only clears a selection inside it; reading `selection.rangeCount` forces a
+    style recalc, so each note's first render paid one (1.5 s of forced recalcs at
+    4x CPU opening a 4 MiB board). `syncInlineRange` now returns first when the
+    editor holds no range, has held none since it last found the selection outside
+    it (`_mayHoldSelection`, set by any range it is given or syncs), and does not
+    hold the focus. A focused editor and one that has held a range read it as
+    before. Measured after (`bench/editor/reports/2026-11-18-board-open-fixes.md`):
+    the open reads the selection once instead of 42 times, but the frames' own
+    style recalcs then do the same work (1.5 s either way), so the open is no
+    shorter; what makes each frame's recalc that large was not found. Pinned by
+    `e2e/editor/board-note-caret.spec.ts` (typing, a composition, a caret kept while
+    another note renders, a selection that goes with a note's editing), and the
+    peer's caret by `canvas-presence.spec.ts`.
+
+67. A graphics block finds its store's surface once (`framework/std`
+    `gfx/model/gfx-block-model.ts`, marked `Capy (local change 67)`; found
+    2026-11-18). `surface` filtered every block of the store on each read, and the
+    layer sort reads `groups`, then `surface`, in every compare: 0.55 s at 4x CPU
+    on a 4 MiB board, growing faster than the board. Each store's surface is kept
+    (a `WeakMap`) while `store.getBlock(id)` still returns that model; a surface
+    removed or replaced is looked up anew, and none found is never kept, so one
+    added later is found. Pinned by `src/features/blocksuite/boardSurface.test.ts`.
+
+68. The views added in one go ask once what is in view (`framework/std`
+    `gfx/viewport-element.ts`, `gfx/grid.ts`, marked `Capy (local change 68)`;
+    found 2026-11-18). The viewport element sets each added block view's
+    `transformState$` from the models in view, and searched the grid over the
+    viewport for every view: a board's open adds every note's view in one pass,
+    0.74 s at 4x CPU for 262 notes. The search is kept to the end of the
+    microtask while the grid (`GridManager.version`, counting adds and removes),
+    the viewport and the query are the same. Pinned by the canvas e2e specs, whose
+    notes show (`canvas-room.spec.ts`, `canvas-presence.spec.ts`) and by
+    `e2e/editor/board-note-caret.spec.ts`.
+
+69. The surface draws first in the frame its `attach` asks for
+    (`affine/blocks/surface` `surface-block.ts`, marked `Capy (local change 69)`;
+    found 2026-11-18). `firstUpdated` drew the whole board at once, before an
+    editor fitting its view in the next frame (the drawing board's `mountLayer`)
+    had done so, and that frame drew it again: 0.56 s at 4x CPU on a full canvas.
+    The stacking canvases are still appended there; `attach`'s refresh draws them,
+    after the fit, since `mountLayer` asked for its frame first. A board whose
+    viewport has no size yet in that frame (`mountLayer` waits) is drawn once
+    before its fit, as before.
+
+70. An image is placed before its file is stored (`affine/blocks/image`
+    `utils.ts`, `index.ts`, marked `Capy (local change 70)`; 2026-11-19, the
+    canvas's upload placeholder, Epo 2026-11-06). `addImages` read each file's
+    size and stored it together, then placed the blocks: a canvas stores the file
+    before its block lands (`boardBlobs.ts`), so nothing showed while it went up.
+    Each image's size is now read first, its box worked out, and the hook set by
+    `setImageUploadHandler` told of each file and its box before the files are
+    stored; its answer is called as the block lands, or with why the file was
+    refused. An image whose size can't be read is said and left out (as before,
+    with BlockSuite's own notice); one whose file is refused lands nothing and the
+    others of the same paste still land (upstream one refusal dropped them all),
+    and `addImages` answers the ids that landed. A board that stopped taking
+    edits while the files were stored (`store.readonly`), or whose add throws,
+    lands none and calls every answer with the error, so no box stays. Pinned by the upload test in
+    `e2e/editor/canvas-read-only.spec.ts` and the image tests in
+    `canvas-room-states.spec.ts`.
+
+71. A read-only store selects and copies, and its clipboard and double click add
+    nothing (`affine/blocks/surface` `tool/default-tool.ts`, `affine/blocks/root`
+    `edgeless/clipboard/clipboard.ts`, `affine/gfx/note` `note-tool.ts`, marked
+    `Capy (local change 71)`; 2026-11-19). Upstream a click on a read-only store
+    returned at once, so nothing could be selected but by a press-drag. Now:
+    - `DefaultTool.click` selects what it is on (or clears) on a read-only store
+      too, and hands the click to no view.
+    - `EdgelessClipboardController.copySelection()` puts on the clipboard what a
+      copy event of the selection does (`_onCopy` without its event; the board's
+      Copy bar, `boardReadOnly.ts`).
+    - Cut on a read-only store copies and removes nothing; a paste returns before
+      reading the clipboard.
+    - The double click that places an inline note (local change 59) places none.
+    Pinned by "a viewer's board selects and copies…" in
+    `e2e/editor/canvas-read-only.spec.ts`.
+
+72. Blocks are drawn into images by html2canvas-pro (`affine/blocks/surface`
+    `extensions/export-manager/export-manager.ts` and `package.json`, `affine/blocks/root`
+    `edgeless/clipboard/clipboard.ts` and `package.json`, marked `Capy (local change
+    72)`; 2026-11-19), the fork the app's note export already uses, in place of
+    html2canvas 1.4.1. Chrome computes a `color-mix()` as a `color(srgb …)` value,
+    which html2canvas 1.4.1 cannot read: it threw on every note, whose fill is a
+    `color-mix()` (local change 52), so the board's marking image and its Download as
+    image failed on any board with a note. The options and the cloned-document fixes
+    are unchanged. Pinned by "the image stacks as the screen does" and "a note
+    scrolled out of view still reaches the image" in
+    `e2e/editor/drawing-board.spec.ts`.
+
+73. The edgeless root keeps no view of its own (`affine/blocks/root`
+    `edgeless/edgeless-root-block.ts` `_initViewport`, marked `Capy (local change
+    73)`; Epo 2026-11-19, Q32). Upstream read a stored viewport as it mounted and wrote
+    one as it went, in sessionStorage under `blocksuite:<store id>:edgelessViewport`.
+    Every board's store id is `board`, so each board opened at the view of the last
+    one shown in the tab, whatever its canvas, until the board set its own first view on
+    its first animation frame. The root now only fits the screen; the board sets the
+    view it opens at on that frame (`DrawingBoardOptions.view` and `kept`: on a canvas,
+    the view this device kept for it, `src/features/canvas/canvasViews.ts`; otherwise
+    its fit), so the change is to what the root shows before that frame. No test pins
+    it: the e2e specs read the view only after the board's first view, which is the
+    same with or without the stored one. The page-mode writers (`frame-panel`,
+    `surface-ref`) still write the key, which nothing reads now.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

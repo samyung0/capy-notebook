@@ -244,6 +244,10 @@ export function keepDeviceCopy(
       write();
       stop();
     },
+    /** The label changed: the next write stores it, the document as it was. */
+    relabel() {
+      changed = true;
+    },
     /** No more writes: the document holds what no copy may keep. */
     stop,
   };

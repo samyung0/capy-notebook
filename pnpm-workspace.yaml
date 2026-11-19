@@ -72,6 +72,9 @@ patchedDependencies:
 # - seroval below 1.6.11 (five advisories, GHSA-97r2-qh9m-474h and others,
 #   under @tanstack/react-router via router-core): router-core's ^1.6.2 allows
 #   1.6.12, but the lockfile kept 1.6.3 on update.
+# - undici 7 below 7.30.1 (five advisories, GHSA-4w7w-5xrc-9h26 and others) under
+#   miniflare (wrangler's Workers tests) and @scalar/json-magic (API docs):
+#   both are dev tools, and a patch release within 7 changes nothing they call.
 overrides:
   # One Yjs instance (our patched one) for the app and BlockSuite, whose
   # packages ask for ^13.6.27.
@@ -83,6 +86,7 @@ overrides:
   "dompurify@<3.4.17": 3.4.17
   "fast-uri@<3.1.9": 3.1.9
   "seroval@<1.6.11": 1.6.12
+  "undici@>=7 <7.30.1": 7.30.1
 
 # `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
 # here. Each entry says why it waits.

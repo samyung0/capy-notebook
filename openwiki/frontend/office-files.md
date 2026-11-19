@@ -1974,8 +1974,10 @@ centred by Arrange.
 
 Both modes hide the speaker notes until View › Show speaker notes (the
 `view.speakerNotes` id, a checkbox item) or the Notes button at the bottom
-right of the slide area (bottom left, over the first thumbnail, when the strip
-is under the slide) shows them; the two flip one state. In edit mode that
+right of the slide area, 72px in from the edge so the Files page's floating
+chat button leaves it clear (`--pptx-notes-toggle-right`; bottom left, over
+the first thumbnail, when the strip is under the slide) shows them; the two
+flip one state. In edit mode that
 is pptx-react's (`pptx-notes-toggle`, labelled Notes in both layouts); the
 viewer draws the same button in `pptx-runtime.css`. The choice is one per
 person for every PPTX file and both modes, kept in the runtime origin's
@@ -2235,15 +2237,40 @@ style or for Cambria; it still loads the raw TTFs the fork keeps in
 (`@betteroffice/fonts-cjk`: Noto Sans TC, SC, JP, KR and Noto Serif SC, 3.4
 to 8.7 MB each packed) loads only when a document's text or fonts need that
 script, so the engine measures CJK text with the face the page paints; without
-them CJK text overlapped in view and vanished in edit. A DOCX downloads one
-whole face per script, picked by the document's East Asian language (a
-Japanese file loads Noto Sans JP alone, 3.6 MB packed, where the old rule added
-Noto Sans SC; Epo 2026-11-09, Q708 A); the Unicode-range slices come at a later
-pin. The language is each run's resolved East Asian language: a Japanese file
-whose runs carry none (or one other than Japanese, Korean or Chinese) also
-loads Noto Sans SC for its Han (about 10 MB with JP), and its kanji-only
-paragraphs paint in Simplified Chinese forms, with no error since both faces
-load; a document-level language (`w:themeFontLang`) is for the slices pin. The editor's
+them CJK text overlapped in view and vanished in edit. A DOCX loads each CJK
+face as Unicode-range slices (Epo 2026-10-17): Capy's loaders carry the face's
+`slices` (`bundledFontSlices`), so the layout opens the face from its skeleton
+(every table but the outlines: metrics and page breaks equal the whole face's)
+and loads only the outline chunks the pages draw (exchange-plan's View about
+1.8 MB of CJK instead of 17.5 MB). The face is picked by each run's resolved
+East Asian language, then the document defaults', then `w:themeFontLang`'s
+(Q751 B), else by the script (kana Japanese, Hangul Korean, Han Simplified
+Chinese). The viewer worker posts each sliced face's bytes (every outline its
+pages draw) with the Office families the layout resolved it for and the
+private family (`BetterOffice Sliced <open>.<n>`) its list markers and
+watermarks name it by; the frame registers them as `FontFace`s for that
+layout only, deleting them when the layout goes. View and Edit run in
+separate frames, so Edit opens its sliced faces again and decodes the
+chunks its pages draw once more, from the immutable HTTP cache (no network
+after the View); within Edit the page hands its decoded files to the engine
+worker (the fork's `SliceLocation.files`, checked against the index by
+length and SHA-256), and the fork registers its own faces in whichever
+thread paints. A slice that fails while the DOCX opens fails the open naming the
+file. One that fails while the document is edited (offline, say) keeps the
+editor running with its characters drawn blank (Q752 B):
+`DocxEditorHost`'s `onError` takes the fork's `FontSliceUnavailableError`
+(`fontSliceErrors`), sends the `font-slice-unavailable` notice once until
+the browser's `online` event, which calls `retryFontSlices()` (no other
+retry), and reports a server's failure through `font-failed` by its face
+(`reportOfficeFontFailure`, tag `office-font`); every other `onError` stays
+fatal. The notice is a warning toast that closes on its timer: the fork
+signals no repaint that drew the missing glyphs. Print and the list-card
+thumbnail wait for every outline the page draws (the fork's `renderPages`)
+and fail when a slice fails: Print shows its failure toast, and a thumbnail
+draw that fails ends its capture cycle like any other, so the next edit or
+open captures again. A typed character whose slice is still loading paints after at most
+300 ms, blank until it lands (Q750 B). Whole CJK faces now load only for
+XLSX's family lookups. The editor's
 Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
 font with no bundled face paints with its CSS fallback stack. Characters a
 document's face and Liberation lack (unstyled Greek or Cyrillic, general

@@ -12,6 +12,9 @@ import {
   type OfficeFace,
   officeViewerFonts,
   onOfficeFontFailure,
+  openFailure,
+  type SlicedOfficeFace,
+  slicedOfficeFaces,
   usedOfficeFaces,
 } from './officeFonts';
 
@@ -26,6 +29,7 @@ type Response =
       faces: OfficeFace[];
       /** Stage times (epoch ms) for the frame to mark. */
       marks: Record<string, number>;
+      sliced: SlicedOfficeFace[];
       type: 'ready';
     }
   | { message: string; type: 'error' };
@@ -58,6 +62,7 @@ self.onmessage = (event: MessageEvent<Request>) => {
         const openEnd = epochNow();
         const displayList = document.displayList();
         const faces = usedOfficeFaces(displayList);
+        const sliced = slicedOfficeFaces(document.slicedFaces(), displayList);
         post(
           {
             displayList,
@@ -69,10 +74,16 @@ self.onmessage = (event: MessageEvent<Request>) => {
               'worker:open-end': openEnd,
               'worker:open-start': openStart,
             },
+            sliced,
             type: 'ready',
           },
           // One face's bytes can stand for two family names.
-          [...new Set(faces.map((face) => face.bytes))]
+          [
+            ...new Set([
+              ...faces.map((face) => face.bytes),
+              ...sliced.map((face) => face.bytes),
+            ]),
+          ]
         );
       } catch (value) {
         post({ message: toError(value).message, type: 'error' });
@@ -80,8 +91,9 @@ self.onmessage = (event: MessageEvent<Request>) => {
         document.dispose();
       }
     },
+    // A slice that fails fails the open, naming its file.
     (value: unknown) => {
-      post({ message: toError(value).message, type: 'error' });
+      post({ message: openFailure(value).message, type: 'error' });
     }
   );
 };

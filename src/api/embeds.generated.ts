@@ -526,7 +526,6 @@ export const EMBED_CATALOG = {
       "topLevel": true,
       "required": [
         "id",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -534,7 +533,6 @@ export const EMBED_CATALOG = {
         "type",
         "id",
         "children",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -545,7 +543,6 @@ export const EMBED_CATALOG = {
         "fontFamily"
       ],
       "assets": [
-        "boardAssetId",
         "images[].assetId"
       ],
       "materials": [
@@ -1387,6 +1384,7 @@ export const EMBED_CATALOG = {
   ],
   "limits": {
     "BLOCK_CAPTION_MAX": 300,
+    "CANVAS_BOARD_MAX": 4194304,
     "CARD_BACK_MAX": 1000,
     "CARD_FRONT_MAX": 200,
     "DRAWING_BOARD_MAX": 256000,

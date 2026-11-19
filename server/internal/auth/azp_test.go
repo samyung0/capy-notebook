@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 )
@@ -51,7 +51,7 @@ func (f *fakeClerk) tokenFor(t *testing.T, userID, origin string) string {
 	if origin != "" {
 		builder = builder.Claims(map[string]any{"azp": origin})
 	}
-	raw, err := builder.CompactSerialize()
+	raw, err := builder.Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}

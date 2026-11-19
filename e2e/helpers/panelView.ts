@@ -1,10 +1,14 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { m } from '../i18n';
 
 const railSection = (page: Page, name: string) =>
   page
     .getByRole('navigation', { name: m.workspace_rail_label() })
     .getByRole('button', { exact: true, name });
+
+/** An open item is the Files page, whose chat button may still be on its way:
+ * the URL decides, not the button. */
+const fileOpen = (page: Page) => /[?&](file|material)=/.test(page.url());
 
 /** Shows Files or the chat in an lg viewport. Files is the tree beside the
  * rail (the Files page's side panel, already shown while a file is open).
@@ -22,8 +26,7 @@ export async function showPanelView(page: Page, name: string) {
   }
   const chat = page.locator('[data-workspace-chat-page]');
   if (!(await chat.isVisible())) {
-    // An open item is the Files page, whose button may still be on its way.
-    if (/[?&](file|material)=/.test(page.url())) await openChatWindow(page);
+    if (fileOpen(page)) await openChatWindow(page);
     else await railSection(page, m.workspace_section_agent()).click();
   }
   const field = chat.getByRole('textbox', { name: m.chat_placeholder() });
@@ -53,8 +56,7 @@ async function openChatWindow(page: Page) {
  * file the chat window's history dialog (the file stays), else the Chat
  * page's list. */
 export async function showChatHistory(page: Page) {
-  const button = page.locator('[data-workspace-chat-button]');
-  if (await button.isVisible()) {
+  if (fileOpen(page)) {
     await openChatWindow(page);
     await page
       .locator('[data-workspace-chat-page]')
@@ -67,7 +69,11 @@ export async function showChatHistory(page: Page) {
   await agent.waitFor();
   if ((await agent.getAttribute('aria-current')) !== 'page')
     await agent.click();
+  await expect(agent).toHaveAttribute('aria-current', 'page');
+  // Agent pressed on its own page folds the list away or back. The panel is
+  // empty while folded; while it opens it is there but still 0px wide.
   const list = page.locator('[data-workspace-left-panel]');
-  if (!(await list.isVisible())) await agent.click();
+  if (await list.evaluate((panel) => !panel.childElementCount))
+    await agent.click();
   await list.getByText(m.chat_group_pinned()).waitFor();
 }

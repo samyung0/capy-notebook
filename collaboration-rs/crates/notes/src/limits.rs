@@ -315,9 +315,9 @@ pub const OWN_KEYS: [(&str, &[&str]); 9] = [
         &["materialId", "refKind"],
     ),
     ("video", &["provider", "videoId"]),
-    // A canvas's one block; no room serves a canvas, but admission keeps the
-    // store's rules for every non-item kind.
-    ("canvas_board", &["boardAssetId", "version", "images"]),
+    // A canvas's one block. Its board room admits by size alone (the server's
+    // board model), so these are the store's rules for the projected block.
+    ("canvas_board", &["version", "images"]),
 ];
 
 /// The keys an element of type `kind` needs besides `type` and `id`.
@@ -389,8 +389,7 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 15] = [
-    "boardAssetId",
+const VALUE_KEYS: [&str; 14] = [
     "version",
     "images",
     "refKind",
@@ -415,12 +414,11 @@ const VALUE_KEYS: [&str; 15] = [
 /// [on_candidate]), a Mermaid source is a string (or its shared text), any
 /// block's indent is a number that stops at `LIST_INDENT_MAX`, a table's
 /// column sizes and left margin are sizes, a list's style holds no `;` or
-/// control character, and a canvas's block names its board asset (empty
-/// before the first save), counts its saves and lists its images by asset id
+/// control character, and a canvas's block counts its board's version and
+/// lists its images by asset id
 /// (Go's `materialdoc.CanvasDocument`).
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
-        ("canvas_board", "boardAssetId", value) => matches!(value, Any::String(_)),
         ("canvas_board", "version", value) => {
             matches!(value, Any::Number(version) if *version >= 0.0 && version.fract() == 0.0)
         }

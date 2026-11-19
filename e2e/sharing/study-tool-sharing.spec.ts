@@ -86,12 +86,12 @@ test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
   const quiz = await response.json();
   try {
     await expect(ownerPage).toHaveURL(`/materials/${quiz.id}`);
-    // The draft edits live: its rooms open and Add question is there.
+    // The draft edits live: once its rooms sync, the Add bar's Add question
+    // (the question rail holds another) takes a press.
     await expect(
-      ownerPage.getByRole('button', {
-        exact: true,
-        name: m.quiz_add_question(),
-      })
+      ownerPage
+        .getByRole('toolbar', { name: m.quiz_editor_add_bar() })
+        .getByRole('button', { exact: true, name: m.quiz_add_question() })
     ).toBeEnabled();
   } finally {
     expect((await ownerApi.delete(`/api/quizzes/${quiz.id}`)).status()).toBe(

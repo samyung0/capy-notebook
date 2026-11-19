@@ -118,19 +118,19 @@ func itemUnionSQL(all bool) string {
 	UNION ALL
 	` + materials + `
 	UNION ALL
-	SELECT 'embed', a.id, 'embed:' || a.id, a.created_at, lower(` + workspaceNameSQL("top.workspace_id", "top.title") + `),
-			a.size_bytes, a.purpose::text, lower(COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id),
-				` + workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')") + `)),
+	SELECT 'embed', a.id, 'embed:' || a.id, a.created_at, lower(` + embedHomeTitleSQL("top", "$1") + `),
+			a.size_bytes, a.purpose::text, lower(` + workspaceNameSQL("COALESCE(top.workspace_id, top.canvas_workspace_id)",
+		"COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id), top.workspace_name, '')") + `),
 			COALESCE(NULLIF(top.workspace_id, ''), top.canvas_workspace_id)
 		FROM editor_assets a
 		-- Each asset's note by its key; as plain joins the planner hashes
 		-- the whole materials table twice (OFFSET 0 keeps the lookup per row).
 		CROSS JOIN LATERAL (SELECT m.trashed_at AS asset_trashed_at, top.title, top.workspace_id,
-				top.workspace_name, top.trashed_at, top.canvas_workspace_id
+				top.workspace_name, top.trashed_at, top.canvas_workspace_id, top.kind, top.owner_user_id, top.canvas_shared
 			FROM materials m JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
 			WHERE m.id=a.material_id OFFSET 0) top
 		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND a.purpose IN ('image','audio')
-			AND (` + lostAccessSQL("top.workspace_id", "$1") + ` OR (top.asset_trashed_at IS NULL AND top.trashed_at IS NULL))
+			AND (` + embedHomeLostSQL("top", "$1") + ` OR (top.asset_trashed_at IS NULL AND top.trashed_at IS NULL))
 	UNION ALL
 	SELECT 'embed', a.id, 'embed:' || a.id, a.created_at, '', a.size_bytes, a.purpose::text,
 			lower(COALESCE(` + workspaceNameSQL("q.workspace_id", "bw.name") + `, '')), q.workspace_id

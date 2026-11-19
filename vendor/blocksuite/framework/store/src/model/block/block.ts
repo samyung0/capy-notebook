@@ -52,8 +52,7 @@ export class Block {
           }
           options.onChange?.(this, key, isLocal);
         };
-    const flavour = yBlock.get('sys:flavour') as string;
-    const blockSchema = this.schema.get(flavour);
+    const blockSchema = this.schema.of(yBlock);
     if (blockSchema?.model.isFlatData) {
       this._syncController = new FlatSyncController(
         schema,

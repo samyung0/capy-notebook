@@ -2589,15 +2589,22 @@ export function useSetHidden(wsId: string) {
         `/${type === 'file' ? 'files' : 'materials'}/${id}/hidden`,
         { hidden }
       ),
-    onSuccess: (_result, { id, type }) => {
-      if (type === 'file') {
-        qc.invalidateQueries({ queryKey: qk.files(wsId) });
-        qc.invalidateQueries({ queryKey: qk.file(id) });
-      } else {
-        qc.invalidateQueries({ queryKey: qk.materials(wsId) });
-        qc.invalidateQueries({ queryKey: qk.material(id) });
-      }
-    },
+    // Returned, so the write stays pending until the lists show it: the menu's
+    // switch draws the value being sent meanwhile (useToggleHidden).
+    // The account's Files page lists the item too (`qk.itemsRoot`).
+    onSuccess: (_result, { id, type }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.itemsRoot }),
+        ...(type === 'file'
+          ? [
+              qc.invalidateQueries({ queryKey: qk.files(wsId) }),
+              qc.invalidateQueries({ queryKey: qk.file(id) }),
+            ]
+          : [
+              qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
+              qc.invalidateQueries({ queryKey: qk.material(id) }),
+            ]),
+      ]),
   });
 }
 

@@ -192,7 +192,7 @@ describe('public workspace SSR', () => {
       expect(result.status).toBe(503);
       const html = await result.text();
       expect(html).toContain('data-error-surface="page"');
-      expect(html).toContain('Try again');
+      expect(html).toContain('Retry');
       expect(result.headers.get('Cache-Control')).toBe('no-store');
       expect(fetcher).toHaveBeenCalledTimes(1);
     }

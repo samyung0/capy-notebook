@@ -829,7 +829,8 @@ function OfficeRuntime() {
     [runtimeRevision]
   );
   // An XLSX face that failed keeps the browser's font with no error shown
-  // (Q710 C): Capy reports it to Sentry.
+  // (Q710 C), as does a DOCX font slice a server failed while editing (Q752
+  // B, with a notice): Capy reports it to Sentry.
   const reportFontFailure = useCallback(
     (family: string, error: Error) => {
       if (runtimeRevision === undefined) return;
@@ -952,7 +953,9 @@ function OfficeRuntime() {
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
+              onFontError={reportFontFailure}
               onMenus={reportMenus}
+              onNotice={reportNotice}
               onPendingChange={reportHostPending}
               onPositioner={reportPositioner}
               onRenderer={reportRenderer}

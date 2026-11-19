@@ -209,12 +209,13 @@ export class DefaultTool extends BaseTool {
   }
 
   override click(e: PointerEventState) {
-    if (this.doc.readonly) return;
-
+    // Capy (local change 71): a store that takes no edits still selects what
+    // a click is on (to copy it), and hands the click to no view.
     if (!this.interactivity?.handleElementSelection(e)) {
       this.selection.clear();
       resetNativeSelection(null);
     }
+    if (this.doc.readonly) return;
 
     this.interactivity?.dispatchEvent('click', e);
   }
@@ -283,8 +284,15 @@ export class DefaultTool extends BaseTool {
 
   // oxlint-disable-next-line typescript/no-misused-promises
   override async dragStart(e: PointerEventState) {
+    // Capy (local change 65): a store that takes no edits takes none from a
+    // drag. No view is handed it (a connector's label moves under one), and
+    // nothing is moved or cloned below: the press selects what is under it and
+    // a drag from empty board selects by its box, as they did.
+    const readonly = this.doc.readonly;
     const { preventDefaultState, handledByView } =
-      this.interactivity?.dispatchEvent('dragstart', e) ?? {};
+      (readonly
+        ? undefined
+        : this.interactivity?.dispatchEvent('dragstart', e)) ?? {};
 
     if (this.selection.editing || preventDefaultState || handledByView) return;
 
@@ -292,6 +300,7 @@ export class DefaultTool extends BaseTool {
 
     // Determine the drag type based on the current state and event
     let dragType = this._determineDragType(e);
+    if (readonly && dragType === DefaultModeDragType.ContentMoving) return;
 
     const elements = this.selection.selectedElements;
     if (elements.some(e => e.isLocked())) return;

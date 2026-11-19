@@ -15,6 +15,10 @@ export const MATERIAL_DOCUMENT_LIMITS = {
 // SYNC WITH MAX_SOURCE_STATE_BYTES IN collaboration-rs/crates/sources/src/lib.rs
 export const SOURCE_STATE_MAX_BYTES = 100 * 1024 * 1024;
 
+/** What a board's work leaves of its cap, offline and at the removals-only
+ * gate: the server's estimate adds a little per struct to each update's bytes. */
+export const BOARD_OFFLINE_MARGIN = 64 * 1024;
+
 /**
  * When to warn before opening a document, deliberately NOT derived from
  * MATERIAL_DOCUMENT_LIMITS. Those caps protect the collaboration service and

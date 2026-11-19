@@ -1,6 +1,8 @@
+import type { DocxViewerSlicedFace } from '@betteroffice/docx/viewer';
 import {
   BASE_LATIN_FAMILY,
   type BundledFontFace,
+  bundledFontSlices,
   type FontAssetOptions,
   type FontDecoder,
   loadBundledFontBytes,
@@ -9,6 +11,7 @@ import {
   resolveLastResortFace,
   resolveMetricCompatFace,
   resolveScriptFallbackFace,
+  type SliceLocation,
 } from '@betteroffice/fonts';
 
 /** A face a DOCX layout loaded, under the Office family name it asked for,
@@ -19,9 +22,32 @@ export interface OfficeFace {
   family: string;
 }
 
+/** A FontFace's family and descriptors. */
+export interface OfficeFamily {
+  family: string;
+  style?: string;
+  weight?: string;
+}
+
+/**
+ * A sliced (CJK) face the viewer worker measured with: its bytes hold the
+ * outline of every glyph the pages draw, under the families the pages paint
+ * it with (the Office families it was resolved for, and the private family
+ * list markers and watermarks name it by). Edit runs in a frame of its own,
+ * so it opens the face again from the immutable HTTP cache.
+ */
+export interface SlicedOfficeFace {
+  bytes: ArrayBuffer;
+  families: OfficeFamily[];
+}
+
 const failures = new Set<(error: Error) => void>();
 // Filled only where bytes are kept (the viewer worker).
 const used = new Map<string, OfficeFace>();
+// The registry opens a sliced face without calling its loader, so the Office
+// families each was resolved for are recorded by slice index instead (viewer
+// worker only, as `used`).
+const slicedFamilies = new Map<string, Map<string, OfficeFace['face']>>();
 let keepBytes = false;
 
 /** Reports a bundled face that failed to load; returns the unsubscribe. */
@@ -96,6 +122,72 @@ export function usedOfficeFaces(displayList: unknown): OfficeFace[] {
   return paintedFaces(used.values(), displayList);
 }
 
+/** The viewer's sliced faces, each under the families `displayList` paints
+ * it with. */
+export function slicedOfficeFaces(
+  sliced: readonly DocxViewerSlicedFace[],
+  displayList: unknown
+): SlicedOfficeFace[] {
+  const painted = paintedFamilies(displayList);
+  return sliced.map(({ bytes, family, slices }) => {
+    const families: OfficeFamily[] = [{ family }];
+    // Opaque to DOCX: the fonts package's location.
+    const index = (slices as SliceLocation).ref.index;
+    for (const [name, face] of slicedFamilies.get(index) ?? [])
+      families.push({
+        family: name,
+        style: face.style,
+        weight: String(face.weight),
+      });
+    return {
+      bytes,
+      families: families.filter(({ family }) =>
+        painted.has(family.toLowerCase())
+      ),
+    };
+  });
+}
+
+/**
+ * Registers sliced faces as FontFaces under the families they paint with,
+ * for one layout: they hold only the outlines its pages draw. Resolves with
+ * what deletes them again.
+ */
+export async function registerSlicedFaces(faces: readonly SlicedOfficeFace[]) {
+  const added: FontFace[] = [];
+  const release = () => {
+    for (const fontFace of added) document.fonts.delete(fontFace);
+  };
+  try {
+    await Promise.all(
+      faces.flatMap(({ bytes, families }) =>
+        families.map(async ({ family, style, weight }) => {
+          const fontFace = new FontFace(family, bytes, { style, weight });
+          await fontFace.load();
+          document.fonts.add(fontFace);
+          added.push(fontFace);
+        })
+      )
+    );
+  } catch (error) {
+    release();
+    throw error;
+  }
+  return release;
+}
+
+/** An open's failure, naming the slice file when a slice failed (a fetch's
+ * own network error names none). */
+export function openFailure(value: unknown): Error {
+  const file = (value as { file?: unknown } | null)?.file;
+  if (typeof file === 'string')
+    return new Error(
+      `The font slice ${file} failed to load: ${value instanceof Error ? value.message : String(value)}`,
+      { cause: value }
+    );
+  return value instanceof Error ? value : new Error(String(value));
+}
+
 // The faces registered in this window, by family, weight and style.
 const registered = new Set<string>();
 
@@ -131,7 +223,30 @@ export function registerOfficeFaces(faces: readonly OfficeFace[]) {
  * settles (font bytes live only in the engines' WASM). */
 type FaceRuntime = { decoder?: FontDecoder; retain: false };
 
+/**
+ * A face's loader. A face shipped in slices also carries where they are, so
+ * DOCX opens it from its skeleton and loads only the outline chunks its
+ * glyphs need.
+ */
 function loader(
+  face: BundledFontFace,
+  family: string,
+  options: FontAssetOptions | undefined,
+  runtime: FaceRuntime
+): (() => Promise<ArrayBuffer>) & { slices?: SliceLocation } {
+  const load = wholeFaceLoader(face, family, options, runtime);
+  const slices = bundledFontSlices(face, options, runtime);
+  if (!slices) return load;
+  if (keepBytes) {
+    const index = slices.ref.index;
+    const families = slicedFamilies.get(index) ?? new Map();
+    slicedFamilies.set(index, families);
+    if (!families.has(family)) families.set(family, face);
+  }
+  return Object.assign(load, { slices });
+}
+
+function wholeFaceLoader(
   face: BundledFontFace,
   family: string,
   options: FontAssetOptions | undefined,
@@ -188,8 +303,6 @@ function fontProvider(
       bold: boolean,
       italic: boolean
     ) {
-      // One whole face per script, which DOCX picks by the document's
-      // language (Q708 A): no slices at this pin.
       const face = resolveScriptFallbackFace(script, bold, italic);
       return face && loader(face, face.family, options, runtime);
     },
@@ -198,13 +311,14 @@ function fontProvider(
 
 /**
  * The fork's bundled fonts for configureDefaultFonts (record 16): DOCX
- * measures with the metric-compatible faces and the CJK coverage faces
- * (@betteroffice/fonts-cjk, emitted as same-origin assets that load only when
- * a document needs that script), each also registered as a
- * FontFace under the Office family it stands in for (a no-op in a worker).
- * Faces ship packed and decode with the engine's decoder. The engine falls
- * back silently when a face fails, so each failure is also reported to
- * onOfficeFontFailure listeners, which show it as an error.
+ * measures with the metric-compatible faces, each also registered as a
+ * FontFace under the Office family it stands in for (a no-op in a worker),
+ * and the CJK coverage faces (@betteroffice/fonts-cjk, same-origin Unicode-
+ * range slices of which a document loads only the chunks its pages draw;
+ * 2026-10-17). Faces ship packed and decode with the engine's decoder. The
+ * engine falls back silently when a whole face fails, so each failure is also
+ * reported to onOfficeFontFailure listeners, which show it as an error; a
+ * sliced face's failure reaches the open or the editor's onError itself.
  */
 export const officeFonts = {
   createFontProvider: (

@@ -26,6 +26,10 @@ import type { GfxCompatibleInterface, PointTestOptions } from './base.js';
 import type { GfxGroupModel } from './model.js';
 import type { SurfaceBlockModel } from './surface/surface-model.js';
 
+/** Capy (local change 67): each store's surface block, as `surface` last
+ * found it. */
+const storeSurfaces = new WeakMap<object, SurfaceBlockModel>();
+
 /**
  * The props that a graphics block model should have.
  */
@@ -176,9 +180,17 @@ export class GfxBlockElementModel<
   }
 
   get surface(): SurfaceBlockModel | null {
+    // Capy (vendor/blocksuite/README.md, local change 67): the scan below
+    // reads every block, and the layer sort reads `groups` (so `surface`) in
+    // every compare. One store's surface is kept while the store still holds
+    // it; one removed, or added after a read found none, is looked up anew.
+    const held = storeSurfaces.get(this.store);
+    if (held && this.store.getBlock(held.id)?.model === held) return held;
     const result = this.store.getBlocksByFlavour('affine:surface');
     if (result.length === 0) return null;
-    return result[0].model as SurfaceBlockModel;
+    const surface = result[0].model as SurfaceBlockModel;
+    storeSurfaces.set(this.store, surface);
+    return surface;
   }
 
   get w() {

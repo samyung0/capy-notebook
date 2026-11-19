@@ -37,10 +37,13 @@ test("a note's embed answers in the note's Preview, and edits again", async ({
   const embed = page
     .locator('[data-note-mount="live"] .slate-material_ref')
     .first();
-  await embed.scrollIntoViewIfNeeded();
-  await expect(embed.locator('[data-question-edit]').first()).toBeVisible({
-    timeout: 30_000,
+  // Its first card in Edit, once its rooms synced (EmbedQuizEditor).
+  const card = embed.getByRole('button', {
+    exact: true,
+    name: m.question_ui_edit_question_number({ number: 1 }),
   });
+  await embed.scrollIntoViewIfNeeded();
+  await expect(card).toBeVisible({ timeout: 30_000 });
   await page
     .getByRole('button', { exact: true, name: m.editor_embed_preview() })
     .click();
@@ -53,7 +56,5 @@ test("a note's embed answers in the note's Preview, and edits again", async ({
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
-  await expect(embed.locator('[data-question-edit]').first()).toBeInViewport({
-    timeout: 30_000,
-  });
+  await expect(card).toBeInViewport({ timeout: 30_000 });
 });

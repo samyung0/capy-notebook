@@ -453,8 +453,12 @@ async fn live_note(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -
     match crate::edits::live_note(&app, &room).await {
         Ok(value) => json_response(StatusCode::OK, value),
         Err(error) => {
-            crate::observe::capture(error.message(), None, &[("stage", "live_note")]);
+            // A refusal of the request (a canvas's board) is the caller's, as
+            // on the document routes.
             let (status, body) = error.status_and_body();
+            if status >= 500 {
+                crate::observe::capture(error.message(), None, &[("stage", "live_note")]);
+            }
             let status = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
             json_response(status, body)
         }
@@ -494,6 +498,11 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
         Err(message) if message == crate::edits::UPDATE_TOO_LARGE => json_response(
             StatusCode::PAYLOAD_TOO_LARGE,
             json!({ "code": "update_too_large", "message": message }),
+        ),
+        // A room no command writes: permanent, and the caller's to avoid.
+        Err(message) if message == crate::edits::CANVAS_REFUSED => json_response(
+            StatusCode::CONFLICT,
+            json!({ "code": "unsupported_operation", "message": message }),
         ),
         Err(message) if message == crate::edits::ROOM_RESET => unavailable(
             "/internal/commands",

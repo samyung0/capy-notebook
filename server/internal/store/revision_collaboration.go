@@ -386,6 +386,9 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err := assertCommentableTx(ctx, tx, materialID); err != nil {
+		return Discussion{}, err
+	}
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Discussion{}, err
 	}
@@ -409,6 +412,24 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	return s.findDiscussion(ctx, materialID, discussionID)
+}
+
+// assertCommentableTx refuses comments on a canvas, as a canvas refuses a
+// content write (UpdateMaterial): its board shows none, so a row there would
+// be one nobody sees. Its holders hear it from the routes, which answer
+// anyone else first (AssertMaterialEditor).
+func assertCommentableTx(ctx context.Context, tx pgx.Tx, materialID string) error {
+	var kind MaterialKind
+	if err := tx.QueryRow(ctx, `SELECT kind FROM materials WHERE id=$1`, materialID).Scan(&kind); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if kind == MaterialCanvas {
+		return fmt.Errorf("%w: a canvas takes no comments", materialdoc.ErrInvalid)
+	}
+	return nil
 }
 
 func nullBytes(value []byte) any {
@@ -437,6 +458,9 @@ func (s *Store) AddComment(
 		if isNoRows(err) {
 			return Comment{}, ErrNotFound
 		}
+		return Comment{}, err
+	}
+	if err := assertCommentableTx(ctx, tx, materialID); err != nil {
 		return Comment{}, err
 	}
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
