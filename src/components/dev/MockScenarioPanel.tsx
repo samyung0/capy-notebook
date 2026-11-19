@@ -218,7 +218,14 @@ export default function MockScenarioPanel() {
               'application request settled'
             );
           }
-          if (!note && !['invite-success', 'collab-chaos'].includes(id)) {
+          if (
+            !note &&
+            ![
+              'invite-success',
+              'invite-class-success',
+              'collab-chaos',
+            ].includes(id)
+          ) {
             // An Office editor's strip draws under its ribbon, in the frame.
             const surface =
               '[role="alert"], [data-toast], [data-error-surface]';

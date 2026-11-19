@@ -695,7 +695,11 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   response as a missing shared workspace. A frozen recipient is refused with
   `account_over_quota`, since joining is an edit. An invite that belongs to
   another account answers the same 404 as a missing one, by invite id or by
-  token, so neither is an existence oracle.
+  token, so neither is an existence oracle. Before Accept the invite page reads
+  the invite (`GET /api/workspace-invites/{token}`: its role and workspace kind,
+  so a class's viewer can agree to what they share) under the same rules, the
+  same 404 wherever Accept would answer one; the in-app notification already
+  names the workspace to that invitee, so this tells them nothing new.
 - Role changes and removals refuse an empty actor rather than reading it as the
   owner.
 - Acceptance locks the workspace first, then locks the owner and recipient

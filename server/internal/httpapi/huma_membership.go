@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -15,6 +17,8 @@ type workspaceMembersOutput struct {
 	Body []apimodel.WorkspaceMember `nullable:"false"`
 }
 type workspaceMemberOutput struct{ Body apimodel.WorkspaceMember }
+
+type invitePreviewOutput struct{ Body store.InvitePreview }
 type workspaceCollaboratorsOutput struct {
 	Body []apimodel.WorkspaceCollaborator `nullable:"false"`
 }
@@ -57,6 +61,7 @@ func (a *api) registerMembership(api huma.API) {
 	reg(api, http.MethodPost, "/api/workspaces/{id}/invites", "createWorkspaceInvite", tag, "Privately invite a workspace member", http.StatusAccepted, a.createWorkspaceInvite)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/invites", "listWorkspaceInvites", tag, "List pending workspace invites", http.StatusOK, a.listWorkspaceInvites)
 	reg(api, http.MethodDelete, "/api/workspaces/{id}/invites/{inviteId}", "cancelWorkspaceInvite", tag, "Cancel a pending workspace invite", http.StatusNoContent, a.cancelWorkspaceInvite)
+	reg(api, http.MethodGet, "/api/workspace-invites/{token}", "previewWorkspaceInvite", tag, "Read a workspace invite for its invitee", http.StatusOK, a.previewWorkspaceInvite)
 	reg(api, http.MethodPost, "/api/workspace-invites/{token}/accept", "acceptWorkspaceInvite", tag, "Accept a workspace invite", http.StatusOK, a.acceptWorkspaceInvite)
 }
 
@@ -154,6 +159,16 @@ func (a *api) cancelWorkspaceInvite(ctx context.Context, in *workspaceInviteInpu
 	return &Empty{}, nil
 }
 
+// previewWorkspaceInvite tells the invitee what joining shares, answering
+// not found wherever Accept would.
+func (a *api) previewWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInviteInput) (*invitePreviewOutput, error) {
+	preview, err := a.s.PreviewWorkspaceInvite(ctx, in.Token, userID(ctx))
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	return &invitePreviewOutput{Body: preview}, nil
+}
+
 func (a *api) acceptWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInviteInput) (*workspaceMemberOutput, error) {
 	accepted, err := a.s.AcceptWorkspaceInviteWithResult(ctx, in.Token, userID(ctx))
 	if err != nil {
@@ -170,6 +185,17 @@ func (a *api) acceptWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInvi
 			Type:         "created",
 			Notification: n,
 		})
+	}
+	// The invite page asked them to agree to what a class shares before
+	// Accept (Epo 2026-11-19), so the class's first open does not tell it
+	// again. They have joined by now: a failure is reported, not answered,
+	// and leaves the notice due.
+	notice, err := a.s.SharingNoticeFor(ctx, userID(ctx), accepted.Member.WorkspaceID)
+	if err == nil && notice.Due {
+		err = a.s.MarkSharingNoticeSeen(ctx, userID(ctx), accepted.Member.WorkspaceID, time.Now())
+	}
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "invite_sharing_notice"})
 	}
 	return &workspaceMemberOutput{Body: accepted.Member}, nil
 }

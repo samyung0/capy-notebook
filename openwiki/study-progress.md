@@ -1725,7 +1725,14 @@ and teaching assistants each member's practice and attempts), and one button; a
 member who dismissed the earlier wording is not told again (`SharingNotice.tsx`, `GET` and
 `PUT /api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
 row, so leaving and rejoining tells again. Staff and personal workspaces never see
-it. The board's own line about topic labels waits for topic summaries, and its Join
+it. A class's viewer agrees to it on the invite page instead (Epo 2026-11-19):
+before Accept the page reads the invite (`GET /api/workspace-invites/{token}`, its
+role and workspace kind, for the invitee alone) and a class viewer's shows "By
+accepting this invitation, you agree to share the following with the class's owner
+and teaching assistants: Your practice and attempts"; Accept marks the notice told
+and goes straight into the class, so its first open (an assignment link's Before you
+start included) never stacks a second dialog. The in-class dialog stays for a member
+who joined some other way or became a viewer later. The board's own line about topic labels waits for topic summaries, and its Join
 step and "What members see" link for an invite preview and board G5.
 
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
@@ -1928,10 +1935,12 @@ tells the class's staff and that member (`publishSweptTodo`).
 (a class's staff) offers Assignment and Graded quiz; a personal workspace's To do
 offers Task and Graded quiz; a class member keeps a plain New task. Assignment and
 Task open `NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked
-form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz with a
-"1 Settings › 2 Questions" stepper (hidden on a phone; Epo 2026-11-16 put
-Settings first, as Canvas, Google Classroom and Moodle set a quiz up before its
-questions). Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
+form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with Settings
+first (Epo 2026-11-16, as Canvas, Google Classroom and Moodle set a quiz up
+before its questions) and no stepper in the title (Epo 2026-11-19). Both steps
+take one frame, 720px wide (so the five tabs show) and `min(680px, 88dvh)` tall,
+and the step after the first opens in its place without the dialog's open
+motion (`DialogStep`), so Next and Back read as one dialog. Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
 the due date required, the title left empty to take its quiz's name ("The quiz's
 name"), and Next, which saves nothing and hands the values on. Step 2 is Add quiz (`AddPracticeDialog` with `graded`) with five tabs:
 Existing quiz first (Practice's quizzes, one picked and copied whole), then

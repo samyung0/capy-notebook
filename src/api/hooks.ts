@@ -104,6 +104,7 @@ import type {
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
+  InvitePreview,
   InvoiceList,
   ItemListParams,
   ItemPage,
@@ -2816,6 +2817,21 @@ export function useCancelWorkspaceInvite(workspaceId: string) {
   });
 }
 
+/** What joining shares, for the invite's own invitee; anyone else gets the
+ * same unavailable answer as Accept. Not kept once the page leaves, since the
+ * key holds the token. */
+export const useWorkspaceInvitePreview = (token: string | undefined) =>
+  useQuery({
+    enabled: !!token,
+    gcTime: 0,
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () =>
+      api.get<InvitePreview>(
+        `/workspace-invites/${encodeURIComponent(token ?? '')}`
+      ),
+    queryKey: ['workspace-invite', token],
+  });
+
 export function useAcceptWorkspaceInvite() {
   const qc = useQueryClient();
   return useMutation({
@@ -2834,6 +2850,8 @@ export function useAcceptWorkspaceInvite() {
       });
       qc.invalidateQueries({ queryKey: qk.notifications });
       qc.invalidateQueries({ queryKey: qk.notificationUnread });
+      // Agreed to on the invite page: a copy cached before then is stale.
+      qc.invalidateQueries({ queryKey: qk.sharingNotice(member.workspaceId) });
     },
   });
 }

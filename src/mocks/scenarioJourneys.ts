@@ -668,6 +668,12 @@ export async function runJourney(
       await ui.element('[contenteditable="true"]');
       setChaosPeers(true);
       return;
+    case 'invite-class-success':
+      // Stops before Accept, which would go straight in: the consent line
+      // is what this one shows.
+      fail();
+      await go('/workspace-invites/mock-scenario');
+      return;
     case 'invite-success':
     case 'invite-unavailable':
     case 'invite-retry':

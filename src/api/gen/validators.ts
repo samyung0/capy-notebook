@@ -9051,6 +9051,20 @@ export const TranscribeAccountVoiceResponse = zod.object({
 
 
 /**
+ * @summary Read a workspace invite for its invitee
+ */
+export const PreviewWorkspaceInviteParams = zod.object({
+  "token": zod.string()
+})
+
+export const PreviewWorkspaceInviteResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "role": zod.enum(['owner', 'editor', 'viewer']),
+  "workspaceKind": zod.enum(['class', 'personal'])
+})
+
+
+/**
  * @summary Accept a workspace invite
  */
 export const AcceptWorkspaceInviteParams = zod.object({

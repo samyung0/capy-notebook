@@ -117,6 +117,7 @@ import type {
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
+  InvitePreview,
   InvoiceList,
   ItemBankPage,
   ItemBankQuestion,
@@ -12243,6 +12244,56 @@ const res = await fetch(getTranscribeAccountVoiceUrl(),
 
   const data: transcribeAccountVoiceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as transcribeAccountVoiceResponse
+}
+
+
+
+export type previewWorkspaceInviteResponse200 = {
+  data: InvitePreview
+  status: 200
+}
+
+export type previewWorkspaceInviteResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type previewWorkspaceInviteResponseSuccess = (previewWorkspaceInviteResponse200) & {
+  headers: Headers;
+};
+export type previewWorkspaceInviteResponseError = (previewWorkspaceInviteResponseDefault) & {
+  headers: Headers;
+};
+
+export type previewWorkspaceInviteResponse = (previewWorkspaceInviteResponseSuccess | previewWorkspaceInviteResponseError)
+
+export const getPreviewWorkspaceInviteUrl = (token: string,) => {
+
+
+
+
+  return `/api/workspace-invites/${token}`
+}
+
+/**
+ * @summary Read a workspace invite for its invitee
+ */
+export const previewWorkspaceInvite = async (token: string, options?: RequestInit): Promise<previewWorkspaceInviteResponse> => {
+
+  const res = await fetch(getPreviewWorkspaceInviteUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: previewWorkspaceInviteResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as previewWorkspaceInviteResponse
 }
 
 

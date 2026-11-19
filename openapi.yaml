@@ -4237,6 +4237,23 @@ components:
         - microsoft
         - microsoftFilesRead
       type: object
+    InvitePreview:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/InvitePreview.json
+          format: uri
+          readOnly: true
+          type: string
+        role:
+          $ref: "#/components/schemas/WorkspaceRole"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+      required:
+        - role
+        - workspaceKind
+      type: object
     Invoice:
       additionalProperties: false
       properties:
@@ -15894,6 +15911,31 @@ paths:
       summary: Transcribe an account chat voice recording for the composer
       tags:
         - Chat
+  /api/workspace-invites/{token}:
+    get:
+      operationId: previewWorkspaceInvite
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitePreview"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read a workspace invite for its invitee
+      tags:
+        - Workspace collaboration
   /api/workspace-invites/{token}/accept:
     post:
       operationId: acceptWorkspaceInvite

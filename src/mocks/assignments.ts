@@ -2059,6 +2059,10 @@ export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
 
 /** Told once in this page's life. */
 let sharingNoticeSeen = false;
+/** The invite page told the member as they joined. */
+export const markSharingNoticeSeen = () => {
+  sharingNoticeSeen = true;
+};
 
 /** GET /api/recent: a graded quiz's own quiz lists nowhere (migration 0174). */
 export function recentFor(url: string) {

@@ -75,6 +75,7 @@ import {
   addPaperFile,
   assignmentActivity,
   assignmentHandlers,
+  markSharingNoticeSeen,
   recentFor,
   submittedPapers,
   workspaceMaterialRefs,
@@ -1786,6 +1787,21 @@ export const handlers = [
     };
     return HttpResponse.json(ws);
   }),
+  http.get('/api/workspace-invites/:token', ({ params }) => {
+    // Scenario and spec links (mock-…) open as any invite would; what
+    // Accept answers is the scenario's.
+    if (String(params.token).startsWith('mock-'))
+      return HttpResponse.json({ role: 'editor', workspaceKind: 'personal' });
+    const invite = mockWorkspaceInvites.find(
+      (item) =>
+        (item.id === params.token || item.token === params.token) &&
+        pendingInvite(item) &&
+        item.invitedUserId === db.user.id
+    );
+    const ws = db.workspaces.find((w) => w.id === invite?.workspaceId);
+    if (!invite || !ws) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json({ role: invite.role, workspaceKind: ws.kind });
+  }),
   http.post('/api/workspace-invites/:token/accept', async ({ params }) => {
     const invite = mockWorkspaceInvites.find(
       (item) =>
@@ -1821,6 +1837,10 @@ export const handlers = [
       (notification) => notification.href === `/workspace-invites/${invite.id}`
     );
     if (notificationIndex >= 0) db.notifications.splice(notificationIndex, 1);
+    // A class's member agreed to what they share on the invite page.
+    const ws = db.workspaces.find((w) => w.id === invite.workspaceId);
+    if (ws?.kind === 'class' && invite.role === 'viewer')
+      markSharingNoticeSeen();
     return HttpResponse.json(member);
   }),
   http.delete('/api/workspaces/:id', async ({ params }) => {

@@ -231,6 +231,7 @@ export * from './inspectSourceImportsReq.ts';
 export * from './inspectSourceImportsReqProvider.ts';
 export * from './inspectSourceImportsResponse.ts';
 export * from './integrationsStatus.ts';
+export * from './invitePreview.ts';
 export * from './invoice.ts';
 export * from './invoiceKind.ts';
 export * from './invoiceList.ts';

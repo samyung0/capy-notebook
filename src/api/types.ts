@@ -119,6 +119,7 @@ export type {
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
+  InvitePreview,
   Invoice,
   InvoiceKind,
   InvoiceList,

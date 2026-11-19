@@ -85,9 +85,7 @@ test('signed-out invitation returns after sign-in and persists accepted membersh
   );
   expect(invitation.accepted_by).toBe(recipient.id);
   expect(invitation.accepted_at).not.toBeNull();
-  await page
-    .getByRole('button', { exact: true, name: m.invite_open() })
-    .click();
+  // Accept goes straight into the workspace.
   await expect(page).toHaveURL(
     (url) => url.pathname === `/workspaces/${workspaceId}`
   );

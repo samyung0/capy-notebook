@@ -225,8 +225,15 @@ export function NewAssignmentDialog({
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent
         aria-describedby={undefined}
+        cardClassName={cn(graded && 'h-full')}
         cardScrollContainerClassName="sm:px-6.25"
-        className="sm:max-w-150"
+        // New graded quiz's Settings takes its Questions' frame, so Next and
+        // Back change only what is in it (Epo 2026-11-19).
+        className={cn(
+          graded
+            ? 'flex flex-col sm:h-[min(680px,88dvh)] sm:max-w-180'
+            : 'sm:max-w-150'
+        )}
         // New graded quiz's steps both have the corner close.
         showCloseButton={!!graded}
       >
@@ -240,7 +247,7 @@ export function NewAssignmentDialog({
               : (title ?? m.assignment_new())}
         </DialogTitle>
         <form
-          className="flex flex-col gap-4 pt-1"
+          className={cn('flex flex-col gap-4 pt-1', graded && 'flex-1')}
           id={formId}
           noValidate
           onSubmit={(event) => {
@@ -490,7 +497,9 @@ export function NewAssignmentDialog({
           {errors.root?.message && (
             <InputError>{errors.root.message}</InputError>
           )}
-          <DialogFooter className="max-sm:hidden sm:pt-2.5">
+          <DialogFooter
+            className={cn('max-sm:hidden sm:pt-2.5', graded && 'mt-auto')}
+          >
             <DialogCancel disabled={saving} size="md" />
             {createButton}
           </DialogFooter>
