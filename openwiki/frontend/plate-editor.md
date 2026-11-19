@@ -5745,23 +5745,34 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       id by the catch-up merge (`reauthor`: `mergeLate` with the joined document's
       id, `applyMerged` re-authored), the board moving onto that document at the
       view and selection it had (`useCanvasBoard`), its size the board's until the
-      new document's measure. The early rows go once the re-applied edit's state is
-      on the device or a receipt covers it, and each recorder keeps its own `late`
-      mark, so a row the replaced one writes meanwhile stays late. A field both
+      new document's measure. The re-apply is not repeat-safe (text typed into a
+      board note, a note or image added, would go in twice), so before the merged
+      update goes the early rows are flagged refused in place (`reauthoring`): a
+      later open shows them copy-only and never re-applies them. They go once a
+      write of the re-applied edit landed (its whole document, or the refused row
+      a refusal keeps; a move or a leave writes it first) or a receipt covers it;
+      a write that failed leaves them, so storage failing never deletes their only
+      copy. Each recorder keeps its own `late` mark. A field both
       sides changed (a shape both people moved) takes Yjs's own pick, with no
       review step (Epo 2026-11-19, Q33, "Yes, one side wins"). What would not show
       is decided per element and block (`boardHidden.ts`; the merge names hidden
       edits by top-level block, and every element sits in the one surface block):
-      an element or block the early board edited and still shows that the merged
-      one does not (another person deleted it). Those alone are kept as one
-      hidden refused row and shown in the copy-only recovery (`merged`, the
-      `changed` strip) while the room runs on the merged document; Reload (asking
-      first) drops them and shows the room. Merge code that does not load (the
-      chunk, the worker or its WASM) keeps the edits as they are, the board
-      read-only under the note's `late-unloaded` strip ("Couldn't sync your edits.
-      Retry or reload the page."), and tries again on Retry and on the browser's
-      reconnect (Q295, Q398); its download has no time limit, the board saying
-      Syncing meanwhile. A merge that ran and failed (its 10 s, Q281), a refusal
+      an early edit is hidden when something both documents held around it is
+      deleted in the merged one. When that is an element or block the merged
+      board no longer shows (another person deleted it), those alone are kept as
+      one hidden refused row and shown in the copy-only recovery (`merged`, the
+      `changed` strip) while the room runs on the merged document; anything else
+      hidden (typing into a text another person replaced) offers the whole early
+      board there, as does a hidden part the merge reports that this check does
+      not find. Reload (asking first) drops it and shows the room. Until the
+      hidden row is stored the early rows stay; if it cannot be, they stay as its
+      copy. Merge code that does not load (the
+      chunk, the worker or its WASM), or flags that cannot be stored, keep the
+      edits as they are, the board read-only under the note's `late-unloaded`
+      strip ("Couldn't sync your edits. Retry or reload the page."), and try
+      again on Retry and on the browser's reconnect (Q295, Q398); the merge's
+      download has no time limit, the board saying Syncing meanwhile. A merge
+      that ran and failed (its 10 s, Q281), a refusal
       (size or any other) or a token refused at the join (403/404) keep every
       early edit in the copy-only recovery with Reload asking first, the strokes
       still on screen, and only the room's refusals toast. A token that says read

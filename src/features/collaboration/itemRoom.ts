@@ -48,7 +48,7 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { dropDeviceCopies } from '@/lib/sourceCache';
-import { hiddenEdits } from './boardHidden';
+import { copyOf, hiddenEdits } from './boardHidden';
 import {
   type CopyLabel,
   keepDeviceCopy,
@@ -196,13 +196,6 @@ const TRANSIENT_CLOSES = new Set([
   'collaboration room is being reset',
 ]);
 const EVICTED = 'collaboration room evicted';
-
-/** A document holding what `doc` holds. */
-function copyOf(doc: Y.Doc) {
-  const copy = new Y.Doc();
-  Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc));
-  return copy;
-}
 
 /** Stored rows another open tab records now (its session's lock held) that
  * only it may apply: edits under an id no room assigned (`late`), which that
@@ -852,7 +845,10 @@ export class ItemRoom {
    * while a draft send of earlier sessions' steps runs (it goes first). A
    * merge whose code did not load keeps everything and tries again on Retry
    * and on the browser's reconnect (Q295, Q398); one that ran and failed
-   * goes to the copy-only recovery with everything kept (Q281). */
+   * goes to the copy-only recovery with everything kept (Q281). The early
+   * rows are flagged copy-only before the merged update goes, since a
+   * second re-apply of them would put text and new blocks in twice (review
+   * b2 re-check N2); flags that cannot be stored hold it all the same way. */
   private reauthor() {
     const joining = this.joining;
     if (!joining?.synced || this.merging || this.sender) return;
@@ -880,6 +876,7 @@ export class ItemRoom {
       console.warn('Leaving the board failed:', error);
     }
     const old = Y.encodeStateAsUpdate(this.doc);
+    const early = this.recorder;
     const { signal } = this.merge;
     const current = () =>
       !(this.destroyed || this.ended || this.joining !== joining);
@@ -889,7 +886,7 @@ export class ItemRoom {
         merging = await import('./lateMerge/lateMerge');
       } catch (error) {
         this.merging = false;
-        if (current()) this.unloaded(error);
+        if (current()) this.unloaded('The late merge did not load:', error);
         return;
       }
       try {
@@ -899,8 +896,18 @@ export class ItemRoom {
           joining.doc.clientID,
           signal
         );
+        if (!current()) {
+          this.merging = false;
+          return;
+        }
+        // With no recorder there are no rows to flag.
+        const flagged = early ? await early.reauthoring() : true;
         this.merging = false;
         if (!current()) return;
+        if (!flagged) {
+          this.unloaded('The early edits could not be flagged:', null);
+          return;
+        }
         this.swap(
           joining,
           (doc) => merging.applyMerged(doc, merged, REAUTHOR_ORIGIN, true),
@@ -910,7 +917,7 @@ export class ItemRoom {
         this.merging = false;
         if (signal.aborted || !current()) return;
         if (error instanceof merging.LateMergeUnloaded) {
-          this.unloaded(error);
+          this.unloaded('The late merge did not load:', error);
           return;
         }
         console.warn('Re-authoring the early edits failed:', error);
@@ -920,11 +927,12 @@ export class ItemRoom {
     })();
   }
 
-  /** The merge's code did not load: the early board's edits stay as they
-   * are, read-only, under the note's strip (`late-unloaded`) until Retry or
-   * the browser's reconnect loads it (Q295, Q398). */
-  private unloaded(error: unknown) {
-    console.warn('The late merge did not load:', error);
+  /** The merge's code did not load (or its rows could not be flagged): the
+   * early board's edits stay as they are, read-only, under the note's strip
+   * (`late-unloaded`) until Retry or the browser's reconnect tries again
+   * (Q295, Q398). */
+  private unloaded(warning: string, error: unknown) {
+    console.warn(warning, error);
     this.set({ unloaded: true });
     const again = () => this.reauthor();
     globalThis.addEventListener?.('online', again);
@@ -951,8 +959,8 @@ export class ItemRoom {
     const recorder = this.record(key, adopted, joined);
     apply(joined);
     this.reauthoredAt = recorder.sequence;
-    // What the merge hides that no element or block accounts for (a piece
-    // it dropped) keeps the whole early board to copy: nothing goes unsaid.
+    // What the merge hides that this check does not find keeps the whole
+    // early board to copy too: nothing goes unsaid.
     const hidden =
       hiddenEdits(early, joined, held) ?? (reported ? copyOf(early) : null);
     this.replaced = replaced;
@@ -978,6 +986,7 @@ export class ItemRoom {
     void (async () => {
       if (hidden) {
         const kept = await recorder.keepHidden(Y.encodeStateAsUpdate(hidden));
+        // Not stored: the early rows, flagged copy-only, stay as its copy.
         if (!kept) return;
         const { recovery } = this.snapshot;
         // Reloaded meanwhile: the copy went with the recovery.
@@ -987,15 +996,10 @@ export class ItemRoom {
           void deleteDrafts([kept]).catch(() => undefined);
         }
         this.replacedHolds = false;
-        // Refused or moved meanwhile: its own rows and this one stand for
-        // the early ones.
-        if (this.recorder !== recorder) {
-          if (this.replaced === replaced) this.dropReplaced();
-          return;
-        }
       }
-      const landed = await recorder.stored();
-      if (landed && this.replaced === replaced) this.dropReplaced();
+      // The whole document, or what a refusal, a move or the leave wrote
+      // meanwhile (its recording stopped).
+      this.dropReplacedOn(recorder.stored());
     })();
     this.requestReceipt();
   }
@@ -1006,6 +1010,18 @@ export class ItemRoom {
     if (this.replacedHolds) return;
     void this.replaced?.discard();
     this.replaced = null;
+  }
+
+  /** The early rows go once `landed`, a write holding the re-authored edit,
+   * did; never on one that failed, so storage failing never deletes their
+   * only copy (review b2 re-check N1). A receipt that covers the edit drops
+   * them too. */
+  private dropReplacedOn(landed: Promise<boolean>) {
+    const replaced = this.replaced;
+    if (!replaced) return;
+    void landed.then((ok) => {
+      if (ok && this.replaced === replaced) this.dropReplaced();
+    });
   }
 
   /** Back from a sleep its rejoin reports nothing until it syncs: its 30 s
@@ -1458,15 +1474,18 @@ export class ItemRoom {
     if (this.ended || this.destroyed) return;
     this.ended = true;
     this.dropCopy();
-    const kept = this.recorder?.unsaved ?? false;
-    if (kept && this.recorder) {
-      this.recorder.refuse();
+    const recorder = this.recorder;
+    const kept = recorder?.unsaved ?? false;
+    if (kept && recorder) {
+      recorder.refuse();
       if (toast) this.toastRefused();
     } else if (this.unsynced > 0) toastSaveUndone();
     this.recorder = null;
-    // The refused row holds what the re-authored edit stood for; while a
-    // part it cannot show is still being stored, the swap drops them after.
-    this.dropReplaced();
+    // The early rows go once the refused row, which holds the re-authored
+    // edit, landed; with nothing unsaved the room stored it already.
+    if (this.replaced && kept && recorder)
+      this.dropReplacedOn(recorder.stored());
+    else this.dropReplaced();
     this.end();
   }
 
@@ -1476,10 +1495,10 @@ export class ItemRoom {
     if (this.ended || this.destroyed) return;
     this.ended = true;
     this.dropCopy();
-    // Its rows hold the re-authored edit, which stands for the early ones.
-    if (this.recorder && this.replaced && !this.replacedHolds)
-      void this.recorder.dispose().then(() => this.dropReplaced());
-    else void this.recorder?.dispose();
+    // Its rows hold the re-authored edit once its whole document landed.
+    if (this.recorder && this.replaced)
+      this.dropReplacedOn(this.recorder.stored());
+    void this.recorder?.dispose();
     this.recorder = null;
     this.end();
   }
@@ -1654,14 +1673,13 @@ export class ItemRoom {
     this.armLeave(false);
     this.merge.abort();
     this.stopUnloaded?.();
-    const disposed = this.recorder?.dispose();
-    // The early rows a re-authored edit stands for go once its own rows are
-    // written, unless they hold the only copy of what it could not show;
-    // until then they stay late (`rowsLate`), never shown twice.
-    const replaced = this.replaced;
-    if (replaced && disposed && !this.replacedHolds)
-      void disposed.then(() => replaced.discard());
-    else void replaced?.dispose();
+    // The early rows a re-authored edit stands for go once a whole document
+    // holding it landed, unless they hold the only copy of what it could not
+    // show; until then they stay, flagged copy-only, never re-applied.
+    if (this.recorder && this.replaced)
+      this.dropReplacedOn(this.recorder.stored());
+    void this.recorder?.dispose();
+    void this.replaced?.dispose();
     this.options.seat?.attach(null);
     this.provider?.destroy();
     this.awareness?.destroy();

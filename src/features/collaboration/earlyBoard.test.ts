@@ -110,6 +110,12 @@ vi.mock('./lateMerge/lateMerge', async (original) => {
   };
 });
 
+// While `fails` is set, the requests it names fail as on a full disk.
+const storage = vi.hoisted(() => ({
+  failed: 0,
+  fails: null as ((message: DraftMessage) => boolean) | null,
+}));
+
 // The drafts worker, run in this process as editDrafts.test.ts runs it.
 class InProcessWorker {
   onerror: ((event: Event) => void) | null = null;
@@ -117,6 +123,13 @@ class InProcessWorker {
   store = import('@/lib/draftStore');
   postMessage(message: DraftMessage) {
     const copy = structuredClone(message);
+    const { id } = copy;
+    if (id !== undefined && storage.fails?.(copy)) {
+      storage.failed++;
+      const error = { message: 'The disk is full', name: 'QuotaExceededError' };
+      void this.store.then(() => this.onmessage?.({ data: { error, id } }));
+      return;
+    }
     void this.store.then(({ handleDraftMessage }) =>
       handleDraftMessage(copy, (answer) =>
         this.onmessage?.({ data: structuredClone(answer) })
@@ -153,8 +166,10 @@ const lockManager = {
 const { ItemRoom } = await import('./itemRoom');
 const {
   admitMockBoardDrafts,
+  mockBoardAtCap,
   mockBoardPeer,
   mockBoardSocket,
+  mockBoardStoreFails,
   mockExpireBoardJoin,
   registerMockCollaborationProvider,
 } = await import('@/mocks/collaboration');
@@ -185,6 +200,8 @@ beforeEach(() => {
   joins.held = null;
   merges.fails = [];
   merges.runs = 0;
+  storage.failed = 0;
+  storage.fails = null;
   vi.mocked(userToast).mockClear();
 });
 afterEach(() => {
@@ -281,6 +298,14 @@ function draw(doc: Y.Doc, id: string, x = 0) {
 }
 
 const drawn = (doc: Y.Doc) => [...elements(doc).keys()].sort();
+
+/** The stored rows once the writes a room still had in hand are through:
+ * the first read's answer comes after the replies those writes wait on, so
+ * the second goes after them. */
+async function settledDrafts(key: string) {
+  await readDrafts(key);
+  return readDrafts(key);
+}
 
 /** The client ids `doc` wrote structs under. */
 const writers = (doc: Y.Doc) => [
@@ -564,6 +589,131 @@ it('lands a move beside one of a shape a peer deleted, which alone is offered to
   );
   peer.leave();
   room.destroy();
+});
+
+// Review b2 re-check N2: the re-apply is not repeat-safe, so its early rows
+// are flagged copy-only before it goes. When the part it hid could not be
+// stored they stay, and the next open offers them to copy, re-applying none.
+it('offers the early edits to copy at the next open, re-applying none, when the part the re-apply hid could not be stored', async () => {
+  const id = canvas();
+  const { copy, peer } = await twoSquares(id);
+  const later = copyOf(id, copy.doc);
+  token.failing = new TypeError('Failed to fetch');
+  const room = await open(id, copy);
+  await vi.waitUntil(() => room.getSnapshot().early);
+  elements(room.doc).get('from')?.set('xywh', '[50,50,100,100]');
+  elements(room.doc).get('to')?.set('xywh', '[450,50,100,100]');
+  peer.remove('from');
+  storage.fails = (message) =>
+    message.op === 'put' && message.rows.some((row) => row.hidden);
+  await back(room);
+  expect(peer.elements().to.xywh).toBe('[450,50,100,100]');
+  await vi.waitUntil(() => storage.failed > 0);
+  room.destroy();
+  storage.fails = null;
+  const runs = merges.runs;
+  // Painted from its copy and online: its join would re-apply late rows.
+  const next = await open(id, later);
+  await vi.waitUntil(() => next.getSnapshot().recovery !== null);
+  expect(merges.runs).toBe(runs);
+  const { recovery } = next.getSnapshot();
+  expect(recovery?.refused).toBe(true);
+  expect(
+    elements(recovery?.doc ?? new Y.Doc())
+      .get('from')
+      ?.get('xywh')
+  ).toBe('[50,50,100,100]');
+  expect(Object.keys(peer.elements())).toEqual(['to']);
+  await next.reload();
+  next.destroy();
+  peer.leave();
+});
+
+// When they cannot be flagged, nothing goes: the board waits read-only under
+// Retry, as when the merge's code did not load.
+it('holds the early edits read-only when they cannot be flagged before the re-apply, and Retry lands them', async () => {
+  const id = canvas();
+  const { copy } = await drewAndLeft(id);
+  const room = await offlineFrom(id, copy);
+  draw(room.doc, 'b', 20);
+  storage.fails = (message) => message.op === 'mark';
+  token.failing = null;
+  room.retry();
+  await vi.waitUntil(() => room.getSnapshot().unloaded);
+  expect(room.getSnapshot()).toMatchObject({ early: true, sending: true });
+  const peer = mockBoardPeer(id);
+  expect(Object.keys(peer.elements())).toEqual(['a']);
+  storage.fails = null;
+  room.retry();
+  await vi.waitUntil(() => !room.getSnapshot().early);
+  expect(Object.keys(peer.elements()).sort()).toEqual(['a', 'b']);
+  expect(userToast).not.toHaveBeenCalled();
+  peer.leave();
+  room.destroy();
+});
+
+// Review b2 re-check N1: the early rows go only once a write holding their
+// edits landed (or the room stored them). Here the room refuses the
+// re-applied edit while storage fails, so its refused row never lands.
+it('keeps the early rows when the room refuses the re-applied edit and its refused row could not be stored', async () => {
+  const id = canvas();
+  const { copy } = await drewAndLeft(id);
+  const onReplace = vi.fn();
+  token.failing = new TypeError('Failed to fetch');
+  const room = await open(id, copy, onReplace);
+  await vi.waitUntil(() => room.getSnapshot().early);
+  draw(room.doc, 'b', 20);
+  const key = `u_mock:material:${id}`;
+  await vi.waitUntil(async () => (await readDrafts(key)).length > 0);
+  const early = new Set((await readDrafts(key)).map((row) => row.session));
+  mockBoardAtCap(id, true);
+  storage.fails = (message) => message.op === 'put';
+  token.failing = null;
+  room.retry();
+  await vi.waitUntil(() => onReplace.mock.calls.length > 0);
+  await vi.waitUntil(() => storage.failed > 0);
+  room.destroy();
+  mockBoardAtCap(id, false);
+  storage.fails = null;
+  const rows = await settledDrafts(key);
+  expect(rows.some((row) => early.has(row.session))).toBe(true);
+  const next = await open(id);
+  const { recovery } = next.getSnapshot();
+  expect(recovery?.refused).toBe(true);
+  expect(drawn(recovery?.doc ?? new Y.Doc())).toEqual(['a', 'b']);
+  await next.reload();
+  next.destroy();
+});
+
+// N1 again: a tab that goes before the room stored the re-applied edit, while
+// storage fails, keeps the early rows.
+it('keeps the early rows when the tab goes before anything holding the re-applied edit was stored', async () => {
+  const id = canvas();
+  const { copy } = await drewAndLeft(id);
+  const room = await offlineFrom(id, copy);
+  draw(room.doc, 'b', 20);
+  const key = `u_mock:material:${id}`;
+  await vi.waitUntil(async () => (await readDrafts(key)).length > 0);
+  const early = new Set((await readDrafts(key)).map((row) => row.session));
+  storage.fails = (message) => message.op === 'put';
+  joins.held = [];
+  token.failing = null;
+  room.retry();
+  await vi.waitUntil(() => joins.held?.length);
+  // The room answers no receipt.
+  mockBoardStoreFails(id, true);
+  const held = joins.held ?? [];
+  joins.held = null;
+  for (const connect of held) connect();
+  await synced(room);
+  const peer = mockBoardPeer(id);
+  expect(peer.elements()).toHaveProperty('b');
+  peer.leave();
+  await vi.waitUntil(() => storage.failed > 0);
+  room.destroy();
+  storage.fails = null;
+  const rows = await settledDrafts(key);
+  expect(rows.some((row) => early.has(row.session))).toBe(true);
 });
 
 // Review b2 finding 1: code that did not load keeps everything as it is and
