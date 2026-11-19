@@ -316,13 +316,16 @@ export function useCanvasBoard(
     trashDoc ??
     recovery?.doc ??
     (room && !refusedFirst && (snapshot.synced || seeded) ? room.doc : null);
+  // Painted from the copy before the join, an editor's board takes edits
+  // (Epo 2026-11-19, Q27 b1; `early`) unless the token said read.
   const readOnly =
     !!trashDoc ||
     !!recovery ||
     lost ||
-    !snapshot.synced ||
+    (snapshot.early
+      ? snapshot.access === 'read'
+      : !snapshot.synced || snapshot.access !== 'write') ||
     snapshot.stopped ||
-    snapshot.access !== 'write' ||
     itemEditingStopped(snapshot);
   const copyOnly = !!recovery || !!trashDoc;
   // A board mounts with its tools once its person may write to its document
@@ -528,14 +531,16 @@ export function useCanvasBoard(
         }
       : lost && (snapshot.synced || !!mounted)
         ? { kind: 'save', state: 'access-lost' }
-        : snapshot.offline
-          ? { kind: 'save', state: snapshot.offline }
-          : snapshot.unreachable && online
-            ? {
-                kind: 'save',
-                onRetry: () => room?.retry(),
-                state: 'unreachable',
-              }
+        : // The join unanswered at 30 s, online, says so with Retry, an early
+          // board's offline episode too (D5, C9).
+          snapshot.unreachable && online
+          ? {
+              kind: 'save',
+              onRetry: () => room?.retry(),
+              state: 'unreachable',
+            }
+          : snapshot.offline
+            ? { kind: 'save', state: snapshot.offline }
             : storageFull
               ? { by: storageFull, kind: 'storage' }
               : readOnlyStrip

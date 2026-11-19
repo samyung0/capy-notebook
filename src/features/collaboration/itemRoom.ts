@@ -50,6 +50,7 @@ import { type CopyLabel, keepDeviceCopy, type RoomSeed } from './deviceCopy';
 import { offerExpiredDrafts } from './expiredDrafts';
 import type { NoteSeat } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
+import { tokenClientIds, tokenIssuedAt } from './protocol';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
 import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
@@ -91,6 +92,10 @@ export interface ItemRoomSnapshot {
    * 2026-10-04), or the room said a store failed while this device had edits
    * unsaved: "Saving is delayed" until a receipt answers. */
   delayed: boolean;
+  /** A board painted from its device copy takes edits before its join (Epo
+   * 2026-11-19, Q27 b1): under its stored token's client id, kept as drafts,
+   * syncing as ordinary edits at the join (`earlyClientId`). */
+  early: boolean;
   /** Bumped when the readers' lists change (`lists`). */
   listsVersion: number;
   /** An editor's save strip while the room cannot be used: unreachable
@@ -174,6 +179,26 @@ const EVICTED = 'collaboration room evicted';
 /** What a board's offline work leaves of its cap: the server's estimate adds
  * a little per struct to each update's bytes. */
 export const BOARD_OFFLINE_MARGIN = 64 * 1024;
+/** How long the room rebinds a previous token's client id (Q236). */
+const REGRANT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The client id an editor's board painted from its device copy writes under
+ * before its join (Epo 2026-11-19, Q27 b1): its stored token's, which the
+ * room rebinds for the same person and room within 7 days (Q236). None when
+ * the copy says the person could not edit, or keeps no token young enough:
+ * the board then waits for the join. */
+function earlyClientId({ board, drafts, seed }: ItemRoomOptions) {
+  const token = seed?.row.token;
+  if (!(board && drafts && seed?.row.canEditContent && token)) return null;
+  const issued = tokenIssuedAt(token);
+  if (issued === null || Date.now() - issued * 1000 > REGRANT_MAX_AGE_MS)
+    return null;
+  try {
+    return { clientId: tokenClientIds(token).clientId, token };
+  } catch {
+    return null;
+  }
+}
 
 export interface ItemRoomOptions {
   /** The room keeps an awareness of its own on its document, sent through
@@ -229,6 +254,7 @@ export class ItemRoom {
   private snapshot: ItemRoomSnapshot = {
     access: null,
     delayed: false,
+    early: false,
     listsVersion: 0,
     offline: null,
     presence: NO_PRESENCE,
@@ -253,6 +279,12 @@ export class ItemRoom {
   /** The last room token handed to the provider: stored drafts keep it
    * (Q288). */
   private lastToken: string | undefined;
+  /** `earlyClientId`'s token, presented at the first token request so the
+   * join offers its client id again. */
+  private readonly earlyToken: string | undefined;
+  /** Reading the stored drafts before an early board's edits: whether it
+   * takes them (no earlier rows wait for the join). */
+  private earlyOpen: Promise<boolean> | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly materialId: string;
   private options: ItemRoomOptions;
@@ -308,6 +340,13 @@ export class ItemRoom {
     this.materialId = materialId;
     this.options = options;
     this.doc = options.seed?.doc ?? new Y.Doc();
+    // Before the awareness, which takes the document's id.
+    const early = earlyClientId(options);
+    if (early) {
+      this.doc.clientID = early.clientId;
+      this.earlyToken = early.token;
+      this.lastToken = early.token;
+    }
     this.awareness = options.awareness ? new Awareness(this.doc) : null;
     this.awareness?.setLocalState(null);
     // The document holds only this item. Undo reaches back 24 h (Epo
@@ -443,10 +482,14 @@ export class ItemRoom {
     // The join has 30 s from its token request until the first sync (Epo
     // 2026-10-23); past them it shows this room's connection error, offline.
     this.reconnector.started();
+    if (this.earlyToken) this.earlyOpen ??= this.openEarly();
     let first: Awaited<ReturnType<typeof getMaterialCollaborationToken>>;
     try {
       first = await (this.options.firstToken?.() ??
-        getMaterialCollaborationToken(this.materialId, this.tokenRequest()));
+        getMaterialCollaborationToken(this.materialId, {
+          ...this.tokenRequest(),
+          previousToken: this.earlyToken,
+        }));
     } catch (error) {
       // Gone or no longer this user's (404, 403): unavailable for good.
       // Offline or a server error: paused until it can join (REVIEW5 B1).
@@ -464,9 +507,17 @@ export class ItemRoom {
     }
     this.room = first.room;
     const access = first.access === 'write' ? 'write' : 'read';
+    // An early board's edits are its drafts already, synced at the join; a
+    // person who may no longer edit loses them as any read-only turn does.
+    const early = !!(await this.earlyOpen);
+    if (this.destroyed || this.ended) return;
+    if (early && access === 'read') {
+      this.readOnly();
+      if (this.ended) return;
+    }
     this.set({ access });
     const key = this.draftKey();
-    if (key && access === 'write' && !(await this.restore(key))) {
+    if (key && access === 'write' && !early && !(await this.restore(key))) {
       // Recovery is this open's answer: no room joins.
       this.reconnector.dispose();
       return;
@@ -580,6 +631,7 @@ export class ItemRoom {
           this.reconnector.connected();
           this.delay.connected();
           this.set({
+            early: false,
             offline: null,
             slowed: false,
             status: this.live(),
@@ -699,6 +751,7 @@ export class ItemRoom {
         document: this.copyDocument(),
         materialId: this.materialId,
         room: this.room,
+        token: this.lastToken,
         version:
           this.provider instanceof RoomProvider
             ? this.provider.reportedVersion
@@ -789,6 +842,8 @@ export class ItemRoom {
   private startLater() {
     if (this.destroyed || this.waiting) return;
     this.set({ status: 'offline' });
+    // An early board's edits are held for the join, under the offline bound.
+    if (this.recorder) this.goOffline();
     const page = globalThis.document;
     const again = () => {
       if (page?.visibilityState === 'hidden') return;
@@ -862,32 +917,55 @@ export class ItemRoom {
       // tokens go through the draft send (Q326).
       const { apply, send } = splitOpenDrafts(current);
       applyDrafts(this.doc, apply, RESTORE_ORIGIN);
-      this.recorder = recordDrafts({
-        adopted: apply,
-        doc: this.doc,
-        ignore: (origin) =>
-          origin === RESTORE_ORIGIN ||
-          (origin !== null && origin === this.provider),
-        key,
-        limitBytes:
-          this.options.board?.max ?? MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
-        lineage: this.room,
-        onLimit: (over) => {
-          this.overLimit = over;
-          this.showOffline();
-        },
-        onLost: toastDraftsLost,
-        onStorage: (ok) => {
-          this.storageOk = ok;
-          this.armLeave(!ok);
-          this.showOffline();
-        },
-        report: editIncidentReporter('material', this.materialId),
-        token: () => this.lastToken,
-      });
+      this.record(key, apply);
       if (send.length) this.sendDrafts(key, send);
       return true;
     }
+  }
+
+  /** Records this session's edits as drafts on this device. */
+  private record(key: string, adopted: EditDraft[]) {
+    this.recorder = recordDrafts({
+      adopted,
+      doc: this.doc,
+      ignore: (origin) =>
+        origin === RESTORE_ORIGIN ||
+        (origin !== null && origin === this.provider),
+      key,
+      limitBytes:
+        this.options.board?.max ?? MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
+      lineage: this.room,
+      onLimit: (over) => {
+        this.overLimit = over;
+        this.showOffline();
+      },
+      onLost: toastDraftsLost,
+      onStorage: (ok) => {
+        this.storageOk = ok;
+        this.armLeave(!ok);
+        this.showOffline();
+      },
+      report: editIncidentReporter('material', this.materialId),
+      token: () => this.lastToken,
+    });
+  }
+
+  /** An early board (`earlyClientId`) starts recording before its join, once
+   * the drafts store holds nothing of earlier sessions (those take the usual
+   * open at the join, the board waiting for it). Its size is the copy's. */
+  private async openEarly() {
+    const key = this.draftKey();
+    const { seed } = this.options;
+    if (!(key && seed)) return false;
+    const rows = await readDrafts(key).catch(() => null);
+    if (this.destroyed || this.ended || this.provider) return false;
+    if (!rows || rows.length) return false;
+    this.room = seed.room;
+    this.record(key, []);
+    this.measure();
+    this.set({ early: true });
+    if (this.snapshot.status === 'offline') this.goOffline();
+    return true;
   }
 
   private showOffline() {
@@ -1291,6 +1369,7 @@ const noSubscribe = () => () => undefined;
 const INITIAL: ItemRoomSnapshot = {
   access: null,
   delayed: false,
+  early: false,
   listsVersion: 0,
   offline: null,
   presence: NO_PRESENCE,

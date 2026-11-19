@@ -236,6 +236,20 @@ export function tokenClientIds(token: string): {
   return { clientId, workerClientId };
 }
 
+/** When a room token was issued (its `iat`, Unix seconds), or null for one
+ * that says not: the room rebinds its client id for 7 days from then (Q236). */
+export function tokenIssuedAt(token: string): number | null {
+  try {
+    const payload = (token.split('.')[1] ?? '')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const { iat } = JSON.parse(atob(payload)) as { iat?: unknown };
+    return typeof iat === 'number' ? iat : null;
+  } catch {
+    return null;
+  }
+}
+
 export const closedPayload = (code: number, reason: string) =>
   new Writer().varUint(code).varString(reason).done();
 

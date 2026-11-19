@@ -24,6 +24,7 @@ import {
   registerMockItemProvider,
 } from '@/features/collaboration/itemRoom';
 import type { PresenceConnection } from '@/features/collaboration/presence';
+import { tokenClientIds } from '@/features/collaboration/protocol';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
 import {
   registerMockSourceProvider,
@@ -44,6 +45,7 @@ import {
   COLLABORATION_LATE_REASON,
   COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
+  COLLABORATION_UNASSIGNED_ID_REASON,
 } from '@/features/notes/collaborationEvents';
 import '@/features/notes/figureBinding';
 import { MAX_PRESENCE_BYTES } from '@/features/notes/notePresence';
@@ -60,6 +62,7 @@ import {
   demoteMockCanvas,
   isMockCanvas,
   mockCanvasAccess,
+  mockCanvasClientIds,
   mockCanvasViewer,
   narrowMockCanvas,
   projectMockCanvas,
@@ -1905,6 +1908,9 @@ class MockBoardProvider implements ItemProvider {
   private joining = false;
   private down = false;
   private previousToken: string | undefined;
+  /** The client id the tab took from a token, which its document keeps once
+   * it wrote under it (Q236), as the room provider's. */
+  private adopted: number | null = null;
   /** Receipts the room holds back while its stores fail
    * (`mockBoardStoreFails`). */
   private held: string[] | null = null;
@@ -1968,11 +1974,18 @@ class MockBoardProvider implements ItemProvider {
         this.config.onAuthenticationFailed?.(refused);
         return;
       }
+      const room = boardRoom(this.config.name, firstState);
+      if (!this.bound(room)) {
+        this.config.onAuthenticationFailed?.({
+          reason: COLLABORATION_UNASSIGNED_ID_REASON,
+        });
+        return;
+      }
       // A viewer sends no presence and hears none; a narrowed editor's read
       // channel keeps its presence, uploads aside.
       const viewer = mockCanvasViewer(this.materialId);
       this.channel = access;
-      this.leave = join(boardRoom(this.config.name, firstState), {
+      this.leave = join(room, {
         access,
         awareness: (!viewer && this.config.awareness) || undefined,
         document: this.config.document,
@@ -1985,6 +1998,34 @@ class MockBoardProvider implements ItemProvider {
     } finally {
       this.joining = false;
     }
+  }
+
+  /** Takes the token's client id unless the document wrote under the one it
+   * took; then whether everything the document brings is under ids the room
+   * gave this person (the service refuses the rest as unassigned, Q213). */
+  private bound(room: Room) {
+    const { document } = this.config;
+    const { clientId } = tokenClientIds(this.previousToken ?? '');
+    const wrote =
+      this.adopted !== null && Y.getState(document.store, this.adopted) > 0;
+    if (!wrote) {
+      this.adopted = clientId;
+      document.clientID = clientId;
+      const awareness = this.config.awareness;
+      if (awareness && awareness.clientID !== clientId) {
+        const state = awareness.getLocalState();
+        removeAwarenessStates(awareness, [awareness.clientID], this);
+        awareness.clientID = clientId;
+        if (state !== null) awareness.setLocalState(state);
+      }
+    }
+    const given = mockCanvasClientIds(this.materialId);
+    const held = Y.decodeStateVector(Y.encodeStateVector(room.document));
+    for (const [client, clock] of Y.decodeStateVector(
+      Y.encodeStateVector(document)
+    ))
+      if (clock > (held.get(client) ?? 0) && !given.has(client)) return false;
+    return true;
   }
 
   private refusedUpdate(why: 'read-only' | 'size') {

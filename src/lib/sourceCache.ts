@@ -52,6 +52,10 @@ export interface DeviceCopyRow {
   size: number;
   standalone: boolean;
   title: string;
+  /** The room token the tab held as it kept the copy: a board painted from
+   * the copy writes under its client id before the join (Q236, Epo
+   * 2026-11-19 Q27 b1). */
+  token?: string;
   /** The stored version the state holds, which its JOIN names. */
   version: number;
 }

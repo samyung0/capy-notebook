@@ -4,6 +4,7 @@ import { ApiError, qk } from '@/api/client';
 import {
   COLLABORATION_LATE_REASON,
   COLLABORATION_NOT_FOUND_REASON,
+  COLLABORATION_UNASSIGNED_ID_REASON,
 } from '@/features/notes/collaborationEvents';
 import { m } from '@/i18n';
 import type { RoomProviderConfig } from './roomProvider';
@@ -175,6 +176,7 @@ const { itemEditingStopped } = await import('./itemRoom');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { draftSender, dropExpiredGroup } = await import('@/lib/editDrafts');
 const { userToast } = await import('@/components/ui/userToast');
+const { getMaterialCollaborationToken } = await import('@/api/hooks');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -1176,4 +1178,118 @@ it('takes nothing between a close for this person and the next sync', async () =
   provider.config.onSynced?.({ state: true });
   expect(room.getSnapshot().stopped).toBe(false);
   room.destroy();
+});
+
+/** A room token as the API signs one: its client id and when it was issued. */
+const signed = (clientId: number, issuedAgoMs = 60_000) =>
+  `h.${btoa(JSON.stringify({ clientId, iat: Math.floor((Date.now() - issuedAgoMs) / 1000) }))}.s`;
+
+/** A board's device copy, kept with `token` by a person who `edits`. */
+function boardCopy(token: string | undefined, edits = true) {
+  const doc = new Y.Doc();
+  doc.getMap('blocks').set('kept', 1);
+  return {
+    doc,
+    room: 'material:q:schema:1',
+    row: {
+      canEditContent: edits,
+      document: 'content' as const,
+      format: 1,
+      kind: 'canvas' as const,
+      materialId: 'q',
+      owner: 'u',
+      room: 'material:q:schema:1',
+      size: 0,
+      standalone: false,
+      title: 'Canvas',
+      token,
+      version: 3,
+    },
+    version: 3,
+  };
+}
+
+const earlyBoard = (seed: ReturnType<typeof boardCopy>, onReplace = vi.fn()) =>
+  new ItemRoom('q', {
+    board: { max: 100_000 },
+    drafts: { actorId: 'u' },
+    onReplace,
+    seed,
+  });
+
+// Epo 2026-11-19 (Q27 b1, as AFFiNE does): an editor's board painted from its
+// copy takes edits before its join, under its stored token's client id (Q236),
+// kept as drafts under the offline bound, and syncs them at the join.
+it("lets an editor's board edit its copy before the join, under the stored token's id", async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const token = signed(77);
+  const room = earlyBoard(boardCopy(token));
+  expect(room.doc.clientID).toBe(77);
+  tokens.push(new TypeError('Failed to fetch'));
+  await room.start();
+  expect(room.getSnapshot()).toMatchObject({
+    early: true,
+    offline: 'offline',
+    synced: false,
+  });
+  expect(drafts.recorded).toBe(1);
+  // The first token request offers the id again.
+  expect(getMaterialCollaborationToken).toHaveBeenLastCalledWith('q', {
+    access: undefined,
+    document: undefined,
+    previousToken: token,
+  });
+  // Back: the join syncs the edits as any; the recorder is this one.
+  room.retry();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.recorded).toBe(1);
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot()).toMatchObject({
+    access: 'write',
+    early: false,
+    offline: null,
+  });
+  room.destroy();
+});
+
+// "Reject nothing": edits the room refuses for their id go to the copy-only
+// recovery, kept; a person the join says may only read loses them as any
+// read-only turn does (Epo 2026-09-29).
+it("keeps an early board's edits refused for their id to copy, and discards them for a reader", async () => {
+  const refusedRoom = earlyBoard(boardCopy(signed(77)));
+  await refusedRoom.start();
+  expect(refusedRoom.getSnapshot().early).toBe(true);
+  providers[0].config.onAuthenticationFailed?.({
+    reason: COLLABORATION_UNASSIGNED_ID_REASON,
+  });
+  expect(drafts.refused).toBe(1);
+  expect(drafts.discarded).toBe(0);
+  refusedRoom.destroy();
+
+  const onReplace = vi.fn();
+  const demoted = earlyBoard(boardCopy(signed(78)), onReplace);
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  await demoted.start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.discarded).toBe(1);
+  expect(demoted.getSnapshot().access).toBe('read');
+  expect(onReplace).toHaveBeenCalledOnce();
+  demoted.destroy();
+});
+
+// No id to write under, or a viewer's copy: the board waits for the join.
+it("leaves a board's copy read-only before the join with no young token, or for a viewer", async () => {
+  for (const seed of [
+    boardCopy(undefined),
+    boardCopy(signed(79, 8 * 24 * 60 * 60 * 1000)),
+    boardCopy(signed(80), false),
+  ]) {
+    const room = earlyBoard(seed);
+    tokens.push(new TypeError('Failed to fetch'));
+    await room.start();
+    expect(room.getSnapshot().early).toBe(false);
+    expect(drafts.recorded).toBe(0);
+    room.destroy();
+  }
 });

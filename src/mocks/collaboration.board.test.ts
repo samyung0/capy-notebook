@@ -5,7 +5,7 @@ import type { WorkspaceRole } from '@/api/types';
 import type { ItemProvider } from '@/features/collaboration/itemRoom';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
 import { COLLABORATION_NOT_FOUND_REASON } from '@/features/notes/collaborationEvents';
-import { mockMemberCanvas } from './canvas';
+import { mockCanvasToken, mockMemberCanvas } from './canvas';
 import {
   mockBoardPeer,
   mockBoardSocket,
@@ -65,7 +65,7 @@ async function tab(id: string) {
     onSynced: () => {
       heard.synced += 1;
     },
-    token: async () => 'mock-collaboration-token',
+    token: async (previous) => mockCanvasToken(id, previous),
     url: 'mock://collaboration',
   });
   document.on('update', (_: Uint8Array, origin: unknown) =>

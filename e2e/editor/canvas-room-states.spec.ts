@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 
 /**
  * A canvas's room when things go wrong or change under the board (the
@@ -943,37 +943,124 @@ test('a canvas whose room is at its cap keeps the stroke it refused for copying,
   await expect.poll(() => drawn(page)).toEqual(['brush']);
 });
 
-test("a canvas opens from this device's copy: offline it shows what was saved, locked, and the same board takes edits once the room is back", async ({
+/** Opens the scenario canvas, draws a stroke, and leaves it, which writes
+ * its copy with the tab's room token; then opens it again offline from the
+ * copy. */
+async function fromCopyOffline(page: Page, context: BrowserContext) {
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+}
+
+// Epo 2026-11-19 (Q27 b1, as AFFiNE does): an editor's board painted from its
+// copy before the join takes edits, under the client id of the copy's token
+// (Q236), kept as drafts, and they sync as ordinary edits at the join.
+test("a canvas opened offline from this device's copy takes a stroke, which reaches the room and another person once it is back", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await fromCopyOffline(page, context);
+  await expect(strip(page)).toContainText("Can't connect to Capy.");
+  await keep(page);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+
+  await context.setOffline(false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await expect(strip(page)).toHaveCount(0);
+  // The same board all along.
+  expect(await kept(page)).toBe(true);
+  await joinPeer(page, SCENARIO);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => Object.keys((window as Shown).peer?.elements() ?? {}).length
+      )
+    )
+    .toBe(2);
+});
+
+// "Reject nothing": a stroke the room refuses for its id (the earlier id held
+// for someone else) stays on this device for copying.
+test('a stroke drawn on the copy under an id the room no longer gives this tab is kept for copying', async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await fromCopyOffline(page, context);
+  await drawStroke(page, 0.6);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await page.evaluate(async (id) => {
+    const modulePath = '/src/mocks/canvas.ts';
+    const { refuseMockCanvasIds } = (await import(modulePath)) as Canvases;
+    refuseMockCanvasIds(id);
+  }, SCENARIO);
+
+  await context.setOffline(false);
+  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect.poll(() => drawn(page)).toHaveLength(2);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+  // Reload, confirmed, opens what the room holds.
+  await strip(page).getByRole('button', { name: 'Reload' }).click();
+  await page
+    .getByRole('dialog', { name: 'Discard these edits and reload?' })
+    .getByRole('button', { name: 'Reload' })
+    .click();
+  await expect(strip(page)).toHaveCount(0);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+});
+
+test("a viewer's copy opened offline takes no edits", async ({
   page,
   context,
 }) => {
   test.slow();
   await page.goto(SCENARIO_PAGE);
   await boardShown(page);
-  await drawStroke(page);
-  await expect.poll(() => drawn(page)).toEqual(['brush']);
-  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
-  // Leaving the canvas writes its copy.
+  const theirs = await page.evaluate(async () => {
+    const modulePath = '/src/mocks/canvas.ts';
+    const { mockMemberCanvas } = (await import(modulePath)) as Canvases;
+    return mockMemberCanvas({
+      creatorName: 'Ben',
+      role: 'viewer',
+      title: 'Lab diagrams',
+      workspaceId: 'ws_scenarios',
+    });
+  });
+  await switchTo(page, 'User scenarios', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
+  await boardShown(page);
+  await joinPeer(page, theirs);
+  await peerSquares(page);
+  await expect.poll(() => drawn(page)).toHaveLength(2);
   await page.getByRole('button', { name: 'Dashboard' }).click();
-  await expect(page.locator('.capy-board')).toHaveCount(0);
-  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+  await expect.poll(() => copied(page, theirs)).toBe(true);
 
   await context.setOffline(true);
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.goBack();
   await boardShown(page);
-  await expect.poll(() => drawn(page)).toEqual(['brush']);
-  // The copy's label says this person edits, so the board mounts with its
-  // tools, locked (no toolbar) until the room's state is in (useCanvasBoard).
-  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
-  await keep(page);
-
-  await context.setOffline(false);
-  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
-  // The same board, now taking edits.
-  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
-  expect(await kept(page)).toBe(true);
-  await drawStroke(page, 0.6);
   await expect.poll(() => drawn(page)).toHaveLength(2);
+  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
+  const before = await page.evaluate(() =>
+    (window as Shown).__board?.snapshot()
+  );
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as Shown).__board?.snapshot())).toBe(
+    before
+  );
+  await context.setOffline(false);
 });
 
 test('a slowed open says why after 5 s, under the loader and, painted from the copy, under the save status; the canvas opens once the budget allows', async ({

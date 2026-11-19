@@ -5649,8 +5649,20 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       budget is slowed (`editor_open_slowed`, `FileLoading`). A member's device keeps
       a copy of what the room confirmed (`deviceCopy.ts`, the `keep` label from the
       canvas's read, `seed` at the next open): the board shows it at once, offline
-      too, locked until the room has synced, with its tools when the copy says the
-      person could edit. The copy's label follows the canvas's read: a rename or a
+      too, with its tools when the copy says the person could edit. Such a board
+      takes edits before the join (Epo 2026-11-19, Q27 b1, as AFFiNE does;
+      `early` in `itemRoom.ts`): the copy keeps the tab's last room token, and a
+      token younger than 7 days gives the document its client id, which the
+      first token request presents again (Q236). The edits are drafts like any
+      offline edit, under the offline bound (cap less size less 64 KiB, the
+      removals-only gate reading the copy's size), and sync as ordinary edits at
+      the join, merged by Yjs. A refusal, the id no longer this tab's
+      (`unassigned`), the size or any other, keeps them in the copy-only recovery
+      with Reload asking first. A token that says read at the join (a demotion, a
+      freeze) discards them as any read-only turn does (Epo 2026-09-29): a fresh
+      room opens on what was saved, read-only. With no stored token, one older
+      than 7 days, earlier sessions' drafts waiting for the join, or a viewer's
+      copy, the board stays locked until the room has synced. The copy's label follows the canvas's read: a rename or a
       demotion is written with the next copy (`ItemRoom.keepAs`, `relabel`), so the
       next open paints with the current title and tools. A board's copy is at most
       its 4 MiB cap, against the 200 MiB the device's copies share. Under the mocks
