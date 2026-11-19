@@ -89,7 +89,7 @@ export function TodoDialog({
     primary = go(
       m.todo_approve_marks(),
       () => {
-        void navigate(assignmentPage(a, { tab: 'approve' }));
+        void navigate(assignmentPage(a, { tab: 'grading' }));
       },
       false
     );
@@ -206,7 +206,9 @@ export function TodoDialog({
           })}
           {a.allowUploads && (
             <span className="t-meta block text-fg-muted">
-              {m.todo_uploads_allowed()}
+              {a.uploadOnly
+                ? m.assignment_submission_upload()
+                : m.todo_uploads_allowed()}
             </span>
           )}
         </>

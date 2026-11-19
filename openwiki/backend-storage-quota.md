@@ -299,12 +299,12 @@ objects for the reaper.
   drawing, is charged for it and goes over, into the usual over-quota states.
   A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
   the same way (`reservePaperStorageTx`), within 15 files and the member's
-  source file cap across them; Upload file can only start while storage is not
+  source file cap across them; Upload can only start while storage is not
   full, and the Files page deletes them once marked and closed. A hand-in's
   files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
   reserve the same way within the same bounds, are stored with no parse or
   credits, and the Files page deletes them once the assignment closes.
-  Like Upload file, a hand-in takes a new file only while the member's storage
+  Like Upload, a hand-in takes a new file only while the member's storage
   is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
   upload session; Epo 2026-11-09, Q728 A): a file added while there was room
   still saves past the limit, files already added stay, and Hand in and Undo

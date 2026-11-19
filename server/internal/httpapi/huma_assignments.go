@@ -146,6 +146,7 @@ type assignmentListInput struct {
 	Closed bool   `query:"closed" doc:"Keep the closed ones"`
 	Done   bool   `query:"done" doc:"Keep the ones the caller has done"`
 	Topic  string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
+	Kind   string `query:"kind" enum:"marked,unmarked" doc:"Only graded quizzes (marked) or only assignments (unmarked); none keeps both"`
 	Sort   string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
 	Dir    string `query:"dir" enum:"asc,desc" default:"asc"`
 	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
@@ -161,7 +162,7 @@ func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*as
 		offset = n
 	}
 	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now(), store.AssignmentListParams{
-		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic),
+		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic), Kind: in.Kind,
 		Sort: in.Sort, Ascending: in.Dir == "asc", Offset: offset, Limit: assignmentPage,
 	})
 	if err != nil {
@@ -189,7 +190,7 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
-		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, Files: b.Files,
+		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, UploadOnly: b.UploadOnly, Files: b.Files,
 		Points: (*int)(b.Points),
 	}
 }
@@ -288,6 +289,12 @@ func (a *api) getAssignment(ctx context.Context, in *assignmentIDInput) (*assign
 	res, err := a.s.GetAssignment(ctx, userID(ctx), in.ID, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
+	}
+	// Its files are the ones the caller may open, so their cards may show.
+	for i := range res.Files {
+		if res.Files[i].ThumbnailURL, err = a.thumbnailURL(ctx, res.Files[i].ThumbnailKey); err != nil {
+			return nil, err
+		}
 	}
 	return &assignmentOutput{Body: res}, nil
 }

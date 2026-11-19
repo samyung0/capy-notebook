@@ -1,5 +1,11 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { usePaperFileLinks, useRemoveHandInFile } from '@/api/hooks';
+import {
+  paperFileLinksQuery,
+  type SubmissionOf,
+  usePaperFileLinks,
+  useRemoveHandInFile,
+} from '@/api/hooks';
 import type {
   Assignment,
   AssignmentMemberRow,
@@ -11,23 +17,26 @@ import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Menu } from '@/components/ui/Menu';
+import { userToast } from '@/components/ui/userToast';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { errorCopy } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import { Td, Th } from '../practice/studyPage';
 import { dayLabel } from './assignmentText';
-import { GradeField } from './GradeField';
 import { LateBadge } from './LateBadge';
 import { PaperPages } from './LazyPaper';
 import type { SubmissionFiles } from './useAddSubmissionFiles';
 
 // Hand-ins (Epo 2026-11-08, mocks S3 and T2): an unmarked assignment that
 // takes files. The member adds their work and hands it in; staff read it on
-// the Members tab and, when it is graded on points (Epo 2026-11-14), grade it
-// on the member's row.
+// the Members tab and the Grading tab, where, when it is graded on points (Epo
+// 2026-11-14), they grade it beside the file (Epo 2026-11-19); the Members tab
+// shows grades read only, as a graded quiz's Responses.
 
-const iconOf = (file: PaperFile) =>
+export const iconOf = (file: PaperFile) =>
   fileIconName(file as Pick<SourceFile, 'kind' | 'name'>);
 
 /** Opens one stored file in a new tab: what pages cannot show (a document). */
@@ -93,14 +102,11 @@ function HandInViewer({
 export function YourWork({
   assignment,
   open,
-  preview = false,
   uploads,
 }: {
   assignment: Assignment;
   /** Takes changes: not handed in, not closed. */
   open: boolean;
-  /** Staff's Preview: shown as a member's open one, Add files off. */
-  preview?: boolean;
   uploads: SubmissionFiles;
 }) {
   const files = assignment.mine?.handIn ?? [];
@@ -114,10 +120,10 @@ export function YourWork({
     <section className="mt-6.5 max-w-183">
       <div className="flex min-h-8 items-center justify-between gap-3">
         <h2 className="t-subtitle">{m.assignment_your_work()}</h2>
-        {(open || preview) && (
+        {open && (
           <>
             <Button
-              disabled={preview || !ready}
+              disabled={!ready}
               iconLeft="plus"
               onClick={() => picker.current?.click()}
               size="sm"
@@ -138,55 +144,18 @@ export function YourWork({
           </>
         )}
       </div>
-      {files.length === 0 && uploading.length === 0 && (open || preview) && (
+      {files.length === 0 && uploading.length === 0 && open && (
         <p className="mt-2 text-fg-muted">{m.assignment_hand_in_empty()}</p>
       )}
-      <ul className="mt-2">
-        {files.map((file) => (
-          <li
-            className="flex min-h-10 items-center gap-2 border-divider border-b"
-            key={file.id}
-          >
-            <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
-            <button
-              className="min-w-0 flex-1 truncate text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
-              onClick={() => setViewing(file)}
-              type="button"
-            >
-              {file.name}
-            </button>
-            <span className="t-meta shrink-0 text-fg-muted">
-              {formatFileSize(file.sizeBytes)}
-            </span>
-            {open && (
-              <Menu
-                items={[
-                  {
-                    icon: 'navigationForward',
-                    label: m.assignment_open(),
-                    onClick: () => setViewing(file),
-                  },
-                  {
-                    danger: true,
-                    disabled: removing,
-                    icon: 'trash',
-                    label: m.assignment_hand_in_remove(),
-                    onClick: () => remove(file.id),
-                  },
-                ]}
-              />
-            )}
-          </li>
-        ))}
-        {uploading.map((name) => (
-          <li
-            className="t-meta flex min-h-10 items-center border-divider border-b text-fg-secondary"
-            key={name}
-          >
-            {m.assignment_paper_uploading({ name })}
-          </li>
-        ))}
-      </ul>
+      <SubmissionFileList
+        className="mt-2"
+        files={files}
+        meta={(file) => formatFileSize(file.sizeBytes)}
+        onOpen={setViewing}
+        onRemove={open ? (file) => remove(file.id) : undefined}
+        removing={removing}
+        uploading={uploading}
+      />
       {viewing && (
         <HandInViewer
           assignmentId={assignment.id}
@@ -199,19 +168,115 @@ export function YourWork({
   );
 }
 
+/** A submission's files, each with its ⋮ to open it and, while it takes
+ * changes, remove it; then the files still uploading. Your work's and Your
+ * answers' list (Epo 2026-11-19). */
+export function SubmissionFileList({
+  className,
+  files,
+  meta,
+  onOpen,
+  onRemove,
+  removing,
+  uploading,
+}: {
+  className?: string;
+  files: readonly PaperFile[];
+  meta: (file: PaperFile) => string;
+  onOpen: (file: PaperFile) => void;
+  /** Absent once it takes no changes. */
+  onRemove?: (file: PaperFile) => void;
+  removing: boolean;
+  uploading: readonly string[];
+}) {
+  return (
+    <ul className={className}>
+      {files.map((file) => (
+        <li
+          className="flex min-h-10 items-center gap-2 border-divider border-b"
+          key={file.id}
+        >
+          <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
+          <button
+            className="min-w-0 flex-1 truncate text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
+            onClick={() => onOpen(file)}
+            type="button"
+          >
+            {file.name}
+          </button>
+          <span className="t-meta shrink-0 text-fg-muted">{meta(file)}</span>
+          {onRemove && (
+            <Menu
+              items={[
+                {
+                  icon: 'navigationForward',
+                  label: m.assignment_open(),
+                  onClick: () => onOpen(file),
+                },
+                {
+                  danger: true,
+                  disabled: removing,
+                  icon: 'trash',
+                  label: m.assignment_hand_in_remove(),
+                  onClick: () => onRemove(file),
+                },
+              ]}
+            />
+          )}
+        </li>
+      ))}
+      {uploading.map((name) => (
+        <li
+          className="t-meta flex min-h-10 items-center border-divider border-b text-fg-secondary"
+          key={name}
+        >
+          {m.assignment_paper_uploading({ name })}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Several photos read as one "3 photos"; else each file by name. */
 const allPhotos = (files: readonly PaperFile[]) =>
   files.length > 1 && files.every((file) => file.kind === 'image');
 
 /** What a member handed in, in one line: a file's name, "2 files", "3 photos". */
-const workSummary = (files: readonly PaperFile[]) =>
+export const workSummary = (files: readonly PaperFile[]) =>
   files.length === 1
     ? files[0]!.name
     : allPhotos(files)
       ? m.assignment_photos({ count: files.length })
       : m.assignment_paper_files({ count: files.length });
 
-function MemberCell({ member }: { member: AssignmentMemberRow }) {
+/** A grade as given, read only: "14.5 / 20". */
+export function GradeText({
+  member,
+  points,
+}: {
+  member: AssignmentMemberRow;
+  points: number;
+}) {
+  if (member.correct === undefined) return null;
+  return (
+    <span className="whitespace-nowrap font-bold">
+      {formatPoints(member.correct)}{' '}
+      <span className="font-semibold text-fg-muted">
+        / {formatPoints(points)}
+      </span>
+    </span>
+  );
+}
+
+/** A member's avatar and name; `sub`, a muted second line under the name,
+ * the avatar centred on both. */
+export function MemberCell({
+  member,
+  sub,
+}: {
+  member: AssignmentMemberRow;
+  sub?: string;
+}) {
   return (
     <span className="flex min-w-0 items-center gap-2.5">
       <Avatar
@@ -220,68 +285,55 @@ function MemberCell({ member }: { member: AssignmentMemberRow }) {
         name={member.name}
         src={member.avatarUrl || undefined}
       />
-      <span className="truncate font-semibold">{member.name}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-semibold">{member.name}</span>
+        {sub && (
+          <span className="t-meta mt-0.5 truncate text-fg-muted">{sub}</span>
+        )}
+      </span>
     </span>
   );
 }
 
-/** T2: who handed in what. A file opens in the viewer; a graded one's Grade
- * column takes each member's grade. */
+/** T2: who handed in what. A row opens the Grading tab at that member (Epo
+ * 2026-11-19), as a graded quiz's opens their attempt; a graded one's Grade
+ * column shows each grade, read only. No Member header: the section's
+ * Members title says it. */
 export function HandInMembers({
   assignment,
   members,
+  onOpen,
 }: {
   assignment: Assignment;
   members: AssignmentMemberRow[];
+  onOpen: (member: AssignmentMemberRow) => void;
 }) {
-  const assignmentId = assignment.id;
   const { points } = assignment;
-  const grade = (member: AssignmentMemberRow, className?: string) =>
-    points !== undefined && (
-      <GradeField
-        assignment={{ ...assignment, points }}
-        className={className}
-        member={member}
-      />
+  // Read only, as a graded quiz's Responses: grading is the Grading tab's.
+  const grade = (member: AssignmentMemberRow) =>
+    points !== undefined && <GradeText member={member} points={points} />;
+  const handedIn = (member: AssignmentMemberRow) =>
+    member.submittedAt ? (
+      <span className="flex items-center gap-2">
+        {dayLabel(member.submittedAt)}
+        {member.late && <LateBadge penaltyPct={member.latePenaltyPct} />}
+      </span>
+    ) : (
+      m.assignment_not_handed_in()
     );
-  const [viewing, setViewing] = useState<{
-    files: readonly PaperFile[];
-    title: string;
-  } | null>(null);
-  const fileButton = (
-    member: AssignmentMemberRow,
-    files: readonly PaperFile[],
-    label: string,
-    icon: PaperFile
-  ) => (
-    <button
-      className="inline-flex min-w-0 max-w-full items-center gap-1.5 font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-action"
-      key={files.map((file) => file.id).join()}
-      onClick={() =>
-        setViewing({
-          files,
-          title: files.length === 1 ? files[0]!.name : member.name,
-        })
-      }
-      type="button"
-    >
-      <FileIcon className="size-4 shrink-0" name={iconOf(icon)} />
-      <span className="truncate">{label}</span>
-    </button>
-  );
-  const work = (member: AssignmentMemberRow) => {
-    const files = member.files ?? [];
-    if (files.length === 0) return null;
-    if (allPhotos(files))
-      return fileButton(member, files, workSummary(files), files[0]!);
-    return files.map((file) => fileButton(member, [file], file.name, file));
+  // A file's own button takes its clicks; the rest of the row opens.
+  const openRow = (event: React.MouseEvent, member: AssignmentMemberRow) => {
+    if ((event.target as Element).closest('input, button, a')) return;
+    onOpen(member);
   };
   return (
     <>
       <table className="mt-2 hidden w-full table-fixed border-separate border-spacing-0 md:table">
         <thead>
           <tr>
-            <Th className="w-[34%]">{m.assignment_col_member()}</Th>
+            <Th className="w-[34%]">
+              <span className="sr-only">{m.assignment_col_member()}</span>
+            </Th>
             <Th className="w-45">{m.assignment_col_handed_in()}</Th>
             <Th>{m.assignment_col_work()}</Th>
             {points !== undefined && (
@@ -291,30 +343,38 @@ export function HandInMembers({
         </thead>
         <tbody>
           {members.map((member) => (
-            <tr key={member.userId}>
+            <tr
+              className="cursor-pointer hover:bg-surface-hover-bg"
+              key={member.userId}
+              onClick={(event) => openRow(event, member)}
+            >
               <Td>
-                <MemberCell member={member} />
+                {/* The row's button for the keyboard; a click anywhere opens. */}
+                <button
+                  className="flex min-w-0 max-w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-action"
+                  onClick={() => onOpen(member)}
+                  type="button"
+                >
+                  <MemberCell member={member} />
+                </button>
               </Td>
-              <Td muted={!member.submittedAt}>
-                {member.submittedAt ? (
-                  <span className="flex items-center gap-2">
-                    {dayLabel(member.submittedAt)}
-                    {member.late && (
-                      <LateBadge penaltyPct={member.latePenaltyPct} />
-                    )}
+              <Td muted={!member.submittedAt}>{handedIn(member)}</Td>
+              <Td className="whitespace-normal" muted={!member.files?.length}>
+                {member.files?.length ? (
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+                    {member.files.map((file) => (
+                      <SubmissionFileLink
+                        file={file}
+                        key={file.id}
+                        of={{ handInId: assignment.id }}
+                      />
+                    ))}
                   </span>
                 ) : (
-                  m.assignment_not_handed_in()
+                  '–'
                 )}
               </Td>
-              <Td className="whitespace-normal">
-                <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
-                  {work(member)}
-                </span>
-              </Td>
-              {points !== undefined && (
-                <Td className="whitespace-normal">{grade(member, 'py-1')}</Td>
-              )}
+              {points !== undefined && <Td>{grade(member)}</Td>}
             </tr>
           ))}
         </tbody>
@@ -322,24 +382,14 @@ export function HandInMembers({
       <ul className="mt-1 md:hidden">
         {members.map((member) => {
           const files = member.files ?? [];
-          const handedIn = !!member.submittedAt && files.length > 0;
           return (
             <li
               className="flex items-center gap-3 border-divider border-b"
               key={member.userId}
             >
               <button
-                className={cn(
-                  'flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
-                  !handedIn && 'cursor-default'
-                )}
-                disabled={!handedIn}
-                onClick={() =>
-                  setViewing({
-                    files,
-                    title: files.length === 1 ? files[0]!.name : member.name,
-                  })
-                }
+                className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+                onClick={() => onOpen(member)}
                 type="button"
               >
                 <div className="min-w-0 flex-1">
@@ -358,20 +408,85 @@ export function HandInMembers({
                 {member.late && (
                   <LateBadge penaltyPct={member.latePenaltyPct} />
                 )}
+                <span className="shrink-0">{grade(member)}</span>
               </button>
-              {grade(member, 'shrink-0')}
             </li>
           );
         })}
       </ul>
-      {viewing && (
-        <HandInViewer
-          assignmentId={assignmentId}
-          files={viewing.files}
-          onClose={() => setViewing(null)}
-          title={viewing.title}
-        />
-      )}
     </>
+  );
+}
+
+/** Opens a hand-in's or paper's file on its signed link (Epo 2026-11-19): a
+ * PDF or photo in a new tab for the browser to show, opened on the click
+ * itself so no popup blocker stops it; anything else downloads through a
+ * hidden frame, so the page neither leaves nor asks to. */
+export function useOpenSubmissionFile(of: SubmissionOf) {
+  const qc = useQueryClient();
+  const busy = useRef(false);
+  return async (file: PaperFile) => {
+    if (busy.current) return;
+    busy.current = true;
+    const shown = file.kind === 'pdf' || file.kind === 'image';
+    const tab = shown ? window.open('', '_blank') : null;
+    try {
+      if (shown && !tab) {
+        userToast({
+          title: m.assignment_file_popup_blocked(),
+          variant: 'error',
+        });
+        return;
+      }
+      const { url } = await qc.fetchQuery({
+        ...paperFileLinksQuery(of, file.id),
+        retry: false,
+      });
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+        return;
+      }
+      const frame = document.createElement('iframe');
+      frame.hidden = true;
+      frame.src = url;
+      document.body.append(frame);
+      setTimeout(() => frame.remove(), 60_000);
+    } catch (error) {
+      tab?.close();
+      userToast({
+        title: errorCopy(error, m.assignment_file_open_failed()),
+        variant: 'error',
+      });
+    } finally {
+      busy.current = false;
+    }
+  };
+}
+
+/** A hand-in's or paper's file by name, underlined (Epo 2026-11-19), opening
+ * on its signed link (`useOpenSubmissionFile`). */
+export function SubmissionFileLink({
+  className,
+  file,
+  of,
+}: {
+  className?: string;
+  file: PaperFile;
+  of: SubmissionOf;
+}) {
+  const open = useOpenSubmissionFile(of);
+  return (
+    <button
+      className={cn(
+        'inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left font-semibold underline decoration-[1.5px] underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-action',
+        className
+      )}
+      onClick={() => void open(file)}
+      type="button"
+    >
+      <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
+      <span className="truncate">{file.name}</span>
+    </button>
   );
 }

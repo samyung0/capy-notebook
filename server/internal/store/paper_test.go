@@ -253,3 +253,29 @@ func TestPaperLettersNameShuffledOptions(t *testing.T) {
 		t.Fatalf("scored %v", marks)
 	}
 }
+
+// TestUploadOnlyStartsAsUpload: an upload-only assignment (Epo 2026-11-19)
+// keeps its mode and starts only as an upload.
+func TestUploadOnlyStartsAsUpload(t *testing.T) {
+	f := newAssignmentFixture(t, "uploadonly")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions = frozenFixture(t)
+	form.AllowUploads = true
+	form.UploadOnly = true
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.UploadOnly || !created.AllowUploads {
+		t.Fatalf("made = uploadOnly %v, allowUploads %v", created.UploadOnly, created.AllowUploads)
+	}
+	if _, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now); err == nil {
+		t.Fatal("started online")
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, true, now)
+	if err != nil || run.Paper != PaperUpload {
+		t.Fatalf("start = %+v, err %v", run.Paper, err)
+	}
+}

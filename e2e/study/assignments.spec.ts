@@ -146,12 +146,13 @@ test.describe('assignments', () => {
       .getByRole('button', { exact: true, name: m.assignment_start() })
       .locator('visible=true')
       .click();
-    await viewerPage
-      .locator('[data-question-row]')
-      .nth(1)
-      .waitFor({ state: 'attached' });
+    // The question numbers (Epo 2026-11-19): the grid, or a phone's strip.
+    const numbers = viewerPage
+      .locator('[data-question-number]')
+      .locator('visible=true');
+    await numbers.nth(1).waitFor();
     await viewerPage.getByText('Mitochondria').click();
-    await viewerPage.locator('[data-question-row]').nth(1).click();
+    await numbers.nth(1).click();
     await viewerPage.getByRole('textbox').fill('By osmosis.');
     await viewerPage
       .getByRole('button', { name: m.assignment_submit() })
@@ -180,7 +181,7 @@ test.describe('assignments', () => {
 
     // The owner marks it on Approve AI marks, and no model marked it first.
     await ownerPage.goto(
-      `/workspaces/${workspaceId}/assignments?assignment=${assignment.id}&tab=approve`
+      `/workspaces/${workspaceId}/assignments?assignment=${assignment.id}&tab=grading`
     );
     await expect(ownerPage.getByText('By osmosis.')).toBeVisible();
     await ownerPage.getByRole('combobox', { name: 'Names osmosis' }).click();

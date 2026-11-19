@@ -339,28 +339,6 @@ export const MarkAssignmentAnswerResponse = zod.object({
 
 
 /**
- * @summary Put a running attempt's paper files in order
- */
-export const orderPaperFilesPathIdMax = 64;
-
-
-
-export const OrderPaperFilesParams = zod.object({
-  "id": zod.string().max(orderPaperFilesPathIdMax)
-})
-
-export const orderPaperFilesBodyFileIdsMax = 15;
-
-
-
-export const OrderPaperFilesBody = zod.object({
-  "fileIds": zod.array(zod.string()).max(orderPaperFilesBodyFileIdsMax)
-})
-
-export const OrderPaperFilesResponse = zod.void()
-
-
-/**
  * @summary Remove a file from a running attempt's paper
  */
 export const removePaperFilePathIdMax = 64;
@@ -482,6 +460,8 @@ export const GetAssignmentResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -542,6 +522,7 @@ export const GetAssignmentResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -591,7 +572,8 @@ export const UpdateAssignmentBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(updateAssignmentBodyTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(updateAssignmentBodyTitleMax)
+  "title": zod.string().min(1).max(updateAssignmentBodyTitleMax),
+  "uploadOnly": zod.boolean().optional()
 })
 
 export const UpdateAssignmentResponse = zod.object({
@@ -608,6 +590,8 @@ export const UpdateAssignmentResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -668,6 +652,7 @@ export const UpdateAssignmentResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -714,6 +699,8 @@ export const SetAssignmentClosedResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -774,6 +761,7 @@ export const SetAssignmentClosedResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -887,6 +875,8 @@ export const PublishAssignmentResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -947,6 +937,7 @@ export const PublishAssignmentResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -972,6 +963,8 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -1032,6 +1025,7 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -1135,6 +1129,8 @@ export const RepublishAssignmentResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -1195,6 +1191,7 @@ export const RepublishAssignmentResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -4759,7 +4756,8 @@ export const CreateBankQuizBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createBankQuizBodyGradedQuizTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createBankQuizBodyGradedQuizTitleMax)
+  "title": zod.string().min(1).max(createBankQuizBodyGradedQuizTitleMax),
+  "uploadOnly": zod.boolean().optional()
 }).optional().describe('The New graded quiz dialog\'s settings (CreateMaterialReq.gradedQuiz): the quiz is made with the graded quiz that owns it (assignmentId)'),
   "questionIds": zod.array(zod.string()).min(1).max(createBankQuizBodyQuestionIdsMax).describe('Bank questions to copy, in this order'),
   "title": zod.string().min(1).max(createBankQuizBodyTitleMax),
@@ -5393,7 +5391,8 @@ export const CreateStandaloneMaterialBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createStandaloneMaterialBodyGradedQuizTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createStandaloneMaterialBodyGradedQuizTitleMax)
+  "title": zod.string().min(1).max(createStandaloneMaterialBodyGradedQuizTitleMax),
+  "uploadOnly": zod.boolean().optional()
 }).optional().describe('The New graded quiz dialog\'s settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)'),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).describe('Material kind'),
   "scopeFileNames": zod.array(zod.string()).nullish(),
@@ -7595,7 +7594,8 @@ export const CopyQuizToGradedQuizBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(copyQuizToGradedQuizBodyGradedQuizTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(copyQuizToGradedQuizBodyGradedQuizTitleMax)
+  "title": zod.string().min(1).max(copyQuizToGradedQuizBodyGradedQuizTitleMax),
+  "uploadOnly": zod.boolean().optional()
 }).describe('The graded quiz\'s settings (marked, no quizId); its title also names the new quiz')
 })
 
@@ -7613,6 +7613,8 @@ export const CopyQuizToGradedQuizResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -7673,6 +7675,7 @@ export const CopyQuizToGradedQuizResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -8445,6 +8448,8 @@ export const GetTodoResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -8505,6 +8510,7 @@ export const GetTodoResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })),
   "manages": zod.boolean(),
@@ -8544,6 +8550,8 @@ export const GetTodoDoneResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -8604,6 +8612,7 @@ export const GetTodoDoneResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })),
   "manages": zod.boolean(),
@@ -8668,7 +8677,8 @@ export const CreateTodoTaskBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createTodoTaskBodyTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createTodoTaskBodyTitleMax)
+  "title": zod.string().min(1).max(createTodoTaskBodyTitleMax),
+  "uploadOnly": zod.boolean().optional()
 })
 
 export const CreateTodoTaskResponse = zod.object({
@@ -8685,6 +8695,8 @@ export const CreateTodoTaskResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -8745,6 +8757,7 @@ export const CreateTodoTaskResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -9385,6 +9398,7 @@ export const ListAssignmentsQueryParams = zod.object({
   "closed": zod.boolean().optional().describe('Keep the closed ones'),
   "done": zod.boolean().optional().describe('Keep the ones the caller has done'),
   "topic": zod.string().optional().describe('Comma-separated topic ids: only those on one of them'),
+  "kind": zod.enum(['marked', 'unmarked']).optional().describe('Only graded quizzes (marked) or only assignments (unmarked); none keeps both'),
   "sort": zod.enum(['title', 'kind', 'topic', 'posted', 'due']).optional().describe('A column to order by, open ones still first; none is the page\'s own order'),
   "dir": zod.enum(['asc', 'desc']).default(listAssignmentsQueryDirDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
@@ -9406,6 +9420,8 @@ export const ListAssignmentsResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -9466,6 +9482,7 @@ export const ListAssignmentsResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })),
   "members": zod.int().optional(),
@@ -9518,7 +9535,8 @@ export const CreateAssignmentBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createAssignmentBodyTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createAssignmentBodyTitleMax)
+  "title": zod.string().min(1).max(createAssignmentBodyTitleMax),
+  "uploadOnly": zod.boolean().optional()
 })
 
 export const CreateAssignmentResponse = zod.object({
@@ -9535,6 +9553,8 @@ export const CreateAssignmentResponse = zod.object({
   "kind": zod.string(),
   "materialId": zod.string().optional(),
   "name": zod.string(),
+  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
+  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
   "workspaceId": zod.string().optional(),
   "workspaceName": zod.string().optional()
 })),
@@ -9595,6 +9615,7 @@ export const CreateAssignmentResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "topicIds": zod.array(zod.string()),
+  "uploadOnly": zod.boolean(),
   "workspaceId": zod.string()
 })
 
@@ -9904,7 +9925,8 @@ export const CreateExtractionBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createExtractionBodyGradedQuizTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createExtractionBodyGradedQuizTitleMax)
+  "title": zod.string().min(1).max(createExtractionBodyGradedQuizTitleMax),
+  "uploadOnly": zod.boolean().optional()
 }).optional().describe('The New graded quiz dialog\'s settings, checked before the run starts: the run\'s quiz is made with the graded quiz that owns it (Extraction.assignmentId)'),
   "hidden": zod.boolean(),
   "paper": zod.array(zod.object({
@@ -10209,7 +10231,8 @@ export const GenerateBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(generateBodyGradedQuizTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(generateBodyGradedQuizTitleMax)
+  "title": zod.string().min(1).max(generateBodyGradedQuizTitleMax),
+  "uploadOnly": zod.boolean().optional()
 }).optional().describe('The New graded quiz dialog\'s settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId'),
   "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
   "mix": zod.boolean().optional().describe('Add the caller\'s answered questions to the new ones'),
@@ -10388,7 +10411,8 @@ export const CreateMaterialBody = zod.object({
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
   "timeLimitMin": zod.int().min(1).max(createMaterialBodyGradedQuizTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createMaterialBodyGradedQuizTitleMax)
+  "title": zod.string().min(1).max(createMaterialBodyGradedQuizTitleMax),
+  "uploadOnly": zod.boolean().optional()
 }).optional().describe('The New graded quiz dialog\'s settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)'),
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']).describe('Material kind'),
   "scopeFileNames": zod.array(zod.string()).nullish(),

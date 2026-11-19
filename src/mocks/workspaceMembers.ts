@@ -2,7 +2,8 @@ import type { WorkspaceMember } from '@/api/types';
 
 /** The mocked workspaces' members, apart from the viewer. */
 export const mockWorkspaceMembers: WorkspaceMember[] = [
-  // Six viewers, the class the assignment boards draw (W1, G3m).
+  // Six viewers the assignment boards name (W1, G3m); the rest of the class
+  // further down.
   {
     createdAt: new Date().toISOString(),
     name: 'Farah Ali',
@@ -77,6 +78,91 @@ export const mockWorkspaceMembers: WorkspaceMember[] = [
     name: 'Eve Park',
     role: 'viewer',
     userId: 'u_mock_hana',
+    workspaceId: 'ws_bio',
+  },
+  // The rest of Biology 101's class, so Grading's member list scrolls.
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Hugo Alvarez',
+    role: 'viewer',
+    userId: 'u_mock_class_01',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Isla Grant',
+    role: 'viewer',
+    userId: 'u_mock_class_02',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Jonah Reyes',
+    role: 'viewer',
+    userId: 'u_mock_class_03',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Kira Novak',
+    role: 'viewer',
+    userId: 'u_mock_class_04',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Luca Rossi',
+    role: 'viewer',
+    userId: 'u_mock_class_05',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Maya Chen',
+    role: 'viewer',
+    userId: 'u_mock_class_06',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Nils Berg',
+    role: 'viewer',
+    userId: 'u_mock_class_07',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Omar Saleh',
+    role: 'viewer',
+    userId: 'u_mock_class_08',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Pia Larsen',
+    role: 'viewer',
+    userId: 'u_mock_class_09',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Quinn Doyle',
+    role: 'viewer',
+    userId: 'u_mock_class_10',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Rosa Diaz',
+    role: 'viewer',
+    userId: 'u_mock_class_11',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Sami Okoye',
+    role: 'viewer',
+    userId: 'u_mock_class_12',
     workspaceId: 'ws_bio',
   },
   // A personal workspace's people, for its Members page (no marks).

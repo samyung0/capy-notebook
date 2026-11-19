@@ -256,7 +256,8 @@ export function typedMark(text: string, max: number): string | undefined {
 
 /** A question's row name, or one of its parts' when a question of several
  * parts lays each out as its own row (the report's Questions tab, a
- * member's result): "Q18", "Q18 (a)(i)", "Q19.2" with number labels. */
+ * member's result): "Q18", "Q18 (a)(i)", and with number labels "Q19 (2)"
+ * (Epo 2026-11-19, not "Q19.2"). */
 export function questionRowName(
   number: number,
   question?: Parameters<typeof fullPartLabel>[0],
@@ -264,8 +265,9 @@ export function questionRowName(
 ) {
   const label = question && partId ? fullPartLabel(question, partId) : '';
   if (!label) return `Q${number}`;
-  return label.startsWith('(')
-    ? `Q${number} ${label}`
-    : `Q${number}.${label.replace(TRAILING_DOT, '')}`;
+  if (label.startsWith('(')) return `Q${number} ${label}`;
+  // "2." or "2(i)": the number in brackets as letters are.
+  const [, top, rest] = NUMBER_LABEL.exec(label) ?? [];
+  return top ? `Q${number} (${top})${rest}` : `Q${number} ${label}`;
 }
-const TRAILING_DOT = /\.$/;
+const NUMBER_LABEL = /^(\d+)\.?(.*)$/;

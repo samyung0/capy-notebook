@@ -2,21 +2,13 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { useQuiz } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import {
-  type LearnerQuestion,
-  type Question,
-  questionMarks,
-} from '@/features/questions/types';
+import type { LearnerQuestion, Question } from '@/features/questions/types';
 import { type Answers, emptyAnswer } from '@/features/quizzes/grade';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizSplit } from '@/features/quizzes/QuizSplit';
 import { m } from '@/i18n';
-import {
-  AnsweredMark,
-  answered,
-  TAKE_PANE,
-  TakeQuestion,
-} from './AssignmentTake';
+import { answered, TAKE_PANE, TakeQuestion } from './AssignmentTake';
+import { NumberStrip, QuestionNumbers } from './QuestionNumbers';
 
 /** Preview (Epo 2026-11-15, a header button since the graded quiz's tabs
  * became Questions | Responses | Settings, and beside a practice quiz's
@@ -63,7 +55,7 @@ export function QuizPreviewDialog({
 
 /**
  * A graded quiz as its members answer it, for its staff (Epo 2026-11-13 A):
- * the question list and one question at a time, laid out as the member's
+ * the question numbers and one question at a time, laid out as the member's
  * page. Answers stay here; there is no clock, Bookmark or Submit, and nothing
  * is saved.
  */
@@ -74,7 +66,6 @@ export function AssignmentPreview({
 }) {
   const [answers, setAnswers] = useState<Answers>({});
   const [index, setIndex] = useState(0);
-  const [onQuestion, setOnQuestion] = useState(false);
   const question = questions[index];
   // An ordering part always shows an order, so showing it is answering it.
   useEffect(() => {
@@ -96,32 +87,32 @@ export function AssignmentPreview({
     q.parts.some((part) => answered(answers[part.id]));
   const isComplete = (q: Question | LearnerQuestion) =>
     q.parts.every((part) => answered(answers[part.id]));
-  const go = (next: number) => {
-    setIndex(next);
-    setOnQuestion(true);
-  };
+  const go = (next: number) => setIndex(next);
+  const open = (id: string) => go(questions.findIndex((q) => q.id === id));
+  const items = questions.map((q) => ({
+    id: q.id,
+    state: isComplete(q)
+      ? ('complete' as const)
+      : isAnswered(q)
+        ? ('answered' as const)
+        : ('empty' as const),
+  }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <QuizSplit
         current={question?.id}
-        onBack={() => setOnQuestion(false)}
-        onOpen={(id) => go(questions.findIndex((q) => q.id === id))}
-        onQuestion={onQuestion}
-        questions={questions}
-        rowEnd={(q) =>
-          isAnswered(q) ? (
-            <AnsweredMark
-              complete={isComplete(q)}
-              label={
-                isComplete(q)
-                  ? m.assignment_legend_answered()
-                  : m.assignment_legend_part_answered()
-              }
-            />
-          ) : (
-            questionMarks(q)
-          )
+        // The dialog runs the list to its bottom edge (Epo 2026-11-19).
+        listClassName="pb-6"
+        numbers={
+          <QuestionNumbers current={question?.id} items={items} onOpen={open} />
         }
+        onBack={() => undefined}
+        onOpen={open}
+        onQuestion
+        phoneStrip={
+          <NumberStrip current={question?.id} items={items} onOpen={open} />
+        }
+        questions={questions}
       >
         <div className={TAKE_PANE}>
           {question && (

@@ -169,7 +169,6 @@ import type {
   NotificationPrefs,
   PDFAnnotation,
   PDFAnnotationBody,
-  PaperOrderInputBody,
   PendingWorkspaceInvite,
   Practice,
   ProjectMaterialReq,
@@ -710,71 +709,6 @@ const res = await fetch(getMarkAssignmentAnswerUrl(id),
 
   const data: markAssignmentAnswerResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as markAssignmentAnswerResponse
-}
-
-
-
-export type orderPaperFilesResponse204 = {
-  data: void
-  status: 204
-}
-
-export type orderPaperFilesResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type orderPaperFilesResponseSuccess = (orderPaperFilesResponse204) & {
-  headers: Headers;
-};
-export type orderPaperFilesResponseError = (orderPaperFilesResponseDefault) & {
-  headers: Headers;
-};
-
-export type orderPaperFilesResponse = (orderPaperFilesResponseSuccess | orderPaperFilesResponseError)
-
-export const getOrderPaperFilesUrl = (id: string,) => {
-
-
-
-
-  return `/api/assignment-attempts/${id}/paper/order`
-}
-
-/**
- * @summary Put a running attempt's paper files in order
- */
-export const orderPaperFiles = async (id: string,
-    paperOrderInputBody: NonReadonly<PaperOrderInputBody>, options?: RequestInit): Promise<orderPaperFilesResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getOrderPaperFilesUrl(id),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(paperOrderInputBody)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: orderPaperFilesResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as orderPaperFilesResponse
 }
 
 

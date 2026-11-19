@@ -1,16 +1,21 @@
 import type { ReactNode } from 'react';
 import { Icon } from '@/components/ui/Icon';
-import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
-/** New assignment's Advanced (Epo 2026-11-04): the app's accordion recipe, whose
- * panel stays mounted so it animates both ways and is inert while closed. */
-export function AdvancedSection({
+/** The app's accordion (Epo 2026-11-04, first New assignment's Advanced): a
+ * chevron and its label toggle a panel that stays mounted, so it animates
+ * both ways, and is inert while closed. `className` styles the toggle (the
+ * Grading tab's member rows run full width). */
+export function Accordion({
   children,
+  className,
+  label,
   onToggle,
   open,
 }: {
   children: ReactNode;
+  className?: string;
+  label: ReactNode;
   onToggle: () => void;
   open: boolean;
 }) {
@@ -18,7 +23,10 @@ export function AdvancedSection({
     <div>
       <button
         aria-expanded={open}
-        className="-mx-2 flex min-h-8 items-center gap-1.5 rounded-button px-2 font-medium hover:bg-surface-hover-bg"
+        className={cn(
+          '-mx-2 flex min-h-8 items-center gap-1.5 rounded-button px-2 text-left font-medium outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
+          className
+        )}
         onClick={onToggle}
         type="button"
       >
@@ -30,7 +38,7 @@ export function AdvancedSection({
           name="chevronDown"
           size={16}
         />
-        {m.assignment_advanced()}
+        {label}
       </button>
       <div
         className="motion-accordion"

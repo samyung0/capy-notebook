@@ -102,6 +102,9 @@ type Assignment struct {
 	// AllowUploads: a member may hand in a paper instead of answering in the app
 	// ("Allow submission with uploads", Epo 2026-11-08).
 	AllowUploads bool `json:"allowUploads"`
+	// UploadOnly: a marked one is answered by upload only, never in the app
+	// (Epo 2026-11-19); it goes with AllowUploads.
+	UploadOnly bool `json:"uploadOnly"`
 	// TopicIDs: its quiz's topic, then the other topics its questions name as
 	// their own (questionTopicsSQL), or its files' with the most-used first.
 	TopicIDs []string         `json:"topicIds" nullable:"false"`
@@ -124,6 +127,12 @@ type AssignmentFile struct {
 	// with no workspace; a task's files need not be its own workspace's.
 	WorkspaceID   *string `json:"workspaceId,omitempty"`
 	WorkspaceName string  `json:"workspaceName,omitempty"`
+	// ThumbnailKey is a file's page-1 WebP, which getAssignment signs into
+	// ThumbnailURL; Preview is a text file's opening characters or a material's
+	// card summary, so its card looks as on the Files page (Epo 2026-11-19).
+	ThumbnailKey string          `json:"-"`
+	ThumbnailURL *string         `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a file's page-1 thumbnail; the assignment's own read only"`
+	Preview      MaterialPreview `json:"preview,omitempty" doc:"A text file's opening characters or a material's list-card preview (openwiki/thumbnails.md)"`
 }
 
 // ownTaskFileSQL and ownTaskMaterialSQL hold a files row f and a materials row
@@ -231,13 +240,15 @@ type AssignmentList struct {
 
 // AssignmentListParams page Study → Assignments and a member's To do (Epo
 // 2026-11-13): Closed keeps the closed ones, Done the caller's done ones, and
-// TopicIDs, when any, only those on one of them. Sort orders by a column (an
+// TopicIDs, when any, only those on one of them; Kind, when set, only that
+// kind (Epo 2026-11-19). Sort orders by a column (an
 // AssignmentSort), open ones still before closed ones; empty is the page's
 // own order.
 type AssignmentListParams struct {
 	Closed    bool
 	Done      bool
 	TopicIDs  []string
+	Kind      string
 	Sort      string
 	Ascending bool
 	Offset    int
@@ -285,6 +296,7 @@ type AssignmentForm struct {
 	ShowGrades     string
 	Shuffle        bool
 	AllowUploads   bool
+	UploadOnly     bool
 	Files          []AssignmentFileRef
 	// Points grades an Assignment (unmarked, not one's own task); nil, none.
 	Points *int
@@ -365,7 +377,7 @@ func (s *Store) taskStanding(ctx context.Context, q rowQueryer, userID, wsID str
 var assignmentCols = `a.id, COALESCE(a.workspace_id, ''), a.kind, a.title, a.posted_at, COALESCE(NULLIF(u.name,''), u.id, ''),
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id,
-	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.allow_uploads,
+	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.allow_uploads, a.upload_only,
 	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
 		WHERE p->'answer'->>'type' = 'drawing'), a.own, COALESCE(a.created_by, ''),
 	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), m.updated_at, a.points,
@@ -407,7 +419,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &topicID,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.DrawingParts, &a.Own, &maker, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &questionTopics); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.UploadOnly, &a.DrawingParts, &a.Own, &maker, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &questionTopics); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
@@ -538,7 +550,8 @@ func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []st
 	// A task of one's own holds files from anywhere, each read while its maker
 	// can still open it; an assignment's are its workspace's.
 	rows, err := s.pool.Query(ctx, `SELECT af.assignment_id, f.id, m.id, COALESCE(f.name, m.title), COALESCE(f.kind::text, m.kind::text),
-			COALESCE(f.topic_id, m.topic_id), fw.id, COALESCE(fw.name, '')
+			COALESCE(f.topic_id, m.topic_id), fw.id, COALESCE(fw.name, ''),
+			COALESCE(f.thumbnail_key, ''), COALESCE(f.preview, m.preview)
 		FROM assignment_files af
 		JOIN assignments a ON a.id=af.assignment_id
 		LEFT JOIN files f ON f.id=af.file_id AND f.trashed_at IS NULL
@@ -557,7 +570,8 @@ func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []st
 		var id string
 		var file AssignmentFile
 		var topic *string
-		if err := rows.Scan(&id, &file.FileID, &file.MaterialID, &file.Name, &file.Kind, &topic, &file.WorkspaceID, &file.WorkspaceName); err != nil {
+		if err := rows.Scan(&id, &file.FileID, &file.MaterialID, &file.Name, &file.Kind, &topic, &file.WorkspaceID, &file.WorkspaceName,
+			&file.ThumbnailKey, &file.Preview); err != nil {
 			return err
 		}
 		a := &list[at[id]]
@@ -818,8 +832,9 @@ func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now ti
 				OR EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.user_id=$2 AND t.submitted_at IS NOT NULL)))
 			AND ($6::text[] IS NULL OR m.topic_id = ANY($6) OR EXISTS (SELECT 1 FROM topics t
 				WHERE t.workspace_id=a.workspace_id AND t.id = ANY($6) AND t.id IN (`+questionTopicIDsSQL+`)))
+			AND ($9 = '' OR a.kind = $9)
 		ORDER BY `+closed+`, `+order+`, a.posted_at DESC, a.id
-		LIMIT $7 OFFSET $8`, wsID, userID, now, p.Closed, p.Done, topics, p.Limit+1, p.Offset)
+		LIMIT $7 OFFSET $8`, wsID, userID, now, p.Closed, p.Done, topics, p.Limit+1, p.Offset, p.Kind)
 	if err != nil {
 		return out, err
 	}
@@ -970,8 +985,13 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID, actorID string, f
 		if len(form.Files) > 0 {
 			return assignmentInput("a marked assignment takes a quiz, not files")
 		}
+		if form.UploadOnly && !form.AllowUploads {
+			return assignmentInput("an upload-only assignment takes uploads")
+		}
 	} else if form.QuizID != "" || form.TimeLimitMin != nil {
 		return assignmentInput("an unmarked assignment has no quiz or time limit")
+	} else if form.UploadOnly {
+		return assignmentInput("only a marked assignment is upload-only")
 	}
 	if form.Points != nil {
 		if form.Kind != AssignmentUnmarked || own {
@@ -1236,11 +1256,11 @@ func (s *Store) createAssignmentTx(ctx context.Context, tx pgx.Tx, actorID, wsID
 	}
 	id := uid("as")
 	if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-			due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, posted_at, created_at, own, points)
-		VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$17,$17,$19,$20)`,
+			due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, upload_only, posted_at, created_at, own, points)
+		VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$21,$17,$17,$19,$20)`,
 		id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 		form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-		form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own, form.Points); err != nil {
+		form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own, form.Points, form.UploadOnly); err != nil {
 		return "", err
 	}
 	if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
@@ -1504,9 +1524,9 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assignments SET title=$2, due_at=$3, time_limit_min=$4, attempts_allowed=$5,
-				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, grades_shown=$11, shuffle=$12, allow_uploads=$13, points=$14 WHERE id=$1`,
+				no_late=$6, late_penalty_pct=$7, assign_all=$8, marking=$9, answers_shown=$10, grades_shown=$11, shuffle=$12, allow_uploads=$13, points=$14, upload_only=$15 WHERE id=$1`,
 			id, strings.TrimSpace(form.Title), form.DueAt, form.TimeLimitMin, form.Attempts,
-			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, form.AllowUploads, form.Points); err != nil {
+			form.NoLate, form.LatePenaltyPct, form.AssignAll, form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, form.AllowUploads, form.Points, form.UploadOnly); err != nil {
 			return err
 		}
 		if form.Marking == MarkingManual {
@@ -2203,14 +2223,14 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 			return err
 		}
 		var kind, title, wsName string
-		var draft, noLate, allowUploads bool
+		var draft, noLate, allowUploads, uploadOnly bool
 		var due, closedAt *time.Time
 		var limit, allowed int
 		var hasLimit *int
 		var total float64
-		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, COALESCE(w.name, ''), a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8, a.allow_uploads
+		err := tx.QueryRow(ctx, `SELECT a.kind, a.title, COALESCE(w.name, ''), a.draft, a.no_late, a.due_at, a.closed_at, a.time_limit_min, a.attempts_allowed, a.total_marks::float8, a.allow_uploads, a.upload_only
 			FROM assignments a LEFT JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1 FOR SHARE OF a`, id).
-			Scan(&kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total, &allowUploads)
+			Scan(&kind, &title, &wsName, &draft, &noLate, &due, &closedAt, &hasLimit, &allowed, &total, &allowUploads, &uploadOnly)
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -2259,6 +2279,9 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 			return ErrAssignmentNoAttempts
 		}
 		var paper *string
+		if uploadOnly && !upload {
+			return assignmentInput("this assignment takes uploads only")
+		}
 		if upload {
 			if !allowUploads {
 				return assignmentInput("this assignment takes answers in the app only")
@@ -3102,9 +3125,9 @@ func applyPartMarks(question map[string]any, marks []AssignmentPartMark, actorID
 type AssignmentReport struct {
 	Members   []AssignmentMemberRow      `json:"members" nullable:"false"`
 	Questions []AssignmentQuestionReport `json:"questions" nullable:"false"`
-	// Answers lists, for the Approve AI marks tab, each member's counted answer to
-	// a question with an open part, and any other submission's answer still
-	// waiting: once marked it can become the highest.
+	// Answers lists, for Grading, each member's counted answer to every
+	// question, and any other submission's answer still waiting: once marked it
+	// can become the highest.
 	Answers []AssignmentAnswerRow `json:"answers" nullable:"false"`
 	// PapersToRead counts the submitted papers not read yet (PapersToRead):
 	// under manual marking, Read papers again reads them (Q725).
@@ -3183,7 +3206,7 @@ type AssignmentItemReport struct {
 	Marked  int     `json:"marked"`
 }
 
-// AssignmentAnswerRow is one member's answer to a question with an open part.
+// AssignmentAnswerRow is one member's answer to a question, for Grading.
 type AssignmentAnswerRow struct {
 	QuestionID string `json:"questionId"`
 	UserID     string `json:"userId"`
@@ -3544,12 +3567,10 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 				awardedSum += awarded
 				marksSum += marks
 			}
-			// By their own copy: a republish may have changed the question since.
-			// A paper still to read waits on its closed parts too.
-			if hasOpenPart(graded) || waiting {
-				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
-					Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), AIError: questionAIError(graded), Awarded: awarded, Marks: marks})
-			}
+			// Every answer, so Grading lists every question (Epo 2026-11-19); by
+			// their own copy, as a republish may have changed the question since.
+			rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
+				Waiting: waiting, AIMarked: waiting && questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), AIError: questionAIError(graded), Awarded: awarded, Marks: marks})
 		}
 		for _, attempt := range others {
 			graded := attempt.graded[id]
@@ -3575,17 +3596,6 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 		reports = append(reports, report)
 	}
 	return reports, rows
-}
-
-func hasOpenPart(q map[string]any) bool {
-	parts, _ := q["parts"].([]any)
-	for _, raw := range parts {
-		p, _ := raw.(map[string]any)
-		if a, _ := p["answer"].(map[string]any); questions.ModelMarked(a["type"]) {
-			return true
-		}
-	}
-	return false
 }
 
 func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport {

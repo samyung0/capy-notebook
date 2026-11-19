@@ -1147,19 +1147,23 @@ export function QuestionCard({
   );
   const marksControl = (part: QuestionPart) => (
     <span className="flex items-center gap-2">
-      <span className="t-meta font-semibold text-fg-secondary">
-        {m.question_ui_part_marks()}
-      </span>
-      {/* A long answer's marks are its marking points' total: the number
-          alone, in the input's text (Epo 2026-11-16). */}
+      {/* A long answer's marks are its marking points' total: one line with
+          the label, "Marks 6" (Epo 2026-11-19). */}
       {modelMarked(part.answer.type) ? (
-        <span className="text-fg">{part.marks}</span>
+        <span className="t-meta font-semibold text-fg-secondary">
+          {`${m.question_ui_part_marks()} ${part.marks}`}
+        </span>
       ) : (
-        <MarksInput
-          label={m.question_ui_part_marks()}
-          onChange={(marks) => changePart({ ...part, marks })}
-          value={part.marks}
-        />
+        <>
+          <span className="t-meta font-semibold text-fg-secondary">
+            {m.question_ui_part_marks()}
+          </span>
+          <MarksInput
+            label={m.question_ui_part_marks()}
+            onChange={(marks) => changePart({ ...part, marks })}
+            value={part.marks}
+          />
+        </>
       )}
     </span>
   );

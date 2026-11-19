@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ReactNode, useRef, useState } from 'react';
-import { type Control, Controller } from 'react-hook-form';
+import { type Control, Controller, useController } from 'react-hook-form';
 import { z } from 'zod';
 import {
   CreateAssignmentBody,
@@ -478,6 +478,7 @@ export function assignmentDefaults(
     shuffle: manage?.shuffle ?? false,
     timeLimitMin: existing?.timeLimitMin,
     title: existing?.title ?? '',
+    uploadOnly: existing?.uploadOnly ?? false,
     ...start,
   };
 }
@@ -532,6 +533,7 @@ export function assignmentBody(
     showGrades: isGraded(values) ? values.showGrades : 'automatic',
     timeLimitMin: marked ? values.timeLimitMin : undefined,
     title: values.title.trim(),
+    uploadOnly: marked && values.uploadOnly,
   };
 }
 
@@ -649,6 +651,39 @@ export function MarkingSelect({ control }: Controlled) {
         </Select>
       )}
     />
+  );
+}
+
+/** How a marked assignment is answered (Epo 2026-11-19): online assessment
+ * only, upload only, or either, the member choosing in Before you start. */
+export function SubmissionSelect({ control }: Controlled) {
+  const {
+    field: { onChange: setUploads, value: uploads },
+  } = useController({ control, name: 'allowUploads' });
+  const {
+    field: { onChange: setOnly, value: only },
+  } = useController({ control, name: 'uploadOnly' });
+  return (
+    <Select
+      onValueChange={(value) => {
+        setUploads(value !== 'online');
+        setOnly(value === 'upload');
+      }}
+      value={only ? 'upload' : uploads ? 'both' : 'online'}
+    >
+      <SelectTrigger aria-label={m.assignment_field_submission()}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="online">
+          {m.assignment_submission_online()}
+        </SelectItem>
+        <SelectItem value="upload">
+          {m.assignment_submission_upload()}
+        </SelectItem>
+        <SelectItem value="both">{m.assignment_submission_both()}</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 

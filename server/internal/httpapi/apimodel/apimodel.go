@@ -494,8 +494,11 @@ type AssignmentFormReq struct {
 	ShowGrades string `json:"showGrades" enum:"automatic,manual"`
 	Shuffle    bool   `json:"shuffle"`
 	// AllowUploads lets members hand in a paper instead (Epo 2026-11-08).
-	AllowUploads bool                      `json:"allowUploads,omitempty"`
-	Files        []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
+	AllowUploads bool `json:"allowUploads,omitempty"`
+	// UploadOnly: a marked one takes uploads only, no online assessment
+	// (Epo 2026-11-19); it needs AllowUploads.
+	UploadOnly bool                      `json:"uploadOnly,omitempty"`
+	Files      []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
 	// Points grades a class's Assignment out of this many (Epo 2026-11-14);
 	// absent, it is not graded. A graded quiz and a task have none.
 	Points *AssignmentPoints `json:"points,omitempty"`

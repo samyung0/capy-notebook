@@ -12,26 +12,29 @@ import { type HistorySearch, parseHistorySearch } from './reviewSearch';
 /** Study's tabs, each `study/<tab>`. */
 export type StudyTab = 'summary' | 'topics' | 'practice' | 'bank' | 'history';
 
-/** A report's tab in the URL: a graded quiz's Questions, Responses (`approve`
- * its Approve AI grades view) and Settings; a task's Members, Settings and
- * Preview. */
+/** A report's tab in the URL: a graded quiz's Questions, Responses, Grading
+ * (grading and approving its answers) and Settings; a task's Members, Grading
+ * (one graded on points or taking files) and Settings. */
 export type ReportTab =
   | 'questions'
   | 'responses'
-  | 'approve'
   | 'members'
-  | 'settings'
-  | 'preview';
+  | 'grading'
+  | 'settings';
 
 /** The Assignments page's URL, `assignments`. `assignment` opens
  * one: its report for a class's owner and teaching assistants (unless `own`, the
  * page of one given to them), its page for a member. `attempt` opens a try: a
  * running one, or results, a member's for staff. `tab`, `by`, `question` and
- * `member` are a report's view (todo-study-tracking.md §9, Links); `by`
- * is Responses' By question (By member without it). */
+ * `member` are a report's view (todo-study-tracking.md §9, Links), Grading's
+ * `member` and `work` the member and hand-in file it shows (Epo 2026-11-19;
+ * not `file`, the workspace's own file key);
+ * `by` is Responses' By question (By member without it). */
 export type AssignmentsSearch = {
   assignment?: string;
   attempt?: string;
+  /** Grading's full screen (Epo 2026-11-19): its lists and the file or answer. */
+  fullscreen?: true;
   member?: string;
   own?: true;
   question?: string;
@@ -39,6 +42,7 @@ export type AssignmentsSearch = {
   /** Beside `attempt` and `member`: the profile's Topics tab to return to. */
   show?: 'topics';
   tab?: ReportTab;
+  work?: string;
 };
 
 /** The Practice page's URL, `study/practice`: a topic session to start
@@ -73,10 +77,9 @@ const text = (value: unknown) =>
 const REPORT_TABS = [
   'questions',
   'responses',
-  'approve',
   'members',
+  'grading',
   'settings',
-  'preview',
 ] as const satisfies readonly ReportTab[];
 
 /** Assignments, one assignment (its report's view), or a try at one. Unknown
@@ -88,11 +91,13 @@ export function parseAssignmentsSearch(
     assignment: undefined,
     attempt: undefined,
     by: undefined,
+    fullscreen: undefined,
     member: undefined,
     own: undefined,
     question: undefined,
     show: undefined,
     tab: undefined,
+    work: undefined,
   };
   const assignment = text(search.assignment);
   if (!assignment) return none;
@@ -114,10 +119,19 @@ export function parseAssignmentsSearch(
     assignment,
     by:
       tab === 'responses' && search.by === 'question' ? 'question' : undefined,
-    member: tab === 'approve' ? text(search.member) : undefined,
+    // Grading's and the Questions editor's full screen (Epo 2026-11-19);
+    // no tab is the first, a graded quiz's Questions.
+    fullscreen:
+      (tab === 'grading' || tab === 'questions' || tab === undefined) &&
+      (search.fullscreen === true || search.fullscreen === 'true')
+        ? true
+        : undefined,
+    // The member Grading shows; a graded quiz's also keeps its question.
+    member: tab === 'grading' ? text(search.member) : undefined,
     own: search.own === true || search.own === 'true' ? true : undefined,
-    question: tab === 'approve' ? text(search.question) : undefined,
+    question: tab === 'grading' ? text(search.question) : undefined,
     tab,
+    work: tab === 'grading' ? text(search.work) : undefined,
   };
 }
 

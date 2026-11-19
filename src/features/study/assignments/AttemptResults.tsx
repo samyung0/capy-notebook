@@ -1,5 +1,6 @@
 import {
   type MouseEvent,
+  type ReactNode,
   type RefObject,
   useEffect,
   useRef,
@@ -238,12 +239,14 @@ function MarkedResults({
           <div className="shrink-0 text-right">
             {/* The badge beside the score; under it on phones, to leave the title room. */}
             <div className="flex flex-col items-end gap-1 sm:flex-row-reverse sm:items-center sm:gap-2">
-              <p className="flex items-baseline gap-1.5 whitespace-nowrap">
+              {/* The percent a size up from meta, further from the score
+                  (Epo 2026-11-19). */}
+              <p className="flex items-baseline gap-2.5 whitespace-nowrap">
                 <span className="font-extrabold text-[1.875rem] leading-none tracking-[-0.02rem] sm:text-[2.125rem]">
                   {markText(attempt.mark, decided)}
                 </span>
                 {decided > 0 && (
-                  <span className="t-meta font-semibold text-fg-muted">
+                  <span className="font-semibold text-base text-fg-muted">
                     {percentText(attempt.mark / decided)}
                   </span>
                 )}
@@ -437,7 +440,9 @@ function ResultRow({
     <li className="border-divider border-b">
       <button
         aria-expanded={false}
-        className="grid min-h-9 w-full grid-cols-[10px_30px_minmax(0,1fr)_auto_20px] items-center gap-2 py-1 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset sm:grid-cols-[92px_34px_minmax(0,1fr)_60px_20px] sm:gap-2.5"
+        // The number at least its column, wider for a part's "Q18 (a)(i)",
+        // pushing the text right rather than under it (Epo 2026-11-19).
+        className="grid min-h-9 w-full grid-cols-[10px_minmax(30px,auto)_minmax(0,1fr)_auto_20px] items-center gap-2 py-1 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset sm:grid-cols-[92px_minmax(34px,auto)_minmax(0,1fr)_60px_20px] sm:gap-2.5"
         onClick={toggle}
         ref={toggleButton}
         type="button"
@@ -601,7 +606,9 @@ function extraBlocks(question: AssignmentGradedQuestion): QuestionBlock[] {
   return blocks.filter((_, i) => i !== line);
 }
 
-function ResultBody({
+/** One question's answer with its marks; staff change them and comment
+ * (results, and Grading's questions marked by rule). */
+export function ResultBody({
   assignment,
   attempt,
   commentHere,
@@ -726,7 +733,13 @@ function ResultBody({
             />
           )}
           <div className="flex justify-end">
-            <Button disabled={isPending || !complete} onClick={save} size="sm">
+            {/* The mark fields' height, as Grade's Save (GradeField). */}
+            <Button
+              className="h-8"
+              disabled={isPending || !complete}
+              onClick={save}
+              size="sm"
+            >
               {m.assignment_save_marks()}
             </Button>
           </div>
@@ -754,19 +767,25 @@ function ResultBody({
 }
 
 /** A written answer: the answer, the marking points with their marks, and the
- * worked solution folded away. */
-function OpenPart({
+ * worked solution folded away. Grading shows its answers the same way (Epo
+ * 2026-11-19), with the AI's marks in a column of their own (`aiColumn`) and
+ * a paper's pages in place of a typed answer (`paper`). */
+export function OpenPart({
+  aiColumn = false,
   answer,
   editing,
   items,
   onItem,
+  paper,
   part,
   showKeys,
 }: {
+  aiColumn?: boolean;
   answer: unknown;
   editing: boolean;
   items: (number | null)[];
   onItem: (index: number, value: number | null) => void;
+  paper?: ReactNode;
   part: AssignmentGradedPart;
   showKeys: boolean;
 }) {
@@ -777,7 +796,9 @@ function OpenPart({
     <>
       <div>
         <p className={label}>{m.assignment_your_answer()}</p>
-        {part.answer.type === 'drawing' ? (
+        {paper ? (
+          <div className="mt-1.5">{paper}</div>
+        ) : part.answer.type === 'drawing' ? (
           // Drawn from its board, with no frame (R2).
           <div className="mt-1.5">
             {answer ? (
@@ -836,44 +857,67 @@ function OpenPart({
         // As the report's marking table: a line under each point, running
         // across both columns with no gap (Epo 2026-11-18); the Awarded
         // column pads itself.
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center sm:grid-cols-[minmax(0,1fr)_210px]">
-          <p className={cn(label, 'border-divider border-b pb-1.5')}>
-            {m.assignment_marking_points()}
-          </p>
-          <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
-            {m.assignment_awarded()}
-          </p>
-          {scheme.map((item, i) => {
-            const awarded = items[i] ?? null;
-            return (
-              <div className="contents" key={i}>
-                <div className="flex items-center self-stretch border-divider border-b py-2.5">
-                  <TextView marks text={item.text} />
-                </div>
-                <div className="flex min-h-11 items-center gap-2 self-stretch border-divider border-b py-2 pl-3">
-                  {editing ? (
-                    <MarkField
-                      label={item.text}
-                      marks={item.marks}
-                      onChange={(value) => onItem(i, value)}
-                      value={awarded}
-                    />
-                  ) : (
-                    <span className="whitespace-nowrap font-bold">
-                      {awarded === null
-                        ? `– / ${formatPoints(item.marks)}`
-                        : markText(awarded, item.marks)}
-                    </span>
+        // By its own width, as Grading's pane is narrower than the screen:
+        // under 448px the chips go and the AI's marks take only their width.
+        <div className="@container">
+          <div
+            className={cn(
+              'grid items-center',
+              aiColumn
+                ? '@md:grid-cols-[minmax(0,1fr)_72px_210px] grid-cols-[minmax(0,1fr)_auto_auto]'
+                : '@md:grid-cols-[minmax(0,1fr)_210px] grid-cols-[minmax(0,1fr)_auto]'
+            )}
+          >
+            <p className={cn(label, 'border-divider border-b pb-1.5')}>
+              {m.assignment_marking_points()}
+            </p>
+            {aiColumn && (
+              <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
+                {m.assignment_col_ai()}
+              </p>
+            )}
+            <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
+              {m.assignment_awarded()}
+            </p>
+            {scheme.map((item, i) => {
+              const awarded = items[i] ?? null;
+              return (
+                <div className="contents" key={i}>
+                  <div className="flex items-center self-stretch border-divider border-b py-2.5">
+                    <TextView marks text={item.text} />
+                  </div>
+                  {aiColumn && (
+                    <div className="t-meta flex items-center self-stretch whitespace-nowrap border-divider border-b pl-3 text-fg-muted">
+                      {part.aiAwards
+                        ? markText(part.aiAwards[i] ?? 0, item.marks)
+                        : '–'}
+                    </div>
                   )}
-                  {awarded !== null && (
-                    <span className="max-sm:hidden">
-                      <ItemChip awarded={awarded} marks={item.marks} />
-                    </span>
-                  )}
+                  <div className="flex min-h-11 items-center gap-2 self-stretch border-divider border-b py-2 pl-3">
+                    {editing ? (
+                      <MarkField
+                        label={item.text}
+                        marks={item.marks}
+                        onChange={(value) => onItem(i, value)}
+                        value={awarded}
+                      />
+                    ) : (
+                      <span className="whitespace-nowrap font-bold">
+                        {awarded === null
+                          ? `– / ${formatPoints(item.marks)}`
+                          : markText(awarded, item.marks)}
+                      </span>
+                    )}
+                    {awarded !== null && (
+                      <span className="@max-md:hidden">
+                        <ItemChip awarded={awarded} marks={item.marks} />
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
       {showKeys && hasSample(part) && (

@@ -7,6 +7,7 @@ import {
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Assignment, AssignmentFormReq, Workspace } from '@/api/types';
+import { Accordion } from '@/components/ui/Accordion';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -31,7 +32,6 @@ import { materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { questionsLabel } from '../practice/practiceText';
 import { studyView } from '../practice/studyView';
-import { AdvancedSection } from './AdvancedSection';
 import {
   AnswersSelect,
   AssignToField,
@@ -47,6 +47,7 @@ import {
   LatePenaltySelect,
   MarkingSelect,
   PointsField,
+  SubmissionSelect,
   SwitchRow,
   TimeLimitSelect,
 } from './assignmentFields';
@@ -434,17 +435,18 @@ export function NewAssignmentDialog({
                 <Field label={m.assignment_field_answers()}>
                   <AnswersSelect control={control} />
                 </Field>
+                {/* C1 (Epo 2026-11-08), as a mode (Epo 2026-11-19). */}
+                <div className="sm:col-span-2">
+                  <Field label={m.assignment_field_submission()}>
+                    <SubmissionSelect control={control} />
+                  </Field>
+                </div>
               </div>
-              {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_uploads()}
-                name="allowUploads"
-              />
             </div>
           )}
           {(kind === 'marked' || hasDraft || hasPolicy || gradedAssignment) && (
-            <AdvancedSection
+            <Accordion
+              label={m.assignment_advanced()}
               onToggle={() => setAdvancedOpen(!advancedOpen)}
               open={advancedOpen}
             >
@@ -483,7 +485,7 @@ export function NewAssignmentDialog({
                   name="draft"
                 />
               )}
-            </AdvancedSection>
+            </Accordion>
           )}
           {errors.root?.message && (
             <InputError>{errors.root.message}</InputError>

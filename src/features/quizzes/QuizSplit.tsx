@@ -91,6 +91,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   children,
   current,
   foot,
+  listClassName,
+  numbers,
   onBack,
   onOpen,
   onQuestion,
@@ -112,6 +114,11 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   current: string | undefined;
   /** Under the rows. */
   foot?: ReactNode;
+  /** Around the list: room under its last row where it meets a card's edge. */
+  listClassName?: string;
+  /** In place of the rows: the questions as numbers (an online assessment's
+   * grid, Epo 2026-11-19). */
+  numbers?: ReactNode;
   onBack: () => void;
   onOpen: (id: string) => void;
   onQuestion: boolean;
@@ -124,8 +131,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   /** Phones: always above the question, with no list. */
   phoneStrip?: ReactNode;
   questions: Q[];
-  /** What a row ends with: a question's marks, unless this says otherwise. */
-  rowEnd: (question: Q) => ReactNode;
+  /** What a row ends with (not with `numbers`). */
+  rowEnd?: (question: Q) => ReactNode;
 }) {
   const list = useRef<HTMLElement>(null);
   const pane = useRef<HTMLDivElement>(null);
@@ -133,7 +140,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   // The list keeps the open question in view, and each opens at its top.
   useEffect(() => {
     if (pane.current) pane.current.scrollTop = 0;
-    const row = list.current?.querySelector('[aria-current="true"]');
+    const row = list.current?.querySelector('[aria-current]');
     // Not in every test DOM.
     row?.scrollIntoView?.({ block: 'nearest' });
   }, [current]);
@@ -143,10 +150,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
     if (onQuestionBefore.current === onQuestion) return;
     onQuestionBefore.current = onQuestion;
     if (onQuestion) back.current?.focus();
-    else
-      list.current
-        ?.querySelector<HTMLElement>('[aria-current="true"]')
-        ?.focus();
+    else list.current?.querySelector<HTMLElement>('[aria-current]')?.focus();
   }, [onQuestion]);
   const phoneOnQuestion = onQuestion || !!phoneStrip || !!paneOnPhone;
   return (
@@ -155,7 +159,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
         aria-label={m.question_ui_questions()}
         className={cn(
           'min-h-0 flex-col gap-px overflow-y-auto p-2.5 md:flex md:border-divider md:border-r',
-          phoneOnQuestion ? 'hidden' : 'flex'
+          phoneOnQuestion ? 'hidden' : 'flex',
+          listClassName
         )}
         ref={list}
       >
@@ -170,27 +175,28 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
           {action && <span className="-mr-1.25 ml-auto">{action}</span>}
         </div>
         {above}
-        {questions.map((item, i) => (
-          <button
-            aria-current={item.id === current || undefined}
-            className={cn(
-              'grid min-h-9 w-full cursor-pointer grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13.5px] outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
-              item.id === current && 'bg-page-hover hover:bg-page-hover'
-            )}
-            data-question-row={item.id}
-            key={item.id}
-            onClick={() => onOpen(item.id)}
-            type="button"
-          >
-            <span className="font-bold text-fg-secondary">{i + 1}</span>
-            <span className="truncate">{questionSummary(item)}</span>
-            {/* Each mark, a number or an icon, centred in its own 20px column,
+        {numbers ??
+          questions.map((item, i) => (
+            <button
+              aria-current={item.id === current || undefined}
+              className={cn(
+                'grid min-h-9 w-full cursor-pointer grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13.5px] outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
+                item.id === current && 'bg-page-hover hover:bg-page-hover'
+              )}
+              data-question-row={item.id}
+              key={item.id}
+              onClick={() => onOpen(item.id)}
+              type="button"
+            >
+              <span className="font-bold text-fg-secondary">{i + 1}</span>
+              <span className="truncate">{questionSummary(item)}</span>
+              {/* Each mark, a number or an icon, centred in its own 20px column,
                 so the rows' marks share one centre line (Epo 2026-11-16). */}
-            <span className="grid auto-cols-[20px] grid-flow-col items-center justify-items-center gap-1.5 text-fg-muted text-xs">
-              {rowEnd(item)}
-            </span>
-          </button>
-        ))}
+              <span className="grid auto-cols-[20px] grid-flow-col items-center justify-items-center gap-1.5 text-fg-muted text-xs">
+                {rowEnd?.(item)}
+              </span>
+            </button>
+          ))}
         {below}
         <div className="mt-auto flex flex-col gap-2 px-2 pt-3 pb-1 empty:hidden">
           {foot}

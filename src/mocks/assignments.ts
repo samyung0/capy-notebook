@@ -24,6 +24,10 @@ import type {
 import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 import { SAVED, withElements } from '@/features/blocksuite/boardFixture';
 import {
+  createMaterialDocument,
+  quizNode,
+} from '@/features/materials/document';
+import {
   modelMarked,
   type Question,
   type QuestionPart,
@@ -33,6 +37,7 @@ import { scorePart } from '@/features/quizzes/grade';
 import { learnerView } from './answerKeys';
 import * as db from './db';
 import { mockBoardAssets } from './editorAssets';
+import { paperPdf } from './extraction';
 import { mockWorkspaceMembers } from './workspaceMembers';
 
 /* Assignments on mocked data: the class on the boards (W1, W3, G3, G3m, A3),
@@ -72,6 +77,8 @@ type Row = {
   gradesReleasedAt?: string;
   shuffle: boolean;
   allowUploads: boolean;
+  /** Answered by upload only (Epo 2026-11-19). */
+  uploadOnly: boolean;
   files: { fileId?: string; materialId?: string }[];
   /** A class's Assignment graded out of this many (Epo 2026-11-14). */
   points?: number;
@@ -93,17 +100,29 @@ type Attempt = {
 
 /** A paper file's bytes, as links read them. */
 const paperUrls = new Map<string, string>();
+/** As the server signs read links (`B2_LINK_TTL`, 5 minutes). */
+const LINK_TTL_MS = 5 * 60_000;
 
-/** A handwritten page, drawn: a seeded paper's one image. */
-const SCAN = `data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="620" height="877"><rect width="620" height="877" fill="#f7f5ef"/>' +
-    Array.from(
-      { length: 24 },
-      (_, i) =>
-        `<line x1="30" x2="590" y1="${80 + i * 32}" y2="${80 + i * 32}" stroke="#c7d3e6"/>`
-    ).join('') +
-    '<g font-family="Bradley Hand, cursive" font-size="22" fill="#24306b"><text x="40" y="70">Name: Ben Lee</text><text x="40" y="134">1  B</text><text x="40" y="198">3  Water goes in by osmosis through the</text><text x="70" y="230">partially permeable membrane.</text></g></svg>'
-)}`;
+/** A handwritten page, drawn: a seeded paper's one image, as a blob URL, which
+ * a new tab opens as the real signed link would (a data: URL it refuses). */
+let scanUrl: string | undefined;
+const scan = () => {
+  scanUrl ??= URL.createObjectURL(
+    new Blob(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="620" height="877"><rect width="620" height="877" fill="#f7f5ef"/>' +
+          Array.from(
+            { length: 24 },
+            (_, i) =>
+              `<line x1="30" x2="590" y1="${80 + i * 32}" y2="${80 + i * 32}" stroke="#c7d3e6"/>`
+          ).join('') +
+          '<g font-family="Bradley Hand, cursive" font-size="22" fill="#24306b"><text x="40" y="70">Name: Ben Lee</text><text x="40" y="134">1  B</text><text x="40" y="198">3  Water goes in by osmosis through the</text><text x="70" y="230">partially permeable membrane.</text></g></svg>',
+      ],
+      { type: 'image/svg+xml' }
+    )
+  );
+  return scanUrl;
+};
 
 /** Upload file's files (the source upload with attemptId): a running paper's. */
 export function addPaperFile(
@@ -216,6 +235,7 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
     showGrades: 'automatic' as const,
     shuffle: false,
     title: body.title,
+    uploadOnly: false,
     workspaceId: wsId,
   };
   applyForm(row, body);
@@ -809,8 +829,11 @@ const richQuestions = (): Question[] => [
           { marks: 1, text: 'Large surface area to volume ratio' },
           { marks: 1, text: 'Short diffusion distance to every part' },
           { marks: 1, text: 'Diffusion is fast enough for its needs' },
-          { marks: 1, text: 'Larger organisms have a smaller ratio' },
-          { marks: 1, text: 'Their inner cells are too far from the surface' },
+          // One row of two: a part has at most 5 (the quiz file refuses more).
+          {
+            marks: 2,
+            text: 'Larger organisms have a smaller ratio, their inner cells too far from the surface',
+          },
           {
             marks: 1,
             text: 'A judgement that the claim holds for small cells',
@@ -989,6 +1012,22 @@ function seed() {
     (mt) => mt.workspaceId === WS && mt.kind === 'quiz' && !mt.parentMaterialId
   );
   const files = db.files.filter((f) => f.workspaceId === WS);
+  // The past paper's own quiz file, holding the questions its two assignments
+  // were published with, so their Questions tab and Preview read the same
+  // questions, as publishing leaves them (hidden, as a graded quiz's is).
+  const paperQuiz =
+    quizzes[0] &&
+    db.makeMaterial({
+      ...quizzes[0],
+      content: createMaterialDocument([
+        quizNode({ questions: pastPaper() }, 'qz_paper'),
+      ]),
+      hidden: true,
+      id: 'qz_paper',
+      title: 'Past paper 2025 P1',
+      topicId: null,
+    });
+  if (paperQuiz) db.materials.push(paperQuiz);
   const common = {
     allowUploads: false,
     assignAll: true,
@@ -1002,6 +1041,7 @@ function seed() {
     showAnswers: 'submitted' as const,
     showGrades: 'automatic' as const,
     shuffle: false,
+    uploadOnly: false,
     workspaceId: WS,
   };
   const list: Row[] = [
@@ -1032,7 +1072,7 @@ function seed() {
       postedAt: at(-1, 9),
       questions: pastPaper(),
       quizChanged: true,
-      quizId: quizzes[0]?.id,
+      quizId: paperQuiz?.id,
       timeLimitMin: 60,
       title: 'Past paper 2025 P1',
     },
@@ -1045,7 +1085,7 @@ function seed() {
       kind: 'marked',
       postedAt: at(-1, 10),
       questions: pastPaper(),
-      quizId: quizzes[0]?.id,
+      quizId: paperQuiz?.id,
       timeLimitMin: 60,
       title:
         'Mock exam on paper: Paper 2 structured questions on cells, tissues and organisation',
@@ -1293,6 +1333,11 @@ function seed() {
     ['u_mock_farah', [work('f_lab_farah', 'Osmosis lab.docx', 'docx', 60_000)]],
   ];
   for (const [id, handed] of lab) setHandIn('as_lab', id, handed);
+  // A handed-in PDF reads as one, so its pages show on the Grading tab.
+  for (const [, handed] of lab)
+    for (const file of handed)
+      if (file.kind === 'pdf' && !paperUrls.has(file.id))
+        paperUrls.set(file.id, paperPdf(file.name.replace(/\.pdf$/, ''), 2));
   done.set('as_lab', new Map(lab.map(([id]) => [id, at(0, 10)])));
   grades.set(
     'as_lab',
@@ -1586,6 +1631,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     timeLimitMin: row.timeLimitMin,
     title: row.title,
     topicIds,
+    uploadOnly: row.uploadOnly,
     workspaceId: row.workspaceId,
     ...(staff
       ? {
@@ -1914,8 +1960,22 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
       const marks = question.parts.reduce((n, p) => n + p.marks, 0);
       const number = (a: Attempt) =>
         submissions(row.id, a.userId).indexOf(a) + 1;
-      if (isOpen) {
-        for (const { attempt, q } of graded)
+      // Every answer, so Grading lists every question (Epo 2026-11-19).
+      for (const { attempt, q } of graded)
+        answers.push({
+          ...aiRow(q),
+          attemptId: attempt.id,
+          attemptNumber: number(attempt),
+          awarded: score(q),
+          marks,
+          questionId: question.id,
+          userId: attempt.userId,
+          waiting: q.parts.some((p) => p.pending),
+        });
+      // Another submission's answer still waiting: it can still become the highest.
+      for (const attempt of assigned.flatMap((id) => submissions(row.id, id))) {
+        const q = attempt.graded.find((g) => g.id === question.id);
+        if (q?.parts.some((p) => p.pending) && !countedRows.includes(attempt))
           answers.push({
             ...aiRow(q),
             attemptId: attempt.id,
@@ -1924,25 +1984,8 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
             marks,
             questionId: question.id,
             userId: attempt.userId,
-            waiting: q.parts.some((p) => p.pending),
+            waiting: true,
           });
-        // Another submission's answer still waiting: it can still become the highest.
-        for (const attempt of assigned.flatMap((id) =>
-          submissions(row.id, id)
-        )) {
-          const q = attempt.graded.find((g) => g.id === question.id);
-          if (q?.parts.some((p) => p.pending) && !countedRows.includes(attempt))
-            answers.push({
-              ...aiRow(q),
-              attemptId: attempt.id,
-              attemptNumber: number(attempt),
-              awarded: score(q),
-              marks,
-              questionId: question.id,
-              userId: attempt.userId,
-              waiting: true,
-            });
-        }
       }
       const enough = marked.length > 0;
       return {
@@ -1982,6 +2025,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.showGrades = body.showGrades;
   row.shuffle = body.shuffle;
   row.allowUploads = !!body.allowUploads;
+  row.uploadOnly = row.kind === 'marked' && !!body.uploadOnly;
   row.points = body.points ?? undefined;
   row.files = body.files.map(({ fileId, materialId }) => ({
     fileId,
@@ -2206,6 +2250,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const topics = (url.searchParams.get('topic') ?? '')
         .split(',')
         .filter(Boolean);
+      const kind = url.searchParams.get('kind');
       const sort = url.searchParams.get('sort');
       const ascending = url.searchParams.get('dir') !== 'desc';
       const offset = Number(url.searchParams.get('cursor') ?? 0);
@@ -2221,6 +2266,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           (a) =>
             topics.length === 0 || a.topicIds.some((t) => topics.includes(t))
         )
+        .filter((a) => !kind || a.kind === kind)
         .sort((a, b) => {
           if (a.closed !== b.closed) return a.closed ? 1 : -1;
           // A column's order, as the server's; none last either way.
@@ -2278,6 +2324,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
         showGrades: 'automatic' as const,
         shuffle: false,
         title: body.title,
+        uploadOnly: false,
         workspaceId: '',
       };
       applyForm(row, body);
@@ -2497,6 +2544,11 @@ export const assignmentHandlers = (viewer: Viewer) => {
       ).length;
       if (used >= row.attempts)
         return conflict('assignment_no_attempts', 'No attempts are left.');
+      if (row.uploadOnly && !upload)
+        return HttpResponse.json(
+          { detail: 'this assignment takes uploads only', status: 422 },
+          { status: 422 }
+        );
       const attempt: Attempt = {
         answers: {},
         assignmentId: row.id,
@@ -2669,25 +2721,12 @@ export const assignmentHandlers = (viewer: Viewer) => {
       );
       return new HttpResponse(null, { status: 204 });
     }),
-    http.put(
-      '/api/assignment-attempts/:id/paper/order',
-      async ({ params, request }) => {
-        const found = attemptOf(params.id);
-        if (found?.attempt.paper !== 'upload') return gone();
-        const { fileIds } = (await request.json()) as { fileIds: string[] };
-        const files = found.attempt.paperFiles ?? [];
-        found.attempt.paperFiles = fileIds.flatMap((id) =>
-          files.filter((f) => f.id === id)
-        );
-        return new HttpResponse(null, { status: 204 });
-      }
-    ),
     http.get(
       '/api/assignment-attempts/:id/paper/:fileId/links',
       ({ params }) => {
-        const url = paperUrls.get(String(params.fileId)) ?? SCAN;
+        const url = paperUrls.get(String(params.fileId)) ?? scan();
         return HttpResponse.json({
-          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          expiresAt: new Date(Date.now() + LINK_TTL_MS).toISOString(),
           url,
         });
       }
@@ -2704,8 +2743,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
     }),
     http.get('/api/assignments/:id/hand-in/:fileId/links', ({ params }) =>
       HttpResponse.json({
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-        url: paperUrls.get(String(params.fileId)) ?? SCAN,
+        expiresAt: new Date(Date.now() + LINK_TTL_MS).toISOString(),
+        url: paperUrls.get(String(params.fileId)) ?? scan(),
       })
     ),
     http.delete('/api/papers/:id', ({ params }) => {

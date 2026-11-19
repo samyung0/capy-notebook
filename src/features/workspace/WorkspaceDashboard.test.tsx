@@ -186,6 +186,7 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
       questions: 12,
       title: 'Past paper',
       topicIds: [],
+      uploadOnly: false,
       workspaceId: 'ws',
     } as Assignment,
   ];
@@ -232,6 +233,7 @@ it("lists a personal workspace's To do: the tasks its viewer set themself, under
       questions: 0,
       title: 'Read chapter 4',
       topicIds: [],
+      uploadOnly: false,
       workspaceId: 'ws',
     } as Assignment,
   ];

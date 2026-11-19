@@ -36,6 +36,7 @@ import {
   LatePenaltySelect,
   MarkingSelect,
   PointsField,
+  SubmissionSelect,
   SwitchRow,
   TimeLimitSelect,
 } from './assignmentFields';
@@ -393,11 +394,17 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
       <section className="flex flex-col gap-3.5">
         <SectionTitle title={m.assignment_section_submissions()} />
         <div className={grid}>
-          <SwitchRow
-            control={control}
-            label={m.assignment_switch_uploads()}
-            name="allowUploads"
-          />
+          {marked ? (
+            <Field label={m.assignment_field_submission()}>
+              <SubmissionSelect control={control} />
+            </Field>
+          ) : (
+            <SwitchRow
+              control={control}
+              label={m.assignment_switch_uploads()}
+              name="allowUploads"
+            />
+          )}
           {marked && (
             <SwitchRow
               control={control}

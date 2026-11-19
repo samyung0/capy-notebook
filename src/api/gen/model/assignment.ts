@@ -36,5 +36,6 @@ export interface Assignment {
   timeLimitMin?: number;
   title: string;
   topicIds: string[];
+  uploadOnly: boolean;
   workspaceId: string;
 }

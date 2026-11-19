@@ -53,4 +53,5 @@ export interface AssignmentFormReq {
      * @maxLength 120
      */
   title: string;
+  uploadOnly?: boolean;
 }

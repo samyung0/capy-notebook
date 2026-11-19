@@ -156,7 +156,7 @@ export function FileListItem({
                     })
                 : undefined
             }
-            propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
+            propertiesClassName=""
             propertyLabelClassName="text-fg-secondary"
             readOnly={readOnly}
             renameTitle={m.files_rename()}

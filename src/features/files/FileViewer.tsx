@@ -133,11 +133,15 @@ export function AudioView({
  * (an old Office file that is not converted, opened by someone who may
  * reprocess it; mock A, Epo 2026-11-11) it offers the conversion: the file's
  * Retry processing, with its toast. */
-function UnsupportedPreview({
+/** A file the app cannot show: what it is, and its download. `download`
+ * replaces the workspace file's link (a hand-in's, on the Grading tab). */
+export function UnsupportedPreview({
   convertTo,
+  download: ownDownload,
   file,
 }: {
   convertTo?: OfficeFormat;
+  download?: () => void;
   file: Pick<SourceFile, 'id' | 'name' | 'workspaceId'>;
 }) {
   const ext = fileExt(file.name);
@@ -162,7 +166,7 @@ function UnsupportedPreview({
     <Button
       iconLeft="download"
       iconLeftClassName="me-1"
-      onClick={download}
+      onClick={ownDownload ?? download}
       variant="ghost-hover"
     >
       {m.files_download_original({ name: file.name })}

@@ -105,41 +105,6 @@ func (s *Store) RemovePaperFile(ctx context.Context, userID, attemptID, fileID s
 	})
 }
 
-// OrderPaperFiles puts the running paper's files in the order given, which
-// must name each of them once.
-func (s *Store) OrderPaperFiles(ctx context.Context, userID, attemptID string, fileIDs []string, now time.Time) error {
-	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
-			return err
-		}
-		if err := s.checkPaperUploadTx(ctx, tx, attemptID, userID, 0, 1<<62, now); err != nil && !errors.Is(err, ErrPaperFull) {
-			return err
-		}
-		var held []string
-		rows, err := tx.Query(ctx, `SELECT id FROM files WHERE attempt_id=$1`, attemptID)
-		if err != nil {
-			return err
-		}
-		held, err = pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return err
-		}
-		if len(held) != len(fileIDs) || len(uniqueStrings(fileIDs)) != len(fileIDs) {
-			return assignmentInput("name each of the paper's files once")
-		}
-		for i, id := range fileIDs {
-			tag, err := tx.Exec(ctx, `UPDATE files SET submission_position=$3 WHERE id=$1 AND attempt_id=$2`, id, attemptID, i+1)
-			if err != nil {
-				return err
-			}
-			if tag.RowsAffected() == 0 {
-				return assignmentInput("name each of the paper's files once")
-			}
-		}
-		return nil
-	})
-}
-
 // PaperPart is one part of a paper as the read call lists it.
 type PaperPart struct {
 	// Label is how the paper numbers it: the question's number in the

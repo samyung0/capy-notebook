@@ -126,7 +126,8 @@ export function QuestionRail({
             className={cn('mb-1.5', outline && 'bg-page-hover')}
             label={m.quiz_editor_navigator()}
           >
-            <Icon name="menu" />
+            {/* A pixel up, centred by eye in its square (Epo 2026-11-19). */}
+            <Icon className="-translate-y-px" name="menu" />
           </ToolbarButton>
         </PopoverTrigger>
         <OutlineContent>

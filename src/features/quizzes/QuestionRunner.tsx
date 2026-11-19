@@ -15,9 +15,9 @@ import { AiWarning } from '@/features/questions/AiWarning';
 import { MatchingGrid } from '@/features/questions/MatchingGrid';
 import {
   AnswerView,
-  answerBoxClass,
-  answerBoxesClass,
-  answerLetterClass,
+  ChoiceMarker,
+  CorrectTag,
+  choiceRowsClass,
   OptionKey,
   optionColumns,
   optionLetter,
@@ -413,66 +413,68 @@ function AnswerSection({
   );
 }
 
-/** A checked choice's tag at the box's end. */
-const RESULT_TAG = {
-  right: { icon: 'check', label: m.question_ui_result_right },
-  wrong: { icon: 'x', label: m.question_ui_result_wrong },
-} as const;
-
-/** A choice as a box: chosen while answering; after checking, only the
- * learner's own pick is marked, right (green) or wrong (red), with its tag;
- * the correct answer lists apart under the boxes (Epo 2026-11-18, L1). */
-function ChoiceBox({
-  label,
-  text,
-  selected,
+/** A choice as the editor's row (Epo 2026-11-19, A): its marker, then its
+ * text. A pick fills purple while answering; once checked it reads right
+ * (green) or wrong (red), and a correct choice left unpicked is ringed green,
+ * each with its tag at the row's end. */
+function ChoiceRow({
   correct,
-  review,
   disabled,
+  multiple,
   onClick,
+  review,
+  selected,
+  text,
 }: {
-  label: ReactNode;
-  text: ReactNode;
-  selected: boolean;
   correct: boolean;
-  review: boolean;
   disabled: boolean;
+  multiple: boolean;
   onClick?: () => void;
+  review: boolean;
+  selected: boolean;
+  text: ReactNode;
 }) {
-  const state: RowState | undefined = selected
-    ? review
+  const state: RowState | undefined = review
+    ? selected
       ? correct
         ? 'right'
         : 'wrong'
-      : 'selected'
-    : undefined;
-  const tag = state === 'right' || state === 'wrong' ? RESULT_TAG[state] : null;
+      : correct
+        ? 'missed'
+        : undefined
+    : selected
+      ? 'selected'
+      : undefined;
+  const locked = review || disabled;
   return (
     <button
       aria-pressed={selected}
-      className={cn(
-        answerBoxClass(state),
-        'w-full text-left disabled:cursor-default',
-        !(review || disabled || selected) && 'hover:border-line-strong'
-      )}
-      disabled={review || disabled}
+      className="group flex min-h-11 w-full items-center gap-3 text-left outline-none disabled:cursor-default"
+      disabled={locked}
       onClick={onClick}
       type="button"
     >
-      {label !== null && (
-        <span className={answerLetterClass(state)}>{label}</span>
+      {/* The editor's marker button: a hover circle centred on the marker. */}
+      <span
+        className={cn(
+          'relative -top-px -m-2 grid shrink-0 place-items-center rounded-full p-2 group-focus-visible:ring-2 group-focus-visible:ring-action',
+          !locked && 'group-hover:bg-surface-hover-bg'
+        )}
+      >
+        <ChoiceMarker
+          checked={selected}
+          className="top-0"
+          multiple={multiple}
+          state={state}
+        />
+      </span>
+      <span className="min-w-0 flex-1 px-0.5">{text}</span>
+      {state === 'right' && <CorrectTag />}
+      {state === 'wrong' && (
+        <CorrectTag label={m.question_ui_result_wrong()} wrong />
       )}
-      <span className="min-w-0">{text}</span>
-      {tag && (
-        <span
-          className={cn(
-            'ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap pl-1 text-[12.5px]',
-            state === 'wrong' ? 'text-tint-error-fg' : 'text-tint-success-fg'
-          )}
-        >
-          {tag.icon && <Icon name={tag.icon} size={16} />}
-          {tag.label()}
-        </span>
+      {state === 'missed' && (
+        <CorrectTag label={m.question_ui_correct_answer()} />
       )}
     </button>
   );
@@ -718,16 +720,16 @@ function PartRunner({
             {m.question_ui_multiple_answers()}
           </p>
         )}
-        <div className={answerBoxesClass(twoColumns)}>
+        <div className={choiceRowsClass(twoColumns)}>
           {/* Shown in the learner's order; a pick stores its authored index. */}
-          {options.map(({ index: i, label, text: option }) => {
+          {options.map(({ index: i, text: option }) => {
             const selected = chosen.includes(i);
             return (
-              <ChoiceBox
+              <ChoiceRow
                 correct={correct(i)}
                 disabled={disabled}
                 key={i}
-                label={label}
+                multiple={multiple}
                 onClick={() =>
                   onChange(
                     multiple
@@ -745,14 +747,6 @@ function PartRunner({
           })}
         </div>
         {result(chosen.length > 0)}
-        {missed && (
-          <AnswerSection
-            className="mt-3.5"
-            title={m.question_ui_correct_answer()}
-          >
-            {correctList}
-          </AnswerSection>
-        )}
       </div>
     );
   }
@@ -790,13 +784,13 @@ function PartRunner({
       );
     return (
       <div>
-        <div className={answerBoxesClass()}>
+        <div className={choiceRowsClass()}>
           {[true, false].map((option) => (
-            <ChoiceBox
+            <ChoiceRow
               correct={keyed === option}
               disabled={disabled}
               key={String(option)}
-              label={null}
+              multiple={false}
               onClick={() => onChange(option)}
               review={review}
               selected={value === option}
@@ -805,20 +799,13 @@ function PartRunner({
           ))}
         </div>
         {result(typeof value === 'boolean')}
-        {missed && (
-          <AnswerSection
-            className="mt-3.5"
-            title={m.question_ui_correct_answer()}
-          >
-            {correctList}
-          </AnswerSection>
-        )}
       </div>
     );
   }
   // Gap fields sit inside the part's text (GapText); a review lists the key
   // under it, as a short answer's Correct answer shows (Epo 2026-11-18), with
-  // what the learner wrote beside a missed blank.
+  // Not answered beside a blank left empty. What was written shows in the
+  // text above, so it isn't repeated here (Epo 2026-11-19).
   if (answer.type === 'gaps') {
     if (!review || !('accepted' in answer)) return null;
     const typed = gapValues(answer, value);
@@ -827,10 +814,9 @@ function PartRunner({
       <KeyList
         rows={answer.accepted.map((accepted, i) => ({
           key: i + 1,
-          note: results[i]
-            ? undefined
-            : typed[i]?.trim()
-              ? m.question_ui_you_wrote({ answer: typed[i] })
+          note:
+            results[i] || typed[i]?.trim()
+              ? undefined
               : m.question_ui_not_answered(),
           text: accepted.join(' / '),
         }))}
@@ -840,6 +826,36 @@ function PartRunner({
   }
   if (answer.type === 'short') {
     const right = 'awarded' in part && part.awarded === part.marks;
+    // A member's result: what they wrote, then the correct answer, each in
+    // its own section as a choice's are (Epo 2026-11-19).
+    if (asList) {
+      const typed = typeof value === 'string' ? value.trim() : '';
+      return (
+        <div className="grid gap-4">
+          {result(typed !== '')}
+          <AnswerSection title={m.question_ui_your_answer()}>
+            {typed ? (
+              <PlainList
+                rows={[
+                  {
+                    label: null,
+                    state: right ? 'right' : 'wrong',
+                    text: answer.unit ? `${typed} ${answer.unit}` : typed,
+                  },
+                ]}
+              />
+            ) : (
+              <p className="text-fg-muted">{m.assignment_not_answered()}</p>
+            )}
+          </AnswerSection>
+          {isAuthoredPart(part) && (
+            <AnswerSection title={m.question_ui_correct_answer()}>
+              <AnswerView part={part} />
+            </AnswerSection>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-3">
@@ -1022,8 +1038,8 @@ function PartRunner({
       ];
       onChange(next);
     }
-    // Checked (O4): "Your order" fills each item green in its right place
-    // and red elsewhere; when any is misplaced, "Correct order" lists the
+    // Checked (O4): "Your order" tags each item Correct in its right place
+    // and Wrong elsewhere; when any is misplaced, "Correct order" lists the
     // key plainly, each item saying where the learner put it. A skipped part
     // shows the key's order unmarked.
     const state = (item: string, i: number): RowState | undefined =>
@@ -1066,39 +1082,50 @@ function PartRunner({
     return (
       <div>
         {misplaced && <h4 className={SUBHEAD}>{m.question_ui_your_order()}</h4>}
-        <div className={answerBoxesClass()}>
-          {current.map((item, i) => (
-            <div
-              className={cn(
-                answerBoxClass(state(item, i)),
-                !review && 'py-1 pr-1.5'
-              )}
-              key={keys[i]}
-            >
-              <span className={answerLetterClass(state(item, i))}>{i + 1}</span>
-              <TextView className="min-w-0 flex-1" text={item} />
-              {!review && (
-                <span className="flex shrink-0 items-center">
-                  <IconButton
-                    disabled={disabled || i === 0}
-                    icon="chevronUp"
-                    label={m.question_ui_move_up()}
-                    onClick={() => move(i, -1)}
-                    size="sm"
-                    variant="ghost-hover"
-                  />
-                  <IconButton
-                    disabled={disabled || i === current.length - 1}
-                    icon="chevronDown"
-                    label={m.question_ui_move_down()}
-                    onClick={() => move(i, 1)}
-                    size="sm"
-                    variant="ghost-hover"
-                  />
+        <div>
+          {current.map((item, i) => {
+            const at = state(item, i);
+            return (
+              // The editor's ordering row (Epo 2026-11-19): its number, the
+              // text, then Move up and Move down, or once checked its tag.
+              <div className="flex min-h-11 items-center gap-3" key={keys[i]}>
+                <span
+                  className={cn(
+                    'w-4.5 shrink-0',
+                    at === 'right' && 'text-tint-success-fg',
+                    at === 'wrong' && 'text-tint-error-fg'
+                  )}
+                >
+                  {i + 1}.
                 </span>
-              )}
-            </div>
-          ))}
+                <TextView className="min-w-0 flex-1 px-0.5" text={item} />
+                {at === 'right' && <CorrectTag />}
+                {at === 'wrong' && (
+                  <CorrectTag label={m.question_ui_result_wrong()} wrong />
+                )}
+                {!review && (
+                  <span className="flex shrink-0 items-center">
+                    <IconButton
+                      disabled={disabled || i === 0}
+                      icon="chevronUp"
+                      label={m.question_ui_move_up()}
+                      onClick={() => move(i, -1)}
+                      size="sm"
+                      variant="ghost-hover"
+                    />
+                    <IconButton
+                      disabled={disabled || i === current.length - 1}
+                      icon="chevronDown"
+                      label={m.question_ui_move_down()}
+                      onClick={() => move(i, 1)}
+                      size="sm"
+                      variant="ghost-hover"
+                    />
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
         {result(Boolean(ordered?.length))}
         {misplaced && (

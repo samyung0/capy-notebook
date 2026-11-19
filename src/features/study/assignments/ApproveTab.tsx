@@ -18,26 +18,27 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
-import { AiWarning } from '@/features/questions/AiWarning';
 import { stripMarks } from '@/features/questions/parseMarkedText';
-import { TextView } from '@/features/questions/QuestionView';
+import { marksText, TextView } from '@/features/questions/QuestionView';
 import {
   modelMarked,
   type Question,
   questionMarks,
 } from '@/features/questions/types';
-import { ReviewedDrawing } from '@/features/quizzes/drawing/DrawingAnswer';
-import { type Answer, formatPoints } from '@/features/quizzes/grade';
+import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from '../studyRoutes';
+import { OpenPart, ResultBody } from './AttemptResults';
 import { markText } from './assignmentText';
+import { SubmissionFileLink } from './HandIns';
 import { PaperPages } from './LazyPaper';
-import { MarkField } from './MarkField';
 import { MarkingNow } from './MarkingNow';
 
 type Selected = { attemptId: string; questionId: string };
@@ -58,41 +59,45 @@ const waitingFirst = (rows: AssignmentAnswerRow[]) => [
 
 const COUNT =
   'inline-grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-tint-accent-1 px-1.5 font-bold text-tint-accent-1-fg text-xs';
-const NOT_GRADED =
-  'inline-flex h-5.5 shrink-0 items-center rounded-md bg-tint-warning px-1.75 font-semibold text-tint-warning-fg text-xs';
+const CHIP =
+  'inline-flex h-5.5 shrink-0 items-center rounded-md px-1.75 font-semibold text-xs';
+const NOT_GRADED = cn(CHIP, 'bg-tint-warning text-tint-warning-fg');
 
-/** Approve AI grades (Epo 2026-11-14, mock A + Overview, after Gradescope and
- * Crowdmark): a row for the whole assignment (what waits, Grade with AI for
- * the answers the AI couldn't grade, Overview, Next to approve), then the
- * questions (To approve with counts, Done), the chosen question's members and
- * the grading pane. Overview is the members × questions grid; a cell opens
- * that answer. `member` (from the Members tab's "2 to approve") keeps the
- * counts and Next to one member's answers. Rows the AI couldn't grade (no
- * credits, a file, an error) read Not graded; the pane says why. */
+/** A graded quiz's Grading tab (Epo 2026-11-14, mock A + Overview, after
+ * Gradescope and Crowdmark; its own tab since 2026-11-19): a row for the whole
+ * assignment (what waits, Grade with AI for the answers the AI couldn't grade,
+ * Overview, Next to approve), then every question (To approve with counts,
+ * Done; the AI's marked "AI marked"), the chosen question's members and the
+ * grading pane, each column scrolling on its own from a tablet up. Overview is
+ * the members × questions grid; a cell opens that answer. `member` (from the
+ * Members tab's "2 to approve") keeps the counts and Next to one member's
+ * answers. Rows the AI couldn't grade (no credits, a file, an error) read Not
+ * graded; the pane says why. `fullscreen` covers the page with it, as a
+ * task's Grading. */
 export function ApproveTab({
   assignment,
+  onExitFullscreen,
   report,
   search,
 }: {
   assignment: Assignment;
+  onExitFullscreen: () => void;
   report: AssignmentReport;
   search: AssignmentsSearch;
 }) {
+  const wide = useMediaQuery('(min-width: 768px)');
+  const fullscreen = wide && !!search.fullscreen;
   const names = useMemo(
     () => new Map(report.members.map((row) => [row.userId, row])),
     [report.members]
   );
   // Graded by hand (A4): no AI grades to approve; the AI only reads papers.
   const manual = assignment.manage?.marking === 'manual';
-  // A paper still to read waits on its closed questions too, which Grade with
-  // AI reads (finding 2).
-  const openQuestions = report.questions.filter(
-    (q) =>
-      q.question.parts.some((p) => modelMarked(p.answer.type)) ||
-      report.answers.some(
-        (row) => row.waiting && row.questionId === q.question.id
-      )
-  );
+  // Every question (Epo 2026-11-19); the AI marks those with a written or
+  // drawn part.
+  const listed = report.questions;
+  const aiMarks = (q: Question) =>
+    !manual && q.parts.some((p) => modelMarked(p.answer.type));
   const order = new Map(report.questions.map((q, i) => [q.question.id, i]));
   const numberOf = (id: string) => (order.get(id) ?? 0) + 1;
   const { isPending: marking, mutate: markWithAI } = useMarkAssignmentWithAI(
@@ -111,7 +116,7 @@ export function ApproveTab({
       (a, b) => (order.get(a.questionId) ?? 0) - (order.get(b.questionId) ?? 0)
     );
   const [question, setQuestion] = useState<string | undefined>(
-    search.question ?? waiting[0]?.questionId ?? openQuestions[0]?.question.id
+    search.question ?? waiting[0]?.questionId ?? listed[0]?.question.id
   );
   const rows = waitingFirst(
     report.answers.filter((row) => row.questionId === question)
@@ -131,9 +136,9 @@ export function ApproveTab({
       setSelected(selection(rows[0]));
   }, [rows, selected]);
 
-  if (openQuestions.length === 0)
+  if (listed.length === 0)
     return (
-      <p className="t-meta mt-6 text-fg-muted">{m.assignment_no_open()}</p>
+      <p className="t-meta mt-6 text-fg-muted">{m.common_nothing_yet()}</p>
     );
 
   const open = (row: AssignmentAnswerRow) => {
@@ -171,8 +176,8 @@ export function ApproveTab({
     });
   const waitingIn = (id: string) =>
     waiting.filter((row) => row.questionId === id).length;
-  const toDo = openQuestions.filter((q) => waitingIn(q.question.id) > 0);
-  const done = openQuestions.filter((q) => waitingIn(q.question.id) === 0);
+  const toDo = listed.filter((q) => waitingIn(q.question.id) > 0);
+  const done = listed.filter((q) => waitingIn(q.question.id) === 0);
   // Approve all clears the chosen question's AI grades.
   const approvable = rows.some((row) => row.waiting && row.aiMarked);
   const questionOf = (id: string) =>
@@ -191,7 +196,7 @@ export function ApproveTab({
         other.userId === row.userId &&
         other.questionId === row.questionId
     );
-  const questionRow = (q: (typeof openQuestions)[number]) => {
+  const questionRow = (q: (typeof listed)[number]) => {
     const count = waitingIn(q.question.id);
     const on = q.question.id === question;
     return (
@@ -211,7 +216,12 @@ export function ApproveTab({
         >
           <span className="flex min-w-0 flex-col">
             <span className="t-meta text-fg-secondary">
-              {`Q${numberOf(q.question.id)} · ${m.question_ui_marks({ count: questionMarks(q.question) })}`}
+              {`Q${numberOf(q.question.id)} · ${marksText(questionMarks(q.question))}`}
+              {aiMarks(q.question) && (
+                <span className="ml-1.5 font-semibold text-tint-accent-1-fg">
+                  {m.assignment_ai_marked()}
+                </span>
+              )}
             </span>
             <TextView
               className={cn(
@@ -239,7 +249,7 @@ export function ApproveTab({
     window.scrollTo?.(0, 0);
   };
   const position = rows.findIndex((row) => same(row, selected));
-  const chip = (q: (typeof openQuestions)[number]) => {
+  const chip = (q: (typeof listed)[number]) => {
     const count = waitingIn(q.question.id);
     const on = q.question.id === question;
     return (
@@ -268,7 +278,10 @@ export function ApproveTab({
   };
   return (
     <div
-      className="flex min-h-0 flex-col"
+      className={cn(
+        'flex min-h-0 flex-col md:flex-1',
+        fullscreen && 'page-px fixed inset-0 z-40 bg-surface'
+      )}
       // Past the question list on a phone the page's own back link leads out,
       // so the workspace header and the report's head step aside (CSS).
       data-approve-drill={screen === 'questions' ? undefined : screen}
@@ -355,15 +368,25 @@ export function ApproveTab({
           >
             {m.assignment_next_to_approve()}
           </Button>
+          {fullscreen && (
+            <ToolbarButton
+              label={m.material_fullscreen_exit()}
+              onClick={onExitFullscreen}
+            >
+              <Icon name="minimize" />
+            </ToolbarButton>
+          )}
         </div>
       </div>
       <div className="flex gap-2 overflow-x-auto border-divider border-b py-3 [scrollbar-width:none] max-md:hidden lg:hidden">
         {[...toDo, ...done].map(chip)}
       </div>
-      <div className="flex min-h-0 flex-col md:grid md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[248px_250px_minmax(0,1fr)]">
+      {/* From a tablet up each column scrolls on its own, the lists with no
+          scrollbar; their rows reach 10px past each side, hence the room. */}
+      <div className="flex min-h-0 flex-col md:grid md:flex-1 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[248px_250px_minmax(0,1fr)]">
         <div
           className={cn(
-            'border-divider pt-1 md:max-lg:hidden lg:border-r lg:pr-5 lg:pb-6',
+            'border-divider pt-1 md:max-lg:hidden lg:-ml-3 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden lg:border-r lg:pr-5 lg:pb-6 lg:pl-3 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
             screen !== 'questions' && 'max-md:hidden'
           )}
         >
@@ -386,7 +409,7 @@ export function ApproveTab({
         </div>
         <div
           className={cn(
-            'border-divider md:border-r md:pt-3 md:pr-5 md:pb-6 lg:px-5',
+            'border-divider md:-ml-3 md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:border-r md:pt-3 md:pr-5 md:pb-6 md:pl-3 lg:ml-0 lg:px-5 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden',
             screen !== 'members' && 'max-md:hidden'
           )}
         >
@@ -402,7 +425,7 @@ export function ApproveTab({
             {question && (
               <div>
                 <p className="t-meta text-fg-secondary">
-                  {`Q${numberOf(question)} · ${m.question_ui_marks({ count: questionMarks(questionOf(question) as Question) })}`}
+                  {`Q${numberOf(question)} · ${marksText(questionMarks(questionOf(question) as Question))}`}
                 </p>
                 <TextView
                   className="font-semibold"
@@ -467,17 +490,8 @@ export function ApproveTab({
                         ? `${person?.name} · ${m.assignment_attempt_number({ number: row.attemptNumber })}`
                         : person?.name}
                     </span>
-                    {row.aiWarning && (
-                      <Icon
-                        className={cn(
-                          'size-4.5 shrink-0',
-                          row.aiWarning === 'error'
-                            ? 'text-tint-error-fg'
-                            : 'text-tint-warning-fg'
-                        )}
-                        name="alert"
-                      />
-                    )}
+                    {/* No warning icon: the AI's warning is about the marks it
+                        took off, which the pane shows (Epo 2026-11-19). */}
                     <AnswerState row={row} />
                   </button>
                 </li>
@@ -487,7 +501,8 @@ export function ApproveTab({
         </div>
         <div
           className={cn(
-            'min-w-0 md:py-4 md:pl-6 lg:pl-8',
+            // Its last 8px are room for the mark fields' focus rings.
+            'min-w-0 md:-mr-2 md:min-h-0 md:overflow-y-auto md:py-4 md:pr-2 md:pl-6 lg:pl-8',
             screen !== 'answer' && 'max-md:hidden'
           )}
         >
@@ -547,7 +562,7 @@ export function ApproveTab({
               goTo('answer');
             }}
             questionOf={questionOf}
-            questions={openQuestions.map((q) => q.question.id)}
+            questions={listed.map((q) => q.question.id)}
             rows={report.answers}
           />
         </SimpleDialog>
@@ -556,14 +571,19 @@ export function ApproveTab({
   );
 }
 
-/** An answer's state on its row: grading now, the AI's grade to approve, Not
- * graded (whatever stopped the AI) or Grade by hand, else its grade. */
+/** An answer's state on its row: grading now, the AI's grade to approve in
+ * Overview's purple (the question already says AI marked; Epo 2026-11-19),
+ * Not graded (whatever stopped the AI) or Grade by hand, else its grade,
+ * plain once approved. */
 function AnswerState({ row }: { row: AssignmentAnswerRow }) {
   if (row.marking) return <MarkingNow />;
   if (row.waiting && row.aiMarked)
     return (
-      <span className="shrink-0 font-semibold text-fg-secondary">
-        {m.assignment_ai_mark({ mark: markText(row.aiAwarded, row.marks) })}
+      <span
+        className={cn(CHIP, 'bg-tint-accent-1 text-tint-accent-1-fg')}
+        title={m.assignment_section_to_approve()}
+      >
+        {markText(row.aiAwarded, row.marks)}
       </span>
     );
   if (row.waiting)
@@ -602,6 +622,13 @@ function OverviewGrid({
   rows: AssignmentAnswerRow[];
 }) {
   const people = [...new Set(rows.map((row) => row.userId))];
+  // A waiting answer before a counted one, as the lists show: one pass, not a
+  // filter per cell.
+  const cells = new Map<string, AssignmentAnswerRow>();
+  for (const row of waitingFirst(rows)) {
+    const key = `${row.userId}/${row.questionId}`;
+    if (!cells.has(key)) cells.set(key, row);
+  }
   const legend = [
     ['bg-tint-accent-1', m.assignment_section_to_approve()],
     ['bg-tint-warning', m.assignment_not_graded_badge()],
@@ -652,12 +679,7 @@ function OverviewGrid({
                     </span>
                   </td>
                   {questions.map((id) => {
-                    // A waiting answer before a counted one, as the lists show.
-                    const row = waitingFirst(
-                      rows.filter(
-                        (r) => r.userId === userId && r.questionId === id
-                      )
-                    )[0];
+                    const row = cells.get(`${userId}/${id}`);
                     return (
                       <td className="p-0.5" key={id}>
                         {row ? (
@@ -729,6 +751,43 @@ function MarkPane({
     | undefined;
   if (isPending || !attempt || !question)
     return <SkeletonList count={5} rowHeight={40} />;
+  // Marked by rule: the member's answer as their results show it, its mark
+  // staff's to change, a read paper's pages above it (a paper still to read
+  // waits on the form below).
+  if (!row.waiting && !question.parts.some((p) => modelMarked(p.answer.type)))
+    return (
+      <div className="flex flex-col">
+        <AnswerHead
+          assignment={assignment}
+          attemptNumber={row.attemptNumber}
+          avatar={avatar}
+          marks={question.parts.reduce((sum, p) => sum + p.marks, 0)}
+          name={name}
+          question={question}
+        />
+        {attempt.paper && (
+          <div className="mt-3">
+            <PaperAnswer
+              attemptId={attempt.id}
+              files={attempt.paperFiles}
+              name={name.split(' ')[0] ?? name}
+              pages={[
+                ...new Set(question.parts.flatMap((p) => p.pages ?? [])),
+              ].sort((a, b) => a - b)}
+            />
+          </div>
+        )}
+        <div className="mt-4">
+          <ResultBody
+            assignment={assignment}
+            attempt={attempt}
+            commentHere
+            question={question}
+            staff
+          />
+        </div>
+      </div>
+    );
   return (
     <MarkForm
       answers={attempt.answers}
@@ -842,108 +901,47 @@ function MarkForm({
     );
   return (
     <div className="flex flex-col">
-      <h2 className="font-semibold leading-snug">
-        <TextView marks text={questionLine(question as Question)} />{' '}
-        <span className="font-semibold text-fg-muted">
-          {`(${marks === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count: marks })})`}
-        </span>
-      </h2>
-      <div className="mt-4 flex items-center gap-2.5">
-        <Avatar
-          aria-hidden
-          className="size-7 shrink-0 text-[11px]"
-          name={name}
-          src={avatar || undefined}
-        />
-        <span className="font-semibold">{name}</span>
-        {assignment.attempts > 1 && (
-          <span className="t-meta text-fg-muted">
-            {m.assignment_attempt_number({ number: attemptNumber })}
-          </span>
-        )}
-      </div>
-      {parts.map((part) => {
-        const text = answers[part.id];
-        return (
-          <div className="mt-3" key={part.id}>
-            {paperFiles ? (
-              <PaperAnswer
-                attemptId={attemptId}
-                files={paperFiles}
-                name={first}
-                pages={part.pages ?? []}
-              />
-            ) : part.answer.type === 'drawing' && text ? (
-              // Drawn from its board, Open drawing for the whole board (R3).
-              <ReviewedDrawing
-                blocks={part.blocks}
-                marks={m.question_ui_marks({ count: part.marks })}
-                title={m.drawing_answer_question()}
-                value={text as Answer}
-              />
-            ) : (
-              <div className="border-line-strong border-l-3 py-0.5 pl-4">
-                {typeof text === 'string' && text ? (
-                  <TextView marks text={text} />
-                ) : (
-                  <span className="text-fg-muted">
-                    {m.assignment_not_answered()}
-                  </span>
-                )}
-              </div>
-            )}
-            {part.aiComment && (
-              <AiWarning
-                className="mt-3"
-                flag={part.aiFlag}
-                message={part.aiComment}
-              />
-            )}
-            <div className="mt-5 grid grid-cols-[minmax(0,1fr)_100px] items-center sm:grid-cols-[minmax(0,1fr)_92px_100px]">
-              <p className="pb-2 font-semibold">
-                {m.assignment_marking_points_title()}
-              </p>
-              <p className="t-label pb-2 text-fg-muted uppercase max-sm:hidden">
-                {m.assignment_col_ai()}
-              </p>
-              <p className="t-label pb-2 text-fg-muted uppercase">
-                {m.assignment_col_grade()}
-              </p>
-              {(part.markscheme ?? []).map((item, i) => (
-                <div className="contents" key={i}>
-                  <div className="min-h-11 border-divider border-t py-2.5 pr-3">
-                    <TextView text={item.text} />{' '}
-                    <span className="text-fg-muted">{`(${item.marks})`}</span>
-                  </div>
-                  <div className="flex min-h-11 items-center border-divider border-t max-sm:hidden">
-                    <span className="t-meta text-fg-muted">
-                      {part.aiAwards
-                        ? markText(part.aiAwards[i] ?? 0, item.marks)
-                        : '–'}
-                    </span>
-                  </div>
-                  <div className="flex min-h-11 items-center border-divider border-t">
-                    <MarkField
-                      label={item.text}
-                      marks={item.marks}
-                      onChange={(value) =>
-                        setItems((all) => ({
-                          ...all,
-                          [part.id]: (all[part.id] ?? []).map((v, j) =>
-                            j === i ? value : v
-                          ),
-                        }))
-                      }
-                      value={items[part.id]?.[i] ?? null}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-      <p className="mt-4 border-divider border-t pt-3 text-fg-secondary">
+      <AnswerHead
+        assignment={assignment}
+        attemptNumber={attemptNumber}
+        avatar={avatar}
+        marks={marks}
+        name={name}
+        question={question}
+      />
+      {/* Each part as the member's results show it (Epo 2026-11-19), the
+          AI's marks beside the grade. */}
+      {parts.map((part) => (
+        <div className="mt-4 flex flex-col gap-5" key={part.id}>
+          <OpenPart
+            aiColumn
+            answer={answers[part.id]}
+            editing
+            items={items[part.id] ?? []}
+            onItem={(i, value) =>
+              setItems((all) => ({
+                ...all,
+                [part.id]: (all[part.id] ?? []).map((v, j) =>
+                  j === i ? value : v
+                ),
+              }))
+            }
+            paper={
+              paperFiles && (
+                <PaperAnswer
+                  attemptId={attemptId}
+                  files={paperFiles}
+                  name={first}
+                  pages={part.pages ?? []}
+                />
+              )
+            }
+            part={part}
+            showKeys
+          />
+        </div>
+      ))}
+      <p className="mt-5 text-fg-secondary">
         {parts.every((p) => p.aiAwards)
           ? m.assignment_ai_mark({
               mark: markText(
@@ -1007,8 +1005,52 @@ function MarkForm({
   );
 }
 
-/** A paper's answer (T1): the pages it was read on, the whole paper a click
- * away; once the member deleted the paper, that it is gone (F2). */
+/** The question with its marks, then whose answer it is. */
+function AnswerHead({
+  assignment,
+  attemptNumber,
+  avatar,
+  marks,
+  name,
+  question,
+}: {
+  assignment: Assignment;
+  attemptNumber: number;
+  avatar?: string;
+  marks: number;
+  name: string;
+  question: AssignmentGradedQuestion;
+}) {
+  return (
+    <>
+      <h2 className="font-semibold leading-snug">
+        <TextView marks text={questionLine(question as Question)} />{' '}
+        <span className="font-semibold text-fg-muted">
+          {`(${marksText(marks)})`}
+        </span>
+      </h2>
+      <div className="mt-4 flex items-center gap-2.5">
+        <Avatar
+          aria-hidden
+          className="size-7 shrink-0 text-[11px]"
+          name={name}
+          src={avatar || undefined}
+        />
+        <span className="font-semibold">{name}</span>
+        {assignment.attempts > 1 && (
+          <span className="t-meta text-fg-muted">
+            {m.assignment_attempt_number({ number: attemptNumber })}
+          </span>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** A paper's answer (T1): its files by name, each opening in a new tab
+ * (Epo 2026-11-19), over the pages it was read on, or the whole paper where
+ * it was found on none; once the member deleted the paper, that it is gone
+ * (F2). */
 function PaperAnswer({
   attemptId,
   files,
@@ -1020,7 +1062,6 @@ function PaperAnswer({
   name: string;
   pages: number[];
 }) {
-  const [whole, setWhole] = useState(false);
   if (files.length === 0)
     return (
       <p className="flex items-center gap-3 rounded-lg border border-line border-dashed p-4 text-fg-secondary">
@@ -1030,30 +1071,16 @@ function PaperAnswer({
     );
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="t-meta text-fg-secondary">
-          {pages.length === 0
-            ? m.assignment_paper_no_pages()
-            : pages.length === 1
-              ? m.assignment_paper_page({ page: pages[0]! })
-              : m.assignment_paper_pages({ pages: pages.join(', ') })}
-        </span>
-        <Button
-          className="ml-auto"
-          onClick={() => setWhole(!whole)}
-          size="sm"
-          variant="outline"
-        >
-          {whole
-            ? m.assignment_paper_found_pages()
-            : m.assignment_paper_whole()}
-        </Button>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {files.map((file) => (
+          <SubmissionFileLink file={file} key={file.id} of={{ attemptId }} />
+        ))}
       </div>
       <PaperPages
         className="grid-cols-1 sm:grid-cols-2"
         files={files}
         of={{ attemptId }}
-        only={whole ? undefined : pages}
+        only={pages.length ? pages : undefined}
         width={480}
       />
     </div>
