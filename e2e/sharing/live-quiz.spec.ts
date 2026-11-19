@@ -50,6 +50,12 @@ test('editors edit a quiz together and a learner follows it live', async ({
   });
   expect(created.status()).toBe(201);
   const quizId = ((await created.json()) as { id: string }).id;
+  // A quiz an editor makes starts hidden from members (Epo 2026-11-16); the
+  // owner shows it before the learner opens it.
+  const shown = await ownerApi.put(`/api/materials/${quizId}/hidden`, {
+    data: { hidden: false },
+  });
+  expect(shown.status()).toBe(200);
 
   await Promise.all([
     ownerPage.goto(`/materials/${quizId}`),
