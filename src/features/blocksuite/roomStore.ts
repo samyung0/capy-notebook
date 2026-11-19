@@ -1,4 +1,5 @@
 import { NoopLogger } from '@blocksuite/affine/global/utils';
+import type { RichText } from '@blocksuite/affine/rich-text';
 import {
   AwarenessStore,
   type Doc,
@@ -12,6 +13,11 @@ import { TestMeta } from '@blocksuite/affine/store/test';
 import { BlobEngine, type BlobSource } from '@blocksuite/affine/sync';
 import type { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import {
+  onRenamed,
+  renamePosition,
+  renameUndo,
+} from '@/features/collaboration/renameClient';
 import { limitUndo } from '@/features/collaboration/undo';
 
 /* Our Workspace/Doc over one room's Y.Doc. BlockSuite's own (TestWorkspace)
@@ -195,7 +201,8 @@ export function openRoomStore({
 
 /** Keeps `manager` tracking `doc`'s current client id, which every
  * BlockSuite write uses as its origin (`store.transact`, the inline
- * editor), and applies `limitUndo`. */
+ * editor), and applies `limitUndo`. Its stack follows a rename of the
+ * document's early edits (Q38), so Undo still takes them back. */
 export function followClientId(manager: Y.UndoManager, doc: Y.Doc) {
   limitUndo(manager);
   let tracked = doc.clientID;
@@ -209,5 +216,36 @@ export function followClientId(manager: Y.UndoManager, doc: Y.Doc) {
     manager.trackedOrigins.add(tracked);
   };
   doc.on('beforeTransaction', follow);
-  return () => doc.off('beforeTransaction', follow);
+  const stopRenames = onRenamed(doc, (renamed, to) =>
+    renameUndo(manager, renamed, to)
+  );
+  return () => {
+    doc.off('beforeTransaction', follow);
+    stopRenames();
+  };
+}
+
+/** The text editors open in `root` (a note's paragraphs, a text's, shape's
+ * or connector's label, a frame's title) follow a rename of `doc`'s early
+ * edits (Q38, review m2): a label editor's own Undo, which tracks the id the
+ * document had as it opened, and every editor's kept caret, which names the
+ * items around it (BlockSuite's `rich-text`, its inline editor's
+ * `lastStartRelativePosition` and `lastEndRelativePosition`). */
+export function followTextEditors(root: ParentNode, doc: Y.Doc) {
+  return onRenamed(doc, (renamed, to) => {
+    const editors = [...root.querySelectorAll<RichText>('rich-text')];
+    // A note's paragraphs share the store's manager, which `followClientId`
+    // renamed already: once more changes nothing.
+    for (const manager of new Set(editors.map((editor) => editor.undoManager)))
+      if (manager) {
+        renameUndo(manager, renamed, to);
+        manager.trackedOrigins.add(to);
+      }
+    for (const { inlineEditor } of editors)
+      for (const position of [
+        inlineEditor?.lastStartRelativePosition,
+        inlineEditor?.lastEndRelativePosition,
+      ])
+        if (position) renamePosition(position, renamed, to);
+  });
 }

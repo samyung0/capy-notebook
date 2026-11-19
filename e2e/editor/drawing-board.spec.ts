@@ -2018,11 +2018,18 @@ test("leaving the canvas with a plane's editor open keeps what the editor writes
       return root.gfx.layer.canvasElements[0]?.ppu ?? null;
     });
   const before = await scale();
+  // MathLive loads as the plane's list first opens, here slowly: its first
+  // row, which takes focus as it comes in, leaves the More menu opened before
+  // it open.
+  await page.route(/\/deps\/mathlive\.js/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.continue();
+  });
   await page.mouse.dblclick(...(await onCard(page))(0.5, 0.5));
   await expect(planeEditor(page)).toBeVisible();
-  await (await planeMenu(page))
-    .getByRole('button', { name: 'Zoom in' })
-    .click();
+  const menu = await planeMenu(page);
+  await expect(page.locator('math-field')).toHaveCount(1);
+  await menu.getByRole('button', { name: 'Zoom in' }).click();
   await page.keyboard.press('Escape');
   // The card takes the editor's view only as the editor closes.
   expect(await scale()).toBe(before);

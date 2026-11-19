@@ -129,8 +129,8 @@ export function copyOf(doc: Y.Doc) {
  * shows that the merged board no longer does (another person deleted them),
  * or the whole early board when anything else is hidden, so nothing goes
  * unsaid (review b2 re-check N3).
- * `early`: the board's document before the re-apply; `merged`: the joined
- * document after it; `held`: the joined document's state vector before it.
+ * `early`: the board's document before the room's state came in; `merged`:
+ * the document after it; `held`: what of the room's state `early` held.
  */
 export function hiddenEdits(
   early: Y.Doc,

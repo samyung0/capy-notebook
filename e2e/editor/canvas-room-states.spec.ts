@@ -145,6 +145,24 @@ const kept = (page: Page) =>
 const viewOf = (page: Page) =>
   page.evaluate(() => (window as Shown).__board?.view() ?? null);
 
+/** Marks the board's editor host, to tell whether its DOM is still the one
+ * (nothing remounted). */
+const keepHost = (page: Page) =>
+  page.evaluate(() => {
+    const host = document.querySelector('.capy-board editor-host');
+    if (!host) throw new Error('no board');
+    Object.assign(host, { kept: true });
+  });
+const keptHost = (page: Page) =>
+  page.evaluate(
+    () =>
+      (
+        document.querySelector('.capy-board editor-host') as {
+          kept?: boolean;
+        } | null
+      )?.kept === true
+  );
+
 /** Calls one of the mock room's e2e switches for a canvas. */
 const room = (
   page: Page,
@@ -984,9 +1002,11 @@ async function selectAll(page: Page) {
 
 // Epo 2026-11-19 (Q27 b1; Q31 "1 then i guess", as a note's): a board painted
 // from its copy offline takes edits under its own client id, which no room
-// assigned; the join re-applies them under the room's (the case b1 broke: the
-// first visit's clean Leave, here the Dashboard, expired its id, Q236).
-test("a stroke drawn offline on this device's copy after a clean leave reaches the room re-applied, and the board takes edits after, where it was looked at and selected", async ({
+// assigned (the case b1 broke: the first visit's clean Leave, here the
+// Dashboard, expired its id, Q236); the join renames them in place to the
+// room's (Q38, "make sure this step is invisible, nothing ever reloads,
+// never"): the same board and DOM, view, selection and Undo.
+test("a stroke drawn offline on this device's copy after a clean leave reaches the room renamed in place, on the same board where it was looked at and selected, and Undo after the join takes it back", async ({
   page,
   context,
 }) => {
@@ -1000,27 +1020,92 @@ test("a stroke drawn offline on this device's copy after a clean leave reaches t
   expect(selected).toHaveLength(2);
   const looked = await viewOf(page);
   await keep(page);
+  await keepHost(page);
 
   await context.setOffline(false);
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
   await expect(strip(page)).toHaveCount(0);
-  // The board moved onto the room's document, as it was.
-  await page.waitForFunction(
-    () => (window as Shown).__board && !(window as Shown).__board?.kept
-  );
+  // Nothing remounted: the same board, its DOM, view and selection.
+  expect(await kept(page)).toBe(true);
+  expect(await keptHost(page)).toBe(true);
   expect(await viewOf(page)).toEqual(looked);
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        [...((window as Shown).__board?.presence.selected() ?? [])].sort()
-      )
+  expect(
+    await page.evaluate(() =>
+      [...((window as Shown).__board?.presence.selected() ?? [])].sort()
     )
-    .toEqual(selected);
-  await expect.poll(() => drawn(page)).toHaveLength(2);
+  ).toEqual(selected);
   await joinPeer(page, SCENARIO);
   await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+  // Undo takes the offline stroke back, in the room too.
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(1);
   await drawStroke(page, 0.8);
-  await expect.poll(async () => (await peerHas(page)).length).toBe(3);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+  expect(await keptHost(page)).toBe(true);
+});
+
+// Review m2: a shape's text editor keeps an Undo of its own, which follows
+// the rename while it stays open: what was typed before the join and after.
+test("a shape's text typed offline on the copy keeps its Undo through the join, its editor open", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await drewAndLeft(page);
+  await fromCopyOffline(page, context);
+  type Root = {
+    getBoundingClientRect(): DOMRect;
+    gfx: {
+      getElementById(id: string): { text?: { toString(): string } } | null;
+      surface: { addElement(props: object): string };
+      viewport: {
+        center: { x: number; y: number };
+        toViewCoord(x: number, y: number): [number, number];
+      };
+    };
+  };
+  const { at, id } = await page.evaluate(() => {
+    const root = document.querySelector(
+      'affine-edgeless-root'
+    ) as unknown as Root;
+    const { x, y } = root.gfx.viewport.center;
+    const id = root.gfx.surface.addElement({
+      shapeType: 'rect',
+      type: 'shape',
+      xywh: `[${x - 120},${y - 60},240,120]`,
+    });
+    const rect = root.getBoundingClientRect();
+    const [left, top] = root.gfx.viewport.toViewCoord(x, y);
+    return { at: [rect.x + left, rect.y + top] as const, id };
+  });
+  const text = () =>
+    page.evaluate(
+      (shape) =>
+        (document.querySelector('affine-edgeless-root') as unknown as Root).gfx
+          .getElementById(shape)
+          ?.text?.toString() ?? '',
+      id
+    );
+  await page.mouse.dblclick(...at);
+  const editor = page.locator('edgeless-shape-text-editor');
+  await expect(editor).toHaveCount(1);
+  await page.keyboard.type('Early');
+  await expect.poll(text).toBe('Early');
+  // Yjs makes typing less than 500 ms apart one Undo step: the join may take
+  // less.
+  await page.waitForTimeout(600);
+
+  await context.setOffline(false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  await expect(strip(page)).toHaveCount(0);
+  await expect(editor).toHaveCount(1);
+  await page.keyboard.type(' cell');
+  await expect.poll(text).toBe('Early cell');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(text).toBe('Early');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(text).toBe('');
 });
 
 test('a stroke drawn offline on the copy after an unclean leave, whose id the room kept, lands too', async ({
@@ -1040,7 +1125,7 @@ test('a stroke drawn offline on the copy after an unclean leave, whose id the ro
 
 // The token answered and the JOIN waits (a slowed open): the board writes
 // under the id the token offers, which the JOIN binds as any session's
-// (Q236), so nothing is re-applied and the same board joins, from the copy.
+// (Q236), so nothing is renamed and the same board joins, from the copy.
 test('a stroke drawn on the copy while the join waits goes as it is: the same board joins, the copy kept', async ({
   page,
 }) => {
@@ -1079,7 +1164,7 @@ test('a canvas opened online from the copy with no early edit joins on it: the s
 });
 
 // Epo 2026-11-19 (Q33): an offline move of a shape another person deleted
-// meanwhile would not show once re-applied, so it alone stays on this device
+// meanwhile would not show once joined, so it alone stays on this device
 // for copying ("Reject nothing", 2026-11-18), while the move beside it lands
 // and the board takes edits once Reload (which asks first) leaves the copy.
 test('a move made offline of a shape another person deleted meanwhile stays for copying, and the move beside it lands', async ({
@@ -1122,32 +1207,50 @@ test('a move made offline of a shape another person deleted meanwhile stays for 
   await expect.poll(async () => (await peerHas(page)).length).toBe(2);
 });
 
-// Review b2 finding 1 (Q295, Q398): the re-apply's merge code not loading
-// keeps the strokes, read-only, under the note's strip, and Retry loads it.
-test("a stroke drawn offline on the copy waits read-only when the merge code doesn't load, and Retry lands it", async ({
+// Q38: the rename runs on the main thread at the join, with the renamed
+// state's encode for the drafts (`canvas:rename`); near the cap, on a board of
+// many strokes, it stays the same board.
+test('a stroke drawn offline on the copy of a canvas near its cap is renamed on the same board, the rename measured', async ({
   page,
   context,
 }) => {
   test.slow();
-  await drewAndLeft(page);
-  await fromCopyOffline(page, context);
-  await drawStroke(page, 0.6);
-  await expect.poll(() => drawn(page)).toHaveLength(2);
-  // The merge's worker script, which loads only on this path.
-  const merge = '**/lateMerge.worker.ts*';
-  await context.route(merge, (route) => route.abort());
-  await context.setOffline(false);
-  await expect(strip(page)).toContainText(
-    "Couldn't sync your edits. Retry or reload the page."
-  );
-  await expect.poll(() => drawn(page)).toHaveLength(2);
-  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
-  await context.unroute(merge);
-  await strip(page).getByRole('button', { name: 'Retry' }).click();
+  await page.goto(SCENARIO_PAGE);
+  await boardShown(page);
+  const strokes = await page.evaluate(async (canvasId) => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockDrawBoardStrokes } = (await import(
+      modulePath
+    )) as Collaboration;
+    return mockDrawBoardStrokes(canvasId, 128 * 1024);
+  }, SCENARIO);
+  await expect.poll(async () => (await drawn(page))?.length).toBe(strokes);
   await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
-  await expect(strip(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect.poll(() => copied(page, SCENARIO)).toBe(true);
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await boardShown(page);
+  await expect.poll(async () => (await drawn(page))?.length).toBe(strokes);
+  await drawStroke(page, 0.6);
+  await expect.poll(async () => (await drawn(page))?.length).toBe(strokes + 1);
+  await keep(page);
+  await keepHost(page);
+
+  await context.setOffline(false);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+  expect(await kept(page)).toBe(true);
+  expect(await keptHost(page)).toBe(true);
+  const took = await page.evaluate(() =>
+    performance.getEntriesByName('canvas:rename').map((entry) => entry.duration)
+  );
+  expect(took).toHaveLength(1);
+  test.info().annotations.push({
+    description: `${took[0].toFixed(1)} ms for ${strokes} strokes`,
+    type: 'canvas:rename',
+  });
   await joinPeer(page, SCENARIO);
-  await expect.poll(async () => (await peerHas(page)).length).toBe(2);
+  await expect.poll(async () => (await peerHas(page)).length).toBe(strokes + 1);
 });
 
 // Epo 2026-11-19 (Q33, "Yes, one side wins"): a shape both people moved, one
