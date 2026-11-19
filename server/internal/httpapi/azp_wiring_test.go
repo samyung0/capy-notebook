@@ -11,8 +11,8 @@ import (
 	"time"
 
 	clerk "github.com/clerk/clerk-sdk-go/v2"
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -75,7 +75,7 @@ func TestGatewayRefusesClerkTokensFromAnotherOrigin(t *testing.T) {
 			Subject: "user_gateway_azp", Issuer: "https://clerk.example.test",
 			IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now.Add(-time.Minute)),
 			Expiry: jwt.NewNumericDate(now.Add(time.Hour)),
-		}).Claims(map[string]any{"azp": origin}).CompactSerialize()
+		}).Claims(map[string]any{"azp": origin}).Serialize()
 		if err != nil {
 			t.Fatal(err)
 		}

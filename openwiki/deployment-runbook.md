@@ -259,13 +259,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `public, max-age=31536000, immutable`; staging copies the dedicated
    `workers/office/_headers` policy, including `nosniff`, `no-referrer`, noindex,
    and a CSP that prevents framing asset URLs. The exceptions are the WASM
-   modules and the uncompressed fonts (`.wasm`, `.ttf`, `.otf`): staging
+   modules and the uncompressed fonts (`.wasm`, `.ttf`): staging
    (`workers/office/stage.mjs`) compresses each once with brotli at quality
    11 into `<name>.br` and removes the original, and `run_worker_first`
-   sends `/assets/*.wasm`, `*.ttf` and `*.otf` to the Worker, which serves
+   sends `/assets/*.wasm` and `*.ttf` to the Worker, which serves
    the `.br` file whole with `Content-Encoding: br` (`encodeBody: "manual"`,
    so the runtime does not compress it again), its real type
-   (`application/wasm`, `font/ttf`, `font/otf`), the same year-long immutable
+   (`application/wasm`, `font/ttf`), the same year-long immutable
    caching and the Worker's security headers. It reads the `.br` file by GET
    with no validators or range whatever the request asks, so a conditional
    or HEAD request on a cache miss still gets the full `200` (the runtime

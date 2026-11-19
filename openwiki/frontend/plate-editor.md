@@ -2418,22 +2418,29 @@ design, option d), and the nudge's release file on 2026-10-17.
   reloads instead of writing a table view's block as a plain value;
   `MIN_SOURCE` stays 28. Its deploy request names "client protocol 28 -> 29,
   material 22 -> 29".
+  The Q691 pin (f1848de46: DOCX View and Edit load only the CJK slices their
+  pages draw, the XLSX viewer opens without the save capture, the DOCX page
+  mirror is patched per key and reads whole words, the XLSX cell editor takes
+  the cell's fill) raised `CLIENT_PROTOCOL` to 30 and `MIN_SOURCE` to 30 on
+  `main`, so source tabs on the older pin (protocols 28 and 29) reload;
+  `MIN_MATERIAL` stayed 29 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request named "client protocol 29 -> 30, source 28 -> 30".
   Quiz figures held as maps (Epo 2026-11-16: a chart, plot or graph in a live
   quiz room is a map of its fields, a graph's elements keyed by id) raised
-  `CLIENT_PROTOCOL` to 30 and `MIN_MATERIAL` to 30, so a quiz tab from before
-  it, which writes a figure as one value the room now refuses, reloads;
-  `MIN_SOURCE` stays 28. Stored quiz rooms are dropped at that deploy and
-  seed again from their questions (migration 0178,
+  `CLIENT_PROTOCOL` to 30 and `MIN_MATERIAL` to 30 on its own branch, at the
+  same time, so a quiz tab from before it, which writes a figure as one value
+  the room now refuses, reloads. Stored quiz rooms are dropped at that deploy
+  and seed again from their questions (migration 0178,
   [deployment-runbook](../deployment-runbook.md#quiz-figure-maps-reset-migration-0178)).
-  Its deploy request names "client protocol 29 -> 30, material 29 -> 30".
   Canvas rooms (Epo 2026-11-18: a canvas's board is a room in the `material:`
   family, no longer a saved board asset) raised `CLIENT_PROTOCOL` to 31 and
   `MIN_MATERIAL` to 31, since the family's minimum is the only gate before any
-  lookup: a tab from before saves a canvas through a route that is gone;
-  `MIN_SOURCE` stays 28. Existing canvases are deleted at that deploy
-  (migration 0181,
+  lookup: a tab from before saves a canvas through a route that is gone.
+  Existing canvases are deleted at that deploy (migration 0181,
   [deployment-runbook](../deployment-runbook.md#canvas-rooms-migrations-0181-to-0183)).
-  Its deploy request names "client protocol 30 -> 31, material 30 -> 31".
+  The two 30s met in one merge; 31 covers both, and `MIN_SOURCE` stays 30.
+  The quiz-figure and canvas changes land together, so their deploy request
+  names "client protocol 30 -> 31, material 29 -> 31".
 
 #### When to bump
 

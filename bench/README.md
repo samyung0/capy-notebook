@@ -24,7 +24,7 @@ place (Epo 2026-10-10).
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance. A board's live Yjs state against its saved size, per kind of work | `pnpm bench:stress` (Docker), `pnpm bench:rates`, `pnpm bench:growth` |
-| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing; a canvas's open at its size cap (by hand) | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
+| [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings, heap (workers from the typing on) and downloads per open in the Office runtime; Office size-ladder fixtures; formula View/Edit parity; the drawing board's cold open, pan, zoom, pen and typing; a canvas's open at its size cap (by hand) | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula`, `pnpm bench:canvas` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`gateway/`](gateway/)     | Go gateway capacity: signed-in browser sessions replayed against the API with their event streams, uploads and paged lists, per-route and per-page latency and errors, gateway and Postgres CPU, waits for a pooled connection | `bench/gateway/scripts/step.sh <users>` (bench host) |
 | [`clone/`](clone/)         | A single file clone's two parts on a disposable pgvector database: the file row with its saved edits (as update rows and folded), and the index copy into the target's HNSW index | `bench/clone/scripts/run.sh` (Docker) |
@@ -109,15 +109,19 @@ frame (a painted DOCX page; the next animation frame for XLSX and PPTX). For
 PPTX it first applies one edit alone and reports the main thread's busy time
 until it is idle again (`busyAfterOneEdit`, from a Chrome trace), which the
 next frame misses. It also reports the heap over two full
-view-mode passes and over five view-mode opens and closes, and records the
-runner's CPU model in every result. It
+view-mode passes and over five view-mode opens and closes, what the open and
+View to Edit downloaded (`downloads`: requests and KiB by kind, from every
+realm, as vite preview sent them (text, JS, CSS and JSON over 1 KB gzipped,
+the rest as built), and with WASM and TTF fonts at the brotli-11 size the
+Office Worker stores; CJK slice indexes count as fonts), and records the runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
 reaches its frame or errors, a fallback to the main-thread engine, a missed budget
 (from three CI runs per format), or scrolling a generated 50,000-row sheet
 (`rows-50k.xlsx`) over a fixed ceiling (a paint gap over 100 ms or under 50
 paints/s, slow or fast); the
-end-of-file keys, the co-editor timings, the PPTX busy time and the heap
-figures are report-only. It runs as
+end-of-file keys, the co-editor timings, the PPTX busy time, the downloads and
+the heap figures are report-only. Its web server (`editor/scripts/office-server.mjs`)
+runs on Linux and Windows. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
 
 The Office size ladder (`editor/scripts/gen_office_ladder.py`) generates

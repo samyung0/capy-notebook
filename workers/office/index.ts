@@ -7,7 +7,6 @@ const ASSET_PATH = /^\/assets\/[A-Za-z0-9_./-]+$/;
 // Files stage.mjs stores only as `<name>.br` (brotli 11), by extension, with
 // the type they are served as; run_worker_first sends them here.
 const PRECOMPRESSED = new Map([
-  ['otf', 'font/otf'],
   ['ttf', 'font/ttf'],
   ['wasm', 'application/wasm'],
 ]);

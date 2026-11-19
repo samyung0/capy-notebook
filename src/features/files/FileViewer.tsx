@@ -259,14 +259,15 @@ function FileViewerContent({
   // once the pages exist, so the document never waits on this.
   const isPdf =
     !!file?.hasBytes && (file.kind === 'pdf' || fileExt(file.name) === 'pdf');
-  // Opened from the Trash: it reads without marks or edits until restored.
+  // Opened from the Trash: no edits until restored; its reader's own marks
+  // show read-only (Epo 2026-11-12).
   const trashed = !!file?.trash;
   const {
     errorUpdatedAt: annotationsErrorUpdatedAt,
     isError: annotationsFailed,
   } = useQuery({
     ...pdfAnnotationsQuery(file?.id ?? ''),
-    enabled: isPdf && !trashed,
+    enabled: isPdf,
   });
   useEffect(() => {
     if (!isPdf || !annotationsFailed || !annotationsErrorUpdatedAt) return;
@@ -525,7 +526,7 @@ function ResolvedFileView({
   if (file.kind === 'pdf' || ext === 'pdf') {
     const pdf = lazyView(
       <PdfView
-        annotationFile={file.trash ? undefined : file}
+        annotationFile={file}
         annotationsReadOnly={annotationsReadOnly}
         onRetry={onRetryLinks}
         page={page}

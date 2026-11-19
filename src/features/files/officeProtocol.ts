@@ -289,7 +289,10 @@ export interface OfficeReadyTimings {
  * a PPTX equation, an inserted image over the payer's plan cap or of a type
  * the browser cannot decode (nothing is inserted), an XLSX edit past the
  * engine's 64 MiB update cap or a copy (or cut) past the copied-area or text
- * ceiling (nothing changes), or an XLSX clipboard write the browser refused.
+ * ceiling (nothing changes), or an XLSX clipboard write the browser refused;
+ * and a DOCX font slice that failed while editing, whose characters stay in
+ * the document drawn blank until the browser is back online (Q752 B). An
+ * older host drops a notice it does not know.
  */
 export const OFFICE_NOTICES = [
   'equation-text',
@@ -299,6 +302,7 @@ export const OFFICE_NOTICES = [
   'edit-too-large',
   'copy-too-large',
   'copy-failed',
+  'font-slice-unavailable',
 ] as const;
 export type OfficeNotice = (typeof OFFICE_NOTICES)[number];
 
@@ -399,7 +403,9 @@ export type OfficeRuntimeMessage =
     }
   /**
    * An XLSX bundled face failed to load: its text keeps the browser's font,
-   * nothing is shown, and Capy reports it to Sentry (Q710 C).
+   * nothing is shown, and Capy reports it to Sentry (Q710 C). A DOCX font
+   * slice a server failed while editing is reported the same way, by its
+   * face (Q752 B).
    */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;

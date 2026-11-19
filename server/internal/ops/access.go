@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 const AccessJWTHeader = "Cf-Access-Jwt-Assertion"
@@ -66,7 +66,7 @@ func NewAccessVerifier(config AccessConfig) (*AccessVerifier, error) {
 }
 
 func (v *AccessVerifier) Verify(ctx context.Context, raw string) (AccessIdentity, error) {
-	token, err := jwt.ParseSigned(strings.TrimSpace(raw))
+	token, err := jwt.ParseSigned(strings.TrimSpace(raw), []jose.SignatureAlgorithm{jose.RS256})
 	if err != nil || len(token.Headers) != 1 {
 		return AccessIdentity{}, errors.New("invalid Cloudflare Access token")
 	}
@@ -107,7 +107,7 @@ func (v *AccessVerifier) Verify(ctx context.Context, raw string) (AccessIdentity
 			continue
 		}
 		if err := claims.ValidateWithLeeway(jwt.Expected{
-			Issuer: v.issuer, Audience: jwt.Audience{v.audience}, Time: time.Now(),
+			Issuer: v.issuer, AnyAudience: jwt.Audience{v.audience}, Time: time.Now(),
 		}, 30*time.Second); err != nil {
 			lastErr = err
 			continue

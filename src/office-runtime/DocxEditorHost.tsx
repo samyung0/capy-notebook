@@ -18,12 +18,14 @@ import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeNotice,
   OfficeParagraphPoint,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
 import { DOCX_RIBBON } from './docxRibbon';
+import { fontSliceErrors } from './fontSliceErrors';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
@@ -100,6 +102,8 @@ export function DocxEditorHost({
   onRenderer,
   onFlusher,
   onError,
+  onFontError,
+  onNotice,
   onPendingChange,
   onPositioner,
   onSave,
@@ -127,6 +131,9 @@ export function DocxEditorHost({
   onMenus: OfficeMenuReporter;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onError: (error: Error) => void;
+  /** A font slice a server failed while editing, by its face: for Sentry. */
+  onFontError: (family: string, error: Error) => void;
+  onNotice: (notice: OfficeNotice) => void;
   onPendingChange: (pending: boolean) => void;
   onPositioner: (positioner: OfficePositioner | null) => void;
   onSave: () => void;
@@ -154,6 +161,18 @@ export function DocxEditorHost({
     writeViewToggle('docxRuler', shown);
   }, []);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
+  // A font slice failing while editing is a notice, not an error (Q752 B);
+  // back online, the editor asks for the failed slices again.
+  const fontSlices = useMemo(
+    () => fontSliceErrors({ onError, onFontError, onNotice }),
+    [onError, onFontError, onNotice]
+  );
+  useEffect(() => {
+    const online = () =>
+      fontSlices.online(() => editorRef.current?.retryFontSlices());
+    window.addEventListener('online', online);
+    return () => window.removeEventListener('online', online);
+  }, [fontSlices]);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -303,7 +322,7 @@ export function DocxEditorHost({
         i18n={docxStrings(locale)}
         icons={docxIcons}
         initialZoom={initialZoom}
-        onError={onError}
+        onError={fontSlices.report}
         onMenus={reportMenus}
         onPendingChange={onPendingChange}
         // File > Save and Ctrl/Cmd+S request the checkpoint; nothing serializes.

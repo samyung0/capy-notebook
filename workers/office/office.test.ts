@@ -14,6 +14,8 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import worker from './index';
 
 const origin = 'https://uat-office.capynotebook.com';
+// A `_headers` file's rules: a path line and its indented header lines.
+const HEADER_RULE = /\r?\n(?=\S)/;
 const parent = 'https://uat.capynotebook.com';
 const env = () => ({
   ASSETS: {
@@ -184,7 +186,6 @@ describe('isolated Office runtime', () => {
     for (const [name, type, method] of [
       ['docx_bg-1.wasm', 'application/wasm', 'GET'],
       ['Carlito-Regular-1.ttf', 'font/ttf', 'GET'],
-      ['NotoSansJP-Regular-1.otf', 'font/otf', 'GET'],
       ['docx_bg-1.wasm', 'application/wasm', 'HEAD'],
     ]) {
       const bindings = env();
@@ -249,7 +250,6 @@ describe('isolated Office runtime', () => {
         '/office-runtime.html',
         '/assets/*.wasm',
         '/assets/*.ttf',
-        '/assets/*.otf',
       ]);
       expect(target.assets.not_found_handling).toBe('none');
       expect(target.assets.html_handling).toBe('none');
@@ -273,7 +273,7 @@ describe('isolated Office runtime', () => {
       ])
         writeFileSync(join(source, name), name);
       writeFileSync(join(source, 'assets/runtime.js'), 'runtime');
-      for (const name of ['a.wasm', 'b.ttf', 'c.otf', 'd.woff2'])
+      for (const name of ['a.wasm', 'b.ttf', 'c.woff2'])
         writeFileSync(join(source, 'assets', name), name.repeat(100));
       execFileSync(process.execPath, [
         'workers/office/stage.mjs',
@@ -290,11 +290,10 @@ describe('isolated Office runtime', () => {
       expect(readdirSync(join(target, 'assets')).sort()).toEqual([
         'a.wasm.br',
         'b.ttf.br',
-        'c.otf.br',
-        'd.woff2',
+        'c.woff2',
         'runtime.js',
       ]);
-      for (const name of ['a.wasm', 'b.ttf', 'c.otf'])
+      for (const name of ['a.wasm', 'b.ttf'])
         expect(
           brotliDecompressSync(
             readFileSync(join(target, 'assets', `${name}.br`))
@@ -310,6 +309,53 @@ describe('isolated Office runtime', () => {
       expect(headers).toContain('X-Robots-Tag: noindex, nofollow');
       expect(readFileSync(join(target, 'assets/runtime.js'), 'utf8')).toBe(
         'runtime'
+      );
+    } finally {
+      rmSync(temp, { recursive: true });
+    }
+  });
+  // The CJK slice files (`.zst`) and their indexes (`.json`), and the whole
+  // packed faces XLSX still loads, skip the Worker: the static layer serves
+  // them as staged, under `_headers`' year-long immutable caching.
+  it('serves the packed font assets as static files with immutable caching', () => {
+    const config = JSON.parse(readFileSync('wrangler.office.jsonc', 'utf8'));
+    const files = [
+      'c093-BrrOHgFT.zst',
+      'skeleton-CzA81bQ2.zst',
+      'slices-B-Ut2Cmu.json',
+      'NotoSansJP-Regular.otf-BFGBpE-Y.zst',
+    ];
+    for (const target of [config, config.env.uat, config.env.production])
+      for (const pattern of target.assets.run_worker_first as string[]) {
+        const glob = new RegExp(
+          `^${pattern.replace(/[.]/g, '[.]').replace('*', '[^/]*')}$`
+        );
+        for (const file of files)
+          expect(glob.test(`/assets/${file}`)).toBe(false);
+      }
+    const temp = mkdtempSync(join(tmpdir(), 'capy-office-test-'));
+    try {
+      const source = join(temp, 'dist');
+      const target = join(temp, 'output');
+      mkdirSync(join(source, 'assets'), { recursive: true });
+      writeFileSync(join(source, 'office-runtime.html'), 'runtime');
+      for (const file of files)
+        writeFileSync(join(source, 'assets', file), file.repeat(100));
+      execFileSync(process.execPath, [
+        'workers/office/stage.mjs',
+        source,
+        target,
+      ]);
+      for (const file of files)
+        expect(readFileSync(join(target, 'assets', file), 'utf8')).toBe(
+          file.repeat(100)
+        );
+      const headers = readFileSync(join(target, '_headers'), 'utf8');
+      const rule = headers
+        .split(HEADER_RULE)
+        .find((block) => block.startsWith('/assets/*'));
+      expect(rule).toContain(
+        'Cache-Control: public, max-age=31536000, immutable'
       );
     } finally {
       rmSync(temp, { recursive: true });

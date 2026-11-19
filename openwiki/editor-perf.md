@@ -79,7 +79,9 @@ builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
 with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
-minutes. It covers one small and one large file per format:
+minutes. Its web server, [`office-server.mjs`](../bench/editor/scripts/office-server.mjs),
+is a Node script so the bench starts on Windows as on Linux. It covers one small
+and one large file per format:
 
 | Format | Small | Large |
 | --- | --- | --- |
@@ -170,6 +172,38 @@ Per file it reports:
   ([frontend/office-files.md](frontend/office-files.md)), so it can run ahead
   of what an engine holds by one step. `performance.measureUserAgentSpecificMemory` would
   need cross-origin isolation, which the app does not have;
+- downloads (`downloads`, report-only): what every fetch of every realm (the
+  host page, the runtime frames and their workers) downloaded during the open,
+  from the workspace's load to the Edit click (`open`, so the app shell is in
+  it), and during View to Edit, from that click to 5 s after the edit's
+  `ready` (`edit`, so fonts that load after the first paint count). Per kind
+  (`appJsCss`, `officeRuntimeJs` from the runtime's origin, `engineWasm` with
+  each module in `engineWasmModules`, `fonts` with the CJK slice indexes
+  (`slices.json`), `fontDecoder` for `fontpack.wasm`, `sourceFile`, `other`
+  with the MSW answers, and `total`; `downloads.ts`): `requests`,
+  `bodiesSent` (fetches whose body crossed the wire), `encodedKiB` (bodies as
+  encoded, also those not sent), `transferredKiB` (what vite preview sent,
+  headers included: it gzips text, JavaScript, CSS and JSON responses over
+  1 KB and sends WASM, fonts and other binaries as built) and
+  `withStoredBrotliKiB` (the same with each WASM and TTF body sent at the
+  brotli-11 `.br` the Office Worker stores and serves; packed `.zst` faces
+  go as stored either way, and the gzipped text stays as vite preview sent
+  it, where production's edge compresses with brotli). A fetch the HTTP
+  cache or
+  MSW's service worker answered (the app's origin only: its API, the source
+  file and most app chunks, bench only) transfers nothing in its realm's
+  timing, and a revalidation (vite preview sends ETags) only its headers. The
+  test's context starts cold and keeps no disk cache, so `docx_edit` downloads
+  twice per DOCX View to Edit here (harness `2026-11-11-q691/REPORT.md`,
+  section 7), and Edit, a frame of its own, asks again for the CJK slices
+  the View loaded, which the cache answers with headers only. The web server stages the build with
+  `workers/office/stage.mjs` into `.results/office-stage` for those sizes,
+  which adds about a minute before the tests. Each realm raises its
+  resource-timing buffer and sends its resource and navigation entries to
+  the test as console messages as fetches end: the DOCX viewer worker ends as
+  soon as it answers and the View's frame goes at View to Edit, so a read at
+  the end would miss them. Workers get the probe once Playwright reports
+  them; one that ends first counts in `unprobedWorkers`;
 - `runner`: the CPU model and core count of the machine that ran it, in every
   Office result (the shared runner pool mixes EPYC models);
 - view-mode heap over full passes (a second case per file, for the view-mode
@@ -295,8 +329,9 @@ The bench's earlier medians (2026-10-04, before the 0.5.1 pin) are in its
 history; the PC baseline the second BetterOffice sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
-Heap figures stay report-only: they go to the results JSON (`budget.heap`,
-and `budget: "report-only"` in the heap and co-editor cases), the job summary
+Heap and download figures stay report-only: they go to the results JSON
+(`budget.heap`, `budget.downloads`, and `budget: "report-only"` in the heap and
+co-editor cases), the job summary
 and the artifact, and fail nothing. Fields are only ever added to these
 files, so a result compares with an older run's field by field.
 TODO: decide what a heap ceiling means (retained

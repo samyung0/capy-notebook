@@ -103,4 +103,16 @@ describe('a DOCX capture', () => {
     expect(drawn).toEqual([[0, 0, 200, (1056 * 200) / 816]]);
     expect(await pageThumbnail((each) => renderPages(0, each))).toBeNull();
   });
+
+  // The fork's renderPages rejects when an outline slice page 1 draws failed
+  // to load: the capture fails rather than store blank characters, so its
+  // cycle ends and the next edit or open draws again (thumbnailCapture).
+  it('fails when page 1 cannot be drawn for a font slice', async () => {
+    const failure = new Error(
+      'Cannot render the page for print or a thumbnail: font outlines it draws did not load (offline)'
+    );
+    await expect(pageThumbnail(() => Promise.reject(failure))).rejects.toBe(
+      failure
+    );
+  });
 });
