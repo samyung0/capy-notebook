@@ -3,6 +3,7 @@ import type { MemberProgress, MembersTopic, SummaryTopic } from '@/api/types';
 import {
   focusOf,
   needsAttention,
+  needsPractice,
   sortMembers,
   topicCount,
 } from './membersRows';
@@ -92,6 +93,32 @@ describe('focusOf', () => {
       focusOf(member('a', { topics: [topic('x', 'familiar')] })).kind
     ).toBe('nothing');
     expect(focusOf(member('a')).kind).toBe('not_started');
+  });
+});
+
+describe('needsPractice', () => {
+  it('puts the most missed first, more answers breaking a tie', () => {
+    const weak = (
+      topicId: string,
+      wrong: number,
+      partial: number,
+      asked: number
+    ) => ({
+      ...topic(topicId, 'needs_practice'),
+      asked,
+      partial,
+      right: asked - wrong - partial,
+      wrong,
+    });
+    const topics = [
+      weak('half', 2, 0, 4),
+      weak('most', 4, 1, 5),
+      weak('halfMore', 3, 0, 6),
+      topic('fine', 'familiar'),
+    ];
+    expect(
+      needsPractice(member('a', { topics })).map(({ topicId }) => topicId)
+    ).toEqual(['most', 'halfMore', 'half']);
   });
 });
 

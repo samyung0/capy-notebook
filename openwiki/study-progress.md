@@ -516,7 +516,11 @@ under the workspace's `study` key).
 - **Overview** (Main): one 52px line per member: Assignments ("76% · 3 of
   4 done", then "2 missing"), Practice this week (questions checked in quizzes
   and reviews over the last seven days, never assignments; "–" for none) and
-  Needs practice (the topics labelled so, as amber chips; else Not started
+  Needs practice (the topics labelled so, as amber chips on one line: the two
+  most missed, the share of latest answers wrong with a partial counting half,
+  more answers then the workspace's order breaking ties, each chip cut with "…"
+  only by what doesn't fit, then "+n" whose hover or tap lists the rest, Epo
+  2026-11-19, mock A; else Not started
   before any answer, Nothing flagged otherwise: Attempted shows only on
   Topics, Epo 2026-11-12). Overall is the counted submission's mark after any late
   penalty (`countedAttemptOrder`, `attemptMarkSQL`) over the marks decided so

@@ -17,6 +17,11 @@ import {
 } from '@/components/app/SortHeader';
 import { Avatar } from '@/components/ui/Avatar';
 import { SkeletonList } from '@/components/ui/feedback';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -272,7 +277,7 @@ function SummaryList({
                 ? questionsText(member.practiceWeek)
                 : '–'}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               <FocusCell member={member} />
             </div>
           </li>
@@ -421,18 +426,33 @@ function AssignmentsCell({ member }: { member: MemberProgress }) {
 const CHIP =
   't-meta inline-flex h-5.5 items-center whitespace-nowrap rounded-md px-1.75 font-semibold';
 
+/** How many flagged topics a line names before "+n" (Epo 2026-11-19, mock A). */
+const FOCUS_SHOWN = 2;
+
 function FocusCell({ member }: { member: MemberProgress }) {
   const focus = focusOf(member);
   switch (focus.kind) {
     case 'topics':
-      return focus.topics.map((t: SummaryTopic) => (
-        <span
-          className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}
-          key={t.topicId ?? t.group}
-        >
-          {topicName(t)}
-        </span>
-      ));
+      return (
+        <>
+          {focus.topics.slice(0, FOCUS_SHOWN).map((t: SummaryTopic) => (
+            // Two long names share the line, each cut only by what doesn't fit.
+            <span
+              className={cn(
+                CHIP,
+                'min-w-0 shrink bg-tint-warning text-tint-warning-fg'
+              )}
+              key={t.topicId ?? t.group}
+              title={topicName(t)}
+            >
+              <span className="min-w-0 truncate">{topicName(t)}</span>
+            </span>
+          ))}
+          {focus.topics.length > FOCUS_SHOWN && (
+            <MoreTopics topics={focus.topics.slice(FOCUS_SHOWN)} />
+          )}
+        </>
+      );
     case 'not_started':
       return (
         <span className="font-semibold text-fg-muted">
@@ -446,6 +466,31 @@ function FocusCell({ member }: { member: MemberProgress }) {
         </span>
       );
   }
+}
+
+/** "+3": hover, focus or tap lists the rest; the profile has them all. */
+function MoreTopics({ topics }: { topics: SummaryTopic[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Tooltip onOpenChange={setOpen} open={open}>
+      <TooltipTrigger
+        className="t-meta shrink-0 cursor-default rounded-sm px-0.5 font-semibold text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
+        onClick={(event) => {
+          // A tap toggles it; it never opens the member's profile.
+          event.stopPropagation();
+          setOpen((was) => !was);
+        }}
+        render={<button type="button" />}
+      >
+        {m.members_more_topics({ count: topics.length })}
+      </TooltipTrigger>
+      <TooltipContent className="text-left">
+        {topics.map((t) => (
+          <div key={t.topicId ?? t.group}>{topicName(t)}</div>
+        ))}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 const COUNT: Record<SummaryTopic['label'], (count: number) => string> = {
