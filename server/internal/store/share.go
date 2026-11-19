@@ -210,6 +210,7 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 //     workspace is link/public
 //   - signed-in nonmember of a link/public workspace: the share role
 //   - standalone link/public material: viewer
+//   - a canvas: materialAccessRow.canvasRole
 //
 // The owner's lifecycle hides it as workspaceRoles does. A workspace material
 // hidden from members is not found for a viewer (Epo 2026-11-03), nor is a quiz
@@ -229,17 +230,19 @@ func materialEffectiveAccess(
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
 	var linkGranted, hidden bool
+	var canvas canvasAccess
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, ''), m.parent_material_id,
-			`+materialHiddenSQL+` OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
+			`+materialHiddenSQL+`,
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
-				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2),
+			`+canvasAccessCols+`
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
-			ON wm.workspace_id=w.id AND wm.user_id=$2
+			ON wm.workspace_id=w.id AND wm.user_id=$2`+canvasAccessJoins+`
 		WHERE m.id=$1 AND m.trashed_at IS NULL AND owner.deleted_at IS NULL
 			AND owner.deletion_requested_at IS NULL
 			AND (owner.suspended_at IS NULL OR owner.id=$2)`, matID, userID).Scan(
@@ -253,6 +256,7 @@ func materialEffectiveAccess(
 		&parentID,
 		&hidden,
 		&linkGranted,
+		&canvas.is, &canvas.shared, &canvas.inWorkspace, &canvas.workspaceRole,
 	)
 	if isNoRows(err) {
 		return "", ErrNotFound
@@ -268,6 +272,7 @@ func materialEffectiveAccess(
 		materialOwner: materialOwner, materialPrivacy: materialPrivacy,
 		workspaceID: wsID, workspaceOwner: workspaceOwner, workspacePrivacy: workspacePrivacy,
 		shareRole: shareRole, memberRole: memberRole, hidden: hidden, linkGranted: linkGranted,
+		canvas: canvas,
 	}
 	role := row.role(userID)
 	if role == "" {
@@ -285,10 +290,62 @@ type materialAccessRow struct {
 	shareRole                                  *ShareRole
 	memberRole                                 WorkspaceRole
 	hidden, linkGranted                        bool
+	canvas                                     canvasAccess
+}
+
+// canvasAccess is what a canvas's access depends on beyond its creator
+// (materialOwner): a canvas sits in no workspace, so the one it was drawn in
+// (canvas_workspace_id) is read apart from workspaceID.
+type canvasAccess struct {
+	is, shared, inWorkspace bool
+	// workspaceRole is the caller's role in that workspace: owner, their
+	// membership's, or none, also when the workspace owner's account is not
+	// live (as liveWorkspaceSQL).
+	workspaceRole WorkspaceRole
+}
+
+// canvasAccessCols and canvasAccessJoins read canvasAccess for the materials
+// row m and the caller $2.
+const (
+	canvasAccessCols = `m.kind='canvas', m.canvas_shared, m.canvas_workspace_id IS NOT NULL,
+			CASE WHEN cwo.id IS NULL THEN '' WHEN cwo.id=$2 THEN 'owner' ELSE COALESCE(cwm.role, '') END`
+	canvasAccessJoins = `
+		LEFT JOIN workspaces cw ON cw.id=m.canvas_workspace_id
+		LEFT JOIN users cwo ON cwo.id=cw.user_id AND cwo.deleted_at IS NULL
+			AND cwo.deletion_requested_at IS NULL AND cwo.suspended_at IS NULL
+		LEFT JOIN workspace_members cwm ON cwm.workspace_id=cw.id AND cwm.user_id=$2`
+)
+
+// canvasRole is the caller's role on a canvas (Epo 2026-11-18; the
+// collaboration server's access::canvas_role is the same rule). One in no
+// workspace is its creator's alone. One drawn in a workspace follows the
+// caller's role there, so a leaver and a link or public visitor hold nothing
+// (Epo 2026-11-09): its creator owns it, and once it is shared the other
+// members hold it by their workspace role. No link, grant or hidden flag
+// applies to a canvas.
+func (r materialAccessRow) canvasRole(userID string) WorkspaceRole {
+	creator := r.materialOwner != nil && *r.materialOwner == userID
+	switch {
+	case !r.canvas.inWorkspace:
+		if creator {
+			return RoleOwner
+		}
+		return ""
+	case r.canvas.workspaceRole == "":
+		return ""
+	case creator:
+		return RoleOwner
+	case r.canvas.shared:
+		return r.canvas.workspaceRole
+	}
+	return ""
 }
 
 // role is the caller's effective role, "" when the material is out of reach.
 func (r materialAccessRow) role(userID string) WorkspaceRole {
+	if r.canvas.is {
+		return r.canvasRole(userID)
+	}
 	// A workspace material's owner_user_id is its payer (uploader pays) and
 	// grants nothing: access follows the workspace.
 	if r.workspaceID == nil && r.materialOwner != nil && *r.materialOwner == userID {
@@ -328,15 +385,16 @@ func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []st
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT wanted.id, m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), `+materialHiddenSQL+` OR (m.kind='quiz' AND `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL),
+			COALESCE(wm.role, ''), `+materialHiddenSQL+`,
 			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
-				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2),
+			`+canvasAccessCols+`
 		FROM materials wanted
 		JOIN materials m ON m.id=COALESCE(wanted.parent_material_id, wanted.id)
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
-			ON wm.workspace_id=w.id AND wm.user_id=$2
+			ON wm.workspace_id=w.id AND wm.user_id=$2`+canvasAccessJoins+`
 		WHERE wanted.id = ANY($1::text[]) AND wanted.trashed_at IS NULL AND m.trashed_at IS NULL
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND (owner.suspended_at IS NULL OR owner.id=$2)`, ids, userID)
@@ -351,6 +409,7 @@ func (s *Store) ReadableMaterialIDs(ctx context.Context, userID string, ids []st
 		if err := rows.Scan(
 			&id, &row.materialOwner, &row.materialPrivacy, &row.workspaceID, &row.workspaceOwner,
 			&row.workspacePrivacy, &row.shareRole, &row.memberRole, &row.hidden, &row.linkGranted,
+			&row.canvas.is, &row.canvas.shared, &row.canvas.inWorkspace, &row.canvas.workspaceRole,
 		); err != nil {
 			return nil, err
 		}
@@ -377,7 +436,8 @@ func (s *Store) UpdateStandaloneMaterialPrivacy(
 		(expectedKind != "" && string(material.Kind) != expectedKind) {
 		return Material{}, ErrNotFound
 	}
-	// A personal canvas is its owner's alone (Epo 2026-11-09): never shared.
+	// A canvas takes no link or public sharing (Epo 2026-11-09); one drawn in
+	// a workspace is shared with it through SetCanvasShared.
 	if material.Kind == MaterialCanvas {
 		return Material{}, ErrForbidden
 	}
@@ -594,11 +654,11 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		return nil, "", err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), (m.preview->>'questionCount')::int, m.created_at,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`, `+quizAssignmentHoldsSQL("m.id")+`
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
-		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND NOT m.hidden
+		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND NOT m.hidden
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL`+after,
 		append([]any{userID}, args...)...)
@@ -615,12 +675,11 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID, cursor string) ([
 		var privacy Privacy
 		var shareRole ShareRole
 		var kind WorkspaceKind
-		var assignedOpen bool
 		if err := rows.Scan(&q.ID, &q.Name, &q.WorkspaceID, &q.QuestionCount, &createdAt, &q.Author, &q.Clones,
-			&member, &privacy, &shareRole, &kind, &assignedOpen); err != nil {
+			&member, &privacy, &shareRole, &kind); err != nil {
 			return nil, "", err
 		}
-		q.CanClone = exploreCanClone(q.WorkspaceID, kind, member, privacy, shareRole) && (!assignedOpen || RoleCanEdit(member))
+		q.CanClone = exploreCanClone(q.WorkspaceID, kind, member, privacy, shareRole)
 		out = append(out, q)
 		keys = append(keys, exploreKey{q.Clones, createdAt, q.ID})
 	}
@@ -1025,14 +1084,12 @@ func (s *Store) snapshotWorkspaceForClone(
 	var snapshot workspaceCloneSnapshot
 	// A viewer's clone leaves out what is hidden from members (Epo
 	// 2026-11-03); an owner's or editor's takes everything, each item keeping
-	// its flag (Epo 2026-11-04). A quiz under an open assignment goes only with
-	// a clone by the owner or a teaching assistant.
-	member, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
+	// its flag (Epo 2026-11-04). A graded quiz's own quiz never goes.
+	_, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
 	}
 	seeHidden := RoleCanEdit(role)
-	takeAssigned := RoleCanEdit(member)
 	rows, err := tx.Query(ctx,
 		`SELECT id, name, description, position FROM topics
 		 WHERE workspace_id=$1 ORDER BY position`,
@@ -1063,9 +1120,9 @@ func (s *Store) snapshotWorkspaceForClone(
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL AND assignment_id IS NULL AND (material_id IS NULL OR EXISTS (
 			SELECT 1 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
 			WHERE m.id=a.material_id AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
-				AND ($3 OR NOT `+quizAssignmentHoldsSQL("m.id")+`)))
+				AND COALESCE(p.assignment_id, m.assignment_id) IS NULL))
 		 ORDER BY created_at`,
-		workspaceID, seeHidden, takeAssigned,
+		workspaceID, seeHidden,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -1110,21 +1167,13 @@ func (s *Store) snapshotWorkspaceForClone(
 		snapshot.bytes += file.sizeBytes + file.sourceBytes
 	}
 
-	// What it leaves out for an open assignment counts in the toast.
-	if !takeAssigned {
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM materials m
-			WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND ($2 OR NOT m.hidden)
-				AND `+quizAssignmentHoldsSQL("m.id"), workspaceID, seeHidden).Scan(&snapshot.skipped); err != nil {
-			return workspaceCloneSnapshot{}, err
-		}
-	}
 	rows, err = tx.Query(ctx,
 		`SELECT `+materialColsM+`
 		 FROM materials m LEFT JOIN materials p ON p.id=m.parent_material_id
 		 WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND ($2 OR NOT COALESCE(p.hidden, m.hidden))
-			AND ($3 OR NOT `+quizAssignmentHoldsSQL("m.id")+`)
+			AND m.assignment_id IS NULL
 		 ORDER BY m.created_at`,
-		workspaceID, seeHidden, takeAssigned,
+		workspaceID, seeHidden,
 	)
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
@@ -1617,6 +1666,13 @@ func (s *Store) cloneWorkspaceOnce(
 				}
 			}
 			content := materialSnapshot.content
+			if mt.Kind == "quiz" {
+				// Questions' own topics follow the topics' new ids (topic ids
+				// are all one length, so the size counted above holds).
+				if content, err = materialdoc.RewriteQuestionTopics(content, topicMap); err != nil {
+					return "", nil, 0, err
+				}
+			}
 			metrics := materialSnapshot.metrics
 			createdAt := time.Now().UTC()
 			// The attribution footer travels with the copy: dropping it would
@@ -2006,27 +2062,6 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	return nil
 }
 
-// assertAssignedQuizCloneTx refuses a quiz under an open assignment to all but
-// the workspace's owner and teaching assistants (Epo 2026-11-04): assertCloneSourceTx
-// still admits a link or public editor.
-func assertAssignedQuizCloneTx(ctx context.Context, tx pgx.Tx, userID, workspaceID, quizID string) error {
-	member, _, err := workspaceRoles(ctx, tx, userID, workspaceID)
-	if err != nil {
-		return err
-	}
-	if RoleCanEdit(member) {
-		return nil
-	}
-	var open bool
-	if err := tx.QueryRow(ctx, `SELECT `+quizAssignmentHoldsSQL("$1"), quizID).Scan(&open); err != nil {
-		return err
-	}
-	if open {
-		return ErrForbidden
-	}
-	return nil
-}
-
 // HideOtherAccountLock maps another account's lifecycle lock (deleted,
 // deletion-pending or suspended) to not found: a locked owner's workspaces
 // and content are gone for everyone else, and a locked payer's state and
@@ -2236,7 +2271,7 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
 // state and study progress are not copied. The cloner pays.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
-	// A personal canvas is its owner's alone (Epo 2026-11-09): never copied.
+	// A canvas is never copied (Epo 2026-11-09), shared or not.
 	if src, err := s.GetMaterial(ctx, matID); err == nil && src.Kind == MaterialCanvas {
 		return Material{}, ErrNotFound
 	}
@@ -2284,8 +2319,9 @@ func (s *Store) cloneMaterialOnce(
 	if err != nil {
 		return "", err
 	}
-	// An embedded row is copied only with its note.
-	if src.ParentMaterialID != "" {
+	// An embedded row is copied only with its note; a graded quiz's quiz is
+	// its assignment's alone.
+	if src.ParentMaterialID != "" || src.AssignmentID != "" {
 		return "", ErrNotFound
 	}
 	if _, err := materialEffectiveAccess(ctx, tx, userID, matID); err != nil {
@@ -2294,11 +2330,6 @@ func (s *Store) cloneMaterialOnce(
 	if src.WorkspaceID != "" {
 		if err := assertCloneSourceTx(ctx, tx, userID, src.WorkspaceID); err != nil {
 			return "", err
-		}
-		if src.Kind == "quiz" {
-			if err := assertAssignedQuizCloneTx(ctx, tx, userID, src.WorkspaceID, matID); err != nil {
-				return "", err
-			}
 		}
 	}
 	// Account lifecycle is the only source-side serialization. The material and

@@ -126,7 +126,7 @@ function DialogContent({
           <div
             className={cn(
               // relative: the close button scrolls away with the content instead of covering it.
-              'relative flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-4 py-5 sm:px-5.5 sm:py-6.5',
+              'group/dialog relative flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-4 py-5 sm:px-5.5 sm:py-6.5',
               // Phones: the header row carries the close button and sticks to
               // the top; a dialog without a title keeps the corner button.
               // Its scrollbar is hidden there, so one appearing when the keyboard
@@ -143,7 +143,10 @@ function DialogContent({
             {showCloseButton && (
               <DialogPrimitive.Close asChild data-slot="dialog-close">
                 <IconButton
-                  className="absolute top-4 right-4"
+                  // Centred on the title's first line (the card's 26px top
+                  // padding plus half the style's title line), so the title
+                  // row and anything at its end share one centre line.
+                  className="absolute top-4 right-4 sm:group-has-[[data-slot=dialog-title]]/dialog:top-[calc(26px+var(--large-card-title-font-size)*var(--large-card-title-line-height)/2-20px)]"
                   icon="x"
                   size="md"
                   variant="ghost-hover"
@@ -219,6 +222,9 @@ function DialogTitle({
       <DialogPrimitive.Title
         className={cn(
           't-large-card-title flex items-center justify-between pt-0 pb-6',
+          // Clear of the corner close: 16px in, 40px wide, then a 12px gap,
+          // less the card's own 22px padding.
+          'sm:group-has-[>[data-slot=dialog-close]]/dialog:pr-11.5',
           className,
           // At most two lines, so a long title never squeezes the action.
           'max-sm:line-clamp-2 max-sm:min-w-0 max-sm:flex-1 max-sm:py-2 max-sm:text-lg max-sm:leading-tight',

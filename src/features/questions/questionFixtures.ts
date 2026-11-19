@@ -25,7 +25,6 @@ export const exampleAnswers: QuestionAnswer[] = [
   { items: ['Ribosome', 'Rough ER', 'Golgi apparatus'], type: 'ordering' },
   {
     accepted: ['Folds increase the surface area available for ATP production.'],
-    hints: [],
     type: 'open',
   },
 ];

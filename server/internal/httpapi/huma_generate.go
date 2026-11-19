@@ -96,6 +96,18 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	}
 	actor := userID(ctx)
 	wsID := in.ID
+	// A graded quiz's form is checked before any credits are reserved; the
+	// quiz is made with it (Epo 2026-11-16). Only an editor's quiz is a
+	// workspace file a graded quiz can own.
+	gradedQuiz := gradedQuizForm(in.Body.GradedQuiz)
+	if gradedQuiz != nil {
+		if !canEdit {
+			return nil, huma.Error403Forbidden("only the workspace's editors make a graded quiz")
+		}
+		if err := a.s.CheckGradedQuiz(ctx, actor, wsID, *gradedQuiz, time.Now()); err != nil {
+			return nil, assignmentError(err)
+		}
+	}
 	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, actor, wsID)
 	defer cancelLiveAuthorization()
 	llm, err := a.resolveLLM(ctx, actor, models.SlotChat)
@@ -130,14 +142,14 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 		return nil, hErr(errAIUnavailable)
 	}
 	opts := generateOptsFrom(in.Body, title)
-	opts.CanEdit = canEdit
+	opts.CanEdit, opts.GradedQuiz = canEdit, gradedQuiz
 	payload, _, err := a.generateViaPipe(ctx, actor, wsID, ws.Name, &opts, llm, charge.id)
 	if err != nil {
 		var unknown unknownScopeIDError
 		if errors.As(err, &unknown) {
 			return nil, huma.Error400BadRequest(unknown.Error())
 		}
-		return nil, hErr(err)
+		return nil, assignmentError(err)
 	}
 	charge.settle(ctx)
 	body, ok := payload.(map[string]any)
@@ -162,6 +174,8 @@ type generateOpts struct {
 	Title   string
 	// Mix adds the caller's answered questions to the new ones.
 	Mix bool
+	// GradedQuiz makes an editor's quiz with its graded quiz (Material.GradedQuiz).
+	GradedQuiz *store.AssignmentForm
 	// CanEdit makes the quiz a file of the workspace.
 	CanEdit bool
 }
@@ -349,7 +363,10 @@ func (a *api) generateViaPipe(
 		ScopeTopics: topicNames, ScopeFileNames: fileNames,
 	}
 	if opts.CanEdit {
-		draft.WorkspaceID, draft.WorkspaceName = wsID, wsName
+		// An editor's quiz is the workspace's, hidden from members until
+		// they show it (Epo 2026-11-16, every quiz an editor makes).
+		draft.WorkspaceID, draft.WorkspaceName, draft.GradedQuiz = wsID, wsName, opts.GradedQuiz
+		draft.Hidden = true
 		if len(opts.Topics) == 1 {
 			draft.TopicID = &opts.Topics[0]
 		}
@@ -363,9 +380,14 @@ func (a *api) generateViaPipe(
 	if err != nil {
 		return nil, usage, err
 	}
+	a.gradedQuizMade(ctx, mt.AssignmentID)
 	quiz, err := a.s.GetQuiz(ctx, mt.ID)
 	if err != nil {
 		return nil, usage, err
 	}
-	return map[string]any{"quiz": quiz}, usage, nil
+	out := map[string]any{"quiz": quiz}
+	if mt.AssignmentID != "" {
+		out["assignmentId"] = mt.AssignmentID
+	}
+	return out, usage, nil
 }

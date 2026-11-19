@@ -17,35 +17,12 @@ Object.assign(globalThis, {
 });
 
 const save = vi.hoisted(() => vi.fn());
-const practice = vi.hoisted(() => ({
-  failed: false,
-  quizzes: [] as { id: string; questions: number; title: string }[],
-}));
-const navigate = vi.hoisted(() => vi.fn());
-const frozen = vi.hoisted(() => ({ value: false }));
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
-vi.mock('@/features/workspace/access', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/features/workspace/access')>()),
-  isWorkspaceReadOnly: () => frozen.value,
-}));
-vi.mock('../practice/MakePractice', () => ({
-  MakePractice: ({ initialTopicId }: { initialTopicId?: string }) => (
-    <div data-make-practice={initialTopicId ?? ''} />
-  ),
-}));
 vi.mock('@/api/hooks', () => ({
   useCreateAssignment: () => ({ isPending: false, mutate: save }),
   useFiles: () => ({ data: [] }),
   useMaterials: () => ({ data: [] }),
   useMe: () => ({ data: { id: 'owner' } }),
-  usePractice: () => ({
-    data: { quizzes: practice.quizzes },
-    isError: practice.failed,
-    isPending: false,
-    refetch: vi.fn(),
-  }),
   useUpdateAssignment: () => ({ isPending: false, mutate: save }),
-  useWorkspace: () => ({ data: {} }),
   useWorkspaceMembers: () => ({
     data: [
       { name: 'Ann', role: 'viewer', userId: 'ann' },
@@ -93,26 +70,10 @@ vi.mock('@/components/ui/Select', () => ({
   SelectItem: pass,
   SelectTrigger: pass,
   SelectValue: () => null,
+  selectTriggerVariants: () => '',
 }));
 vi.mock('./TaskFiles', () => ({
-  TaskFileMenu: ({
-    kinds,
-    onPick,
-    trigger,
-  }: {
-    kinds?: string[];
-    onPick: (file: { id: string; name: string }) => void;
-    trigger: ReactNode;
-  }) => (
-    <>
-      {trigger}
-      <button
-        data-picker={kinds?.join()}
-        onClick={() => onPick({ id: 'qz9', name: 'Mock paper' })}
-        type="button"
-      />
-    </>
-  ),
+  ChooseFileRow: pass,
   TaskFilesField: () => <div data-task-files />,
 }));
 vi.mock('@/components/ui/Popover', () => ({
@@ -176,83 +137,90 @@ const submitForm = () =>
 
 beforeEach(() => {
   save.mockReset();
-  navigate.mockReset();
-  frozen.value = false;
-  practice.failed = false;
-  practice.quizzes = [];
 });
 
-const searchBox = () =>
-  host.querySelector(`[aria-label="${m.assignment_search_quizzes()}"]`);
-
-it('asks for a quiz to be made when there are none, with no search', async () => {
+it('makes a new one an Assignment, with no Kind or Quiz field', async () => {
   const root = await show();
-  expect(host.textContent).toContain(m.assignment_make_quiz_to_begin());
-  expect(searchBox()).toBeNull();
-  await act(async () => root.unmount());
-});
-
-it('searches once there are quizzes', async () => {
-  practice.quizzes = [{ id: 'q1', questions: 3, title: 'Cells' }];
-  const root = await show();
-  expect(host.textContent).not.toContain(m.assignment_make_quiz_to_begin());
-  expect(searchBox()).not.toBeNull();
-  await act(async () => root.unmount());
-});
-
-const row = (label: string) =>
-  [...host.querySelectorAll('button')].find(
-    (button) => button.textContent === label
+  expect(host.querySelector('[data-value="marked"]')).toBeNull();
+  expect(
+    host.querySelector(`[aria-label="${m.assignment_field_quiz()}"]`)
+  ).toBeNull();
+  expect(host.textContent).toContain(m.assignment_field_files());
+  expect(host.querySelector('header')?.textContent).toContain(
+    m.assignment_new()
   );
-const press = (button?: Element) =>
-  act(async () => {
-    button?.dispatchEvent(new window.Event('click', { bubbles: true }));
-  });
-
-it('closes for New quiz and Make a quiz, which open by link', async () => {
-  const onClose = vi.fn();
-  const root = await show(undefined, onClose);
-  await press(row(m.dashboard_make_quiz()));
-  expect(onClose).toHaveBeenCalledTimes(1);
-  const makeSearch = navigate.mock.lastCall?.[0].search;
-  expect(makeSearch({ study: 'assignments' })).toEqual({
-    make: 'files',
-    makeFrom: 'assignments',
-  });
-  expect(makeSearch({})).toEqual({ make: 'files', makeFrom: undefined });
-  await press(row(m.assignment_new_quiz()));
-  const { search } = navigate.mock.lastCall?.[0] ?? {};
-  expect(search({ study: 'assignments' })).toEqual({
-    add: 'create',
-    newFromQuiz: undefined,
-    study: 'assignments',
-  });
-  await act(async () => root.unmount());
+  act(() => root.unmount());
 });
 
-it('gives way to the generate dialog', async () => {
-  const onClose = vi.fn();
-  const root = await show(undefined, onClose);
-  await press(row(m.assignment_generate_questions()));
-  expect(host.querySelector('[data-make-practice]')).not.toBeNull();
-  expect(onClose).not.toHaveBeenCalled();
-  await act(async () => root.unmount());
-});
+const graded = async (onNext = vi.fn(), own = false) => {
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <NewAssignmentDialog
+        graded={{ onNext, title: 'New graded quiz' }}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+        own={own}
+        workspaceId="ws1"
+      />
+    )
+  );
+  return root;
+};
 
-it('offers no way to make a quiz in a frozen workspace', async () => {
-  frozen.value = true;
-  const root = await show();
-  expect(row(m.assignment_new_quiz())).toBeUndefined();
-  expect(host.textContent).toContain(m.assignment_no_quizzes());
-  await act(async () => root.unmount());
-});
-
-it('says a list it could not read failed, not that there are no quizzes', async () => {
-  practice.failed = true;
-  const root = await show();
-  expect(host.textContent).toContain(m.assignment_quizzes_failed());
-  expect(host.textContent).not.toContain(m.assignment_make_quiz_to_begin());
-  await act(async () => root.unmount());
+it("is New graded quiz's first step: Next hands the settings on, saving nothing", async () => {
+  const onNext = vi.fn();
+  const root = await graded(onNext);
+  // When members see grades and answers sit beside Marking.
+  const values = [...host.querySelectorAll('[data-value]')].map((select) =>
+    select.getAttribute('data-value')
+  );
+  expect(values).toEqual(
+    expect.arrayContaining(['none', '1', 'ai_approve', 'automatic', 'closed'])
+  );
+  // A graded quiz needs its title and due date before it goes on.
+  await submitForm();
+  expect(onNext).not.toHaveBeenCalled();
+  expect(host.textContent).toContain(m.assignment_due_required());
+  act(() => root.unmount());
+  // Filled in, as on the way back from Questions.
+  const root2 = createRoot(host);
+  await act(async () =>
+    root2.render(
+      <NewAssignmentDialog
+        graded={{
+          initial: {
+            assignAll: true,
+            assignees: [],
+            attempts: 1,
+            draft: false,
+            dueAt: '2026-11-21T09:00:00Z',
+            files: [],
+            kind: 'marked',
+            latePenaltyPct: 0,
+            marking: 'ai_approve',
+            noLate: false,
+            showAnswers: 'closed',
+            showGrades: 'automatic',
+            shuffle: false,
+            title: 'Membranes check',
+          },
+          onNext,
+          title: 'New graded quiz',
+        }}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+        workspaceId="ws1"
+      />
+    )
+  );
+  await submitForm();
+  expect(save).not.toHaveBeenCalled();
+  expect(onNext.mock.calls[0][0]).toMatchObject({
+    kind: 'marked',
+    title: 'Membranes check',
+  });
+  act(() => root2.unmount());
 });
 
 it('sends the form once, whichever Create is pressed', async () => {
@@ -281,17 +249,7 @@ it('saves an edit without an assignee who has left', async () => {
   act(() => root.unmount());
 });
 
-it('shows grades automatically and answers after it closes by default', async () => {
-  const root = await show();
-  const values = [...host.querySelectorAll('[data-value]')].map((select) =>
-    select.getAttribute('data-value')
-  );
-  expect(values).toContain('automatic');
-  expect(values).toContain('closed');
-  act(() => root.unmount());
-});
-
-it("assigns a member's practice to them alone, generating on their topic", async () => {
+it("assigns a member's work to them alone", async () => {
   const root = createRoot(host);
   await act(async () =>
     root.render(
@@ -299,7 +257,6 @@ it("assigns a member's practice to them alone, generating on their topic", async
         onClose={vi.fn()}
         onDone={vi.fn()}
         presetAssignee="ann"
-        presetTopicId="t1"
         workspaceId="ws1"
       />
     )
@@ -308,12 +265,6 @@ it("assigns a member's practice to them alone, generating on their topic", async
     host.querySelector(`[aria-label="${m.assignment_field_assign_to()}"]`)
       ?.textContent
   ).toBe(m.workspace_members_one());
-  await press(row(m.assignment_generate_questions()));
-  expect(
-    host
-      .querySelector('[data-make-practice]')
-      ?.getAttribute('data-make-practice')
-  ).toBe('t1');
   act(() => root.unmount());
 });
 
@@ -332,9 +283,12 @@ it('saves a task for its maker alone, with its title, due date and files', async
     own: true,
     title: 'Read chapter 4',
   } as unknown as Assignment);
-  // Nothing about who it is for, and files from anywhere.
+  // Nothing about who it is for, files from anywhere, and no points.
   expect(assignField()).toBeNull();
   expect(host.querySelector('[data-task-files]')).not.toBeNull();
+  expect(
+    host.querySelector(`[aria-label="${m.assignment_field_points()}"]`)
+  ).toBeNull();
   expect(host.querySelector('header')?.textContent).toContain(
     m.todo_edit_task()
   );
@@ -352,46 +306,11 @@ it('saves a task for its maker alone, with its title, due date and files', async
   act(() => root.unmount());
 });
 
-it('gives a task every field but Assign to and a draft, with a quiz from anywhere', async () => {
-  const root = createRoot(host);
-  await act(async () =>
-    root.render(
-      <NewAssignmentDialog
-        onClose={vi.fn()}
-        onDone={vi.fn()}
-        own
-        workspaceId=""
-      />
-    )
-  );
-  // It starts plain, then takes a quiz.
-  expect(host.querySelector('[data-value="unmarked"]')).not.toBeNull();
-  await pick('unmarked', 'marked');
-  const values = [...host.querySelectorAll('[data-value]')].map((select) =>
-    select.getAttribute('data-value')
-  );
-  // Time limit, attempts, marking, grades and answers.
-  expect(values).toEqual(
-    expect.arrayContaining(['none', '1', 'ai_approve', 'automatic', 'closed'])
-  );
+it("gives a personal workspace's graded quiz every field but Assign to and a draft", async () => {
+  const root = await graded(vi.fn(), true);
   expect(assignField()).toBeNull();
   expect(host.textContent).toContain(m.assignment_switch_shuffle());
   expect(host.textContent).not.toContain(m.assignment_switch_draft());
-  // Its quiz comes from the picker over every quiz, not this workspace's list.
-  expect(searchBox()).toBeNull();
-  await press(
-    host.querySelector(`button[aria-label="${m.assignment_field_quiz()}"]`) ??
-      undefined
-  );
-  await press(host.querySelector('[data-picker="quiz"]') ?? undefined);
-  expect(
-    host.querySelector(`button[aria-label="${m.assignment_field_quiz()}"]`)
-      ?.textContent
-  ).toContain('Mock paper');
-  // A quiz needs its due date, as an assignment's does.
-  await submitForm();
-  expect(save).not.toHaveBeenCalled();
-  expect(host.textContent).toContain(m.assignment_due_required());
   act(() => root.unmount());
 });
 
@@ -450,5 +369,30 @@ it("follows To do's Workspace in place: a task with none, an assignment in a cla
   expect(assignField()).toBeNull();
   expect(host.querySelector('[data-task-files]')).not.toBeNull();
   expect(title()).not.toBeNull();
+  act(() => root.unmount());
+});
+
+it('grades a class Assignment on points, with Show grades and the late penalty', async () => {
+  const root = await show({
+    ...existing,
+    dueAt: '2026-12-01T10:00:00Z',
+    kind: 'unmarked',
+    latePenaltyPct: 20,
+    manage: { ...existing.manage, assignees: ['ann'], showGrades: 'manual' },
+    points: 20,
+  } as Assignment);
+  expect(
+    host.querySelector<HTMLInputElement>(
+      `[aria-label="${m.assignment_field_points()}"]`
+    )?.value
+  ).toBe('20');
+  expect(host.textContent).toContain(m.assignment_field_grades());
+  await submitForm();
+  expect(save.mock.calls[0][0]).toMatchObject({
+    kind: 'unmarked',
+    latePenaltyPct: 20,
+    points: 20,
+    showGrades: 'manual',
+  });
   act(() => root.unmount());
 });

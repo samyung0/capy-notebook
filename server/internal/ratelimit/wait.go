@@ -104,14 +104,12 @@ func chatSend(method, path string) bool {
 }
 
 // answerCheck is a graded answer check, which waits for its buckets before
-// grading: a quiz attempt, a review or bank check, a computation check, or a
-// signed-out grade.
+// grading: a quiz attempt, a review or bank check, or a signed-out grade.
 func answerCheck(method, path string) bool {
 	if method != http.MethodPost {
 		return false
 	}
 	return (strings.HasPrefix(path, "/api/quizzes/") && strings.HasSuffix(path, "/attempts")) ||
 		strings.HasSuffix(path, "/check") ||
-		strings.HasSuffix(path, "/computation-check") ||
 		(strings.HasPrefix(path, "/api/public/") && strings.HasSuffix(path, "/grade"))
 }

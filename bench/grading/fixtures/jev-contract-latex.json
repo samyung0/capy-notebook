@@ -27,7 +27,7 @@
           {
             "id": "a",
             "blocks": [{ "type": "text", "text": "Explain geometrically why $\\frac{d}{dx}\\sin x = \\cos x$." }],
-            "answer": { "type": "open", "accepted": ["The derivative is the gradient of the tangent to $y = \\sin x$. The sine curve is steepest (gradient 1) at $x = 0$ and flat at $x = \\frac{\\pi}{2}$, exactly where $\\cos x$ equals 1 and 0, and this matching continues around the curve."], "hints": [] },
+            "answer": { "type": "open", "accepted": ["The derivative is the gradient of the tangent to $y = \\sin x$. The sine curve is steepest (gradient 1) at $x = 0$ and flat at $x = \\frac{\\pi}{2}$, exactly where $\\cos x$ equals 1 and 0, and this matching continues around the curve."] },
             "markscheme": [
               "Interprets the derivative as the gradient of the tangent to $y = \\sin x$",
               "Notes the gradient of $\\sin x$ is greatest at $x = 0$ and zero at $x = \\frac{\\pi}{2}$, matching the values of $\\cos x$"
@@ -58,7 +58,7 @@
           {
             "id": "a",
             "blocks": [{ "type": "text", "text": "Explain in words what $\\lim_{x \\to a} f(x) = L$ means." }],
-            "answer": { "type": "open", "accepted": ["As $x$ gets closer and closer to $a$ (without equalling it), $f(x)$ gets as close as we like to $L$. The value of $f(a)$ itself does not matter; it may be undefined or different from $L$."], "hints": [] },
+            "answer": { "type": "open", "accepted": ["As $x$ gets closer and closer to $a$ (without equalling it), $f(x)$ gets as close as we like to $L$. The value of $f(a)$ itself does not matter; it may be undefined or different from $L$."] },
             "markscheme": [
               "As $x$ gets closer and closer to $a$, $f(x)$ gets closer and closer to $L$",
               "The value of $f$ at $a$ itself does not matter (it may be undefined or different from $L$)"
@@ -89,7 +89,7 @@
           {
             "id": "a",
             "blocks": [{ "type": "text", "text": "Without finding its value, explain why the series $\\sum_{n=1}^{\\infty} \\frac{1}{2^n}$ converges." }],
-            "answer": { "type": "open", "accepted": ["Each term is half the previous one, so it is a geometric series with ratio $\\frac{1}{2}$, and $|r| < 1$. The partial sums keep increasing but never pass 1, since each term covers half of the remaining gap to 1, so they approach a limit."], "hints": [] },
+            "answer": { "type": "open", "accepted": ["Each term is half the previous one, so it is a geometric series with ratio $\\frac{1}{2}$, and $|r| < 1$. The partial sums keep increasing but never pass 1, since each term covers half of the remaining gap to 1, so they approach a limit."] },
             "markscheme": [
               "Each term is half of the previous term, so the terms shrink geometrically (common ratio $\\frac{1}{2}$, with $|r| < 1$)",
               "The partial sums increase but never exceed a fixed bound (for example 1), so they approach a limit"
@@ -120,7 +120,7 @@
           {
             "id": "a",
             "blocks": [{ "type": "text", "text": "Explain why $\\mathrm{H_2O}$ has a much higher boiling point than $\\mathrm{H_2S}$." }],
-            "answer": { "type": "open", "accepted": ["Water molecules form hydrogen bonds with each other because O is very electronegative. These are stronger than the forces between $\\mathrm{H_2S}$ molecules, so more energy is needed to separate water molecules."], "hints": [] },
+            "answer": { "type": "open", "accepted": ["Water molecules form hydrogen bonds with each other because O is very electronegative. These are stronger than the forces between $\\mathrm{H_2S}$ molecules, so more energy is needed to separate water molecules."] },
             "markscheme": [
               "Water molecules form hydrogen bonds with each other (H bonded to the very electronegative O)",
               "Hydrogen bonds are stronger than the intermolecular forces between $\\mathrm{H_2S}$ molecules, so more energy is needed to separate the molecules"
@@ -151,7 +151,7 @@
           {
             "id": "a",
             "blocks": [{ "type": "text", "text": "Using $F = ma$, explain in words why a loaded trolley accelerates less than an empty one when pushed with the same force." }],
-            "answer": { "type": "open", "accepted": ["Rearranging gives $a = \\frac{F}{m}$: with the same force, a larger mass gives a smaller acceleration. The loaded trolley has more mass, so it accelerates less."], "hints": [] },
+            "answer": { "type": "open", "accepted": ["Rearranging gives $a = \\frac{F}{m}$: with the same force, a larger mass gives a smaller acceleration. The loaded trolley has more mass, so it accelerates less."] },
             "markscheme": [
               "For the same force, a larger mass gives a smaller acceleration ($a = \\frac{F}{m}$)",
               "The loaded trolley has more mass"

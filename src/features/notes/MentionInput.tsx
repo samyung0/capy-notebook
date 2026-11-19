@@ -236,7 +236,7 @@ export function MentionInputElement(
               ))}
             {!isPending && !isError && !matches.length && (
               <span className="block px-2 py-3 text-fg-muted text-sm">
-                {m.editor_mention_empty()}
+                {m.common_no_matches()}
               </span>
             )}
           </PopupMotion>

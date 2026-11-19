@@ -292,6 +292,24 @@ export async function addImageBlocks(
   return blockIds;
 }
 
+/**
+ * Capy (local change 70): told of each image `addImages` is about to store,
+ * with the box its block will take, before its file is stored. The answer, if
+ * any, is called once: with no error as the block lands, or with why the file
+ * was refused (no block lands for it). The board shows a box there meanwhile.
+ */
+export type ImageUploadHandler = (
+  std: BlockStdScope,
+  file: File,
+  xywh: string
+) => ((error?: unknown) => void) | void;
+
+let imageUploadHandler: ImageUploadHandler | null = null;
+
+export const setImageUploadHandler = (handler: ImageUploadHandler | null) => {
+  imageUploadHandler = handler;
+};
+
 export async function addImages(
   std: BlockStdScope,
   files: File[],
@@ -308,9 +326,26 @@ export async function addImages(
 
   const flavour = ImageBlockSchema.model.flavour;
 
-  const propsArray = await Promise.all(
-    files.map(file => buildPropsWith(std, file))
-  );
+  // Capy (local change 70): each image's size first, then its box, so the
+  // board shows the box while the file is stored. An image whose size can't
+  // be read is said and left out; one whose file is refused lands nothing,
+  // and the others still land.
+  const sized = (
+    await Promise.all(
+      files.map(async file => {
+        const imageSize = await readImageSize(file);
+        if (imageSize.width * imageSize.height) return { file, imageSize };
+        toast(std.host, 'Failed to read image size, please try another image');
+        return null;
+      })
+    )
+  ).filter(entry => entry !== null);
+  if (!sized.length) return [];
+  const propsArray = sized.map(({ file, imageSize }) => ({
+    size: file.size,
+    sourceId: '',
+    ...imageSize,
+  }));
 
   const gfx = std.get(GfxControllerIdentifier);
   const isMultiple = propsArray.length > 1;
@@ -329,7 +364,7 @@ export async function addImages(
 
   const xy = [x, y];
 
-  const blocks = propsArray.map((props, i) => {
+  const placed = propsArray.map((props, i) => {
     // If maxWidth is provided, limit the width of the image to maxWidth
     // Otherwise, use the original width
     if (maxWidth) {
@@ -339,7 +374,6 @@ export async function addImages(
     }
 
     const center = Vec.addScalar(xy, i * gap);
-    const index = gfx.layer.generateIndex();
 
     const { width, height } = props;
     const xywh = calcBoundByOrigin(
@@ -349,19 +383,50 @@ export async function addImages(
       height
     ).serialize();
 
-    return {
-      flavour,
-      blockProps: {
-        ...props,
-        width,
-        height,
-        xywh,
-        index,
-      },
-    };
+    return { ...props, width, height, xywh };
   });
 
-  const blockIds = std.store.addBlocks(blocks, gfx.surface);
+  const settles = placed.map(({ xywh }, i) =>
+    imageUploadHandler?.(std, sized[i].file, xywh)
+  );
+  const stored = await Promise.allSettled(
+    sized.map(({ file }) => std.store.blobSync.set(file))
+  );
+  stored.forEach((result, i) => {
+    if (result.status === 'rejected') settles[i]?.(result.reason);
+  });
+  const blocks = placed.flatMap((props, i) => {
+    const result = stored[i];
+    if (result.status === 'rejected') return [];
+    return [
+      {
+        flavour,
+        blockProps: {
+          ...props,
+          sourceId: result.value,
+          index: gfx.layer.generateIndex(),
+        },
+      },
+    ];
+  });
+  if (!blocks.length) return [];
+
+  // A board that stopped taking edits while the files were stored (or one
+  // whose add fails) lands none of them, and each box says so.
+  let blockIds: string[];
+  try {
+    if (std.store.readonly)
+      throw new Error('the board took no edits as its images were stored');
+    blockIds = std.store.addBlocks(blocks, gfx.surface);
+  } catch (error) {
+    stored.forEach((result, i) => {
+      if (result.status === 'fulfilled') settles[i]?.(error);
+    });
+    return [];
+  }
+  stored.forEach((result, i) => {
+    if (result.status === 'fulfilled') settles[i]?.();
+  });
 
   gfx.selection.set({
     elements: blockIds,

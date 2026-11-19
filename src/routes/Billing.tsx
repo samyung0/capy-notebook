@@ -23,9 +23,10 @@ export default function Billing() {
             to: '/billing',
           });
         }}
+        // Detailed usage is hidden for now (Epo 2026-11-13); its tab still
+        // opens from a link.
         tabs={[
           { label: m.billing_tab_usage(), value: 'usage' },
-          { label: m.billing_tab_details(), value: 'details' },
           { label: m.subscription_title(), value: 'subscription' },
         ]}
         value={tab}

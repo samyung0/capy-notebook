@@ -98,14 +98,10 @@ at two levels:
   editor grant counts as an editor. `canClone`, Explore's `canClone`, a file row's
   `rights.clone` and `assertCloneSourceTx` agree with it. A personal workspace
   doesn't change, viewers included. A refusal answers the usual non-disclosing 404.
-- **Assignment.** A quiz under a published assignment that hasn't closed, or that
-  closed under Show answers Do not show and was not turned to practice, is cloned
-  only by the workspace's owner and teaching assistants (`assertAssignedQuizCloneTx`,
-  `quizAssignmentHoldsSQL`),
-  which covers link and public editors too. Their workspace clone leaves that quiz
-  out and counts it in the toast, and Explore's row and their item menu drop Clone.
-  After closing the normal rules are back. On a quiz's own page Clone still shows
-  for them, and the dialog answers the server's refusal.
+- **Graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
+  (`materials.assignment_id`) is never cloned, by staff either (`CloneMaterial`
+  answers 404), a workspace clone leaves it and its images out, and Explore
+  never lists it. No other quiz is held by an assignment.
 
 The server applies Practice's row: `WorkspacePractice` gives member counts and
 averages to a class's owner and editor members only, and suggestions and own
@@ -125,6 +121,7 @@ first, since a task's only staff is its maker):
 | --- | --- | --- | --- | --- | --- |
 | Make, change, publish, close, reopen or delete one | Yes | Yes | No | No | No |
 | Read every assignment, the report, any member's results; change marks | Yes | Yes | No | No | No |
+| Set or clear a member's grade on a graded Assignment (`PUT /api/assignments/{id}/grades/{userId}`, Epo 2026-11-14; a frozen account cannot) | Yes | Yes | No | No | No |
 | See and take it, read own results, tick an unmarked one | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | Tick a quiz or a hand-in off their own To do without doing it (`PUT /api/assignments/{id}/todo-check`) | If they ticked "You" | If they ticked "You" | No | Yes | No |
 | Tick the answers waiting off their own To do (`todo-check` with `approvals`) | Yes | Yes | No | No | No |
@@ -145,8 +142,9 @@ owner get 404 on every one and see none of them. In a workspace it needs its
 maker still a member; when they leave or are removed, or the workspace is
 deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
 /api/todo/tasks`), and its quiz and files are any its maker can open, from any
-workspace or none (`checkAssignmentQuizTx`, `ownTaskFileSQL`,
-`ownTaskMaterialSQL`): never one hidden from them (a class's quiz under an open
+workspace or none (`ownTaskFileSQL`, `ownTaskMaterialSQL`), while a marked
+task's quiz is made with it and the task owns it (`makeGradedQuizTx`, Epo
+2026-11-16): never one hidden from them (a class's quiz under an open
 assignment is held from every viewer member, and one it went to stays refused
 past the close while its keys are held), and a file they later lose access to leaves
 the task, so a task shows its maker nothing they could not open themself;
@@ -275,7 +273,7 @@ preview their items in the app.
 The renderer (`src/share/server.tsx`) is built by Vite as its own bundle (`vite build --ssr` into `dist/_ssr`,
 kept out of the static assets by `.assetsignore`; `wrangler.jsonc` aliases it as `capy-share-render`), so the page
 components keep their browser imports; libraries that only run in effects or on click (Mermaid, MathLive's
-editor, jsxgraph, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
+editor, KaTeX, the app's embed editors) are empty modules there. It writes the data it rendered from
 into `<script id="share-state">`, and the page's script (`share.html`, `src/share/main.tsx`) never fetches it
 again. A quiz or flashcard set hydrates whole (`StudyPage.tsx`, the same tree on both sides, in English). Nothing on these pages counts, signed in or out, and they read no session (Epo 2026-11-05, Q640 B; 2026-11-06, Q663 A):
 a quiz's check takes the share route, which marks what has one right answer and leaves an answered open part Not marked
@@ -328,7 +326,7 @@ Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
 (`src/lib/localDb.ts`) and are never imported into an account on sign-in. Every
 part is graded through that API route, by reference to the stored quiz; the
 anonymous caps in [observability-metering.md](observability-metering.md) count
-only the open parts Jev grades.
+only the open parts a model grades.
 
 Sources: [Worker routes](../workers/site/public.ts),
 [public handlers](../server/internal/httpapi/huma_anonymous.go) and
@@ -469,17 +467,33 @@ unchanged.
   annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
-- **Held by an assignment.** A class's quiz under an open assignment is read as
-  hidden by the same checks without the column being written
-  (`materialHiddenSQL`, Epo 2026-11-11): every viewer member loses it until the
-  assignment closes or is deleted, or under Show answers Do not show until
-  staff turn it to practice after the close, and the one it went to keeps the
-  row that opens the assignment. See
-  [study progress](study-progress.md#assignments), One row.
+- **Owned by a graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
+  (`materials.assignment_id`, migration 0174) is hidden for good: claiming it
+  sets `hidden`, and `materialHiddenSQL` and `live_access` read it as hidden
+  whatever the column says, so only the class's staff (and a Task's maker) open
+  it, before and after the close. It lists nowhere (every list, search, picker,
+  Practice, Study, Explore and the pipeline's scope, outline and summary queries
+  have `m.assignment_id IS NULL`), hiding it by hand and trashing it answer 404,
+  and it goes when its assignment is deleted (`ON DELETE CASCADE`). A graded
+  quiz or a marked task is made with its quiz in one request (the quiz maker's
+  `gradedQuiz`, or a copy of a workspace quiz, Epo 2026-11-16), so no quiz
+  waits unowned. It is charged to its maker, so
+  their account purge deletes it and the assignment keeps its frozen copy. See
+  [study progress](study-progress.md#assignments), The owned quiz.
 - **Switching it.** `PUT /api/files/{id}/hidden` and `PUT
-  /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu ("Hide
-  file" / "Unhide file") or its header: a Hide file button on a visible item (from
-  `sm`), the chip on a hidden one. Owners and editors may switch it: the
+  /api/materials/{id}/hidden` with `{hidden}`, from the item's ⋮ menu or the
+  chip on a hidden one's header. The menu's row is a switch, "Shared with
+  members" (mock A, Epo 2026-11-18; "Hide file" / "Unhide file" before): on
+  while members see the item, read to screen readers as a checkbox item
+  (`MenuItem.switch` in `Menu.tsx`). Switching it off hides the item without
+  asking and leaves the menu open on the switch, which moves at once (it shows
+  the value being sent until the lists have it, `useToggleHidden`'s
+  `hiddenOf`, and falls back with a toast on a refusal; the write stays
+  pending until the workspace's lists and the account's Files list,
+  `qk.itemsRoot`, are read again, so that page's row does not snap back);
+  switching it on, or the chip, closes the menu and asks first
+  ("Share this file with members?", everyone in the workspace will see it;
+  Epo 2026-11-16). Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
   and a standalone or embedded item answers 404. Hiding drains the item's live
@@ -515,23 +529,34 @@ unchanged.
   workspace or of one item, copies each item's flag as it is: hidden stays
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
+- **Every quiz an editor makes starts hidden** (Epo 2026-11-16): an owner or
+  editor shows it to members from its Hidden chip or ⋮ menu when it is ready.
+  Generate (`huma_generate.go`, an editor's quiz), Create quiz (`createQuiz`
+  and `createMaterial` with kind quiz), From the bank (`CreateQuizFromBank`,
+  `bankCopyToNewQuiz`) and the chat agent's quiz (`internal_materials.go`, in a
+  workspace) insert it with `hidden`; a viewer's own practice quiz is a
+  standalone material nobody else reaches, and a quiz embedded in a note
+  follows its note (the new workspace's starter quiz is one).
 - **Make a quiz.** A converted quiz starts hidden unless its maker turns off
-  the files step's switch, Hide the quiz from members (Epo 2026-11-11; on by
-  default and off from Practice's Add practice, sent as `hidden` with the run
-  and kept on its row). Files uploaded in the
+  the files step's switch, Hide the quiz (Epo 2026-11-11; on by default
+  wherever the dialog opens, Practice's Add practice too since 2026-11-16,
+  sent as `hidden` with the run and kept on its row). Files uploaded in the
   Make a quiz dialog are uploaded hidden, with the same `hidden` flag, so a
   mark scheme uploaded for the quiz never reaches the students; a file picked
   from the workspace keeps its setting, and the run changes no file's
   visibility (Epo 2026-11-04). See
   [agentic-retrieval.md](agentic-retrieval.md#make-a-quiz-questions-from-uploaded-files).
 
-An open hidden item's header shows a "Hidden from members" chip after its
+An open hidden item's header shows a "Hidden" chip (the state alone, Epo
+2026-11-16; the upload dialog's choice keeps "Hidden from members") after its
 name (X2; the icon alone on phones). For owners and editors who may change the
-item the chip is a button ("Unhide file" in its tooltip) that shows it to
-members, as the ⋮ menu does (`useToggleHidden`, same request and error toast);
-hiding again stays in the menu, and a read-only editor's chip is a plain
-label. A hidden item's Files row carries the eye at its end (`HiddenMark`,
-board T3).
+item the chip is a button ("Share with members" in its tooltip and to screen
+readers) that shares it with members, as the ⋮ menu's switch does
+(`useToggleHidden`, same request, error toast and confirm dialog); a visible
+item's header shows nothing (Epo 2026-11-16) and hiding stays in the menu,
+and a read-only editor's chip is a plain label. A hidden item's Files row
+carries the eye at its end (`HiddenMark`, board T3), centred in the hover ⋮'s
+28px column as a topic's count is.
 
 Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
 [routes](../server/internal/httpapi/huma_hidden.go),
@@ -552,7 +577,7 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   behind mention autocomplete, which carries only user id, display name, and
   avatar. A user whose display name is empty is shown by user id.
 - **People with access** on the workspace's Members page (Epo 2026-11-11; a
-  class's owner and teaching assistants find it on Members' Manage tab, and
+  class's owner and teaching assistants find the same page, and
   Workspace settings has no Sharing tab): link sharing first, for the owner
   and editors. The owner's row reads Owner; for the owner each other row has
   its role dropdown, applied at once, and a Remove button that asks first
@@ -1069,10 +1094,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
     one, because a link or public visitor has no row to name; signed-out pages
     are static and join no room, so every connection has a user id and is found
     alike. A note's embedded items and a quiz's keys room go with the event as
-    in every room event (`evict_children`, `evict_material_epochs`). Frozen, the
-    storage limit and an assigned quiz are not revoked: the writer's recheck
-    answers the first two with the read-only strip, and a reader keeps an
-    assigned quiz until they leave. Delivery is idempotent: a repeat closes
+    in every room event (`evict_children`, `evict_material_epochs`). Frozen and
+    the storage limit are not revoked: the writer's recheck answers both with
+    the read-only strip. Delivery is idempotent: a repeat closes
     nobody new, so a revoke is not deduplicated; a check that fails answers
     negatively and the outbox retries it; a room on no instance acknowledges,
     having no one to close, and every tab on every instance closes.
@@ -1352,6 +1376,29 @@ Details live in [study-progress.md](study-progress.md).
 Sources: [study routes](../server/internal/httpapi/huma_study.go) and
 [study store](../server/internal/store/study.go).
 
+### Item banks
+
+Details live in [question-bank.md](question-bank.md#item-banks).
+
+- My bank (`/api/item-banks/me/…`) is its owner's alone. A class's bank (the
+  workspace id in place of `me`) is read and written by the class's owner and
+  editor members by persisted membership (`assignmentStaff`); viewer members,
+  share-role editors, link and public visitors, and any personal workspace get
+  404 (`itemBankScope`).
+- Writes need an editable account (`requireAccountEdit`; delete takes
+  `requireAccountMutate`), and a class bank write takes the workspace's editor
+  lock first (`lockItemBankTx`).
+- Its images are charged to whoever added them (Who pays, below), listed in
+  their Files page (`bank` rows, unreachable once they are no longer the
+  class's staff), and resolve for the bank's readers only (`bankAssetReadable`).
+  A class's bank and its images go with the workspace; `PurgeUser` deletes My
+  bank and clears `created_by` on class questions the account added, whose
+  images go with everything else it pays for; a quiz copied from such a
+  question afterwards drops the missing image (`CreateQuizFromBank`).
+
+Sources: [item bank routes](../server/internal/httpapi/huma_item_banks.go) and
+[item bank store](../server/internal/store/item_banks.go).
+
 ### Drawing answers
 
 A drawing part's answer is its saved board (and, while its part waits on the
@@ -1391,15 +1438,144 @@ the person attempting (see [study-progress.md](study-progress.md) and
 
 ### Workspace canvases
 
-A member's workspace canvas (Epo 2026-11-09) is theirs alone: a standalone
-material of kind `canvas` linked to the workspace by `canvas_workspace_id`, so a
-standalone material's owner-only rules apply (read, trash, restore, purge) with
-no new path. `GET /api/workspaces/{id}/canvas` finds or makes the caller's own
-for any member (a frozen account opens an existing one; making one needs an
-editing account), and `PUT` records a save at the revision read. It is never
-shared (`UpdateStandaloneMaterialPrivacy` refuses it), never cloned
-(`CloneMaterial` refuses it) and never hidden or filed; it leaves with the
-member (`RemoveWorkspaceMemberWithResult`) and with the workspace.
+A canvas (Epo 2026-11-09; any number per member and workspace since Epo
+2026-11-12) is a standalone material of kind `canvas`, owned and paid for by
+the person who made it. One drawn in a workspace names it in
+`canvas_workspace_id` and sits in no workspace (`workspace_id` is null), so
+no workspace read lists it; one made on the account's Canvas page names none.
+Its board is drawn in the canvas's collaboration room (Epo 2026-11-18, one
+room per canvas whether it is shared or not;
+[plate-editor](frontend/plate-editor.md#the-boards-tools), The canvas's room).
+
+- **Private or shared (Epo 2026-11-18).** A new canvas is private: its creator
+  alone holds it. `materials.canvas_shared` (migration 0182; only a canvas
+  with a `canvas_workspace_id` may carry it) shares it with the workspace it
+  was drawn in, and its members then hold it by their workspace role. There is
+  no per-canvas invite, grant, link or public state
+  (`UpdateStandaloneMaterialPrivacy` refuses a canvas), and a canvas of one's
+  own, in no workspace, is never shared (`PATCH` answers 422).
+- **The role** is one rule in Go (`materialAccessRow.canvasRole`, read by
+  `materialEffectiveAccess` and `ReadableMaterialIDs`) and in the
+  collaboration server (`access::canvas_role`, read by `live_role`):
+  - in no workspace: its creator is `owner`, anyone else has none;
+  - drawn in a workspace: someone with no role there has none, their own
+    canvas included, so a leaver and a link or public visitor hold nothing
+    (Epo 2026-11-09). A workspace whose owner's account is deleted, being
+    deleted or suspended gives no role;
+  - its creator, while they have a role there, is `owner` whatever that role
+    is, so a creator who is a workspace viewer still draws on their own;
+  - once shared, every other member holds their workspace role: owners and
+    editors draw, viewers watch;
+  - the `hidden` flag, link grants and share roles never apply to a canvas.
+- **The room token** (`POST /api/materials/{id}/collaboration-token`, the
+  route every material uses; the refusal a canvas had before is gone) carries
+  `write` for `owner` and `editor` and `read` for `viewer`, and answers 404 to
+  anyone with no role. It is `read` for everyone while the canvas's payer (its
+  creator) is frozen or at its storage limit, and for an actor whose own
+  account is frozen; a `keys` document is refused for a canvas as for any
+  material that is no quiz. The collaboration server rechecks the role on
+  its own schedule (`LiveAccess::access`).
+- **Revoking.** Taking a shared canvas back queues a `revoke` for its room
+  (`materials_canvas_unshared_eviction`, migration 0182): the room stays
+  loaded, its creator stays joined and only the channels whose role no longer
+  covers them close. Sharing widens access and queues nothing. A membership,
+  role or lifecycle change in the workspace rechecks the channels of that
+  workspace's canvases too (`enqueue_workspace_collaboration_evictions` also
+  selects `kind='canvas' AND canvas_workspace_id`). Nothing announces a share
+  or an unshare to the other members (the hidden-file write publishes no
+  event either): the picker reads its list again each time it opens.
+- **The routes.** `GET /api/canvases` lists every canvas the caller made
+  (their own first, then the ones they drew in workspaces); with
+  `workspaceId` (members only) the ones they drew there and the other members'
+  shared ones, each row carrying `shared`, `own` and, on another member's,
+  `creatorName`. A canvas whose creator's account is not live is left out, as
+  `GET /api/canvases/{id}` would not open it. `POST /api/canvases` makes a
+  private one (an editing account needed, a member when a workspace is named).
+  `GET /api/canvases/{id}` answers anyone with a role (404 otherwise) with
+  `shared`, `own` and what a note's read says of the caller's editing, in its
+  field names (`editingOf`, shared with `materialResponse`): `role` (owner for
+  the creator, else the workspace role), `capabilities` (`canEdit` off while a
+  frozen account, the caller's or the creator's, makes it read-only;
+  `canEditContent` off also while the creator is at its storage limit) and,
+  for an editor no frozen account stops, `storageFull` (`self` or `payer`), so
+  the page shows the note's read-only or storage strip and tells a narrowed
+  editor from a viewer. `PATCH /api/canvases/{id}` with `{shared}` shares or
+  takes back. `PUT /api/canvases/{id}` (the saved board) is gone, and a
+  `board` editor asset for a canvas is refused with 400
+  (`checkEditorAsset`): a board asset is a quiz's drawn sample answer alone.
+  `UpdateMaterial` refuses a content patch for a canvas (its document is
+  written by its room's projection alone).
+- **Who shares, renames and deletes (PROVISIONAL, open question 3 of the
+  canvas build, with Epo: who administers a shared canvas, and may a
+  workspace viewer share their own).** As built, the creator alone
+  (`canvasAdmin`): `SetCanvasShared` answers 403 to another member who holds
+  the canvas and 404 to anyone who does not; sharing also needs the creator to
+  be an owner or editor of the workspace at that moment (`canShareCanvas`,
+  read under the workspace's mutation lock, so a role change landing at the
+  same time is seen), while taking back needs no role; a frozen creator does
+  neither (`requireAccountEdit`, `assertEditableTx`), so a frozen creator
+  cannot unshare. Rename (`UpdateMaterial`) is refused for anyone but the
+  creator, though a shared canvas's editors pass the route's
+  `AssertMaterialEditor`. Delete follows the standalone rule: only the owner
+  of a material in no workspace trashes it. A workspace owner who did not make
+  the canvas can do none of the three.
+- **Leaving (PROVISIONAL, open question 2: a shared canvas whose creator
+  leaves or is removed).** As built, every canvas a member drew in the
+  workspace is deleted when they leave or are removed, shared ones included
+  with what the other members drew on them (`dropLeaverCanvasTx`, decided for
+  private canvases, Epo 2026-11-09). It also goes with the workspace.
+- **Images.** An image on a canvas is an `image` editor asset of the canvas
+  material, charged to whoever uploaded it (`lockEditorAssetScopeTx`): the
+  creator, or on a shared canvas a member whose role there is owner or editor,
+  read under the material's row lock so an unshare has landed or waits. A
+  viewer is refused, and nobody adds to a canvas whose creator is frozen.
+- **An editor's images on a canvas they lost.** An editor who put images on a
+  shared canvas keeps paying for them after the canvas is taken back or they
+  leave the workspace. The Files page and its Embeds rows mark such an image
+  `lostAccess` as they mark an item of a lost workspace
+  (`lostCanvasSQL` through `embedHomeLostSQL`: the caller holds no role on the
+  canvas under its creator's lifecycle): the row keeps the canvas's title and
+  drops its material and workspace ids, so it can be deleted and never opened;
+  the title is blank too once the workspace's owner, or for another member's
+  canvas its creator, is no longer live (`embedHomeTitleSQL`). When the leaver
+  is the creator the canvas itself is deleted, and its images with it.
+- It is never cloned (`CloneMaterial` refuses it), hidden or filed, and no
+  agent tool, command or detailed read reaches it: the collaboration server
+  answers 409 `unsupported_operation` to an agent inspect or edit, a
+  replace-block command and the live read of a loaded board. It takes no
+  comments: creating a discussion or adding a comment on a canvas answers 400
+  (`assertCommentableTx`, as `UpdateMaterial` refuses its content patch), so
+  no row is written that nothing shows. The global search lists every canvas
+  the caller holds a role on (`NOT lostCanvasSQL`): their own and the other
+  members' shared ones, each linking to its Canvas panel or page at that
+  canvas (`?view=canvas&c=` or `/canvas?c=`).
+- **From the Trash** (Epo 2026-11-12, as a note or file). A trashed canvas is
+  in its creator's Trash alone (it sits in no workspace), and its creator alone
+  opens it from there (`trashReaderSQL`, `TrashedCanvas`): `GET
+  /api/canvases/{id}` answers with `trash` (`episodeId`, `purgeAfter`,
+  `canRestore`), no `role` and every capability off but `canView`, and `GET
+  /api/canvases/{id}/board` with the stored board, `{updates}`: the room's base
+  state then each stored update in order, Yjs V1 and base64, empty for a canvas
+  never opened (`TrashedCanvasBoard`, one statement so a fold drops nothing).
+  It joins no room, as a trashed note reads its stored content: the room token,
+  every room and every other write still refuse a trashed canvas, and the board
+  route answers 404 for a live canvas (its board is its room's) and for anyone
+  else. Its images resolve for the creator as a trashed note's
+  (`MaterialInTrashFor`). Restore makes it live at a new room schema.
+- Known and left as built (the Go review, 2026-11-18): a creator
+  lowered to workspace viewer stays `owner` of their canvases, so one they
+  shared stays shared and they keep drawing and uploading there, though they
+  can share no other; and the suspension or deletion request of a workspace
+  owner closes the rooms of that owner's own materials only, so members'
+  canvas rooms there last until their 5 minute tokens end, the same gap
+  member-paid workspace materials have.
+
+Sources: [canvas store](../server/internal/store/canvas.go),
+[access](../server/internal/store/share.go),
+[routes](../server/internal/httpapi/huma_canvas.go),
+[lost rows](../server/internal/store/listing.go),
+[migration 0182](../server/migrations/0182_canvas_shared.sql),
+[collaboration access](../collaboration-rs/crates/server/src/access.rs).
 
 A paper (an assignment answered on paper, migration 0161) is the member's own
 standalone uploads, linked to the attempt by `files.attempt_id`, so a viewer
@@ -1831,22 +2007,24 @@ and never show it. The sidebar (the rail, the phone nav drawer) shows
 popover lists Upload a file, Chat with Capy and Practise a topic; a row opens
 its step in the workspace on screen, or else the latest one, through one-shot
 params the workspace page takes and drops: `?add=upload` (the Add file
-dialog), `?chat=new` (a new chat), `?study=practice` (Practice). A step ticks
+dialog), `?chat=new` (a new chat), and the `study/practice` route (Practice). A step ticks
 when it happens in this browser: an upload finishes, a chat message is sent, a
 topic session's first answer is checked. The starter workspace counts as made, so there is no create
 step.
 
 Start tour runs the guided tour app-wide (`Tour`, mounted by `AppShell` while
 one runs): ten steps across the workspace (Files panel, Chats panel with its
-view menu open, the editor, a question's edit dialog, Study), a review, its
+view menu open, the editor, editing a question, Study), a review, its
 result, Settings → Customizations and the mic, on the dashboard. Each step opens its
 page, waits for it, lights a panel, a dialog or the whole page and outlines the
-buttons it names; the question dialog's Undo and Redo also get a held
+buttons it names; the question step's Undo and Redo also get a held
 "Undo · Redo" label. The card sits beside the lit part or, without room, in
 its bottom-right corner; a part under 96px tall goes above or below it
-instead, so the phone mic is not covered. The question step edits the workspace's first quiz,
-else the welcome note's embedded one: its quiz block's Edit opens the same
-dialog. The last step lights the mic that opens the
+instead, so the phone mic is not covered. The question step opens the workspace's first quiz,
+lighting the centre panel and outlining the header's Undo, Redo and save state
+and the open card (the tour opens the first); without a quiz it opens the
+welcome note's embedded one, whose first question opens in place, the
+block's Undo, Redo, live state and open card lit instead. The last step lights the mic that opens the
 account voice overlay: the voice card on the rail or the full sidebar. A step
 whose part this width lacks (side panels on phones, and this mic, since the
 phone top row has none since Epo 2026-11-11) or whose note is missing is
@@ -1914,7 +2092,8 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
   quiz or set row is the exception: it is charged to its note's payer.
 - A member who leaves or is removed keeps paying for those images and audio
   and deletes them from its Files page, where they are listed under a note it
-  can no longer open; deleting its account deletes them. The
+  can no longer open, or under a class's item bank it no longer reads (Epo
+  2026-11-14); deleting its account deletes them. The
   note, and study screens, then show each as removed by its uploader.
 - Nobody adds bytes to another user's bill, except the embedded quiz or set
   row itself, charged to its note's payer; the images in it are the account's
@@ -2204,7 +2383,22 @@ the caller can open: the workspace list's set (`visibleWorkspacesSQL`) and its
 standalone materials, never a row it only pays for; the dashboard's Recent uses
 it and offers Rename/Properties/Delete only where the workspace's
 `capabilities` allow editing. Global search (`Store.Search`) follows the same
-set for workspaces, files and flashcard sets.
+set for workspaces, files and every material not embedded in a note (Epo
+2026-11-13), and adds the caller's own canvases (a workspace's opens on its
+Canvas panel). It matches names and titles only, never content: a
+case-folded substring with `%` and `_` literal, or a name in which every query
+word is within a few edits of a word or word start (`search_typos`,
+fuzzystrmatch `levenshtein_less_equal`, migration 0172). A query word allows
+Meilisearch's typo counts: none under five characters, one from five, two from
+nine, so "biolgy" finds Biology 101, "adv chemsitry" Advanced chemistry and
+"math" not Mats. Typos widen only when hits are few (Typesense's
+`typo_tokens_threshold`): a kind shows hits a typo further away only while it
+has fewer than three closer ones, so three sets named "Plans" hide "Plants".
+Words split on anything not a letter or digit, so an accent counts as one edit
+(ecole finds École) and Chinese and Japanese names, written without spaces,
+match as substrings only. It ranks the whole name, then names starting with the
+query, then ones holding it, then fewer typos, then shorter names, and keeps
+five hits of each kind; the dialog shows each kind under its own heading.
 
 The Files page shows one list (Epo 2026-11-09, `GET /api/items`,
 `store.ListItems`): to the user a file is any of them, so uploaded files, the
@@ -2219,9 +2413,8 @@ keeps the access rules below. It filters by owner and location (Epo
 2026-10-28): My files (the default, the paid-for list above) or All files
 (`scope=all`: that plus every file and block in workspaces the caller owns or
 is a member of, `memberWorkspacesSQL`, never a link or public workspace it
-only opened, and a hidden quiz assigned to the caller while that assignment is
-open, which opens the assignment as in Recent (`quizAssignedToSQL`; Epo
-2026-11-09); embeds and submissions are always its own), and everywhere (the
+only opened, nor a quiz a graded quiz owns (2026-11-14); embeds, an item bank
+question's images included, and submissions are always its own), and everywhere (the
 default) or Workspace only (`location=workspace`; a submission sits in its
 assignment's workspace). The Kind filter takes file kinds and note, quiz,
 flashcards; image and audio also take embedded images and audio. Every file
@@ -2275,7 +2468,7 @@ Forget or privacy change handled elsewhere never swallows the reopen. Opens of
 embedded materials or of someone else's standalone material are acknowledged
 and not stored, since Recent never lists them. In the browser every
 successful mutation marks Recent stale (`src/api/queryClient.ts`), as do chat
-agent changes and finished uploads, so it refetches wherever it shows. Past reviews and notifications keep the caller's
+agent changes and finished uploads, so it refetches wherever it shows. History's revisions and notifications keep the caller's
 history but blank the live workspace (and topic) name once the caller can no
 longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.

@@ -128,9 +128,6 @@ it('shows a part left Not marked in the result as not marked, its marks in the t
   expect(html).toContain(m.result_not_marked({ count: 1 }));
   expect(html).not.toContain(m.result_wrong({ count: 1 }));
   expect(host.textContent).toContain('— / 4');
-  expect(host.textContent).toContain(
-    m.result_type_marks({ awarded: '—', max: '4' })
-  );
   // Its marks stay in the score's total.
   expect(host.textContent).toContain('0 / 4');
   act(() => root.unmount());
@@ -226,6 +223,50 @@ it('a try picked up again opens at the first question not checked', async () => 
   expect(
     host.querySelector('[data-question-id]')?.getAttribute('data-question-id')
   ).toBe('b');
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+function EmbeddedQuiz() {
+  const control = useMemoryRun(
+    async (id) =>
+      ({
+        question: {
+          ...three.find((q) => q.id === id),
+          parts: three[0].parts.map((part) => ({ ...part, awarded: 1 })),
+        },
+      }) as never
+  );
+  return (
+    <AttemptBody
+      control={control}
+      embedded
+      name=""
+      questions={three}
+      trail={[]}
+    />
+  );
+}
+
+it('an embedded quiz has Reset where a checked question’s Check was, and no count', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<EmbeddedQuiz />));
+  const named = (name: string) =>
+    [...host.querySelectorAll('button')].filter(
+      (button) => button.textContent?.trim() === name
+    );
+  expect(host.textContent).not.toContain(
+    m.quiz_checked_count({ checked: 0, total: 3 })
+  );
+  await act(async () => named(m.question_ui_check())[0]?.click());
+  expect(named(m.question_ui_check())).toHaveLength(2);
+  expect(named(m.action_reset())).toHaveLength(1);
+  // Answered again from blank.
+  await act(async () => named(m.action_reset())[0]?.click());
+  expect(named(m.question_ui_check())).toHaveLength(3);
+  expect(named(m.action_reset())).toHaveLength(0);
   await act(async () => root.unmount());
   host.remove();
 });

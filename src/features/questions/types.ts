@@ -1,5 +1,10 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
+import type { Board, GraphElement } from '@/features/graph/model';
+import { m } from '@/i18n';
+
+/** A graph's elements: the one graph model (src/features/graph/model.ts). */
+export type { GraphElement } from '@/features/graph/model';
 
 export const QUESTION_TYPES = [
   'mcq',
@@ -15,7 +20,7 @@ export const QUESTION_TYPES = [
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 export type CognitiveLevel = 'recall' | 'application' | 'analysis';
 
-export type TextBlock = { type: 'text'; text: string; label?: string };
+export type TextBlock = { type: 'text'; text: string };
 type ChartEmbed = Extract<
   (typeof EMBED_CATALOG.embeds)[number],
   { kind: 'chart' }
@@ -59,96 +64,12 @@ export type PlotBlock = {
   /** A caption in notes and the accessible label (optional). */
   description?: string;
 };
-export type GraphElement =
-  | {
-      type: 'functiongraph';
-      id: string;
-      term: string;
-      domain?: [number, number];
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'point';
-      id: string;
-      name?: string;
-      coords: [number, number];
-      hidden?: boolean;
-    }
-  | {
-      type: 'line';
-      id: string;
-      points: [string, string];
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'segment';
-      id: string;
-      points: [string, string];
-      dash?: boolean;
-      /** 1 to 3 hatch marks; segments with the same count are equal in length. */
-      ticks?: number;
-      hidden?: boolean;
-    }
-  | {
-      type: 'circle';
-      id: string;
-      center: string;
-      radius: number;
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'text';
-      id: string;
-      coords: [number, number];
-      text: string;
-      hidden?: boolean;
-    }
-  | {
-      /** The non-reflex angle at the middle point; 90° draws the square mark. */
-      type: 'angle';
-      id: string;
-      points: [string, string, string];
-      label?: string;
-      hidden?: boolean;
-    }
-  | {
-      /** Counterclockwise from the first point to the second around `center`. */
-      type: 'arc';
-      id: string;
-      center: string;
-      points: [string, string];
-      dash?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'sector';
-      id: string;
-      center: string;
-      points: [string, string];
-      dash?: boolean;
-      shade?: boolean;
-      hidden?: boolean;
-    }
-  | {
-      type: 'polygon';
-      id: string;
-      points: string[];
-      dash?: boolean;
-      shade?: boolean;
-      hidden?: boolean;
-    };
 export type GraphBlock = {
   type: 'graph';
-  board: {
-    bbox: [number, number, number, number];
-    axis: boolean;
-    grid: boolean;
-  };
+  board: Board;
   elements: GraphElement[];
-  image: { url: string } | { svg: string };
+  /** The size it is drawn at; no picture is stored, every view draws the
+   * elements (Epo 2026-11-16). */
   width: number;
   height: number;
   /** Alt text and grading text (optional). */
@@ -176,7 +97,19 @@ export type QuestionBlock =
 export type QuestionAnswer =
   /** One or more correct options (Epo 2026-10-15): one is answered as a single
    * choice, several as checkboxes under a hint (Epo 2026-11-08). */
-  | { type: 'mcq'; options: string[]; correct: number[] }
+  | {
+      type: 'mcq';
+      options: string[];
+      correct: number[];
+      /** Multiple answer (Epo 2026-11-15, as Canvas and Google Forms):
+       * checkboxes even with one correct option. Several correct options are
+       * checkboxes without it too. */
+      multiple?: true;
+      /** Shuffle options (Epo 2026-11-15, as Canvas): members see the options
+       * shuffled, the `locked` indices (sorted, only with it) in place. */
+      shuffle?: true;
+      locked?: number[];
+    }
   | { type: 'boolean'; correct: boolean }
   | { type: 'short'; accepted: string[]; unit?: string }
   | {
@@ -185,7 +118,7 @@ export type QuestionAnswer =
       pairs: { left: string; right: number }[];
     }
   | { type: 'ordering'; items: string[] }
-  | { type: 'open'; accepted: string[]; hints: string[] }
+  | { type: 'open'; accepted: string[] }
   /** One accepted list per numbered gap written in the part's text. */
   | { type: 'gaps'; accepted: string[][] }
   /** Answered on the drawing board, which every drawing part opens plain
@@ -242,11 +175,17 @@ export type Question = {
   layout: 'paper' | 'split';
   labels: 'letters' | 'numbers';
   level?: CognitiveLevel;
+  /** Its own topics, at most QUESTION_TOPICS_MAX of the quiz's workspace's
+   * (Epo 2026-11-15); absent or empty follows the quiz's topic, and an id the
+   * workspace no longer holds is ignored. */
+  topicIds?: string[];
 };
 
 export type LearnerAnswer =
-  /** `multiple` only when several options are correct (Epo 2026-11-08). */
-  | { type: 'mcq'; options: string[]; multiple?: true }
+  /** `multiple` only when several options are correct (Epo 2026-11-08).
+   * `order`, with Shuffle options: each shown option's authored index, which
+   * an answer stores. */
+  | { type: 'mcq'; options: string[]; multiple?: true; order?: number[] }
   | { type: 'boolean' | 'open' }
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
@@ -345,14 +284,78 @@ export function withoutGapsBlock(
   };
 }
 
+/** Each block's blanks' accepted answers, block by block. */
+export function gapListsByBlock(part: QuestionPart): string[][][] {
+  const accepted = part.answer.type === 'gaps' ? part.answer.accepted : [];
+  let at = 0;
+  return part.blocks.map((block) => {
+    const count = gapNumbers([block]).length;
+    at += count;
+    return accepted.slice(at - count, at);
+  });
+}
+
+/** A gaps part with `blocks` in place of its own and `lists` their blanks'
+ * answers block by block (`gapListsByBlock`), renumbered in reading order:
+ * blocks moved or split keep their blanks' answers. */
+export function withGapsBlocks(
+  part: QuestionPart,
+  blocks: QuestionBlock[],
+  lists: string[][][]
+): QuestionPart {
+  if (part.answer.type !== 'gaps') return { ...part, blocks };
+  const used = gapListsByBlock(part).flat().length;
+  return {
+    ...part,
+    answer: {
+      ...part.answer,
+      accepted: [...lists.flat(), ...part.answer.accepted.slice(used)],
+    },
+    blocks: renumberGaps(blocks),
+  };
+}
+
 /** Whether an mcq has several correct options, read from its key or, for a
  * learner, the `multiple` flag: one is a single choice, several are checkboxes
  * under a hint (Epo 2026-11-08). */
 export function multipleAnswers(answer: QuestionAnswer | LearnerAnswer) {
   if (answer.type !== 'mcq') return false;
   return 'correct' in answer
-    ? answer.correct.length > 1
+    ? answer.multiple === true || answer.correct.length > 1
     : answer.multiple === true;
+}
+
+/** Option indices as Shuffle options shows them: the locked ones in their
+ * own places, the rest shuffled by `random` into the others. */
+export function shuffledOrder(
+  count: number,
+  locked: readonly number[] = [],
+  random: () => number = Math.random
+): number[] {
+  const keep = new Set(locked);
+  const free = Array.from({ length: count }, (_, i) => i).filter(
+    (i) => !keep.has(i)
+  );
+  for (let i = free.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [free[i], free[j]] = [free[j], free[i]];
+  }
+  let next = 0;
+  return Array.from({ length: count }, (_, i) =>
+    keep.has(i) ? i : free[next++]
+  );
+}
+
+/** An mcq's options as a learner sees them, each with its authored index
+ * (what an answer stores): a learner view's `order`, else as written. */
+export function shownOptions(
+  answer: Extract<QuestionAnswer | LearnerAnswer, { type: 'mcq' }>
+): { index: number; text: string }[] {
+  const order =
+    'order' in answer && answer.order
+      ? answer.order
+      : answer.options.map((_, i) => i);
+  return order.map((index) => ({ index, text: answer.options[index] ?? '' }));
 }
 
 /** Authored parts carry a worked solution; learner parts never do. */
@@ -366,6 +369,8 @@ export function questionMarks(question: Question | LearnerQuestion): number {
   return question.parts.reduce((total, part) => total + part.marks, 0);
 }
 
+/** A new question, its text and answer filled as Google Forms fills a new
+ * question's (Epo 2026-11-15), so it starts with no issue to show. */
 export function blankQuestion(): Question {
   return {
     id: crypto.randomUUID(),
@@ -373,8 +378,8 @@ export function blankQuestion(): Question {
     layout: 'paper',
     parts: [
       {
-        answer: { accepted: [''], type: 'short' },
-        blocks: [{ text: '', type: 'text' }],
+        answer: { accepted: [m.question_default_answer()], type: 'short' },
+        blocks: [{ text: m.question_default_question(), type: 'text' }],
         id: crypto.randomUUID(),
         marks: 1,
         solution: [],
@@ -437,11 +442,10 @@ export function blockWithoutBlanks(block: QuestionBlock): QuestionBlock {
   }
 }
 
-/** The question without blanks: empty text blocks, a blank short-answer unit,
- * blank accepted answers (a blank's too) and blank open-answer hints never
- * leave it incomplete (no accepted answer left does), and saves and the quiz
- * projection drop them, with every block as `blockWithoutBlanks` keeps it
- * (Epo 2026-10-14). Blank marking items go too, and then the part's marks are
+/** The question without blanks: empty text blocks, a blank short-answer unit
+ * and blank accepted answers (a blank's too) never leave it incomplete (no
+ * accepted answer left does), and saves and the quiz projection drop them,
+ * with every block as `blockWithoutBlanks` keeps it (Epo 2026-10-14). Blank marking items go too, and then the part's marks are
  * the rest's (`schemeMarks`, Epo 2026-10-15). */
 export function withoutBlanks(question: Question): Question {
   const keep = (blocks: QuestionBlock[]) =>
@@ -455,11 +459,7 @@ export function withoutBlanks(question: Question): Question {
         ? { ...answer, accepted: filled(answer.accepted) }
         : { accepted: filled(answer.accepted), type: 'short' };
     if (answer.type === 'open')
-      return {
-        ...answer,
-        accepted: filled(answer.accepted),
-        hints: filled(answer.hints),
-      };
+      return { ...answer, accepted: filled(answer.accepted) };
     if (answer.type === 'gaps')
       return { ...answer, accepted: answer.accepted.map(filled) };
     return answer;

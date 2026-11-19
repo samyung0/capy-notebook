@@ -225,13 +225,19 @@ widgets: `drag-handle`, `edgeless-auto-connect`, `edgeless-dragging-area`,
 14. Shape button colours (`affine/gfx/shape` `shape-draggable.ts`, marked `Capy (local
     change 14)`): `--capy-shape-button-<name>` and `--capy-shape-button-stroke-<name>`
     fix the toolbar pieces' colours; without them the pieces show the shape's last colour.
+    A piece being dragged out (`onOverlayCreated`) keeps those colours too, as AFFiNE's
+    demo shows the piece itself, where it took the canvas shape's last colours (Epo
+    2026-11-12).
 
 15. Phone toolbar (`affine/widgets/edgeless-toolbar` `edgeless-toolbar.ts`, marked
     `Capy (local change 15)`): below 768 px the toolbar takes the full width less an
     8 px gutter, in place of AFFiNE's 64 px safe area each side, its illustrated tools
     are 78 px wide and spread with `space-around`, so two show between the arrows. The
-    change is the `FULL_WIDTH_*` constants, the media rule, `_availableWidth` and
-    `scrollSeniorToolSize`.
+    change is the `FULL_WIDTH_*` constants, the narrow rule, `_availableWidth` and
+    `scrollSeniorToolSize`. The narrow rule is a container query on the widget (Epo
+    2026-11-12), so it follows the board's width as the paging does; as a media query
+    on the window, a board under 768 px in a wider window drew 96 px tools that the
+    paging had counted as 78 px, and they ran past the end with no arrows.
 
 16. `elementsCtorMap` exported from `affine/blocks/surface` (marked `Capy (local change
     16)`), so the board can register its formula element before a saved answer loads.
@@ -409,6 +415,414 @@ Outside this directory, for BlockSuite:
     `config.ts`) shows the information icon, where upstream reuses Text's. The
     callout look (`calloutLook.ts`, `pageEditor.css`) is the BlockSuite note's, on
     `blocksuite-notes`; main's boards never call `setCalloutVariantIcon`.
+40. Focus kept by the page's popovers (`framework/std` `event/dispatcher.ts`, marked
+    `Capy (local change 40)`; Epo 2026-11-12): the pointer entering the board leaves
+    the dispatcher off while focus sits in a `[role=dialog]`, `[role=menu]` or
+    `[role=listbox]` outside the host, as upstream already did for a focused input.
+    Otherwise the pointer's cursor selection, on its first move, had `RangeBinding`
+    focus the host, which closed the page's canvas picker. `RangeBinding`
+    (`inline/range/range-binding.ts`) also leaves focus in a text input or textarea
+    when a selection changes: with the board already active, every pointer move
+    focused the host and took focus out of the Misc panel's link field.
+
+41. Shape centred on the pointer (`affine/gfx/shape` `overlay/shape-overlay.ts` and
+    `shape-tool.ts`, marked `Capy (local change 41)`; Epo 2026-11-12): the shape tool's
+    overlay is centred on the pointer, as a dragged piece is, and a click places the
+    shape centred there. AFFiNE hung it by its top-left corner (6 px off for rectangles,
+    the `SHAPE_OVERLAY_OFFSET_*` constants, now removed). Local change 46 sizes the
+    overlay and the click per shape (`getShapeSize`).
+
+42. Duplicate and paste without frames (`blocks/root` `edgeless/clipboard/utils.ts`,
+    marked `Capy (local change 42)`; Epo 2026-11-12): `createNewPresentationIndexes`
+    asks for the frame manager only when the pasted content holds a frame. The boards
+    register no frames, so Duplicate and every paste threw `ServiceNotFoundError`.
+
+43. Shape fill and the square piece (`affine/gfx/shape` `toolbar/config.ts`,
+    `draggable/shape-draggable.ts` and `toolbar/icons.ts`, marked `Capy (local change
+    43)`; Epo 2026-11-12): picking a fill colour sets `filled`, and No fill clears it;
+    upstream read `isTransparent` the wrong way round, so a colour was stored unfilled and
+    never drew. The toolbar's first piece is a plain square (`squareSvg`, `rect`) where
+    AFFiNE's was a rounded rectangle; its colours are `--capy-shape-button-rect`.
+
+44. Board fonts (`model` `consts/text.ts`, `widgets/edgeless-toolbar`
+    `panel/font-family-panel.ts`, marked `Capy (local change 44)`; Epo 2026-11-12):
+    `FontFamily` gains `ComicNeue` and `JetBrainsMono`, and the font menu lists
+    `BoardFontFamilyList` (Fustat for `Inter`, Comic Neue, Lora, JetBrains Mono) in place
+    of AFFiNE's seven, which load from its CDN and never drew here. The faces are in
+    `src/features/blocksuite/drawingBoard.css`.
+
+45. Text sizes (`shared` `utils/zod-schema.ts`, `model` `elements/shape/shape.ts`,
+    `widgets/edgeless-selected-rect` `auto-complete-panel.ts`, `gfx/text`
+    `toolbar/actions.ts`, marked `Capy (local change 45)`; Epo 2026-11-12): shape text
+    and free text start at 16 (AFFiNE: 20 and 24), and the size menu adds 12 and 20.
+
+46. Polygon shapes (`model` `consts/shape.ts` and `elements/shape/api/polygon.ts`,
+    `affine/gfx/shape` `element-renderer/shape/polygon.ts`, `element-renderer/shape/
+    utils.ts`, `element-renderer/shape-dom/index.ts`, `overlay/polygon.ts`,
+    `overlay/factory.ts`, `overlay/utils.ts`, `shape-tool.ts`, and `shared`
+    `utils/zod-schema.ts`, marked `Capy (local change 46)`; Epo 2026-11-12): `ShapeType`
+    gains `rightTriangle`, `parallelogram`, `trapezium`, `pentagon` and `hexagon`, each
+    its corners in `POLYGON_SHAPES`, drawn and hit-tested by one polygon implementation
+    built as the diamond is. `getShapeSize` gives each its click size. They were groups
+    of straight connectors, which neither filled nor held text.
+
+47. One thing held at a time (`widgets/edgeless-toolbar`
+    `draggable/draggable-element.controller.ts`, marked `Capy (local change 47)`; Epo
+    2026-11-12): the controller every toolbar piece uses keeps one carried piece across
+    all of them (`carried`). Taking a piece cancels the other and drops a held tool (a
+    picked shape or note following the pointer) but keeps a drawing tool (pen,
+    highlighter, eraser), which the board takes back once the piece is placed; a tool
+    picked while carrying cancels the piece. A press that returns a carried piece to the toolbar lands on the overlay's mask
+    and is passed on (`pressThrough`) to what lies beneath, so one click works a button
+    or picks up another piece; AFFiNE swallowed it. The mouseup and touchend that end a
+    press are heard in the capture phase: the board's panels keep their mouseup from the
+    board, so a click on a panel's tile was read as a drag from the board's first move
+    (no carry, and a scaled preview off the pointer).
+
+48. Note centred on the pointer (replaced by 53: the preview is gone) (`affine/gfx/note` `note-tool.ts`, `overlay/overlay.ts`,
+    `overlay/consts.ts` and `index.ts`, marked `Capy (local change 48)`; Epo 2026-11-12):
+    the note tool's overlay is the empty note a click places, centred on the pointer:
+    its width, its height, hairline (`--capy-note-edge`) and corner, and the
+    placeholder in the block's font, size, weight and place, from `notePreviewOf`
+    (`overlay/consts.ts`, measured per kind on the board). The click centres the note
+    by that height. A dragged note lands where its outline was drawn. AFFiNE drew a
+    100 by 50 box in 16 px Arial below and right of the pointer and shifted both by
+    `DEFAULT_NOTE_OFFSET_X/Y`. The package exports `EdgelessNoteSeniorButton` for the
+    board's `capy-note-button`.
+
+49. Placeholder without a scrollbar (`blocks/paragraph` `styles.ts`, marked `Capy
+    (local change 49)`; Epo 2026-11-12): `.affine-paragraph-placeholder` clips both
+    axes. Its `overflow-x: hidden` alone made the other axis `auto`, and a heading's
+    text, a pixel taller than its line, drew a scrollbar beside the placeholder.
+
+50. Mouse strokes at one width (`affine/gfx/brush` `brush-tool.ts` and
+    `highlighter-tool.ts`, `framework/global` `gfx/perfect-freehand/
+    get-solid-stroke-points.ts`, marked `Capy (local change 50)`; Epo 2026-11-12): a
+    mouse stroke records no pressure, and a stroke without pressure draws at one width
+    (pressure 0.5, `simulatePressure` off); a click without pressure is a dot at
+    pressure 0. A stroke at pressure 0.5 is its width wide (size `lineWidth / √2`):
+    AFFiNE's easing drew every width 1.41 times over, a pen 4 as 5.7 and the
+    highlighter's 22 as 31. The highlighter starts at its third width, 18 (`model`
+    `consts/line.ts`; AFFiNE's fourth, 22). AFFiNE took the release's pressure 0 for a
+    pressure device, so the first stroke redrew at another width when it ended and
+    every later one stored pressure, and it thinned a stroke without pressure by its
+    speed.
+51. Tooltips over popover menus (`affine/components` `tooltip/tooltip.ts`, marked
+    `Capy (local change 51)`; Epo 2026-11-13): a tooltip whose element sits inside an
+    open popover (the selection toolbar's menus, shown in the top layer since
+    `topLayer: true`) is shown as a manual popover itself, placed `fixed`, so it lands
+    above the menu. It was drawn under it: the note style panel's Film shadow tooltip
+    showed as a black box peeking past the panel's edge.
+52. Inline notes (`affine/model` `consts/note.ts`, `affine/blocks/note`
+    `inline-note.ts`, `note-edgeless-block.ts`, `components/edgeless-note-background.ts`
+    and `components/edgeless-note-style-panel.ts`, `affine/gfx/note` `note-tool.ts` and
+    `overlay/`, marked `Capy (local change 52)`; Epo 2026-11-13): a note is inline (its
+    text on the canvas, no fill, padding or edge) when its fill is `transparent`, it has
+    no shadow and no border (`isInlineNote`; no new field). A placed note starts inline,
+    and its preview and centring leave out the card's padding (`NOTE_CARD_PADDING`). The
+    note container carries `data-inline`. The style panel opens with an Inline | Card
+    switch, Inline on the left, and shows Fill, Shadow, Border and Corner only for a
+    card; `setNotesInline` turns notes inline or into cards (the default fill, the Box
+    shadow, corner 8) as one undo step. A note's fill is drawn half see-through
+    (`color-mix`), its border and shadow solid.
+
+53. Inline notes fit their text (`affine/gfx/note` `note-tool.ts`, `index.ts`,
+    `affine/blocks/note` `note-edgeless-block.ts`, `inline-note.ts` and
+    `components/edgeless-note-mask.ts`, marked `Capy (local change 53)`; Epo
+    2026-11-13): the note tool draws nothing under the pointer (its plus cursor
+    alone); a click, or a drag at its start, places an inline note whose first line
+    starts at the pointer and is centred on it (`FIRST_LINE` per kind). The
+    `overlay/` folder (local change 48's preview, AFFiNE's dragged-out box) is gone.
+    An inline note renders `max-content` wide up to `DEFAULT_NOTE_WIDTH`, and a
+    `ResizeObserver` stores that width; it resizes by its corners only, which scale
+    it. Turning one into a card widens it by the card's 10 px padding each side, so
+    its lines stay. The note mask stored its height 40 taller while a note was edited
+    (it reaches 20 px past the note then); it stores the note's own height.
+
+54. A note's full height from its own padding (`affine/blocks/note`
+    `note-edgeless-block.ts`, marked `Capy (local change 54)`; Epo 2026-11-13): the
+    full height a custom height is compared with adds the note container's real top
+    and bottom padding (8 px on a board card, 0 inline), not AFFiNE's 24 each. It
+    read 32 too tall, so a card whose custom height fitted its text showed the fold
+    (a pale blue strip under it on hover) and the fold arrow. The arrow shows when
+    the two differ by a pixel or more. `setNotesInline` also clears a custom height
+    (`collapse`) when a note turns inline, whose height is its text's. Local change 55
+    removed the fold itself, so what remains of this is the board's padding.
+
+55. Notes have no fold (`affine/blocks/note` `note-edgeless-block.ts`, `inline-note.ts`,
+    `note-styles.ts`/`.css`, `components/edgeless-note-mask.ts`, marked
+    `Capy (local change 55)`; Epo 2026-11-13): a note is always as tall as its text.
+    The custom height (`edgeless.collapse`), the pale strip of the hidden part on
+    hover, the fold arrow (`components/more-indicator.ts`, deleted) and the hover and
+    resize tracking that fed them are gone; the mask always stores the text's height.
+    A card resizes by its sides, which set its width (the text rewraps and the height
+    follows; the opposite side stays put), or its corners, which scale it; it can be
+    as narrow as 40 (times its scale), where AFFiNE kept it 218 wide at least, so a
+    card scaled down while inline snapped wider on its first drag. Turning a note
+    inline or into a card clears and sets its selection again, so the frame's handles
+    follow the new kind.
+
+56. Excalidraw's selection frame, and notes turn (`affine/widgets/edgeless-selected-rect`
+    `edgeless-selected-rect.ts` and `resize-handles.ts`, `affine/widgets/toolbar`
+    `utils.ts`, `affine/model` `note-model.ts`, `affine/blocks/note`
+    `note-edgeless-block.ts`, marked `Capy (local change 56)`; Epo 2026-11-13, F1): the
+    frame is a 1px `--affine-primary-color` line drawn 6 px off the selection
+    (`::before`, dashed with `data-multi`, none with `data-connector`), with 9 px square
+    corners filled with `--capy-handle-fill`, a faint 3 by 16 px bar outside each side
+    that resizes, and a rotate knob 32 px above the middle (`aria-label="rotate"`) in
+    place of the hidden rotate ring past each corner. While turning, the angle shows
+    in one place, under the circle the selection turns in, or above it when the
+    board's bottom toolbar would hide it (`.capy-rotate-angle`); one item shows its
+    own, snapped turn. The selection's
+    toolbar stands 30 px further off, clear of the knob. A note has a `rotate` prop
+    (0 by default), is drawn turned about its middle, hit where it is drawn, and turns
+    (AFFiNE's notes did not); a side drag keeps the other side's middle where it is
+    along the turn.
+
+57. A lead button in the note menu (`affine/gfx/note` `toolbar/note-menu.ts`, marked
+    `Capy (local change 57)`; Epo 2026-11-13, P1): `lead` renders before the note kinds,
+    with a divider, and `above` above the row (the menu is a column). The board puts
+    its Link button and address field there; nothing is rendered when they are unset.
+
+58. A gentle snap when turning (`framework/std` `gfx/interactivity/resize/manager.ts`,
+    marked `Capy (local change 58)`; Epo 2026-11-13): without Shift, one item turned to
+    within 4° of a multiple of 45° lands on it (`softSnap`). Shift still snaps to every
+    15°; several items turn without either, as in AFFiNE.
+
+59. A double click places a note (`affine/shared` `feature-flag-service.ts`,
+    `affine/gfx/note` `note-tool.ts` and `view.ts`, `affine/gfx/text`
+    `dblclick-add-edgeless-text.ts`, marked `Capy (local change 59)`; Epo 2026-11-13):
+    with `enable_dblclick_note` (off by default), a double click on empty canvas places
+    an inline text note there and types in it (`DblClickAddNote`), and the canvas text
+    label's double click stands aside. The workspace canvas turns it on; an answer
+    board keeps the label.
+
+60. A note's side plus types in the new note (`affine/widgets/edgeless-selected-rect`
+    `edgeless-auto-complete.ts` and `utils.ts`, marked `Capy (local change 60)`; Epo
+    2026-11-13): the plus on either side of a selected note places the next note there
+    with the caret in its first line. AFFiNE aimed a caret at the middle of a
+    default-height note, below an inline note's one line, so nothing could be typed;
+    the stale fold flag the new note was given is gone too.
+
+61. The shape switcher offers every shape (`affine/gfx/shape`
+    `toolbar/shape-menu-config.ts`, marked `Capy (local change 61)`; Epo 2026-11-13):
+    `ShapeComponentConfig` lists the board shapes panel's ten shapes (local change 46's
+    polygons after AFFiNE's five), drawn with the panel's outlines, so a selected
+    shape's Switch shape type menu and a connector's next-shape panel reach them all.
+
+62. Content this editor can't read is kept and drawn as a placeholder (`framework/std`
+    `gfx/model/surface/surface-model.ts`, `unknown-element-model.ts` (new) and
+    `gfx/index.ts`; `framework/store` `schema/schema.ts`, `extension/schema.ts`,
+    `model/block/block.ts`, `sync-controller.ts`, `flat-sync-controller.ts` and
+    `model/store/store.ts`, marked `Capy (local change 62)`; Epo 2026-11-18: reject
+    nothing, delete nothing a person hasn't acknowledged). A shared board holds what
+    a peer or a newer version wrote, and none of this writes to or deletes a stored
+    map.
+    - Canvas elements: upstream threw `Invalid element type` for a type it has no
+      model for, when the surface loads and inside the Yjs observer when a peer
+      adds one. A stored entry is now built by `_storedCtor`: its own model, or an
+      `UnknownElementModel` (type `capy:unknown`: its place, order and turn, nothing
+      else read) when the type is unknown or the editor's `ElementReadableIdentifier`
+      check, registered on the store, says it can't read it. An entry with no place
+      to draw at (`hasPlace`), or that is no map, gets no model. An entry's id is its
+      key in the elements map, not the `id` field it holds. `addElement` of an
+      unknown type still throws. `_propsToY` takes a placeholder, so it can be moved.
+    - Blocks: upstream skips a block whose flavour has no schema. `Schema.standIn`,
+      set from a store's `BlockStandInExtension`, answers with the schema a stored
+      block is read with (`Schema.of`, which the block and both sync controllers
+      ask), so an editor can read one it doesn't know through a schema of its own
+      that declares no props. `getBlock`, `getBlock$`, `getParent` and `hasBlock`
+      answer for a block's own key only: a child id such as `__proto__` or
+      `toString` found something that is no block. A block under such an id is
+      still never built.
+    - Toolbar (`affine/widgets/toolbar` `src/toolbar.ts`): a selection of models
+      whose `toolbar` is `false` alone shows no floating toolbar. The placeholder
+      models set it: Lock and the rest are not for something unread.
+    - The board's side is `src/features/blocksuite/boardUnknown.ts` (what is read)
+      and `boardUnknownView.ts` (the placeholder), pinned by
+      `src/features/blocksuite/boardUnknown.test.ts`.
+
+63. A connector's label is placed only by the tab whose own change moved it
+    (`affine/gfx/connector` `connector-watcher.ts` and `connector-manager.ts`
+    `ConnectorPathGenerator.updatePath`, marked `Capy (local change 63)`; Epo
+    2026-11-18, the canvas's collaboration room). `labelXYWH` is a stored field, and
+    upstream's watcher wrote it whenever a connector's path was worked out: as a
+    board loads, when a peer adds a connector or moves a shape one hangs on, and
+    in a read-only store. On a shared canvas every open tab then wrote, a
+    viewer's too (the room closes a read channel that writes, so a viewer's board
+    reopened in a loop), and a peer's move landed in another editor's Undo and
+    emptied its Redo. The watcher now carries whether the change was this tab's
+    own (`local` on the surface's events, `isLocal` on a block's) to
+    `updatePath`'s new `placeLabel` argument, false on load and in a read-only
+    store: the path, which is not stored, is still drawn again everywhere, and
+    the label's place comes from the tab that made the change. A place that did
+    not move is not written again, so an Undo that put it back keeps its Redo.
+    The mind map's two callers keep the default (their connectors are local
+    ones with no label). Pinned by
+    `src/features/blocksuite/connectorLabel.test.ts`.
+
+64. A double click that opens a card's editor is used up (`framework/std`
+    `event/control/pointer.ts` `ClickController.endRun` and
+    `PointerControl.endClickRun`, `event/dispatcher.ts`
+    `UIEventDispatcher.endClickRun`, marked `Capy (local change 64)`; found
+    2026-11-18). The click counter listens on the host and adds one for each press
+    at the same place within 500 ms of the last. A plane's or chart's editor opens
+    over the board, outside the host, so its presses (the menu, Done) are not
+    seen: a double click on the card within 500 ms of the one that opened the
+    editor counted as presses three and four, a triple click, and opened nothing.
+    `openBoardEditor` (`src/features/blocksuite/boardEditorShell.ts`) calls
+    `std.event.endClickRun()` as the editor opens. Pinned by "a selected line's
+    point still moves alone" in `e2e/editor/drawing-board.spec.ts`, which closes
+    an editor and opens it again at once.
+
+65. A read-only store takes no edits from the board's keys or the select tool's
+    drag (`affine/blocks/root` `edgeless/edgeless-keyboard.ts` and
+    `edgeless/edgeless-root-block.ts`, `affine/blocks/surface`
+    `tool/default-tool.ts`, `affine/gfx/shape` `draggable/shape-draggable.ts`,
+    `affine/gfx/mindmap` `toolbar/mindmap-tool-button.ts`, marked `Capy (local
+    change 65)`; found 2026-11-18, the canvas's collaboration room). The keyboard
+    manager and the tools are made for every board, and upstream guards them with
+    the viewport's lock (`service.locked`), never the store's `readonly`, while
+    an element's field, a stash's pop and a block's props write with no
+    read-only check. On a viewer's board, or an editor's locked one, select all
+    and an arrow key moved every element, and `v` (on a locked board the
+    toolbar's own Escape too) then a press-drag moved what it pressed on: a
+    viewer's tab sent on its read channel, the room closed it and the board
+    reopened each time; a locked editor moved what was stored nowhere. While
+    `store.readonly`:
+    - The select tool's `dragStart` (`default-tool.ts`) hands the drag to no view
+      (a connector's label is moved by its view) and starts no move or clone.
+      The press still selects what is under it and a drag from empty board
+      still selects by its box, so `v` and Escape may pick the tool. A press-drag
+      on a connector's label therefore selects its connector, as one on its
+      line does.
+    - The root block's `bindHotKey` wrapper (`edgeless-root-block.ts`), which
+      replaces a selected mind map node's text with a bound letter before that
+      letter's handler runs, leaves the text and calls the handler.
+    - In `edgeless-keyboard.ts` (`_readonly`) these do nothing: the tool letters
+      `t`, `c`, `n`, `p`, `Shift-p`, `e`, `f` and `Shift-s`, the note slicer
+      (`k`, `-`), `@`, group and ungroup, Delete, Backspace and `Control-d`, the
+      arrow nudge, Enter and Tab (a label's or a text's editor, a mind map's new
+      node) and a letter that is no hotkey typed over a mind map's node. `v`,
+      `h`, Space, select all, Escape, the zoom keys and walking a mind map's
+      nodes with the arrows go on.
+    - The shape piece's `s` and the mind map button's `m` pick nothing.
+    The surface's own add, remove and update, a block's add and delete, and the
+    resize handles already refused. The guard is at the tool and not at the
+    element's stash pop, because a write that is no person's edit goes through
+    it and is left as it was: a mind map lays itself out on every board when
+    its tree changes and pops its nodes' stashed `xywh` (`mindmap.ts`
+    `stashTree`, the view's layout method). Pinned by "the keyboard and a drag move nothing on a board
+    that takes no edits" in `e2e/editor/canvas-room-states.spec.ts` (select all
+    and the arrows, then `v` or Escape and a press-drag, on a viewer's board and
+    a revoked editor's).
+
+66. An inline editor with no range reads no selection after it renders
+    (`framework/std` `inline/services/range.ts`, marked `Capy (local change 66)`;
+    found 2026-11-18, opening a full canvas). Every inline editor syncs the page's
+    selection when its render completes (`render.ts`), and with no range of its own
+    that only clears a selection inside it; reading `selection.rangeCount` forces a
+    style recalc, so each note's first render paid one (1.5 s of forced recalcs at
+    4x CPU opening a 4 MiB board). `syncInlineRange` now returns first when the
+    editor holds no range, has held none since it last found the selection outside
+    it (`_mayHoldSelection`, set by any range it is given or syncs), and does not
+    hold the focus. A focused editor and one that has held a range read it as
+    before. Measured after (`bench/editor/reports/2026-11-18-board-open-fixes.md`):
+    the open reads the selection once instead of 42 times, but the frames' own
+    style recalcs then do the same work (1.5 s either way), so the open is no
+    shorter; what makes each frame's recalc that large was not found. Pinned by
+    `e2e/editor/board-note-caret.spec.ts` (typing, a composition, a caret kept while
+    another note renders, a selection that goes with a note's editing), and the
+    peer's caret by `canvas-presence.spec.ts`.
+
+67. A graphics block finds its store's surface once (`framework/std`
+    `gfx/model/gfx-block-model.ts`, marked `Capy (local change 67)`; found
+    2026-11-18). `surface` filtered every block of the store on each read, and the
+    layer sort reads `groups`, then `surface`, in every compare: 0.55 s at 4x CPU
+    on a 4 MiB board, growing faster than the board. Each store's surface is kept
+    (a `WeakMap`) while `store.getBlock(id)` still returns that model; a surface
+    removed or replaced is looked up anew, and none found is never kept, so one
+    added later is found. Pinned by `src/features/blocksuite/boardSurface.test.ts`.
+
+68. The views added in one go ask once what is in view (`framework/std`
+    `gfx/viewport-element.ts`, `gfx/grid.ts`, marked `Capy (local change 68)`;
+    found 2026-11-18). The viewport element sets each added block view's
+    `transformState$` from the models in view, and searched the grid over the
+    viewport for every view: a board's open adds every note's view in one pass,
+    0.74 s at 4x CPU for 262 notes. The search is kept to the end of the
+    microtask while the grid (`GridManager.version`, counting adds and removes),
+    the viewport and the query are the same. Pinned by the canvas e2e specs, whose
+    notes show (`canvas-room.spec.ts`, `canvas-presence.spec.ts`) and by
+    `e2e/editor/board-note-caret.spec.ts`.
+
+69. The surface draws first in the frame its `attach` asks for
+    (`affine/blocks/surface` `surface-block.ts`, marked `Capy (local change 69)`;
+    found 2026-11-18). `firstUpdated` drew the whole board at once, before an
+    editor fitting its view in the next frame (the drawing board's `mountLayer`)
+    had done so, and that frame drew it again: 0.56 s at 4x CPU on a full canvas.
+    The stacking canvases are still appended there; `attach`'s refresh draws them,
+    after the fit, since `mountLayer` asked for its frame first. A board whose
+    viewport has no size yet in that frame (`mountLayer` waits) is drawn once
+    before its fit, as before.
+
+70. An image is placed before its file is stored (`affine/blocks/image`
+    `utils.ts`, `index.ts`, marked `Capy (local change 70)`; 2026-11-19, the
+    canvas's upload placeholder, Epo 2026-11-06). `addImages` read each file's
+    size and stored it together, then placed the blocks: a canvas stores the file
+    before its block lands (`boardBlobs.ts`), so nothing showed while it went up.
+    Each image's size is now read first, its box worked out, and the hook set by
+    `setImageUploadHandler` told of each file and its box before the files are
+    stored; its answer is called as the block lands, or with why the file was
+    refused. An image whose size can't be read is said and left out (as before,
+    with BlockSuite's own notice); one whose file is refused lands nothing and the
+    others of the same paste still land (upstream one refusal dropped them all),
+    and `addImages` answers the ids that landed. A board that stopped taking
+    edits while the files were stored (`store.readonly`), or whose add throws,
+    lands none and calls every answer with the error, so no box stays. Pinned by the upload test in
+    `e2e/editor/canvas-read-only.spec.ts` and the image tests in
+    `canvas-room-states.spec.ts`.
+
+71. A read-only store selects and copies, and its clipboard and double click add
+    nothing (`affine/blocks/surface` `tool/default-tool.ts`, `affine/blocks/root`
+    `edgeless/clipboard/clipboard.ts`, `affine/gfx/note` `note-tool.ts`, marked
+    `Capy (local change 71)`; 2026-11-19). Upstream a click on a read-only store
+    returned at once, so nothing could be selected but by a press-drag. Now:
+    - `DefaultTool.click` selects what it is on (or clears) on a read-only store
+      too, and hands the click to no view.
+    - `EdgelessClipboardController.copySelection()` puts on the clipboard what a
+      copy event of the selection does (`_onCopy` without its event; the board's
+      Copy bar, `boardReadOnly.ts`).
+    - Cut on a read-only store copies and removes nothing; a paste returns before
+      reading the clipboard.
+    - The double click that places an inline note (local change 59) places none.
+    Pinned by "a viewer's board selects and copies…" in
+    `e2e/editor/canvas-read-only.spec.ts`.
+
+72. Blocks are drawn into images by html2canvas-pro (`affine/blocks/surface`
+    `extensions/export-manager/export-manager.ts` and `package.json`, `affine/blocks/root`
+    `edgeless/clipboard/clipboard.ts` and `package.json`, marked `Capy (local change
+    72)`; 2026-11-19), the fork the app's note export already uses, in place of
+    html2canvas 1.4.1. Chrome computes a `color-mix()` as a `color(srgb …)` value,
+    which html2canvas 1.4.1 cannot read: it threw on every note, whose fill is a
+    `color-mix()` (local change 52), so the board's marking image and its Download as
+    image failed on any board with a note. The options and the cloned-document fixes
+    are unchanged. Pinned by "the image stacks as the screen does" and "a note
+    scrolled out of view still reaches the image" in
+    `e2e/editor/drawing-board.spec.ts`.
+
+73. The edgeless root keeps no view of its own (`affine/blocks/root`
+    `edgeless/edgeless-root-block.ts` `_initViewport`, marked `Capy (local change
+    73)`; Epo 2026-11-19, Q32). Upstream read a stored viewport as it mounted and wrote
+    one as it went, in sessionStorage under `blocksuite:<store id>:edgelessViewport`.
+    Every board's store id is `board`, so each board opened at the view of the last
+    one shown in the tab, whatever its canvas, until the board set its own first view on
+    its first animation frame. The root now only fits the screen; the board sets the
+    view it opens at on that frame (`DrawingBoardOptions.view` and `kept`: on a canvas,
+    the view this device kept for it, `src/features/canvas/canvasViews.ts`; otherwise
+    its fit), so the change is to what the root shows before that frame. No test pins
+    it: the e2e specs read the view only after the board's first view, which is the
+    same with or without the stored one. The page-mode writers (`frame-panel`,
+    `surface-ref`) still write the key, which nothing reads now.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

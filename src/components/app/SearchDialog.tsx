@@ -3,12 +3,12 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useState } from 'react';
 import { searchQueryQMax } from '@/api/gen/validators';
 import { useSearch } from '@/api/hooks';
-import type { SearchKind, SearchResult } from '@/api/types';
+import type { MaterialRefType, SearchKind, SearchResult } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Dialog, DialogClose, DialogContent } from '@/components/ui/Dialog';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -21,14 +21,16 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { waitsForConnection } from '@/lib/online';
 import { useDebounced } from '@/lib/useDebounced';
-import { userColorPair } from '@/lib/userColor';
 
-const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]['name']> = {
+/** A material hit's kind is its material kind; these draw a plain icon. */
+const KIND_ICON = {
   event: 'schedule',
   file: 'files',
-  flashcards: 'flashcards',
   workspace: 'workspaces',
-};
+} satisfies Partial<Record<SearchKind, Parameters<typeof Icon>[0]['name']>>;
+
+const isMaterial = (kind: SearchKind): kind is MaterialRefType =>
+  !(kind in KIND_ICON);
 
 function visibleSearchResult(result: SearchResult): boolean {
   if (result.kind === 'event') return features.schedule;
@@ -110,108 +112,134 @@ export function SearchDialog({
               />
             </DialogClose>
           </div>
-          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2.5 max-sm:pb-[calc(--spacing(2.5)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]">
+          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2 max-sm:pb-[calc(--spacing(2)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]">
             {waitsForConnection(fetchStatus, data) ? (
               <QueryPausedState />
             ) : isFetching ? (
-              <SkeletonList className="px-1" count={5} rowHeight={48} />
+              <SkeletonList className="px-1" count={6} rowHeight={40} />
             ) : query && !data && isError ? (
-              <div className="absolute inset-0 flex items-center justify-center">
+              <CenteredState>
                 <InlineErrorState
-                  className="-translate-y-1/2"
                   errorId={unexpectedErrorId(error)}
                   message={m.search_error()}
                   onRetry={() => void refetch()}
                 />
-              </div>
+              </CenteredState>
             ) : query ? (
               results?.length ? (
-                results.map((r) => {
-                  const workspaceIcon = r.kind === 'workspace' && r.iconId;
-                  const fileIcon =
-                    r.kind === 'file' && r.fileKind
-                      ? fileIconName({ kind: r.fileKind, name: r.title })
-                      : r.kind === 'flashcards'
-                        ? materialIconName('flashcards')
-                        : undefined;
-                  const c = r.color ? userColorPair(r.color) : null;
-                  return (
-                    <button
-                      className={cn(
-                        BASE_BUTTON_STYLE,
-                        'flex w-full items-center gap-3 px-2 py-2.5 text-left hover:bg-surface-hover-bg'
-                      )}
-                      key={`${r.kind}-${r.id}`}
-                      onClick={() => {
-                        setOpen(false);
-                        navigate({ to: r.href });
-                      }}
-                      type="button"
-                    >
-                      {fileIcon ? (
-                        <ThumbnailPanel
-                          fileKind={r.fileKind}
-                          icon={fileIcon}
-                          preview={r.preview}
-                          small
-                          thumbnailUrl={r.thumbnailUrl}
-                        />
-                      ) : (
-                        <span
-                          className={cn(
-                            'flex size-10 shrink-0 items-center justify-center rounded-button',
-                            !workspaceIcon &&
-                              'bg-surface-hover-bg text-fg-secondary'
-                          )}
-                          style={
-                            !workspaceIcon && c
-                              ? { background: c.bg, color: c.fg }
-                              : undefined
-                          }
-                        >
-                          {workspaceIcon ? (
-                            <img
-                              alt=""
-                              className="size-10 rounded-button"
-                              height={40}
-                              src={iconUrl(workspaceIcon)}
-                              width={40}
-                            />
-                          ) : (
-                            <Icon name={KIND_ICON[r.kind]} size={16} />
-                          )}
-                        </span>
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-fg text-sm">
-                          {r.title}
-                        </span>
-                        {r.subtitle && (
-                          <span className="block truncate text-fg-muted text-xs">
-                            {r.subtitle}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })
+                groupByKind(results).map(([kind, rows]) => (
+                  // One section per kind, under its name (Epo 2026-11-13).
+                  <section
+                    aria-label={GROUP_LABEL[kind]()}
+                    className="not-first:mt-2 border-divider not-first:border-t not-first:pt-2"
+                    key={kind}
+                  >
+                    <h3 className="t-meta px-2 py-1 font-semibold text-fg-muted">
+                      {GROUP_LABEL[kind]()}
+                    </h3>
+                    {rows.map((r) => (
+                      <ResultRow
+                        key={`${r.kind}-${r.id}`}
+                        onOpen={() => {
+                          setOpen(false);
+                          navigate({ to: r.href });
+                        }}
+                        result={r}
+                      />
+                    ))}
+                  </section>
+                ))
               ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-center">
-                  <span className="-translate-y-1/2">
-                    No matches for "{query}".
-                  </span>
-                </div>
+                <CenteredState>{m.common_no_matches()}</CenteredState>
               )
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-center">
-                <span className="-translate-y-1/2">
-                  {m.search_result_placeholder()}
-                </span>
-              </div>
+              <CenteredState>{m.search_result_placeholder()}</CenteredState>
             )}
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The results' kinds in the order the server sends them, each with its rows. */
+function groupByKind(results: SearchResult[]) {
+  const groups = new Map<SearchKind, SearchResult[]>();
+  for (const r of results)
+    groups.set(r.kind, [...(groups.get(r.kind) ?? []), r]);
+  return [...groups];
+}
+
+const GROUP_LABEL: Record<SearchKind, () => string> = {
+  canvas: m.search_group_canvases,
+  diagram: m.search_group_diagrams,
+  event: m.nav_schedule,
+  file: m.nav_files,
+  flashcards: m.search_group_flashcards,
+  mindmap: m.search_group_mindmaps,
+  note: m.search_group_notes,
+  quiz: m.search_group_quizzes,
+  workspace: m.nav_workspaces,
+};
+
+/** The prompt, no matches and the error, in the middle of the results' area. */
+function CenteredState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-35 items-center justify-center text-center">
+      {children}
+    </div>
+  );
+}
+
+/** One line per hit: the kind's icon, the name, then where it lives. */
+function ResultRow({
+  onOpen,
+  result: r,
+}: {
+  onOpen: () => void;
+  result: SearchResult;
+}) {
+  return (
+    <button
+      className={cn(
+        BASE_BUTTON_STYLE,
+        'flex h-10 w-full items-center justify-start gap-3 px-2 text-left hover:bg-surface-hover-bg'
+      )}
+      onClick={onOpen}
+      type="button"
+    >
+      <span className="flex size-5 shrink-0 items-center justify-center">
+        {r.kind === 'workspace' && r.iconId ? (
+          <img
+            alt=""
+            className="size-5 rounded-[4px]"
+            height={20}
+            src={iconUrl(r.iconId)}
+            width={20}
+          />
+        ) : r.kind === 'file' && r.fileKind ? (
+          <FileIcon
+            className="size-5"
+            name={fileIconName({ kind: r.fileKind, name: r.title })}
+          />
+        ) : isMaterial(r.kind) ? (
+          <FileIcon className="size-5" name={materialIconName(r.kind)} />
+        ) : (
+          <Icon
+            className="text-fg-secondary"
+            name={KIND_ICON[r.kind]}
+            size={18}
+          />
+        )}
+      </span>
+      <span className="min-w-0 truncate font-medium text-fg text-sm">
+        {r.title}
+      </span>
+      {r.subtitle && (
+        <span className="ml-auto min-w-0 max-w-[45%] shrink-0 truncate pl-2 text-fg-muted text-xs">
+          {r.subtitle}
+        </span>
+      )}
+    </button>
   );
 }

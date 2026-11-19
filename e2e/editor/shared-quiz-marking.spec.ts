@@ -43,10 +43,14 @@ for (const { screen, width } of SCREENS) {
             (q) => q.getAttribute('data-question-id') === 'q14'
           ) + 1
       );
+    // A long answer is written in the formula-taking text field (Epo
+    // 2026-11-16, option B).
     await open
-      .getByRole('textbox', { name: m.question_ui_your_answer() })
-      .first()
-      .fill('The curve levels off because CO₂ limits the rate.');
+      .getByRole('textbox', { name: m.question_ui_text_and_formulas() })
+      .click();
+    await page.keyboard.type(
+      'The curve levels off because CO₂ limits the rate.'
+    );
     await open.getByRole('button', CHECK).click();
     await expect(
       open.getByText(m.assignment_not_marked(), { exact: true })

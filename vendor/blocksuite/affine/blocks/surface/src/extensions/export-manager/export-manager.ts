@@ -33,8 +33,10 @@ import type { SurfaceBlockComponent } from '../../surface-block.js';
 import { getBgGridGap } from '../../utils/get-bg-grip-gap.js';
 import { FileExporter } from './file-exporter.js';
 
+// Capy (local change 72): html2canvas-pro, which reads the color() values
+// Chrome computes for color-mix() (a note's fill), where html2canvas threw.
 // oxlint-disable-next-line typescript/consistent-type-imports
-type Html2CanvasFunction = typeof import('html2canvas').default;
+type Html2CanvasFunction = typeof import('html2canvas-pro').default;
 
 export type ExportOptions = {
   imageProxyEndpoint: string;
@@ -176,7 +178,7 @@ export class ExportManager {
   }
 
   private async _docToCanvas(): Promise<HTMLCanvasElement | void> {
-    const html2canvas = (await import('html2canvas')).default;
+    const html2canvas = (await import('html2canvas-pro')).default;
     if (!(html2canvas instanceof Function)) return;
 
     const pathname = location.pathname;
@@ -288,7 +290,7 @@ export class ExportManager {
     htmlElement: HTMLElement,
     options: Parameters<Html2CanvasFunction>[1] = {}
   ) {
-    const html2canvas = (await import('html2canvas'))
+    const html2canvas = (await import('html2canvas-pro'))
       .default as unknown as Html2CanvasFunction;
     const html2canvasOption = {
       ignoreElements: function (element: Element) {

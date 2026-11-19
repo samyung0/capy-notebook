@@ -3,6 +3,7 @@
  * templates (see TEMPLATES in map.ts); water, bridges, the signpost and the
  * flag are drawn in place.
  */
+import type { Rng } from '@/lib/rng';
 import {
   catmull,
   escapeText,
@@ -12,7 +13,6 @@ import {
   n,
   type Pt,
   polyD,
-  type Rng,
   sketch,
 } from './sketch';
 

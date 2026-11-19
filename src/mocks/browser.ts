@@ -10,12 +10,13 @@ import {
   permanentScenarios,
 } from './scenarios';
 
-/** The dev server's modules go straight through. Every request reaches the
- * worker's handlers, each of which parses the request's cookies before
- * matching: on a navigation that imports BlockSuite (about 3,400 modules)
- * that was about 11 s of main thread. */
+/** The dev server's modules, and a build's own chunks (`/assets/`), go straight
+ * through. Every request reaches the worker's handlers, each of which parses
+ * the request's cookies before matching: on a navigation that imports
+ * BlockSuite (about 3,400 modules) that was about 11 s of main thread, and a
+ * build's canvas chunks took 2.5 s at 4x CPU. */
 const devModules = http.all(
-  /^https?:\/\/[^/]+\/(?:src|node_modules|vendor|@vite|@id|@fs|@react-refresh)\//,
+  /^https?:\/\/[^/]+\/(?:src|node_modules|vendor|assets|@vite|@id|@fs|@react-refresh)\//,
   () => passthrough()
 );
 

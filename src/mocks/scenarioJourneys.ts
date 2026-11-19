@@ -129,7 +129,7 @@ export async function runJourney(
   const share = async () => {
     seedMember();
     // The scenario workspace is a class its viewer owns: Members' Manage tab.
-    await go(`${scenarioPath}?study=members&manage=true`);
+    await go(`${scenarioPath}/members`);
   };
   const chat = async () => {
     await go(scenarioPath);

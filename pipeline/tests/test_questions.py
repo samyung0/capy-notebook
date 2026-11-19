@@ -38,7 +38,6 @@ OPEN = {
         {"text": "Sodium channels there cannot reopen yet", "marks": 1},
     ],
     "model_answer": "The patch behind is refractory: its sodium channels are inactivated.",
-    "hints": ["What state are the channels behind in?"],
 }
 PLOT = {
     "type": "plot",
@@ -239,9 +238,10 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
     ]
     assert found.notes == ['Dropped questions[2].back: unknown field, sent "Sodium"']
     # A quiz fence's question too, and media by its block's schema.
-    assert questions.drop_question_blanks({**OPEN, "hints": [], "unit": "null"}) == {
-        k: v for k, v in OPEN.items() if k != "hints"
-    }
+    assert (
+        questions.drop_question_blanks({**OPEN, "explanation": "", "unit": "null"})
+        == OPEN
+    )
     # YAML's ~ (null) reads as text in a fence; it is blank too.
     assert questions.drop_question_blanks({**SHORT, "unit": "~"}) == {
         k: v for k, v in SHORT.items() if k != "unit"
@@ -862,6 +862,21 @@ def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
     # group would be lost on the way back, as a stem would.
     grouped = {**stored[1], "groups": [{"id": "g", "blocks": []}]}
     assert questions.authored(grouped) is None
+    assert questions.authored({**stored[1], "topicIds": ["tp_cells"]}) is None
+    multiple = {**stored[0]["parts"][0]["answer"], "multiple": True}
+    assert (
+        questions.authored(
+            {**stored[0], "parts": [{**stored[0]["parts"][0], "answer": multiple}]}
+        )
+        is None
+    )
+    shuffled = {**stored[0]["parts"][0]["answer"], "shuffle": True, "locked": [0]}
+    assert (
+        questions.authored(
+            {**stored[0], "parts": [{**stored[0]["parts"][0], "answer": shuffled}]}
+        )
+        is None
+    )
     stored[0]["stem"] = [{"type": "text", "text": "Context"}]
     assert (
         questions.quiz_fence_view(

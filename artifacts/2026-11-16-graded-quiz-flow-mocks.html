@@ -1,0 +1,342 @@
+<title>Graded quiz flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: a column of numbered boards, each a dialog drawn as the app draws it, with the note beside it. */
+:root {
+  --page: #f4f4f2; --card: #ffffff; --fg: #1d1d1f; --fg2: #55575c; --muted: #8a8c91;
+  --divider: #e6e6e3; --hover: #f1f1ef; --action: #1f1f1f; --action-fg: #ffffff;
+  --accent: #2f6fec; --green-bg: #e3f4e8; --green-fg: #1f7a3d; --amber-bg: #fdf0d5; --amber-fg: #8a5a00;
+  --red: #d33b2c; --guide: #e2412f;
+  --font: "Fustat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #161617; --card: #222224; --fg: #ededee; --fg2: #b3b4b8; --muted: #86888d;
+  --divider: #36363a; --hover: #2c2c2f; --action: #ededee; --action-fg: #161617;
+  --accent: #6c9cff; --green-bg: #1f3a28; --green-fg: #7fd69a; --amber-bg: #3b2f14; --amber-fg: #f0c26a;
+  --red: #ff7b6b; --guide: #ff7b6b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #161617; --card: #222224; --fg: #ededee; --fg2: #b3b4b8; --muted: #86888d;
+  --divider: #36363a; --hover: #2c2c2f; --action: #ededee; --action-fg: #161617;
+  --accent: #6c9cff; --green-bg: #1f3a28; --green-fg: #7fd69a; --amber-bg: #3b2f14; --amber-fg: #f0c26a;
+  --red: #ff7b6b; --guide: #ff7b6b; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--fg); font: 14px/1.45 var(--font); margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px }
+main { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px }
+h1 { font-size: 26px; margin: 0; text-wrap: balance; font-weight: 800 }
+h2 { font-size: 18px; margin: 0; font-weight: 800; text-wrap: balance }
+p { margin: 0 }
+.lede { color: var(--fg2); max-width: 70ch; display: flex; flex-direction: column; gap: 8px }
+.board { display: grid; grid-template-columns: minmax(0, 600px) minmax(0, 1fr); gap: 28px; align-items: start }
+.board.wide { grid-template-columns: minmax(0, 1fr) }
+@media (max-width: 900px) { .board { grid-template-columns: minmax(0, 1fr) } }
+.tag { display: inline-flex; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted) }
+.note { display: flex; flex-direction: column; gap: 10px; color: var(--fg2); min-width: 0 }
+.note b { color: var(--fg) }
+.note ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px }
+.pick { display: inline-block; font-weight: 800; font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--green-bg); color: var(--green-fg) }
+
+/* The dialog, as SimpleDialog draws it */
+.dlg { background: var(--card); border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10); padding: 26px 22px; display: flex; flex-direction: column; min-width: 0; position: relative }
+.dlg.fixed { height: 680px }
+.dh { display: flex; align-items: center; gap: 12px; padding-bottom: 24px }
+.dh .t { font-size: 22px; font-weight: 800; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 32px }
+.steps { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; flex-shrink: 0 }
+.st { display: flex; align-items: center; gap: 6px; color: var(--muted) }
+.st i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 800; background: var(--hover); color: var(--fg2) }
+.st.on { color: var(--fg) } .st.on i { background: var(--action); color: var(--action-fg) }
+.chev { color: var(--muted); font-size: 12px }
+.x { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; flex-shrink: 0; color: var(--fg) }
+.x svg { width: 20px; height: 20px }
+.tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--divider); margin: 0 -22px 16px; padding: 0 22px; overflow-x: auto }
+.tabs span { padding: 0 0 10px; font-weight: 600; color: var(--fg2); white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px }
+.tabs span.on { color: var(--fg); border-color: var(--fg) }
+.tabs span.new::after { content: "new"; margin-left: 6px; font-size: 10.5px; font-weight: 800; color: var(--green-fg); background: var(--green-bg); padding: 1px 5px; border-radius: 5px; vertical-align: 1px }
+.body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 14px }
+.foot { display: flex; align-items: center; gap: 8px; padding-top: 14px; justify-content: flex-end; flex-wrap: wrap }
+.foot .meta { margin-right: auto; color: var(--fg2); font-size: 12.5px; min-width: 0 }
+.foot .meta b { color: var(--fg) }
+.btn { height: 36px; padding: 0 14px; border-radius: 9px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--divider); background: var(--card); color: var(--fg); white-space: nowrap; font: inherit; font-weight: 600 }
+.btn.primary { background: var(--action); color: var(--action-fg); border-color: var(--action) }
+.btn.off { opacity: .45 }
+.field { display: flex; flex-direction: column; gap: 6px }
+.label { font-weight: 700; font-size: 13.5px }
+.label em { color: var(--red); font-style: normal }
+.input { height: 36px; border: 1px solid var(--divider); border-radius: 9px; padding: 0 12px; display: flex; align-items: center; color: var(--fg); min-width: 0; gap: 8px }
+.input.ph { color: var(--muted) }
+.input .end { margin-left: auto; color: var(--muted) }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
+.switchrow { display: flex; align-items: center; gap: 10px; font-size: 13.5px }
+.sw { width: 32px; height: 18px; border-radius: 9px; background: var(--divider); position: relative; flex-shrink: 0 }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--card) }
+.sw.on { background: var(--action) } .sw.on::after { left: 16px; background: var(--action-fg) }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 7px; background: var(--hover); font-size: 13px; font-weight: 600 }
+.search { display: flex; gap: 8px }
+.search .input { flex: 1; height: 32px }
+.search .btn { height: 32px }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--divider); border-radius: 9px; overflow: hidden; height: 36px }
+.seg span { display: grid; place-items: center; font-weight: 600; color: var(--fg2); border-left: 1px solid var(--divider) }
+.seg span:first-child { border-left: 0 }
+.seg span.on { background: var(--action); color: var(--action-fg) }
+.list { flex: 1; min-height: 0; overflow: hidden }
+.qrow { display: flex; gap: 12px; align-items: flex-start; padding: 11px 4px; border-bottom: 1px solid var(--divider) }
+.qrow .tx { flex: 1; min-width: 0 }
+.qrow .tx b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.qrow .tx span { color: var(--fg2); font-size: 12.5px }
+.radio, .box { width: 16px; height: 16px; border: 1.5px solid var(--muted); flex-shrink: 0; margin-top: 2px }
+.radio { border-radius: 50% } .box { border-radius: 4px }
+.radio.on { border: 5px solid var(--action) }
+.box.on { background: var(--action); border-color: var(--action); position: relative }
+.box.on::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid var(--action-fg); border-width: 0 2px 2px 0; transform: rotate(45deg) }
+.qicon { width: 18px; height: 18px; color: var(--fg2); flex-shrink: 0; margin-top: 1px }
+.callout { border-radius: 9px; padding: 10px 12px; background: var(--amber-bg); color: var(--amber-fg); font-size: 13px }
+.summary { display: flex; align-items: center; gap: 10px; border-block: 1px solid var(--divider); padding: 10px 0; min-height: 44px }
+.summary b { font-weight: 700 }
+.textarea { border: 1px solid var(--divider); border-radius: 9px; padding: 10px 12px; color: var(--muted); height: 86px }
+
+/* tables */
+.tblwrap { overflow-x: auto }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13.5px }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--divider); vertical-align: top }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 800 }
+td b { font-weight: 700 }
+
+/* header alignment boards */
+.cmp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px }
+@media (max-width: 900px) { .cmp { grid-template-columns: minmax(0, 1fr) } }
+.hdrdemo { background: var(--card); border-radius: 14px; padding: 26px 22px 18px; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10); overflow: hidden }
+.hdrdemo .dh { padding-bottom: 0 }
+.hdrdemo.before .x { position: absolute; top: 16px; right: 16px }
+.hdrdemo.before .steps { margin-right: 36px }
+.guide { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--guide); pointer-events: none }
+.cap { font-size: 12.5px; color: var(--fg2); margin-top: 8px }
+
+.profile { background: var(--card); border-radius: 14px; padding: 20px 22px; display: flex; align-items: center; gap: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.06) }
+.av { width: 48px; height: 48px; border-radius: 50%; background: #e8e3f7; color: #5a48a8; display: grid; place-items: center; font-weight: 700; flex-shrink: 0 }
+.profile .nm { flex: 1; min-width: 0 }
+.profile .nm b { font-size: 20px; font-weight: 800 }
+.profile .nm span { display: block; color: var(--muted); font-size: 12.5px }
+.refs { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--fg2) }
+.refs a { color: var(--accent) }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+</style>
+
+<main>
+<header class="lede">
+  <span class="tag">Capy Notebook · Study · 2026-11-16</span>
+  <h1>Graded quiz flow</h1>
+  <p>Today New graded quiz makes its quiz first (Questions), saves it hidden, then asks for Settings. Assign practice on a member's profile opens it under the title "New graded quiz", and there is no way to start from a quiz the workspace already has. These boards turn it round: Settings first, Questions second, and one Create that sends everything.</p>
+</header>
+
+<!-- Board 1 -->
+<section class="board">
+  <div class="dlg fixed" aria-label="Step 1 Settings">
+    <div class="dh">
+      <span class="t">New graded quiz</span>
+      <span class="steps"><span class="st on"><i>1</i>Settings</span><span class="chev">›</span><span class="st"><i>2</i>Questions</span></span>
+      <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+    <div class="body">
+      <div class="field"><span class="label">Title <em>*</em></span><div class="input">Membranes check</div></div>
+      <div class="row2">
+        <div class="field"><span class="label">Due <em>*</em></span><div class="input">Fri 21 Nov, 17:00</div></div>
+        <div class="field"><span class="label">Time limit</span><div class="input">30 minutes<span class="end">⌄</span></div></div>
+      </div>
+      <div class="row2">
+        <div class="field"><span class="label">Attempts</span><div class="input">1<span class="end">⌄</span></div></div>
+        <div class="field"><span class="label">Assign to</span><div class="input">Farah Ali<span class="end">⌄</span></div></div>
+      </div>
+      <div class="field"><span class="label">Marking</span><div class="input">AI grades, approval required<span class="end">⌄</span></div></div>
+      <div class="switchrow"><span class="sw"></span>Save as draft</div>
+    </div>
+    <div class="foot"><span class="btn">Cancel</span><span class="btn primary">Next</span></div>
+  </div>
+  <div class="note">
+    <span class="tag">Board 1 · Settings first</span>
+    <h2>The fields today's step 2 has, before any quiz exists</h2>
+    <p>Same fields and order as today's Settings step, without the "0 questions · Change questions" row: nothing is made yet, so nothing is saved and nothing waits in the trash sweep. Next only checks the form. From a member's profile, Assign to starts on that member.</p>
+    <p>Title may be left empty; it then takes the quiz's name, as it does today.</p>
+  </div>
+</section>
+
+<!-- Board 2 -->
+<section class="board">
+  <div class="dlg fixed" aria-label="Step 2 Questions, From a quiz">
+    <div class="dh">
+      <span class="t">New graded quiz</span>
+      <span class="steps"><span class="st"><i>1</i>Settings</span><span class="chev">›</span><span class="st on"><i>2</i>Questions</span></span>
+      <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+    <div class="tabs"><span>Convert to quiz</span><span>Generate quiz</span><span>From the bank</span><span class="on new">From a quiz</span><span>Create blank</span></div>
+    <div class="body">
+      <div class="search"><div class="input ph">Search quizzes</div><span class="btn">Filter</span></div>
+      <div class="list">
+        <div class="qrow"><span class="radio on"></span><svg class="qicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></svg><div class="tx"><b>Membranes and transport quiz</b><span>12 questions · 18 marks · edited 3 Nov</span></div></div>
+        <div class="qrow"><span class="radio"></span><svg class="qicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></svg><div class="tx"><b>Cell biology basics</b><span>10 questions · 10 marks · edited 28 Oct</span></div></div>
+        <div class="qrow"><span class="radio"></span><svg class="qicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></svg><div class="tx"><b>Genetics check-in</b><span>8 questions · 14 marks · edited 22 Oct</span></div></div>
+        <div class="qrow"><span class="radio"></span><svg class="qicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></svg><div class="tx"><b>Cell organelles</b><span>15 questions · 15 marks · edited 19 Oct</span></div></div>
+        <div class="qrow"><span class="radio"></span><svg class="qicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></svg><div class="tx"><b>Osmosis check</b><span>6 questions · 9 marks · graded quiz, closed 14 Nov</span></div></div>
+        <div class="qrow"><span class="radio"></span><svg class="qicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z"/></svg><div class="tx"><b>Near-final quiz</b><span>20 questions · 24 marks · edited 9 Oct</span></div></div>
+      </div>
+    </div>
+    <div class="foot"><span class="meta"><b>12 questions</b> · 18 marks</span><span class="btn">Back</span><span class="btn primary">Create</span></div>
+  </div>
+  <div class="note">
+    <span class="tag">Board 2 · Questions, then one Create</span>
+    <h2>From a quiz: copy one the workspace already has</h2>
+    <ul>
+      <li>Lists the workspace's practice quizzes and earlier graded quizzes, newest edit first. One pick (a radio): the graded quiz gets a copy of every question, images included, as From the bank copies today. Editing the copy never changes the original.</li>
+      <li>Create sends the settings and the questions in one request; the server makes the quiz and the graded quiz in one transaction. No quiz exists before Create, so Cancel leaves nothing behind.</li>
+      <li>Tabs keep today's order with From a quiz before Create blank, which stays last.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Board 3 -->
+<section class="board">
+  <div class="dlg fixed" aria-label="Step 2 Questions, Generate quiz">
+    <div class="dh">
+      <span class="t">New graded quiz</span>
+      <span class="steps"><span class="st"><i>1</i>Settings</span><span class="chev">›</span><span class="st on"><i>2</i>Questions</span></span>
+      <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+    <div class="tabs"><span>Convert to quiz</span><span class="on">Generate quiz</span><span>From the bank</span><span>From a quiz</span><span>Create blank</span></div>
+    <div class="body">
+      <div class="field"><span class="label">From</span><div class="input"><span class="chip">Membranes and transport</span><span class="end">⌄</span></div></div>
+      <div class="row2">
+        <div class="field"><span class="label">Questions</span><div class="input">10<span class="end">⌄</span></div></div>
+        <div class="field"><span class="label">Difficulty</span><div class="input">Mixed<span class="end">⌄</span></div></div>
+      </div>
+      <div class="field"><span class="label">Instructions</span><div class="textarea">Anything the questions should focus on</div></div>
+      <div class="callout">The questions take a few minutes. Create saves the graded quiz as a draft; it fills in when they are ready, and you publish it from its page after a look.</div>
+    </div>
+    <div class="foot"><span class="meta">About 4 credits</span><span class="btn">Back</span><span class="btn primary">Create draft</span></div>
+  </div>
+  <div class="note">
+    <span class="tag">Board 3 · Questions that take a while</span>
+    <h2>Generate and Convert still send one request</h2>
+    <p>Their questions come from a run that takes minutes, so one request can't hand them back at once. Create sends the settings plus the run's inputs. The server saves the graded quiz as a draft and starts the run, and the run's quiz goes straight into that draft. Today the quiz is made first and swept to the trash after a day if no graded quiz takes it; that sweep goes away.</p>
+    <p>The button says <b>Create draft</b>, so nothing reaches members before a teacher has read AI-made questions. Create blank also saves a draft and opens the empty quiz to write in.</p>
+  </div>
+</section>
+
+<!-- Board 4 -->
+<section class="board">
+  <div class="dlg fixed" aria-label="Alternative: quizzes inside From the bank">
+    <div class="dh">
+      <span class="t">New graded quiz</span>
+      <span class="steps"><span class="st"><i>1</i>Settings</span><span class="chev">›</span><span class="st on"><i>2</i>Questions</span></span>
+      <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    </div>
+    <div class="tabs"><span>Convert to quiz</span><span>Generate quiz</span><span class="on">From the bank</span><span>Create blank</span></div>
+    <div class="body">
+      <div class="seg"><span>Biology 101</span><span>Personal</span><span class="on">Quizzes</span></div>
+      <div class="search"><div class="input">Membranes and transport quiz<span class="end">⌄</span></div><span class="btn">Filter</span></div>
+      <div class="list">
+        <div class="qrow"><span class="box on"></span><div class="tx"><b>Select all 12</b></div></div>
+        <div class="qrow"><span class="box on"></span><div class="tx"><b>Explain why a red blood cell bursts in pure water.</b><span>Long answer · 3 marks</span></div></div>
+        <div class="qrow"><span class="box on"></span><div class="tx"><b>Which process moves water across a partially permeable membrane?</b><span>Multiple choice · 1 mark</span></div></div>
+        <div class="qrow"><span class="box on"></span><div class="tx"><b>Describe active transport, naming where the energy comes from.</b><span>Short answer · 2 marks</span></div></div>
+        <div class="qrow"><span class="box on"></span><div class="tx"><b>Label the phospholipid bilayer diagram.</b><span>Labels · 4 marks</span></div></div>
+      </div>
+    </div>
+    <div class="foot"><span class="meta"><b>12 questions</b> · 18 marks</span><span class="btn">Back</span><span class="btn primary">Create</span></div>
+  </div>
+  <div class="note">
+    <span class="tag">Board 4 · Alternative to Board 2</span>
+    <h2>Quizzes as a third source inside From the bank</h2>
+    <p>No fifth tab: the bank switch gains Quizzes, a quiz select replaces Search, and its questions can be picked one by one, as bank questions are. More flexible (some questions of a quiz), at the cost of an extra click for the common "use that quiz again".</p>
+    <p>Pick Board 2 or Board 4.</p>
+  </div>
+</section>
+
+<!-- Board 5 -->
+<section class="board wide">
+  <div class="note">
+    <span class="tag">Board 5 · The name on the profile</span>
+    <h2>"Assign practice" opens "New graded quiz"</h2>
+    <p>In Capy a practice quiz is open to the whole workspace, so one member can only be given a graded quiz. Either the button or the title should change. Pick one:</p>
+  </div>
+  <div class="cmp">
+    <div>
+      <div class="profile"><span class="av">FA</span><div class="nm"><b>Farah Ali</b><span>Joined 10 Sept · active today</span></div><span class="btn">Assign quiz</span></div>
+      <p class="cap"><b>N1</b> · The button says <b>Assign quiz</b>; the dialog keeps "New graded quiz" with Farah in Assign to. The words match what gets made.</p>
+    </div>
+    <div>
+      <div class="profile"><span class="av">FA</span><div class="nm"><b>Farah Ali</b><span>Joined 10 Sept · active today</span></div><span class="btn">Assign practice</span></div>
+      <p class="cap"><b>N2</b> · The button stays; from the profile the dialog is titled <b>Assign practice</b>, and it is still a graded quiz (due date, marks, on the report) underneath. Canvas's New Quizzes does it this way: a "practice" quiz is an ordinary quiz that doesn't count toward the grade.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Board 6 -->
+<section class="board wide">
+  <div class="note">
+    <span class="tag">Board 6 · Header alignment</span>
+    <h2>The close button sits 6px above the title line and 5px from the steps</h2>
+    <p>Measured on today's dialog at 1024px: the title's text line is centred at 88px from the top, the steps too, but the close button (absolute, 16px from the corner) is centred at 82px. The steps keep 36px clear for a 40px button, so "Settings" ends 5px before it. The fix puts the close button in the title row, so all three share one centre line, with a 12px gap.</p>
+  </div>
+  <div class="cmp">
+    <div>
+      <div class="hdrdemo before">
+        <div class="guide" style="top: 42px"></div>
+        <div class="dh"><span class="t">New graded quiz</span><span class="steps"><span class="st"><i>1</i>Settings</span><span class="chev">›</span><span class="st on"><i>2</i>Questions</span></span></div>
+        <span class="x" style="top: 16px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+      </div>
+      <p class="cap">Today: the dashed line is the title's centre; the × sits above it and crowds the steps.</p>
+    </div>
+    <div>
+      <div class="hdrdemo">
+        <div class="guide" style="top: 42px"></div>
+        <div class="dh"><span class="t">New graded quiz</span><span class="steps"><span class="st"><i>1</i>Settings</span><span class="chev">›</span><span class="st on"><i>2</i>Questions</span></span><span class="x" style="margin: -4px -9px -4px 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+      </div>
+      <p class="cap">Fixed: title, steps and × on one line; the × keeps its 40px target and its edge.</p>
+    </div>
+  </div>
+</section>
+
+<!-- What one request carries -->
+<section class="board wide">
+  <div class="note">
+    <span class="tag">What Create sends</span>
+    <h2>One request per tab</h2>
+  </div>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th>Tab</th><th>Create sends</th><th>The graded quiz after Create</th></tr></thead>
+    <tbody>
+      <tr><td><b>Convert to quiz</b></td><td>Settings + the files and pages picked</td><td>Draft; the run's quiz goes into it when the pages are read</td></tr>
+      <tr><td><b>Generate quiz</b></td><td>Settings + topics or files, count, instructions</td><td>Draft; filled when the questions are written</td></tr>
+      <tr><td><b>From the bank</b></td><td>Settings + bank and question ids, in the order picked</td><td>Published (or a draft if the switch is on)</td></tr>
+      <tr><td><b>From a quiz</b></td><td>Settings + the quiz id to copy</td><td>Published (or a draft if the switch is on)</td></tr>
+      <tr><td><b>Create blank</b></td><td>Settings + the template</td><td>Draft, opened in the quiz editor</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- References -->
+<section class="board wide">
+  <div class="note">
+    <span class="tag">How others do it</span>
+    <h2>All three set the quiz up first and add questions after</h2>
+    <ul>
+      <li><b>Canvas (New Quizzes)</b>: the Details tab holds title and points, and Assign Access holds assignees, due and availability dates; questions are added on the Build page after the quiz is created. To reuse a quiz, the quiz's options copy it (Copy To / Send To), and instructors duplicate it first so the questions come along. Canvas New Quizzes has no separate practice type; a practice quiz is an ordinary quiz set not to count toward the grade.</li>
+      <li><b>Google Classroom + Forms</b>: Create › Quiz assignment takes title, instructions, assignees and due date; Classroom makes a blank Forms quiz and attaches it, and the questions are written in Forms. An existing form can only be attached as a link, which loses grade import.</li>
+      <li><b>Moodle</b>: adding a Quiz activity opens its settings form (name, timing, grade); Save and display, then Edit quiz adds questions, including "+ from question bank". A whole quiz is reused with the activity's Duplicate.</li>
+    </ul>
+    <div class="refs">
+      <a href="https://community.instructure.com/en/kb/articles/661068-how-do-i-edit-a-quiz-in-new-quizzes">Canvas: How do I edit a quiz in New Quizzes?</a>
+      <a href="https://community.instructure.com/en/kb/articles/661025-how-do-i-assign-a-quiz-to-everyone-individual-students-differentiation-tags-or-sections">Canvas: Assign a quiz to everyone or individual students</a>
+      <a href="https://community.instructure.com/en/kb/articles/661097-how-do-i-send-a-quiz-to-another-instructor-in-new-quizzes">Canvas: Send or copy a quiz in New Quizzes</a>
+      <a href="https://community.canvaslms.com/t5/New-Quizzes-Discussion/Copying-a-New-Quiz-to-another-Course-questions-did-not-copy-over/m-p/597669">Canvas Community: duplicate first, then copy</a>
+      <a href="https://community.canvaslms.com/t5/Archived-Questions/ARCHIVED-Practice-Quiz-vs-Graded-Quiz/m-p/223793">Canvas Community: Practice quiz vs graded quiz</a>
+      <a href="https://support.google.com/edu/classroom/answer/9095575?hl=en">Google Classroom: Create a quiz assignment</a>
+      <a href="https://docs.moodle.org/503/en/Building_Quiz">Moodle: Building Quiz</a>
+      <a href="https://docs.moodle.org/503/en/Reusing_activities">Moodle: Reusing activities</a>
+    </div>
+  </div>
+</section>
+</main>

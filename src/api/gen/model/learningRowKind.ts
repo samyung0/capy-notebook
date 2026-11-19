@@ -9,8 +9,6 @@ export type LearningRowKind = typeof LearningRowKind[keyof typeof LearningRowKin
 
 
 export const LearningRowKind = {
-  session: 'session',
-  quiz: 'quiz',
   start: 'start',
   review: 'review',
 } as const;

@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef } from 'react';
 
 /** Reveal visible rows once when the initial skeleton resolves. */
-export function useLoadingReveal(loading: boolean) {
-  const ref = useRef<HTMLDivElement>(null);
+export function useLoadingReveal<T extends HTMLElement = HTMLDivElement>(
+  loading: boolean
+) {
+  const ref = useRef<T>(null);
   const sawLoading = useRef(false);
   const settled = useRef(false);
 

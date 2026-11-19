@@ -182,7 +182,7 @@ func quizWithImages(t *testing.T, assetIDs ...string) string {
 		stem += `,{"type":"image","image":{"assetId":"` + id + `"},"width":10,"height":10,"description":"Figure"}`
 	}
 	content, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[`+stem+`],
-		"parts":[{"id":"q1-a","blocks":[{"type":"text","text":"Explain."}],"answer":{"type":"open","accepted":["Because."],"hints":[]},"marks":1,"markscheme":[{"text":"States why","marks":1}],"solution":[]}],
+		"parts":[{"id":"q1-a","blocks":[{"type":"text","text":"Explain."}],"answer":{"type":"open","accepted":["Because."]},"marks":1,"markscheme":[{"text":"States why","marks":1}],"solution":[]}],
 		"layout":"paper","labels":"letters"}]`), nil)
 	if err != nil {
 		t.Fatal(err)

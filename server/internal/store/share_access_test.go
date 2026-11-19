@@ -186,7 +186,7 @@ func TestSearchFlashcardsUsesMaterials(t *testing.T) {
 	}
 	for _, result := range results {
 		if result.ID == "dk_e2e_private" {
-			if result.Kind != SearchFlashcards || result.Title != "E2E Private Flashcards" {
+			if result.Kind != SearchKind(MaterialFlashcards) || result.Title != "E2E Private Flashcards" {
 				t.Fatalf("unexpected flashcard result: %#v", result)
 			}
 			return

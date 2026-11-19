@@ -32,6 +32,7 @@ import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
 import { learnerView } from './answerKeys';
 import * as db from './db';
+import { mockBoardAssets } from './editorAssets';
 import { mockWorkspaceMembers } from './workspaceMembers';
 
 /* Assignments on mocked data: the class on the boards (W1, W3, G3, G3m, A3),
@@ -46,6 +47,8 @@ type Row = {
   workspaceId: string;
   /** A task its maker set themself: nobody else's, staff included. */
   own?: boolean;
+  /** Topics beyond its quiz's or files', to show a row with several. */
+  moreTopicIds?: string[];
   kind: 'marked' | 'unmarked';
   title: string;
   quizId?: string;
@@ -54,8 +57,8 @@ type Row = {
   postedAt: string;
   closedAt?: string;
   releasedAt?: string;
-  /** When staff turned its quiz to practice (Do not show). */
-  practiceAt?: string;
+  /** Its quiz was saved after the last publish. */
+  quizChanged?: true;
   timeLimitMin?: number;
   attempts: number;
   noLate: boolean;
@@ -70,6 +73,8 @@ type Row = {
   shuffle: boolean;
   allowUploads: boolean;
   files: { fileId?: string; materialId?: string }[];
+  /** A class's Assignment graded out of this many (Epo 2026-11-14). */
+  points?: number;
 };
 type Attempt = {
   id: string;
@@ -214,6 +219,9 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
     workspaceId: wsId,
   };
   applyForm(row, body);
+  // A graded quiz owns the quiz its dialog made.
+  const quiz = db.materials.find((mt) => mt.id === row.quizId);
+  if (row.kind === 'marked' && quiz) quiz.assignmentId = row.id;
   if (row.kind === 'marked' && !row.draft) freeze(row);
   rows.set(row.id, row);
   return row;
@@ -225,6 +233,30 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
 export function assignAsMockOwner(wsId: string, body: AssignmentFormReq) {
   seed();
   return addRow(wsId, body, false).id;
+}
+
+/** A quiz maker's `gradedQuiz` (Epo 2026-11-16): the graded quiz made with
+ * the quiz, which it owns; returns its id. */
+export function addMockGradedQuiz(
+  wsId: string,
+  form: AssignmentFormReq,
+  quizId: string
+) {
+  seed();
+  return addRow(wsId, { ...form, kind: 'marked', quizId }, false).id;
+}
+
+/** A member's submitted attempt at an assignment: the Members mock's profile
+ * links its rows to the attempts seeded here. */
+export function submittedAttemptId(assignmentId: string, userId: string) {
+  seed();
+  for (const attempt of attempts.values())
+    if (
+      attempt.assignmentId === assignmentId &&
+      attempt.userId === userId &&
+      attempt.submittedAt
+    )
+      return attempt.id;
 }
 
 /** For a spec: hands the Member scenario's attempts at an assignment to one of
@@ -336,12 +368,13 @@ const open = (
   id: string,
   text: string,
   items: [string, number][],
-  solution?: string
+  solution?: string,
+  sample?: string
 ): Question => ({
   ...base(id),
   parts: [
     {
-      answer: { accepted: [], hints: [], type: 'open' },
+      answer: { accepted: sample ? [sample] : [], type: 'open' },
       blocks: textBlock(text),
       id: `${id}:a`,
       marks: items.reduce((sum, [, marks]) => sum + marks, 0),
@@ -351,7 +384,51 @@ const open = (
   ],
 });
 
-/** Past paper 2025 P1: 12 questions, 40 marks, as the boards draw it. */
+const part = (
+  id: string,
+  text: string,
+  answer: QuestionPart['answer'],
+  marks: number,
+  solution?: string,
+  markscheme?: [string, number][]
+): Question => ({
+  ...base(id),
+  parts: [
+    {
+      answer,
+      blocks: textBlock(text),
+      id: `${id}:a`,
+      marks,
+      ...(markscheme && {
+        markscheme: markscheme.map(([text, marks]) => ({ marks, text })),
+      }),
+      solution: solution ? textBlock(solution) : [],
+    },
+  ],
+});
+
+/** A drawn sample answer's board, served by the editor-asset mock. */
+const SAMPLE_BOARD = 'asset_mock_sample_board';
+mockBoardAssets.set(
+  SAMPLE_BOARD,
+  toBase64(
+    withElements({
+      color: '#2f7d56',
+      // Over the fixture's plane (index a0).
+      index: 'a1',
+      lineWidth: 4,
+      points: Array.from({ length: 48 }, (_, i) => [
+        200 + Math.cos((i / 47) * Math.PI * 2) * 180,
+        140 + Math.sin((i / 47) * Math.PI * 2) * 110,
+      ]),
+      type: 'brush',
+      xywh: '[0,0,400,280]',
+    })
+  )
+);
+
+/** Past paper 2025 P1: 12 questions, 40 marks, as the boards draw it, then
+ * one of each other answer type (Epo 2026-11-13). */
 const pastPaper = (): Question[] => [
   mcq(
     'q1',
@@ -374,7 +451,8 @@ const pastPaper = (): Question[] => [
       ['Uses the term water potential', 1],
       ["Links to the cell's higher solute concentration", 1],
     ],
-    'Soil water is more dilute than the cell sap, so water moves into the cell by osmosis through the partially permeable membrane, down the water potential gradient.'
+    'Soil water is more dilute than the cell sap, so water moves into the cell by osmosis through the partially permeable membrane, down the water potential gradient.',
+    "Water moves from the dilute soil water into the root hair cell by osmosis, across its partially permeable membrane, because the cell's sap has a higher solute concentration and so a lower water potential."
   ),
   short(
     'q4',
@@ -430,6 +508,336 @@ const pastPaper = (): Question[] => [
     ['Mass falls in concentrated solution', 2],
     ['No change where potentials match', 2],
   ]),
+  part(
+    'q13',
+    'Osmosis needs energy from respiration.',
+    { correct: false, type: 'boolean' },
+    1,
+    'Osmosis is passive: water moves down its own gradient, so the cell spends no energy on it.'
+  ),
+  part(
+    'q14',
+    'Match each organelle to its job.',
+    {
+      options: ['Makes proteins', 'Controls the cell', 'Releases energy'],
+      pairs: [
+        { left: 'Ribosome', right: 0 },
+        { left: 'Nucleus', right: 1 },
+        { left: 'Mitochondrion', right: 2 },
+      ],
+      type: 'matching',
+    },
+    3
+  ),
+  part(
+    'q15',
+    'Put the steps of making an onion slide in order.',
+    {
+      items: [
+        'Peel a thin layer of epidermis',
+        'Lay it flat in a drop of water',
+        'Add a drop of iodine',
+        'Lower a cover slip at an angle',
+      ],
+      type: 'ordering',
+    },
+    2
+  ),
+  part(
+    'q16',
+    'Water moves by (1) ___ from a (2) ___ solution to a more concentrated one.',
+    {
+      accepted: [['osmosis'], ['dilute', 'weak']],
+      type: 'gaps',
+    },
+    2,
+    'Osmosis moves water from where there is more of it (dilute) to where there is less (concentrated).'
+  ),
+  part(
+    'q17',
+    'Draw a plant cell and label the cell wall, the vacuole and the nucleus.',
+    { sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD }, type: 'drawing' },
+    3,
+    'A box-shaped cell: the wall around the outside, a large central vacuole and the nucleus pushed to one side.',
+    [
+      ['Cell wall drawn and labelled', 1],
+      ['Large vacuole drawn and labelled', 1],
+      ['Nucleus drawn and labelled', 1],
+    ]
+  ),
+  ...richQuestions(),
+];
+
+/** Questions with stems, groups, figures, tables and many parts, to see how
+ * the report, Preview and results lay them out (Epo 2026-11-14). */
+const CELL_FIGURE = {
+  description: 'An animal cell seen under a light microscope.',
+  height: 540,
+  image: { assetId: 'asset_mock_cell_diagram' },
+  type: 'image' as const,
+  width: 960,
+};
+const richQuestions = (): Question[] => [
+  {
+    ...base('q18'),
+    groups: [
+      {
+        blocks: [
+          ...textBlock(
+            'A student measured how the mass of potato cylinders changed after 30 minutes in sugar solutions.'
+          ),
+          {
+            header: true,
+            rows: [
+              [
+                'Sugar (mol/dm³)',
+                'Start mass (g)',
+                'End mass (g)',
+                'Change (%)',
+              ],
+              ['0.0', '2.50', '2.80', '+12.0'],
+              ['0.2', '2.48', '2.60', '+4.8'],
+              ['0.4', '2.52', '2.47', '−2.0'],
+              ['0.6', '2.50', '2.30', '−8.0'],
+            ],
+            type: 'table' as const,
+          },
+        ],
+        id: 'q18:g1',
+      },
+      {
+        blocks: [
+          ...textBlock(
+            'The figure shows one of the cells after the experiment.'
+          ),
+          CELL_FIGURE,
+        ],
+        id: 'q18:g2',
+      },
+    ],
+    parts: [
+      {
+        answer: {
+          correct: [2],
+          options: [
+            '0.0 mol/dm³',
+            '0.2 mol/dm³',
+            'Between 0.2 and 0.4 mol/dm³',
+            '0.6 mol/dm³',
+          ],
+          type: 'mcq',
+        },
+        blocks: textBlock(
+          'Estimate the sugar concentration with the same water potential as the potato.'
+        ),
+        group: 'q18:g1',
+        id: 'q18:a',
+        marks: 1,
+        solution: textBlock(
+          'The change crosses zero between 0.2 and 0.4 mol/dm³, so that is where no water moves.'
+        ),
+      },
+      {
+        answer: { accepted: ['12', '12.0'], type: 'short', unit: '%' },
+        blocks: textBlock(
+          'Calculate the percentage change in mass in pure water. Show your working.'
+        ),
+        group: 'q18:g1',
+        id: 'q18:b',
+        marks: 2,
+        solution: [
+          ...textBlock('Change = (2.80 − 2.50) ÷ 2.50 × 100'),
+          ...textBlock('= 0.30 ÷ 2.50 × 100 = 12%'),
+        ],
+      },
+      {
+        answer: {
+          accepted: [
+            'The cylinders gained mass in dilute solutions because water moved in by osmosis, and lost mass in concentrated ones as water moved out.',
+          ],
+          type: 'open',
+        },
+        blocks: textBlock(
+          'Explain the pattern in the results. Use the idea of water potential in your answer.'
+        ),
+        group: 'q18:g1',
+        id: 'q18:c',
+        marks: 4,
+        markscheme: [
+          { marks: 1, text: 'Gains mass in dilute solutions' },
+          { marks: 1, text: 'Loses mass in concentrated solutions' },
+          { marks: 1, text: 'Water moves by osmosis' },
+          { marks: 1, text: 'From higher to lower water potential' },
+        ],
+        solution: textBlock(
+          'Where the solution has a higher water potential than the cell sap, water enters by osmosis and the mass rises; where it is lower, water leaves and the mass falls.'
+        ),
+      },
+      {
+        answer: { correct: true, type: 'boolean' },
+        blocks: textBlock('The cell in the figure has lost water.'),
+        group: 'q18:g2',
+        id: 'q18:d',
+        marks: 1,
+        solution: textBlock(
+          'Its membrane has pulled in from the edge: it is plasmolysed.'
+        ),
+      },
+      {
+        answer: { accepted: [], type: 'open' },
+        blocks: textBlock(
+          'Suggest which solution this cell came from and give a reason.'
+        ),
+        group: 'q18:g2',
+        id: 'q18:e',
+        marks: 2,
+        markscheme: [
+          { marks: 1, text: 'Names 0.6 mol/dm³' },
+          { marks: 1, text: 'Lowest water potential, so most water lost' },
+        ],
+        solution: [],
+      },
+    ],
+    stem: textBlock('Osmosis in plant tissue.'),
+  },
+  {
+    ...base('q19'),
+    labels: 'numbers',
+    parts: [
+      {
+        answer: { accepted: ['0.025'], type: 'short', unit: 'mm' },
+        blocks: [
+          ...textBlock('The image of the cell is 25 mm wide at ×1000.'),
+          ...textBlock('Calculate the real width of the cell.'),
+        ],
+        id: 'q19:a',
+        marks: 2,
+        solution: textBlock(
+          'Real size = image size ÷ magnification = 25 ÷ 1000 = 0.025 mm'
+        ),
+      },
+      {
+        answer: {
+          accepted: [['nucleus'], ['cytoplasm'], ['membrane', 'cell membrane']],
+          type: 'gaps',
+        },
+        blocks: textBlock(
+          'The (1) ___ holds the genes, chemical reactions happen in the (2) ___, and the (3) ___ controls what enters the cell.'
+        ),
+        id: 'q19:b',
+        marks: 3,
+        solution: [],
+      },
+      {
+        answer: {
+          sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD },
+          type: 'drawing',
+        },
+        blocks: textBlock(
+          'Draw the cell as seen at ×1000 and add a scale bar.'
+        ),
+        id: 'q19:c',
+        marks: 3,
+        markscheme: [
+          { marks: 1, text: 'Clear single outline' },
+          { marks: 1, text: 'Nucleus in proportion' },
+          { marks: 1, text: 'Scale bar of a stated length' },
+        ],
+        solution: [],
+      },
+    ],
+    stem: [
+      ...textBlock(
+        'A student looked at cheek cells under a light microscope and drew what they saw.'
+      ),
+      CELL_FIGURE,
+    ],
+  },
+  {
+    ...base('q20'),
+    parts: [
+      {
+        answer: {
+          correct: [0, 2],
+          options: [
+            'They have a large surface area',
+            'They contain chloroplasts',
+            'They have thin walls',
+            'They store starch',
+          ],
+          type: 'mcq',
+        },
+        blocks: [
+          ...textBlock(
+            'Which two features help root hair cells take in water?'
+          ),
+          {
+            header: true,
+            rows: [
+              ['Cell', 'Length (µm)', 'Surface (µm²)'],
+              ['Root hair cell', '1300', '42 000'],
+              ['Leaf cell', '80', '9 600'],
+            ],
+            type: 'table',
+          },
+        ],
+        id: 'q20:a',
+        marks: 2,
+        solution: textBlock(
+          'A long hair gives a large surface for osmosis, and a thin wall keeps the path short.'
+        ),
+      },
+    ],
+    stem: [],
+  },
+  {
+    ...base('q21'),
+    parts: [
+      {
+        answer: { accepted: [], type: 'open' },
+        blocks: [
+          ...textBlock(
+            'Evaluate the claim that a single-celled organism does not need a transport system.'
+          ),
+          ...textBlock(
+            'In your answer, refer to surface area, volume and diffusion distance.'
+          ),
+        ],
+        id: 'q21:a',
+        marks: 6,
+        markscheme: [
+          { marks: 1, text: 'Large surface area to volume ratio' },
+          { marks: 1, text: 'Short diffusion distance to every part' },
+          { marks: 1, text: 'Diffusion is fast enough for its needs' },
+          { marks: 1, text: 'Larger organisms have a smaller ratio' },
+          { marks: 1, text: 'Their inner cells are too far from the surface' },
+          {
+            marks: 1,
+            text: 'A judgement that the claim holds for small cells',
+          },
+        ],
+        solution: [
+          ...textBlock(
+            'A single cell is small, so its surface area is large compared with its volume and nothing in it is far from the surface.'
+          ),
+          {
+            header: true,
+            rows: [
+              ['Side (cm)', 'Surface (cm²)', 'Volume (cm³)', 'Ratio'],
+              ['1', '6', '1', '6 : 1'],
+              ['2', '24', '8', '3 : 1'],
+              ['4', '96', '64', '1.5 : 1'],
+            ],
+            type: 'table',
+          },
+          ...textBlock(
+            'As size grows the ratio falls, so large organisms need a transport system while a single cell does not.'
+          ),
+        ],
+      },
+    ],
+    stem: [],
+  },
 ];
 
 const worksheet = (count: number): Question[] =>
@@ -513,6 +921,31 @@ function seedAttempt(
         answers[part.id] =
           closed++ < right ? part.answer.accepted[0] : 'diffusion';
       else if (part.answer.type === 'open') answers[part.id] = OPEN_ANSWER;
+      // The other types: right for the stronger members.
+      else if (part.answer.type === 'boolean')
+        answers[part.id] =
+          right >= 3 ? part.answer.correct : !part.answer.correct;
+      else if (part.answer.type === 'matching') {
+        const { options, pairs } = part.answer;
+        const good = right >= 3;
+        answers[part.id] = Object.fromEntries(
+          pairs.map((pair, i) => [
+            String(i),
+            options[
+              good || i > 0 ? pair.right : (pair.right + 1) % options.length
+            ],
+          ])
+        );
+      } else if (part.answer.type === 'ordering') {
+        const items = [...part.answer.items];
+        if (right < 4) items.reverse();
+        answers[part.id] = items;
+      } else if (part.answer.type === 'gaps')
+        answers[part.id] = part.answer.accepted.map((list, i) =>
+          right >= 3 || i > 0 ? list[0] : 'diffusion'
+        );
+      else if (part.answer.type === 'drawing')
+        answers[part.id] = { drawing: 'dr_marked_1' };
     }
   const graded = gradePaper(questions, answers);
   let waited = 0;
@@ -598,6 +1031,7 @@ function seed() {
       kind: 'marked',
       postedAt: at(-1, 9),
       questions: pastPaper(),
+      quizChanged: true,
       quizId: quizzes[0]?.id,
       timeLimitMin: 60,
       title: 'Past paper 2025 P1',
@@ -623,6 +1057,9 @@ function seed() {
       kind: 'marked',
       postedAt: at(0, 9),
       questions: worksheet(9),
+      // Every graded quiz owns a quiz to edit (migration 0174); the seeded
+      // ones borrow the workspace's.
+      quizId: quizzes[1]?.id,
       title: 'Inheritance worksheet',
     },
     // Members hand in files with Hand in (Epo 2026-11-08, S3/T2).
@@ -633,6 +1070,8 @@ function seed() {
       files: files[0] ? [{ fileId: files[0].id }] : [],
       id: 'as_lab',
       kind: 'unmarked',
+      // Graded on points (Epo 2026-11-14, board Task).
+      points: 20,
       postedAt: at(-1, 11),
       title: 'Osmosis lab write-up',
     },
@@ -662,8 +1101,10 @@ function seed() {
       id: 'as_osmosis',
       kind: 'marked',
       latePenaltyPct: 20,
+      moreTopicIds: ['ch_2', 'ch_1', 'ch_3'],
       postedAt: at(-7, 9),
       questions: worksheet(10),
+      quizId: quizzes[0]?.id,
       title: 'Osmosis check',
     },
     {
@@ -853,10 +1294,19 @@ function seed() {
   ];
   for (const [id, handed] of lab) setHandIn('as_lab', id, handed);
   done.set('as_lab', new Map(lab.map(([id]) => [id, at(0, 10)])));
+  grades.set(
+    'as_lab',
+    new Map([
+      ['u_mock_tom', 17],
+      ['u_mock_diego', 14.5],
+    ])
+  );
 }
 
 /** Who ticked an unmarked assignment, and when. */
 const done = new Map<string, Map<string, string>>();
+/** Staff's grades on a graded Assignment, by member. */
+const grades = new Map<string, Map<string, number>>();
 /** The viewer's To do ticks that aren't the work (Epo 2026-11-10): `work` on
  * their own quiz or hand-in, `approvals` on the answers waiting for them. */
 const todoChecks = new Map<string, { approvals?: string; work?: string }>();
@@ -896,6 +1346,14 @@ const penaltyOf = (row: Row, submittedAt?: string) =>
 
 const penalised = (correct: number, pct: number) =>
   Math.round(correct * (100 - pct)) / 100;
+
+/** A member's grade on a graded Assignment, late as their tick is. */
+const gradeOf = (row: Row, userId: string) => {
+  const correct = grades.get(row.id)?.get(userId);
+  if (row.points === undefined || correct === undefined) return;
+  const pct = penaltyOf(row, done.get(row.id)?.get(userId));
+  return { correct, mark: penalised(correct, pct), total: row.points };
+};
 
 const assignedTo = (row: Row, viewer: Viewer) => {
   const members = viewers(row.workspaceId).map((m) => m.userId);
@@ -1046,7 +1504,16 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
       a.assignmentId === row.id && a.userId === db.user.id && !a.submittedAt
   );
   const tick = done.get(row.id)?.get(db.user.id);
-  const myTotals = mine ? totals(mine.graded) : undefined;
+  // A graded Assignment's grade stands where a quiz's counted marks do.
+  const myGrade = gradeOf(row, db.user.id);
+  const myTotals = mine
+    ? totals(mine.graded)
+    : myGrade && { ...myGrade, waitingAnswers: 0, waitingMarks: 0 };
+  const myPenalty = penaltyOf(row, mine?.submittedAt ?? (myGrade && tick));
+  const graded = assigned.flatMap((id) => {
+    const g = gradeOf(row, id);
+    return g ? [g.mark / g.total] : [];
+  });
   const material = db.materials.find((mt) => mt.id === row.quizId);
   const topicIds =
     row.kind === 'marked'
@@ -1061,6 +1528,9 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             })
           ),
         ];
+  topicIds.push(
+    ...(row.moreTopicIds ?? []).filter((id) => !topicIds.includes(id))
+  );
   const gradesHidden = row.showGrades === 'manual' && !row.gradesReleasedAt;
   return {
     allowUploads: row.allowUploads,
@@ -1107,11 +1577,11 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     marks,
     noLate: row.noLate,
     own: !!row.own,
+    points: row.points,
     postedAt: row.postedAt,
     postedBy: row.own
       ? db.user.name
       : (POSTERS[row.workspaceId] ?? db.user.name),
-    practiceQuizId: row.releasedAt && !gradesHidden ? row.quizId : undefined,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
     title: row.title,
@@ -1136,12 +1606,15 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             assigned: assigned.length,
             assignees: row.assignees,
             average:
-              decided.length >= 5
+              decided.length > 0
                 ? decided.reduce(
                     (sum, d) => sum + d.correct / (d.total - d.waitingMarks),
                     0
                   ) / decided.length
-                : undefined,
+                : graded.length > 0
+                  ? graded.reduce((sum, share) => sum + share, 0) /
+                    graded.length
+                  : undefined,
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
             gradesReleasedAt: row.gradesReleasedAt,
             marking: row.marking,
@@ -1158,22 +1631,16 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                         ).length,
                       0
                     ),
-            practiceAt: row.practiceAt,
+            quizChanged: row.quizChanged,
             quizId: row.quizId,
             quizTitle: material?.title,
-            quizWorkspaceId: material?.workspaceId || undefined,
+            quizUpdatedAt: material?.updatedAt,
             showAnswers: row.showAnswers,
             showGrades: row.showGrades,
             shuffle: row.shuffle,
             toApprove: assigned
               .flatMap((id) => submissions(row.id, id))
               .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0),
-            toPractice:
-              !row.own &&
-              !row.draft &&
-              !!closedAtOf(row) &&
-              !gradesHidden &&
-              answersHeld(row),
           },
         }
       : {}),
@@ -1197,10 +1664,10 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                 ? handInOf(row.id, db.user.id)
                 : undefined,
             late: isLate(row, mine?.submittedAt ?? tick),
-            latePenaltyPct: penaltyOf(row, mine?.submittedAt),
+            latePenaltyPct: myPenalty,
             mark:
               myTotals && !gradesHidden
-                ? penalised(myTotals.correct, penaltyOf(row, mine?.submittedAt))
+                ? penalised(myTotals.correct, myPenalty)
                 : undefined,
             missing:
               row.kind === 'marked' &&
@@ -1338,7 +1805,13 @@ function partReport(part: QuestionPart, list: Attempt[]): AssignmentPartReport {
     out.wrongAnswers = [...counts]
       .map(([text, count]) => ({ count, text }))
       .sort((a, b) => b.count - a.count);
-  } else if (part.answer.type === 'open') {
+  } else if (part.answer.type === 'boolean') {
+    out.options = [0, 0];
+    for (const a of list) {
+      const chosen = a.answers[part.id];
+      if (typeof chosen === 'boolean') out.options[chosen ? 0 : 1] += 1;
+    }
+  } else if (modelMarked(part.answer.type)) {
     out.items = (part.markscheme ?? []).map((item, i) => {
       const marked = list.flatMap((a) => {
         const graded = gradedPart(a);
@@ -1352,6 +1825,16 @@ function partReport(part: QuestionPart, list: Attempt[]): AssignmentPartReport {
       };
     });
   }
+  // The part's own numbers, as the server takes them.
+  const marked = list.flatMap((a) => {
+    const graded = gradedPart(a);
+    return graded && !graded.pending ? [graded] : [];
+  });
+  const awarded = marked.reduce((sum, g) => sum + (g.awarded ?? 0), 0);
+  if (marked.length && modelMarked(part.answer.type))
+    out.average = awarded / marked.length;
+  else if (marked.length && part.marks)
+    out.percent = awarded / (part.marks * marked.length);
   return out;
 }
 
@@ -1371,16 +1854,21 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
   const members: AssignmentMemberRow[] = assigned
     .map((id): AssignmentMemberRow => {
       const a = counted(row, id);
-      const sum = a ? totals(a.graded) : undefined;
       const tick = done.get(row.id)?.get(id);
+      const grade = gradeOf(row, id);
+      const sum = a ? totals(a.graded) : grade;
+      const pct = penaltyOf(
+        row,
+        a?.submittedAt ?? (row.points === undefined ? undefined : tick)
+      );
       const person = nameOf(id);
       return {
         attemptId: a?.id,
         avatarUrl: person.avatarUrl,
         correct: sum?.correct,
         late: isLate(row, a?.submittedAt ?? tick),
-        latePenaltyPct: penaltyOf(row, a?.submittedAt),
-        mark: sum && penalised(sum.correct, penaltyOf(row, a?.submittedAt)),
+        latePenaltyPct: pct,
+        mark: sum && penalised(sum.correct, pct),
         minutes: a
           ? Math.max(
               1,
@@ -1456,7 +1944,7 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
             });
         }
       }
-      const enough = marked.length >= 5;
+      const enough = marked.length > 0;
       return {
         average:
           enough && isOpen
@@ -1464,8 +1952,9 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
             : undefined,
         parts: question.parts.map((p) => partReport(p, countedRows)),
         percent:
-          enough && !isOpen
-            ? marked.filter(({ q }) => score(q) >= marks).length / marked.length
+          enough && !isOpen && marks > 0
+            ? marked.reduce((n, { q }) => n + score(q), 0) /
+              (marked.length * marks)
             : undefined,
         question,
         submitted: graded.length,
@@ -1493,6 +1982,7 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.showGrades = body.showGrades;
   row.shuffle = body.shuffle;
   row.allowUploads = !!body.allowUploads;
+  row.points = body.points ?? undefined;
   row.files = body.files.map(({ fileId, materialId }) => ({
     fileId,
     materialId,
@@ -1523,85 +2013,31 @@ export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
   );
 }
 
-/** When the assignment that made this quiz practice closed (board P1). */
-export function assignmentClosedAt(quizId: string) {
-  seed();
-  const row = [...rows.values()].find(
-    (r) => r.quizId === quizId && r.releasedAt
-  );
-  return row && (closedAtOf(row) ?? row.releasedAt);
-}
-
-/** Under Show answers Do not show and not yet turned to practice. */
-const answersHeld = (row: Row) =>
-  row.kind === 'marked' && row.showAnswers === 'never' && !row.practiceAt;
-
-/** The assignments holding a quiz: open ones, and closed ones whose answers are
- * held. A task someone set themself holds no quiz back. */
-function holding(quizId: string) {
-  seed();
-  return [...rows.values()].filter(
-    (r) =>
-      r.quizId === quizId &&
-      !r.own &&
-      !r.draft &&
-      (!closedAtOf(r) || answersHeld(r))
-  );
-}
-
-/** Whether the quiz is kept from a member: while an assignment holds it, it is,
- * assigned to them or not (the one it went to opens it through their row). */
-export const quizHeldFromMembers = (quizId: string) =>
-  holding(quizId).length > 0;
-
-/** A quiz row's fields for this viewer, as the server's lists read them: the icon
- * while it is under an open assignment, and for an assignee what the row opens. */
-export function quizAssignmentFields(quizId: string, viewer: Viewer) {
-  const open = holding(quizId);
-  if (!open.length) return {};
-  if (viewer === 'owner') return { assigned: true };
-  const mine = open
-    .filter((r) => assignedTo(r, viewer).includes(db.user.id))
-    .sort((a, b) => Date.parse(a.dueAt!) - Date.parse(b.dueAt!))[0];
-  return mine ? { assigned: true, assignmentId: mine.id } : {};
-}
-
 /** Told once in this page's life. */
 let sharingNoticeSeen = false;
 
-/** GET /api/recent for this viewer. */
-export function recentFor(url: string, viewer: Viewer) {
+/** GET /api/recent: a graded quiz's own quiz lists nowhere (migration 0174). */
+export function recentFor(url: string) {
   const page = db.listRecent(new URL(url));
+  const owned = new Set(
+    db.materials.filter((mt) => mt.assignmentId).map((mt) => mt.id)
+  );
   return {
     ...page,
-    items: page.items
-      .map((item) =>
-        item.material
-          ? {
-              ...item,
-              material: {
-                ...item.material,
-                ...quizAssignmentFields(item.material.id, viewer),
-              },
-            }
-          : item
-      )
-      // A member's held quiz is listed only as the row that opens its assignment.
-      .filter(
-        (item) =>
-          viewer === 'owner' ||
-          !item.material ||
-          !!item.material.assignmentId ||
-          !quizHeldFromMembers(item.material.id)
-      ),
+    items: page.items.filter(
+      (item) => !item.material || !owned.has(item.material.id)
+    ),
   };
 }
 
-/** A workspace's rows for this viewer: a member lists a quiz that is hidden, or
- * held by an open assignment, only while it is assigned to them. */
+/** A workspace's rows for this viewer: a member lists no hidden one. */
 export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
   const refs: MaterialRef[] = db.materials
-    .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
+    // A graded quiz's own quiz lists nowhere.
+    .filter(
+      (mt) =>
+        mt.workspaceId === wsId && !mt.parentMaterialId && !mt.assignmentId
+    )
     .map((mt) => ({
       createdAt: mt.createdAt,
       hidden: mt.hidden,
@@ -1613,16 +2049,8 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
       title: mt.title,
       topicId: mt.topicId,
       type: mt.kind,
-      ...quizAssignmentFields(mt.id, viewer),
     }))
-    .filter(
-      (ref) =>
-        viewer === 'owner' ||
-        ref.assignmentId ||
-        (!ref.hidden && !quizHeldFromMembers(ref.id))
-    )
-    // An assignee isn't told it is hidden from others.
-    .map((ref) => (ref.assignmentId ? { ...ref, hidden: false } : ref))
+    .filter((ref) => viewer === 'owner' || !ref.hidden)
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   return refs;
 }
@@ -1769,23 +2197,62 @@ export const assignmentHandlers = (viewer: Viewer) => {
         workspaces,
       } satisfies TodoDonePage);
     }),
-    http.get('/api/workspaces/:id/assignments', ({ params }) => {
+    // Filtered and paged as the server does (Epo 2026-11-13), 50 a page.
+    http.get('/api/workspaces/:id/assignments', ({ params, request }) => {
       seed();
+      const url = new URL(request.url);
+      const closed = url.searchParams.get('closed') === 'true';
+      const done = url.searchParams.get('done') === 'true';
+      const topics = (url.searchParams.get('topic') ?? '')
+        .split(',')
+        .filter(Boolean);
+      const sort = url.searchParams.get('sort');
+      const ascending = url.searchParams.get('dir') !== 'desc';
+      const offset = Number(url.searchParams.get('cursor') ?? 0);
       const staff = viewer === 'owner' && isClass(String(params.id));
-      const items = [...rows.values()]
+      const all = [...rows.values()]
         .filter((row) => row.workspaceId === params.id)
         .filter((row) => staff || !row.draft)
         .map((row) => toAssignment(row, viewer))
         .filter((a) => a.manage || a.mine)
+        .filter((a) => closed || !a.closed)
+        .filter((a) => done || !a.mine?.done)
+        .filter(
+          (a) =>
+            topics.length === 0 || a.topicIds.some((t) => topics.includes(t))
+        )
         .sort((a, b) => {
           if (a.closed !== b.closed) return a.closed ? 1 : -1;
+          // A column's order, as the server's; none last either way.
+          if (sort) {
+            const value = (x: Assignment) =>
+              sort === 'title'
+                ? x.title.toLowerCase()
+                : sort === 'kind'
+                  ? x.kind
+                  : sort === 'topic'
+                    ? db.topics.find((t) => t.id === x.topicIds[0])?.name
+                    : sort === 'posted'
+                      ? x.postedAt
+                      : x.dueAt;
+            const p = value(a);
+            const q = value(b);
+            if (!p || !q) return p === q ? 0 : p ? -1 : 1;
+            const by = p.localeCompare(q);
+            return ascending ? by : -by;
+          }
           if (!a.dueAt) return 1;
           if (!b.dueAt) return -1;
-          return Date.parse(a.dueAt) - Date.parse(b.dueAt);
+          return a.closed
+            ? Date.parse(b.dueAt) - Date.parse(a.dueAt)
+            : Date.parse(a.dueAt) - Date.parse(b.dueAt);
         });
+      const PAGE = 50;
       return HttpResponse.json({
-        items,
+        items: all.slice(offset, offset + PAGE),
         members: staff ? viewers(String(params.id)).length : undefined,
+        nextCursor:
+          offset + PAGE < all.length ? String(offset + PAGE) : undefined,
       } satisfies AssignmentList);
     }),
     // A task with no workspace: its maker's alone.
@@ -1816,6 +2283,30 @@ export const assignmentHandlers = (viewer: Viewer) => {
       applyForm(row, body);
       if (row.kind === 'marked') freeze(row);
       rows.set(row.id, row);
+      return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
+    }),
+    // Existing quiz: a copy of a workspace quiz made into a new graded quiz.
+    http.post('/api/quizzes/:id/graded-copy', async ({ params, request }) => {
+      const source = db.materials.find(
+        (mt) => mt.id === params.id && mt.kind === 'quiz'
+      );
+      if (!source) return gone();
+      const { gradedQuiz } = (await request.json()) as {
+        gradedQuiz: AssignmentFormReq;
+      };
+      const copy = db.makeMaterial({
+        ...source,
+        assignmentId: undefined,
+        content: structuredClone(source.content),
+        createdAt: new Date().toISOString(),
+        hidden: true,
+        id: newId('qz'),
+        title: gradedQuiz.title || source.title,
+      });
+      db.materials.unshift(copy);
+      const id = addMockGradedQuiz(source.workspaceId, gradedQuiz, copy.id);
+      const row = rowOf(id);
+      if (!row) return gone();
       return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
     }),
     http.post(
@@ -1892,8 +2383,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (!row) return gone();
       const { closed } = (await request.json()) as { closed: boolean };
       row.closedAt = closed ? new Date().toISOString() : undefined;
-      // Under Do not show the quiz stays held until staff turn it to practice.
-      if (closed && (row.own || !answersHeld(row)))
+      // Under Do not show nothing is released (Epo 2026-11-14).
+      if (closed && (row.own || row.showAnswers !== 'never'))
         row.releasedAt ??= new Date().toISOString();
       // The stream's word to whoever is taking it (`publishAssignmentClosed`).
       if (
@@ -1909,18 +2400,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
         );
       return HttpResponse.json(toAssignment(row, viewer));
     }),
-    http.post('/api/assignments/:id/practice', ({ params }) => {
-      const row = rowOf(params.id);
-      if (!row) return gone();
-      if (row.own || !closedAtOf(row) || !answersHeld(row))
-        return HttpResponse.json(
-          { message: "this assignment's quiz is not waiting" },
-          { status: 400 }
-        );
-      row.practiceAt = new Date().toISOString();
-      row.releasedAt ??= row.practiceAt;
-      return HttpResponse.json(toAssignment(row, viewer));
-    }),
     http.post('/api/assignments/:id/release-grades', ({ params }) => {
       const row = rowOf(params.id);
       if (!row) return gone();
@@ -1928,6 +2407,25 @@ export const assignmentHandlers = (viewer: Viewer) => {
         row.gradesReleasedAt ??= new Date().toISOString();
       return HttpResponse.json(toAssignment(row, viewer));
     }),
+    // Staff grade a member on a graded Assignment (Epo 2026-11-14).
+    http.put(
+      '/api/assignments/:id/grades/:userId',
+      async ({ params, request }) => {
+        const row = rowOf(params.id);
+        if (!row || !runs(row, viewer)) return gone();
+        const { points } = (await request.json()) as { points?: number };
+        if (row.points === undefined || (points ?? 0) > row.points)
+          return HttpResponse.json(
+            { detail: 'this assignment is not graded', status: 422 },
+            { status: 422 }
+          );
+        const of = grades.get(row.id) ?? new Map<string, number>();
+        if (points === undefined) of.delete(String(params.userId));
+        else of.set(String(params.userId), points);
+        grades.set(row.id, of);
+        return new HttpResponse(null, { status: 204 });
+      }
+    ),
     http.put('/api/assignments/:id/done', async ({ params, request }) => {
       seed();
       const id = String(params.id);

@@ -14,7 +14,6 @@ import {
   roomBindingPlugin,
   takeLocalEdit,
   trailingBlockPlugin,
-  writeNoEdit,
 } from './roomBinding';
 
 /* CAPY-WEB-7: a note editor painted before its room synced (the join's 30 s
@@ -222,22 +221,6 @@ describe('roomBindingPlugin', () => {
     expect(blocks().map((node) => node.type)).toEqual(['p', 'table', 'p']);
   });
 
-  it("reaches the room with a write of the editor's own, and brings no paragraph", async () => {
-    const { blocks, editor, updates, yjs } = await openedNote([
-      block('a', 'Intro'),
-      TABLE,
-    ]);
-    writeNoEdit(editor, () =>
-      editor.tf.setNodes({ marked: true } as never, { at: [0] })
-    );
-    await settle();
-    YjsEditor.flushLocalChanges(yjs);
-    expect(updates.length).toBeGreaterThan(0);
-    expect(blocks()[0]).toMatchObject({ marked: true });
-    expect(blocks().map((node) => node.type)).toEqual(['p', 'table']);
-    expect(takeLocalEdit(editor)).toBe(false);
-  });
-
   it('counts a real edit and an Undo as local edits, a normalization as none', async () => {
     const { editor, undo, yjs } = await openedNote([INLINE]);
     expect(takeLocalEdit(editor)).toBe(false);
@@ -258,6 +241,17 @@ describe('roomBindingPlugin', () => {
     await settle();
     expect(blocks().map((node) => node.type)).toEqual(['p', 'table', 'p']);
     expect(editor.selection?.anchor.path).toEqual([2, 0]);
+  });
+
+  it('opens a new line below a closing paragraph with text (trailingHint)', async () => {
+    const { blocks, editor } = await openedNote([block('a', 'Intro')]);
+    openTrailingParagraph(editor as never);
+    await settle();
+    expect(blocks()).toMatchObject([
+      { children: [{ text: 'Intro' }] },
+      { children: [{ text: '' }], type: 'p' },
+    ]);
+    expect(editor.selection?.anchor.path).toEqual([1, 0]);
   });
 
   // Our @slate-yjs/core patch: history maps the selection onto the room

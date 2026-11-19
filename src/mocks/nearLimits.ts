@@ -9,7 +9,6 @@ import type {
   Question,
   QuestionPart,
 } from '@/features/questions/types';
-import nearLimitGraphSvg from './fixtures/near-limit-graph.svg?raw';
 
 /* Embeds at their limits for the "Near-limit" files in Biology 101: every
  * count sits at its cap and every text at its length cap. Byte caps are met
@@ -121,16 +120,19 @@ export function nearLimitPlot(): PlotBlock {
   };
 }
 
-/** The graph's recipe; its SVG is drawn from it by
- * `renderGraphSvg` into fixtures/near-limit-graph.svg. */
-export function nearLimitGraphRecipe(): Omit<GraphBlock, 'image'> {
+/** A graph at every graph cap. */
+export function nearLimitGraph(): GraphBlock {
   const points = 30;
   const name = (i: number) => filled(`P${i} `, limits.QUESTION_GRAPH_NAME_MAX);
-  const term = (k: number) => {
-    let out = `${k}`;
+  const restriction = '\\left\\lbrace -10\\le x\\le 10\\right\\rbrace';
+  const latex = (k: number) => {
+    let out = `y=${k}`;
     for (let n = 1; ; n++) {
-      const next = `${out}+0.${n}*sin(${n}*x)`;
-      if (next.length > limits.QUESTION_GRAPH_TERM_MAX) return out;
+      const next = `${out}+0.${n}\\sin\\left(${n}x\\right)`;
+      if (
+        [...next, ...restriction].length > limits.QUESTION_GRAPH_EXPRESSION_MAX
+      )
+        return out + restriction;
       out = next;
     }
   };
@@ -159,10 +161,9 @@ export function nearLimitGraphRecipe(): Omit<GraphBlock, 'image'> {
     ...Array.from(
       { length: 8 },
       (_, k): GraphElement => ({
-        domain: [-10, 10],
         id: `f${k}`,
-        term: term(k - 4),
-        type: 'functiongraph',
+        latex: latex(k - 4),
+        type: 'expression',
       })
     ),
     ...Array.from(
@@ -202,10 +203,6 @@ export function nearLimitGraphRecipe(): Omit<GraphBlock, 'image'> {
     type: 'graph',
     width: limits.QUESTION_GRAPH_DIMENSION_MAX,
   };
-}
-
-export function nearLimitGraph(): GraphBlock {
-  return { ...nearLimitGraphRecipe(), image: { svg: nearLimitGraphSvg } };
 }
 
 /** An interactive block just under HTML_EMBED_MAX_BYTES: a filterable table. */
@@ -280,7 +277,6 @@ function nearLimitPart(id: string, index: number): QuestionPart {
       return {
         answer: {
           accepted: [filled('Model answer: ', limits.QUIZ_OPEN_ANSWER_MAX)],
-          hints: [],
           type: 'open',
         },
         blocks: text('Explain how the sodium-potassium pump keeps a gradient.'),

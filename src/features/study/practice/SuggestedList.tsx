@@ -35,16 +35,13 @@ function PractiseRow({
   );
 }
 
-/** Up to three picks with today's suggested-review wording (P2), on Practice
- * and on the Dashboard, which also ends the list with the whole workspace's
- * review (`onReviewAll`, Epo 2026-11-04, board D2). */
+/** Up to three picks with today's suggested-review wording (P2), on Study's
+ * Overview. */
 export function SuggestedList({
   list,
-  onReviewAll,
   onStart,
 }: {
   list: ReviewSuggestion[];
-  onReviewAll?: () => void;
   onStart: (s: ReviewSuggestion) => void;
 }) {
   return (
@@ -58,14 +55,6 @@ export function SuggestedList({
           onStart={() => onStart(s)}
         />
       ))}
-      {onReviewAll && (
-        <PractiseRow
-          action={m.review_start()}
-          meta={m.dashboard_workspace_review_meta()}
-          name={m.dashboard_workspace_review()}
-          onStart={onReviewAll}
-        />
-      )}
     </ul>
   );
 }

@@ -49,7 +49,7 @@ export function MaterialListItem({
   return (
     <div
       className={cn(
-        'group relative flex min-h-7.5 items-center rounded-button pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
+        'group relative flex min-h-7.5 items-center rounded-button pr-1 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
         indent ? 'pl-7' : 'pl-2',
         active && 'bg-surface-hover-bg'
       )}
@@ -65,24 +65,17 @@ export function MaterialListItem({
         onClick={onOpen}
         params={{ workspaceId }}
         replace
-        // An assignee's row opens the assignment; the quiz is refused until it closes.
-        search={
-          matRef.assignmentId
-            ? { assignment: matRef.assignmentId, study: 'assignments' as const }
-            : { material: matRef.id }
-        }
+        search={{ material: matRef.id }}
         to="/workspaces/$workspaceId"
       >
-        <FileIcon
-          className="size-4"
-          name={materialIconName(matRef.type, matRef.assigned)}
-        />
+        <FileIcon className="size-4" name={materialIconName(matRef.type)} />
         <span className="min-w-0 flex-1 translate-y-px truncate">
           {matRef.type === 'quiz'
             ? m.files_quiz_row({ title: matRef.title })
             : matRef.title}
         </span>
-        {matRef.hidden && <HiddenMark />}
+        {/* In the ⋮'s 28px column, centred under it (Epo 2026-11-16). */}
+        {matRef.hidden && <HiddenMark className="w-7 justify-center" />}
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
       {hoverMenu && (

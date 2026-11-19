@@ -112,10 +112,34 @@ pub fn replace_block(
     if !deep_strict_equal(&current, &command.expected_block) {
         return refuse("target block changed concurrently");
     }
+    // A figure keeping its keys changes in place: its `set_node` writes only
+    // the figure map's entries that differ (`figure_map::sync`, Epo
+    // 2026-11-16), so a peer's edit to another element or value stays.
+    let figure = kind
+        .and_then(Value::as_str)
+        .is_some_and(crate::figure_map::is_figure);
+    if figure && same_keys(&current, &command.replacement_block) {
+        let mut props = command
+            .replacement_block
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        props.remove("children");
+        editor.set_nodes_at(path, &props)?;
+        return Ok(());
+    }
     let replacement = command.replacement_block.clone();
     editor.without_normalizing(|editor| {
         editor.remove_node(path.clone())?;
         editor.insert_nodes(path, vec![replacement])
     })?;
     Ok(())
+}
+
+/// Whether two elements carry the same keys.
+fn same_keys(a: &Value, b: &Value) -> bool {
+    match (a.as_object(), b.as_object()) {
+        (Some(a), Some(b)) => a.len() == b.len() && a.keys().all(|key| b.contains_key(key)),
+        _ => false,
+    }
 }

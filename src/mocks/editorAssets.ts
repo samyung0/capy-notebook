@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type { EditorAssetItem } from '@/api/types';
+import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 
 // Inline SVG so the seed needs no binary fixture or network.
 const cellDiagram = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
@@ -26,6 +27,19 @@ const uploads = new Map<
   string,
   { contentType: string; materialId: string; name: string; purpose: string }
 >();
+
+/** Boards (base64 snapshots) served gzipped as board assets, as the bucket
+ * holds them: e.g. a drawing question's sample answer. */
+export const mockBoardAssets = new Map<string, string>();
+
+async function boardUrl(board: string) {
+  const packed = await new Response(
+    new Blob([fromBase64(board) as Uint8Array<ArrayBuffer>])
+      .stream()
+      .pipeThrough(new CompressionStream('gzip'))
+  ).arrayBuffer();
+  return `data:application/gzip;base64,${toBase64(new Uint8Array(packed))}`;
+}
 
 /** A material's uploaded image assets: what a canvas save may name. */
 export const mockImageAssets = (materialId: string) =>
@@ -114,8 +128,19 @@ export const editorAssetHandlers = [
     embeds.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/editor-assets/:id/resolve', ({ params }) => {
+  http.get('/api/editor-assets/:id/resolve', async ({ params }) => {
     const id = String(params.id);
+    const board = mockBoardAssets.get(id);
+    if (board !== undefined)
+      return HttpResponse.json({
+        assetId: id,
+        contentType: 'application/gzip',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        name: 'sample.board',
+        purpose: 'board',
+        sizeBytes: board.length,
+        url: await boardUrl(board),
+      });
     const asset = assets[id];
     if (!asset) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json({

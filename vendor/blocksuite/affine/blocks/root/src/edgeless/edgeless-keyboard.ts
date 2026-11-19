@@ -84,6 +84,13 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
     return this.rootComponent.std;
   }
 
+  /** Capy (local change 65): a store that takes no edits takes none from the
+   * keyboard. Every key below that writes, or picks a tool that would, stops
+   * here; the keys that select, zoom and pan go on. */
+  private get _readonly() {
+    return this.rootComponent.store.readonly;
+  }
+
   constructor(override rootComponent: EdgelessRootBlockComponent) {
     super(rootComponent);
     this.rootComponent.bindHotKey(
@@ -92,9 +99,11 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           this._setEdgelessTool(DefaultTool);
         },
         t: () => {
+          if (this._readonly) return;
           this._setEdgelessTool(TextTool);
         },
         c: () => {
+          if (this._readonly) return;
           const editPropsStore = this.std.get(EditPropsStore);
 
           let mode: ConnectorMode;
@@ -115,6 +124,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           });
         },
         n: () => {
+          if (this._readonly) return;
           this._setEdgelessTool(NoteTool, {
             childFlavour: DEFAULT_NOTE_CHILD_FLAVOUR,
             childType: DEFAULT_NOTE_CHILD_TYPE,
@@ -122,15 +132,19 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           });
         },
         p: () => {
+          if (this._readonly) return;
           this._setEdgelessTool(BrushTool);
         },
         'Shift-p': () => {
+          if (this._readonly) return;
           this._setEdgelessTool(HighlighterTool);
         },
         e: () => {
+          if (this._readonly) return;
           this._setEdgelessTool(EraserTool);
         },
         k: () => {
+          if (this._readonly) return;
           if (this.rootComponent.service.locked) return;
           const { selection } = rootComponent.service;
 
@@ -145,6 +159,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           }
         },
         f: () => {
+          if (this._readonly) return;
           if (this.rootComponent.service.locked) return;
           if (
             this.rootComponent.service.selection.selectedElements.length !==
@@ -168,6 +183,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           }
         },
         '-': () => {
+          if (this._readonly) return;
           if (this.rootComponent.service.locked) return;
           const { selectedElements: elements } =
             rootComponent.service.selection;
@@ -180,6 +196,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           }
         },
         '@': () => {
+          if (this._readonly) return;
           const std = this.rootComponent.std;
           if (
             std.selection.getGroup('note').length > 0 ||
@@ -210,6 +227,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
             .catch(console.error);
         },
         'Shift-s': () => {
+          if (this._readonly) return;
           if (this.rootComponent.service.locked) return;
           const controller = rootComponent.gfx.tool.currentTool$.peek();
           if (
@@ -225,6 +243,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           controller.createOverlay();
         },
         'Mod-g': ctx => {
+          if (this._readonly) return;
           if (this.rootComponent.service.locked) return;
           if (
             this.rootComponent.service.selection.selectedElements.length > 1 &&
@@ -235,6 +254,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
           }
         },
         'Shift-Mod-g': ctx => {
+          if (this._readonly) return;
           if (this.rootComponent.service.locked) return;
           const { selection } = this.rootComponent.service;
           if (
@@ -362,6 +382,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
         },
 
         Enter: () => {
+          if (this._readonly) return;
           const { service } = rootComponent;
           const selection = service.selection;
           const elements = selection.selectedElements;
@@ -424,6 +445,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
         },
         Tab: ctx => {
           ctx.get('defaultState').event.preventDefault();
+          if (this._readonly) return;
 
           const { service } = rootComponent;
           const selection = service.selection;
@@ -477,6 +499,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
         if (event.code === 'Space' && !event.repeat) {
           this._space(event);
         } else if (
+          !this._readonly &&
           !selection.editing &&
           // the key might be `Unidentified` according to mdn
           event.key?.length === 1 &&
@@ -523,6 +546,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
   private _delete() {
     const edgeless = this.rootComponent;
 
+    if (this._readonly) return;
     if (edgeless.service.locked) return;
     if (edgeless.service.selection.editing) {
       return;
@@ -630,6 +654,7 @@ export class EdgelessPageKeyboardManager extends PageKeyboardManager {
       return;
     }
 
+    if (this._readonly) return;
     if (selectedElements.some(e => e.isLocked())) return;
 
     const movedElements = new Set([

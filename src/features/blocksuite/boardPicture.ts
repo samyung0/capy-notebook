@@ -1,3 +1,4 @@
+import { DefaultTool } from '@blocksuite/affine/blocks/surface';
 import { StoreExtensionProvider } from '@blocksuite/affine/ext-loader';
 import type { Bound } from '@blocksuite/affine/global/gfx';
 import {
@@ -130,6 +131,8 @@ export function addPicture(
     { ...picture, xywh: box.serialize() },
     surface.id
   );
+  // Whatever tool was on (the pen, say), Select takes over (Epo 2026-11-13).
+  gfx.tool.setTool(DefaultTool);
   gfx.selection.set({ editing: false, elements: [id] });
   return id;
 }

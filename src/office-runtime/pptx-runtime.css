@@ -140,10 +140,19 @@
   box-shadow: 0 8px 32px rgb(27 39 61 / 20%);
 }
 
+/* Capy's 52px chat button (ChatDock, right-4) floats over the frame's bottom
+   right on the Files page at every width (Epo 2026-11-14): beside the slide
+   rail the Notes button keeps that column clear, in View and Edit (the
+   editor's own --pptx-notes-toggle-right). The narrow layout has it at the
+   bottom left. */
+:root:not([data-narrow]) {
+  --pptx-notes-toggle-right: 72px;
+}
+
 /* pptx-react's Notes button (a ToolbarButton at the stage's bottom right). */
 .pptx-viewer-notes-toggle {
   position: absolute;
-  right: 8px;
+  right: var(--pptx-notes-toggle-right, 8px);
   bottom: 8px;
   z-index: 5;
   display: inline-flex;

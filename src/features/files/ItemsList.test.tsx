@@ -198,24 +198,6 @@ it("offers another member's block only what the caller may do", () => {
   expect(theirs).not.toContain(`data-menu="${m.action_delete()}"`);
 });
 
-// A hidden quiz assigned to the viewer lists in All files as in Recent, and
-// only opens its assignment: the quiz itself is refused to them.
-it("offers an assignee's quiz only its assignment", () => {
-  list.items = [
-    block({
-      assigned: true,
-      assignmentId: 'as_1',
-      isOwner: false,
-      kind: 'quiz',
-      workspaceId: 'ws_1',
-    }),
-  ];
-  const html = render();
-  expect(html).toContain(`data-menu="${m.assignment_open()}"`);
-  expect(html).not.toContain(`data-menu="${m.action_study()}"`);
-  expect(html).not.toContain(`data-menu="${m.action_clone_to()}"`);
-});
-
 it('confirms what a deletion does: trash, for good, or both', () => {
   const [file, submission, material, embed] = ITEMS;
   expect(deleteCopy([file, material]).title).toBe(

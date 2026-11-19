@@ -13,4 +13,9 @@ export interface CreateCanvasInputBody {
      * @maxLength 120
      */
   title: string;
+  /**
+     * The workspace it is drawn in, the caller a member; none for a canvas of their own
+     * @maxLength 64
+     */
+  workspaceId?: string;
 }

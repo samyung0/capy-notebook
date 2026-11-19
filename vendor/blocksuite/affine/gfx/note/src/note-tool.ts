@@ -1,38 +1,31 @@
 import {
-  DEFAULT_NOTE_OFFSET_X,
-  DEFAULT_NOTE_OFFSET_Y,
   DefaultTool,
   EdgelessCRUDIdentifier,
-  EXCLUDING_MOUSE_OUT_CLASS_LIST,
-  type SurfaceBlockComponent,
 } from '@blocksuite/affine-block-surface';
 import {
   DEFAULT_NOTE_HEIGHT,
   DEFAULT_NOTE_WIDTH,
-  NOTE_MIN_HEIGHT,
-  type NoteBlockModel,
+  INLINE_NOTE_FILL,
   NoteDisplayMode,
+  NoteShadow,
+  StrokeStyle,
 } from '@blocksuite/affine-model';
 import { focusTextModel } from '@blocksuite/affine-rich-text';
 import {
-  EditPropsStore,
+  FeatureFlagService,
   TelemetryProvider,
 } from '@blocksuite/affine-shared/services';
 import type { NoteChildrenFlavour } from '@blocksuite/affine-shared/types';
-import {
-  handleNativeRangeAtPoint,
-  hasClassNameInList,
-} from '@blocksuite/affine-shared/utils';
+import { handleNativeRangeAtPoint } from '@blocksuite/affine-shared/utils';
 import { type IPoint, Point, serializeXYWH } from '@blocksuite/global/gfx';
 import type { BlockStdScope, PointerEventState } from '@blocksuite/std';
 import {
   BaseTool,
   type GfxBlockElementModel,
   GfxControllerIdentifier,
+  type GfxInteractivityContext,
+  InteractivityExtension,
 } from '@blocksuite/std/gfx';
-import { effect } from '@preact/signals-core';
-
-import { DraggingNoteOverlay, NoteOverlay } from './overlay';
 
 export type NoteToolOption = {
   childFlavour: NoteChildrenFlavour;
@@ -40,197 +33,80 @@ export type NoteToolOption = {
   tip: string;
 };
 
+/** Capy (local change 53): the first line's height of a note starting with each
+ * kind, in model units on the board (a code block has none, and lays out as text). */
+const FIRST_LINE: Record<string, number> = {
+  h1: 36,
+  h2: 36,
+  h3: 32,
+  h4: 30,
+  h5: 28,
+  h6: 26,
+  quote: 26,
+};
+const firstLineOf = (childType: string | null) =>
+  (childType && FIRST_LINE[childType]) || 22.8;
+
+// Capy (local change 53; Epo 2026-11-13): the tool shows the plus cursor alone,
+// like a text tool: no note follows the pointer and no box is dragged out. A click
+// (or a drag, at its start) places an inline note with its first line starting at
+// the pointer. AFFiNE drew a preview box and let a drag size the note.
 export class NoteTool extends BaseTool<NoteToolOption> {
   static override toolName = 'affine:note';
 
-  private _draggingNoteOverlay: DraggingNoteOverlay | null = null;
-
-  private _noteOverlay: NoteOverlay | null = null;
-
-  private get _surfaceComponent() {
-    return this.gfx.surfaceComponent as SurfaceBlockComponent | null;
-  }
-
-  // Ensure clear overlay before adding a new note
-  private _clearOverlay() {
-    this._noteOverlay = this._disposeOverlay(this._noteOverlay);
-    this._draggingNoteOverlay = this._disposeOverlay(this._draggingNoteOverlay);
-    this._surfaceComponent?.refresh();
-  }
-
-  private _disposeOverlay(overlay: NoteOverlay | null) {
-    if (!overlay) return null;
-
-    overlay.dispose();
-    this._surfaceComponent?.renderer.removeOverlay(overlay);
-    return null;
-  }
-
-  // Should hide overlay when mouse is out of viewport or on menu and toolbar
-  private _hideOverlay() {
-    if (!this._noteOverlay) return;
-
-    this._noteOverlay.globalAlpha = 0;
-    this._surfaceComponent?.refresh();
-  }
-
-  private _resize(shift = false) {
-    const { _draggingNoteOverlay } = this;
-    if (!_draggingNoteOverlay) return;
-
-    const draggingArea = this.controller.draggingArea$.peek();
-    const { startX, startY } = draggingArea;
-    let { endX, endY } = this.controller.draggingArea$.peek();
-
-    if (shift) {
-      const w = Math.abs(endX - startX);
-      const h = Math.abs(endY - startY);
-      const m = Math.max(w, h);
-      endX = startX + (endX > startX ? m : -m);
-      endY = startY + (endY > startY ? m : -m);
-    }
-
-    _draggingNoteOverlay.slots.draggingNoteUpdated.next({
-      xywh: [
-        Math.min(startX, endX),
-        Math.min(startY, endY),
-        Math.abs(startX - endX),
-        Math.abs(startY - endY),
-      ],
-    });
-  }
-
-  private _updateOverlayPosition(x: number, y: number) {
-    if (!this._noteOverlay) return;
-    this._noteOverlay.x = x;
-    this._noteOverlay.y = y;
-    this._surfaceComponent?.refresh();
-  }
-
-  override activate() {
-    const attributes =
-      this.std.get(EditPropsStore).lastProps$.value['affine:note'];
-    const background = attributes.background;
-    this._noteOverlay = new NoteOverlay(this.gfx, background);
-    this._noteOverlay.text = this.activatedOption.tip;
-    this._surfaceComponent?.renderer.addOverlay(this._noteOverlay);
-  }
-
   override click(e: PointerEventState): void {
-    this._clearOverlay();
-
-    const { childFlavour, childType } = this.activatedOption;
-    const options = {
-      childFlavour,
-      childType,
-      collapse: false,
-    };
-    const point = new Point(e.point.x, e.point.y);
-    addNote(this.std, point, options);
-  }
-
-  override deactivate() {
-    this._clearOverlay();
+    this._place(e.point.x, e.point.y);
   }
 
   override dragEnd() {
-    if (!this._draggingNoteOverlay) return;
+    const { startX, startY } = this.controller.draggingArea$.peek();
+    this._place(...this.gfx.viewport.toViewCoord(startX, startY));
+  }
 
-    const { x, y, width, height } = this._draggingNoteOverlay;
-
-    this._disposeOverlay(this._draggingNoteOverlay);
-
+  private _place(viewX: number, viewY: number) {
     const { childFlavour, childType } = this.activatedOption;
-
-    const options = {
+    addNote(this.std, new Point(viewX, viewY), {
       childFlavour,
       childType,
-      collapse: true,
-    };
-
-    const [viewX, viewY] = this.gfx.viewport.toViewCoord(x, y);
-
-    const point = new Point(viewX, viewY);
-
-    this.doc.captureSync();
-
-    addNote(
-      this.std,
-      point,
-      options,
-      Math.max(width, DEFAULT_NOTE_WIDTH),
-      Math.max(height, DEFAULT_NOTE_HEIGHT)
-    );
+      line: firstLineOf(childType),
+    });
   }
+}
 
-  override dragMove(e: PointerEventState) {
-    if (!this._draggingNoteOverlay) return;
-
-    this._resize(e.keys.shift || this.gfx.keyboard.shiftKey$.peek());
-  }
-
-  override dragStart() {
-    this._clearOverlay();
-
-    const attributes =
-      this.std.get(EditPropsStore).lastProps$.value['affine:note'];
-    const background = attributes.background;
-    this._draggingNoteOverlay = new DraggingNoteOverlay(this.gfx, background);
-    this._surfaceComponent?.renderer.addOverlay(this._draggingNoteOverlay);
-  }
+/** Capy (local change 59; Epo 2026-11-13): with `enable_dblclick_note`, a double
+ * click on empty canvas places an inline text note there, as the Note tool's Text
+ * does, in place of a canvas text label (`DblClickAddEdgelessText` stands aside). */
+export class DblClickAddNote extends InteractivityExtension {
+  static override key = 'dbl-click-add-note';
 
   override mounted() {
-    this.disposable.add(
-      effect(() => {
-        const shiftPressed = this.gfx.keyboard.shiftKey$.value;
-
-        if (!this._draggingNoteOverlay) {
-          return;
-        }
-
-        this._resize(shiftPressed);
-      })
-    );
-  }
-
-  override pointerMove(e: PointerEventState) {
-    if (!this._noteOverlay) return;
-
-    // if mouse is in viewport and move, update overlay pointion and show overlay
-    if (this._noteOverlay.globalAlpha === 0) this._noteOverlay.globalAlpha = 1;
-    const [x, y] = this.gfx.viewport.toModelCoord(e.x, e.y);
-    this._updateOverlayPosition(x, y);
-  }
-
-  override pointerOut(e: PointerEventState) {
-    // should not hide the overlay when pointer on the area of other notes
-    if (
-      e.raw.relatedTarget &&
-      hasClassNameInList(
-        e.raw.relatedTarget as Element,
-        EXCLUDING_MOUSE_OUT_CLASS_LIST
-      )
-    )
-      return;
-    this._hideOverlay();
+    this.event.on('dblclick', ({ event }: GfxInteractivityContext) => {
+      const flags = this.std.store.get(FeatureFlagService);
+      if (!flags.getFlag('enable_dblclick_note')) return;
+      // Capy (local change 71): no note on a store that takes no edits.
+      if (this.std.store.readonly) return;
+      const [x, y] = this.gfx.viewport.toModelCoord(event.x, event.y);
+      if (this.gfx.getElementByPoint(x, y)) return;
+      addNote(this.std, new Point(event.x, event.y), {
+        childFlavour: 'affine:paragraph',
+        childType: 'text',
+        line: firstLineOf('text'),
+      });
+    });
   }
 }
 
 type NoteOptions = {
   childFlavour: NoteChildrenFlavour;
   childType: string | null;
-  collapse: boolean;
+  /** The first line's height: the note is placed with it centred on the point. */
+  line: number;
 };
-function addNote(
-  std: BlockStdScope,
-  point: Point,
-  options: NoteOptions,
-  width = DEFAULT_NOTE_WIDTH,
-  height = DEFAULT_NOTE_HEIGHT
-) {
+
+function addNote(std: BlockStdScope, point: Point, options: NoteOptions) {
   const noteId = addNoteAtPoint(std, point, {
-    width,
-    height,
+    height: options.line,
+    offsetY: options.line / 2,
   });
 
   const gfx = std.get(GfxControllerIdentifier);
@@ -241,13 +117,6 @@ function addNote(
     { type: options.childType },
     noteId
   );
-  if (options.collapse && height > NOTE_MIN_HEIGHT) {
-    const note = doc.getModelById(noteId) as NoteBlockModel;
-    doc.updateBlock(note, () => {
-      note.props.edgeless.collapse = true;
-      note.props.edgeless.collapsedHeight = height;
-    });
-  }
   gfx.tool.setTool(DefaultTool);
 
   // Wait for edgelessTool updated
@@ -296,8 +165,8 @@ function addNoteAtPoint(
   const {
     width = DEFAULT_NOTE_WIDTH,
     height = DEFAULT_NOTE_HEIGHT,
-    offsetX = DEFAULT_NOTE_OFFSET_X,
-    offsetY = DEFAULT_NOTE_OFFSET_Y,
+    offsetX = 0,
+    offsetY = 0,
     parentId = gfx.doc.root?.id,
     noteIndex,
     scale = 1,
@@ -313,6 +182,12 @@ function addNoteAtPoint(
         height
       ),
       displayMode: NoteDisplayMode.EdgelessOnly,
+      // Capy (local change 52): a new note is inline, whatever note was styled
+      // last; the rest of its style (corner, border size) is the last one's.
+      background: INLINE_NOTE_FILL,
+      edgeless: {
+        style: { borderStyle: StrokeStyle.None, shadowType: NoteShadow.None },
+      },
     },
     parentId,
     noteIndex

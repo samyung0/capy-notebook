@@ -7,6 +7,7 @@ import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { ProfilePillButton } from './ProfilePillButton';
@@ -286,9 +287,7 @@ function OwnAvatarButton({
           src={avatarUrl}
         />
       )}
-      {dot && (
-        <span className="absolute top-0 right-0 size-2.25 rounded-full bg-solid-error ring-2 ring-surface" />
-      )}
+      {dot && <PendingDot className="top-0 right-0" />}
     </button>
   );
 }

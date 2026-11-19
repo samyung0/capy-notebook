@@ -53,7 +53,9 @@ export class EdgelessNoteBackground extends SignalWatcher(
 
     return {
       borderRadius: borderRadius + 'px',
-      backgroundColor: backgroundColor,
+      // Capy (local change 52): the fill half see-through, so a board's frost
+      // shows through it; its border and shadow stay solid.
+      backgroundColor: `color-mix(in srgb, ${backgroundColor} 50%, transparent)`,
       borderWidth: `${borderSize}px`,
       borderStyle: borderStyle === StrokeStyle.Dash ? 'dashed' : borderStyle,
       boxShadow: !shadowType ? 'none' : `var(${shadowType})`,

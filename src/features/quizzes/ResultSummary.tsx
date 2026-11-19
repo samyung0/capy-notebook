@@ -65,7 +65,7 @@ export function ResultScore({
 }) {
   return (
     <p className="flex flex-wrap items-baseline gap-x-2.5">
-      <span className="font-extrabold text-4xl text-fg leading-none">
+      <span className="t-result-score whitespace-nowrap text-fg">
         {formatPoints(awarded)} / {formatPoints(max)}
       </span>
       <span className="font-semibold text-fg-secondary">

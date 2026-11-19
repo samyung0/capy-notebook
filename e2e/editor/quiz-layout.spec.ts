@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { startAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 /* A quiz's one layout (Epo 2026-11-06): the question list on the left, one
@@ -86,19 +87,12 @@ test('the list keeps the open question in view, and each opens at its top', asyn
 });
 
 test.describe('taking an assignment', () => {
-  const ASSIGNMENT = '/workspaces/ws_bio?study=assignments&assignment=as_paper';
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() =>
       sessionStorage.setItem('capy.scenario.last', 'workspace-member')
     );
   });
-  const start = async (page: Page) => {
-    await page.goto(ASSIGNMENT);
-    await page
-      .getByRole('button', { exact: true, name: m.assignment_start() })
-      .click({ timeout: 30_000 });
-    await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
-  };
+  const start = (page: Page) => startAssignmentAsMember(page, 'as_paper');
 
   test('a phone has a strip of numbers and no header, with its clock, Submit and a way out', async ({
     page,
@@ -117,8 +111,10 @@ test.describe('taking an assignment', () => {
     ).toBeVisible();
     await expect(rows(page).first()).toBeHidden();
     await page.getByText('Mitochondria', { exact: true }).click();
+    // Its name goes on with its state ("Question 2, Not answered"), and 20
+    // and 21 start the same.
     const second = strip.getByRole('button', {
-      name: m.assignment_question_n({ number: 2 }),
+      name: new RegExp(`^${m.assignment_question_n({ number: 2 })}(,|$)`),
     });
     await second.click();
     await expect(second).toHaveAttribute('aria-current', 'step');
@@ -148,22 +144,4 @@ test.describe('taking an assignment', () => {
       })
     ).toBeHidden();
   });
-});
-
-test("the editor's add button lines up with the rows' marks", async ({
-  page,
-}) => {
-  await page.goto('/workspaces/ws_bio?material=qz_1');
-  const add = page.getByRole('button', { name: m.quiz_add_question() });
-  await expect(add).toBeVisible({ timeout: 30_000 });
-  const plus = await add.locator('svg').boundingBox();
-  const marks = await rows(page).first().locator('span').last().boundingBox();
-  expect(
-    Math.abs(
-      (plus?.x ?? 0) +
-        (plus?.width ?? 0) -
-        (marks?.x ?? 0) -
-        (marks?.width ?? 0)
-    )
-  ).toBeLessThanOrEqual(1.5);
 });

@@ -117,9 +117,8 @@ func (a *api) materialResponse(
 	readOnly, full bool,
 ) (*materialOutput, error) {
 	material.IsOwner = role == store.RoleOwner
-	material.Capabilities = store.CapabilitiesForRole(role, true)
-	material.Capabilities.CanEdit = material.Capabilities.CanEdit && !readOnly
-	material.Capabilities.CanEditContent = material.Capabilities.CanEdit && !full
+	var storageFull store.StorageFullBy
+	material.Capabilities, storageFull = editingOf(role, readOnly, full, material.OwnerUserID, userID(ctx))
 	if role == "" {
 		material.Role = nil
 	} else {
@@ -148,10 +147,25 @@ func (a *api) materialResponse(
 	if body.RemovedAssetIDs, err = a.s.MissingEditorAssetIDs(ctx, body.Content.EditorAssetIDs()); err != nil {
 		return nil, hErr(err)
 	}
-	if store.RoleCanEdit(role) && !readOnly {
-		body.StorageFull = store.FullBy(full, material.OwnerUserID, userID(ctx))
-	}
+	body.StorageFull = storageFull
 	return &materialOutput{Body: body}, nil
+}
+
+// editingOf is what a material's response says of the caller's editing, for a
+// caller holding role on a material payerID pays for: its capabilities, with
+// editing off where readOnly (api.readOnly: a frozen account) and content
+// editing off where full (api.ownerFull: the payer at its storage limit), and,
+// for an editor no frozen account stops, whose full storage that is. A canvas
+// says the same (canvasResponse).
+func editingOf(role store.WorkspaceRole, readOnly, full bool, payerID, viewerID string) (store.AccessCapabilities, store.StorageFullBy) {
+	capabilities := store.CapabilitiesForRole(role, true)
+	capabilities.CanEdit = capabilities.CanEdit && !readOnly
+	capabilities.CanEditContent = capabilities.CanEdit && !full
+	var storageFull store.StorageFullBy
+	if store.RoleCanEdit(role) && !readOnly {
+		storageFull = store.FullBy(full, payerID, viewerID)
+	}
+	return capabilities, storageFull
 }
 
 func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materialRefsOutput, error) {
@@ -196,6 +210,9 @@ func (a *api) createStandaloneMaterial(ctx context.Context, in *createStandalone
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
+	if in.Body.GradedQuiz != nil {
+		return nil, huma.Error422UnprocessableEntity("a graded quiz is made in a workspace")
+	}
 	if in.Body.Kind != "note" {
 		return nil, huma.Error400BadRequest("unsupported material kind")
 	}
@@ -232,8 +249,10 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		return nil, hErr(err)
 	}
 	kind := in.Body.Kind
+	// Mind maps are no longer made, only opened (Epo 2026-11-13); a diagram
+	// holds Mermaid's mindmap syntax.
 	switch kind {
-	case "note", "quiz", "flashcards", "mindmap", "diagram":
+	case "note", "quiz", "flashcards", "diagram":
 	default:
 		return nil, huma.Error400BadRequest("unsupported material kind")
 	}
@@ -266,10 +285,15 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		ScopeTopics:    in.Body.ScopeTopics,
 		ScopeFileNames: in.Body.ScopeFileNames,
 		Privacy:        "private",
+		GradedQuiz:     gradedQuizForm(in.Body.GradedQuiz),
+		// A quiz starts hidden from members until shown (Epo 2026-11-16,
+		// every quiz an editor makes).
+		Hidden: kind == store.MaterialQuiz,
 	})
 	if err != nil {
-		return nil, hErr(err)
+		return nil, assignmentError(err)
 	}
+	a.gradedQuizMade(ctx, res.AssignmentID)
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), res.ID)
 	if err != nil {
 		return nil, hErr(err)

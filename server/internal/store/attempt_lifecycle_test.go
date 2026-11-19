@@ -110,9 +110,9 @@ func TestFileAndAccountDeletionDoNotWaitForWorkerHeldJobRows(t *testing.T) {
 	})
 }
 
-// All results pages attempts sorted by score and filtered by the quiz's
+// Study → History pages attempts sorted by score and filtered by the quiz's
 // workspace in SQL.
-func TestListAttemptsSortsFiltersAndPages(t *testing.T) {
+func TestStudyHistorySortsFiltersAndPages(t *testing.T) {
 	f := newStudyFixture(t, "u_attempt_list")
 	ctx := context.Background()
 	other, err := f.s.CreateWorkspace(ctx, f.user, WorkspaceCreate{Name: "Other", Tags: []TagRef{}})
@@ -139,21 +139,77 @@ func TestListAttemptsSortsFiltersAndPages(t *testing.T) {
 	low := attempt(f.ws.ID, f.ws.Name, 1)
 	attempt(other.ID, other.Name, 0)
 
-	list, more, err := f.s.ListAttempts(ctx, f.user, AttemptParams{Sort: "score", Ascending: true, Workspaces: []string{f.ws.ID}, Limit: 1})
+	list, more, err := f.s.StudyHistory(ctx, f.user, HistoryParams{Sort: "score", Ascending: true, Workspaces: []string{f.ws.ID}, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].ID != low || !more || *list[0].WorkspaceID != f.ws.ID {
+	if len(list) != 1 || list[0].ID != low || !more || *list[0].WorkspaceID != f.ws.ID || list[0].Status != HistoryDone {
 		t.Fatalf("first page = %+v, more %v", list, more)
 	}
-	list, more, err = f.s.ListAttempts(ctx, f.user, AttemptParams{Sort: "score", Ascending: true, Workspaces: []string{f.ws.ID}, Offset: 1, Limit: 1})
+	list, more, err = f.s.StudyHistory(ctx, f.user, HistoryParams{Sort: "score", Ascending: true, Workspaces: []string{f.ws.ID}, Offset: 1, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(list) != 1 || list[0].ID != high || more {
 		t.Fatalf("second page = %+v, more %v", list, more)
 	}
-	if list, _, err = f.s.ListAttempts(ctx, f.user, AttemptParams{Limit: 10}); err != nil || len(list) != 3 {
+	if list, _, err = f.s.StudyHistory(ctx, f.user, HistoryParams{Limit: 10}); err != nil || len(list) != 3 {
 		t.Fatalf("unfiltered = %d attempts, %v", len(list), err)
+	}
+}
+
+// History offers only the newest try of a quiz checked partway to go on; an
+// older partway try just ended there (Epo 2026-11-13).
+func TestStudyHistoryContinuesTheNewestTry(t *testing.T) {
+	f := newStudyFixture(t, "u_history_tries")
+	ctx := context.Background()
+	quiz := f.quiz(t)
+	var qs []json.RawMessage
+	if err := json.Unmarshal([]byte(studySnapshot), &qs); err != nil {
+		t.Fatal(err)
+	}
+	firstOnly := []byte("[" + string(qs[0]) + "]")
+	older := checkQuiz(t, f.s, f.user, quiz.ID, firstOnly, studyAnswers).ID
+	newer := checkQuiz(t, f.s, f.user, quiz.ID, firstOnly, studyAnswers).ID
+	list, _, err := f.s.StudyHistory(ctx, f.user, HistoryParams{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]HistoryStatus{}
+	for _, r := range list {
+		if r.Answered != 1 || r.Items != len(qs) {
+			t.Fatalf("row = %+v, want 1 of %d answered", r, len(qs))
+		}
+		status[r.ID] = r.Status
+	}
+	if status[newer] != HistoryOpen || status[older] != HistoryPartial {
+		t.Fatalf("statuses = %v, want the newer open and the older partial", status)
+	}
+	// The status filter pages what matches.
+	for _, c := range []struct {
+		statuses []HistoryStatus
+		offset   int
+		want     string
+		more     bool
+	}{
+		{[]HistoryStatus{HistoryOpen}, 0, newer, false},
+		{[]HistoryStatus{HistoryPartial}, 0, older, false},
+		{[]HistoryStatus{HistoryOpen, HistoryPartial}, 0, newer, true},
+		{[]HistoryStatus{HistoryOpen, HistoryPartial}, 1, older, false},
+	} {
+		got, more, err := f.s.StudyHistory(ctx, f.user, HistoryParams{Statuses: c.statuses, Offset: c.offset, Limit: 1})
+		if err != nil || len(got) != 1 || got[0].ID != c.want || more != c.more {
+			t.Fatalf("statuses %v from %d = %+v, more %v, %v", c.statuses, c.offset, got, more, err)
+		}
+	}
+	// Continue offers the newer try until it is removed from it.
+	if cont, err := f.s.ContinueRows(ctx, f.user, "", time.Now()); err != nil || len(cont) != 1 || cont[0].ID != newer {
+		t.Fatalf("continue = %+v, %v", cont, err)
+	}
+	if err := f.s.HideContinue(ctx, f.user, HistoryQuiz, newer); err != nil {
+		t.Fatal(err)
+	}
+	if cont, err := f.s.ContinueRows(ctx, f.user, "", time.Now()); err != nil || len(cont) != 0 {
+		t.Fatalf("continue after removing = %+v, %v", cont, err)
 	}
 }

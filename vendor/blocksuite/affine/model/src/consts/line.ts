@@ -24,7 +24,8 @@ export const BRUSH_LINE_WIDTHS = [
 
 export const HIGHLIGHTER_LINE_WIDTHS = [10, 14, 18, 22, 26, 30];
 
-export const DEFAULT_HIGHLIGHTER_LINE_WIDTH = 22;
+// Capy (local change 50): the third width (Epo 2026-11-12); AFFiNE's was the fourth, 22.
+export const DEFAULT_HIGHLIGHTER_LINE_WIDTH = 18;
 
 /**
  * Use `DefaultTheme.StrokeColorShortMap` instead.

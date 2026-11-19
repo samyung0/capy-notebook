@@ -764,14 +764,7 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		if err := validateMediaWidth(node); err != nil {
 			return err
 		}
-		if err := questions.ValidateBlock(block, questions.Policy{Live: live}); err != nil {
-			return err
-		}
-		// A note draws a graph from its own SVG; a URL image is for questions.
-		if image, _ := block["image"].(map[string]any); typ == "graph" && image["url"] != nil {
-			return errors.New("note graphs require inline SVG")
-		}
-		return nil
+		return questions.ValidateBlock(block, questions.Policy{Live: live})
 	case HTMLEmbedType:
 		return validateHTMLEmbed(node, depth)
 	case TableViewType:
@@ -1433,11 +1426,8 @@ func editorAssetIDs(nodes []map[string]any) []string {
 				seen[image.AssetID] = struct{}{}
 			}
 		}
-		// A canvas's board and images (the catalog's boardAssetId, images[].assetId).
+		// A canvas's images (the catalog's images[].assetId).
 		if node["type"] == CanvasBoardType {
-			if board, ok := node["boardAssetId"].(string); ok && board != "" {
-				seen[board] = struct{}{}
-			}
 			if images, ok := node["images"].([]any); ok {
 				for _, image := range images {
 					if m, ok := image.(map[string]any); ok {
@@ -1523,6 +1513,42 @@ func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, e
 		doc.Value = Empty().Value
 	} else {
 		doc.Value = kept
+	}
+	return Marshal(doc)
+}
+
+// RewriteQuestionTopics renames each quiz question's own topics (`topicIds`)
+// through idMap, for a workspace clone whose topics get new ids; one idMap
+// lacks is ignored where it counts, so it goes, and the list with it once
+// empty.
+func RewriteQuestionTopics(raw string, idMap map[string]string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var rewrite func(map[string]any)
+	rewrite = func(node map[string]any) {
+		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" {
+			if old, has := q["topicIds"].([]any); has {
+				ids := []any{}
+				for _, v := range old {
+					if id, _ := v.(string); idMap[id] != "" {
+						ids = append(ids, idMap[id])
+					}
+				}
+				if len(ids) > 0 {
+					q["topicIds"] = ids
+				} else {
+					delete(q, "topicIds")
+				}
+			}
+		}
+		for _, child := range children(node) {
+			rewrite(child)
+		}
+	}
+	for _, node := range doc.Value {
+		rewrite(node)
 	}
 	return Marshal(doc)
 }

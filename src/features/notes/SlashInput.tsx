@@ -280,7 +280,7 @@ export function SlashInputElement(
               })
             ) : (
               <span className="block px-2 py-3 text-fg-muted text-sm">
-                {m.editor_commands_none()}
+                {m.common_no_matches()}
               </span>
             )}
           </PopupMotion>

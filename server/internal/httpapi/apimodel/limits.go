@@ -80,6 +80,25 @@ func (CommentText) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema
 	return withMax(s, fieldlimits.Comment)
 }
 
+// AssignmentPoints is what a graded Assignment is out of, 1 to
+// fieldlimits.AssignmentPoints; AssignmentGrade a member's grade on it, with at
+// most one decimal place from 0 (the store holds it to the assignment's points).
+type (
+	AssignmentPoints int
+	AssignmentGrade  float64
+)
+
+func (AssignmentPoints) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	low, high := 1.0, float64(fieldlimits.AssignmentPoints)
+	s.Minimum, s.Maximum = &low, &high
+	return s
+}
+func (AssignmentGrade) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	low, high, step := 0.0, float64(fieldlimits.AssignmentPoints), 0.1
+	s.Minimum, s.Maximum, s.MultipleOf = &low, &high, &step
+	return s
+}
+
 // Str dereferences an optional bounded field.
 func Str[T ~string](p *T) *string {
 	if p == nil {

@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { ToolbarPopoverContent as PopoverContent } from '@/components/ui/ToolbarPopover';
@@ -12,20 +13,25 @@ import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 
 /** The toolbar's Σ: an inline formula and the common templates, which go
  * into the formula being edited. The note toolbar and the question text
- * editor share it. */
+ * editor share it; a learner's answer opens it from its Formula button
+ * (`trigger`). */
 export function ToolbarMathMenu({
   editor,
   label,
+  trigger,
 }: {
   editor: NoteEditorInstance;
   label: string;
+  trigger?: ReactElement;
 }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <ToolbarButton label={label}>
-          <EditorIcon name="sigma" />
-        </ToolbarButton>
+        {trigger ?? (
+          <ToolbarButton label={label}>
+            <EditorIcon name="sigma" />
+          </ToolbarButton>
+        )}
       </PopoverTrigger>
       <PopoverContent
         className="ignore-click-outside/toolbar w-auto p-0"

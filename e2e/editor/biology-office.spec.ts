@@ -1138,13 +1138,11 @@ test.describe('DOCX on a phone', () => {
     const expected = await highlightOnPage(referenceFrame);
     await reference.close();
 
-    await page.goto('/workspaces/ws_bio');
+    // A phone's chats are the Chats page (Epo 2026-11-14).
+    await page.goto('/workspaces/ws_bio?view=chats');
     await page
-      .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+      .getByRole('button', { name: 'Answer: Office citation' })
       .click({ timeout: 60_000 });
-    // The MSW User scenarios panel floats over the chat field's history button.
-    await page.getByRole('button', { name: m.chat_history() }).press('Enter');
-    await page.getByRole('button', { name: 'Answer: Office citation' }).click();
     await page.getByTitle(m.chat_source_number({ n: 1 })).click();
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     const highlight = frame.locator('[data-citation-highlight]').first();
@@ -1838,7 +1836,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
 
   await test.step('a newly opened editor leaves the focus in the chat box', async () => {
     await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
-    // An open file shows Files; the chat box is in Agent.
+    // An open file is the Files page: its chat button opens the chat's window.
     await showPanelView(page, m.workspace_tab_chat());
     await chat.click();
     await page.keyboard.type('hi');
@@ -1931,6 +1929,12 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await expect(chat).toHaveValue('qq');
     await page.waitForTimeout(1000);
     expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    // The chat's window floats over the file's right side, where Find and the
+    // comments open (Epo 2026-11-14): it closes for the steps in the document.
+    await page
+      .locator('[data-workspace-chat-page]')
+      .getByRole('button', { exact: true, name: m.action_close() })
+      .click();
 
     // Find, typed into while paused, keeps the focus: the next keys search.
     await capabilities(false);

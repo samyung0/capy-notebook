@@ -1,25 +1,23 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { QUIZ_OPEN_ANSWER_MAX } from '@/api/limits.generated';
 import type { Question, QuestionPart } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount, Input, InputError } from '@/components/ui/Input';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
-import { Textarea } from '@/components/ui/TextArea';
 import { AiWarning } from '@/features/questions/AiWarning';
+import { MatchingGrid } from '@/features/questions/MatchingGrid';
 import {
   AnswerView,
   answerBoxClass,
   answerBoxesClass,
   answerLetterClass,
-  MatchingLayout,
   OptionKey,
   optionColumns,
   optionLetter,
@@ -36,6 +34,7 @@ import {
   type LearnerPart,
   type LearnerQuestion,
   multipleAnswers,
+  shownOptions,
   type TextBlock,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -45,7 +44,75 @@ import { DrawingAnswer } from './drawing/DrawingAnswer';
 import type { PinnedQuestion } from './drawing/DrawingBoardScreen';
 import { isDrawingValue } from './drawing/drawingValue';
 import { pinnedQuestion } from './drawing/pinnedQuestion';
-import { type Answer, type Answers, emptyAnswer, quantityValue } from './grade';
+import {
+  type Answer,
+  type Answers,
+  emptyAnswer,
+  formatPoints,
+  quantityValue,
+} from './grade';
+
+// Plate and the formula field load with the first long answer.
+const TextEditor = lazy(() =>
+  import('@/features/questions/TextEditor').then((module) => ({
+    default: module.TextEditor,
+  }))
+);
+
+/** A learner's long answer as written, formulas typeset, on ruled lines. */
+function OpenAnswerView({ text }: { text: string }) {
+  return (
+    <div className="ruled-lines min-h-[calc(var(--ruled-line)*3)] px-0.5">
+      <TextView marks text={text} />
+    </div>
+  );
+}
+
+/** A learner's long answer with formulas (Epo 2026-11-16, mock B): one
+ * Formula button and the formula keyboard under it. The editor reads its
+ * value once, so a value changed from outside (a reset) remounts it. */
+function OpenAnswerField({
+  onChange,
+  value,
+}: {
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const own = useRef(value);
+  const [shown, setShown] = useState({ key: 0, value });
+  if (value !== shown.value)
+    setShown({
+      key: value === own.current ? shown.key : shown.key + 1,
+      value,
+    });
+  const [tools, setTools] = useState<HTMLSpanElement | null>(null);
+  return (
+    <>
+      <Suspense fallback={<OpenAnswerView text={value} />}>
+        <TextEditor
+          answer
+          key={shown.key}
+          maxLength={QUIZ_OPEN_ANSWER_MAX}
+          onChange={(text) => {
+            own.current = text;
+            onChange(text);
+          }}
+          placeholder={m.question_ui_type_answer()}
+          toolbarTarget={tools}
+          value={value}
+        />
+      </Suspense>
+      <div className="flex min-h-9 items-center gap-1">
+        <span className="flex items-center gap-1" ref={setTools} />
+        <CharCount
+          className="ml-auto"
+          max={QUIZ_OPEN_ANSWER_MAX}
+          value={textLength(value)}
+        />
+      </div>
+    </>
+  );
+}
 
 // Silent cap on gap and short answers; they are graded without the model.
 const SHORT_ANSWER_MAX = 1000;
@@ -68,6 +135,8 @@ export function QuestionRunner({
   frameAnswer,
   titleAside,
   headerMarks,
+  partResults = true,
+  layout = 'boxes',
 }: {
   /** Learner questions (no answer key) only render without `review`, which
    * shows a question graded on the server: its key and each part's `awarded`. */
@@ -85,6 +154,13 @@ export function QuestionRunner({
   frameAnswer?: (partId: string, answer: ReactNode) => ReactNode;
   titleAside?: QuestionViewProps['titleAside'];
   headerMarks?: boolean;
+  /** A checked choice part's "Wrong · 0 / 2 marks" line; a member's result
+   * row shows its verdict beside the question instead (Epo 2026-11-18). */
+  partResults?: boolean;
+  /** A checked choice or ordering part as boxes, as the learner answered
+   * it, or as plain lines with Your answer and Correct answer under them (a
+   * member's result, Epo 2026-11-18). */
+  layout?: AnswerLayout;
 }) {
   // A gaps part's text carries its own fields, one per numbered blank.
   const gapBlock: QuestionViewProps['renderBlock'] = (
@@ -120,6 +196,7 @@ export function QuestionRunner({
       <PartRunner
         disabled={disabled}
         key={part.id}
+        layout={layout}
         onChange={(value) => onChange?.(part.id, value)}
         part={part}
         pinned={
@@ -127,6 +204,7 @@ export function QuestionRunner({
             ? pinnedQuestion(question, part, questionNumber)
             : undefined
         }
+        results={partResults}
         review={review}
         twoColumns={optionColumns(question)}
         value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
@@ -194,11 +272,10 @@ function GapText({
   const pieces = block.text.split(new RegExp(GAP_MARKER.source));
   return (
     <div className="leading-[2.1]">
-      {block.label && <strong className="mr-3">{block.label}</strong>}
       {pieces.map((piece, i) => {
         if (i % 2 === 0) {
           const text = i > 0 ? piece.replace(LEADING_PUNCTUATION, '') : piece;
-          return text && <TextView key={i} text={text} />;
+          return text && <TextView key={i} marks text={text} />;
         }
         const gap = Number(piece) - 1;
         const tail = pieces[i + 1]?.match(LEADING_PUNCTUATION)?.[0] ?? '';
@@ -262,38 +339,89 @@ function gapValues(
   });
 }
 
-/** "Your answer" / "Correct answer" over a checked part's two lists. */
-const SUBHEAD = 't-meta mb-1.5 font-bold text-fg-muted';
+/** "Your answer" / "Correct answer" over a checked part's lists, as the
+ * member result's sections head theirs. */
+const SUBHEAD = 't-meta mb-1.5 text-fg-secondary';
 
-/** The correct answer under a checked part's own boxes (O4, R4): plain
- * lines 4px apart, no boxes, one column even on paper questions; the label
- * muted and bold, then the text semibold. */
-function PlainList({ rows }: { rows: { label: string; text: string }[] }) {
+type AnswerLayout = 'boxes' | 'list';
+
+type PlainRow = {
+  /** A letter or place; True and False have none. */
+  label: string | null;
+  text: string;
+  /** The learner's own pick, marked right or wrong. */
+  state?: 'right' | 'wrong';
+};
+
+/** Answers as plain lines, no boxes, one column even on paper questions:
+ * the label muted, then the text; a learner's own pick carries its mark at
+ * the end. */
+function PlainList({ rows }: { rows: PlainRow[] }) {
   return (
-    <ol className="grid gap-1 font-semibold text-sm">
-      {rows.map((row) => (
-        <li className="flex items-baseline gap-2.5" key={row.label}>
-          <span className="w-4 shrink-0 font-bold text-fg-muted">
-            {row.label}
-          </span>
-          <TextView className="min-w-0" text={row.text} />
+    <ol className="grid gap-1.5">
+      {rows.map((row, i) => (
+        <li className="flex items-baseline gap-2.5" key={`${row.label}${i}`}>
+          {row.label !== null && (
+            <span className="w-4 shrink-0 font-semibold text-fg-muted">
+              {row.label}
+            </span>
+          )}
+          <TextView
+            className={cn(
+              'min-w-0',
+              row.state === 'right' && 'text-tint-success-fg',
+              row.state === 'wrong' && 'text-tint-error-fg'
+            )}
+            text={row.text}
+          />
+          {row.state && (
+            <span
+              className={cn(
+                'ml-auto inline-flex shrink-0 items-center gap-1 self-center whitespace-nowrap pl-2 text-[12.5px]',
+                row.state === 'right'
+                  ? 'text-tint-success-fg'
+                  : 'text-tint-error-fg'
+              )}
+            >
+              <Icon name={row.state === 'right' ? 'check' : 'x'} size={16} />
+              {row.state === 'right'
+                ? m.question_ui_result_right()
+                : m.question_ui_result_wrong()}
+            </span>
+          )}
         </li>
       ))}
     </ol>
   );
 }
 
+/** A checked part's section: its heading, then its list. */
+function AnswerSection({
+  children,
+  className,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  title: string;
+}) {
+  return (
+    <div className={className}>
+      <h4 className={SUBHEAD}>{title}</h4>
+      {children}
+    </div>
+  );
+}
+
 /** A checked choice's tag at the box's end. */
 const RESULT_TAG = {
-  missed: { icon: null, label: m.question_ui_correct_answer },
   right: { icon: 'check', label: m.question_ui_result_right },
-  wrong: { icon: 'x', label: m.question_ui_your_answer },
+  wrong: { icon: 'x', label: m.question_ui_result_wrong },
 } as const;
 
-/** A choice as a box: chosen while answering; after checking, right (green
- * fill), wrong (red fill) or the correct answer that was not chosen (green
- * outline), each with its tag. `ownOnly` marks only the learner's choices,
- * right or wrong, for a part whose correct answer lists apart (R4). */
+/** A choice as a box: chosen while answering; after checking, only the
+ * learner's own pick is marked, right (green) or wrong (red), with its tag;
+ * the correct answer lists apart under the boxes (Epo 2026-11-18, L1). */
 function ChoiceBox({
   label,
   text,
@@ -302,7 +430,6 @@ function ChoiceBox({
   review,
   disabled,
   onClick,
-  ownOnly = false,
 }: {
   label: ReactNode;
   text: ReactNode;
@@ -311,20 +438,15 @@ function ChoiceBox({
   review: boolean;
   disabled: boolean;
   onClick?: () => void;
-  ownOnly?: boolean;
 }) {
-  const state: RowState | undefined = review
-    ? selected
+  const state: RowState | undefined = selected
+    ? review
       ? correct
         ? 'right'
         : 'wrong'
-      : correct && !ownOnly
-        ? 'missed'
-        : undefined
-    : selected
-      ? 'selected'
-      : undefined;
-  const tag = state && state !== 'selected' ? RESULT_TAG[state] : null;
+      : 'selected'
+    : undefined;
+  const tag = state === 'right' || state === 'wrong' ? RESULT_TAG[state] : null;
   return (
     <button
       aria-pressed={selected}
@@ -349,54 +471,45 @@ function ChoiceBox({
           )}
         >
           {tag.icon && <Icon name={tag.icon} size={16} />}
-          {ownOnly && state === 'wrong'
-            ? m.question_ui_result_wrong()
-            : tag.label()}
+          {tag.label()}
         </span>
       )}
     </button>
   );
 }
 
-/** A checked choice part's result above its boxes, as in Results: Right or
- * Wrong with the marks; a skipped part reads Not answered and counts as
- * wrong. */
+/** A checked part's verdict under its answer (Epo 2026-11-18, L1): Correct,
+ * Wrong or Not answered, beside its marks. Choices, True or False and
+ * ordering score all or nothing. */
 function PartResult({
   part,
   answered,
-  detail,
 }: {
   part: QuestionPart;
   answered: boolean;
-  /** After the marks: "1 right, 1 wrong" on a multi-answer part. */
-  detail?: string;
 }) {
   const { awarded, marks } = part;
   if (awarded == null) return null;
-  // Choices, True or False and ordering score all or nothing.
   const right = answered && awarded >= marks;
-  const score =
-    marks === 1
-      ? m.question_ui_result_mark({ awarded: String(awarded) })
-      : m.question_ui_result_marks({
-          awarded: String(awarded),
-          marks: String(marks),
-        });
   return (
-    <p className="mb-2.5 flex items-center gap-2 font-bold text-sm">
+    <p className="mt-3 flex items-center gap-2.5">
       <span
         className={cn(
-          'size-2.5 shrink-0 rounded-[2px]',
-          right ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
+          'inline-flex h-5.5 items-center rounded-md px-1.75 font-semibold text-xs',
+          right
+            ? 'bg-tint-success text-tint-success-fg'
+            : 'bg-tint-error text-tint-error-fg'
         )}
-      />
-      {right ? m.question_ui_result_right() : m.question_ui_result_wrong()}
-      <span className="t-meta font-semibold text-fg-muted">
-        {answered
-          ? detail
-            ? `${score} · ${detail}`
-            : score
-          : m.question_ui_result_skipped({ score })}
+      >
+        {right
+          ? m.question_ui_result_right()
+          : answered
+            ? m.question_ui_result_wrong()
+            : m.assignment_not_answered()}
+      </span>
+      <span className="text-fg-secondary">
+        <b className="font-bold text-fg text-lg">{formatPoints(awarded)}</b>
+        {` / ${formatPoints(marks)}`}
       </span>
     </p>
   );
@@ -413,8 +526,8 @@ function KeyList({
   rows: { key: number; text: string; note?: string }[];
 }) {
   return (
-    <div className="mt-3.5 border-divider border-t pt-2.5">
-      <h4 className="mb-1 font-bold text-tint-success-fg text-xs">{title}</h4>
+    <div className="mt-3.5">
+      <h4 className={SUBHEAD}>{title}</h4>
       <ol className="grid">
         {rows.map((row) => (
           // A long note (what the learner wrote) wraps under the answer on
@@ -516,6 +629,8 @@ function PartRunner({
   value,
   onChange,
   review,
+  results,
+  layout,
   disabled,
   twoColumns,
 }: {
@@ -525,6 +640,8 @@ function PartRunner({
   value: Answer;
   onChange: (value: Answer) => void;
   review: boolean;
+  results: boolean;
+  layout: AnswerLayout;
   disabled: boolean;
   twoColumns: boolean;
 }) {
@@ -545,10 +662,14 @@ function PartRunner({
   const indices = Array.isArray(value)
     ? value.filter((item) => typeof item === 'number')
     : null;
-  const result = (answered: boolean, detail?: string) =>
-    review && isAuthoredPart(part) ? (
-      <PartResult answered={answered} detail={detail} part={part} />
+  const result = (answered: boolean) =>
+    review && results && isAuthoredPart(part) ? (
+      <PartResult answered={answered} part={part} />
     ) : null;
+  // Checked and short of full marks: the correct answer lists apart.
+  const missed =
+    review && isAuthoredPart(part) && (part.awarded ?? 0) < part.marks;
+  const asList = review && layout === 'list';
   // One correct option is a single choice: picking one replaces the other.
   // Several toggle like checkboxes, under a hint saying so.
   if (answer.type === 'mcq') {
@@ -556,42 +677,57 @@ function PartRunner({
     const correct = (i: number) =>
       key?.type === 'mcq' && key.correct.includes(i);
     const chosen = indices ?? [];
-    // A multi-answer part marked wrong (R4): the learner's choices on top,
-    // each right or wrong, then the correct answer as its own plain list.
-    // Single-answer parts outline the correct option instead (M1).
-    const apart =
-      review &&
-      key?.type === 'mcq' &&
-      key.correct.length > 1 &&
-      isAuthoredPart(part) &&
-      (part.awarded ?? 0) < part.marks;
-    const right = chosen.filter(correct).length;
+    const options = shownOptions(answer).map(({ index, text }, shown) => ({
+      index,
+      label: optionLetter(shown),
+      text,
+    }));
+    const correctList = (
+      <PlainList rows={options.filter((option) => correct(option.index))} />
+    );
+    // A member's result (A): every option as a line, then what they picked
+    // and what was correct, each in its own section.
+    if (asList)
+      return (
+        <div className="grid gap-4">
+          <PlainList rows={options} />
+          {result(chosen.length > 0)}
+          <AnswerSection title={m.question_ui_your_answer()}>
+            {chosen.length > 0 ? (
+              <PlainList
+                rows={options
+                  .filter((option) => chosen.includes(option.index))
+                  .map((option) => ({
+                    ...option,
+                    state: correct(option.index) ? 'right' : 'wrong',
+                  }))}
+              />
+            ) : (
+              <p className="text-fg-muted">{m.assignment_not_answered()}</p>
+            )}
+          </AnswerSection>
+          <AnswerSection title={m.question_ui_correct_answer()}>
+            {correctList}
+          </AnswerSection>
+        </div>
+      );
     return (
       <div>
-        {result(
-          chosen.length > 0,
-          apart
-            ? m.question_ui_result_choices({
-                right: String(right),
-                wrong: String(chosen.length - right),
-              })
-            : undefined
-        )}
         {multiple && !review && (
           <p className="mb-2 text-fg-muted text-sm">
             {m.question_ui_multiple_answers()}
           </p>
         )}
-        {apart && <h4 className={SUBHEAD}>{m.question_ui_your_answer()}</h4>}
         <div className={answerBoxesClass(twoColumns)}>
-          {answer.options.map((option, i) => {
+          {/* Shown in the learner's order; a pick stores its authored index. */}
+          {options.map(({ index: i, label, text: option }) => {
             const selected = chosen.includes(i);
             return (
               <ChoiceBox
                 correct={correct(i)}
                 disabled={disabled}
                 key={i}
-                label={optionLetter(i)}
+                label={label}
                 onClick={() =>
                   onChange(
                     multiple
@@ -601,7 +737,6 @@ function PartRunner({
                       : [i]
                   )
                 }
-                ownOnly={apart}
                 review={review}
                 selected={selected}
                 text={<TextView text={option} />}
@@ -609,49 +744,85 @@ function PartRunner({
             );
           })}
         </div>
-        {apart && (
-          <>
-            <h4 className={cn(SUBHEAD, 'mt-3.5')}>
-              {m.question_ui_correct_answer()}
-            </h4>
-            <PlainList
-              rows={answer.options.flatMap((option, i) =>
-                correct(i) ? [{ label: optionLetter(i), text: option }] : []
-              )}
-            />
-          </>
+        {result(chosen.length > 0)}
+        {missed && (
+          <AnswerSection
+            className="mt-3.5"
+            title={m.question_ui_correct_answer()}
+          >
+            {correctList}
+          </AnswerSection>
         )}
       </div>
     );
   }
   // True and False stack like other choices, text at the left (B2).
-  if (answer.type === 'boolean')
+  if (answer.type === 'boolean') {
+    const text = (option: boolean) =>
+      option ? m.question_ui_true() : m.question_ui_false();
+    const keyed = key?.type === 'boolean' ? key.correct : undefined;
+    const correctList = keyed !== undefined && (
+      <PlainList rows={[{ label: null, text: text(keyed) }]} />
+    );
+    if (asList)
+      return (
+        <div className="grid gap-4">
+          {result(typeof value === 'boolean')}
+          <AnswerSection title={m.question_ui_your_answer()}>
+            {typeof value === 'boolean' ? (
+              <PlainList
+                rows={[
+                  {
+                    label: null,
+                    state: value === keyed ? 'right' : 'wrong',
+                    text: text(value),
+                  },
+                ]}
+              />
+            ) : (
+              <p className="text-fg-muted">{m.assignment_not_answered()}</p>
+            )}
+          </AnswerSection>
+          <AnswerSection title={m.question_ui_correct_answer()}>
+            {correctList}
+          </AnswerSection>
+        </div>
+      );
     return (
       <div>
-        {result(typeof value === 'boolean')}
         <div className={answerBoxesClass()}>
           {[true, false].map((option) => (
             <ChoiceBox
-              correct={key?.type === 'boolean' && key.correct === option}
+              correct={keyed === option}
               disabled={disabled}
               key={String(option)}
               label={null}
               onClick={() => onChange(option)}
               review={review}
               selected={value === option}
-              text={option ? m.question_ui_true() : m.question_ui_false()}
+              text={text(option)}
             />
           ))}
         </div>
+        {result(typeof value === 'boolean')}
+        {missed && (
+          <AnswerSection
+            className="mt-3.5"
+            title={m.question_ui_correct_answer()}
+          >
+            {correctList}
+          </AnswerSection>
+        )}
       </div>
     );
-  // Gap fields sit inside the part's text (GapText); a review with a miss
-  // lists the key.
+  }
+  // Gap fields sit inside the part's text (GapText); a review lists the key
+  // under it, as a short answer's Correct answer shows (Epo 2026-11-18), with
+  // what the learner wrote beside a missed blank.
   if (answer.type === 'gaps') {
     if (!review || !('accepted' in answer)) return null;
     const typed = gapValues(answer, value);
     const results = isAuthoredPart(part) ? (part.itemResults ?? []) : [];
-    if (answer.accepted.every((_, i) => results[i])) return null;
     return (
       <KeyList
         rows={answer.accepted.map((accepted, i) => ({
@@ -733,13 +904,14 @@ function PartRunner({
             {m.question_ui_value_only({ unit: answer.unit })}
           </InputError>
         )}
+        {result(typeof value === 'string' && value.trim() !== '')}
         {review && isAuthoredPart(part) && (
-          <p className="mt-2 text-sm">
-            <span className="mr-1.5 font-bold text-tint-success-fg text-xs">
-              {m.question_ui_accepted_answers()}
-            </span>
+          <AnswerSection
+            className="mt-2.5"
+            title={m.question_ui_correct_answer()}
+          >
             <AnswerView part={part} />
-          </p>
+          </AnswerSection>
         )}
       </div>
     );
@@ -768,167 +940,64 @@ function PartRunner({
         {review && isAuthoredPart(part) && (
           <OpenVerdict answered={text.trim() !== ''} part={part} />
         )}
-        <Textarea
-          aria-label={m.question_ui_your_answer()}
-          className="ruled-lines max-h-[calc(var(--ruled-line)*8)] min-h-[calc(var(--ruled-line)*3)] rounded-none border-0 bg-transparent px-0.5 py-0 focus:border-0 disabled:cursor-default disabled:bg-transparent disabled:text-fg"
-          disabled={review || disabled}
-          maxLength={QUIZ_OPEN_ANSWER_MAX}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={m.question_ui_type_answer()}
-          value={text}
-        />
-        {!review && (
-          <CharCount
-            className="self-end"
-            max={QUIZ_OPEN_ANSWER_MAX}
-            value={textLength(text)}
-          />
+        {review || disabled ? (
+          <OpenAnswerView text={text} />
+        ) : (
+          <OpenAnswerField onChange={onChange} value={text} />
         )}
       </div>
     );
   }
+  // One pick per row on a grid (Epo 2026-11-15); the stored answer is still
+  // each row's chosen option text. A check marks every row's pick right or
+  // wrong and lists the correct answer under the grid, as choices do (Epo
+  // 2026-11-18): always in a member's result, short of full marks otherwise.
   if (answer.type === 'matching') {
     const choices =
       value !== null && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
-    const choose = (i: number, index: number) =>
-      onChange({ ...choices, [String(i)]: answer.options[index] });
-    // Side by side, the padding pulls the letter menus away from the options.
-    const rows = (
-      <ol className="grid content-start @min-[50rem]:pr-6">
-        {('left' in answer
-          ? answer.left
-          : answer.pairs.map((pair) => pair.left)
-        ).map((left, i) => {
-          const chosen = choices[String(i)];
-          const letter =
-            chosen === undefined ? -1 : answer.options.indexOf(chosen);
-          const right =
-            key?.type === 'matching' ? key.pairs[i]?.right : undefined;
-          // The server's verdict per pair.
-          const correct =
-            isAuthoredPart(part) && part.itemResults?.[i] === true;
-          return (
-            <li
-              className="grid @md:min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 @md:py-0 py-1.5"
-              key={i}
-            >
-              <OptionKey>{i + 1}</OptionKey>
-              <TextView className="min-w-0 text-fg" text={left} />
-              {/* Wider screens: an underlined letter that opens the options. */}
-              {review ? (
-                <span className="@md:flex hidden items-center gap-3">
-                  {!correct && right !== undefined && (
-                    <span className="whitespace-nowrap font-bold text-tint-success-fg text-xs">
-                      {m.question_ui_correct_letter({
-                        letter: optionLetter(right),
-                      })}
-                    </span>
-                  )}
-                  <span
-                    className={cn(
-                      'w-16 border-b-2 px-1.5 py-1.5 font-bold',
-                      correct
-                        ? 'border-solid-success text-tint-success-fg'
-                        : 'border-solid-error text-tint-error-fg'
-                    )}
-                  >
-                    {letter < 0 ? '–' : optionLetter(letter)}
-                  </span>
-                </span>
-              ) : (
-                <div className="@md:block hidden w-16">
-                  <Select
-                    disabled={disabled}
-                    onValueChange={(next) => choose(i, Number(next))}
-                    value={letter < 0 ? '' : String(letter)}
-                  >
-                    <SelectTrigger
-                      aria-label={left}
-                      className={cn(
-                        'h-auto border-line-strong bg-transparent px-1.5 py-1.5 font-bold disabled:cursor-default disabled:bg-transparent data-[state=open]:border-solid-accent-1 data-[state=open]:border-b-2',
-                        letter >= 0 && 'text-tint-accent-1-fg'
-                      )}
-                      variant="underline"
-                    >
-                      <SelectValue placeholder="–" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {answer.options.map((option, index) => (
-                          <SelectItem
-                            hint={
-                              <TextView className="text-fg" text={option} />
-                            }
-                            key={index}
-                            size="sm"
-                            value={String(index)}
-                          >
-                            {optionLetter(index)}.
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {/* Phones: the letters themselves under the item, with the
-                  options listed above; no menu to open. */}
-              <div
-                aria-label={left}
-                className="col-span-3 flex @md:hidden flex-wrap gap-1.5 pl-8.5"
-                role="group"
-              >
-                {answer.options.map((_, index) => {
-                  const here = index === letter;
-                  const state: RowState | undefined = review
-                    ? here
-                      ? correct
-                        ? 'right'
-                        : 'wrong'
-                      : !correct && index === right
-                        ? 'missed'
-                        : undefined
-                    : here
-                      ? 'selected'
-                      : undefined;
-                  return (
-                    <button
-                      aria-pressed={here}
-                      className={cn(
-                        'grid size-10 place-items-center border-b font-bold disabled:cursor-default',
-                        state
-                          ? 'border-b-2'
-                          : 'border-line-strong text-fg-muted',
-                        state === 'selected' &&
-                          'border-solid-accent-1 text-tint-accent-1-fg',
-                        state === 'right' &&
-                          'border-solid-success text-tint-success-fg',
-                        state === 'wrong' &&
-                          'border-solid-error text-tint-error-fg',
-                        state === 'missed' &&
-                          'border-solid-success text-tint-success-fg',
-                        review && !state && 'opacity-45',
-                        !(review || disabled || state) && 'hover:text-fg'
-                      )}
-                      disabled={review || disabled}
-                      key={index}
-                      onClick={() => choose(i, index)}
-                      type="button"
-                    >
-                      {optionLetter(index)}
-                    </button>
-                  );
-                })}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+    const rows =
+      'left' in answer ? answer.left : answer.pairs.map((pair) => pair.left);
+    const picks = rows.map((_, i) => {
+      const chosen = choices[String(i)];
+      const index = chosen === undefined ? -1 : answer.options.indexOf(chosen);
+      return index < 0 ? undefined : index;
+    });
+    const keyed = review && key?.type === 'matching' ? key : undefined;
+    return (
+      <div>
+        <MatchingGrid
+          columns={answer.options}
+          correct={keyed?.pairs.map((pair) => pair.right)}
+          label={m.question_ui_your_answer()}
+          onPick={
+            taking
+              ? (row, column) =>
+                  onChange({
+                    ...choices,
+                    [String(row)]: answer.options[column],
+                  })
+              : undefined
+          }
+          rows={rows}
+          value={picks}
+        />
+        {keyed && (asList || missed) && (
+          <AnswerSection
+            className="mt-3.5"
+            title={m.question_ui_correct_answer()}
+          >
+            <PlainList
+              rows={keyed.pairs.map((pair) => ({
+                label: null,
+                text: `${pair.left}: ${answer.options[pair.right] ?? ''}`,
+              }))}
+            />
+          </AnswerSection>
+        )}
+      </div>
     );
-    // The option list stays after checking so result letters keep their text.
-    return <MatchingLayout items={rows} options={answer.options} />;
   }
   if (answer.type === 'ordering') {
     const ordered = Array.isArray(value)
@@ -964,9 +1033,38 @@ function PartRunner({
           : 'wrong'
         : undefined;
     const misplaced = review && current.some((item, i) => !right(item, i));
+    const keyOrder = (
+      <PlainList
+        rows={answer.items.map((item, i) => ({
+          label: String(i + 1),
+          text: item,
+        }))}
+      />
+    );
+    if (asList)
+      return (
+        <div className="grid gap-4">
+          {result(Boolean(ordered?.length))}
+          <AnswerSection title={m.question_ui_your_order()}>
+            {ordered?.length ? (
+              <PlainList
+                rows={current.map((item, i) => ({
+                  label: String(i + 1),
+                  state: right(item, i) ? 'right' : 'wrong',
+                  text: item,
+                }))}
+              />
+            ) : (
+              <p className="text-fg-muted">{m.assignment_not_answered()}</p>
+            )}
+          </AnswerSection>
+          <AnswerSection title={m.question_ui_correct_order()}>
+            {keyOrder}
+          </AnswerSection>
+        </div>
+      );
     return (
       <div>
-        {result(Boolean(ordered?.length))}
         {misplaced && <h4 className={SUBHEAD}>{m.question_ui_your_order()}</h4>}
         <div className={answerBoxesClass()}>
           {current.map((item, i) => (
@@ -1002,18 +1100,14 @@ function PartRunner({
             </div>
           ))}
         </div>
+        {result(Boolean(ordered?.length))}
         {misplaced && (
-          <>
-            <h4 className={cn(SUBHEAD, 'mt-3.5')}>
-              {m.question_ui_correct_order()}
-            </h4>
-            <PlainList
-              rows={answer.items.map((item, i) => ({
-                label: String(i + 1),
-                text: item,
-              }))}
-            />
-          </>
+          <AnswerSection
+            className="mt-3.5"
+            title={m.question_ui_correct_order()}
+          >
+            {keyOrder}
+          </AnswerSection>
         )}
       </div>
     );

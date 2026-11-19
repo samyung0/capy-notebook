@@ -62,10 +62,18 @@ test('a note credits its embedded quiz inside the embed and in its footer', asyn
   await showNoteToolbar(ownerPage);
   await check(ownerPage);
 
-  // Removing its last question (confirmed) removes the embed, and the footer
-  // drops the quiz's credit at once.
+  // Deleting its last question (confirmed) removes the embed, and the footer
+  // drops the quiz's credit at once. A question card opens to edit, its Delete
+  // at its end (Epo 2026-11-15).
   await ownerPage
-    .getByRole('button', { exact: true, name: m.action_remove() })
+    .getByRole('button', {
+      exact: true,
+      name: m.question_ui_edit_question_number({ number: 1 }),
+    })
+    .click();
+  await ownerPage
+    .locator('[data-question-open]')
+    .getByRole('button', { exact: true, name: m.question_ui_delete() })
     .click();
   await ownerPage
     .getByRole('dialog')

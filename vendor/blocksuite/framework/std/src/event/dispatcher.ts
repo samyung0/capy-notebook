@@ -311,11 +311,16 @@ export class UIEventDispatcher extends LifeCycleWatcher {
     return output;
   }
 
+  /** Capy (local change 40): an open popover, menu or dialog outside the host
+   * keeps its focus too, so a pointer passing over the board leaves it open
+   * (the pointer's cursor selection would otherwise focus the host). */
   private _isActiveElementOutsideHost(): boolean {
     const activeElement = this._getDeepActiveElement();
     return (
       activeElement !== null &&
-      this._isEditableElementActive(activeElement) &&
+      (this._isEditableElementActive(activeElement) ||
+        activeElement.closest('[role=dialog], [role=menu], [role=listbox]') !==
+          null) &&
       !this.host.contains(activeElement)
     );
   }
@@ -334,6 +339,12 @@ export class UIEventDispatcher extends LifeCycleWatcher {
    * pastes; none of the events that turn it off fire when it's hidden. */
   deactivate() {
     this._setActive(false);
+  }
+
+  /** Capy (local change 64): what a double click opened over the host uses up
+   * that double click, so the next press at the same place is a first one. */
+  endClickRun() {
+    this._pointerControl.endClickRun();
   }
 
   private _setActive(active: boolean) {

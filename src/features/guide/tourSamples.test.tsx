@@ -111,14 +111,14 @@ it('shows example chats while the tour runs in a workspace without chats', () =>
 });
 
 it('shows an example card to rate while the tour runs and nothing is due', () => {
-  expect(render(<ReviewSession />)).toContain(m.review_nothing());
+  expect(render(<ReviewSession />)).toContain(m.common_nothing_yet());
 
   page.tour = { workspaceId: 'ws' };
   const html = render(<ReviewSession />);
   expect(html).toContain(m.tour_example());
   expect(html).toContain(m.tour_sample_card_retrieval_back());
   expect(html).toContain(m.srs_good());
-  expect(html).not.toContain(m.review_nothing());
+  expect(html).not.toContain(m.common_nothing_yet());
 });
 
 it("shows the tour's sample result without fetching it", () => {

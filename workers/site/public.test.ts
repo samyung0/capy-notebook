@@ -179,7 +179,7 @@ describe('anonymous material routes', () => {
     expect(page.headers.get('Cache-Control')).toBe('no-store');
     const html = await page.text();
     expect(html).toContain('This note could not be loaded');
-    expect(html).not.toContain('Try again');
+    expect(html).not.toContain('Retry');
     // A shared quiz names its kind.
     const quizPage = await handleSiteRequest(
       request(`/share/quizzes/${TOKEN}`),

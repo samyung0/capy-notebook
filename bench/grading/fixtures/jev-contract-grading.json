@@ -49,8 +49,7 @@
               "type": "open",
               "accepted": [
                 "Germans resented the war guilt clause (Article 231), which forced Germany to accept the blame for the war, and the large reparations bill, which damaged the economy. Many called it a 'Diktat' because Germany was not allowed to negotiate, which felt humiliating."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Identifies one valid reason, e.g. war guilt clause, reparations, loss of territory, military restrictions, exclusion from the negotiations",
@@ -163,8 +162,7 @@
               "type": "open",
               "accepted": [
                 "The cartoonist suggests that appeasement will not satisfy Hitler: being given Czechoslovakia only makes him ask for more, shown by 'what's for dessert?' and 'Poland?' on the menu."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "States the message: appeasement will not satisfy Hitler, who will keep demanding more territory",
@@ -184,8 +182,7 @@
               "type": "open",
               "accepted": [
                 "Britain's armed forces were not ready, so Chamberlain needed time to rearm; British public opinion was strongly against another war after the First World War; and many believed the Treaty of Versailles had been too harsh, so some German demands seemed reasonable."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Britain was not ready for war / needed time to rearm",
@@ -330,8 +327,7 @@
               "type": "open",
               "accepted": [
                 "There are millions of alveoli, giving a very large surface area. Their walls are one cell thick, so the diffusion distance is short. A dense network of capillaries and constant blood flow keep a steep concentration gradient."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Large surface area (many alveoli)",
@@ -440,8 +436,7 @@
               "type": "open",
               "accepted": [
                 "The rate increases as temperature increases up to an optimum of about 40 °C, then decreases rapidly to almost zero by 60 °C."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Rate increases as temperature increases up to an optimum (about 40 °C)",
@@ -461,8 +456,7 @@
               "type": "open",
               "accepted": [
                 "High temperature denatures the enzyme: the bonds holding its shape break, so the active site changes shape. The substrate no longer fits, so fewer enzyme-substrate complexes form."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "The enzyme is denatured",
@@ -604,8 +598,7 @@
               "type": "open",
               "accepted": [
                 "Sodium chloride has a giant ionic lattice. There are strong electrostatic attractions between the oppositely charged Na+ and Cl- ions in all directions, and a lot of energy is needed to overcome them."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Giant ionic lattice",
@@ -713,8 +706,7 @@
               "type": "open",
               "accepted": [
                 "A more concentrated acid has more acid particles in the same volume, so particles collide with the magnesium more frequently, giving more successful collisions per second."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "More acid particles in the same volume",
@@ -814,8 +806,7 @@
               "type": "open",
               "accepted": [
                 "The scales measure the normal contact force on the person. To accelerate upwards there must be a resultant upward force, so the normal force must become greater than the person's weight."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "The scales measure the normal (contact) force on the person, not their weight directly",
@@ -911,8 +902,7 @@
               "type": "open",
               "accepted": [
                 "Both spoons are at room temperature. Metal is a much better thermal conductor than wood, so it conducts heat away from your hand faster, and your skin senses that faster heat loss as cold."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Both spoons are at the same (room) temperature",
@@ -1016,8 +1006,7 @@
               "type": "open",
               "accepted": [
                 "Restaurant meals are a normal good, so lower incomes reduce demand at every price and the demand curve shifts left from D1 to D2. The equilibrium moves from A to B: price falls from P1 to P2 and quantity falls from Q1 to Q2."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Explains the effect on demand",
@@ -1119,8 +1108,7 @@
               "type": "open",
               "accepted": [
                 "If the business fails, Priya's personal assets such as her house are protected and she can only lose the money she invested."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": ["Her personal assets are protected if the business fails / she can only lose what she invested"],
             "solution": []
@@ -1134,8 +1122,7 @@
               "type": "open",
               "accepted": [
                 "A private limited company must file its accounts at Companies House, where anyone can see them, so rival bakeries could find out how much profit Priya makes."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Identifies a valid disadvantage, e.g. accounts must be filed and made public, legal set-up costs, sharing control or profits with shareholders",
@@ -1264,8 +1251,7 @@
               "type": "open",
               "accepted": [
                 "Floods deposit silt, making the soil very fertile for growing rice; the rivers provide water, fish and transport, and many people are too poor to move elsewhere."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Fertile soil from silt deposited by floods, good for farming",
@@ -1285,8 +1271,7 @@
               "type": "open",
               "accepted": [
                 "Build raised flood shelters: during a flood people can move into them, staying above the water so fewer people drown."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Identifies a valid strategy, e.g. embankments, flood shelters, early warning systems, raised houses, mangrove planting",
@@ -1414,8 +1399,7 @@
               "type": "open",
               "accepted": [
                 "She questions Macbeth's manhood ('When you durst do it, then you were a man'), shaming him into agreeing to murder Duncan; the audience sees how she controls him."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Identifies a manipulative technique, e.g. questioning his masculinity, accusing him of cowardice, emotional blackmail about his love",
@@ -1508,8 +1492,7 @@
         "stem": [
           {
             "type": "text",
-            "label": "Extract",
-            "text": "He stopped. Listened. Nothing. Then, from somewhere below him, the floorboard creaked."
+            "text": "**Extract**\n\nHe stopped. Listened. Nothing. Then, from somewhere below him, the floorboard creaked."
           }
         ],
         "parts": [
@@ -1525,8 +1508,7 @@
               "type": "open",
               "accepted": [
                 "The minor sentences 'Listened.' and 'Nothing.' slow the pace and create pauses that mirror the character's careful listening; the longer final sentence delays and then delivers the sudden creak, sharpening the tension."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Identifies the use of short or minor sentences, e.g. 'Listened.' 'Nothing.'",
@@ -1630,8 +1612,7 @@
               "type": "open",
               "accepted": [
                 "For: free tuition lets talented students from poorer families attend, improving fairness and social mobility. Against: it is very expensive for taxpayers, including people who never attend. For example, Germany funds free tuition through general taxation."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Gives a valid argument in favour of free university education",
@@ -1723,8 +1704,7 @@
               "type": "open",
               "accepted": [
                 "Division asks how many lots of the divisor fit into the number. A divisor smaller than 1 fits into each whole more than once, so the number of lots is larger than the number you started with."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Interprets division as finding how many lots of the divisor fit into the number",
@@ -1806,8 +1786,7 @@
               "type": "open",
               "accepted": [
                 "Correlation means two variables tend to change together; causation means a change in one directly produces a change in the other. For example, ice cream sales and drownings are correlated because both rise in hot weather, but ice cream does not cause drowning."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Correlation: two variables change together or are associated",
@@ -1911,8 +1890,7 @@
               "type": "open",
               "accepted": [
                 "Free speech lets citizens criticise the government and hold those in power to account, and allows open debate so voters can make informed choices. Incitement to violence can justifiably be banned because it endangers other people."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Allows citizens to criticise the government / hold those in power to account",
@@ -2005,8 +1983,7 @@
               "type": "open",
               "accepted": [
                 "Fewer trees remove less carbon dioxide by photosynthesis; burning or decomposing the cleared trees releases their stored carbon as carbon dioxide; carbon dioxide is a greenhouse gas, so more of it traps more heat."
-              ],
-              "hints": []
+              ]
             },
             "markscheme": [
               "Fewer trees remove less carbon dioxide from the atmosphere by photosynthesis",

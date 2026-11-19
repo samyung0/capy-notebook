@@ -95,8 +95,7 @@ export function customBlockNode(
   }
   if (type === 'chart' || type === 'plot' || type === 'graph') {
     const block = questionBlockSchema.parse(JSON.parse(code));
-    if (block.type !== type || (block.type === 'graph' && 'url' in block.image))
-      throw new Error('Invalid figure block.');
+    if (block.type !== type) throw new Error('Invalid figure block.');
     return { block, children: [{ text: '' }], id: uid('block'), type };
   }
   if (type === HTML_EMBED_LANG) return htmlEmbedFenceNode(code);

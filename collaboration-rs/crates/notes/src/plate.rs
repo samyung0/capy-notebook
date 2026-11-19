@@ -16,9 +16,9 @@ use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::types::TypeRef;
 use yrs::{Any, ID, ReadTxn};
 
-use crate::catalog;
 use crate::json::{self, Unencodable};
 use crate::limits::DEPTH_CEILING;
+use crate::{catalog, figure_map};
 
 /// The note's Plate root (a Y.XmlText named `content`).
 pub const CONTENT_ROOT: &str = "content";
@@ -243,6 +243,7 @@ fn strict_equal(a: &Any, b: &Any, same: bool) -> bool {
 /// for an element one client wrote (every slate-yjs insert) and which the
 /// document does not keep across clients (then client, then clock).
 pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionError> {
+    let kind = kind_of(branch);
     let mut out = Vec::new();
     let mut firsts = Vec::new();
     for (key, item) in branch.map_items() {
@@ -254,7 +255,7 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
             first = left;
         }
         firsts.push((first.id().client.get(), first.id().clock));
-        out.push((key.clone(), entry_value(key, item)?));
+        out.push((key.clone(), entry_value(&kind, key, item)?));
     }
     let mut order: Vec<usize> = (0..out.len()).collect();
     order.sort_by_key(|&i| firsts[i]);
@@ -262,8 +263,23 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
     Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
 }
 
-/// The value of an element's live property `key` (its map entry `item`).
-fn entry_value(key: &str, item: ItemPtr) -> Result<Any, ProjectionError> {
+/// An element's type (empty without one).
+fn kind_of(branch: &Branch) -> String {
+    let Some(item) = branch.entry_item("type").filter(|item| !item.is_deleted()) else {
+        return String::new();
+    };
+    match item.content() {
+        ItemContent::Any(values) => match values.last() {
+            Some(Any::String(kind)) => kind.to_string(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+/// The value of an element's live property `key` (its map entry `item`) on
+/// an element of type `kind`.
+fn entry_value(kind: &str, key: &str, item: ItemPtr) -> Result<Any, ProjectionError> {
     Ok(match item.content() {
         ItemContent::Any(values) => values.last().cloned().unwrap_or(Any::Undefined),
         ItemContent::Embed(value) => value.clone(),
@@ -280,15 +296,15 @@ fn entry_value(key: &str, item: ItemPtr) -> Result<Any, ProjectionError> {
         }
         // A figure's live block (Epo 2026-10-17) reads as its repaired value.
         ItemContent::Type(map) if map_key(key) && matches!(map.type_ref(), TypeRef::Map) => {
-            json::value_to_any(&map_value(map)?)
+            json::value_to_any(&map_value(kind, map)?)
         }
         _ => return Err(ProjectionError::Property(key.to_string())),
     })
 }
 
-/// A figure's live `block` map as the room holds it, before the repair
-/// (`None` without one, or when it is no map): room admission checks each of
-/// its list entries ([crate::questions::figure_entries]).
+/// A live `block` map as the room holds it, before a figure's repair
+/// (`None` without one, or when it is no map): what the note's size limits
+/// measure (Epo 2026-10-18).
 pub fn held_block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError> {
     let Some(entry) = element
         .entry_item("block")
@@ -296,8 +312,12 @@ pub fn held_block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionE
     else {
         return Ok(None);
     };
+    let kind = kind_of(&element);
     match entry.content() {
         ItemContent::Type(map) if matches!(map.type_ref(), TypeRef::Map) => {
+            if figure_map::is_figure(&kind) {
+                return Ok(Some(figure_map::held_block(map, &kind)?));
+            }
             Ok(Some(map_entries(map, true)?))
         }
         _ => Ok(None),
@@ -314,7 +334,7 @@ pub fn block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError>
     else {
         return Ok(None);
     };
-    match entry_value("block", entry)? {
+    match entry_value(&kind_of(&element), "block", entry)? {
         Any::Undefined => Ok(None),
         value => Ok(Some(json::any_to_value(&value)?)),
     }
@@ -346,7 +366,7 @@ pub fn map_key(key: &str) -> bool {
         .any(|element| element.shared_map.contains(&key))
 }
 
-/// Whether some element's map holds `key` as a list of maps.
+/// Whether some element's map holds `key` as a list of maps (a table view's).
 pub fn list_key(key: &str) -> bool {
     catalog::ELEMENTS
         .iter()
@@ -354,21 +374,23 @@ pub fn list_key(key: &str) -> bool {
 }
 
 /// The keys of an element's map held as lists of maps (`sharedLists`: a
-/// chart's or plot's series, a graph's elements).
+/// table view's columns, rows and views).
 pub fn lists_of(kind: &str) -> &'static [&'static str] {
     catalog::element(kind).map_or(&[], |element| element.shared_lists)
 }
 
-/// A figure's live `block` map as its value, repaired on read
-/// (`questions::repair_figure`): the one place the map is read, for the
-/// projection, the metrics, admission's check and the index text (through
-/// [properties], [element] and [block_value]). Its entries are plain values
-/// or lists of maps of plain values, in key order (as a plain object
-/// attribute reads, `json::any_to_value`); anything else is an error.
-fn map_value(branch: &Branch) -> Result<Value, ProjectionError> {
-    let mut block = map_entries(branch, true)?;
-    crate::questions::repair_figure(&mut block);
-    Ok(block)
+/// An element's live `block` map as its value: the one place the map is
+/// read, for the projection, the metrics, admission's check and the index
+/// text (through [properties], [element] and [block_value]). A figure's is
+/// the figure map quiz rooms hold too, read repaired ([figure_map::block],
+/// Epo 2026-11-16); a table view's holds plain values and lists of maps of
+/// plain values, in key order (as a plain object attribute reads,
+/// `json::any_to_value`); anything else is an error.
+fn map_value(kind: &str, branch: &Branch) -> Result<Value, ProjectionError> {
+    if figure_map::is_figure(kind) {
+        return Ok(figure_map::block(branch, kind)?);
+    }
+    map_entries(branch, true)
 }
 
 /// A block map's entries, read strictly: plain values, and with `lists`,
@@ -584,7 +606,7 @@ pub fn holds_pending_reference<T: ReadTxn>(txn: &T) -> bool {
                 .filter(|entry| !entry.is_deleted())
                 .is_some_and(|entry| {
                     !matches!(
-                        entry_value("pending", entry),
+                        entry_value("", "pending", entry),
                         Ok(Any::Null | Any::Undefined)
                     )
                 })

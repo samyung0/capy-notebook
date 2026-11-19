@@ -15,21 +15,23 @@ export class EdgelessNoteMask extends SignalWatcher(
     const maskDOM = this.renderRoot!.querySelector('.affine-note-mask');
     const observer = new ResizeObserver(entries => {
       if (this.model.store.readonly) return;
+      // Capy (local change 55): always the text's height; a note has no fold.
       for (const entry of entries) {
-        if (!this.model.props.edgeless.collapse) {
-          const bound = Bound.deserialize(this.model.xywh);
-          const scale = this.model.props.edgeless.scale ?? 1;
-          const height = entry.contentRect.height * scale;
+        const bound = Bound.deserialize(this.model.xywh);
+        const scale = this.model.props.edgeless.scale ?? 1;
+        // Capy (local change 53): less the 20 px the mask reaches past the
+        // note on each side while it is edited, which AFFiNE stored as height.
+        const extra = this.editing ? ACTIVE_NOTE_EXTRA_PADDING : 0;
+        const height = (entry.contentRect.height - 2 * extra) * scale;
 
-          if (!height || almostEqual(bound.h, height)) {
-            return;
-          }
-
-          bound.h = height;
-          this.model.stash('xywh');
-          this.model.xywh = bound.serialize();
-          this.model.pop('xywh');
+        if (!height || almostEqual(bound.h, height)) {
+          return;
         }
+
+        bound.h = height;
+        this.model.stash('xywh');
+        this.model.xywh = bound.serialize();
+        this.model.pop('xywh');
       }
     });
 

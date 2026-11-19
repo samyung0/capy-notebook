@@ -411,10 +411,6 @@ fn figure_block_in(kind: &str, block: &Value, live: bool) -> Check {
     }
     .map_err(ValidationError)?;
     parsed.description_fits(false).map_err(ValidationError)?;
-    if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
-        // The TS raises this inside its try and re-wraps the message.
-        return fail("invalid material document: note graphs require inline SVG");
-    }
     Ok(())
 }
 

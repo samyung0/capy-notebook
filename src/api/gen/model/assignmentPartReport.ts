@@ -8,11 +8,13 @@ import type { AssignmentItemReport } from './assignmentItemReport.ts';
 import type { AssignmentWrongAnswer } from './assignmentWrongAnswer.ts';
 
 export interface AssignmentPartReport {
+  average?: number;
   /** @nullable */
   items?: AssignmentItemReport[] | null;
   /** @nullable */
   options?: number[] | null;
   partId: string;
+  percent?: number;
   /** @nullable */
   wrongAnswers?: AssignmentWrongAnswer[] | null;
 }

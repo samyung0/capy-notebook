@@ -19,6 +19,7 @@ import {
   type NotificationSelf,
 } from '@/features/notification/NotificationItem';
 import { getLocale, m } from '@/i18n';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 function dayLabel(date: Date): string {
   const today = new Date();
@@ -96,6 +97,7 @@ export default function Notifications() {
     isFetchingNextPage,
     isFetchNextPageError,
   } = useNotifications();
+  const revealRef = useLoadingReveal(!data);
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
@@ -133,7 +135,7 @@ export default function Notifications() {
             <Link search={{ tab: 'notifications' }} to="/settings" />
           </IconButton>
         </div>
-        <div className="flex max-w-7xl flex-col">
+        <div className="flex max-w-7xl flex-col" ref={revealRef}>
           {!data &&
             (fetchStatus === 'paused' ? (
               <QueryPausedState />

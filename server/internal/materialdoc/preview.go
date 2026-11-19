@@ -298,13 +298,13 @@ func questionPreviewOf(q map[string]any) *questionPreview {
 	return out
 }
 
-// blocksPlainText joins a question's text blocks.
+// blocksPlainText joins a question's text blocks, without their markers.
 func blocksPlainText(blocks []any) string {
 	var texts []string
 	for _, raw := range blocks {
 		block, _ := raw.(map[string]any)
 		if text, _ := block["text"].(string); block["type"] == "text" && strings.TrimSpace(text) != "" {
-			texts = append(texts, strings.TrimSpace(text))
+			texts = append(texts, strings.TrimSpace(questions.StripMarks(text)))
 		}
 	}
 	return strings.Join(texts, " ")

@@ -67,7 +67,7 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = drawingFrozen(t)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = drawingFrozen(t)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = drawingFrozen(t)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func drawingRun(t *testing.T, f assignmentFixture, member, marking string, now t
 	ctx := context.Background()
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions, form.Marking = drawingFrozen(t), marking
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}

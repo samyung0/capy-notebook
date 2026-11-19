@@ -23,7 +23,11 @@ export class DblClickAddEdgelessText extends InteractivityExtension {
         ...this.gfx.viewport.toModelCoord(e.x, e.y)
       );
 
-      if (picked) {
+      // Capy (local change 59): the note's double click places a note instead.
+      if (
+        picked ||
+        this.std.store.get(FeatureFlagService).getFlag('enable_dblclick_note')
+      ) {
         return;
       }
 

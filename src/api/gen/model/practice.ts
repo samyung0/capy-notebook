@@ -4,15 +4,15 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { PracticeQuiz } from './practiceQuiz.ts';
+import type { PracticeItem } from './practiceItem.ts';
 import type { PracticeReview } from './practiceReview.ts';
 import type { ReviewSuggestion } from './reviewSuggestion.ts';
 
 export interface Practice {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  items: PracticeItem[];
   members?: number;
-  quizzes: PracticeQuiz[];
   reviews: PracticeReview[];
   suggestions: ReviewSuggestion[];
 }

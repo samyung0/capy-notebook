@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/bankmigrations"
 	"github.com/samyung0/capy-notebook/server/internal/cover"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
@@ -141,5 +142,26 @@ func TestSyllabusCatalogExamsLoad(t *testing.T) {
 	}
 	if len(exams) != 2 {
 		t.Fatalf("exams=%d", len(exams))
+	}
+}
+
+// A published question's graph loses its picture and is valid again.
+func TestDropGraphImagesLeavesTheElements(t *testing.T) {
+	raw, err := os.ReadFile("../../internal/questions/testdata/graph-image-rejected.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Question map[string]any }
+	if err = json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if !dropGraphImages(fixture.Question) {
+		t.Fatal("found no graph picture")
+	}
+	if err = questions.Validate(fixture.Question, questions.Policy{}); err != nil {
+		t.Fatal(err)
+	}
+	if dropGraphImages(fixture.Question) {
+		t.Fatal("dropped a picture twice")
 	}
 }

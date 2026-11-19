@@ -392,9 +392,11 @@ func labelled(head, tail string) string {
 	return head + ": " + tail
 }
 
-// graphElementText is one graph element as stored: its type, then its term,
-// points (by name, else coordinates), text or label. An element naming a
-// point that is gone is left out, as a merged graph is repaired on read.
+// graphElementText is one graph element as stored: its type, then a formula
+// row's LaTeX as typed, its points (by name, else coordinates), text, label
+// or formula's LaTeX. An element naming a point that is gone is left out, as a merged graph is
+// repaired on read, and so is a mark without text (a stroke, curve or
+// ellipse).
 func graphElementText(e map[string]any, points map[string]string) string {
 	typ, _ := e["type"].(string)
 	refs := func(ids ...string) (string, bool) {
@@ -412,15 +414,8 @@ func graphElementText(e map[string]any, points map[string]string) string {
 	var body string
 	ok := true
 	switch typ {
-	case "functiongraph":
-		body = str("term")
-		if domain, okDomain := e["domain"].([]any); okDomain && len(domain) == 2 {
-			a, okA := formatIndexNumber(domain[0])
-			b, okB := formatIndexNumber(domain[1])
-			if okA && okB {
-				body += " on [" + a + ", " + b + "]"
-			}
-		}
+	case "expression":
+		body = str("latex")
 	case "point":
 		body, ok = pair(e["coords"])
 		if name := field(e, "name"); name != "" {
@@ -447,6 +442,8 @@ func graphElementText(e map[string]any, points map[string]string) string {
 		body = "center " + center + ", " + ends
 	case "text":
 		body = field(e, "text")
+	case "formula":
+		body = field(e, "latex")
 	default:
 		return ""
 	}
@@ -514,12 +511,12 @@ func questionIndexPieces(q map[string]any) []string {
 	return out
 }
 
-// questionBlockText is one question block: a text's label and text, a
-// figure's rendering, a table's rows or an image's description.
+// questionBlockText is one question block: a text, a figure's rendering, a
+// table's rows or an image's description.
 func questionBlockText(b map[string]any) string {
 	switch b["type"] {
 	case "text":
-		return labelledLines(field(b, "label"), field(b, "text"))
+		return field(b, "text")
 	case "chart", "plot", "graph":
 		return figureIndexText(b)
 	case "table":
@@ -535,14 +532,4 @@ func questionBlockText(b map[string]any) string {
 		return field(b, "description")
 	}
 	return ""
-}
-
-func labelledLines(first, second string) string {
-	switch {
-	case first == "":
-		return second
-	case second == "":
-		return first
-	}
-	return first + "\n" + second
 }

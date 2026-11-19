@@ -54,7 +54,7 @@ The issuer allows a second key, so steps 1 to 5 never break a request.
 
 | Key                                                                                                                          | Issuer                                                                                | Cadence |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------- |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `DEEPINFRA_API_KEY`, `OPENROUTER_API_KEY`, `JEV_TYPESAFE_API_KEY` | AI providers                                                                          | 90 days |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `DEEPINFRA_API_KEY`, `OPENROUTER_API_KEY` | AI providers                                                                          | 90 days |
 | `B2_KEY_ID` + `B2_APP_KEY`, `BANK_PUBLIC_B2_*`, `BANK_PRIVATE_B2_*`, `KNOWLEDGE_BASE_B2_*`                                   | Cloudflare R2 for `B2_*` after the cutover (an Object Read & Write token), Backblaze for the rest (pairs: replace both) | yearly  |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_EMAIL_TOKEN`                                                                             | Cloudflare (set a TTL on the token)                                                   | yearly  |
 | `SENTRY_AUTH_TOKEN`, `UAT_SENTRY_TOKEN`                                                                                      | Sentry                                                                                | yearly  |

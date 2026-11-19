@@ -11,7 +11,7 @@ import {
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -94,17 +94,17 @@ export default function Workspaces() {
       </div>
       <ListToolbar
         action={
-          <Button
+          <PageButton
             disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
           >
             {m.action_new_workspace()}
-          </Button>
+          </PageButton>
         }
         filters={[
           {
-            emptyLabel: m.workspaces_filter_no_tags(),
+            emptyLabel: m.common_nothing_yet(),
             key: 'tags',
             label: m.workspaces_filter_tags(),
             onToggle: (value) =>
@@ -148,7 +148,7 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              className="min-h-23 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
+              className="min-h-26 cursor-pointer items-center justify-center frosted:bg-transparent p-2 focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-34 sm:p-5.5"
               interactive
               onClick={() => setCreateOpen(true)}
               radius="card-lg"

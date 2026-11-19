@@ -51,19 +51,32 @@ type workspaceReviewInput struct {
 type reviewSessionIDInput struct {
 	ID string `path:"id" format:"uuid"`
 }
-type pastReviewsInput struct {
-	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,topic,status" default:"date"`
+type studyHistoryInput struct {
+	Sort        string `query:"sort" enum:"date,workspace,name,topic,score" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
-	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
-	Has         string `query:"has" doc:"Comma-separated: quiz, flashcards; a session with either passes"`
+	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; an attempt's quiz or set's current workspace"`
+	Kind        string `query:"kind" doc:"Comma-separated kinds: revision, quiz, flashcards; empty is all"`
+	Status      string `query:"status" doc:"Comma-separated statuses: done, partial, open; empty is all"`
 	Offset      int    `query:"offset" minimum:"0"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
 }
-type pastReviewsOutput struct {
+type studyHistoryOutput struct {
 	Body struct {
-		Items []store.PastReview `json:"items" nullable:"false"`
+		Items []store.HistoryRow `json:"items" nullable:"false"`
 		More  bool               `json:"more"`
 	}
+}
+type continueInput struct {
+	WorkspaceID string `query:"workspaceId" doc:"One workspace's Continue; empty is every workspace's"`
+}
+type continueOutput struct {
+	Body struct {
+		Items []store.HistoryRow `json:"items" nullable:"false"`
+	}
+}
+type hideContinueInput struct {
+	Kind string `path:"kind" enum:"revision,quiz,flashcards"`
+	ID   string `path:"id"`
 }
 type reviewRatingInput struct {
 	Body apimodel.RateReviewItemReq
@@ -84,12 +97,14 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/attempts", "getWorkspaceAttempts", tag, "Each quiz's and set's attempt count and latest attempts", http.StatusOK, a.getWorkspaceAttempts)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/dashboard", "getWorkspaceDashboard", tag, "The workspace's Dashboard: its owner, member count and latest activity", http.StatusOK, a.getWorkspaceDashboard)
-	reg(api, http.MethodGet, "/api/workspaces/{id}/practice", "getWorkspacePractice", tag, "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews", http.StatusOK, a.getWorkspacePractice)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/practice", "getWorkspacePractice", tag, "The workspace's Practice page: suggestions, quizzes and sets, and the caller's topic reviews", http.StatusOK, a.getWorkspacePractice)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "A new review session: a suggestion's items, or the whole workspace's", http.StatusOK, a.getWorkspaceReview)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}", "resumeReviewSession", tag, "An unfinished review session's items still to answer", http.StatusOK, a.resumeReviewSession)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}/result", "getReviewResult", tag, "A review session's result: its scores and every answered item", http.StatusOK, a.getReviewResult)
 	reg(api, http.MethodPost, "/api/review/sessions/{id}/finish", "finishReviewSession", tag, "End a review session before its last item", http.StatusNoContent, a.finishReviewSession)
-	reg(api, http.MethodGet, "/api/review/sessions", "listPastReviews", tag, "Finished review sessions with their quiz and flashcard results", http.StatusOK, a.listPastReviews)
+	reg(api, http.MethodGet, "/api/learning/history", "listStudyHistory", tag, "Revisions and quiz and flashcard attempts, with what can go on", http.StatusOK, a.listStudyHistory)
+	reg(api, http.MethodGet, "/api/learning/continue", "listContinue", tag, "Study's Continue: the newest revisions and tries that can go on, left within the week", http.StatusOK, a.listContinue)
+	reg(api, http.MethodDelete, "/api/learning/continue/{kind}/{id}", "hideContinue", tag, "Remove a revision or try from Continue; History keeps it", http.StatusNoContent, a.hideContinue)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/question-count", "getStudyQuestionCount", tag, "How many questions a practice group holds, for its start dialog", http.StatusOK, a.getStudyQuestionCount)
@@ -263,18 +278,43 @@ func (a *api) finishReviewSession(ctx context.Context, in *reviewSessionIDInput)
 	return &Empty{}, hErr(a.s.FinishReviewSession(ctx, userID(ctx), in.ID, time.Now()))
 }
 
-func (a *api) listPastReviews(ctx context.Context, in *pastReviewsInput) (*pastReviewsOutput, error) {
-	list, more, err := a.s.PastReviews(ctx, userID(ctx), store.PastReviewParams{
+func (a *api) listStudyHistory(ctx context.Context, in *studyHistoryInput) (*studyHistoryOutput, error) {
+	list, more, err := a.s.StudyHistory(ctx, userID(ctx), store.HistoryParams{
 		Sort: in.Sort, Ascending: in.Dir == "asc",
-		Workspaces: commaValues(in.WorkspaceID), Has: commaValues(in.Has),
-		Offset: in.Offset, Limit: in.Limit,
+		Workspaces: commaValues(in.WorkspaceID), Kinds: commaValues(in.Kind),
+		Statuses: historyStatuses(in.Status), Offset: in.Offset, Limit: in.Limit,
 	})
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out := &pastReviewsOutput{}
+	out := &studyHistoryOutput{}
 	out.Body.Items, out.Body.More = list, more
 	return out, nil
+}
+
+func (a *api) listContinue(ctx context.Context, in *continueInput) (*continueOutput, error) {
+	list, err := a.s.ContinueRows(ctx, userID(ctx), in.WorkspaceID, time.Now())
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &continueOutput{}
+	out.Body.Items = list
+	return out, nil
+}
+
+func (a *api) hideContinue(ctx context.Context, in *hideContinueInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	return &Empty{}, hErr(a.s.HideContinue(ctx, userID(ctx), store.HistoryKind(in.Kind), in.ID))
+}
+
+func historyStatuses(v string) []store.HistoryStatus {
+	var out []store.HistoryStatus
+	for _, s := range commaValues(v) {
+		out = append(out, store.HistoryStatus(s))
+	}
+	return out
 }
 
 func commaValues(v string) []string {

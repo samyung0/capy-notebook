@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { Rng } from '@/lib/rng';
 import { FinishBurst, FinishMarks, useFinishCelebration } from './finish';
 import { boardSpot, MapBoard } from './MapBoard';
 import {
@@ -15,7 +16,7 @@ import {
   STEP,
   templateDefs,
 } from './map';
-import { catmull, lastOf, n, type Pt, polyD, Rng, wobble } from './sketch';
+import { catmull, lastOf, n, type Pt, polyD, wobble } from './sketch';
 import './trailMap.css';
 import { useVisibleRange } from './useVisibleRange';
 

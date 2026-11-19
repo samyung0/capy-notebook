@@ -25,7 +25,7 @@ import {
 } from '@/components/app/ListToolbar';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
@@ -55,6 +55,7 @@ import { FILE_KINDS } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import type { FilesTab } from '@/lib/tabSearch';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Files() {
   const navigate = useNavigate();
@@ -119,14 +120,22 @@ export default function Files() {
 }
 
 /** Where a trashed item opens read-only: the file page Files opens it on. A
- * board opens only live, on its workspace. */
+ * canvas opens on its own canvas page, the account's or its workspace's,
+ * under the Trash strip with Restore. */
 function trashLink(item: TrashItem) {
   if (item.kind === 'source_file')
     return linkOptions({
       params: { fileId: item.id },
       to: '/files/$fileId',
     });
-  if (item.materialKind === 'canvas') return;
+  if (item.materialKind === 'canvas')
+    return item.workspaceId
+      ? linkOptions({
+          params: { workspaceId: item.workspaceId },
+          search: { c: item.id, view: 'canvas' },
+          to: '/workspaces/$workspaceId',
+        })
+      : linkOptions({ search: { c: item.id }, to: '/canvas' });
   return linkOptions({
     params: { materialId: item.id },
     to: '/materials/$materialId',
@@ -245,6 +254,7 @@ function TrashTab({
     isLoading,
     refetch,
   } = useTrash(undefined, true);
+  const revealRef = useLoadingReveal(isLoading);
   // Icons for the list's Workspace column; a deleted workspace has none.
   const { data: workspaces = [] } = useWorkspaces(
     { sort: 'accessed' },
@@ -286,11 +296,11 @@ function TrashTab({
   if (isError && !data) {
     return (
       <ErrorState
-        {...describeError(error)}
-        action={
-          <ErrorAction onClick={() => refetch()}>{m.trash_retry()}</ErrorAction>
-        }
         className="py-16"
+        // Its own title and Retry: the description's action is a toast's.
+        description={describeError(error).description}
+        icon={describeError(error).icon}
+        onRetry={() => refetch()}
         title={m.trash_load_failed()}
         variant="panel"
       />
@@ -369,32 +379,34 @@ function TrashTab({
           ) : items.length === 0 ? (
             <p className="text-fg-muted">{m.trash_empty()}</p>
           ) : (
-            <ItemPick.Provider value={selection.pickContext}>
-              <ItemList
-                columns={[
-                  m.list_col_name(),
-                  m.create_filter_workspace(),
-                  m.list_col_details(),
-                  m.list_col_expires(),
-                ]}
-                view={view}
-              >
-                {items.map((item) => (
-                  <TrashCard
-                    item={item}
-                    key={`${item.kind}:${item.id}:${item.episodeId}`}
-                    onPurge={purgeOne}
-                    onRestore={restoreOne}
-                    selected={selection.isSelected(item)}
-                    view={view}
-                    workspaceIconId={
-                      workspaces.find((ws) => ws.id === item.workspaceId)
-                        ?.iconId
-                    }
-                  />
-                ))}
-              </ItemList>
-            </ItemPick.Provider>
+            <div ref={revealRef}>
+              <ItemPick.Provider value={selection.pickContext}>
+                <ItemList
+                  columns={[
+                    m.list_col_name(),
+                    m.create_filter_workspace(),
+                    m.list_col_details(),
+                    m.list_col_expires(),
+                  ]}
+                  view={view}
+                >
+                  {items.map((item) => (
+                    <TrashCard
+                      item={item}
+                      key={`${item.kind}:${item.id}:${item.episodeId}`}
+                      onPurge={purgeOne}
+                      onRestore={restoreOne}
+                      selected={selection.isSelected(item)}
+                      view={view}
+                      workspaceIconId={
+                        workspaces.find((ws) => ws.id === item.workspaceId)
+                          ?.iconId
+                      }
+                    />
+                  ))}
+                </ItemList>
+              </ItemPick.Provider>
+            </div>
           )}
           <ListEnd
             fetchNextPage={fetchNextPage}

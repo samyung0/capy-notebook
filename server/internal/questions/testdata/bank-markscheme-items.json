@@ -24,8 +24,7 @@
         ],
         "answer": {
           "type": "open",
-          "accepted": ["alpha"],
-          "hints": []
+          "accepted": ["alpha"]
         },
         "marks": 6,
         "markscheme": [

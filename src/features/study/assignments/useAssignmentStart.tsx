@@ -38,10 +38,7 @@ export function useAssignmentStart(workspaceId: string, onCancel?: () => void) {
     message: string;
   } | null>(null);
   const open = (assignment: string, attempt: string) =>
-    navigate({
-      search: { assignment, attempt, study: 'assignments' as const },
-      to: '.',
-    });
+    navigate({ search: { assignment, attempt }, to: '.' });
   const run = (a: Assignment, upload = false) => {
     setStartError(null);
     mutate(

@@ -1,17 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { startAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const LAST_PUBLISHED = new RegExp(
   m.assignment_last_published({ date: '' }).trim()
 );
 
-// Epo 2026-11-05: an assignment's actions sit on its Settings tab, with no ⋮.
-test('Settings holds the actions: Republish moves the last published time, Edit quiz opens it', async ({
+// Epo 2026-11-05: an assignment's actions sit on its Settings tab, with no ⋮;
+// a graded quiz's quiz edits on its Questions tab (Epo 2026-11-15).
+test('Settings holds the actions: Republish moves the last published time', async ({
   page,
 }) => {
-  await page.goto(
-    '/workspaces/ws_bio?study=assignments&assignment=as_genetics'
-  );
+  await page.goto('/workspaces/ws_bio/assignments?assignment=as_genetics');
   await page
     .getByRole('tab', { name: m.assignment_tab_settings() })
     .click({ timeout: 60_000 });
@@ -30,36 +30,30 @@ test('Settings holds the actions: Republish moves the last published time, Edit 
     .getByRole('button', { exact: true, name: m.assignment_republish() })
     .click();
   await expect(hint).not.toHaveText(before);
-
-  await page.getByRole('link', { name: m.assignment_edit_quiz() }).click();
-  await expect(page).toHaveURL(/material=/);
-  await expect(
-    page.getByTestId('content-header').getByText('Genetics check-in')
-  ).toBeVisible({ timeout: 30_000 });
 });
 
-test('a draft has its Publish row first, and publishing brings the tabs', async ({
+test('a draft publishes from its header, and publishing brings Responses', async ({
   page,
 }) => {
-  await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_draft');
+  await page.goto('/workspaces/ws_bio/assignments?assignment=as_draft');
   await page
     .getByRole('button', { exact: true, name: m.assignment_publish() })
     .click({ timeout: 60_000 });
   await expect(
-    page.getByRole('tab', { name: m.assignment_tab_settings() })
+    page.getByRole('tab', { name: m.assignment_tab_responses() })
   ).toBeVisible();
 });
 
-test('a closed assignment keeps Edit quiz and has no Republish', async ({
-  page,
-}) => {
+test('a closed assignment has no Republish', async ({ page }) => {
   await page.goto(
-    '/workspaces/ws_bio?study=assignments&assignment=as_cells&tab=settings'
+    '/workspaces/ws_bio/assignments?assignment=as_cells&tab=settings'
   );
   await expect(
-    page.getByRole('link', { name: m.assignment_edit_quiz() })
+    page.getByRole('tab', { name: m.assignment_tab_settings() })
   ).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText(LAST_PUBLISHED)).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { exact: true, name: m.assignment_republish() })
+  ).toHaveCount(0);
 });
 
 test.describe('as a member', () => {
@@ -72,11 +66,7 @@ test.describe('as a member', () => {
   test('a page open through a republish reads the new questions', async ({
     page,
   }) => {
-    await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_paper');
-    await page
-      .getByRole('button', { exact: true, name: m.assignment_start() })
-      .click({ timeout: 30_000 });
-    await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
+    await startAssignmentAsMember(page, 'as_paper');
     const take = page.locator('[data-assignment-take]');
     const first = take.locator('h2').getByText('Which organelle makes most');
     await expect(first).toBeVisible({ timeout: 30_000 });
@@ -89,58 +79,6 @@ test.describe('as a member', () => {
     await expect(first).toHaveCount(0);
     await expect(take).toBeVisible();
   });
-
-  test('a quiz open when it gets assigned stays, and a fresh open goes to the assignment', async ({
-    page,
-  }) => {
-    const quiz = '/workspaces/ws_bio?material=qz_bio_near';
-    await page.goto(quiz);
-    await expect(page.getByTestId('content-header')).toBeVisible({
-      timeout: 60_000,
-    });
-    const assigned = await page.evaluate(async () => {
-      // The class's owner assigns it: a member's own POST makes a task for
-      // themself, which holds nothing.
-      const { assignAsMockOwner } = await import(
-        '/src/mocks/assignments.ts' as string
-      );
-      assignAsMockOwner('ws_bio', {
-        assignAll: true,
-        assignees: [],
-        attempts: 1,
-        draft: false,
-        dueAt: new Date(Date.now() + 86_400_000).toISOString(),
-        files: [],
-        kind: 'marked',
-        latePenaltyPct: 0,
-        marking: 'ai_approve',
-        noLate: false,
-        quizId: 'qz_bio_near',
-        showAnswers: 'submitted',
-        showGrades: 'automatic',
-        shuffle: false,
-        title: 'Assigned while open',
-      });
-      const paths = ['/src/api/queryClient.ts', '/src/api/client.ts'];
-      const [{ queryClient }, { qk }] = await Promise.all(
-        paths.map((path) => import(path))
-      );
-      await queryClient.invalidateQueries();
-      const list: { assignmentId?: string; id: string }[] =
-        queryClient.getQueryData(qk.materials('ws_bio'));
-      return list.find((row) => row.id === 'qz_bio_near')?.assignmentId;
-    });
-    // The list says it is assigned now, and the page stays.
-    expect(assigned).toBeTruthy();
-    await page.waitForTimeout(500);
-    await expect(page).toHaveURL(/material=qz_bio_near/);
-    await expect(page).not.toHaveURL(/assignment=/);
-    await expect(page.getByTestId('content-header')).toBeVisible();
-
-    // A quiz assigned already, opened afresh (a reload resets the mock's data).
-    await page.goto('/workspaces/ws_bio?material=qz_1');
-    await expect(page).toHaveURL(/assignment=/, { timeout: 60_000 });
-  });
 });
 
 test.describe('at phone width', () => {
@@ -150,7 +88,7 @@ test.describe('at phone width', () => {
     page,
   }) => {
     await page.goto(
-      '/workspaces/ws_bio?study=assignments&assignment=as_genetics&tab=settings'
+      '/workspaces/ws_bio/assignments?assignment=as_genetics&tab=settings'
     );
     await expect(
       page.getByRole('tab', { name: m.assignment_tab_settings() })

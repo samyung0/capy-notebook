@@ -34,6 +34,7 @@ import { answerLabels } from '@/features/questions/editorFields';
 import { TextView } from '@/features/questions/QuestionView';
 import {
   type LearnerQuestion,
+  type Question,
   type QuestionType,
   questionMarks,
 } from '@/features/questions/types';
@@ -63,7 +64,7 @@ const SAVE_AFTER_MS = 2000;
 type SaveState = 'saved' | 'saving' | 'failed';
 
 /** What a part's answer must hold to count as answered. */
-function answered(value: Answer | undefined) {
+export function answered(value: Answer | undefined) {
   if (value === undefined || value === null) return false;
   if (typeof value === 'string') return value.trim() !== '';
   if (Array.isArray(value))
@@ -74,18 +75,103 @@ function answered(value: Answer | undefined) {
 
 /** The board's large line (A2): the question's first text, taken out of what
  * the runner shows, unless it holds a gap's blanks. */
-function questionHeading(question?: LearnerQuestion) {
-  const [first, ...stem] = question?.stem ?? [];
-  if (question && first?.type === 'text')
+function questionHeading(question: LearnerQuestion | Question): {
+  rest: LearnerQuestion | Question;
+  text: string;
+} {
+  const [first, ...stem] = question.stem;
+  if (first?.type === 'text')
     return { rest: { ...question, stem }, text: first.text };
-  const part = question?.parts.length === 1 ? question.parts[0] : undefined;
+  const part = question.parts.length === 1 ? question.parts[0] : undefined;
   const [line, ...blocks] = part?.blocks ?? [];
-  if (question && part && line?.type === 'text' && part.answer.type !== 'gaps')
+  if (part && line?.type === 'text' && part.answer.type !== 'gaps')
     return {
-      rest: { ...question, parts: [{ ...part, blocks }] },
+      rest: { ...question, parts: [{ ...part, blocks }] } as
+        | LearnerQuestion
+        | Question,
       text: line.text,
     };
-  return { rest: question as LearnerQuestion, text: '' };
+  return { rest: question, text: '' };
+}
+
+/** A list row's answered mark (Epo 2026-11-13): a purple tick once every part
+ * is answered, a ring while only some are. */
+export function AnsweredMark({
+  complete,
+  label,
+}: {
+  complete: boolean;
+  label: string;
+}) {
+  return (
+    <RowMark label={label}>
+      {complete ? (
+        <Icon className="text-solid-accent-1" name="check" size={16} />
+      ) : (
+        <span className="size-2.5 rounded-full border-2 border-solid-accent-1" />
+      )}
+    </RowMark>
+  );
+}
+
+/** The answering pane's room around its question. */
+export const TAKE_PANE =
+  'px-4 pt-6 pb-6 sm:px-6 md:pb-24 lg:px-21.5 lg:pt-12 lg:pb-10';
+
+/** One question as a member answers it (A2): its number, type and marks, its
+ * first text as the large line, then its answers; `children` closes it (the
+ * row of Bookmark, Previous and Next). Staff's Preview shows the same. */
+export function TakeQuestion({
+  answers,
+  children,
+  number,
+  onChange,
+  paper = false,
+  question,
+}: {
+  answers: Answers;
+  children: ReactNode;
+  number: number;
+  onChange: (partId: string, value: Answer) => void;
+  /** Answered on paper (S5): the question alone, no field to answer in. */
+  paper?: boolean;
+  question: LearnerQuestion | Question;
+}) {
+  const type = question.parts[0]?.answer.type as QuestionType | undefined;
+  const heading = useMemo(() => questionHeading(question), [question]);
+  return (
+    <div className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3">
+      <p className="t-meta text-fg-secondary">
+        {m.assignment_question_meta({
+          marks: questionMarks(question),
+          number,
+          type: type ? answerLabels[type]() : '',
+        })}
+      </p>
+      {heading.text && (
+        <h2 className="font-extrabold text-[1.25rem] leading-snug tracking-[-0.01rem] lg:text-[1.375rem]">
+          <TextView marks text={heading.text} />
+        </h2>
+      )}
+      {/* Written answers get the paper's room on this page. */}
+      <div className="[&_textarea]:max-h-none [&_textarea]:min-h-[calc(var(--ruled-line)*10)]">
+        <QuestionRunner
+          answers={answers}
+          disabled={paper}
+          frameAnswer={paper ? () => null : undefined}
+          headerMarks={false}
+          onChange={onChange}
+          question={heading.rest}
+        />
+      </div>
+      {paper && (
+        <p className="t-meta rounded-lg bg-page-hover px-3 py-2.5 text-fg-secondary">
+          {m.assignment_paper_on_paper()}
+        </p>
+      )}
+      {children}
+    </div>
+  );
 }
 
 /** Bookmarks stay in this browser: they are only for the member to come back
@@ -407,8 +493,6 @@ export function AssignmentTake({
     files.length === 1
       ? m.assignment_paper_one_file()
       : m.assignment_paper_files({ count: files.length });
-  const type = question?.parts[0]?.answer.type as QuestionType | undefined;
-  const heading = useMemo(() => questionHeading(question), [question]);
 
   // A timed attempt always shows its clock; one only a due date ends shows it
   // in the last hour (Epo 2026-11-08).
@@ -478,16 +562,6 @@ export function AssignmentTake({
               </div>
             </header>
             <QuizSplit
-              above={
-                !paper && (
-                  <p className="t-meta px-1.5 pb-1.5 text-fg-secondary">
-                    {m.assignment_answered_of({
-                      answered: answeredCount,
-                      total: questions.length,
-                    })}
-                  </p>
-                )
-              }
               below={
                 paper && (
                   <>
@@ -603,21 +677,17 @@ export function AssignmentTake({
                     </RowMark>
                   )}
                   {!paper && isAnswered(q) ? (
-                    <RowMark label={stateLabel(q)}>
-                      <span
-                        className={cn(
-                          'size-2.5 rounded-full border-2 border-solid-accent-1',
-                          isComplete(q) && 'bg-solid-accent-1'
-                        )}
-                      />
-                    </RowMark>
+                    <AnsweredMark
+                      complete={isComplete(q)}
+                      label={stateLabel(q)}
+                    />
                   ) : (
                     questionMarks(q)
                   )}
                 </>
               )}
             >
-              <div className="px-4 pt-6 pb-6 sm:px-6 md:pb-24 lg:px-21.5 lg:pt-12 lg:pb-10">
+              <div className={TAKE_PANE}>
                 {paperOpen && (
                   <PaperPane
                     attemptId={attempt.id}
@@ -626,39 +696,14 @@ export function AssignmentTake({
                   />
                 )}
                 {!paperOpen && question && (
-                  <div
-                    className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3"
+                  <TakeQuestion
+                    answers={answers}
                     key={question.id}
+                    number={index + 1}
+                    onChange={change}
+                    paper={paper}
+                    question={question}
                   >
-                    <p className="t-meta text-fg-secondary">
-                      {m.assignment_question_meta({
-                        marks: questionMarks(question),
-                        number: index + 1,
-                        type: type ? answerLabels[type]() : '',
-                      })}
-                    </p>
-                    {heading.text && (
-                      <h2 className="font-extrabold text-[1.25rem] leading-snug tracking-[-0.01rem] lg:text-[1.375rem]">
-                        <TextView text={heading.text} />
-                      </h2>
-                    )}
-                    {/* Written answers get the paper's room on this page. */}
-                    <div className="[&_textarea]:max-h-none [&_textarea]:min-h-[calc(var(--ruled-line)*10)]">
-                      <QuestionRunner
-                        answers={answers}
-                        disabled={paper}
-                        // On paper, the question alone: no field to answer in.
-                        frameAnswer={paper ? () => null : undefined}
-                        headerMarks={false}
-                        onChange={change}
-                        question={heading.rest}
-                      />
-                    </div>
-                    {paper && (
-                      <p className="t-meta rounded-lg bg-page-hover px-3 py-2.5 text-fg-secondary">
-                        {m.assignment_paper_on_paper()}
-                      </p>
-                    )}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                       <Button
                         iconLeft="bookmark"
@@ -692,7 +737,7 @@ export function AssignmentTake({
                         </Button>
                       </div>
                     </div>
-                  </div>
+                  </TakeQuestion>
                 )}
               </div>
             </QuizSplit>

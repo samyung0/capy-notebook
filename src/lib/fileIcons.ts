@@ -271,9 +271,6 @@ export function fileIconName({
 
 /** `assigned`: a quiz under an open assignment shows the assignment's icon in
  * every list (Epo 2026-11-04). */
-export function materialIconName(
-  type: MaterialRefType,
-  assigned?: boolean
-): FileIconName {
-  return assigned ? 'assignment' : MATERIAL_ICON[type];
+export function materialIconName(type: MaterialRefType): FileIconName {
+  return MATERIAL_ICON[type];
 }

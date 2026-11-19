@@ -35,10 +35,12 @@ def tagged(tag, props, required=None):
 
 ELEMENT = {
     "oneOf": [
+        # A formula row as typed, Desmos-style LaTeX: y=..., f(x)=... or an
+        # equation in x and y (Epo 2026-11-18).
         tagged(
-            "functiongraph",
-            {"id": TEXT, "term": TEXT, "domain": PAIR, "dash": BOOL, "hidden": BOOL},
-            ["id", "term"],
+            "expression",
+            {"id": TEXT, "latex": TEXT, "dash": BOOL, "hidden": BOOL},
+            ["id", "latex"],
         ),
         tagged(
             "point",
@@ -137,14 +139,11 @@ BLOCK = {
             {
                 "board": obj({"bbox": array(NUMBER, 4, 4), "axis": BOOL, "grid": BOOL}),
                 "elements": array(ELEMENT, 1, 60),
-                "image": {
-                    "oneOf": [obj({"url": TEXT}), obj({"svg": {"type": "string"}})]
-                },
                 "width": NUMBER,
                 "height": NUMBER,
                 "description": TEXT,
             },
-            ["board", "elements", "image", "width", "height", "description"],
+            ["board", "elements", "width", "height", "description"],
         ),
         tagged(
             "image",

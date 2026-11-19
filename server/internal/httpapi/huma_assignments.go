@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -75,6 +77,14 @@ type assignmentAnswersInput struct {
 		Answers map[string]any `json:"answers"`
 	}
 }
+type assignmentGradeInput struct {
+	ID     string `path:"id"`
+	UserID string `path:"userId"`
+	Body   struct {
+		// Points is the grade; absent clears it.
+		Points *apimodel.AssignmentGrade `json:"points,omitempty"`
+	}
+}
 type assignmentMarkInput struct {
 	ID   string `path:"id"`
 	Body store.AssignmentMark
@@ -85,8 +95,9 @@ type sharingNoticeOutput struct {
 
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
-	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an assignment, freezing its quiz", http.StatusCreated, a.createAssignment)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
+	reg(api, http.MethodPost, "/api/quizzes/{id}/graded-copy", "copyQuizToGradedQuiz", tag, "Make a graded quiz from a copy of a practice quiz in the same workspace, images and all", http.StatusCreated, a.copyQuizToGradedQuiz)
 	reg(api, http.MethodGet, "/api/assignments/{id}", "getAssignment", tag, "An assignment", http.StatusOK, a.getAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}", "updateAssignment", tag, "Change an assignment's settings", http.StatusOK, a.updateAssignment)
 	reg(api, http.MethodDelete, "/api/assignments/{id}", "deleteAssignment", tag, "Delete an assignment with its results", http.StatusNoContent, a.deleteAssignment)
@@ -94,7 +105,6 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
-	reg(api, http.MethodPost, "/api/assignments/{id}/practice", "turnAssignmentToPractice", tag, "Make a closed assignment's quiz practice for members when its answers are not shown", http.StatusOK, a.turnAssignmentToPractice)
 	reg(api, http.MethodPut, "/api/assignments/{id}/done", "setAssignmentDone", tag, "A member's tick on an unmarked assignment", http.StatusNoContent, a.setAssignmentDone)
 	reg(api, http.MethodPut, "/api/assignments/{id}/todo-check", "setAssignmentTodoCheck", tag, "Tick an assignment, or the answers waiting on it, off the caller's To do without doing it", http.StatusNoContent, a.setAssignmentTodoCheck)
 	reg(api, http.MethodPost, "/api/assignments/{id}/start", "startAssignment", tag, "Start an attempt, starting its clock, or return the one running", http.StatusOK, a.startAssignment)
@@ -107,6 +117,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sharing-notice", "getSharingNotice", tag, "Whether a class member is yet to be told what they share", http.StatusOK, a.getSharingNotice)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/sharing-notice", "markSharingNoticeSeen", tag, "Record that a class member was told what they share", http.StatusNoContent, a.markSharingNoticeSeen)
 	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/marks", "markAssignmentAnswer", tag, "Set or change a question's marks and comment in a member's answers", http.StatusOK, a.markAssignmentAnswer)
+	reg(api, http.MethodPut, "/api/assignments/{id}/grades/{userId}", "setAssignmentGrade", tag, "Set or clear a member's grade on an assignment graded on points", http.StatusNoContent, a.setAssignmentGrade)
 }
 
 // assignmentError answers a refused assignment with copy the browser shows.
@@ -127,8 +138,32 @@ func assignmentError(err error) error {
 	return hErr(err)
 }
 
-func (a *api) listAssignments(ctx context.Context, in *workspaceIDInput) (*assignmentListOutput, error) {
-	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now())
+// assignmentPage is Study → Assignments' and a member's To do's page size.
+const assignmentPage = 50
+
+type assignmentListInput struct {
+	ID     string `path:"id"`
+	Closed bool   `query:"closed" doc:"Keep the closed ones"`
+	Done   bool   `query:"done" doc:"Keep the ones the caller has done"`
+	Topic  string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
+	Sort   string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
+	Dir    string `query:"dir" enum:"asc,desc" default:"asc"`
+	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+}
+
+func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*assignmentListOutput, error) {
+	offset := 0
+	if in.Cursor != "" {
+		n, err := strconv.Atoi(in.Cursor)
+		if err != nil || n < 0 {
+			return nil, hErr(store.ErrInvalidCursor)
+		}
+		offset = n
+	}
+	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now(), store.AssignmentListParams{
+		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic),
+		Sort: in.Sort, Ascending: in.Dir == "asc", Offset: offset, Limit: assignmentPage,
+	})
 	if err != nil {
 		return nil, assignmentError(err)
 	}
@@ -155,28 +190,25 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
 		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, Files: b.Files,
+		Points: (*int)(b.Points),
 	}
 }
 
-// formQuiz reads a marked form's quiz to freeze, unless it is a draft. Its
-// maker must be able to open the quiz; the store then holds an assignment to
-// its class's, and a task someone sets themself to any they can open.
-func (a *api) formQuiz(ctx context.Context, form *store.AssignmentForm) error {
-	if form.Kind != store.AssignmentMarked {
+// gradedQuizForm is a question maker's graded quiz (Epo 2026-11-16): the
+// New graded quiz dialog's settings, made with the quiz. Nil: none.
+func gradedQuizForm(b *apimodel.AssignmentFormReq) *store.AssignmentForm {
+	if b == nil {
 		return nil
 	}
-	if form.QuizID == "" {
-		return huma.Error422UnprocessableEntity("choose a quiz")
+	form := assignmentForm(*b)
+	return &form
+}
+
+// gradedQuizMade tells a new graded quiz's members and staff (createAssignment).
+func (a *api) gradedQuizMade(ctx context.Context, assignmentID string) {
+	if assignmentID != "" {
+		a.publishTodo(ctx, a.todoAudience(ctx, assignmentID, false)...)
 	}
-	if form.Draft {
-		return nil
-	}
-	if _, err := a.materialRead(ctx, form.QuizID); err != nil {
-		return hErr(err)
-	}
-	qs, err := a.quizForFreezing(ctx, form.QuizID)
-	form.Questions = qs
-	return err
 }
 
 func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (*assignmentOutput, error) {
@@ -192,15 +224,63 @@ func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (
 	if role == "" {
 		return nil, hErr(store.ErrNotFound)
 	}
-	form := assignmentForm(in.Body)
-	if err := a.formQuiz(ctx, &form); err != nil {
-		return nil, err
-	}
-	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, form, time.Now())
+	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, assignmentForm(in.Body), time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
 	a.publishTodo(ctx, a.todoAudience(ctx, res.ID, false)...)
+	return &assignmentOutput{Body: res}, nil
+}
+
+type copyQuizToGradedQuizInput struct {
+	ID   string `path:"id" maxLength:"64" doc:"The quiz to copy: a practice quiz, or another graded quiz's own"`
+	Body apimodel.CopyQuizToGradedQuizReq
+}
+
+// copyQuizToGradedQuiz makes a graded quiz from a copy of a quiz of the
+// workspace the caller edits (Epo 2026-11-16): a practice quiz, hidden or not,
+// or another graded quiz's own, last term's reused. The copy is the source as
+// it is now, live edits projected.
+func (a *api) copyQuizToGradedQuiz(ctx context.Context, in *copyQuizToGradedQuizInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	source, err := a.s.GetMaterial(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	// A practice quiz of a workspace: a graded quiz's own quiz is an assignment
+	// already, not one to start another from (Epo 2026-11-16).
+	if source.Kind != store.MaterialQuiz || source.WorkspaceID == "" || source.AssignmentID != "" {
+		return nil, hErr(store.ErrNotFound)
+	}
+	if err := a.assertWorkspaceEditor(ctx, source.WorkspaceID); err != nil {
+		return nil, hErr(err)
+	}
+	ws, err := a.s.GetWorkspaceShared(ctx, source.WorkspaceID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	qs, err := a.quizForFreezing(ctx, source.ID)
+	if err != nil {
+		return nil, err
+	}
+	form := assignmentForm(in.Body.GradedQuiz)
+	title, err := a.s.DisambiguateMaterialTitle(ctx, ws.ID, form.Title)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.CopyQuizToGradedQuiz(ctx, store.QuizCopy{
+		ActorID: userID(ctx), WorkspaceID: ws.ID, WorkspaceName: ws.Name,
+		SourceID: source.ID, Questions: qs, Title: title, Form: form,
+	}, time.Now())
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	if err != nil {
+		return nil, bankError(err)
+	}
+	a.gradedQuizMade(ctx, res.ID)
 	return &assignmentOutput{Body: res}, nil
 }
 
@@ -316,17 +396,6 @@ func (a *api) releaseAssignmentGrades(ctx context.Context, in *assignmentIDInput
 	}
 	for i := range sent {
 		a.publishNotificationEvent(ctx, sent[i].UserID, notificationEvent{Type: "created", Notification: &sent[i]})
-	}
-	return &assignmentOutput{Body: res}, nil
-}
-
-func (a *api) turnAssignmentToPractice(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
-		return nil, err
-	}
-	res, err := a.s.TurnAssignmentToPractice(ctx, userID(ctx), in.ID, time.Now())
-	if err != nil {
-		return nil, assignmentError(err)
 	}
 	return &assignmentOutput{Body: res}, nil
 }
@@ -505,6 +574,19 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 	}
 	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), res.UserID)...)
 	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
+}
+
+// setAssignmentGrade is staff entering a member's grade on a graded Assignment
+// (Epo 2026-11-14); the member's To do and staff's lists refresh.
+func (a *api) setAssignmentGrade(ctx context.Context, in *assignmentGradeInput) (*Empty, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	if err := a.s.SetAssignmentGrade(ctx, userID(ctx), in.ID, in.UserID, (*float64)(in.Body.Points), time.Now()); err != nil {
+		return nil, assignmentError(err)
+	}
+	a.publishTodo(ctx, append(a.todoAudience(ctx, in.ID, true), in.UserID)...)
+	return &Empty{}, nil
 }
 
 // getSharingNotice reads the caller's own flag, so it needs no access check.

@@ -3,7 +3,9 @@ package httpapi_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -11,8 +13,67 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 )
+
+// gradedQuizQuestion is one multiple choice question for a graded quiz.
+var gradedQuizQuestion = map[string]any{
+	"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+	"parts": []map[string]any{{
+		"id": "q1:part:1", "blocks": []map[string]any{{"type": "text", "text": "Pick the second"}},
+		"answer": map[string]any{"type": "mcq", "options": []string{"a", "b"}, "correct": []int{1}},
+		"marks":  1, "solution": []any{},
+	}},
+}
+
+// gradedQuizForm is the New graded quiz dialog's settings: given to every
+// member, due in an hour, marked as marking says.
+func gradedQuizForm(title, marking string) map[string]any {
+	return map[string]any{
+		"kind": "marked", "title": title, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
+		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": true, "assignees": []string{}, "draft": false,
+		"marking": marking, "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
+	}
+}
+
+// postGradedQuiz makes a quiz of these questions with its graded quiz in one
+// request in the seeded workspace, as Create blank does (createMaterial's
+// gradedQuiz, Epo 2026-11-16).
+func postGradedQuiz(t *testing.T, h http.Handler, user string, questions any, form map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(questions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := materialdoc.QuizDocument(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var content map[string]any
+	if err := json.Unmarshal([]byte(doc), &content); err != nil {
+		t.Fatal(err)
+	}
+	return doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/materials", user, map[string]any{
+		"kind": "quiz", "title": fmt.Sprintf("%s %d", form["title"], time.Now().UnixNano()), "content": content, "gradedQuiz": form,
+	})
+}
+
+// makeGradedQuiz is postGradedQuiz made, returning the graded quiz's id and its
+// quiz's; it is deleted, with its quiz, after the test.
+func makeGradedQuiz(t *testing.T, h http.Handler, user string, questions any, form map[string]any) (assignmentID, quizID string) {
+	t.Helper()
+	rec := postGradedQuiz(t, h, user, questions, form)
+	var made struct {
+		ID           string `json:"id"`
+		AssignmentID string `json:"assignmentId"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &made); err != nil || rec.Code != http.StatusCreated || made.AssignmentID == "" {
+		t.Fatalf("make a graded quiz: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/assignments/"+made.AssignmentID, "u_owner", nil) })
+	return made.AssignmentID, made.ID
+}
 
 // TestAssignmentRoutesAuthorize walks the routes as each role, on the seeded
 // workspace where u_owner, u_editor and u_viewer are members and u_other is not:
@@ -63,39 +124,18 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	setKind("class")
 	t.Cleanup(func() { setKind("personal") })
 
-	quiz := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
-		"name": fmt.Sprintf("Assignment routes %d", time.Now().UnixNano()), "workspaceId": "ws_e2e_private", "topics": []string{},
-		"questions": []map[string]any{{
-			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": []map[string]any{{
-				"id": "q1:part:1", "blocks": []map[string]any{{"type": "text", "text": "Pick the second"}},
-				"answer": map[string]any{"type": "mcq", "options": []string{"a", "b"}, "correct": []int{1}},
-				"marks":  1, "solution": []any{},
-			}},
-		}},
-	})
-	if quiz.Code != http.StatusCreated {
-		t.Fatalf("create quiz: status = %d body=%s", quiz.Code, quiz.Body.String())
+	// A graded quiz is made with its questions (Epo 2026-11-16): never from a
+	// quiz that already exists, and only by the class's staff.
+	form := gradedQuizForm("Routes", "ai_approve")
+	form["latePenaltyPct"] = 20
+	named := maps.Clone(form)
+	named["quizId"] = "qz_e2e_private"
+	if rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_editor", named); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a graded quiz from an existing quiz: status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	var made struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(quiz.Body.Bytes(), &made); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil)
-	})
-	form := map[string]any{
-		"kind": "marked", "title": "Routes", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
-		"attempts": 1, "noLate": false, "latePenaltyPct": 20, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": "ai_approve", "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	}
-	// A viewer member gives out nothing: theirs is a task for themself, which
-	// the class's staff do not read.
-	for user, want := range map[string]int{"u_viewer": http.StatusUnprocessableEntity, "u_other": http.StatusNotFound} {
-		if rec := doReq(t, h, http.MethodPost, ws+"/assignments", user, form); rec.Code != want {
-			t.Fatalf("%s creates: status = %d body=%s", user, rec.Code, rec.Body.String())
+	for user, want := range map[string]int{"u_viewer": http.StatusForbidden, "u_other": http.StatusNotFound} {
+		if rec := postGradedQuiz(t, h, user, []any{gradedQuizQuestion}, form); rec.Code != want {
+			t.Fatalf("%s makes a graded quiz: status = %d body=%s", user, rec.Code, rec.Body.String())
 		}
 	}
 	mine := doReq(t, h, http.MethodPost, ws+"/assignments", "u_viewer", map[string]any{
@@ -114,46 +154,8 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	if rec := doReq(t, h, http.MethodDelete, "/api/assignments/"+task.ID, "u_viewer", nil); rec.Code != http.StatusNoContent {
 		t.Fatalf("a viewer deletes their task: status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	// A task for oneself takes a quiz too (Epo 2026-11-11), from any workspace
-	// its maker can open it in: they take it and read its report, and the
-	// class's staff reach none of it.
-	marked := doReq(t, h, http.MethodPost, "/api/todo/tasks", "u_viewer", map[string]any{
-		"kind": "marked", "title": "Mock paper", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
-		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": false, "assignees": []string{"u_viewer"}, "draft": false,
-		"marking": "manual", "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	})
-	var paper struct {
-		ID        string `json:"id"`
-		Questions int    `json:"questions"`
-	}
-	if err := json.Unmarshal(marked.Body.Bytes(), &paper); err != nil || marked.Code != http.StatusCreated || paper.Questions != 1 {
-		t.Fatalf("a viewer's marked task: status = %d body=%s", marked.Code, marked.Body.String())
-	}
-	if rec := doReq(t, h, http.MethodPost, "/api/assignments/"+paper.ID+"/start", "u_viewer", map[string]any{}); rec.Code != http.StatusOK {
-		t.Fatalf("its maker starts it: status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	for user, want := range map[string]int{"u_viewer": http.StatusOK, "u_owner": http.StatusNotFound} {
-		if rec := doReq(t, h, http.MethodGet, "/api/assignments/"+paper.ID+"/report", user, nil); rec.Code != want {
-			t.Fatalf("%s reads a marked task's report: status = %d body=%s", user, rec.Code, rec.Body.String())
-		}
-	}
-	if rec := doReq(t, h, http.MethodDelete, "/api/assignments/"+paper.ID, "u_viewer", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("its maker deletes a marked task: status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	created := doReq(t, h, http.MethodPost, ws+"/assignments", "u_editor", form)
-	if created.Code != http.StatusCreated {
-		t.Fatalf("an editor creates: status = %d body=%s", created.Code, created.Body.String())
-	}
-	var assignment struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(created.Body.Bytes(), &assignment); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		doReq(t, h, http.MethodDelete, "/api/assignments/"+assignment.ID, "u_owner", nil)
-	})
-	path := "/api/assignments/" + assignment.ID
+	assignmentID, quizID := makeGradedQuiz(t, h, "u_editor", []any{gradedQuizQuestion}, form)
+	path := "/api/assignments/" + assignmentID
 
 	for _, user := range []string{"u_viewer", "u_other"} {
 		for _, call := range []struct {
@@ -216,7 +218,7 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 
 	// While it is open its assignee gets neither the quiz nor a key, and no
 	// viewer clones in a class; staff do.
-	quizPath := "/api/quizzes/" + made.ID
+	quizPath := "/api/quizzes/" + quizID
 	check := map[string]any{"questionId": "q1", "answers": map[string]any{"q1:part:1": []int{1}}}
 	if rec := doReq(t, h, http.MethodGet, quizPath, "u_viewer", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("the assignee reads the quiz: status = %d", rec.Code)
@@ -230,17 +232,15 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	if rec := doReq(t, h, http.MethodPost, ws+"/clone", "u_viewer", map[string]any{"name": "Copy"}); rec.Code != http.StatusNotFound {
 		t.Fatalf("a class viewer clones: status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if rec := doReq(t, h, http.MethodPost, "/api/materials/"+made.ID+"/clone", "u_viewer", map[string]any{"title": "Copy"}); rec.Code != http.StatusNotFound {
+	if rec := doReq(t, h, http.MethodPost, "/api/materials/"+quizID+"/clone", "u_viewer", map[string]any{"title": "Copy"}); rec.Code != http.StatusNotFound {
 		t.Fatalf("a class viewer clones the quiz: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	if rec := doReq(t, h, http.MethodPut, path+"/closed", "u_owner", map[string]any{"closed": true}); rec.Code != http.StatusOK {
 		t.Fatalf("close: status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if rec := doReq(t, h, http.MethodGet, quizPath, "u_viewer", nil); rec.Code != http.StatusOK {
+	// The graded quiz owns its quiz: closing does not show it to members.
+	if rec := doReq(t, h, http.MethodGet, quizPath, "u_viewer", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("after closing the member reads the quiz: status = %d", rec.Code)
-	}
-	if rec := doReq(t, h, http.MethodPost, quizPath+"/check", "u_viewer", check); rec.Code != http.StatusOK {
-		t.Fatalf("after closing the member checks the quiz: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	// The notice, told once.
@@ -368,43 +368,8 @@ func startedAssignment(t *testing.T, h http.Handler) string {
 	}
 	setKind("class")
 	t.Cleanup(func() { setKind("personal") })
-	quiz := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
-		"name": fmt.Sprintf("Closing %d", time.Now().UnixNano()), "workspaceId": "ws_e2e_private", "topics": []string{},
-		"questions": []map[string]any{{
-			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": []map[string]any{{
-				"id": "q1:part:1", "blocks": []map[string]any{{"type": "text", "text": "Pick the second"}},
-				"answer": map[string]any{"type": "mcq", "options": []string{"a", "b"}, "correct": []int{1}},
-				"marks":  1, "solution": []any{},
-			}},
-		}},
-	})
-	if quiz.Code != http.StatusCreated {
-		t.Fatalf("create quiz: status = %d body=%s", quiz.Code, quiz.Body.String())
-	}
-	var made struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(quiz.Body.Bytes(), &made); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil) })
-	created := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
-		"kind": "marked", "title": "Closing", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
-		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": "ai_approve", "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	})
-	if created.Code != http.StatusCreated && created.Code != http.StatusOK {
-		t.Fatalf("create assignment: status = %d body=%s", created.Code, created.Body.String())
-	}
-	var assignment struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(created.Body.Bytes(), &assignment); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/assignments/"+assignment.ID, "u_owner", nil) })
-	path := "/api/assignments/" + assignment.ID
+	assignmentID, _ := makeGradedQuiz(t, h, "u_owner", []any{gradedQuizQuestion}, gradedQuizForm("Closing", "ai_approve"))
+	path := "/api/assignments/" + assignmentID
 	if rec := doReq(t, h, http.MethodPost, path+"/start", "u_viewer", map[string]any{}); rec.Code != http.StatusOK {
 		t.Fatalf("a member starts: status = %d body=%s", rec.Code, rec.Body.String())
 	}

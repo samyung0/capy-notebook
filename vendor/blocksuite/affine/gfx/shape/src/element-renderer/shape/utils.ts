@@ -9,11 +9,12 @@ import {
   wrapText,
   wrapTextDeltas,
 } from '@blocksuite/affine-gfx-text';
-import type {
-  LocalShapeElementModel,
-  ShapeElementModel,
-  TextAlign,
-  TextVerticalAlign,
+import {
+  type LocalShapeElementModel,
+  POLYGON_SHAPES,
+  type ShapeElementModel,
+  type TextAlign,
+  type TextVerticalAlign,
 } from '@blocksuite/affine-model';
 import { FeatureFlagService } from '@blocksuite/affine-shared/services';
 import type { Bound, SerializedXYWH } from '@blocksuite/global/gfx';
@@ -49,6 +50,12 @@ export function drawGeneralShape(
       break;
     case 'triangle':
       drawTriangle(ctx, 0, 0, w, h);
+      break;
+    default: {
+      // Capy (local change 46): the board's polygons.
+      const corners = POLYGON_SHAPES[shapeModel.shapeType];
+      if (corners) drawPolygon(ctx, corners, w, h);
+    }
   }
 
   ctx.lineWidth = shapeModel.strokeWidth;
@@ -118,6 +125,20 @@ function drawRect(
   ctx.arcTo(x, y + height, x, y + height - r, r);
   ctx.lineTo(x, y + r);
   ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawPolygon(
+  ctx: CanvasRenderingContext2D,
+  corners: [number, number][],
+  width: number,
+  height: number
+) {
+  ctx.beginPath();
+  corners.forEach(([fx, fy], i) => {
+    if (i === 0) ctx.moveTo(fx * width, fy * height);
+    else ctx.lineTo(fx * width, fy * height);
+  });
   ctx.closePath();
 }
 

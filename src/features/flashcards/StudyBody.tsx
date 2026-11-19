@@ -82,6 +82,7 @@ export function StudyBody({
   cards,
   topic,
   embedded,
+  fill,
   footer,
   frame,
   name,
@@ -102,6 +103,9 @@ export function StudyBody({
   topic?: string;
   /** Inside a note: no header, frame or page padding. */
   embedded?: boolean;
+  /** A canvas card (Epo 2026-11-13): the card face takes the height the box
+   * has, under the count and above the steps, instead of the window's. */
+  fill?: boolean;
   footer?: ReactNode;
   frame?: Frame;
   name: string;
@@ -243,7 +247,7 @@ export function StudyBody({
             takenAt={takenAt}
             usePrevious={usePrevious}
           />
-          {/* Where a quiz result has Redo quiz, sized like it. */}
+          {/* Where a quiz result has its Study again, sized like it. */}
           <div className="mt-12 flex justify-end">
             <Button
               className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
@@ -268,11 +272,18 @@ export function StudyBody({
 
   return (
     <Shell header={header}>
-      <div className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6')}>
-        <div className="mx-auto flex max-w-160 flex-col gap-6">
+      <div
+        className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6', fill && 'h-full')}
+      >
+        <div
+          className={cn(
+            'mx-auto flex max-w-160 flex-col gap-6',
+            fill && 'h-full gap-3'
+          )}
+        >
           {card ? (
             <>
-              <div>
+              <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
                 {embedded ? (
                   <p className="t-meta mb-1 text-center text-fg-muted">
                     {m.flashcards_card_of_total({ position, total })}
@@ -286,6 +297,7 @@ export function StudyBody({
                 )}
                 <CardStack
                   card={card}
+                  fill={fill}
                   label={topic}
                   onRate={rate}
                   rated={shown.record}
@@ -295,9 +307,20 @@ export function StudyBody({
               <StepNav
                 canNext={!!shown?.past || steps.steps.queue.length > 1}
                 canPrevious={steps.steps.cursor > 0}
-                className="pt-2"
+                className={cn(!fill && 'pt-2')}
                 onNext={next}
                 onPrevious={previous}
+                start={
+                  // An embedded set has no header for Reset: it starts the run
+                  // over from the far left of this row once it has moved on
+                  // (Epo 2026-11-13).
+                  embedded &&
+                  (rated.length > 0 || steps.steps.cursor > 0) && (
+                    <Button onClick={studyAgain} size="sm" variant="outline">
+                      {m.action_reset()}
+                    </Button>
+                  )
+                }
               />
             </>
           ) : (
@@ -305,9 +328,7 @@ export function StudyBody({
               <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
                 <Icon className="non-scaling-svg" name="check" size={30} />
               </span>
-              <h2 className="t-large-card-title">
-                {m.flashcards_empty_flashcards()}
-              </h2>
+              <h2 className="t-large-card-title">{m.common_nothing_yet()}</h2>
             </div>
           )}
           {footer}

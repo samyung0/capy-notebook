@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentFormReq } from './assignmentFormReq.ts';
 import type { Envelope } from './envelope.ts';
 import type { MaterialKind } from './materialKind.ts';
 
@@ -12,6 +13,8 @@ export interface CreateMaterialReq {
   readonly $schema?: string;
   /** Versioned Plate document */
   content?: Envelope;
+  /** The New graded quiz dialog's settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId) */
+  gradedQuiz?: AssignmentFormReq;
   /** Material kind */
   kind: MaterialKind;
   /** @nullable */

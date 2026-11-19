@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import { mountDrawingBoard } from '@/features/blocksuite/drawingBoard';
+import { usePlaneEditor } from '@/features/questions/PlaneEditorHost';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, errorCopy } from '@/lib/errors';
@@ -120,6 +121,7 @@ export default function DrawingBoardScreen({
   withImage?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const { openPlane, planeEditor } = usePlaneEditor();
   /** Names this board's pictures in the page's memory where no draft does. */
   const screen = useId();
   // The board mounts once; closing reads the latest handler.
@@ -249,6 +251,7 @@ export default function DrawingBoardScreen({
               },
             },
             onChange: readOnly ? undefined : keep,
+            openPlane,
             readOnly,
             saved: kept?.doc ?? saved,
           });
@@ -426,6 +429,7 @@ export default function DrawingBoardScreen({
       role="dialog"
     >
       <div className="absolute inset-0 [&>div]:h-full" ref={host} />
+      {planeEditor}
       {!ready && (
         <div className="absolute inset-0 grid place-items-center">
           <Spinner />

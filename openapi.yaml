@@ -453,12 +453,13 @@ components:
           type: boolean
         own:
           type: boolean
+        points:
+          format: int64
+          type: integer
         postedAt:
           format: date-time
           type: string
         postedBy:
-          type: string
-        practiceQuizId:
           type: string
         questions:
           format: int64
@@ -783,6 +784,11 @@ components:
           type: string
         noLate:
           type: boolean
+        points:
+          format: int64
+          maximum: 1000
+          minimum: 1
+          type: integer
         quizId:
           type: string
         showAnswers:
@@ -822,6 +828,22 @@ components:
         - shuffle
         - files
       type: object
+    AssignmentGradeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AssignmentGradeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        points:
+          format: double
+          maximum: 1000
+          minimum: 0
+          multipleOf: 0.1
+          type: number
+      type: object
     AssignmentItemReport:
       additionalProperties: false
       properties:
@@ -858,6 +880,8 @@ components:
         members:
           format: int64
           type: integer
+        nextCursor:
+          type: string
       required:
         - items
       type: object
@@ -893,16 +917,14 @@ components:
         notGraded:
           format: int64
           type: integer
-        practiceAt:
-          format: date-time
-          type: string
+        quizChanged:
+          type: boolean
         quizId:
           type: string
         quizTitle:
           type: string
-        quizTrashed:
-          type: boolean
-        quizWorkspaceId:
+        quizUpdatedAt:
+          format: date-time
           type: string
         showAnswers:
           enum:
@@ -920,8 +942,6 @@ components:
         toApprove:
           format: int64
           type: integer
-        toPractice:
-          type: boolean
       required:
         - assignAll
         - assignees
@@ -1104,6 +1124,9 @@ components:
     AssignmentPartReport:
       additionalProperties: false
       properties:
+        average:
+          format: double
+          type: number
         items:
           items:
             $ref: "#/components/schemas/AssignmentItemReport"
@@ -1117,6 +1140,9 @@ components:
           type: array
         partId:
           type: string
+        percent:
+          format: double
+          type: number
         wrongAnswers:
           items:
             $ref: "#/components/schemas/AssignmentWrongAnswer"
@@ -1366,25 +1392,6 @@ components:
         - startedAt
         - takenAt
       type: object
-    AttemptsOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/AttemptsOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/Attempt"
-          type: array
-        more:
-          type: boolean
-      required:
-        - items
-        - more
-      type: object
     AutoReloadReq:
       additionalProperties: false
       properties:
@@ -1561,6 +1568,66 @@ components:
           type: array
       required:
         - topics
+      type: object
+    BankQuestionsCopyReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankQuestionsCopyReq.json
+          format: uri
+          readOnly: true
+          type: string
+        bank:
+          description: me, or a class workspace's id
+          maxLength: 64
+          minLength: 1
+          type: string
+        questionIds:
+          description: Bank questions to copy, in this order
+          items:
+            type: string
+          maxItems: 150
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+        - bank
+        - questionIds
+      type: object
+    BankQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: "The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz): the quiz is made with the graded quiz that owns it (assignmentId)"
+        questionIds:
+          description: Bank questions to copy, in this order
+          items:
+            type: string
+          maxItems: 150
+          minItems: 1
+          type: array
+          uniqueItems: true
+        title:
+          maxLength: 120
+          minLength: 1
+          type: string
+        workspaceId:
+          description: The workspace the quiz is made in; the caller edits it
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+        - workspaceId
+        - questionIds
+        - title
       type: object
     BankReviewInputBody:
       additionalProperties: false
@@ -1850,6 +1917,24 @@ components:
         - netTokens
         - access
       type: object
+    CanvasBoardBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CanvasBoardBody.json
+          format: uri
+          readOnly: true
+          type: string
+        updates:
+          description: "The board's stored Yjs state as V1 updates, base64, applied in order: the base state, then each update stored after it; empty for a canvas never opened"
+          items:
+            format: base64
+            type: string
+          type: array
+      required:
+        - updates
+      type: object
     CanvasBody:
       additionalProperties: false
       properties:
@@ -1859,50 +1944,78 @@ components:
           format: uri
           readOnly: true
           type: string
-        boardAssetId:
-          description: The saved board's editor asset (gzipped Yjs update); empty before the first save
-          type: string
+        capabilities:
+          $ref: "#/components/schemas/AccessCapabilities"
         id:
           description: The canvas material
           type: string
         imageAssetIds:
-          description: The canvas's images, as image editor assets
+          description: The images on the board at its last projection, as image editor assets
           items:
             type: string
           type: array
+        own:
+          description: The caller made it
+          type: boolean
         ownImageAssetIds:
-          description: "Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name"
+          description: Every ready image asset of this canvas, one the pruner trashed included
           items:
             type: string
           type: array
         revision:
-          description: The material's revision; a save sends the one it read
+          description: The material's revision
           format: int64
           type: integer
+        role:
+          $ref: "#/components/schemas/WorkspaceRole"
+          description: "The caller's role on the canvas: owner (its creator), or their workspace role on another member's shared one; absent on one opened from the Trash"
+        shared:
+          description: "Shared with its workspace: the members hold it by their workspace role"
+          type: boolean
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
+          description: The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only
         title:
           type: string
+        trash:
+          $ref: "#/components/schemas/Trashed"
+          description: The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board
         updatedAt:
           format: date-time
           type: string
         version:
-          description: Counts the saves
+          description: The room's stored version at its last projection; 0 before the first
           format: int64
           type: integer
+        workspaceId:
+          description: The workspace it was drawn in; none for a canvas of one's own
+          type: string
       required:
         - id
         - title
         - revision
-        - boardAssetId
         - version
         - imageAssetIds
         - ownImageAssetIds
+        - shared
+        - own
         - updatedAt
+        - capabilities
       type: object
     CanvasListItem:
       additionalProperties: false
       properties:
+        creatorName:
+          description: Who made it, on another member's canvas; absent on the caller's own
+          type: string
         id:
           type: string
+        own:
+          description: The caller made it
+          type: boolean
+        shared:
+          description: "Shared with its workspace: the members hold it by their workspace role"
+          type: boolean
         title:
           type: string
         updatedAt:
@@ -1918,6 +2031,8 @@ components:
       required:
         - id
         - title
+        - shared
+        - own
         - updatedAt
       type: object
     CanvasPage:
@@ -2248,42 +2363,6 @@ components:
         - createdAt
         - updatedAt
       type: object
-    ComputationCheckReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ComputationCheckReq.json
-          format: uri
-          readOnly: true
-          type: string
-        partId:
-          type: string
-        question:
-          additionalProperties: {}
-          type: object
-      required:
-        - question
-        - partId
-      type: object
-    ComputationCheckResp:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ComputationCheckResp.json
-          format: uri
-          readOnly: true
-          type: string
-        computational:
-          type: boolean
-        probability:
-          format: double
-          type: number
-      required:
-        - computational
-        - probability
-      type: object
     ConfirmExtractionReq:
       additionalProperties: false
       properties:
@@ -2314,6 +2393,22 @@ components:
       required:
         - id
         - type
+      type: object
+    ContinueOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ContinueOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/HistoryRow"
+          type: array
+      required:
+        - items
       type: object
     Conversation:
       additionalProperties: false
@@ -2371,6 +2466,39 @@ components:
           type: string
       required:
         - items
+      type: object
+    CopyBankQuestionsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CopyBankQuestionsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          description: The copies in the shared question format, in the order asked, for the editor to insert through the quiz's live rooms
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+      required:
+        - questions
+      type: object
+    CopyQuizToGradedQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CopyQuizToGradedQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: The graded quiz's settings (marked, no quizId); its title also names the new quiz
+      required:
+        - gradedQuiz
       type: object
     Cover:
       additionalProperties: false
@@ -2449,6 +2577,10 @@ components:
         title:
           maxLength: 120
           minLength: 1
+          type: string
+        workspaceId:
+          description: The workspace it is drawn in, the caller a member; none for a canvas of their own
+          maxLength: 64
           type: string
       required:
         - title
@@ -2595,6 +2727,9 @@ components:
           items:
             $ref: "#/components/schemas/ExtractionFile"
           type: array
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: "The New graded quiz dialog's settings, checked before the run starts: the run's quiz is made with the graded quiz that owns it (Extraction.assignmentId)"
         hidden:
           type: boolean
         paper:
@@ -2641,6 +2776,9 @@ components:
         content:
           $ref: "#/components/schemas/Envelope"
           description: Versioned Plate document
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: "The New graded quiz dialog's settings: a quiz is made with the graded quiz that owns it, in one write (marked, no quizId)"
         kind:
           $ref: "#/components/schemas/MaterialKind"
           description: Material kind
@@ -3087,6 +3225,8 @@ components:
       properties:
         assetId:
           type: string
+        bank:
+          type: boolean
         createdAt:
           format: date-time
           type: string
@@ -3268,6 +3408,8 @@ components:
         answered:
           format: int64
           type: integer
+        assignmentId:
+          type: string
         confirmed:
           format: int64
           type: integer
@@ -3758,7 +3900,11 @@ components:
         fileIds:
           items:
             type: string
+          maxItems: 5
           type: array
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
@@ -3842,6 +3988,78 @@ components:
           type: boolean
       required:
         - hidden
+      type: object
+    HistoryRow:
+      additionalProperties: false
+      properties:
+        answered:
+          format: int64
+          type: integer
+        at:
+          format: date-time
+          type: string
+        correct:
+          format: double
+          type: number
+        group:
+          enum:
+            - topic
+            - others
+            - workspace
+          type: string
+        iconId:
+          type: string
+        id:
+          type: string
+        items:
+          format: int64
+          type: integer
+        kind:
+          enum:
+            - revision
+            - quiz
+            - flashcards
+          type: string
+        materialId:
+          nullable: true
+          type: string
+        name:
+          type: string
+        status:
+          enum:
+            - done
+            - partial
+            - open
+          type: string
+        topicId:
+          type: string
+        topics:
+          items:
+            type: string
+          type: array
+        total:
+          format: double
+          type: number
+        workspaceId:
+          nullable: true
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - kind
+        - at
+        - workspaceId
+        - workspaceName
+        - iconId
+        - name
+        - materialId
+        - topics
+        - correct
+        - total
+        - answered
+        - items
+        - status
       type: object
     ImportSourcesAccepted:
       additionalProperties: false
@@ -4155,6 +4373,139 @@ components:
         - count
         - recent
       type: object
+    ItemBank:
+      additionalProperties: false
+      properties:
+        count:
+          description: Questions in it
+          format: int64
+          type: integer
+        id:
+          description: me for the caller's own bank, else the class workspace's id
+          type: string
+        kind:
+          enum:
+            - personal
+            - workspace
+          type: string
+        name:
+          description: The workspace's name; empty for the caller's own bank
+          type: string
+      required:
+        - id
+        - kind
+        - name
+        - count
+      type: object
+    ItemBankPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ItemBankPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ItemBankQuestion"
+          type: array
+        nextCursor:
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
+    ItemBankQuestion:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ItemBankQuestion.json
+          format: uri
+          readOnly: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        question:
+          additionalProperties: {}
+          type: object
+        tags:
+          items:
+            type: string
+          type: array
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - question
+        - tags
+        - createdAt
+        - updatedAt
+      type: object
+    ItemBankQuestionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ItemBankQuestionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        question:
+          additionalProperties: {}
+          description: A question in the shared question format, as a quiz holds it
+          type: object
+        tags:
+          description: Free-text tags, without commas
+          items:
+            maxLength: 35
+            type: string
+          maxItems: 10
+          type: array
+      required:
+        - question
+        - tags
+      type: object
+    ItemBankTagsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ItemBankTagsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        tags:
+          items:
+            type: string
+          type: array
+      required:
+        - tags
+      type: object
+    ItemBanksOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ItemBanksOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ItemBank"
+          type: array
+      required:
+        - items
+      type: object
     ItemPage:
       additionalProperties: false
       properties:
@@ -4241,25 +4592,10 @@ components:
     LearningRow:
       additionalProperties: false
       properties:
-        answered:
-          format: int64
-          type: integer
-        at:
-          format: date-time
-          type: string
-        group:
-          enum:
-            - topic
-            - others
-            - workspace
-            - ""
-          type: string
         iconId:
           type: string
         kind:
           enum:
-            - session
-            - quiz
             - start
             - review
           type: string
@@ -4271,13 +4607,9 @@ components:
             - flashcards
             - ""
           type: string
-        sessionId:
-          type: string
         suggestion:
           $ref: "#/components/schemas/ReviewSuggestion"
         title:
-          type: string
-        topicName:
           type: string
         total:
           format: int64
@@ -4291,7 +4623,6 @@ components:
         - workspaceId
         - workspaceName
         - iconId
-        - answered
         - total
       type: object
     LearningTeach:
@@ -4480,6 +4811,8 @@ components:
           example: https://example.com/schemas/Material.json
           format: uri
           readOnly: true
+          type: string
+        assignmentId:
           type: string
         audioMaxBytes:
           format: int64
@@ -4706,10 +5039,6 @@ components:
     MaterialListItem:
       additionalProperties: false
       properties:
-        assigned:
-          type: boolean
-        assignmentId:
-          type: string
         cardCount:
           format: int64
           type: integer
@@ -4789,10 +5118,6 @@ components:
     MaterialRef:
       additionalProperties: false
       properties:
-        assigned:
-          type: boolean
-        assignmentId:
-          type: string
         createdAt:
           format: date-time
           type: string
@@ -5715,25 +6040,6 @@ components:
         - answered
         - total
       type: object
-    PastReviewsOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/PastReviewsOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/PastReview"
-          type: array
-        more:
-          type: boolean
-      required:
-        - items
-        - more
-      type: object
     PaymentMethod:
       additionalProperties: false
       properties:
@@ -5785,13 +6091,13 @@ components:
           format: uri
           readOnly: true
           type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PracticeItem"
+          type: array
         members:
           format: int64
           type: integer
-        quizzes:
-          items:
-            $ref: "#/components/schemas/PracticeQuiz"
-          type: array
         reviews:
           items:
             $ref: "#/components/schemas/PracticeReview"
@@ -5802,25 +6108,31 @@ components:
           type: array
       required:
         - suggestions
-        - quizzes
+        - items
         - reviews
       type: object
-    PracticeQuiz:
+    PracticeItem:
       additionalProperties: false
       properties:
-        assignmentClosedAt:
-          format: date-time
-          type: string
         average:
           format: double
           type: number
         best:
           $ref: "#/components/schemas/SessionScore"
+        covers:
+          items:
+            type: string
+          type: array
         id:
+          type: string
+        kind:
+          enum:
+            - quiz
+            - flashcards
           type: string
         onlyYou:
           type: boolean
-        questions:
+        size:
           format: int64
           type: integer
         title:
@@ -5831,9 +6143,11 @@ components:
           format: int64
           type: integer
       required:
+        - kind
         - id
         - title
-        - questions
+        - covers
+        - size
       type: object
     PracticeReview:
       additionalProperties: false
@@ -6987,74 +7301,17 @@ components:
         - reviewedBy
         - reviewerName
       type: object
-    SaveCanvasInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SaveCanvasInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        boardAssetId:
-          description: "The new board asset, uploaded first: a ready board asset of this canvas"
-          maxLength: 64
-          minLength: 1
-          type: string
-        imageAssetIds:
-          description: "The canvas's images now: ready image assets of this canvas"
-          items:
-            type: string
-          maxItems: 1000
-          nullable: true
-          type: array
-        revision:
-          description: The revision the browser read; another tab's save since is refused (409)
-          format: int64
-          minimum: 1
-          type: integer
-      required:
-        - revision
-        - boardAssetId
-        - imageAssetIds
-      type: object
-    SaveOwnCanvasInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SaveOwnCanvasInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        boardAssetId:
-          description: "The new board asset, uploaded first: a ready board asset of this canvas"
-          maxLength: 64
-          minLength: 1
-          type: string
-        imageAssetIds:
-          description: "The canvas's images now: ready image assets of this canvas"
-          items:
-            type: string
-          maxItems: 1000
-          nullable: true
-          type: array
-        revision:
-          description: The revision the browser read; another tab's save since is refused (409)
-          format: int64
-          minimum: 1
-          type: integer
-      required:
-        - revision
-        - boardAssetId
-        - imageAssetIds
-      type: object
     SearchKind:
       enum:
         - workspace
         - file
         - event
+        - note
+        - quiz
         - flashcards
+        - mindmap
+        - diagram
+        - canvas
       type: string
     SearchResult:
       additionalProperties: false
@@ -7069,14 +7326,7 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/SearchKind"
-        preview:
-          additionalProperties: true
-          description: A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md
-          type: object
         subtitle:
-          type: string
-        thumbnailUrl:
-          description: Hour-stable presigned GET of a file's page-1 thumbnail
           type: string
         title:
           type: string
@@ -8022,13 +8272,13 @@ components:
         filesBytes:
           format: int64
           type: integer
-        otherBytes:
+        imagesBytes:
           format: int64
           type: integer
       required:
         - filesBytes
+        - imagesBytes
         - canvasBytes
-        - otherBytes
       type: object
     StorageFullBy:
       enum:
@@ -8041,6 +8291,25 @@ components:
         - near_limit
         - full
       type: string
+    StudyHistoryOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyHistoryOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/HistoryRow"
+          type: array
+        more:
+          type: boolean
+      required:
+        - items
+        - more
+      type: object
     StudyPreferences:
       additionalProperties: false
       properties:
@@ -8831,6 +9100,21 @@ components:
         - answered
         - total
         - lastAnswerAt
+      type: object
+    UpdateCanvasInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateCanvasInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        shared:
+          description: "Shared with the workspace it was drawn in: the members hold it by their workspace role"
+          type: boolean
+      required:
+        - shared
       type: object
     UpdateCommentReq:
       additionalProperties: false
@@ -10150,6 +10434,38 @@ paths:
       summary: A member's tick on an unmarked assignment
       tags:
         - Assignments
+  /api/assignments/{id}/grades/{userId}:
+    put:
+      operationId: setAssignmentGrade
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentGradeInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set or clear a member's grade on an assignment graded on points
+      tags:
+        - Assignments
   /api/assignments/{id}/hand-in/{fileId}:
     delete:
       operationId: removeHandInFile
@@ -10233,31 +10549,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Have the AI mark the answers still waiting, in the background
-      tags:
-        - Assignments
-  /api/assignments/{id}/practice:
-    post:
-      operationId: turnAssignmentToPractice
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Assignment"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Make a closed assignment's quiz practice for members when its answers are not shown
       tags:
         - Assignments
   /api/assignments/{id}/publish:
@@ -10418,76 +10709,6 @@ paths:
       summary: Tick an assignment, or the answers waiting on it, off the caller's To do without doing it
       tags:
         - Assignments
-  /api/attempts:
-    get:
-      operationId: listAttempts
-      parameters:
-        - explode: false
-          in: query
-          name: sort
-          schema:
-            default: date
-            enum:
-              - date
-              - score
-              - quiz
-              - workspace
-            type: string
-        - explode: false
-          in: query
-          name: dir
-          schema:
-            default: desc
-            enum:
-              - asc
-              - desc
-            type: string
-        - description: Comma-separated workspace ids; the quiz's or set's current workspace
-          explode: false
-          in: query
-          name: workspaceId
-          schema:
-            description: Comma-separated workspace ids; the quiz's or set's current workspace
-            type: string
-        - description: "Comma-separated kinds: quiz, flashcards; empty is both"
-          explode: false
-          in: query
-          name: kind
-          schema:
-            description: "Comma-separated kinds: quiz, flashcards; empty is both"
-            type: string
-        - explode: false
-          in: query
-          name: offset
-          schema:
-            format: int64
-            minimum: 0
-            type: integer
-        - explode: false
-          in: query
-          name: limit
-          schema:
-            default: 30
-            format: int64
-            maximum: 100
-            minimum: 1
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AttemptsOutputBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List attempts
-      tags:
-        - Quizzes
   /api/attempts/{id}:
     get:
       operationId: getAttempt
@@ -11167,6 +11388,14 @@ paths:
           schema:
             description: Opaque cursor from the previous page
             type: string
+        - description: "This workspace's canvases, latest saved first: the caller's and the other members' shared ones"
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: "This workspace's canvases, latest saved first: the caller's and the other members' shared ones"
+            maxLength: 64
+            type: string
       responses:
         "200":
           content:
@@ -11180,7 +11409,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "The caller's canvases a page at a time: their own, latest saved first, then their workspaces'"
+      summary: "Canvases a page at a time: the caller's own, latest saved first, then the ones they drew in their workspaces; or, for a workspace, the ones they drew there and the other members' shared ones"
       tags:
         - materials
     post:
@@ -11204,7 +11433,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Make a canvas of the caller's own, in no workspace
+      summary: Make a private canvas of the caller's, in a workspace they are a member of or in none
       tags:
         - materials
   /api/canvases/{id}:
@@ -11232,11 +11461,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: One of the caller's canvases
+      summary: A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only
       tags:
         - materials
-    put:
-      operationId: saveCanvas
+    patch:
+      operationId: updateCanvas
       parameters:
         - description: Canvas material id
           in: path
@@ -11250,7 +11479,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SaveOwnCanvasInputBody"
+              $ref: "#/components/schemas/UpdateCanvasInputBody"
         required: true
       responses:
         "200":
@@ -11265,7 +11494,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Record a save of one of the caller's canvases, as a workspace canvas's
+      summary: Share a canvas with the workspace it was drawn in, or take it back
+      tags:
+        - materials
+  /api/canvases/{id}/board:
+    get:
+      operationId: getTrashedCanvasBoard
+      parameters:
+        - description: Canvas material id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Canvas material id
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanvasBoardBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's
       tags:
         - materials
   /api/chat/edit-operations/{operationId}/undo:
@@ -12884,6 +13141,266 @@ paths:
       summary: Disconnect a provider
       tags:
         - Billing & integrations
+  /api/item-banks:
+    get:
+      operationId: listItemBanks
+      parameters:
+        - description: "The workspace the caller is in: its class bank comes first when they are its staff"
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: "The workspace the caller is in: its class bank comes first when they are its staff"
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemBanksOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "The banks the caller may use: a class workspace's when they are its staff, then their own"
+      tags:
+        - Item banks
+  /api/item-banks/{bank}/questions:
+    get:
+      operationId: listItemBankQuestions
+      parameters:
+        - description: me, or a class workspace's id
+          in: path
+          name: bank
+          required: true
+          schema:
+            description: me, or a class workspace's id
+            maxLength: 64
+            type: string
+        - description: Words the question's text or answers hold
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Words the question's text or answers hold
+            maxLength: 200
+            type: string
+        - description: "Comma-separated: questions holding any of these tags"
+          explode: false
+          in: query
+          name: tags
+          schema:
+            description: "Comma-separated: questions holding any of these tags"
+            maxLength: 2000
+            type: string
+        - description: "Comma-separated topic ids: a class bank's questions with any of these as a topic of their own"
+          explode: false
+          in: query
+          name: topics
+          schema:
+            description: "Comma-separated topic ids: a class bank's questions with any of these as a topic of their own"
+            maxLength: 2000
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemBankPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A bank's questions, newest first, a page at a time, with the filtered count
+      tags:
+        - Item banks
+    post:
+      operationId: createItemBankQuestion
+      parameters:
+        - description: me, or a class workspace's id
+          in: path
+          name: bank
+          required: true
+          schema:
+            description: me, or a class workspace's id
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemBankQuestionReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemBankQuestion"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Copy a question into a bank
+      tags:
+        - Item banks
+  /api/item-banks/{bank}/questions/{id}:
+    delete:
+      operationId: deleteItemBankQuestion
+      parameters:
+        - description: me, or a class workspace's id
+          in: path
+          name: bank
+          required: true
+          schema:
+            description: me, or a class workspace's id
+            maxLength: 64
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a bank question
+      tags:
+        - Item banks
+    put:
+      operationId: updateItemBankQuestion
+      parameters:
+        - description: me, or a class workspace's id
+          in: path
+          name: bank
+          required: true
+          schema:
+            description: me, or a class workspace's id
+            maxLength: 64
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemBankQuestionReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemBankQuestion"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace a bank question and its tags
+      tags:
+        - Item banks
+  /api/item-banks/{bank}/quizzes:
+    post:
+      operationId: createBankQuiz
+      parameters:
+        - description: me, or a class workspace's id
+          in: path
+          name: bank
+          required: true
+          schema:
+            description: me, or a class workspace's id
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankQuizReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Copy picked bank questions, images and all, into a new quiz in a workspace the caller edits
+      tags:
+        - Item banks
+  /api/item-banks/{bank}/tags:
+    get:
+      operationId: listItemBankTags
+      parameters:
+        - description: me, or a class workspace's id
+          in: path
+          name: bank
+          required: true
+          schema:
+            description: me, or a class workspace's id
+            maxLength: 64
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemBankTagsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Every tag a bank's questions hold
+      tags:
+        - Item banks
   /api/items:
     get:
       operationId: listItems
@@ -13053,6 +13570,141 @@ paths:
       summary: Update a label
       tags:
         - Schedule
+  /api/learning/continue:
+    get:
+      operationId: listContinue
+      parameters:
+        - description: One workspace's Continue; empty is every workspace's
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: One workspace's Continue; empty is every workspace's
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContinueOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Study's Continue: the newest revisions and tries that can go on, left within the week"
+      tags:
+        - Study
+  /api/learning/continue/{kind}/{id}:
+    delete:
+      operationId: hideContinue
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema:
+            enum:
+              - revision
+              - quiz
+              - flashcards
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a revision or try from Continue; History keeps it
+      tags:
+        - Study
+  /api/learning/history:
+    get:
+      operationId: listStudyHistory
+      parameters:
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            default: date
+            enum:
+              - date
+              - workspace
+              - name
+              - topic
+              - score
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Comma-separated workspace ids; an attempt's quiz or set's current workspace
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: Comma-separated workspace ids; an attempt's quiz or set's current workspace
+            type: string
+        - description: "Comma-separated kinds: revision, quiz, flashcards; empty is all"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: revision, quiz, flashcards; empty is all"
+            type: string
+        - description: "Comma-separated statuses: done, partial, open; empty is all"
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: "Comma-separated statuses: done, partial, open; empty is all"
+            type: string
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            format: int64
+            minimum: 0
+            type: integer
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 30
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyHistoryOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Revisions and quiz and flashcard attempts, with what can go on
+      tags:
+        - Study
   /api/learning/overview:
     get:
       operationId: getLearningOverview
@@ -14269,31 +14921,6 @@ paths:
       summary: Check public workspace metadata
       tags:
         - Sharing
-  /api/questions/computation-check:
-    post:
-      operationId: checkQuestionComputation
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ComputationCheckReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ComputationCheckResp"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Check whether an open part needs computation to grade
-      tags:
-        - Quizzes
   /api/quizzes:
     post:
       operationId: createQuiz
@@ -14372,6 +14999,40 @@ paths:
       summary: Get a quiz to view or take, without answers
       tags:
         - Quizzes
+  /api/quizzes/{id}/bank-questions:
+    post:
+      operationId: copyBankQuestionsToQuiz
+      parameters:
+        - description: The quiz the copies are for
+          in: path
+          name: id
+          required: true
+          schema:
+            description: The quiz the copies are for
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankQuestionsCopyReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopyBankQuestionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Copy picked bank questions, images and all, for a quiz the caller edits; the editor inserts the copies itself
+      tags:
+        - Item banks
   /api/quizzes/{id}/check:
     post:
       operationId: checkQuizQuestion
@@ -14428,6 +15089,40 @@ paths:
       summary: Get a quiz with its answers to edit it
       tags:
         - Quizzes
+  /api/quizzes/{id}/graded-copy:
+    post:
+      operationId: copyQuizToGradedQuiz
+      parameters:
+        - description: "The quiz to copy: a practice quiz, or another graded quiz's own"
+          in: path
+          name: id
+          required: true
+          schema:
+            description: "The quiz to copy: a practice quiz, or another graded quiz's own"
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyQuizToGradedQuizReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make a graded quiz from a copy of a practice quiz in the same workspace, images and all
+      tags:
+        - Assignments
   /api/quizzes/{id}/metadata:
     patch:
       operationId: updateQuizMetadata
@@ -14563,79 +15258,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Record a flashcard's review rating
-      tags:
-        - Study
-  /api/review/sessions:
-    get:
-      operationId: listPastReviews
-      parameters:
-        - explode: false
-          in: query
-          name: sort
-          schema:
-            default: date
-            enum:
-              - date
-              - quiz
-              - cards
-              - time
-              - workspace
-              - topic
-              - status
-            type: string
-        - explode: false
-          in: query
-          name: dir
-          schema:
-            default: desc
-            enum:
-              - asc
-              - desc
-            type: string
-        - description: Comma-separated workspace ids
-          explode: false
-          in: query
-          name: workspaceId
-          schema:
-            description: Comma-separated workspace ids
-            type: string
-        - description: "Comma-separated: quiz, flashcards; a session with either passes"
-          explode: false
-          in: query
-          name: has
-          schema:
-            description: "Comma-separated: quiz, flashcards; a session with either passes"
-            type: string
-        - explode: false
-          in: query
-          name: offset
-          schema:
-            format: int64
-            minimum: 0
-            type: integer
-        - explode: false
-          in: query
-          name: limit
-          schema:
-            default: 30
-            format: int64
-            maximum: 100
-            minimum: 1
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PastReviewsOutputBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Finished review sessions with their quiz and flashcard results
       tags:
         - Study
   /api/review/sessions/{id}:
@@ -15537,6 +16159,56 @@ paths:
           required: true
           schema:
             type: string
+        - description: Keep the closed ones
+          explode: false
+          in: query
+          name: closed
+          schema:
+            description: Keep the closed ones
+            type: boolean
+        - description: Keep the ones the caller has done
+          explode: false
+          in: query
+          name: done
+          schema:
+            description: Keep the ones the caller has done
+            type: boolean
+        - description: "Comma-separated topic ids: only those on one of them"
+          explode: false
+          in: query
+          name: topic
+          schema:
+            description: "Comma-separated topic ids: only those on one of them"
+            type: string
+        - description: A column to order by, open ones still first; none is the page's own order
+          explode: false
+          in: query
+          name: sort
+          schema:
+            description: A column to order by, open ones still first; none is the page's own order
+            enum:
+              - title
+              - kind
+              - topic
+              - posted
+              - due
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: asc
+            enum:
+              - asc
+              - desc
+            type: string
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
@@ -15550,7 +16222,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise"
+      summary: "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise"
       tags:
         - Assignments
     post:
@@ -15580,68 +16252,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Give a class an assignment, freezing its quiz
+      summary: Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
       tags:
         - Assignments
-  /api/workspaces/{id}/canvas:
-    get:
-      operationId: workspaceCanvas
-      parameters:
-        - description: Workspace id
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Workspace id
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CanvasBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: The caller's own canvas in the workspace, made on first open
-      tags:
-        - materials
-    put:
-      operationId: saveWorkspaceCanvas
-      parameters:
-        - description: Workspace id
-          in: path
-          name: id
-          required: true
-          schema:
-            description: Workspace id
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaveCanvasInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CanvasBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: "Record a save of the caller's canvas: its new board asset and images; the server counts the version"
-      tags:
-        - materials
   /api/workspaces/{id}/clone:
     post:
       operationId: cloneWorkspace
@@ -16243,7 +16856,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "The workspace's Practice page: suggestions, quizzes and the caller's topic reviews"
+      summary: "The workspace's Practice page: suggestions, quizzes and sets, and the caller's topic reviews"
       tags:
         - Study
   /api/workspaces/{id}/recent:

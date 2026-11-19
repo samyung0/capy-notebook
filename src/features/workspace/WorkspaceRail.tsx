@@ -4,8 +4,10 @@ import type { Workspace } from '@/api/types';
 import { ProfileMenu } from '@/components/app/ProfileMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { useAssignmentCount } from '@/features/study/assignments/useAssignmentCount';
+import { useMembersNeedAction } from '@/features/study/members/membersAttention';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -18,7 +20,6 @@ export type WorkspaceSection =
   | 'files'
   | 'agent'
   | 'todo'
-  | 'practice'
   | 'members'
   | 'study'
   | 'canvas';
@@ -26,14 +27,17 @@ export type WorkspaceSection =
 /** The sections that are one of Study's former pages, and back. */
 export const SECTION_PAGE = {
   members: 'members',
-  practice: 'practice',
   study: 'summary',
   todo: 'assignments',
 } as const satisfies Partial<Record<WorkspaceSection, StudyPage>>;
+/** The rail row a page belongs to: Practice is a tab of Study (Epo
+ * 2026-11-13). */
 export const PAGE_SECTION = {
   assignments: 'todo',
+  bank: 'study',
+  history: 'study',
   members: 'members',
-  practice: 'practice',
+  practice: 'study',
   summary: 'study',
 } as const satisfies Record<StudyPage, WorkspaceSection>;
 
@@ -68,11 +72,6 @@ export function workspaceSections(
         }
       : { icon: 'todo' as const, label: m.nav_todo(), value: 'todo' as const },
     {
-      icon: 'quiz' as const,
-      label: m.study_panel_practice(),
-      value: 'practice' as const,
-    },
-    {
       icon: 'userGroup' as const,
       label: m.study_panel_members(),
       value: 'members' as const,
@@ -103,6 +102,7 @@ const ITEM =
 function RailItem({
   active,
   count,
+  dot,
   icon,
   label,
   onClick,
@@ -110,6 +110,8 @@ function RailItem({
   active: boolean;
   /** What waits there, by the icon. */
   count?: number;
+  /** Something waits there with no count to show. */
+  dot?: boolean;
   icon: IconName;
   label: string;
   onClick: () => void;
@@ -127,10 +129,11 @@ function RailItem({
       <span className="relative">
         <Icon name={icon} size={20} />
         {!!count && (
-          <span className="absolute -top-1.5 left-3.5 min-w-4 rounded-full bg-tint-accent-1 px-1 text-center font-bold text-[10px] text-tint-accent-1-fg leading-4">
+          <span className="absolute -top-1.5 left-3.5 min-w-4 rounded-full bg-solid-error px-1 text-center font-bold text-[10px] text-white leading-4">
             {count}
           </span>
         )}
+        {dot && <PendingDot className="-top-1 -right-1.5" />}
       </span>
       <span>{label}</span>
     </button>
@@ -138,29 +141,34 @@ function RailItem({
 }
 
 /** The labelled icon rail on every workspace page from md, so iPads keep it:
- * Workspaces back to the list, the sections, and your avatar opening the workspace and account menu.
+ * Workspaces back to the list, the sections, Settings opening the workspace's
+ * settings dialog, and your avatar opening the workspace and account menu.
  * From lg Files and Agent open panels; below, the Files dropdown and the pages.
  * To do carries the count the Study panel showed beside Assignments. */
 export function WorkspaceRail({
   accountItems,
   active,
   onSelect,
+  onSettings,
   workspace,
 }: {
   /** The workspace part of the avatar's menu (Invite, settings, Clone). */
   accountItems: MenuItem[];
   active: WorkspaceSection;
   onSelect: (section: WorkspaceSection) => void;
+  /** Opens Workspace settings, for whoever has them (Epo 2026-11-13). */
+  onSettings?: () => void;
   workspace: Pick<Workspace, 'id' | 'kind' | 'name' | 'role'>;
 }) {
   const { data: unread } = useUnreadNotificationCount({ errorBoundary: false });
   const assignmentCount = useAssignmentCount(workspace);
+  const membersNeedAction = useMembersNeedAction(workspace);
   return (
     // No panel of its own: on the shell like the app sidebar's background, so a
     // page frame shows straight through.
     <nav
       aria-label={m.workspace_rail_label()}
-      className="flex h-full w-19 shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3"
+      className="flex h-full w-17 shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3"
     >
       <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
         <Icon name="navigationBack" size={20} />
@@ -170,13 +178,22 @@ export function WorkspaceRail({
         <RailItem
           active={active === section.value}
           count={section.value === 'todo' ? assignmentCount : undefined}
+          dot={section.value === 'members' && membersNeedAction}
           icon={section.icon}
           key={section.value}
           label={section.label}
           onClick={() => onSelect(section.value)}
         />
       ))}
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col items-center gap-2">
+        {onSettings && (
+          <RailItem
+            active={false}
+            icon="settings"
+            label={m.workspace_rail_settings()}
+            onClick={onSettings}
+          />
+        )}
         <ProfileMenu
           dot={(unread?.count ?? 0) > 0}
           notifications

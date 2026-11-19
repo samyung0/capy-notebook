@@ -25,4 +25,4 @@ Answer shapes, by answer type:
 | `gaps` | one string per gap, in gap order |
 
 Matching and ordering answer by text because `LearnerView` shuffles their options
-and items. Open parts are graded by Jev and are not here.
+and items. Open parts are graded by the grading model and are not here.

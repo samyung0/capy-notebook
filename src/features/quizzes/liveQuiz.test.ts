@@ -4,11 +4,16 @@ import * as Y from 'yjs';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { itemUndo, pairedUndo } from '@/features/collaboration/undo';
 import { LOCAL_EDIT } from '@/features/collaboration/yText';
-import { exampleQuestions } from '@/features/questions/questionFixtures';
+import {
+  exampleQuestion,
+  exampleQuestions,
+} from '@/features/questions/questionFixtures';
 import type { Question, QuestionBlock } from '@/features/questions/types';
+import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import {
   applyReaderMessage,
+  insertQuestions,
   itemParts,
   keysScope,
   questionsScope,
@@ -25,7 +30,7 @@ const rich: Question = {
     {
       ...exampleQuestions[0].parts[0],
       blocks: [
-        { label: 'Source A', text: 'Read $x^2$.', type: 'text' },
+        { text: 'Read $x^2$.', type: 'text' },
         {
           header: true,
           rows: [
@@ -121,6 +126,91 @@ it('gives learners no key, and matching and ordering only from the pushed lists'
   expect([...content.share.keys()]).toEqual(['questions']);
 });
 
+it('keeps Multiple answer and gives learners checkboxes with one correct option', () => {
+  const question = exampleQuestion('multiple', {
+    correct: [1],
+    multiple: true,
+    options: ['Nucleus', 'Mitochondria', 'Ribosome'],
+    type: 'mcq',
+  });
+  expect(validateQuestion(question)).toEqual(question);
+  const content = new Y.Doc();
+  const keys = new Y.Doc();
+  seedQuiz(content, keys, [question]);
+  expect(readQuestions(content, keys)).toEqual([question]);
+  expect(readLearnerQuestions(content)[0].parts[0].answer).toMatchObject({
+    multiple: true,
+  });
+});
+
+it('keeps Shuffle options with its lock on its option and shuffles learners around it', () => {
+  const question = exampleQuestion('shuffle', {
+    correct: [1],
+    locked: [3],
+    options: ['Nucleus', 'Mitochondria', 'Ribosome', 'None of these'],
+    shuffle: true,
+    type: 'mcq',
+  });
+  expect(validateQuestion(question)).toEqual(question);
+  const content = new Y.Doc();
+  const keys = new Y.Doc();
+  seedQuiz(content, keys, [question]);
+  expect(readQuestions(content, keys)).toEqual([question]);
+  const answer = readLearnerQuestions(content)[0].parts[0].answer;
+  expect(answer.type === 'mcq' && answer.order?.[3]).toBe(3);
+  expect(answer.type === 'mcq' && [...(answer.order ?? [])].sort()).toEqual([
+    0, 1, 2, 3,
+  ]);
+  // The lock follows its option when the options move.
+  const moved = structuredClone(question);
+  const part = moved.parts[0];
+  if (part.answer.type !== 'mcq') throw new Error('mcq');
+  part.answer = {
+    ...part.answer,
+    correct: [2],
+    locked: [0],
+    options: ['None of these', 'Nucleus', 'Mitochondria', 'Ribosome'],
+  };
+  writeQuestion(content, keys, moved, 'parity');
+  expect(readQuestions(content, keys)).toEqual([moved]);
+  // Turning it off drops the locks.
+  part.answer = { ...part.answer, locked: undefined, shuffle: undefined };
+  writeQuestion(content, keys, moved, 'parity');
+  expect(readQuestions(content, keys)[0].parts[0].answer).toEqual({
+    correct: [2],
+    options: ['None of these', 'Nucleus', 'Mitochondria', 'Ribosome'],
+    type: 'mcq',
+  });
+});
+
+// A learner's shuffled options keep the order already shown (the stored,
+// server-seeded view) through every sync; one that no longer fits is seeded
+// by the quiz and part, the same on each read.
+it('keeps the shuffled order a learner already sees', () => {
+  const question = exampleQuestion('shown', {
+    correct: [1],
+    locked: [3],
+    options: ['Nucleus', 'Mitochondria', 'Ribosome', 'None of these'],
+    shuffle: true,
+    type: 'mcq',
+  });
+  const content = new Y.Doc();
+  seedQuiz(content, new Y.Doc(), [question]);
+  const partId = question.parts[0].id;
+  const order = (shown?: number[]) => {
+    const answer = readLearnerQuestions(content, undefined, {
+      quizId: 'qz_1',
+      shown: shown && new Map([[partId, shown]]),
+    })[0].parts[0].answer;
+    return answer.type === 'mcq' ? answer.order : undefined;
+  };
+  expect(order([2, 0, 1, 3])).toEqual([2, 0, 1, 3]);
+  // The locked option out of place: seeded instead, stable.
+  expect(order([3, 0, 1, 2])).toEqual(order());
+  expect(order()).toEqual(order());
+  expect(order()?.[3]).toBe(3);
+});
+
 it('writes one typed character as one small change and keeps option ids', () => {
   const { content, keys } = quiz();
   const before = Y.encodeStateVector(content);
@@ -208,6 +298,29 @@ it('undoes an answer type change in both documents as one step', () => {
   expect(undo.canUndo()).toBe(false);
   undo.redo();
   expect(readQuestions(content, keys)[0]).toEqual(next);
+});
+
+it('inserts bank copies after the open question in the order picked, undone as one step', () => {
+  const { content, keys } = quiz();
+  const undo = pairedUndo(
+    new Y.UndoManager(content, { trackedOrigins: new Set([LOCAL_EDIT]) }),
+    new Y.UndoManager(keys, { trackedOrigins: new Set([LOCAL_EDIT]) })
+  );
+  const copy = (id: string): Question => ({
+    ...structuredClone(questions[0]),
+    id,
+    parts: questions[0].parts.map((part, i) => ({ ...part, id: `${id}-${i}` })),
+  });
+  insertQuestions(content, keys, [copy('b1'), copy('b2')], 0);
+  const ids = readQuestions(content, keys).map((question) => question.id);
+  expect(ids).toEqual([
+    questions[0].id,
+    'b1',
+    'b2',
+    ...questions.slice(1).map((question) => question.id),
+  ]);
+  undo.undo();
+  expect(readQuestions(content, keys)).toEqual(questions);
 });
 
 it('undoes only the latest edit when another document changed earlier', () => {

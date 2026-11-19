@@ -1657,7 +1657,7 @@ function seedAttempt(
     | 'total'
     | 'workspaceId'
   >,
-  /** Open parts' item marks, standing in for Jev's. */
+  /** Open parts' item marks, standing in for the grading model's. */
   itemAwards: Record<string, number[]> = {}
 ): SeedAttempt {
   const graded = gradeQuestions(quiz.questions, answers);

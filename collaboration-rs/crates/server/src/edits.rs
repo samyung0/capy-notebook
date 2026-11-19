@@ -404,6 +404,29 @@ fn material_room(request: &DocumentRequest) -> Result<(String, String, i64), Doc
     }
 }
 
+/// Why no agent tool, command or detailed read reaches a canvas: its board
+/// is written and read by its editors' own tabs alone. Every route answers
+/// it 409 `unsupported_operation`, unreported: the refusal is permanent and
+/// the caller's to avoid.
+pub const CANVAS_REFUSED: &str = "a canvas's board is edited only in its editor";
+
+/// Whether the material is a canvas, read before any of its rooms or rows is
+/// touched.
+async fn is_canvas(app: &Shared, material_id: &str) -> Result<bool, DocumentError> {
+    let client = app
+        .db
+        .get()
+        .await
+        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let found = client
+        .query_opt(
+            "SELECT 1 FROM materials WHERE id=$1 AND kind='canvas'",
+            &[&material_id],
+        )
+        .await?;
+    Ok(found.is_some())
+}
+
 /// `inspectMaterialDocument`: the blocks as the editors see them now, the
 /// stored document with this replica's live rooms merged in (unsaved
 /// typing), as an edit reads it; no room load, no bootstrap write.
@@ -412,6 +435,9 @@ pub async fn inspect_material(
     request: &DocumentRequest,
 ) -> Result<Value, DocumentError> {
     let (_, material_id, schema) = material_room(request)?;
+    if is_canvas(app, &material_id).await? {
+        return Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED));
+    }
     let blocks = material_blocks(app, &material_id, schema).await?;
     Ok(json!({ "blocks": blocks, "roomSchema": schema }))
 }
@@ -548,7 +574,10 @@ async fn material_blocks(
 /// a detailed read of the note (inspect_document), only when the room is
 /// loaded here (one process holds every room) and holds edits its projected
 /// content lacks; else none, and the read uses the stored content. One room
-/// per request, so no answer nears the API's answer cap.
+/// per request, so no answer nears the API's answer cap. A loaded canvas's
+/// board is refused ([CANVAS_REFUSED]); one not loaded is none like any
+/// room this process does not hold, as telling it from a note would cost
+/// every note's read a query.
 pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError> {
     let none = json!({ "content": null });
     if !matches!(
@@ -564,8 +593,12 @@ pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError>
     if handle.tx.send(RoomCmd::LiveNote(reply)).await.is_err() {
         return Ok(none);
     }
-    let Ok(Ok(Some(state))) = tokio::time::timeout(SNAPSHOT_WAIT, answer).await else {
-        return Ok(none);
+    let state = match tokio::time::timeout(SNAPSHOT_WAIT, answer).await {
+        Ok(Ok(Ok(Some(state)))) => state,
+        Ok(Ok(Err(crate::room::IsBoard))) => {
+            return Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED));
+        }
+        _ => return Ok(none),
     };
     let value = tokio::task::spawn_blocking(move || {
         let doc = ydoc::scratch_doc();
@@ -1029,6 +1062,9 @@ fn compute(
                     notes::repair::emptied(&mut txn, &kind);
                     outcome
                 }
+                Model::Board => {
+                    return Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED));
+                }
             };
             let offered = cost <= ydoc::MAX_UPDATE_BYTES;
             (outcome, Some(Captured::of(&mut txn)), offered)
@@ -1169,6 +1205,9 @@ pub async fn edit_material(
     );
     if app.evictions.blocks(&room, false) {
         return Err(DocumentError::Unavailable(ROOM_RESET));
+    }
+    if is_canvas(app, &material_id).await? {
+        return Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED));
     }
     let change = match undo {
         Some(undo) => {
@@ -2127,6 +2166,12 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     if app.evictions.blocks(&command.room, false) {
         return Err(ROOM_RESET.into());
     }
+    if is_canvas(app, &material_id)
+        .await
+        .map_err(|error| error.message().to_owned())?
+    {
+        return Err(CANVAS_REFUSED.into());
+    }
     let live = live_state(app, &command.room).await;
     let mut client = app.db.get().await.map_err(|error| error.to_string())?;
     let tx = client
@@ -2360,6 +2405,7 @@ fn replace_on(
             let mut txn = doc.transact_mut();
             item.replace_block(&mut txn, &command.replacement_block)?;
         }
+        Model::Board => return Err(CANVAS_REFUSED.into()),
     }
     if !scratch.changed() {
         return Ok(None);

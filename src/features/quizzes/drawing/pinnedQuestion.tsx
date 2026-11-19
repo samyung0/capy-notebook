@@ -1,5 +1,6 @@
 import type { Question, QuestionPart } from '@/api/types';
 import { fullPartLabel } from '@/features/questions/groups';
+import { stripMarks } from '@/features/questions/parseMarkedText';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import type { LearnerPart, LearnerQuestion } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -38,7 +39,7 @@ export function pinnedQuestion(
         ? m.question_ui_one_mark()
         : m.question_ui_marks({ count: part.marks }),
     short: [questionNumber, label].filter(Boolean).join(' '),
-    summary: first?.type === 'text' ? first.text : '',
+    summary: first?.type === 'text' ? stripMarks(first.text) : '',
     title: label ? `${number} ${label}` : number,
   };
 }

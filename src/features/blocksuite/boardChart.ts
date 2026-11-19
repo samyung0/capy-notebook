@@ -4,7 +4,7 @@ import {
   elementsCtorMap,
 } from '@blocksuite/affine/blocks/surface';
 import {
-  Bound,
+  type Bound,
   getPointsFromBoundWithRotation,
   type IVec,
   linePolygonIntersects,
@@ -20,10 +20,12 @@ import {
   GfxPrimitiveElementModel,
   GfxViewInteractionExtension,
 } from '@blocksuite/affine/std/gfx';
+import type { Frame } from '@/features/graph/model';
 import {
   BAR_SHARE,
   barPlot,
   CARD_PADS,
+  CHART_TEXT,
   type ChartBar,
   type ChartData,
   type ChartKind,
@@ -36,7 +38,6 @@ import {
   type SliceFill,
 } from './boardData';
 import { ticks } from './boardGeometry';
-import type { Frame } from './boardPlane';
 
 export function drawChart(
   ctx: CanvasRenderingContext2D,
@@ -53,7 +54,7 @@ export function drawChart(
   ctx.fillStyle = paper.paper;
   ctx.fill();
   ctx.clip();
-  ctx.font = '12px Arial, sans-serif';
+  ctx.font = `${CHART_TEXT}px Arial, sans-serif`;
   ctx.textBaseline = 'middle';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -121,17 +122,16 @@ export function drawChart(
     }
     ctx.fillStyle = paper.text;
     ctx.textAlign = 'center';
-    for (const { angle, text } of chart.labels)
-      ctx.fillText(text, ...onScreen(cx, cy, r * LABEL_REACH, angle));
+    for (const { angle, reach, size = CHART_TEXT, text } of chart.labels) {
+      ctx.font = `${size}px Arial, sans-serif`;
+      ctx.fillText(text, ...onScreen(cx, cy, r * reach, angle));
+    }
   }
   ctx.restore();
   ctx.strokeStyle = paper.edge;
   ctx.lineWidth = 1;
   ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
 }
-
-/** How far out of a pie's centre its labels sit. */
-export const LABEL_REACH = 0.62;
 
 export class ChartElementModel extends GfxPrimitiveElementModel<{
   axisMax: number;
@@ -150,9 +150,10 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
     return 'chart';
   }
 
+  /** A turned card (Epo 2026-11-13) answers by its turned corners, as a formula's. */
   override containsBound(bounds: Bound) {
-    return Bound.deserialize(this.xywh).points.some((point) =>
-      bounds.containsPoint(point as IVec)
+    return getPointsFromBoundWithRotation(this).some((point) =>
+      bounds.containsPoint(point)
     );
   }
 
@@ -173,13 +174,13 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
 
   override getNearestPoint(point: IVec) {
     return polygonNearestPoint(
-      Bound.deserialize(this.xywh).points,
+      getPointsFromBoundWithRotation(this),
       point
     ) as IVec;
   }
 
   override includesPoint(x: number, y: number) {
-    return pointInPolygon([x, y], Bound.deserialize(this.xywh).points);
+    return pointInPolygon([x, y], getPointsFromBoundWithRotation(this));
   }
 
   @field()
@@ -222,7 +223,13 @@ const chartRenderer: ElementRenderer<ChartElementModel> = (
   renderer
 ) => {
   const [, , w, h] = model.deserializedXYWH;
-  ctx.setTransform(matrix);
+  // Turned round its middle, as a formula card is.
+  ctx.setTransform(
+    matrix
+      .translateSelf(w / 2, h / 2)
+      .rotateSelf(model.rotate)
+      .translateSelf(-w / 2, -h / 2)
+  );
   drawChart(
     ctx,
     { h, w, x: 0, y: 0 },
@@ -253,13 +260,6 @@ class ChartElementView extends GfxElementModelView<ChartElementModel> {
 const chartInteraction = GfxViewInteractionExtension<ChartElementView>(
   'chart',
   {
-    handleRotate() {
-      return {
-        beforeRotate(context) {
-          context.set({ rotatable: false });
-        },
-      };
-    },
     resizeConstraint: {
       maxHeight: 4000,
       maxWidth: 4000,

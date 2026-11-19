@@ -1185,7 +1185,10 @@ export class ConnectorPathGenerator extends PathGenerator {
   static updatePath(
     connector: ConnectorElementModel | LocalConnectorElementModel,
     path: PointLocation[] | null,
-    elementGetter?: (id: string) => GfxModel | null
+    elementGetter?: (id: string) => GfxModel | null,
+    // Capy (vendor/blocksuite/README.md, local change 63): whether the label's
+    // place, a stored field, is written with the path.
+    placeLabel = true
   ) {
     const instance = new ConnectorPathGenerator({
       getElementById: elementGetter ?? (() => null),
@@ -1205,13 +1208,16 @@ export class ConnectorPathGenerator extends PathGenerator {
     connector.path = relativePoints;
 
     // Updates Connector's Label position.
-    if (isConnectorWithLabel(connector)) {
+    if (placeLabel && isConnectorWithLabel(connector)) {
       const model = connector as ConnectorElementModel;
       const [cx, cy] = model.getPointByOffsetDistance(
         model.labelOffset.distance
       );
-      const [, , w, h] = model.labelXYWH!;
-      model.labelXYWH = [cx - w / 2, cy - h / 2, w, h];
+      const [x, y, w, h] = model.labelXYWH!;
+      // Capy (local change 63): a place that did not move is not written again
+      // (an Undo already put it back, and a write would empty its Redo).
+      if (x !== cx - w / 2 || y !== cy - h / 2)
+        model.labelXYWH = [cx - w / 2, cy - h / 2, w, h];
     }
 
     connector.updatingPath = false;

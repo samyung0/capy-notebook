@@ -133,7 +133,10 @@ export const paragraphBlockStyles = css`
     position: absolute;
     display: none;
     max-width: 100%;
-    overflow-x: hidden;
+    /* Capy (local change 49): both axes clipped. overflow-x alone made the
+       other axis scroll, and a heading's text, a pixel taller than its line, drew
+       a scrollbar beside the placeholder. */
+    overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
     left: 0;

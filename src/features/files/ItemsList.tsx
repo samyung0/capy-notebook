@@ -309,7 +309,7 @@ export function ItemsList({
             selected: location === 'workspace' ? ['workspace'] : [],
           },
           {
-            emptyLabel: m.create_filter_no_workspaces(),
+            emptyLabel: m.common_nothing_yet(),
             key: 'workspace',
             label: m.files_filter_workspace(),
             onToggle: (value) =>
@@ -370,7 +370,7 @@ export function ItemsList({
         ) : items.length === 0 ? (
           <p className="py-10 text-center text-fg-muted">
             {kinds.length || workspaceIds.length || location || owner
-              ? m.files_empty()
+              ? m.common_no_matches()
               : m.files_none()}
           </p>
         ) : (

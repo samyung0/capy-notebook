@@ -341,13 +341,14 @@ export const qk = {
   assignments: (wsId: string) =>
     ['workspace', wsId, 'study', 'assignments'] as const,
   attempt: (id: string) => ['attempt', id] as const,
-  attempts: (params?: unknown) => ['attempts', params ?? null] as const,
-  attemptsRoot: ['attempts'] as const,
   billing: ['billing'] as const,
   /** The Canvas page's panel: every canvas the caller has. */
   canvases: ['canvases'] as const,
   cards: (flashcardSetId: string) =>
     ['flashcardSet', flashcardSetId, 'cards'] as const,
+  continue: (workspaceId?: string) =>
+    ['review', 'history', 'continue', workspaceId ?? null] as const,
+  continueRoot: ['review', 'history', 'continue'] as const,
   /** One conversation's row, read by id when its list page is not loaded. */
   conversation: (convId: string) => ['conversation', convId, 'row'] as const,
   /** One workspace's chats, or with null the account chat's. */
@@ -372,6 +373,10 @@ export const qk = {
   filesRecent: (wsId: string) =>
     ['workspace', wsId, 'files', 'recent'] as const,
   flashcardSet: (id: string) => ['flashcardSet', id] as const,
+  /** Learning → History: revisions and attempts; under review, so study
+   * refreshes take it along. */
+  history: (params?: unknown) => ['review', 'history', params ?? null] as const,
+  historyRoot: ['review', 'history'] as const,
   ingestSlots: ['me', 'ingest-slots'] as const,
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
@@ -407,8 +412,6 @@ export const qk = {
   ownedMaterials: (params?: unknown) =>
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
-  pastReviews: (params?: unknown) =>
-    ['review', 'past', params ?? null] as const,
   /** The workspace's Practice page; refreshed with the rest of study. */
   practice: (wsId: string) => ['workspace', wsId, 'study', 'practice'] as const,
   quiz: (id: string) => ['quiz', id] as const,

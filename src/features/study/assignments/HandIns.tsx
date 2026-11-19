@@ -17,13 +17,15 @@ import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { Td, Th } from '../practice/studyPage';
 import { dayLabel } from './assignmentText';
+import { GradeField } from './GradeField';
 import { LateBadge } from './LateBadge';
 import { PaperPages } from './LazyPaper';
 import type { SubmissionFiles } from './useAddSubmissionFiles';
 
 // Hand-ins (Epo 2026-11-08, mocks S3 and T2): an unmarked assignment that
 // takes files. The member adds their work and hands it in; staff read it on
-// the Members tab. Nothing marks it.
+// the Members tab and, when it is graded on points (Epo 2026-11-14), grade it
+// on the member's row.
 
 const iconOf = (file: PaperFile) =>
   fileIconName(file as Pick<SourceFile, 'kind' | 'name'>);
@@ -91,11 +93,14 @@ function HandInViewer({
 export function YourWork({
   assignment,
   open,
+  preview = false,
   uploads,
 }: {
   assignment: Assignment;
   /** Takes changes: not handed in, not closed. */
   open: boolean;
+  /** Staff's Preview: shown as a member's open one, Add files off. */
+  preview?: boolean;
   uploads: SubmissionFiles;
 }) {
   const files = assignment.mine?.handIn ?? [];
@@ -109,10 +114,10 @@ export function YourWork({
     <section className="mt-6.5 max-w-183">
       <div className="flex min-h-8 items-center justify-between gap-3">
         <h2 className="t-subtitle">{m.assignment_your_work()}</h2>
-        {open && (
+        {(open || preview) && (
           <>
             <Button
-              disabled={!ready}
+              disabled={preview || !ready}
               iconLeft="plus"
               onClick={() => picker.current?.click()}
               size="sm"
@@ -133,7 +138,7 @@ export function YourWork({
           </>
         )}
       </div>
-      {files.length === 0 && uploading.length === 0 && open && (
+      {files.length === 0 && uploading.length === 0 && (open || preview) && (
         <p className="mt-2 text-fg-muted">{m.assignment_hand_in_empty()}</p>
       )}
       <ul className="mt-2">
@@ -220,14 +225,25 @@ function MemberCell({ member }: { member: AssignmentMemberRow }) {
   );
 }
 
-/** T2: who handed in what. A file opens in the viewer; no mark column. */
+/** T2: who handed in what. A file opens in the viewer; a graded one's Grade
+ * column takes each member's grade. */
 export function HandInMembers({
-  assignmentId,
+  assignment,
   members,
 }: {
-  assignmentId: string;
+  assignment: Assignment;
   members: AssignmentMemberRow[];
 }) {
+  const assignmentId = assignment.id;
+  const { points } = assignment;
+  const grade = (member: AssignmentMemberRow, className?: string) =>
+    points !== undefined && (
+      <GradeField
+        assignment={{ ...assignment, points }}
+        className={className}
+        member={member}
+      />
+    );
   const [viewing, setViewing] = useState<{
     files: readonly PaperFile[];
     title: string;
@@ -268,6 +284,9 @@ export function HandInMembers({
             <Th className="w-[34%]">{m.assignment_col_member()}</Th>
             <Th className="w-45">{m.assignment_col_handed_in()}</Th>
             <Th>{m.assignment_col_work()}</Th>
+            {points !== undefined && (
+              <Th className="w-36">{m.assignment_col_grade()}</Th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -280,7 +299,9 @@ export function HandInMembers({
                 {member.submittedAt ? (
                   <span className="flex items-center gap-2">
                     {dayLabel(member.submittedAt)}
-                    {member.late && <LateBadge penaltyPct={0} />}
+                    {member.late && (
+                      <LateBadge penaltyPct={member.latePenaltyPct} />
+                    )}
                   </span>
                 ) : (
                   m.assignment_not_handed_in()
@@ -291,6 +312,9 @@ export function HandInMembers({
                   {work(member)}
                 </span>
               </Td>
+              {points !== undefined && (
+                <Td className="whitespace-normal">{grade(member, 'py-1')}</Td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -300,10 +324,13 @@ export function HandInMembers({
           const files = member.files ?? [];
           const handedIn = !!member.submittedAt && files.length > 0;
           return (
-            <li className="border-divider border-b" key={member.userId}>
+            <li
+              className="flex items-center gap-3 border-divider border-b"
+              key={member.userId}
+            >
               <button
                 className={cn(
-                  'flex min-h-14 w-full items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
+                  'flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset',
                   !handedIn && 'cursor-default'
                 )}
                 disabled={!handedIn}
@@ -328,8 +355,11 @@ export function HandInMembers({
                       : m.assignment_not_handed_in()}
                   </div>
                 </div>
-                {member.late && <LateBadge penaltyPct={0} />}
+                {member.late && (
+                  <LateBadge penaltyPct={member.latePenaltyPct} />
+                )}
               </button>
+              {grade(member, 'shrink-0')}
             </li>
           );
         })}

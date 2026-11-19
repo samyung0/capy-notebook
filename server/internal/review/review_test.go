@@ -41,8 +41,10 @@ func TestQuestionHashCoversThePromptTextOnly(t *testing.T) {
 		map[string]any{"text": "Names the membrane", "marks": 3})
 	edited["layout"] = "split"
 	edited["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": "a"}, "width": 640, "height": 480}}
+	// A question's own topics move its answers, never reset them (Epo 2026-11-15).
+	edited["topicIds"] = []any{"tp_cells", "tp_genetics"}
 	if QuestionHash(base) != QuestionHash(edited) {
-		t.Fatal("an answer, marking scheme, mark, layout or image changed the hash")
+		t.Fatal("an answer, marking scheme, mark, layout, image or topic changed the hash")
 	}
 	if QuestionHash(base) == QuestionHash(question("Ribosomes have membranes?", map[string]any{"type": "boolean", "correct": true}, 1)) {
 		t.Fatal("a new prompt kept the hash")

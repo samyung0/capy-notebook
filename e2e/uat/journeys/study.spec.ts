@@ -44,11 +44,10 @@ const truePart = {
   solution: [],
 };
 
-/** An open part: Jev grades it against its one marking item. */
+/** An open part: the grading model grades it against its one marking item. */
 const openPart = {
   answer: {
     accepted: ['Their roots and waterlogged soil hold the carbon they absorb.'],
-    hints: [],
     type: 'open',
   },
   blocks: [{ text: 'Explain how wetland plants store carbon.', type: 'text' }],

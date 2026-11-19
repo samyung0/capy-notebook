@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import type { Practice } from '@/api/types';
@@ -16,8 +17,8 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/api/hooks', () => ({
-  useAssignments: () => ({ data: undefined }),
   usePractice: () => ({ data: page.data, isError: false, isPending: false }),
+  useStudyTopics: () => ({ data: undefined }),
   useTopics: () => ({
     data: [
       { description: '', fileIds: [], id: 't1', name: 'Osmosis', order: 0 },
@@ -29,18 +30,28 @@ vi.mock('@/api/hooks', () => ({
 }));
 
 const practice = (members?: number): Practice => ({
-  members,
-  quizzes: [
+  items: [
     {
       average: members ? 0.62 : undefined,
       best: { correct: 5, total: 8 },
+      covers: ['t1', 't2'],
       id: 'qz',
-      questions: 8,
+      kind: 'quiz',
+      size: 8,
       title: 'Osmosis check',
       topicId: 't1',
       triedBy: members ? 5 : undefined,
     },
+    {
+      best: { correct: 14, total: 18 },
+      covers: [],
+      id: 'dk',
+      kind: 'flashcards',
+      size: 18,
+      title: 'Osmosis cards',
+    },
   ],
+  members,
   reviews: [
     {
       best: { correct: 7, total: 10 },
@@ -72,7 +83,11 @@ const practice = (members?: number): Practice => ({
 });
 
 const render = () =>
-  renderToStaticMarkup(<PracticePage search={{}} workspaceId="ws" />);
+  renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <PracticePage search={{}} workspaceId="ws" />
+    </QueryClientProvider>
+  );
 
 it('shows a member Suggested, their own review and every quiz with their best', () => {
   page.kind = 'class';
@@ -88,6 +103,14 @@ it('shows a member Suggested, their own review and every quiz with their best', 
   expect(html).toContain('5 / 8');
   expect(html).toContain(m.practice_col_best());
   expect(html).not.toContain(m.practice_col_average());
+  // The row itself practises (Epo 2026-11-13); a set lists with its cards,
+  // and one without a topic reads "–".
+  expect(html).toContain('role="link"');
+  expect(html).toContain('Osmosis cards');
+  expect(html).toContain('14 / 18');
+  expect(html).toContain('>–<');
+  // A quiz covers its topic and its questions' own (Epo 2026-11-15).
+  expect(html).toContain('>+1<');
 });
 
 it("shows a class's owner how members use each quiz", () => {
@@ -95,7 +118,7 @@ it("shows a class's owner how members use each quiz", () => {
   page.role = 'owner';
   page.data = practice(6);
   const html = render();
-  expect(html).toContain(m.workspace_members_count({ count: 6 }));
+  expect(html).not.toContain(m.workspace_members_count({ count: 6 }));
   expect(html).toContain(m.practice_tried_of({ members: 6, tried: 5 }));
   expect(html).toContain('62%');
   expect(html).not.toContain(m.practice_suggested());
@@ -122,13 +145,14 @@ it('gives each of the four people their rail', () => {
     m.workspace_tab_files(),
     m.workspace_section_agent(),
   ];
-  // A class's staff give out assignments and see every member's marks; they
-  // have no marks of their own, so no Study.
+  // A class's staff give out assignments and manage the members; their Study
+  // is every member's marks, Practice a tab of Study for everyone (Epo
+  // 2026-11-13).
   expect(rail('class', 'owner')).toEqual([
     ...before,
     m.study_panel_assignments(),
-    m.study_panel_practice(),
     m.study_panel_members(),
+    m.workspace_tab_study(),
     m.workspace_section_canvas(),
   ]);
   // Everyone else has their own To do and Study, and sees who the members are
@@ -141,7 +165,6 @@ it('gives each of the four people their rail', () => {
     expect(own).toEqual([
       ...before,
       m.nav_todo(),
-      m.study_panel_practice(),
       m.study_panel_members(),
       m.workspace_tab_study(),
       m.workspace_section_canvas(),
@@ -151,10 +174,5 @@ it('gives each of the four people their rail', () => {
     workspaceSections({ kind: 'personal', role: '' as never }).map(
       (section) => section.label
     )
-  ).toEqual([
-    ...before,
-    m.nav_todo(),
-    m.study_panel_practice(),
-    m.workspace_tab_study(),
-  ]);
+  ).toEqual([...before, m.nav_todo(), m.workspace_tab_study()]);
 });

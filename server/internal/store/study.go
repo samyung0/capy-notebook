@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -120,6 +121,148 @@ func itemsOf(mt Material) ([]studyItem, error) {
 	parsedItems.bytes += size
 	parsedItems.Unlock()
 	return items, nil
+}
+
+// ownTopics is a question's own topics (`topicIds`) as stored, unchecked.
+func ownTopics(question map[string]any) []string {
+	raw, _ := question["topicIds"].([]any)
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if id, _ := v.(string); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// questionTopics is the distinct topics a quiz's questions name as their own
+// (`topicIds`), in question order and unchecked: readers keep those of the
+// quiz's workspace (covers).
+func questionTopics(items []studyItem) []string {
+	var out []string
+	for _, it := range items {
+		for _, id := range ownTopics(it.Question) {
+			if !slices.Contains(out, id) {
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+// cachedItems is each material's items at its revision (ids to revisions):
+// parsedItems' where it holds that revision, the rest loaded in one query and
+// parsed. A material whose content is refused has no entry.
+func (s *Store) cachedItems(ctx context.Context, revisions map[string]int64) (map[string][]studyItem, error) {
+	out := make(map[string][]studyItem, len(revisions))
+	var misses []string
+	parsedItems.Lock()
+	for id, revision := range revisions {
+		if hit, ok := parsedItems.m[id]; ok && hit.revision == revision {
+			out[id] = hit.items
+		} else {
+			misses = append(misses, id)
+		}
+	}
+	parsedItems.Unlock()
+	if len(misses) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, misses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		mt, err := scanMaterial(rows)
+		if err != nil {
+			return nil, err
+		}
+		items, err := itemsOf(mt)
+		if refused(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[mt.ID] = items
+	}
+	return out, rows.Err()
+}
+
+// workspaceTopics is a workspace's topics in reading order, with their names.
+type workspaceTopics struct {
+	order []string
+	names map[string]string
+}
+
+func (t workspaceTopics) has(id string) bool {
+	_, ok := t.names[id]
+	return ok
+}
+
+func (s *Store) topicsOf(ctx context.Context, wsID string) (workspaceTopics, error) {
+	all, err := s.topicsIn(ctx, []string{wsID})
+	return all[wsID], err
+}
+
+// topicsIn is topicsOf for several workspaces in one query; each holds an
+// entry, empty without topics.
+func (s *Store) topicsIn(ctx context.Context, wsIDs []string) (map[string]workspaceTopics, error) {
+	out := make(map[string]workspaceTopics, len(wsIDs))
+	for _, id := range wsIDs {
+		out[id] = workspaceTopics{names: map[string]string{}}
+	}
+	rows, err := s.pool.Query(ctx, `SELECT workspace_id, id, name FROM topics WHERE workspace_id = ANY($1) ORDER BY position, id`, wsIDs)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var wsID, id, name string
+		if err := rows.Scan(&wsID, &id, &name); err != nil {
+			return out, err
+		}
+		t := out[wsID]
+		t.order = append(t.order, id)
+		t.names[id] = name
+		out[wsID] = t
+	}
+	return out, rows.Err()
+}
+
+// topicsNamed is topicsOf only when some item names a topic of its own, the
+// one case itemTopics reads them; else none, and no query.
+func (s *Store) topicsNamed(ctx context.Context, wsID string, docs map[string][]studyItem) (workspaceTopics, error) {
+	for _, items := range docs {
+		for _, it := range items {
+			if len(ownTopics(it.Question)) > 0 {
+				return s.topicsOf(ctx, wsID)
+			}
+		}
+	}
+	return workspaceTopics{}, nil
+}
+
+// itemTopics is the topics an item counts toward in mastery, each fully (Epo
+// 2026-11-15, todo-question-topics.md): a question's own (`topicIds`) that
+// are the workspace's topics, else its quiz's (quiz; none outside topics).
+// Reads take them from the current content, so changing a question's topics
+// moves its past answers with them.
+func itemTopics(it studyItem, quiz *string, topics workspaceTopics) []string {
+	var own []string
+	for _, id := range ownTopics(it.Question) {
+		if topics.has(id) {
+			own = append(own, id)
+		}
+	}
+	if len(own) > 0 {
+		return own
+	}
+	if quiz != nil {
+		return []string{*quiz}
+	}
+	return nil
 }
 
 func materialItems(mt Material) ([]studyItem, error) {
@@ -571,32 +714,37 @@ type ranked struct {
 	lapses     int
 	reps       int
 	lastReview time.Time
-	// topicID is the material's topic, nil outside topics.
-	topicID *string
+	// topicIDs are the topics the item counts toward (itemTopics), none
+	// outside topics.
+	topicIDs []string
 }
 
 // reviewPool is every rated item of the quizzes and sets not trashed or
 // embedded whose content still matches what was rated, least retained first. Only rated materials are read, in one query, and a
 // document is loaded and parsed only when the cache misses its revision.
 func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Time) ([]ranked, error) {
+	return s.reviewPoolIn(ctx, userID, wsID, nil, now)
+}
+
+// reviewPoolIn is reviewPool with the workspace's topics already read (nil:
+// read only when a question names one, topicsNamed).
+func (s *Store) reviewPoolIn(ctx context.Context, userID, wsID string, known *workspaceTopics, now time.Time) ([]ranked, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, COALESCE(m.topic_id, m.practice_topic_id), rs.item_id, rs.item_hash,
 			rs.stability, rs.difficulty, rs.reps, rs.lapses, rs.fsrs_state, rs.last_review
 		FROM materials m
 		JOIN review_states rs ON rs.material_id=m.id AND rs.user_id=$1
 		WHERE (m.workspace_id=$2 OR (m.practice_workspace_id=$2 AND m.owner_user_id=$1)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL
+			AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)
-			AND `+quizAssignedToSQL("m.id", "$1")+` IS NULL
 		ORDER BY m.position, m.created_at, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
 	}
 	type ratedMaterial struct {
-		title    string
-		revision int64
-		topicID  *string
-		states   map[string]storedState
-		items    []studyItem
+		id, title string
+		revision  int64
+		topicID   *string
+		states    map[string]storedState
 	}
 	var order []*ratedMaterial
 	byID := map[string]*ratedMaterial{}
@@ -611,7 +759,7 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 		}
 		rm := byID[id]
 		if rm == nil {
-			rm = &ratedMaterial{title: title, revision: revision, topicID: topicID, states: map[string]storedState{}}
+			rm = &ratedMaterial{id: id, title: title, revision: revision, topicID: topicID, states: map[string]storedState{}}
 			byID[id] = rm
 			order = append(order, rm)
 		}
@@ -621,49 +769,26 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	var missing []string
-	for id, rm := range byID {
-		parsedItems.Lock()
-		hit, ok := parsedItems.m[id]
-		parsedItems.Unlock()
-		if ok && hit.revision == rm.revision {
-			rm.items = hit.items
-		} else {
-			missing = append(missing, id)
-		}
+	revisions := make(map[string]int64, len(order))
+	for _, rm := range order {
+		revisions[rm.id] = rm.revision
 	}
-	if len(missing) > 0 {
-		rows, err := s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, missing)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			mt, err := scanMaterial(rows)
-			if err != nil {
-				rows.Close()
-				return nil, err
-			}
-			items, err := itemsOf(mt)
-			if refused(err) {
-				continue
-			}
-			if err != nil {
-				rows.Close()
-				return nil, err
-			}
-			byID[mt.ID].items = items
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+	docs, err := s.cachedItems(ctx, revisions)
+	if err != nil {
+		return nil, err
+	}
+	var topics workspaceTopics
+	if known != nil {
+		topics = *known
+	} else if topics, err = s.topicsNamed(ctx, wsID, docs); err != nil {
+		return nil, err
 	}
 	var all []ranked
 	for _, rm := range order {
-		for _, it := range rm.items {
+		for _, it := range docs[rm.id] {
 			if st, ok := rm.states[it.ItemID]; ok && st.hash == it.hash {
 				it.MaterialTitle = rm.title
-				all = append(all, ranked{studyItem: it, r: review.Retrievability(st.State, now), lapses: st.Lapses, reps: st.Reps, lastReview: st.LastReview, topicID: rm.topicID})
+				all = append(all, ranked{studyItem: it, r: review.Retrievability(st.State, now), lapses: st.Lapses, reps: st.Reps, lastReview: st.LastReview, topicIDs: itemTopics(it, rm.topicID, topics)})
 			}
 		}
 	}
@@ -681,20 +806,17 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 		id, title string
 		revision  int64
 		topicID   *string
-		items     []studyItem
 	}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, m.revision, COALESCE(m.topic_id, m.practice_topic_id) FROM materials m
 		LEFT JOIN topics c ON c.id=COALESCE(m.topic_id, m.practice_topic_id)
 		WHERE (m.workspace_id=$2 OR (m.practice_workspace_id=$2 AND m.owner_user_id=$1)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL
-			AND m.parent_material_id IS NULL
+			AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $1)
-			AND `+quizAssignedToSQL("m.id", "$1")+` IS NULL
 		ORDER BY c.id IS NULL, c.position, m.position, m.created_at DESC, m.id`, userID, wsID)
 	if err != nil {
 		return nil, err
 	}
 	var order []*quizMaterial
-	byID := map[string]*quizMaterial{}
 	for rows.Next() {
 		qm := &quizMaterial{}
 		if err := rows.Scan(&qm.id, &qm.title, &qm.revision, &qm.topicID); err != nil {
@@ -702,7 +824,6 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 			return nil, err
 		}
 		order = append(order, qm)
-		byID[qm.id] = qm
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -711,45 +832,19 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 	if len(order) == 0 {
 		return nil, nil
 	}
-	// Documents load only when the cache misses their revision.
 	ids := make([]string, 0, len(order))
-	var missing []string
+	revisions := make(map[string]int64, len(order))
 	for _, qm := range order {
 		ids = append(ids, qm.id)
-		parsedItems.Lock()
-		hit, ok := parsedItems.m[qm.id]
-		parsedItems.Unlock()
-		if ok && hit.revision == qm.revision {
-			qm.items = hit.items
-		} else {
-			missing = append(missing, qm.id)
-		}
+		revisions[qm.id] = qm.revision
 	}
-	if len(missing) > 0 {
-		rows, err := s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, missing)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			mt, err := scanMaterial(rows)
-			if err != nil {
-				rows.Close()
-				return nil, err
-			}
-			items, err := itemsOf(mt)
-			if refused(err) {
-				continue
-			}
-			if err != nil {
-				rows.Close()
-				return nil, err
-			}
-			byID[mt.ID].items = items
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+	docs, err := s.cachedItems(ctx, revisions)
+	if err != nil {
+		return nil, err
+	}
+	topics, err := s.topicsNamed(ctx, wsID, docs)
+	if err != nil {
+		return nil, err
 	}
 	rated := map[string]string{}
 	rows, err = s.pool.Query(ctx, `SELECT material_id, item_id, item_hash FROM review_states
@@ -771,12 +866,12 @@ func (s *Store) newPool(ctx context.Context, userID, wsID string) ([]ranked, err
 	}
 	var out []ranked
 	for _, qm := range order {
-		for _, it := range qm.items {
+		for _, it := range docs[qm.id] {
 			if hash, ok := rated[qm.id+"/"+it.ItemID]; ok && hash == it.hash {
 				continue
 			}
 			it.MaterialTitle = qm.title
-			out = append(out, ranked{studyItem: it, topicID: qm.topicID})
+			out = append(out, ranked{studyItem: it, topicIDs: itemTopics(it, qm.topicID, topics)})
 		}
 	}
 	return out, nil
@@ -847,6 +942,8 @@ type ItemAttempts struct {
 	Size       int       `json:"size"`
 	Count      int       `json:"count"`
 	Recent     []Attempt `json:"recent" nullable:"false"`
+	// questionTopics is a quiz's questions' own topics (questionTopics).
+	questionTopics []string
 }
 
 // itemRecentAttempts is how many attempts the progress page lists per item;
@@ -901,15 +998,13 @@ func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]I
 // the item cache does not hold; hidden ones only for owners and editors.
 func (s *Store) itemCounts(ctx context.Context, userID, wsID string) ([]ItemAttempts, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.revision FROM materials m
-		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
-			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
-			AND `+quizAssignedToSQL("m.id", "$2")+` IS NULL`, wsID, userID)
+		WHERE (m.workspace_id=$1 OR (m.practice_workspace_id=$1 AND m.owner_user_id=$2)) AND m.kind IN ('quiz','flashcards') AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)`, wsID, userID)
 	if err != nil {
 		return nil, err
 	}
-	var out []ItemAttempts
-	var misses []string
-	missAt := map[string]int{}
+	var ids []string
+	revisions := map[string]int64{}
 	for rows.Next() {
 		var id string
 		var revision int64
@@ -917,50 +1012,22 @@ func (s *Store) itemCounts(ctx context.Context, userID, wsID string) ([]ItemAtte
 			rows.Close()
 			return nil, err
 		}
-		parsedItems.Lock()
-		hit, ok := parsedItems.m[id]
-		parsedItems.Unlock()
-		if ok && hit.revision == revision {
-			out = append(out, ItemAttempts{MaterialID: id, Size: len(hit.items)})
-			continue
-		}
-		missAt[id] = len(out)
-		misses = append(misses, id)
-		out = append(out, ItemAttempts{MaterialID: id})
+		ids = append(ids, id)
+		revisions[id] = revision
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil || len(misses) == 0 {
-		return out, err
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, misses)
+	docs, err := s.cachedItems(ctx, revisions)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	left := map[string]bool{}
-	for rows.Next() {
-		mt, err := scanMaterial(rows)
-		if err != nil {
-			return nil, err
-		}
-		items, err := itemsOf(mt)
-		if refused(err) {
-			left[mt.ID] = true
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		out[missAt[mt.ID]].Size = len(items)
-	}
-	if err := rows.Err(); err != nil || len(left) == 0 {
-		return out, err
-	}
-	kept := out[:0]
-	for _, it := range out {
-		if !left[it.MaterialID] {
-			kept = append(kept, it)
+	var out []ItemAttempts
+	for _, id := range ids {
+		if items, ok := docs[id]; ok {
+			out = append(out, ItemAttempts{MaterialID: id, Size: len(items), questionTopics: questionTopics(items)})
 		}
 	}
-	return kept, nil
+	return out, nil
 }

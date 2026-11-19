@@ -10,7 +10,9 @@ type PanelSearchProps = {
 /** The search at the top of a workspace panel, in its gutter. */
 export function PanelSearch(props: PanelSearchProps) {
   return (
-    <div className="shrink-0 px-2.5 pt-2.5 pb-1">
+    // No room above: it sits under its panel's title row, whose height
+    // already spaces it (Epo 2026-11-18).
+    <div className="shrink-0 px-2.5 pb-1">
       <PanelSearchField {...props} />
     </div>
   );

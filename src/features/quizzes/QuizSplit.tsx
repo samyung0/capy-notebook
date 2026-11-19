@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
-import { parseMathText } from '@/features/questions/parseMathText';
+import { parseMarkedText } from '@/features/questions/parseMarkedText';
 import {
   GAP_MARKER,
   type LearnerQuestion,
@@ -9,9 +9,10 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
-/** Text without formula markup: a plain formula as written, others elided. */
+/** Text without formula or mark markup: a plain formula as written, others
+ * elided. */
 const rowText = (text: string) =>
-  parseMathText(text)
+  parseMarkedText(text)
     .map(({ type, value }) =>
       type !== 'text' && value.includes('\\') ? '…' : value
     )
@@ -37,6 +38,8 @@ export function questionSummary(question: Question | LearnerQuestion): string {
  * to another question opens that one. */
 export function useQuizPick(target?: string, startOnQuestion = !!target) {
   const [picked, setPicked] = useState<string | null>(target ?? null);
+  // The cards' scroll, kept as the live editor replaces the opening paint.
+  const scrollTop = useRef(0);
   const [onQuestion, setOnQuestion] = useState(startOnQuestion);
   const [linked, setLinked] = useState(target);
   if (linked !== target) {
@@ -53,6 +56,7 @@ export function useQuizPick(target?: string, startOnQuestion = !!target) {
       setOnQuestion(true);
     },
     picked,
+    scrollTop,
     setOnQuestion,
     setPicked,
   };
@@ -77,7 +81,8 @@ export function RowMark({
  * A quiz's one layout, in view, edit, study and an assignment (Epo 2026-11-06,
  * from board X2): the question list on the left, the open question on the right.
  * Phones have room for one: the list, then the question with a way back to it,
- * or `phoneStrip` above the question in place of the list.
+ * `phoneStrip` above the question in place of the list, or the pane alone
+ * (`paneOnPhone`).
  */
 export function QuizSplit<Q extends Question | LearnerQuestion>({
   action,
@@ -90,6 +95,8 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   onOpen,
   onQuestion,
   paneClassName,
+  paneOnPhone,
+  phoneHead,
   phoneStrip,
   questions,
   rowEnd,
@@ -110,6 +117,10 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   onQuestion: boolean;
   /** Around the pane's content: room under it for what floats over the page. */
   paneClassName?: string;
+  /** Phones: the pane alone, which holds its own list (the quiz's cards). */
+  paneOnPhone?: boolean;
+  /** Phones: above the list, as the pane's top shows it on wider screens. */
+  phoneHead?: ReactNode;
   /** Phones: always above the question, with no list. */
   phoneStrip?: ReactNode;
   questions: Q[];
@@ -137,7 +148,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
         ?.querySelector<HTMLElement>('[aria-current="true"]')
         ?.focus();
   }, [onQuestion]);
-  const phoneOnQuestion = onQuestion || !!phoneStrip;
+  const phoneOnQuestion = onQuestion || !!phoneStrip || !!paneOnPhone;
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] md:grid-cols-[300px_minmax(0,1fr)]">
       <nav
@@ -148,6 +159,9 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
         )}
         ref={list}
       >
+        {phoneHead && (
+          <div className="px-1.5 pt-1.5 pb-3 md:hidden">{phoneHead}</div>
+        )}
         <div className="flex min-h-7 items-center px-1.5 pt-0.5 pb-1.5">
           <p className="min-w-0 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
             {m.quiz_editor_questions({ count: questions.length })}
@@ -170,7 +184,9 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
           >
             <span className="font-bold text-fg-secondary">{i + 1}</span>
             <span className="truncate">{questionSummary(item)}</span>
-            <span className="flex min-w-5 items-center justify-end gap-1.5 text-right text-fg-muted text-xs">
+            {/* Each mark, a number or an icon, centred in its own 20px column,
+                so the rows' marks share one centre line (Epo 2026-11-16). */}
+            <span className="grid auto-cols-[20px] grid-flow-col items-center justify-items-center gap-1.5 text-fg-muted text-xs">
               {rowEnd(item)}
             </span>
           </button>
@@ -186,17 +202,18 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
           phoneOnQuestion ? 'flex' : 'hidden'
         )}
       >
-        {phoneStrip ?? (
-          <button
-            className="mx-4 mt-3 inline-flex shrink-0 cursor-pointer items-center gap-1.5 self-start font-semibold text-fg-secondary underline md:hidden"
-            onClick={onBack}
-            ref={back}
-            type="button"
-          >
-            <Icon name="navigationBack" size={16} />
-            {m.quiz_editor_all_questions()}
-          </button>
-        )}
+        {phoneStrip ??
+          (!paneOnPhone && (
+            <button
+              className="mx-4 mt-3 inline-flex shrink-0 cursor-pointer items-center gap-1.5 self-start font-semibold text-fg-secondary underline md:hidden"
+              onClick={onBack}
+              ref={back}
+              type="button"
+            >
+              <Icon name="navigationBack" size={16} />
+              {m.quiz_editor_all_questions()}
+            </button>
+          ))}
         <div
           className={cn(
             'min-h-0 min-w-0 flex-1 overflow-y-auto',

@@ -21,12 +21,12 @@ import type {
   AssignmentClosedInputBody,
   AssignmentDoneInputBody,
   AssignmentFormReq,
+  AssignmentGradeInputBody,
   AssignmentList,
   AssignmentMark,
   AssignmentReportBody,
   AssignmentTodoCheckInputBody,
   AttemptDetail,
-  AttemptsOutputBody,
   AutoReloadReq,
   AutoReloadResp,
   BankAssetOutputBody,
@@ -37,7 +37,9 @@ import type {
   BankMarksOutputBody,
   BankProgressOutputBody,
   BankQuestionBatchParams,
+  BankQuestionsCopyReq,
   BankQuestionsParams,
+  BankQuizReq,
   BankReviewInputBody,
   BankSaveInputBody,
   BankSummaryOutputBody,
@@ -45,6 +47,7 @@ import type {
   BillingInfo,
   BootstrapSourceDocumentParams,
   BrowserSourceSession,
+  CanvasBoardBody,
   CanvasBody,
   CanvasPage,
   CheckBankQuestionReq,
@@ -57,11 +60,12 @@ import type {
   CloneWorkspaceResp,
   CollaborationTokenResponse,
   Comment,
-  ComputationCheckReq,
-  ComputationCheckResp,
   ConfirmExtractionReq,
+  ContinueOutputBody,
   Conversation,
   ConversationPage,
+  CopyBankQuestionsOutputBody,
+  CopyQuizToGradedQuizReq,
   CreateBlankFileReq,
   CreateCanvasInputBody,
   CreateCommentReq,
@@ -115,22 +119,30 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
+  ItemBankPage,
+  ItemBankQuestion,
+  ItemBankQuestionReq,
+  ItemBankTagsOutputBody,
+  ItemBanksOutputBody,
   ItemPage,
   Label,
   LearningOverview,
   LibraryFigure,
   ListAccountConversationsParams,
-  ListAttemptsParams,
+  ListAssignmentsParams,
   ListCanvasesParams,
+  ListContinueParams,
   ListConversationsParams,
   ListDrawingsParams,
+  ListItemBankQuestionsParams,
+  ListItemBanksParams,
   ListItemsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
   ListOwnedMaterialsParams,
-  ListPastReviewsParams,
   ListRecentParams,
+  ListStudyHistoryParams,
   ListTagsParams,
   ListTrashParams,
   ListUsageEventsParams,
@@ -159,7 +171,6 @@ import type {
   PDFAnnotation,
   PDFAnnotationBody,
   PaperOrderInputBody,
-  PastReviewsOutputBody,
   PendingWorkspaceInvite,
   Practice,
   ProjectMaterialReq,
@@ -181,8 +192,6 @@ import type {
   RetryProcessingInputBody,
   ReviewResult,
   ReviewSession,
-  SaveCanvasInputBody,
-  SaveOwnCanvasInputBody,
   SearchParams,
   SearchResult,
   SetChatPrefsReq,
@@ -209,6 +218,7 @@ import type {
   SourceUploadPolicy,
   SpendingLimitReq,
   StartAssignmentInputBody,
+  StudyHistoryOutputBody,
   StudyPreferences,
   StudyQuestionCountOutputBody,
   StudySummary,
@@ -227,6 +237,7 @@ import type {
   TrashPage,
   URLResp,
   UndoEditReq,
+  UpdateCanvasInputBody,
   UpdateCommentReq,
   UpdateConversationReq,
   UpdateEventReq,
@@ -1298,6 +1309,73 @@ const res = await fetch(getSetAssignmentDoneUrl(id),
 
 
 
+export type setAssignmentGradeResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAssignmentGradeResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setAssignmentGradeResponseSuccess = (setAssignmentGradeResponse204) & {
+  headers: Headers;
+};
+export type setAssignmentGradeResponseError = (setAssignmentGradeResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAssignmentGradeResponse = (setAssignmentGradeResponseSuccess | setAssignmentGradeResponseError)
+
+export const getSetAssignmentGradeUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/api/assignments/${id}/grades/${userId}`
+}
+
+/**
+ * @summary Set or clear a member's grade on an assignment graded on points
+ */
+export const setAssignmentGrade = async (id: string,
+    userId: string,
+    assignmentGradeInputBody: NonReadonly<AssignmentGradeInputBody>, options?: RequestInit): Promise<setAssignmentGradeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetAssignmentGradeUrl(id,userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignmentGradeInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAssignmentGradeResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAssignmentGradeResponse
+}
+
+
+
 export type removeHandInFileResponse204 = {
   data: void
   status: 204
@@ -1448,56 +1526,6 @@ export const markAssignmentWithAI = async (id: string, options?: RequestInit): P
 
   const data: markAssignmentWithAIResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as markAssignmentWithAIResponse
-}
-
-
-
-export type turnAssignmentToPracticeResponse200 = {
-  data: Assignment
-  status: 200
-}
-
-export type turnAssignmentToPracticeResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type turnAssignmentToPracticeResponseSuccess = (turnAssignmentToPracticeResponse200) & {
-  headers: Headers;
-};
-export type turnAssignmentToPracticeResponseError = (turnAssignmentToPracticeResponseDefault) & {
-  headers: Headers;
-};
-
-export type turnAssignmentToPracticeResponse = (turnAssignmentToPracticeResponseSuccess | turnAssignmentToPracticeResponseError)
-
-export const getTurnAssignmentToPracticeUrl = (id: string,) => {
-
-
-
-
-  return `/api/assignments/${id}/practice`
-}
-
-/**
- * @summary Make a closed assignment's quiz practice for members when its answers are not shown
- */
-export const turnAssignmentToPractice = async (id: string, options?: RequestInit): Promise<turnAssignmentToPracticeResponse> => {
-
-  const res = await fetch(getTurnAssignmentToPracticeUrl(id),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: turnAssignmentToPracticeResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as turnAssignmentToPracticeResponse
 }
 
 
@@ -1828,63 +1856,6 @@ const res = await fetch(getSetAssignmentTodoCheckUrl(id),
 
   const data: setAssignmentTodoCheckResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as setAssignmentTodoCheckResponse
-}
-
-
-
-export type listAttemptsResponse200 = {
-  data: AttemptsOutputBody
-  status: 200
-}
-
-export type listAttemptsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listAttemptsResponseSuccess = (listAttemptsResponse200) & {
-  headers: Headers;
-};
-export type listAttemptsResponseError = (listAttemptsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listAttemptsResponse = (listAttemptsResponseSuccess | listAttemptsResponseError)
-
-export const getListAttemptsUrl = (params?: ListAttemptsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/attempts?${stringifiedParams}` : `/api/attempts`
-}
-
-/**
- * @summary List attempts
- */
-export const listAttempts = async (params?: ListAttemptsParams, options?: RequestInit): Promise<listAttemptsResponse> => {
-
-  const res = await fetch(getListAttemptsUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listAttemptsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listAttemptsResponse
 }
 
 
@@ -3324,7 +3295,7 @@ export const getListCanvasesUrl = (params?: ListCanvasesParams,) => {
 }
 
 /**
- * @summary The caller's canvases a page at a time: their own, latest saved first, then their workspaces'
+ * @summary Canvases a page at a time: the caller's own, latest saved first, then the ones they drew in their workspaces; or, for a workspace, the ones they drew there and the other members' shared ones
  */
 export const listCanvases = async (params?: ListCanvasesParams, options?: RequestInit): Promise<listCanvasesResponse> => {
 
@@ -3374,7 +3345,7 @@ export const getCreateCanvasUrl = () => {
 }
 
 /**
- * @summary Make a canvas of the caller's own, in no workspace
+ * @summary Make a private canvas of the caller's, in a workspace they are a member of or in none
  */
 export const createCanvas = async (createCanvasInputBody: NonReadonly<CreateCanvasInputBody>, options?: RequestInit): Promise<createCanvasResponse> => {
 
@@ -3438,7 +3409,7 @@ export const getGetCanvasUrl = (id: string,) => {
 }
 
 /**
- * @summary One of the caller's canvases
+ * @summary A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only
  */
 export const getCanvas = async (id: string, options?: RequestInit): Promise<getCanvasResponse> => {
 
@@ -3460,26 +3431,26 @@ export const getCanvas = async (id: string, options?: RequestInit): Promise<getC
 
 
 
-export type saveCanvasResponse200 = {
+export type updateCanvasResponse200 = {
   data: CanvasBody
   status: 200
 }
 
-export type saveCanvasResponseDefault = {
+export type updateCanvasResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type saveCanvasResponseSuccess = (saveCanvasResponse200) & {
+export type updateCanvasResponseSuccess = (updateCanvasResponse200) & {
   headers: Headers;
 };
-export type saveCanvasResponseError = (saveCanvasResponseDefault) & {
+export type updateCanvasResponseError = (updateCanvasResponseDefault) & {
   headers: Headers;
 };
 
-export type saveCanvasResponse = (saveCanvasResponseSuccess | saveCanvasResponseError)
+export type updateCanvasResponse = (updateCanvasResponseSuccess | updateCanvasResponseError)
 
-export const getSaveCanvasUrl = (id: string,) => {
+export const getUpdateCanvasUrl = (id: string,) => {
 
 
 
@@ -3488,10 +3459,10 @@ export const getSaveCanvasUrl = (id: string,) => {
 }
 
 /**
- * @summary Record a save of one of the caller's canvases, as a workspace canvas's
+ * @summary Share a canvas with the workspace it was drawn in, or take it back
  */
-export const saveCanvas = async (id: string,
-    saveOwnCanvasInputBody: NonReadonly<SaveOwnCanvasInputBody>, options?: RequestInit): Promise<saveCanvasResponse> => {
+export const updateCanvas = async (id: string,
+    updateCanvasInputBody: NonReadonly<UpdateCanvasInputBody>, options?: RequestInit): Promise<updateCanvasResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -3507,20 +3478,70 @@ export const saveCanvas = async (id: string,
     }
     return headers;
   };
-const res = await fetch(getSaveCanvasUrl(id),
+const res = await fetch(getUpdateCanvasUrl(id),
   {
     ...options,
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveOwnCanvasInputBody)
+    body: JSON.stringify(updateCanvasInputBody)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveCanvasResponse
+  const data: updateCanvasResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateCanvasResponse
+}
+
+
+
+export type getTrashedCanvasBoardResponse200 = {
+  data: CanvasBoardBody
+  status: 200
+}
+
+export type getTrashedCanvasBoardResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getTrashedCanvasBoardResponseSuccess = (getTrashedCanvasBoardResponse200) & {
+  headers: Headers;
+};
+export type getTrashedCanvasBoardResponseError = (getTrashedCanvasBoardResponseDefault) & {
+  headers: Headers;
+};
+
+export type getTrashedCanvasBoardResponse = (getTrashedCanvasBoardResponseSuccess | getTrashedCanvasBoardResponseError)
+
+export const getGetTrashedCanvasBoardUrl = (id: string,) => {
+
+
+
+
+  return `/api/canvases/${id}/board`
+}
+
+/**
+ * @summary The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's
+ */
+export const getTrashedCanvasBoard = async (id: string, options?: RequestInit): Promise<getTrashedCanvasBoardResponse> => {
+
+  const res = await fetch(getGetTrashedCanvasBoardUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTrashedCanvasBoardResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTrashedCanvasBoardResponse
 }
 
 
@@ -6865,6 +6886,421 @@ export const deleteIntegration = async (provider: string, options?: RequestInit)
 
 
 
+export type listItemBanksResponse200 = {
+  data: ItemBanksOutputBody
+  status: 200
+}
+
+export type listItemBanksResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listItemBanksResponseSuccess = (listItemBanksResponse200) & {
+  headers: Headers;
+};
+export type listItemBanksResponseError = (listItemBanksResponseDefault) & {
+  headers: Headers;
+};
+
+export type listItemBanksResponse = (listItemBanksResponseSuccess | listItemBanksResponseError)
+
+export const getListItemBanksUrl = (params?: ListItemBanksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/item-banks?${stringifiedParams}` : `/api/item-banks`
+}
+
+/**
+ * @summary The banks the caller may use: a class workspace's when they are its staff, then their own
+ */
+export const listItemBanks = async (params?: ListItemBanksParams, options?: RequestInit): Promise<listItemBanksResponse> => {
+
+  const res = await fetch(getListItemBanksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listItemBanksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listItemBanksResponse
+}
+
+
+
+export type listItemBankQuestionsResponse200 = {
+  data: ItemBankPage
+  status: 200
+}
+
+export type listItemBankQuestionsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listItemBankQuestionsResponseSuccess = (listItemBankQuestionsResponse200) & {
+  headers: Headers;
+};
+export type listItemBankQuestionsResponseError = (listItemBankQuestionsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listItemBankQuestionsResponse = (listItemBankQuestionsResponseSuccess | listItemBankQuestionsResponseError)
+
+export const getListItemBankQuestionsUrl = (bank: string,
+    params?: ListItemBankQuestionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/item-banks/${bank}/questions?${stringifiedParams}` : `/api/item-banks/${bank}/questions`
+}
+
+/**
+ * @summary A bank's questions, newest first, a page at a time, with the filtered count
+ */
+export const listItemBankQuestions = async (bank: string,
+    params?: ListItemBankQuestionsParams, options?: RequestInit): Promise<listItemBankQuestionsResponse> => {
+
+  const res = await fetch(getListItemBankQuestionsUrl(bank,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listItemBankQuestionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listItemBankQuestionsResponse
+}
+
+
+
+export type createItemBankQuestionResponse201 = {
+  data: ItemBankQuestion
+  status: 201
+}
+
+export type createItemBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createItemBankQuestionResponseSuccess = (createItemBankQuestionResponse201) & {
+  headers: Headers;
+};
+export type createItemBankQuestionResponseError = (createItemBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type createItemBankQuestionResponse = (createItemBankQuestionResponseSuccess | createItemBankQuestionResponseError)
+
+export const getCreateItemBankQuestionUrl = (bank: string,) => {
+
+
+
+
+  return `/api/item-banks/${bank}/questions`
+}
+
+/**
+ * @summary Copy a question into a bank
+ */
+export const createItemBankQuestion = async (bank: string,
+    itemBankQuestionReq: NonReadonly<ItemBankQuestionReq>, options?: RequestInit): Promise<createItemBankQuestionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateItemBankQuestionUrl(bank),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itemBankQuestionReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createItemBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createItemBankQuestionResponse
+}
+
+
+
+export type deleteItemBankQuestionResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteItemBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteItemBankQuestionResponseSuccess = (deleteItemBankQuestionResponse204) & {
+  headers: Headers;
+};
+export type deleteItemBankQuestionResponseError = (deleteItemBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteItemBankQuestionResponse = (deleteItemBankQuestionResponseSuccess | deleteItemBankQuestionResponseError)
+
+export const getDeleteItemBankQuestionUrl = (bank: string,
+    id: string,) => {
+
+
+
+
+  return `/api/item-banks/${bank}/questions/${id}`
+}
+
+/**
+ * @summary Delete a bank question
+ */
+export const deleteItemBankQuestion = async (bank: string,
+    id: string, options?: RequestInit): Promise<deleteItemBankQuestionResponse> => {
+
+  const res = await fetch(getDeleteItemBankQuestionUrl(bank,id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteItemBankQuestionResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteItemBankQuestionResponse
+}
+
+
+
+export type updateItemBankQuestionResponse200 = {
+  data: ItemBankQuestion
+  status: 200
+}
+
+export type updateItemBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateItemBankQuestionResponseSuccess = (updateItemBankQuestionResponse200) & {
+  headers: Headers;
+};
+export type updateItemBankQuestionResponseError = (updateItemBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateItemBankQuestionResponse = (updateItemBankQuestionResponseSuccess | updateItemBankQuestionResponseError)
+
+export const getUpdateItemBankQuestionUrl = (bank: string,
+    id: string,) => {
+
+
+
+
+  return `/api/item-banks/${bank}/questions/${id}`
+}
+
+/**
+ * @summary Replace a bank question and its tags
+ */
+export const updateItemBankQuestion = async (bank: string,
+    id: string,
+    itemBankQuestionReq: NonReadonly<ItemBankQuestionReq>, options?: RequestInit): Promise<updateItemBankQuestionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getUpdateItemBankQuestionUrl(bank,id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itemBankQuestionReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateItemBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateItemBankQuestionResponse
+}
+
+
+
+export type createBankQuizResponse201 = {
+  data: Material
+  status: 201
+}
+
+export type createBankQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createBankQuizResponseSuccess = (createBankQuizResponse201) & {
+  headers: Headers;
+};
+export type createBankQuizResponseError = (createBankQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type createBankQuizResponse = (createBankQuizResponseSuccess | createBankQuizResponseError)
+
+export const getCreateBankQuizUrl = (bank: string,) => {
+
+
+
+
+  return `/api/item-banks/${bank}/quizzes`
+}
+
+/**
+ * @summary Copy picked bank questions, images and all, into a new quiz in a workspace the caller edits
+ */
+export const createBankQuiz = async (bank: string,
+    bankQuizReq: NonReadonly<BankQuizReq>, options?: RequestInit): Promise<createBankQuizResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateBankQuizUrl(bank),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(bankQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createBankQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createBankQuizResponse
+}
+
+
+
+export type listItemBankTagsResponse200 = {
+  data: ItemBankTagsOutputBody
+  status: 200
+}
+
+export type listItemBankTagsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listItemBankTagsResponseSuccess = (listItemBankTagsResponse200) & {
+  headers: Headers;
+};
+export type listItemBankTagsResponseError = (listItemBankTagsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listItemBankTagsResponse = (listItemBankTagsResponseSuccess | listItemBankTagsResponseError)
+
+export const getListItemBankTagsUrl = (bank: string,) => {
+
+
+
+
+  return `/api/item-banks/${bank}/tags`
+}
+
+/**
+ * @summary Every tag a bank's questions hold
+ */
+export const listItemBankTags = async (bank: string, options?: RequestInit): Promise<listItemBankTagsResponse> => {
+
+  const res = await fetch(getListItemBankTagsUrl(bank),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listItemBankTagsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listItemBankTagsResponse
+}
+
+
+
 export type listItemsResponse200 = {
   data: ItemPage
   status: 200
@@ -7083,6 +7519,172 @@ const res = await fetch(getUpdateLabelUrl(id),
 
   const data: updateLabelResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateLabelResponse
+}
+
+
+
+export type listContinueResponse200 = {
+  data: ContinueOutputBody
+  status: 200
+}
+
+export type listContinueResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listContinueResponseSuccess = (listContinueResponse200) & {
+  headers: Headers;
+};
+export type listContinueResponseError = (listContinueResponseDefault) & {
+  headers: Headers;
+};
+
+export type listContinueResponse = (listContinueResponseSuccess | listContinueResponseError)
+
+export const getListContinueUrl = (params?: ListContinueParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/learning/continue?${stringifiedParams}` : `/api/learning/continue`
+}
+
+/**
+ * @summary Study's Continue: the newest revisions and tries that can go on, left within the week
+ */
+export const listContinue = async (params?: ListContinueParams, options?: RequestInit): Promise<listContinueResponse> => {
+
+  const res = await fetch(getListContinueUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listContinueResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listContinueResponse
+}
+
+
+
+export type hideContinueResponse204 = {
+  data: void
+  status: 204
+}
+
+export type hideContinueResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type hideContinueResponseSuccess = (hideContinueResponse204) & {
+  headers: Headers;
+};
+export type hideContinueResponseError = (hideContinueResponseDefault) & {
+  headers: Headers;
+};
+
+export type hideContinueResponse = (hideContinueResponseSuccess | hideContinueResponseError)
+
+export const getHideContinueUrl = (kind: 'revision' | 'quiz' | 'flashcards',
+    id: string,) => {
+
+
+
+
+  return `/api/learning/continue/${kind}/${id}`
+}
+
+/**
+ * @summary Remove a revision or try from Continue; History keeps it
+ */
+export const hideContinue = async (kind: 'revision' | 'quiz' | 'flashcards',
+    id: string, options?: RequestInit): Promise<hideContinueResponse> => {
+
+  const res = await fetch(getHideContinueUrl(kind,id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: hideContinueResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as hideContinueResponse
+}
+
+
+
+export type listStudyHistoryResponse200 = {
+  data: StudyHistoryOutputBody
+  status: 200
+}
+
+export type listStudyHistoryResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listStudyHistoryResponseSuccess = (listStudyHistoryResponse200) & {
+  headers: Headers;
+};
+export type listStudyHistoryResponseError = (listStudyHistoryResponseDefault) & {
+  headers: Headers;
+};
+
+export type listStudyHistoryResponse = (listStudyHistoryResponseSuccess | listStudyHistoryResponseError)
+
+export const getListStudyHistoryUrl = (params?: ListStudyHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/learning/history?${stringifiedParams}` : `/api/learning/history`
+}
+
+/**
+ * @summary Revisions and quiz and flashcard attempts, with what can go on
+ */
+export const listStudyHistory = async (params?: ListStudyHistoryParams, options?: RequestInit): Promise<listStudyHistoryResponse> => {
+
+  const res = await fetch(getListStudyHistoryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listStudyHistoryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listStudyHistoryResponse
 }
 
 
@@ -9595,70 +10197,6 @@ export const headPublicWorkspaceSummary = async (token: string, options?: Reques
 
 
 
-export type checkQuestionComputationResponse200 = {
-  data: ComputationCheckResp
-  status: 200
-}
-
-export type checkQuestionComputationResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type checkQuestionComputationResponseSuccess = (checkQuestionComputationResponse200) & {
-  headers: Headers;
-};
-export type checkQuestionComputationResponseError = (checkQuestionComputationResponseDefault) & {
-  headers: Headers;
-};
-
-export type checkQuestionComputationResponse = (checkQuestionComputationResponseSuccess | checkQuestionComputationResponseError)
-
-export const getCheckQuestionComputationUrl = () => {
-
-
-
-
-  return `/api/questions/computation-check`
-}
-
-/**
- * @summary Check whether an open part needs computation to grade
- */
-export const checkQuestionComputation = async (computationCheckReq: NonReadonly<ComputationCheckReq>, options?: RequestInit): Promise<checkQuestionComputationResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCheckQuestionComputationUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(computationCheckReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: checkQuestionComputationResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as checkQuestionComputationResponse
-}
-
-
-
 export type createQuizResponse201 = {
   data: Quiz
   status: 201
@@ -9832,6 +10370,71 @@ export const getQuiz = async (id: string, options?: RequestInit): Promise<getQui
 
 
 
+export type copyBankQuestionsToQuizResponse200 = {
+  data: CopyBankQuestionsOutputBody
+  status: 200
+}
+
+export type copyBankQuestionsToQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type copyBankQuestionsToQuizResponseSuccess = (copyBankQuestionsToQuizResponse200) & {
+  headers: Headers;
+};
+export type copyBankQuestionsToQuizResponseError = (copyBankQuestionsToQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type copyBankQuestionsToQuizResponse = (copyBankQuestionsToQuizResponseSuccess | copyBankQuestionsToQuizResponseError)
+
+export const getCopyBankQuestionsToQuizUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/bank-questions`
+}
+
+/**
+ * @summary Copy picked bank questions, images and all, for a quiz the caller edits; the editor inserts the copies itself
+ */
+export const copyBankQuestionsToQuiz = async (id: string,
+    bankQuestionsCopyReq: NonReadonly<BankQuestionsCopyReq>, options?: RequestInit): Promise<copyBankQuestionsToQuizResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCopyBankQuestionsToQuizUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(bankQuestionsCopyReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: copyBankQuestionsToQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as copyBankQuestionsToQuizResponse
+}
+
+
+
 export type checkQuizQuestionResponse200 = {
   data: AttemptDetail
   status: 200
@@ -9943,6 +10546,71 @@ export const getQuizForEdit = async (id: string, options?: RequestInit): Promise
 
   const data: getQuizForEditResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getQuizForEditResponse
+}
+
+
+
+export type copyQuizToGradedQuizResponse201 = {
+  data: Assignment
+  status: 201
+}
+
+export type copyQuizToGradedQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type copyQuizToGradedQuizResponseSuccess = (copyQuizToGradedQuizResponse201) & {
+  headers: Headers;
+};
+export type copyQuizToGradedQuizResponseError = (copyQuizToGradedQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type copyQuizToGradedQuizResponse = (copyQuizToGradedQuizResponseSuccess | copyQuizToGradedQuizResponseError)
+
+export const getCopyQuizToGradedQuizUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/graded-copy`
+}
+
+/**
+ * @summary Make a graded quiz from a copy of a practice quiz in the same workspace, images and all
+ */
+export const copyQuizToGradedQuiz = async (id: string,
+    copyQuizToGradedQuizReq: NonReadonly<CopyQuizToGradedQuizReq>, options?: RequestInit): Promise<copyQuizToGradedQuizResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCopyQuizToGradedQuizUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(copyQuizToGradedQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: copyQuizToGradedQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as copyQuizToGradedQuizResponse
 }
 
 
@@ -10258,63 +10926,6 @@ const res = await fetch(getRateReviewItemUrl(),
 
   const data: rateReviewItemResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as rateReviewItemResponse
-}
-
-
-
-export type listPastReviewsResponse200 = {
-  data: PastReviewsOutputBody
-  status: 200
-}
-
-export type listPastReviewsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listPastReviewsResponseSuccess = (listPastReviewsResponse200) & {
-  headers: Headers;
-};
-export type listPastReviewsResponseError = (listPastReviewsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listPastReviewsResponse = (listPastReviewsResponseSuccess | listPastReviewsResponseError)
-
-export const getListPastReviewsUrl = (params?: ListPastReviewsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/review/sessions?${stringifiedParams}` : `/api/review/sessions`
-}
-
-/**
- * @summary Finished review sessions with their quiz and flashcard results
- */
-export const listPastReviews = async (params?: ListPastReviewsParams, options?: RequestInit): Promise<listPastReviewsResponse> => {
-
-  const res = await fetch(getListPastReviewsUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listPastReviewsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listPastReviewsResponse
 }
 
 
@@ -12108,20 +12719,29 @@ export type listAssignmentsResponseError = (listAssignmentsResponseDefault) & {
 
 export type listAssignmentsResponse = (listAssignmentsResponseSuccess | listAssignmentsResponseError)
 
-export const getListAssignmentsUrl = (id: string,) => {
+export const getListAssignmentsUrl = (id: string,
+    params?: ListAssignmentsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/workspaces/${id}/assignments`
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/assignments?${stringifiedParams}` : `/api/workspaces/${id}/assignments`
 }
 
 /**
- * @summary A class's assignments: all of them for its owner and teaching assistants, a member's own otherwise
+ * @summary A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise
  */
-export const listAssignments = async (id: string, options?: RequestInit): Promise<listAssignmentsResponse> => {
+export const listAssignments = async (id: string,
+    params?: ListAssignmentsParams, options?: RequestInit): Promise<listAssignmentsResponse> => {
 
-  const res = await fetch(getListAssignmentsUrl(id),
+  const res = await fetch(getListAssignmentsUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -12167,7 +12787,7 @@ export const getCreateAssignmentUrl = (id: string,) => {
 }
 
 /**
- * @summary Give a class an assignment, freezing its quiz
+ * @summary Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
  */
 export const createAssignment = async (id: string,
     assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createAssignmentResponse> => {
@@ -12200,121 +12820,6 @@ const res = await fetch(getCreateAssignmentUrl(id),
 
   const data: createAssignmentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createAssignmentResponse
-}
-
-
-
-export type workspaceCanvasResponse200 = {
-  data: CanvasBody
-  status: 200
-}
-
-export type workspaceCanvasResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type workspaceCanvasResponseSuccess = (workspaceCanvasResponse200) & {
-  headers: Headers;
-};
-export type workspaceCanvasResponseError = (workspaceCanvasResponseDefault) & {
-  headers: Headers;
-};
-
-export type workspaceCanvasResponse = (workspaceCanvasResponseSuccess | workspaceCanvasResponseError)
-
-export const getWorkspaceCanvasUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/canvas`
-}
-
-/**
- * @summary The caller's own canvas in the workspace, made on first open
- */
-export const workspaceCanvas = async (id: string, options?: RequestInit): Promise<workspaceCanvasResponse> => {
-
-  const res = await fetch(getWorkspaceCanvasUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: workspaceCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as workspaceCanvasResponse
-}
-
-
-
-export type saveWorkspaceCanvasResponse200 = {
-  data: CanvasBody
-  status: 200
-}
-
-export type saveWorkspaceCanvasResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type saveWorkspaceCanvasResponseSuccess = (saveWorkspaceCanvasResponse200) & {
-  headers: Headers;
-};
-export type saveWorkspaceCanvasResponseError = (saveWorkspaceCanvasResponseDefault) & {
-  headers: Headers;
-};
-
-export type saveWorkspaceCanvasResponse = (saveWorkspaceCanvasResponseSuccess | saveWorkspaceCanvasResponseError)
-
-export const getSaveWorkspaceCanvasUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/canvas`
-}
-
-/**
- * @summary Record a save of the caller's canvas: its new board asset and images; the server counts the version
- */
-export const saveWorkspaceCanvas = async (id: string,
-    saveCanvasInputBody: NonReadonly<SaveCanvasInputBody>, options?: RequestInit): Promise<saveWorkspaceCanvasResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getSaveWorkspaceCanvasUrl(id),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveCanvasInputBody)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: saveWorkspaceCanvasResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveWorkspaceCanvasResponse
 }
 
 
@@ -13497,7 +14002,7 @@ export const getGetWorkspacePracticeUrl = (id: string,) => {
 }
 
 /**
- * @summary The workspace's Practice page: suggestions, quizzes and the caller's topic reviews
+ * @summary The workspace's Practice page: suggestions, quizzes and sets, and the caller's topic reviews
  */
 export const getWorkspacePractice = async (id: string, options?: RequestInit): Promise<getWorkspacePracticeResponse> => {
 

@@ -135,7 +135,7 @@ export function WorkspaceFormDialog({
     }
   });
   const fields = (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <Controller
         control={control}
         name="iconId"

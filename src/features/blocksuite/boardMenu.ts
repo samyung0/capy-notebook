@@ -25,6 +25,10 @@ export type MenuZoom = {
   out: () => void;
   percent?: { reset: () => void; value: () => number };
 };
+/** A line of text under a divider at the menu's end (a canvas's size). */
+export type MenuNote = { error: boolean; text: string };
+
+type MenuContent = { entries: MenuEntry[]; note?: MenuNote; zoom?: MenuZoom };
 
 /** The ☰ button and its menu, top right of the board and of an open card (Epo
  * 2026-11-08): everything that isn't a tool lives here, so the bottom row holds only
@@ -33,9 +37,9 @@ export type MenuZoom = {
 export class BoardMenu {
   readonly element = document.createElement('div');
   open = false;
-  private readonly content: () => { entries: MenuEntry[]; zoom?: MenuZoom };
+  private readonly content: () => MenuContent;
 
-  constructor(content: () => { entries: MenuEntry[]; zoom?: MenuZoom }) {
+  constructor(content: () => MenuContent) {
     this.content = content;
     this.element.className = 'capy-menu';
     document.addEventListener('pointerdown', this.away, true);
@@ -59,7 +63,7 @@ export class BoardMenu {
 
   /** Again from what it shows: the undo stacks, the zoom. */
   readonly draw = () => {
-    const { entries, zoom } = this.content();
+    const { entries, note, zoom } = this.content();
     const run = (action: () => void) => () => {
       action();
       this.set(false);
@@ -126,6 +130,15 @@ export class BoardMenu {
                         >
                           ${hugeIcon(PlusSignIcon)}
                         </button>
+                      </div>`
+                    : nothing
+                }
+                ${
+                  note
+                    ? html`<div
+                        class=${note.error ? 'capy-menu-note capy-menu-note-error' : 'capy-menu-note'}
+                      >
+                        ${note.text}
                       </div>`
                     : nothing
                 }

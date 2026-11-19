@@ -7,6 +7,8 @@ import {
 import {
   type Color,
   DefaultTheme,
+  getShapeSize,
+  type ShapeName,
   type ShapeStyle,
 } from '@blocksuite/affine-model';
 import { ThemeProvider } from '@blocksuite/affine-shared/services';
@@ -15,15 +17,19 @@ import { assertType } from '@blocksuite/global/utils';
 import type { GfxController } from '@blocksuite/std/gfx';
 import { effect } from '@preact/signals-core';
 
-import {
-  SHAPE_OVERLAY_HEIGHT,
-  SHAPE_OVERLAY_OFFSET_X,
-  SHAPE_OVERLAY_OFFSET_Y,
-  SHAPE_OVERLAY_WIDTH,
-} from '../consts';
+import { SHAPE_OVERLAY_HEIGHT, SHAPE_OVERLAY_WIDTH } from '../consts';
 import type { ShapeTool } from '../shape-tool';
 import { ShapeFactory } from './factory';
 import type { Shape } from './shape';
+
+// Capy (local change 41): the shape following the pointer is centred on it, as a
+// shape dragged from the toolbar is, and a click places it there (ShapeTool.click).
+// AFFiNE hung it from the pointer by its top-left corner.
+// Local change 46 sizes it as the click places it (`getShapeSize`).
+function centredOn(x: number, y: number, shapeName: string): XYWH {
+  const [w, h] = getShapeSize(shapeName as ShapeName);
+  return [x - w / 2, y - h / 2, w, h];
+}
 
 export class ShapeOverlay extends ToolOverlay {
   shape: Shape;
@@ -70,16 +76,7 @@ export class ShapeOverlay extends ToolOverlay {
           ...options,
         };
 
-        let { x, y } = this;
-        if (shapeName === 'roundedRect' || shapeName === 'rect') {
-          x += SHAPE_OVERLAY_OFFSET_X;
-          y += SHAPE_OVERLAY_OFFSET_Y;
-        }
-        const w =
-          shapeName === 'roundedRect'
-            ? SHAPE_OVERLAY_WIDTH + 40
-            : SHAPE_OVERLAY_WIDTH;
-        const xywh = [x, y, w, SHAPE_OVERLAY_HEIGHT] as XYWH;
+        const xywh = centredOn(this.x, this.y, shapeName);
         this.shape = ShapeFactory.createShape(
           xywh,
           shapeName,
@@ -95,16 +92,7 @@ export class ShapeOverlay extends ToolOverlay {
 
   override render(ctx: CanvasRenderingContext2D, rc: RoughCanvas): void {
     ctx.globalAlpha = this.globalAlpha;
-    let { x, y } = this;
-    const { type } = this.shape;
-    if (type === 'roundedRect' || type === 'rect') {
-      x += SHAPE_OVERLAY_OFFSET_X;
-      y += SHAPE_OVERLAY_OFFSET_Y;
-    }
-    const w =
-      type === 'roundedRect' ? SHAPE_OVERLAY_WIDTH + 40 : SHAPE_OVERLAY_WIDTH;
-    const xywh = [x, y, w, SHAPE_OVERLAY_HEIGHT] as XYWH;
-    this.shape.xywh = xywh;
+    this.shape.xywh = centredOn(this.x, this.y, this.shape.type);
     this.shape.draw(ctx, rc);
   }
 }

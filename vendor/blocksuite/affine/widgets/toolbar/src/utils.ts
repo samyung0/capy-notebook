@@ -65,7 +65,9 @@ export function autoUpdatePosition(
   const isInner = placement === 'inner';
   const offsetTop = sideOptions?.top ?? 0;
   const offsetBottom = sideOptions?.bottom ?? 0;
-  const offsetY = offsetTop + (hasSurfaceScope ? 2 : 0);
+  // Capy (local change 56): a canvas selection's toolbar clears the selection
+  // frame's rotate knob, 32 px above it.
+  const offsetY = offsetTop + (hasSurfaceScope ? 2 + 30 : 0);
   const config: Partial<ComputePositionConfig> = isInner
     ? {
         placement: 'top-start',

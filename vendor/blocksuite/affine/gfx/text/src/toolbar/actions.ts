@@ -70,8 +70,11 @@ const FONT_STYLE_LIST = [
   },
 ] as const satisfies MenuItem<FontStyle>[];
 
+// Capy (local change 45): 12 and 20 added to AFFiNE's sizes.
 const FONT_SIZE_LIST = [
+  { value: 12 },
   { value: 16 },
+  { value: 20 },
   { value: 24 },
   { value: 32 },
   { value: 40 },

@@ -26,10 +26,12 @@ describe('parseWorkspaceOpenSearch', () => {
     }
   );
 
-  it('keeps the open panel from the URL', () => {
-    expect(parseWorkspaceOpenSearch({ panel: 'agent' }).panel).toBe('agent');
-    expect(parseWorkspaceOpenSearch({ panel: 'canvas' }).panel).toBe('canvas');
-    expect(parseWorkspaceOpenSearch({ panel: 'x' }).panel).toBeUndefined();
+  it('keeps the page from the URL', () => {
+    expect(parseWorkspaceOpenSearch({ view: 'chat' }).view).toBe('chat');
+    expect(parseWorkspaceOpenSearch({ view: 'canvas' }).view).toBe('canvas');
+    expect(parseWorkspaceOpenSearch({ view: 'files-chat' }).view).toBe(
+      'files-chat'
+    );
   });
 
   it("keeps Make a quiz's dialog steps, with what was chosen", () => {
@@ -133,52 +135,12 @@ describe('document mode cache', () => {
     expect(() => saveDocumentMode(item, 'edit')).not.toThrow();
   });
 
-  it('opens settings at a tab and Practice with its session or result from the URL, ignoring other values', () => {
-    expect(
-      parseWorkspaceOpenSearch({ settings: 'others', study: 'practice' })
-    ).toMatchObject({ settings: 'others', study: 'practice' });
-    expect(
-      parseWorkspaceOpenSearch({
-        group: 'topic',
-        reviewMode: 'fading',
-        study: 'practice',
-        topicId: 't1',
-      })
-    ).toMatchObject({
-      group: 'topic',
-      reviewMode: 'fading',
-      study: 'practice',
-      topicId: 't1',
-    });
-    expect(
-      parseWorkspaceOpenSearch({ review: 's1', study: 'practice' })
-    ).toMatchObject({ review: 's1', study: 'practice' });
+  it('opens settings at a tab over any page, ignoring an unknown one', () => {
     expect(
       parseWorkspaceOpenSearch({ file: 'f1', settings: 'danger' })
     ).toMatchObject({ file: 'f1', settings: 'danger' });
-    expect(
-      parseWorkspaceOpenSearch({
-        group: 'topic',
-        settings: 'bogus',
-        study: 'yes',
-      })
-    ).toEqual({
-      group: undefined,
-      review: undefined,
-      reviewMode: undefined,
-      settings: undefined,
-      study: undefined,
-      topicId: undefined,
-    });
-  });
-
-  it("opens Members with its view and a member's profile", () => {
-    expect(
-      parseWorkspaceOpenSearch({
-        member: 'u1',
-        show: 'topics',
-        study: 'members',
-      })
-    ).toMatchObject({ member: 'u1', show: 'topics', study: 'members' });
+    expect(parseWorkspaceOpenSearch({ settings: 'bogus' }).settings).toBe(
+      undefined
+    );
   });
 });

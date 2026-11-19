@@ -442,9 +442,11 @@ fn figure(block: &Value) -> String {
     lines.join("\n")
 }
 
-/// One graph element as stored: its type, then its term, points (by name,
-/// else coordinates), text or label. An element naming a point that is gone
-/// is left out, as a merged graph is repaired on read.
+/// One graph element as stored: its type, then a formula row's LaTeX as
+/// typed, its points (by name, else coordinates), text, label or formula's
+/// LaTeX. An element naming a
+/// point that is gone is left out, as a merged graph is repaired on read, and
+/// so is a mark without text (a stroke, curve or ellipse).
 fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
     let refs = |ids: &[&str]| -> Option<String> {
         let names: Option<Vec<&str>> = ids
@@ -461,15 +463,7 @@ fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
     let string = |key: &str| e[key].as_str().unwrap_or_default();
     let mut typ = string("type").to_owned();
     let body = match typ.as_str() {
-        "functiongraph" => {
-            let mut body = string("term").to_owned();
-            if let Some([a, b]) = e["domain"].as_array().map(Vec::as_slice)
-                && let (Some(a), Some(b)) = (number(a), number(b))
-            {
-                body.push_str(&format!(" on [{a}, {b}]"));
-            }
-            Some(body)
-        }
+        "expression" => Some(string("latex").to_owned()),
         "point" => {
             let body = pair(&e["coords"]);
             let name = field(e, "name");
@@ -495,6 +489,7 @@ fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
             .zip(refs(&strings(&e["points"])))
             .map(|(center, ends)| format!("center {center}, {ends}")),
         "text" => Some(field(e, "text").to_owned()),
+        "formula" => Some(field(e, "latex").to_owned()),
         _ => None,
     };
     match body {
@@ -548,18 +543,11 @@ fn question(q: &Value) -> Vec<String> {
     out
 }
 
-/// One question block: a text's label and text, a figure's rendering, a
-/// table's rows or an image's description.
+/// One question block: a text, a figure's rendering, a table's rows or an
+/// image's description.
 fn question_block(b: &Value) -> String {
     match b["type"].as_str() {
-        Some("text") => {
-            let (label, text) = (field(b, "label"), field(b, "text"));
-            match (label.is_empty(), text.is_empty()) {
-                (true, _) => text.to_owned(),
-                (_, true) => label.to_owned(),
-                _ => format!("{label}\n{text}"),
-            }
-        }
+        Some("text") => field(b, "text").to_owned(),
         Some("chart" | "plot" | "graph") => figure(b),
         Some("table") => b["rows"]
             .as_array()

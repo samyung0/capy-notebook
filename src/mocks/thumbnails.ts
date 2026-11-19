@@ -17,6 +17,7 @@ import {
   mermaidNode,
   quizNode,
 } from '@/features/materials/document';
+import { stripMarks } from '@/features/questions/parseMarkedText';
 import { GAP_MARKER } from '@/features/questions/types';
 import { biologyQuizQuestions } from './biologyQuiz';
 import paperPdf from './fixtures/thumbs/2604.03051v1-pdf.webp';
@@ -138,7 +139,7 @@ export function notePreview(value: MaterialValue): MaterialPreview {
 
 const textOf = (blocks: QuestionBlock[]) =>
   blocks
-    .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+    .flatMap((block) => (block.type === 'text' ? [stripMarks(block.text)] : []))
     .join(' ');
 const cut = (items: string[]) =>
   items.slice(0, CHOICES).map((item) => item.slice(0, CHOICE));

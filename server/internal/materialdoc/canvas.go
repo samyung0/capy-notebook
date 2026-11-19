@@ -7,20 +7,22 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
 )
 
-// CanvasBoardType is the one block a canvas material's document holds: where
-// its saved board is (the material's own `board` editor asset), the save's
-// version, and the images on the canvas, so the asset pruner keeps them all
-// (Epo 2026-11-09, todo-workspace-canvas-storage.md).
+// CanvasBoardType is the one block a canvas material's document holds. The
+// board itself lives in the canvas's collaboration room (Epo 2026-11-18); the
+// room's projection sends this block with the stored version it projected and
+// the images on the board, so the asset pruner keeps them.
 const CanvasBoardType = "canvas_board"
+
+// CanvasBoardID is the block's id, the same in every canvas: the room sends
+// it too, so a projection replaces the block and never adds a second.
+const CanvasBoardID = "board"
 
 // CanvasBoard is a canvas document's one block, read back.
 type CanvasBoard struct {
-	// BoardAssetID is empty until the first save.
-	BoardAssetID string `json:"boardAssetId"`
-	// Version counts the saves; the browser sends the one it read, and a
-	// stale one is refused (ErrConflict through the material's revision).
+	// Version is the room's stored version at its last projection; 0 until
+	// the first.
 	Version int64 `json:"version"`
-	// ImageAssetIDs are the pictures on the canvas, as image editor assets.
+	// ImageAssetIDs are the pictures on the board, as image editor assets.
 	ImageAssetIDs []string `json:"imageAssetIds"`
 }
 
@@ -31,12 +33,11 @@ func CanvasDocument(board CanvasBoard) (string, error) {
 		images = append(images, map[string]any{"assetId": id})
 	}
 	node := map[string]any{
-		"type":         CanvasBoardType,
-		"id":           newID("block"),
-		"children":     []any{textLeaf("")},
-		"boardAssetId": board.BoardAssetID,
-		"version":      board.Version,
-		"images":       images,
+		"type":     CanvasBoardType,
+		"id":       CanvasBoardID,
+		"children": []any{textLeaf("")},
+		"version":  board.Version,
+		"images":   images,
 	}
 	return Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{node}})
 }
@@ -52,7 +53,6 @@ func ReadCanvasBoard(raw string) (CanvasBoard, error) {
 	}
 	node := doc.Value[0]
 	out := CanvasBoard{ImageAssetIDs: []string{}}
-	out.BoardAssetID, _ = node["boardAssetId"].(string)
 	switch v := node["version"].(type) {
 	case json.Number:
 		out.Version, _ = v.Int64()

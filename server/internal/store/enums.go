@@ -280,13 +280,15 @@ func (NotificationKind) Schema(r huma.Registry) *huma.Schema {
 // SearchKind is the category of a global-search hit.
 type SearchKind string
 
+// A material hit's kind is its MaterialKind (Epo 2026-11-13: every material,
+// canvases included).
 const (
-	SearchWorkspace  SearchKind = "workspace"
-	SearchFile       SearchKind = "file"
-	SearchEvent      SearchKind = "event"
-	SearchFlashcards SearchKind = "flashcards"
+	SearchWorkspace SearchKind = "workspace"
+	SearchFile      SearchKind = "file"
+	SearchEvent     SearchKind = "event"
 )
 
 func (SearchKind) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "SearchKind", "workspace", "file", "event", "flashcards")
+	return enumRef(r, "SearchKind", "workspace", "file", "event",
+		"note", "quiz", "flashcards", "mindmap", "diagram", "canvas")
 }

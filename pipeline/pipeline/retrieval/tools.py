@@ -3245,15 +3245,14 @@ FIGURE_JSON_CHARS = 5000
 
 def _figure_view(printed: str) -> str:
     """A chart's, plot's or graph's block as inspect_document prints it: its
-    compact JSON without a graph's drawn SVG (``image``), or past
-    FIGURE_JSON_CHARS its type, kind, title, labels and series names."""
+    compact JSON, or past FIGURE_JSON_CHARS its type, kind, title, labels and
+    series names."""
     try:
         block = json.loads(printed)
     except ValueError:
         block = None
     if not isinstance(block, dict):
         return printed[:FIGURE_JSON_CHARS]
-    block.pop("image", None)
     shown = json.dumps(block, ensure_ascii=False, separators=(",", ":"))
     if len(shown) <= FIGURE_JSON_CHARS:
         return shown
@@ -4796,7 +4795,6 @@ ARGUMENT_ORDER = (
     "markscheme",
     "model_answer",
     "unit",
-    "hints",
     "explanation",
     "replaces",
     "questions",

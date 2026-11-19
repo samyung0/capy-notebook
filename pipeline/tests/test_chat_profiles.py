@@ -48,7 +48,8 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # 2026-11-03; the schemas, skills and turn_context keys alone),
 # the owner schemas and skills/editing keys alone, read_study_progress removed
 # (Epo 2026-11-04; schemas/owner_office alone, which was
-# schemas/owner_office_progress).
+# schemas/owner_office_progress), add_questions without hints (Epo 2026-11-15;
+# schemas/owner and schemas/owner_office alone).
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
 OWNER = frozenset(

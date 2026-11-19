@@ -1,8 +1,10 @@
-import type {
-  LearnerAnswer,
-  LearnerQuestion,
-  Question,
-  QuestionPart,
+import {
+  type LearnerAnswer,
+  type LearnerQuestion,
+  multipleAnswers,
+  type Question,
+  type QuestionPart,
+  shuffledOrder,
 } from '@/features/questions/types';
 import { isDrawingValue } from '@/features/quizzes/drawing/drawingValue';
 import {
@@ -22,7 +24,8 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 /** Mirrors the server's `questions.LearnerView`: no answers, marking schemes
- * or solutions, with matching options and ordering items shuffled. */
+ * or solutions, with matching options, ordering items and Shuffle options'
+ * mcq options (`order`) shuffled. */
 export function learnerView(question: Question): LearnerQuestion {
   return {
     ...question,
@@ -34,7 +37,10 @@ export function learnerView(question: Question): LearnerQuestion {
           learner = {
             options: answer.options,
             type: answer.type,
-            ...(answer.correct.length > 1 ? { multiple: true as const } : {}),
+            ...(multipleAnswers(answer) ? { multiple: true as const } : {}),
+            ...(answer.shuffle
+              ? { order: shuffledOrder(answer.options.length, answer.locked) }
+              : {}),
           };
           break;
         case 'short':
@@ -74,9 +80,9 @@ export function learnerView(question: Question): LearnerQuestion {
   };
 }
 
-/** Stands in for Jev: an item earns its marks when the answer shares a long
+/** Stands in for the grading model: an item earns its marks when the answer shares a long
  * word with it; a blank answer earns 0 on every item. */
-function mockJev(part: QuestionPart, answer: Answer | undefined): number[] {
+function mockGrader(part: QuestionPart, answer: Answer | undefined): number[] {
   const text = typeof answer === 'string' ? answer.toLowerCase().trim() : '';
   return (part.markscheme ?? []).map((item) =>
     text &&
@@ -109,7 +115,7 @@ export function gradeQuestions(
     ...question,
     parts: question.parts.map((part): QuestionPart => {
       if (part.answer.type === 'open')
-        return applyItemAwards(part, mockJev(part, answers[part.id]));
+        return applyItemAwards(part, mockGrader(part, answers[part.id]));
       if (part.answer.type === 'drawing')
         return applyItemAwards(part, mockDrawing(part, answers[part.id]));
       const { awarded, items } = scorePart(part, answers[part.id]);

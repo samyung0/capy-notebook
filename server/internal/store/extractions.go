@@ -34,6 +34,11 @@ type Extraction struct {
 	SpendSessionID string `json:"-"`
 	// Hidden is the starter's choice for the quiz the run saves.
 	Hidden bool `json:"-"`
+	// GradedQuiz is the graded quiz the run's quiz is made with, started in
+	// the New graded quiz dialog (Epo 2026-11-16, Material.GradedQuiz).
+	GradedQuiz *AssignmentForm `json:"-"`
+	// AssignmentID is that graded quiz once the quiz is made.
+	AssignmentID *string `json:"assignmentId,omitempty"`
 }
 
 // ExtractionFoundQuestion is one line of the map: a printed question, the pages it
@@ -103,7 +108,8 @@ const KindExtractionQuestion = "extraction_question"
 
 const extractionCols = `id, workspace_id, title, status, copied, answered, confirmed,
 	found, COALESCE(found_credit_micros, 0), unread_answers, paper_name, paper_pages, answer_files,
-	report, quiz_id, error_code, error, created_at, finished_at, COALESCE(spend_session_id, ''), hidden`
+	report, quiz_id, error_code, error, created_at, finished_at, COALESCE(spend_session_id, ''), hidden, graded_quiz,
+	(SELECT m.assignment_id FROM materials m WHERE m.id=question_extractions.quiz_id)`
 
 func scanExtraction(row pgx.Row) (Extraction, error) {
 	var e Extraction
@@ -113,7 +119,7 @@ func scanExtraction(row pgx.Row) (Extraction, error) {
 	var paperPages, answerFiles int
 	err := row.Scan(&e.ID, &e.WorkspaceID, &e.Title, &e.Status, &e.Recorded, &e.Answered, &e.Confirmed,
 		&found, &foundMicros, &unread, &paperName, &paperPages, &answerFiles,
-		&report, &e.QuizID, &e.ErrorCode, &e.Error, &e.CreatedAt, &e.FinishedAt, &e.SpendSessionID, &e.Hidden)
+		&report, &e.QuizID, &e.ErrorCode, &e.Error, &e.CreatedAt, &e.FinishedAt, &e.SpendSessionID, &e.Hidden, &e.GradedQuiz, &e.AssignmentID)
 	if err != nil {
 		return e, err
 	}
@@ -153,6 +159,8 @@ type ExtractionStart struct {
 	AnswerFiles    int
 	// Hidden starts the run's quiz hidden from members.
 	Hidden bool
+	// GradedQuiz: the run's quiz is made with this graded quiz (Extraction.GradedQuiz).
+	GradedQuiz *AssignmentForm
 }
 
 // CreateExtraction records a run as running.
@@ -163,10 +171,10 @@ func (s *Store) CreateExtraction(ctx context.Context, run ExtractionStart) (Extr
 	}
 	return scanExtraction(s.pool.QueryRow(ctx, `
 		INSERT INTO question_extractions (id, workspace_id, user_id, title, spend_session_id, unread_answers,
-			paper_name, paper_pages, answer_files, hidden)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			paper_name, paper_pages, answer_files, hidden, graded_quiz)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+extractionCols, run.ID, run.WorkspaceID, run.UserID, run.Title, nullString(run.SpendSessionID), unread,
-		run.PaperName, run.PaperPages, run.AnswerFiles, run.Hidden))
+		run.PaperName, run.PaperPages, run.AnswerFiles, run.Hidden, run.GradedQuiz))
 }
 
 // GetExtraction reads a run its starter may see; one waiting on them says what they

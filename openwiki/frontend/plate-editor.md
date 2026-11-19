@@ -264,10 +264,14 @@ it dirtied. The trailing paragraph comes with the first edit, written straight
 into the document under its own origin so it is no part of that edit's Undo
 (as an ordinary edit, the Undo would bring it back as a new edit and empty
 Redo). Later, `trailingBlockPlugin` adds one only behind a real edit in the same
-batch, never for a co-editor's or an agent's change. A click below the last
-block, where a note not ending in a paragraph has nothing to click on, adds the
-paragraph and puts the caret in it (`openTrailingParagraph`), which counts as
-the first edit; from the keyboard Mod+Enter leaves the last block as before. The
+batch, never for a co-editor's or an agent's change. The note always ends
+with "Type / for commands" (Epo 2026-11-17, `trailingHint.ts`): an empty last
+paragraph shows it whether or not the caret is in it, and a note ending in
+anything else draws it after its last block (`data-trailing-hint` on the
+editable, the column's `::after` in `tailwind.css`), written nowhere. A click
+below the last block puts the caret in that empty paragraph, or adds one and
+puts the caret in it (`openTrailingParagraph`), which counts as the first edit;
+from the keyboard Mod+Enter leaves the last block as before. The
 checkpoint debounce starts only for a real edit (this person's or an Undo's,
 `takeLocalEdit`): a co-editor's change no longer reads Syncing or asks for a
 receipt here.
@@ -357,7 +361,11 @@ binary format). A note room's awareness state (`notePresence.ts`) holds only:
 | `b` | block selection runs `[[firstId, lastId], ...]` | ≤ 16 runs, ids ≤ 64 |
 | `uploads` | upload placeholder ids ([uploads](#stable-ids-and-persisted-node-data)), writers only | ≤ 100 ids ≤ 32 characters |
 
-A source room's holds only `cursor` ([Office cursors](#office-cursors)); an
+A source room's holds only `cursor` ([Office cursors](#office-cursors)); a
+canvas's room holds a board's `p`, `b`, `s` and `f` (Epo 2026-11-18,
+`Fields::Board`: the pointer in whole board units and the selected ids as a
+flat list; [the canvas's room](#the-boards-tools), Presence) and a note's
+`uploads`, writers only, with the same bounds; an
 item room (quiz, set, mindmap, diagram) and a quiz's keys room hold none.
 The collaboration server (`presence.rs`, called from `on_awareness` in
 `room.rs`) keeps and relays a state only when every field is one its room
@@ -397,7 +405,17 @@ picked from the mocks (2026-10-28, capy-harness
 Cursor02Icon (`pointer` in `Icon.tsx`) filled with the peer's colour, its
 tip at x and y of the block's box, with the name in a pill below and right
 of it (left of it within 142 px of the editor's right edge, the widest pill
-and its gap); a block
+and its gap). It glides to each new position in 120 ms at one speed (a
+`transform` transition, Epo 2026-11-18; a first position, and every one under
+reduced motion, is shown at once). Positions are sent every 50 ms and, as
+measured on UAT that day, leave the collaboration server and reach
+cloudflared one frame per segment 47 to 69 ms apart, but past Cloudflare
+reach a far browser in pairs about 100 ms apart (gaps of 0 to 221 ms), so the
+tab drew 8 to 11 positions a second in jumps of 27 to 85 px at a hand's speed.
+With a 120 ms linear transition put on UAT's own page it moved every frame in
+steps of about 4 px and settled about 90 ms later; 80 ms still paused between
+pairs, and Liveblocks' cursor guide also finds a linear transition smoother
+than an eased one. A block
 selection is a 2 px outline 4 px outside each run, from its first block's
 top to its last block's bottom, its corners half the theme's
 `--radius-button` (capy 4 px, fisheye 6 px, notion 3 px), with the name in a
@@ -760,9 +778,22 @@ nested (a paste) is lifted to the top level by the plugin's normalizer. Blocks
 pasted while the caret is on a void block (a quiz, an image, an embed) go in
 right after that block with the caret following them (`VoidBlockPastePlugin`
 in `pastePlugins.ts`); Slate alone drops a fragment inserted into a void. Quiz
-and set edits go to the item's own rooms, so note undo covers only inserting
-and removing the reference (the question and card dialogs have their own Undo
-and Redo). An agent or API write to an embedded item lands in its rooms, which
+and set edits go to the item's own rooms, so the note's own history covers only
+inserting and removing the reference. In Edit the embed shows no Undo, Redo or
+Saved of its own (Epo 2026-11-17): the embed last pressed lends its quiz's or
+set's history to the note (`embedUndo.tsx`: `EmbedUndoLender` around
+`AppEmbedEdit` gives its `UndoSink` the embed's box, and `EmbedUndoHost` in
+`NoteEditorCore` keeps the one pressed), so the toolbar's Undo and Redo and ⌘Z
+and ⇧⌘Z (Ctrl+Y) on the page, not in a field nor a portaled dialog, act on it
+as a canvas card's do; a press anywhere else (the note's title, its text,
+another block, or outside the note) or the caret moving into the note's text
+gives them back to the note. An embed lends only while it edits (not read-only,
+in recovery or stopped), and one pressed while still loading lends once it can. The embeds report
+their rooms' save state (`embeds/embedStatus.ts`) to the note's frame
+(`PaintedFrame`), and the header shows the most pressing of the note's and
+theirs (Saved, then Syncing, a draft syncing, Offline, Unsaved, Error); a note
+still connecting or opening says so alone, and an embed still opening says
+nothing. A question's or card's dialog keeps its own Undo. An agent or API write to an embedded item lands in its rooms, which
 every open editor and reader holds, so nothing refetches: the `embed-changed`
 broadcast of 2026-10-07 is gone (live-items). Go and the collaboration server reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
@@ -806,7 +837,7 @@ mode. A chart or graph's hover toolbar has Edit/Copy/Delete in edit mode; Edit
 opens a dialog. Toolbar Copy (charts, graphs, Mermaid, HTML
 blocks) fires a real copy event filled by `setFragmentData`, so the clipboard
 holds `application/x-slate-fragment` like Cmd+C; `navigator.clipboard.write`
-cannot carry that type and its paste inserted nothing. Unresized charts open at 28rem and graphs at their image width;
+cannot carry that type and its paste inserted nothing. Unresized charts open at 28rem and graphs at their stored width;
 the chart preview sits on a page-coloured panel because its text uses page
 colours. Shared pages still render them as plain figures (no frame).
 
@@ -1051,46 +1082,99 @@ on a `mermaid` block only, with strings and nothing else inside
 on another element, a block retyped while it holds one, and a format, embed,
 nested type or attribute inside a source are refused.
 
-A chart's, plot's or graph's `block` is a live map in rooms (Epo 2026-10-17;
-the catalog's `sharedMap` and `sharedLists`, openwiki
-[embeds](../embeds.md#live-figures)): a Y.Map whose entries are its fields,
-each replaced whole, with a chart's or plot's `series` and a graph's
-`elements` as Y.Arrays of Y.Maps, one per series or element. Two editors'
-changes to different fields, series or graph elements merge; the same field
-takes the last writer. Slate holds the plain block. The same slate-yjs patch
-reads the map as its value, turns a remote change anywhere inside it into one
-`set_node` of the whole `block` on the owning element (once per
-transaction), edits the map with the fewest writes on a local `set_node`
-(changed entries only, series by index, graph elements by their `id`), and
-makes the map on inserts and clones. Undo is the room's Yjs undo manager, as
-for any edit (`figureMap.test.ts`). The note's figure (`VisualBlockElement`)
+A chart's, plot's or graph's `block` is the figure map a quiz room's block
+entry holds, without the entry's `order` (Epo 2026-11-16, D15; the catalog's
+`sharedMap`, openwiki [embeds](../embeds.md#live-figures)): plain fields each
+replaced whole, a graph's `board` a map of its fields and its `elements` a map
+of element id to `{element, order}`, a chart's `series` and `labels` maps of
+id to order key with `names` (id to name) and `values` ("series/label" to
+number, an empty cell no entry), a plot its fields alone. No Y.Array sits
+inside a figure. One reader, one diffing writer and the one-entry writes serve
+both rooms (`src/features/figures/figureMap.ts`, its Y.Map helpers in
+`figures/yMaps.ts`; `quizzes/liveFigures.ts` re-exports them). A graph's
+element entries have one writer wherever they are held, quiz, note and the
+canvas plane alike (`writeElements` in `src/features/graph/keyed.ts`, D10;
+the one-entry `setElement` and `moveElement` go through it too): an element
+alike its stored one (the same object, or equal JSON, as a note's Slate value
+hands fresh objects) keeps its entry, and order keys come from `risingOrders`
+(`src/lib/orderKey.ts`), which keeps every held key that still rises in the
+wanted order (the longest such run), so appending re-keys nothing held and a
+moved element alone takes a key between its neighbours; each entry is written
+at most once. A chart's series and labels are aligned by `alignPlaces`
+(`figures/align.ts`, used by `alignAxis`). One Rust
+module (`collaboration-rs/crates/notes/src/figure_map.rs`) reads, writes and
+admits them for notes and `items::quiz`. Two editors' changes to different
+fields, elements, series, labels or cells merge; a reorder and an edit of
+another element both land; the same field takes the last writer. Slate holds
+the plain block. The slate-yjs patch hands a figure's `block` to a codec that
+`src/features/notes/figureBinding.ts` registers (`setFigureCodec`: create,
+edit, read; a figure met before the binding loads throws): it reads the map as
+the plain block (unrepaired, `heldBlock`), turns a remote change anywhere
+inside it into one `set_node` of the whole `block` on the owning element (once
+per transaction), writes a local `set_node` as a diff onto the held map
+(`writeFigure`: only the entries that changed), and makes the map on inserts
+and clones. A table view keeps the patch's shared lists. Undo is the room's
+Yjs undo manager, as for any edit (`notes/figureMap.test.ts`). The note's
+figure (`VisualBlockElement`)
 re-renders on a peer's change and draws the block repaired
-(`repairFigureBlock`); its Edit opens `VisualBlockDialog` from the block
-itself, so the dialog's draft follows the live block: a peer's change rebases
-the draft field by field (`rebaseBlock`: the user's changed fields, series
-and elements keep the user's value, the rest follow the peer; the graph
-editor's rows follow the rebased elements, keeping a row still being typed),
-and Save writes the user's changes onto the block as it is then, so a peer's
-change that landed meanwhile stays. No merge is refused (Epo 2026-10-18):
+(`repairFigureBlock`). A chart's or graph's Edit opens the quiz's figure
+dialog live (Epo 2026-11-16, D15; `LiveFigureDialog` in
+`blocks/VisualBlockDialog.tsx`, `BlockDialog` in its binding mode): no draft,
+no Save or Cancel, Done only closes, Remove block takes the element out, the
+same dialog and behaviour as in a live quiz (see the quiz's figure dialog
+below). Its binding (`noteFigureBinding.ts`, over `localFigureBinding`)
+writes each change as one Slate `set_node` of the figure's `block` in the
+note's own editor, an ordinary note edit: bound, the codec writes only the
+entries that changed (one moved point is one element entry, one chart cell
+one value entry; `noteFigureBinding.test.ts`); unbound (the editable saved
+copy before the room joins) it is a copy edit like any other. Writing the
+figure's map directly under the editor's local origin was measured and
+dropped: slate-yjs skips its own origin's events, so Slate would hold the
+old block until mirrored, and an unbound editor has no map to write. The
+element hands each change of its block from elsewhere (a peer, an Undo) to
+the binding (`receive`), so the open dialog follows it. The binding gives a
+chart's series and labels handles of its own (the plain block has no ids):
+its own changes keep them, and `receive` carries them across a change from
+elsewhere by `alignPlaces`, the rule the room's chart writer keeps its ids
+by, so a cell left after a peer inserted a series above it still writes its
+own series, and a handle that went meanwhile writes nothing. Undo is the note's (Cmd+Z in the note, its
+toolbar): the dialog's writes join the note's Yjs history, transactions
+within the undo manager's 500 ms merged into one step (a typed row writes at
+most once a frame, a drag once on drop, a typed field once left), and an
+Undo while the dialog is open reaches it as any change does. The dialog's
+fields keep their own undo: the element stops a React `input` from the
+portaled dialog (a field's `historyUndo`) before slate-react, which would
+run the note's Undo. A chart or graph inserted from the slash menu or
+toolbar goes into the note at once and its element opens the dialog as it
+mounts (`openFigure.ts`); Remove block is the way out (there is no Cancel
+that leaves nothing). A new graph holds no blank description, which a
+note's figure check refuses. A viewer, or a note that is read-only, shows no
+Edit and renders no dialog. A plot keeps its draft dialog (`PlotDialog`):
+its draft follows the live plot field by field, series by index
+(`rebasePlot`: the user's changed fields keep the user's value), and Save
+writes the user's changes onto the plot as it is then; a new plot goes in
+at its Save. No merge is refused (Epo 2026-10-18):
 readers draw it repaired, a chart or plot left without series as an empty
 frame and a pie without a positive value through the chart's empty state. The
 editors show a merge's raw block with its issues: a chart's rows past its
 labels and series past the cap, a pie's other series (Remove last series
 shows for it), its negative or missing positive value, no series (Add series
 shows even on a pie), and a graph's rows past the cap or naming a gone point,
-each marked, Save held until they are fixed. A graph's SVG is drawn on Save; an editor in Edit mode that
-sees a graph's recipe change (elements, board, size) redraws it in an idle
-callback (`graphRedraw.ts`) and writes `image`, outside Undo, only when the
-SVG differs, so its own write never redraws again; readers keep the stored
-SVG. The Rust server writes the same maps on bootstrap and an agent's insert
-and reads them in one place (`plate::map_value`, behind
-`plate::block_value`); room admission takes a block as its map only and
-refuses a crafted update that puts an unknown key, a wrong type, an oversize
-value or another shape into one (`figure_map.rs`; where the relaxed check for
-a merge's kept states runs: [embeds](../embeds.md#live-figures)).
-The write is no person's edit (`writeNoEdit`): it starts no checkpoint and brings
-no trailing paragraph, so a co-editor's graph edit adds none from everyone with
-the note open.
+each marked (a plot's Save held until they are fixed). A graph stores no picture (Epo
+2026-11-16): every view, the editor's and readers', draws its elements (repaired)
+with the graph engine (`GraphView`, [embeds](../embeds.md)), so a co-editor's
+change shows as it arrives and nothing is written back. The Rust server writes the same maps on bootstrap and an agent's insert
+(`figure_map::insert`, then `figure_map::sync`, the diffing writer quizzes'
+`sync_block` uses) and an agent's `replace_block` of a figure with the same
+keys writes a diff too (`set_nodes_at`); it reads them in one place
+(`plate::map_value` through `figure_map::block`, behind `plate::block_value`),
+so projections, checkpoints, search text and exports see the plain block.
+Room admission takes a block as its map only and refuses a crafted update
+that puts an unknown key, a wrong type, an oversize value, a stray map or a
+list into one (`figure_map::check_field`, `check_entry`, `check_held`; where
+the relaxed check for a merge's kept states runs:
+[embeds](../embeds.md#live-figures)). Rooms stored with the old list layout
+were reset by migration 0179 ([runbook](../deployment-runbook.md)).
 
 A note's table view (`table_view`, Epo 2026-11-12, AFFiNE's database look:
 `src/features/notes/tableView/`) is a top-level void like a figure, edited in
@@ -1112,7 +1196,16 @@ title 140px on phones) and an end column (the editor's + sits in it) that takes
 the rest, so every row's line runs the block's width as AFFiNE's does (Epo
 2026-11-12), 36px rows, one-line cells cut with an ellipsis, so a
 note's table keeps its shape between View and the editor. The open view is
-each reader's own state; Sort and Group by are stored on the view. A Kanban
+each reader's own state; Sort and Group by are stored on the view. The block's
+own buttons (+ view, Sort, Group by, New record above it, + column, the
++ New record row and a Kanban lane's + New) are muted and take the text's ink
+on hover with no background (Epo 2026-11-19); tabs and cells keep theirs. A view's
+menu (its name and Delete view, never the last view) opens on a press on the
+open tab or a right-click on any tab, which also opens that view, as Notion's
+and AFFiNE's do (Epo 2026-11-17); the right-click is the tab's alone, not the
+block's menu. A selected table view, like a figure, draws the block
+selection's tint: a void block keeps the overlay in its spacer span, which the
+tint rule in `tailwind.css` also reads. A Kanban
 card drags with its own data type (`application/x-capy-table-view-record`) and
 stops the event, so neither Slate's drop nor the block drag reads it. A
 read-only note draws the same component with only its tabs live. The slash
@@ -1145,7 +1238,9 @@ has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 
 Chart, plot and graph nodes store their question block under `block` (a live
 map in rooms, above), an optional `width`, and a single empty text child;
-graphs export their SVG before saving.
+a graph's block holds its elements and no picture; the note export draws it
+to SVG (`exportGraphSvg`, a formula's glyphs as outlines) and then to PNG like
+the other figures.
 A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
 and is the figure's accessible label: optional on every figure, images and
 graphs included (Epo 2026-10-14; a blank one is dropped on Save; the chart
@@ -1159,9 +1254,9 @@ schema, so a refused block fails the agent's write); the agent's note format
 `kind: "scatter"`, as dots, comes from the agent, a pasted fence or the Plot
 command (slash menu and all-blocks menu, beside Chart and Graph), which opens
 the figure dialog on a line through (0, 0) and (1, 1) and inserts the block
-on Save, as Chart and Graph do (Epo 2026-10-17); its hover toolbar has Edit,
+on Save (Epo 2026-10-17; Chart and Graph go in at once, above); its hover toolbar has Edit,
 Copy and Delete like a chart's, Edit opening the plot editor in the figure
-dialog (`VisualBlockDialog`), and exports draw it like a chart with its points
+dialog (`PlotDialog`), and exports draw it like a chart with its points
 as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
@@ -2114,7 +2209,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   `collaboration-rs/crates/server/src/protocol.rs`; a vitest keeps them equal.
   - The server keeps one minimum per room family:
     - material rooms (`material:`, `keys:`: notes, mindmaps, diagrams,
-      quizzes, quiz keys, flashcard sets): `MIN_MATERIAL`;
+      quizzes, quiz keys, flashcard sets, canvases): `MIN_MATERIAL`;
     - source rooms (`source:`: Office and text): `MIN_SOURCE`.
   - `socket::authenticate` checks it right after parsing the room name,
     before any lookup. A client below its family's minimum, or above the
@@ -2173,7 +2268,9 @@ design, option d), and the nudge's release file on 2026-10-17.
     fetch change nothing.
   - When it differs from `VITE_RELEASE_SHA`, the next path change becomes a
     full page load, with nothing shown. A `?file=` or other search change
-    stays in the page, so a streaming chat turn is not cut. While offline the
+    stays in the page, as does a move between one workspace's pages
+    (`/workspaces/<id>/study/practice` and the like, `workspaceOfPath`), so
+    a streaming chat turn and the docked chat's draft are not cut. While offline the
     page stays (a load would land on the browser's offline page); the first
     path change back online loads.
   - It loads once per served release per tab (sessionStorage
@@ -2324,10 +2421,26 @@ design, option d), and the nudge's release file on 2026-10-17.
   The Q691 pin (f1848de46: DOCX View and Edit load only the CJK slices their
   pages draw, the XLSX viewer opens without the save capture, the DOCX page
   mirror is patched per key and reads whole words, the XLSX cell editor takes
-  the cell's fill) raised `CLIENT_PROTOCOL` to 30 and `MIN_SOURCE` to 30, so
-  source tabs on the older pin (protocols 28 and 29) reload; `MIN_MATERIAL`
-  stays 29 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy request names
-  "client protocol 29 -> 30, source 28 -> 30".
+  the cell's fill) raised `CLIENT_PROTOCOL` to 30 and `MIN_SOURCE` to 30 on
+  `main`, so source tabs on the older pin (protocols 28 and 29) reload;
+  `MIN_MATERIAL` stayed 29 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request named "client protocol 29 -> 30, source 28 -> 30".
+  Quiz figures held as maps (Epo 2026-11-16: a chart, plot or graph in a live
+  quiz room is a map of its fields, a graph's elements keyed by id) raised
+  `CLIENT_PROTOCOL` to 30 and `MIN_MATERIAL` to 30 on its own branch, at the
+  same time, so a quiz tab from before it, which writes a figure as one value
+  the room now refuses, reloads. Stored quiz rooms are dropped at that deploy
+  and seed again from their questions (migration 0178,
+  [deployment-runbook](../deployment-runbook.md#quiz-figure-maps-reset-migration-0178)).
+  Canvas rooms (Epo 2026-11-18: a canvas's board is a room in the `material:`
+  family, no longer a saved board asset) raised `CLIENT_PROTOCOL` to 31 and
+  `MIN_MATERIAL` to 31, since the family's minimum is the only gate before any
+  lookup: a tab from before saves a canvas through a route that is gone.
+  Existing canvases are deleted at that deploy (migration 0181,
+  [deployment-runbook](../deployment-runbook.md#canvas-rooms-migrations-0181-to-0183)).
+  The two 30s met in one merge; 31 covers both, and `MIN_SOURCE` stays 30.
+  The quiz-figure and canvas changes land together, so their deploy request
+  names "client protocol 30 -> 31, material 29 -> 31".
 
 #### When to bump
 
@@ -3727,10 +3840,34 @@ place, in their order. Admission holds structure and caps only, as for the rest
 of the document, and the next write settles the order keys and takes a group no
 part names. The limits still measure such a group and its images stay in use
 (`held_question_json`) until then. The keys document holds `keys`: part id to `{type,
-solution, correct | accepted | hints | markscheme | gaps | options | pairs |
+solution, correct | accepted | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
-`accepted` holds at most one sample answer, which the room refuses past. Editors type ordering items and matching options in the keys
+`accepted` holds at most one sample answer, which the room refuses past.
+A block entry holds its fields in both documents (a solution's in the keys
+document). A chart, plot or graph is a map of plain fields, each replaced
+whole (Epo 2026-11-16, D2, D3, D9; client protocol 30): a graph `{order,
+type, width, height, description?, board: {bbox, axis, grid, polar?},
+elements: element id -> {element, order}}` (the shape of
+`src/features/graph/keyed.ts`, read by order key then id), a chart `{order,
+type, kind, title, xTitle?, yTitle?, gridlines?, description?, series: id ->
+order key, labels: id -> order key, names: id -> name, values:
+"series/label" -> number}` (its series and labels held as a table's rows and
+columns, its values plain numbers where a table's cells are texts, an empty
+cell no entry), and a plot its fields alone. Two editors on different
+fields, elements or values both keep their change; a figure is read repaired
+(`repairFigureBlock`, `q::repair_figure`), and the projection keeps the plain
+block. The room entry's key is the block's identity: blocks read from the
+room carry it (`figureRoom(docs).key`), and the question card's figure
+dialog writes and removes that entry (`figureRoom` in `liveQuiz.ts`: a chart
+or graph through `bind`, a table at its Save). The live
+writes the graph and chart dialogs use, each one undoable step touching only
+what changed, are in `src/features/quizzes/liveFigures.ts` (element by id,
+board field, plain fields, chart value, series and label add, remove and
+rename), with `liveFigure` and `subscribeFigure` reading a figure kept
+until its own entry changes. The server's writers (seeding, the save API,
+agent commands) go through `sync_block`, which writes a figure field by
+field and element by element, never whole. Editors type ordering items and matching options in the keys
 document. Readers get them outside Yjs (D3 as revised 2026-10-10: a reader
 copy inside the content document leaked typing order through its tombstones):
 the content room keeps a plain list of texts per part (`items::quiz::
@@ -3739,7 +3876,8 @@ message, `{type, full, parts: {<part id>: {kind, items} | null}}`, the whole
 set to a channel that joins (`full`) and the parts that changed otherwise. A
 part whose entries change as a set is shuffled afresh (a uniform
 permutation); a single text edit keeps the order, and a change of several
-texts at once (a server write reorders lists by position) shuffles too, so a
+texts at once (a write that reorders and edits at once changes the list's
+middle by position) shuffles too, so a
 reader never sees which text replaced which. So does a text retyped into one
 another entry shows, so two retypes in separate windows show no swap. No ids and no history reach a
 reader, and neither document holds anything the server writes alone, so an
@@ -3767,10 +3905,13 @@ units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
 keeps `QUESTION_TEXT_MAX`, Epo 2026-10-14), image sizes and ids, whole marks, list and table counts, questions, parts per question and per
 quiz, a question's groups (no more than its parts may be), open parts, marking
-items, ticks and matching pairs, and each chart,
-plot and graph value against its kind's caps (`notes::questions::figure_caps`,
-sizes only: an unfinished figure is admitted; the block's type and value are
-read from the update or the held block, whichever writes them). Nothing past a
+items, ticks and matching pairs, and each figure field, graph element
+(`notes::questions::figure_caps` on the element alone; its form is the
+validators') and chart value as it arrives (sizes only: an unfinished figure
+is admitted). A figure's maps (graph elements, chart series, labels, names and
+values) count to twice their caps, as a merge may pass a cap and the read
+keeps the first ones; a figure written as one value (the layout before client
+protocol 30) is refused. Nothing past a
 limit is stored (Epo 2026-10-14): the question dialog's inputs stop at each
 limit and its Add buttons at each count, and everything the store's check
 refuses is refused at admission, so a store never discards a room for it. An
@@ -3781,17 +3922,70 @@ update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
 (blank) is structure; it only leaves its question incomplete. Live quiz rooms
 accept only hosted question images: an image names its uploaded `{assetId}`,
-and an image's or a graph's `{url}` is blank or one a stored question keeps
+and an image's `{url}` is blank or one a stored question keeps
 (`figure_url`, `Policy::hosted`: under `BANK_ASSETS_URL`, a copied bank
 figure).
 
-`QuestionDialog` edits a live question (`live` prop): its outline, part and
-block editors write through `writeQuestion`
+A quiz's question (its page's open card, or a note's quiz block in Edit, which
+edits the same cards in place, Epo 2026-11-15) writes through `writeQuestion`
 (`src/features/quizzes/liveQuiz.ts`: the fewest changes, lists by their common
-head and tail, a move as a new order key), a chart or graph stays staged until
-the block's Back (one value per block, D8), and the footer holds Undo, Redo and
-the live state; there is no Save or Cancel and the dialog closes with its X or
-Esc. Undo spans both documents (`pairedUndo` in
+head and tail, a move as a new order key), a table stays staged until
+its `BlockDialog`'s Save, which writes only what differs into the block's own
+room entry, found by its key (`FigureRoom`), and a chart or graph is edited
+live (below), with Undo, Redo and the
+live state in the page's header or above the note's quiz; there is no Save or
+Cancel.
+
+A chart's or graph's dialog edits the figure where it lives (Epo 2026-11-16,
+D2, D3, D13): it holds no draft, has no Save or Cancel, and its Done (in the
+footer, at the end of the row after Remove block; phones show the row after
+the content) only closes it. It reads and writes the figure through one
+binding (`FigureBinding` in `src/features/questions/figureBinding.ts`: `read`,
+`subscribe`, `setFields`, `setBoard`, `setElement`, `deleteElement`,
+`moveElement`, `addChartItem`, `removeChartItem`,
+`setChartName`, `setChartCell`, `remove`), so its editors (`GraphEditor`,
+`ChartEditor` in `BlockEditor.tsx`) know no quiz: a live quiz's figure binds
+its room entry (`figureRoom(docs).bind`, `roomFigureBinding.ts`, each call one
+`LOCAL_EDIT` transaction through `liveFigures.ts`, so the room's Undo takes it
+back), and a question draft with no room (the bank's question dialog) binds a
+plain block (`localFigureBinding.ts`), each change handed to the draft at
+once; a chart's series and labels go by the binding's own handles there
+(above). A note's
+chart or graph binds its element (`noteFigureBinding`, over the local
+binding: each change one `set_node` of the note's block, a change from
+elsewhere through `receive`; above). `bindFigure` (`questionEdits.ts`) opens
+the dialog: a chart or graph just added from Insert goes into the room or the
+draft at once, where Insert put it (both start drawable: a graph with y = x,
+a chart with one empty row and series), so the dialog has it to edit and
+Remove takes it out; the dialog closes when a co-editor removes the figure.
+A graph's rows stay in the editor for typing speed (a keystroke parses its
+row once and the canvas redraws on the next frame) and are written by
+`graphWriter.ts`: a row typed into, restyled, dragged or left unable to draw
+is touched, and on the next frame its element is written if it differs from
+the figure's (at most once a frame however fast it is typed, nothing when
+unchanged; a new one goes last, then to its row's place, counted by the
+figure's elements of the rows above it, a row that cannot draw now included).
+A row that does not
+parse or names a point that is not there is not written: it keeps its text
+and issue while the dialog is open, and when the dialog closes the room keeps
+the element's last drawable form (none for a row never drawable). A co-editor's
+change reaches every row (`reconcileRows` in `graphSyntax.ts`: changed,
+added, removed and reordered elements) except one holding what the figure
+does not have yet, which keeps its text until it is written; element ids are
+the rows' keys and never change. A tool's mark or move is written once on
+drop (only the elements it changed), a pan or zoom writes the view once it settles, and a co-editor's view
+waits while a gesture is under way. Axes and grid write on change; typed
+fields (width, height, bounds, description, a chart's titles, names and
+cells) show their own text while typed in and write once left, on Enter, or
+when the dialog closes (`useCommitted`), so a co-editor's change elsewhere
+never moves the caret; a width, height or bound that cannot be drawn stays in
+its field with its issue, unwritten. A chart writes its kind and gridlines on
+change, Add row and Add column at once, and each cell, name and title as it
+is left, keyed by its series and label ids so a co-editor's cell lands in
+place. Undo is the room's: writes merge into steps as other quiz edits do
+(`itemUndo`, 500 ms). Plots stay shown only in the quiz dialog, which keeps
+Save for them and tables. The question card's editors are nested Plate editors inside the note
+block, so their input never reaches the note's. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
 both made together, such as an answer type change, as one). Inputs stop at
 their caps (`maxLength`; a text editor takes back an edit past its cap). A
@@ -3803,8 +3997,8 @@ holds the question list and the open question (see
 Edit (ghost-hover) and Remove (danger-light) on a row under each question
 at the right, and an
 incomplete question shows a line under it saying what it lacks
-(`incomplete.ts`); empty text blocks, a blank short-answer unit and blank
-open-answer hints never count against it, but a part needs one block with
+(`incomplete.ts`); empty text blocks and a blank short-answer unit never
+count against it, but a part needs one block with
 content. The bank dialog's Save drops them too (`withoutBlanks`). Readers
 (the attempt page, the workspace quiz View, note embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
@@ -3818,10 +4012,19 @@ the rest are checked, and the score, which matches the attempt the server keeps
 counts in those on the page, and the result waits for it. Shared pages and review
 sessions read stored questions, so they never show one.
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
-content write is gone). Agent question commands write what differs in the
-questions that differ, texts as the fewest changes and lists by position, so
-an editor typing in the same question keeps their characters; their Undo is
-the durable Undo of every agent edit.
+content write is gone). The server's whole-question writes, the content save
+API (`set_questions`) and agent question commands (`replace_child`), go
+through `sync_question`: only the questions that differ, texts as the fewest
+changes, and every list (blocks, options, items, accepted answers, mark
+scheme rows) by the browser's rule in `sync_entries`, ported from
+`writeList` and `writeBlocks` (Epo 2026-11-17). Entries alike at the head and
+tail (a block compared by its JSON as the room reads it back, a text item by
+its text) stay untouched, a middle holding the same items in another order
+only takes new order keys, and anything else changes the middle by position:
+new items come between their neighbours, missing ones go, a block of another
+type takes a fresh entry. So an editor typing in the same question, even in a
+block after one the write inserted, keeps their characters. The agent's
+commands' Undo is the durable Undo of every agent edit.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo
@@ -4090,12 +4293,13 @@ show the viewer's own choice (visitors without one get capy, so Fustat)
 and carry a server-rendered Aa button that switches it with plain script
 (`src/share/main.tsx`); the edge-cached HTML stays the same for everyone.
 
-Both picks also have shortcuts in the top right corner of a note's scroll area,
-in View and Edit alike (`NoteDisplayToggles.tsx`): an Aa button flips the font
-and a ↔ button (from `md`, where the width shows) flips the width, each saving
-at once like Apply. Their icons stay the same either way; the note shows which
-pick is on. They sit in the scroll area, not the toolbar, so they scroll away
-with the note's top. In Edit a bolt button leads them and shows or hides the
+The width pick also has a shortcut in the top right corner of a note's scroll
+area, in View and Edit alike (`NoteDisplayToggles.tsx`): a ↔ button (from `md`,
+where the width shows) flips it, saving at once like Apply. Its icon stays the
+same either way; the note shows which pick is on. The font is picked in Editor
+settings alone (Epo 2026-11-17 removed the Aa shortcut). It sits in the scroll
+area, not the toolbar, so it scrolls away with the note's top. In Edit a pencil
+button (a bolt until Epo 2026-11-17) leads it and shows or hides the
 note's toolbar, which starts hidden (Epo 2026-10-27); the choice is this
 browser's (`PREF_KEYS.noteToolbar` in localStorage, Q461): no key, or storage
 blocked, means hidden, and it holds across the editor's remounts and later
@@ -4346,6 +4550,11 @@ Pointer-down outside the formula, keyboard and its toggles also hides it,
 including toolbar controls that preserve editor focus.
 Question editors retain external controls, with the menu below the keyboard for
 block formulas and a centered menu alone for inline formulas.
+A click beside an inline formula, not on it, puts the caret on the side clicked
+(`FormulaCaretPlugin` in `formulaCaret.ts`, notes and question editors): Chrome
+lands such a click in the formula's hidden spacer, which selects the formula and
+drops typed text. It checks on the click and on the selection change, since Slate
+throttles DOM selection and an already-selected formula sends no change.
 The formula menu filters MathLive's native items to Insert Matrix, Insert, Mode,
 Copy and Paste. Its shadow-root CSS matches ToolbarPopover's tokens, row spacing,
 border and shadow, retaining native matrix grids, templates and clipboard formats.
@@ -4499,9 +4708,19 @@ that branch.
   at the root (text, icon, panel, border, hover, shadow, font), since BlockSuite's
   parts read them from inside shadow roots and from popups under `<body>`. It
   outranks the theme sheet and the board's dark palette, and stands down while the
-  marking image is drawn (`[data-board-light]`). The note's active colour is the
-  app's accent; the board keeps AFFiNE's blue, as its selection frames and pieces
-  are drawn in it (`drawingBoard.css`).
+  marking image is drawn (`[data-board-light]`). What is selected or active is the
+  app's accent on the board as in the note (Epo 2026-11-13, F1; until then the board
+  kept AFFiNE's blue), so the notion style's is blue. The selection frame is
+  Excalidraw's (local change 56): a 1px accent line 6px off the selection, dashed
+  round several, 9px square corners filled with the board's paper
+  (`--capy-handle-fill`), a faint bar outside each side that resizes, and a rotate
+  knob above the middle for whatever turns, in place of AFFiNE's hidden ring past
+  each corner. A turn within 4° of a multiple of 45° lands on it (local change 58),
+  Shift snaps to every 15°, and the angle shows in one place while turning, under
+  the circle the selection turns in (above it when the bottom toolbar would hide
+  it). Quiz, set and link cards turn their content with the frame
+  (`boardCards.ts`), as a picture does. The selection's toolbar stands 30px further off, clear of the
+  knob.
 - **One floating bar:** BlockSuite's `editor-toolbar` draws every bar: a text
   selection, a selected block (table, callout, image), a link, and on the board a
   selected element or several (Group, Align, Lock). It is an opaque overlay panel:
@@ -4513,8 +4732,13 @@ that branch.
   Every icon in a bar is 18px, AFFiNE's fixed 20px ones included (16px in the
   small inner bars, such as the code block's).
   The board's own panels (the ☰ button and list, an open card's tools, the
-  formula card) take the same corner and shadow; its bottom toolbar keeps
-  AFFiNE's 64px height and corner, which its pieces are fitted to.
+  formula card) take the same corner and shadow, but the ☰ button is flat, as the
+  canvas picker and a phone's Back beside it (Epo 2026-11-12). On the canvas pages the
+  three are 32px tall, 8px in from the board's top left and right at every width
+  (`--capy-board-menu-size`, which the pages set; the ☰ by an open card's Done stays
+  Done's 40px). Its bottom toolbar keeps AFFiNE's 64px height and corner, which its
+  pieces are fitted to; its narrow layout (78px tools, the full width) follows the
+  board's width, as its paging does, not the window's (local change 15).
 - **Icons:** `vite.config.ts` aliases `@blocksuite/icons/lit` to
   `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
   replaces about ninety names with Hugeicons in the app's 1.8 stroke, in the
@@ -4572,7 +4796,8 @@ that branch.
   was typed in is saved, so leaving the field never undoes a rename made
   elsewhere, which shows there. A name is one line: pasted line breaks become
   spaces, and a long name wraps and re-wraps with the column. Under it a
-  collapsed Info row opens Topic (a press moves the note to another topic),
+  collapsed Info row (quiet: no rules above and below, a ghost button as wide
+  as its label, muted until hovered, Epo 2026-11-17) opens Topic (a press moves the note to another topic),
   Created, Updated and Words, counted when it opens. A reader, and a note outside
   a workspace, see Topic as text; a reader's title cannot be typed in.
 
@@ -4586,10 +4811,10 @@ aligned while Plate stays in the app). Built so far:
 - **Rhythm** (`tailwind.css`, `.note-editor`): text blocks 8px apart on a 1.5
   line in either note font; the font setting changes the font and its weight
   only.
-- **Column** (`note-column` in `tailwind.css`): 96px margins from a box wider
-  than 640px, capped at 912px unless Full width, in the editor
+- **Column** (`note-column` in `tailwind.css`): 96px margins from a box 880px
+  wide and 48px from 640px (a tablet's pane, Epo 2026-11-19), capped at 912px unless Full width, in the editor
   (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
-  and their footers. The step is a padding clamp on the parent's width, so no
+  and their footers. The steps are a padding max/min on the parent's width, so no
   container is declared. A narrower box keeps Plate's gutters (20px on a
   phone and 40px from `sm`, and always 40px on the editor's right for its
   thread buttons) where the BlockSuite note uses 16px. As in the BlockSuite
@@ -4627,7 +4852,9 @@ aligned while Plate stays in the app). Built so far:
   WebKit 26.5; `e2e/sharing/live-note-view.spec.ts` runs that reader in
   WebKit). The BlockSuite note's title still declares its container.
 - **Gutter** (`BlockInteractions.tsx`): from `sm` a + sits left of the grip on
-  a top-level block. It adds a paragraph below and types the slash, so the
+  a top-level block, both on its first line (an embedded quiz or set too,
+  Epo 2026-11-17, no longer centred on the block's height). It adds a
+  paragraph below and types the slash, so the
   slash plugin opens its menu; left without a pick or a search, the line
   stays empty (`gutterSlash.ts` marks the input node, `SlashInput.tsx` skips
   writing the slash back). A click on the grip opens the block menu under it
@@ -4669,7 +4896,12 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `.capy-board`), then two slots of pieces drawn like AFFiNE's shapes (Epo 2026-11-08,
   canvas NsamYcLR4imjm5Xi2fWFj2 "Picked"): Graphs (a polar disc behind a coordinate plane)
   and Formulas (d/dx, ∫, Σ, √x), then Misc, which holds the charts since 2026-11-10 (the
-  Charts slot is gone; the B and Shift+B keys still place a chart). `CapyPieceSlot` runs on
+  Charts slot is gone; the B and Shift+B keys still place a chart). On the workspace
+  canvas the Formulas slot is a **GIF & Sticker** slot instead (Epo 2026-11-12, mock
+  LXarL8yrtSK1hNB8ydPkan, A + M1; `sheetTools(board)`): a GIF card behind a sticker,
+  centred in the bar (Epo 2026-11-13) and lifting together on hover, whose click opens KLIPY's view (Misc's panel with `only`
+  set: no Back) on the tab used last; Formulas move into its Misc, and the M key still
+  opens a blank formula on both boards. `CapyPieceSlot` runs on
   BlockSuite's `EdgelessDraggableElementController` as the shape slot does: a piece lifts
   under the pointer, a click or a drag picks it up, it lands where it's dropped and a new
   one rises into the slot once it leaves the toolbar; Escape or the toolbar puts it back.
@@ -4691,10 +4923,51 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   page around the board places (its width through `--capy-board-done-width`, its top through
   `--capy-board-menu-top`; a drawing answer measures whichever Done shows, the phone's or the
   wider screen's), so the
-  bottom row holds only the toolbar: Undo, Redo, Fit to screen, then a row of −, the
+  bottom row holds only the toolbar: Undo, Redo, Fit to screen, Download as image, Clear all (Epo 2026-11-13:
+  everything on the board, or in an open plane or chart, goes in one undo step; greyed
+  out when there's nothing; a pie keeps its 12 o'clock line), then a row of −, the
   zoom (which resets to 100%) and +. Fit to screen closes it; Undo, Redo and the zoom
   row keep it open, so a few presses step back or zoom; a press anywhere else and
-  Escape close it. A teacher's board has Fit to screen and zoom only.
+  Escape close it. Its rows are the editor popovers' (30px, medium 14px text, 18px
+  icons, Epo 2026-11-12); a row with no icon lines its text up with those that have one.
+  A teacher's board, a viewer's and one that takes no edits have Fit to screen,
+  Download as image and zoom only.
+  Download as image (2026-11-19, mock MenuDownload, as Office keeps Download) saves
+  the whole board as a PNG named by the board's `title` (a canvas's, without the
+  characters a file name cannot hold; `canvas.png` or `drawing.png` with none), on white in the
+  light palette, its longest side at most 4,096 px, drawn as the marking image is
+  (layer by layer, so what the screen covers is covered) but with nothing moved
+  nearer. BlockSuite's own `ExportManager.exportPng` is not used: it draws every note
+  under every stroke, offsets blocks by 50 units, and gives nothing when one image's
+  file is missing. A board that cannot be drawn says so in a toast.
+  On a canvas (`setRoomSize`, Epo 2026-11-18, 2B) the menu ends, from 75% of the
+  room's cap, with a divider and `Size: 3,150/4,096 KB`, kilobytes rounded up as a
+  note's size line (`documentStats.ts`); at the cap the row is in the error colour
+  and reads on ` · Only edits that remove content will be saved.` A board with no
+  room (`/dev/drawing`, answers) shows none. Just left of the ☰ (12 px apart, 8 px
+  below 640 px, where a note's header goes compact) sits `statusSlot`, an empty element the canvas page portals its save
+  status into (1B); empty, it takes no room.
+  From the cap less the room's 64 KiB margin (`BOARD_OFFLINE_MARGIN`, the
+  space offline work leaves, online too: client-limits A) the size row is red
+  with the remove-only words and the board takes only edits that remove content
+  (`boardFull.ts`): select, the eraser, Delete and moving stay; what adds is
+  refused with "Only edits that remove content will be saved." in a toast: a
+  tool other than select, pan and the eraser (the pen, highlighter, shapes,
+  notes, text, connectors, stamps; picking one goes back to select), a paste,
+  a drop, ⌘D and the element toolbar's Duplicate (both through
+  `createElementsFromClipboardDataCommand`), an Alt-drag's copy, a mind map's
+  Tab or Enter child, a shape's auto-complete +, a double click's note, a piece
+  or picture from the toolbar or Misc, an image picked, and a new formula.
+  Typing in what is already there and Undo are not stopped; the room refuses
+  them past its cap and its copy-only recovery takes over. Below the margin it
+  all comes back. The gate coming on under the pen waits for the stroke to end,
+  then goes back to select without a toast (the row says why); picking an
+  adding tool while gated is what the toast is for. `setRoomSize` is called on
+  every update of the room, so it does nothing unless the row's text or the
+  gate changes.
+  A popover, menu or dialog of the page's that holds focus keeps it while the pointer
+  crosses the board (local change 40): upstream the board took focus back on the
+  pointer's first move, which closed the canvas picker.
   AFFiNE's zoom toolbar isn't loaded. Below 768 px the toolbar spans the screen less an
   8 px gutter, which needs `.capy-board` to be the `viewport` container.
 - **Selecting** shows AFFiNE's own toolbar. It reads the editor's mode, so the board
@@ -4705,56 +4978,203 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   The board (`.capy-board`) is positioned, so this selection layer and the ☰ menu sit
   against it even with a header row above it (a tablet's). BlockSuite's own toasts go to
   the app's `userToast` (`setToastHandler`, vendored local change 33); its fixed
-  container was cut off by the page.
+  container was cut off by the page. They read in the app's language through a table
+  of their own beside the chrome labels' (`toastText` in `chromeLabels.ts`, as decided
+  2026-11-10 for the labels); one the table does not hold shows as written.
+- **A canvas that takes no edits selects and copies** (2026-11-19, mocks ReadOnlyCopy
+  and ReadOnlyPhone; notes and Office allow it in every read-only state): a viewer's
+  board, copy-only recovery, a frozen or full one, a trashed canvas and an editor's
+  board while it is locked. A mouse or pen click selects (vendored local change 71),
+  a drag on empty board selects by its box, ⌘C copies; a finger pans and a tap
+  selects (`TapPanTool`, `boardReadOnly.ts`). The tool is picked by each press's
+  pointer, so a touch screen with a mouse does both. There is no toolbar: a bar with
+  one Copy sits above the selection (below it when the board's top has no room),
+  and puts on the clipboard what an editor's copy does (`copySelection`, local
+  change 71); it says "Copied to clipboard". Nothing writes to the board: the moves
+  stay refused (local change 65), cut copies only, a paste and a double click add
+  nothing (local change 71). A teacher's view of an answer pans and zooms only.
+- **An image while it uploads** (Epo 2026-11-06, as a note's placeholder; mock
+  Upload): on a canvas, a box at the place and size its block will take shows at
+  once with "0% uploaded" and a bar (`boardUploads.ts`; BlockSuite names the box
+  before it stores the file, local change 70). The box is the page's own, in no
+  one's stored board, so a refused upload leaves nothing behind: its box says "The
+  image couldn't be added." with the reason and a Close. The other images of one
+  paste still land. Peers see an "Uploading" box with the uploader's outline and
+  name tag through board presence `uploads`, each id the box itself (`x,y,w,h` in
+  whole board units, base 36, at most 29 characters, `uploadId` in
+  `boardPresence.ts`); a board that takes no edits sends none, as a read channel's
+  state may hold no `uploads`.
 - **Shapes panel:** replaces AFFiNE's one-row menu through a DI override of the `shape`
-  senior tool. BlockSuite has four shape types, so the rest are presets of straight
-  connectors and ellipses in a group (a pen stroke smears at corners).
+  senior tool. The right triangle, parallelogram, trapezium, pentagon and hexagon are
+  shape types added to BlockSuite (local change 46: corners in `POLYGON_SHAPES`, one
+  polygon implementation for hit tests, connectors, canvas, DOM and cursor preview), so
+  they fill, hold text and connect as a square does; `boardPreview.ts` keeps a copy of
+  the corners, checked by its test. A selected shape's Switch shape type menu, and a
+  connector's next-shape panel, offer the same ten in the panel's outlines (local change
+  61, Epo 2026-11-13). Solids and diagrams are presets of straight
+  connectors and ellipses in a group (a pen stroke smears at corners). The toolbar's
+  square piece is a plain square (local change 43; AFFiNE's was rounded). Clicking the
+  toolbar's Shape piece only opens or closes the panel; a shape is taken up by dragging
+  the piece (the drag shows the piece in its toolbar colours, local change 14) or by
+  picking it in the panel. A picked shape follows the pointer, centred on it, until a
+  click places it there or a drag sizes it: BlockSuite's own shapes through its overlay
+  (local change 41), the presets and lines (`StampTool`) drawn as they will be placed on
+  the board's preview layer.
+- **Toolbar buttons with a panel** (Shape, Note, Misc; Epo 2026-11-12) share three helpers
+  in `boardTools.ts`: `togglePanel` (a click only opens or closes the panel, nothing
+  follows the pointer yet), `closeOnPressOutside` (a press anywhere but the panel or its
+  button closes it) and `followTool` (the panel closes once what was picked is placed or
+  another tool is taken while it is open; it opens over any tool, so the pen stays the
+  pen until something is picked). The Note button is `capy-note-button`, overriding the `note`
+  senior tool; with a kind picked the button stays lit and the pointer is the plus
+  cursor, with nothing following it, and a click (or a drag, at its start) places an
+  inline note whose first line starts at the pointer, centred on it (local change 53,
+  Epo 2026-11-13, like a text tool; it replaced local change 48's carried preview and
+  AFFiNE's dragged-out box). A paragraph's placeholder clips both axes
+  (local change 49), so a heading's shows no scrollbar. The note menu marks a kind only while a note of it is in
+  hand (Epo 2026-11-13): AFFiNE's menu marks the tool's kind, which stayed the last one
+  picked. Where the board takes link cards (the workspace and the Canvas page), the
+  note menu starts with Link (Epo 2026-11-13, P1; local change 57 gives the menu a
+  `lead` button and an `above` slot): its field (`capy-link-add`) opens above the
+  row and places a link card as Misc's YouTube tile does (`placeLink`). A tooltip of
+  something inside a toolbar menu (a popover in the top layer) is shown in the top
+  layer too (local change 51), so it lands above the menu.
+- **Select after placing** (Epo 2026-11-13, replacing 2026-11-12's return to the
+  drawing tool): whatever is placed (a shape, a preset, a carried piece, a Misc card,
+  a GIF, sticker or emoji, a picked image) leaves Select on with it selected, whatever
+  tool was on before. `addCard` and `addPicture` take Select before selecting what
+  they add, and Misc's Image tile before its images land. A placed note keeps the
+  focus for typing.
+- **Strokes** (local change 50, Epo 2026-11-12): a mouse stroke stores no pressure and
+  draws at one width, and a mouse click is a dot at pressure 0; a pen or stylus that
+  reports pressure keeps it. A stroke at pressure 0.5 is exactly its width wide, as
+  `boardPreview.ts` draws it (AFFiNE drew each width 1.41 times over). The highlighter starts
+  at its third width, 18.
+- **One thing held at a time** (local change 47, Epo 2026-11-12): every toolbar piece
+  (shape pieces, Graphs, Formulas, Misc tiles) goes through BlockSuite's shared
+  `EdgelessDraggableElementController`. Taking a piece puts down whatever else was held
+  (another carried piece or a picked shape or note), and taking a tool puts a carried
+  piece down. While a piece is carried a mask covers the board, so a press that returns
+  it to the toolbar is passed on to what lies under the pointer: one click both puts the
+  piece back and works the button or picks up the next piece.
 - **Plane cards** (`boardPlane.ts`) are a `plane` canvas element holding a view (top left
-  corner in plane units, board pixels per unit) and its marks as plain data, drawn by one
-  renderer with a clip, so a card stacks with strokes and reaches the marking image with
-  no special case. A card is a picture on the canvas: Select moves it, its corners resize
+  corner in plane units, board pixels per unit) and its marks, drawn by the graph engine
+  (`drawGraph` in `src/features/graph/draw.ts`, the one renderer every graph shares,
+  Epo 2026-11-16) with a clip, so a card stacks with strokes and reaches the marking
+  image with no special case. Its marks are the graph model's elements
+  (`src/features/graph/model.ts`, D1/D16): a `point`, a `polyline` (a line; with
+  `arrow`, a two-point vector), a `curve` with optional `handles`, an `ellipse`
+  (`center`, `radii`), a `text` label with `size`, a `formula` and an `expression`
+  (`boardData.ts` `PlaneElement`). They are stored in the card's `elements` field, a
+  `Y.Map` of element id to `{ element, order }` (an order key, `src/lib/orderKey.ts`),
+  as BlockSuite's mind map keeps its nodes (`propsToY` turns a pasted card's plain
+  entries into the map, `@observe` hears changes and tells the renderer and an open
+  editor to draw again; D10): reading sorts by order key, a tie by id, cached on the
+  model (`elementList`) until the map changes; writing (`writeList`, `writeElements` in
+  `src/features/graph/keyed.ts`, the one writer quiz and note graphs use too) sets or
+  deletes only the entries that changed, keeping every held order key that can stay
+  (`risingOrders`), so two
+  people drawing on one plane would merge mark by mark once the canvas has a room. A
+  plane holds at most 100 elements, as every graph, its labels up to 60 characters and
+  a curve up to 100 points, where its tool finishes it (the question bounds
+  `QUESTION_GRAPH_*`, D7); the load check runs the graph model's one element check
+  (`graphElementSchema`, the same as quiz and note graphs and Go and Rust) on each
+  element of a kind the plane makes (`PLANE_KINDS`); a board saved with the old
+  `marks` list fails it (no production data, no shim). A card is a picture on the canvas: Select moves it, the frame's knob
+  turns it about its middle (`rotate`, Epo 2026-11-13; turned, the side across from a
+  dragged handle stays put on the page), its corners resize
   it, between 120 by 80 and 4000 px, showing more or less of the plane at the same scale,
   scrolling over it moves the canvas, and the eraser leaves it alone (`erasable` false,
   which the vendored eraser reads: local change 30), while a connector meets its edge
   at four anchors as on a shape. A fresh board starts
-  with one. Double click, double tap or the pen opens it. **Fit to size**, on by default:
+  with one. Double click, double tap or the pen opens it. A card starts at **Custom size**, the
+  size it is placed at, which nothing changes but a corner drag (Epo 2026-11-18); the size
+  never decides what of the plane shows: each time the plane is left, the plane in it is
+  framed round its marks, the size kept, as a graph figure's window is (`fitView` over
+  `fitWindow`), starting from the card's home window (origin near its bottom left at
+  30 px a unit, `PLANE_HOME_PPU`), never from where the editor was left, so the frame
+  comes from what is drawn alone; functions count over the home window's x range;
+  nothing to frame keeps the editor's view (Epo 2026-11-18). **Fit to
+  size**, turned on from its toolbar:
   each time the plane is left, a card with marks takes their size at the plane's scale plus
-  40 px, its top left staying put; past 1600 px it zooms out instead. Dragging a corner
+  40 px (a label's or formula's text counted in pixels round its point; not the origin,
+  Epo 2026-11-18, as other apps fit to what is drawn), its top left
+  staying put; past 1600 px it zooms out instead (`fitMarks`, shared with a quiz or note
+  graph's dialog, Epo 2026-11-18). Functions count as sampled (`functionReach`, an
+  asymptote's spikes left out) and only within the y range the card showed, or whole when
+  never within it (y = 3x + 10000), so the card moves to it. Dragging a corner
   makes it Custom size, as resizing a note does. Neither is in the undo history. Pen
   strokes over a card stay where they are, so they can stop lining up. A **polar** card
   (`polar: true`, its origin in the middle) draws rings at the grid's steps, numbered along
   0°, and spokes every 15° (darker every 30°, the axes every 90°) labelled where they
   leave the card; its marks are stored as on any plane, and its editor snaps them to where
   a ring crosses a spoke.
-- **Editing a plane** (`boardPlaneEditor.ts`, on the shell in `boardEditorShell.ts`): it
+- **Editing a plane** (Epo 2026-11-17: one graph editor for the canvas, notes and
+  quizzes): the plane opens in `GraphEditor` (`src/features/questions/GraphEditor.tsx`),
+  the editor quiz and note graphs use. `boardPlaneEditor.ts` gives it the card as a
+  `FigureBinding` (`planeBinding`: one undo step per task, `boardEditorSession`'s
+  `write`) and a root over the board; the page that mounted the board renders the
+  editor there (`openPlane` in `mountDrawingBoard`'s options, `usePlaneEditor` in
+  `PlaneEditorHost.tsx`, on the workspace and account Canvas pages, the answer board
+  and the dev board). `boardEditorSession` (`boardEditorShell.ts`) keeps the board's
+  side: undo reaches only the editor's steps while it is open, the board's menu and
+  slot keys step aside, and closing (Done, an Escape nothing else took, the page)
+  writes the camera outside the history and, for a fitting card, `fitCard`. It
   opens over the whole board. At its top right sit the same ☰ menu (Fit to screen where the card
-  has one, Undo, Redo, and − and + where it zooms; the board's menu hides meanwhile)
-  and Done on its own (Epo 2026-11-08). Done leaves, as does Escape when no mark is open (Escape closes
+  has one, Undo, Redo, Clear all, and − and + where it zooms; the board's menu hides
+  meanwhile)
+  and Done on its own (Epo 2026-11-08). A plane's Fit to screen shows at least 10
+  units across and up, so an empty plane shows a stretch of grid round the origin
+  (Epo 2026-11-13). Done leaves, as does Escape when no mark is open (Escape closes
   an open menu first, then a selection). Inside, the wheel or two fingers pan, Ctrl or
-  pinch zooms, a middle-button drag pans, and Select drags, as on the board.
+  pinch zooms about the pointer (the engine's `attachGestures`, within `PLANE_ZOOM`,
+  10⁻⁶ to 10⁶ px a unit), a middle-button drag pans, and Select drags, as on the board.
+  The tools are every graph editor's (Epo 2026-11-16, D12): `graphTools` in
+  `src/features/graph/tools.ts` (no React, no BlockSuite) holds their state machines,
+  hit-testing (`distanceTo` and `movedGroup` in `marks.ts`, constructions included),
+  handles, selection and overlay, and writes whole element lists through the editor's
+  rows. The strip floats over the plane's foot with Finish above it.
+  Point names each point it places (Epo 2026-11-17, `freePointName`): the first of
+  A … Z, then A_1 … Z_1, A_2 …, that no point in the graph has (a peer's included),
+  so a row such as `segment(A, B)` can use it; the name draws beside the point.
   A point's dot picks up with any tool but Erase (Epo 2026-11-08, option C): it rings
   blue under the mouse, a drag moves it to the grid with the coordinate chip, and a tap
   still does the tool's job at that point (Line starts from it). Select also drags a
-  whole line, curve or label (snapped by grid steps), and a single point or any point
-  of a selected mark takes the whole mark, so dragging one of several selected marks
-  (dots too) moves them all. The moved copies are only drawn until the pointer lifts, so a
+  whole line or curve (snapped by grid steps) or a label (wherever it's dragged, as it's
+  placed where it's clicked, Epo 2026-11-13), and a single point takes the
+  whole point, so dragging one of several selected dots, or a selected line's stroke,
+  moves them all; a line's or curve's own point stays its own to drag, selected or not
+  (Epo 2026-11-13). The moved copies are only drawn until the pointer lifts, so a
   drag is one undo step. Select works as the board's does (Epo 2026-11-09): a click
   selects a mark (blue, its points showing), Shift-click adds or takes one away, and a
   drag on empty paper draws a selection box that picks every mark it touches (Shift
   adds them); a click on empty paper, Escape or another tool lets go, and Delete or
   Backspace removes all that's selected.
   Where points coincide, the last drawn moves.
-  Label (Epo 2026-11-08) types text centred where it's clicked, a `label` mark at that
+  Label (Epo 2026-11-08) types text centred where it's clicked, a `text` element at that
   coordinate that moves and zooms with the plane (a click near one edits it; up to 24
-  characters; previews leave labels out, as numbers); after one, the tool goes back to
-  Select. Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
+  characters, wrapping at 200 px as every graph's labels do; previews leave labels
+  out); after one, the tool goes back to
+  Select. With Select, a double click on empty paper types a label there and one on a
+  label edits it, as on the canvas; while one is typed, the canvas label's maths symbol
+  row (`symbolButtons` in `boardFormula.ts`) sits under it, kept inside the plane, and
+  inserts at the caret within the label's 60 characters (Epo 2026-11-13). A plane label is
+  still its own kind: a `text` element drawn on the plane, not BlockSuite's canvas text.
+  A label or formula picked alone with Select wears the board's selection frame
+  (`src/features/graph/overlay.ts`: a 1px accent line 6 px out, a 9 px square on each corner) and
+  no toolbar; dragging a corner sizes its text about its middle (Epo 2026-11-13),
+  stored as `size` in pixels (8 to 96, `QUESTION_GRAPH_TEXT_SIZE_MIN`/`MAX`, which
+  the board catalog's `TEXT_SIZE_MIN`/`MAX` repeat for pie labels;
+  without it 15 px for a label, 18 px for a formula, 12 px for a pie label). Formula (Epo 2026-11-08) opens the board's formula card (`openFormulaCard`) for
   a `formula` mark centred where it's clicked (a click on one opens it again, emptied it
   goes); KaTeX's layout (`boardFormulaDraw.ts`, loaded only once a formula is on the
   board or a plane) is replayed at 18 px, inverted on dark paper, keeping its size as
   the plane zooms. Select drags it whole; Erase takes it. Previews leave formulas out, as
   they can't lay them out (Epo: none rather than broken); the marking image has them.
   Vector (Epo 2026-11-08) is a line of two clicks with an arrowhead (12 px, kept as
-  the plane zooms) at its second point, a `vector` mark of two points. Each tool's
+  the plane zooms) at its second point, a two-point `polyline` with `arrow`; its line stops
+  halfway into the head, on the card and the preview alike, so the line's round end
+  doesn't show past the point (Epo 2026-11-13). Each tool's
   button shows AFFiNE's tooltip with its key, and the open card takes those keys: V
   Select, P Point, L Line, A Vector, C Curve, O Ellipse, T Label, F Formula, E Erase (a
   chart: V Select, D its bars or slices, F Fill, T Label, E Erase); the row fits a 360 px
@@ -4765,20 +5185,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   BlockSuite's fading grey trail (`EraserTrail` in `boardEraser.ts`), everything it
   passes over hides, and lifting removes them in one undo step. Ellipse (Epo 2026-11-08, square
   planes only): a press and drag sizes a circle from its middle (the chip shows `r`), a
-  click places one a grid step round. It's an `ellipse` mark of four handles (right,
-  top, left, bottom); pulling one sets the width or height about the middle, so it
+  click places one a grid step round. It's an `ellipse` element (`center`, `radii`)
+  held by four handles (right, top, left, bottom: `ellipseHandles`); pulling one sets
+  the width or height about the middle, so it
   stays upright and on the grid, and Shift scales it evenly. Select drags it whole, its
   middle (any other mark's first point) landing on the grid, where a ring crosses a
-  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces of their
-  Catmull-Rom curve (`curvePieces`) and ellipses as canvas ellipses, smooth at any zoom;
-  the sampled path (`smoothThrough`, `pathOf`) is for hit tests and previews. A line's,
+  spoke on a polar plane (`snapPlane`), as points do. Curves draw as cubic Bézier pieces
+  (`curveSegments`): their Catmull-Rom curve (`curvePieces`) until a handle is moved, then
+  their stored handles; ellipses draw as canvas ellipses, smooth at any zoom; the sampled
+  path (`pathOf`) is for hit tests and previews. A line's,
   curve's or ellipse's points show only in the editor, on the mark under the pointer,
   held or still open (Epo 2026-11-08); a single point always shows, on cards, previews
   and the marking image too. A curve clicked back onto its first point closes, smooth there,
   and ends. Point, Line and Curve snap to the
   fine squares for the current zoom, so the
   plane has no edge and no fixed scale (the numbers are the question editor's, `tickStep`
-  and `axisNumber` in `graph.ts`, with no JSXGraph). Numbers leave with their axis and
+  and `axisNumber` in `src/features/graph/view.ts`; the plane draws through the engine,
+  its editor adding only what it shows on top: the picked mark's blue halo
+  (`strokeElement`), the points of the mark under the pointer, held or open, handles,
+  frames and chips). Numbers keep to the edge their axis left by (Epo 2026-11-18) and
   marks keep their thickness. The view stops 1e9 units from the origin, and a grid too
   fine to draw goes blank. Each click is written at once, one undo step, and undo
   shortens a line or curve still taking clicks. While a plane or chart is open, undo and
@@ -4791,9 +5216,58 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   connector tools go back to Select; Point stays on. Leaving keeps a curve with two points
   or more and removes a mark that has only its first. Canvas drawings over a card aren't in it: they stay in place
   if the view moves.
+- **Bending a curve** (Epo 2026-11-13, K1 and K2, both boards): a curve may store
+  `handles`, an [in, out] pair of plane points per point; with none it keeps the
+  automatic bend, so saved curves draw as before. Select on a curve's point picks it and
+  shows its two handles (a blue line to a 9 px square each). Dragging one bends the
+  pieces on either side; on a smooth point the other handle turns to stay in line at
+  its own length, and Alt drags one alone, leaving a corner. A double click on a point
+  makes it a corner (both handles on it) or smooth again. With one curve selected,
+  dragging its stroke away from any point pulls that stretch through the pointer
+  (`bent`: the two inner handles move by their share of the drag, `t` held to 0.1–0.9),
+  the points either side staying smooth; a ring shows where a press would bend. A
+  closed curve's seam is one point with the last point's in-handle and the first's
+  out-handle (`pairOf`). Moving a point carries its handles; moving the curve moves
+  them all. `fitCard` counts handles.
+- **Functions and the objects list** (Epo 2026-11-13, L2, workspace canvases only): a
+  formula row is an `expression` element holding its LaTeX as typed (Epo 2026-11-18;
+  a restriction `\left\lbrace a\le x\le b\right\rbrace` inside it), read with
+  `readExpression` in `graphSyntax.ts` (read as Desmos reads it, as every graph surface; a command
+  such as `line(x)` is refused). A function of x is drawn across whatever is shown by
+  `functionRuns` (`src/features/graph/curves.ts`): a sample every 2 px, at most 4000,
+  breaking where the value isn't finite or jumps (a leap past the canvas height whose
+  middle isn't between, as at tan's asymptote; a steep line keeps drawing). Any other
+  equation in x and y is an implicit curve drawn by `equationRuns` (marching squares,
+  [question-bank.md](../question-bank.md)). It can't be dragged; its row edits it, and
+  `fitCard` ignores it. The list button (☰-styled, `drawing_board_objects`) sits
+  at the editor's top left: a 300 px card floating below it, open by default from 640 px
+  (`listChoice` remembers a toggle for the session), and under 640 px a sheet over the
+  lower 48% with the tools and Finish riding above it; its "+ Label" is a ghost button
+  (no border, the hover fill marks it). The answer board's plane has no list. Rows are
+  the graph editor's rows (Epo 2026-11-16,
+  D12: `graphSyntax.ts`'s one parser, `buildElements`, `reconcileRows` and
+  `rowsAfterEdit`, no second syntax), laid out compact (36 px, 14 px text, 15 px
+  formulas; kind icon as the field's label, ⋮ with style, Hide and Delete). Every row the dialog takes (a function with its
+  restriction, an equation in x and y, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
+  `sector`, `polygon`) is a MathLive field (loaded when the list first opens) that draws
+  as it's typed and writes on Enter or leaving, one undo step; emptied it goes. A point a
+  tool places is a named `A = (a, b)` row; a line's or vector's `(a, b) to (c, d)` and a
+  label's text are typed in place and written on change; curves, ellipses and formulas
+  are shaped on the plane, so their rows show only the kind's name (Epo 2026-11-13). The
+  empty last row (`data-new`, drawn by the same template as the row it becomes so its
+  field keeps focus) adds a row. A row that can't be read shows the dialog's warning
+  icon with its reason and keeps its text, unwritten, until it can; Escape puts it back
+  as it was. Moving a named point drags what's built on it; erasing it (Erase, Delete)
+  takes what's built on it too, while deleting its row in the list leaves those rows
+  with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) a tool or a new row
+  is refused with `drawing_board_plane_full` on the new row's icon. "+ Label" adds a label in
+  the middle of what's in view and selects its text. Hovering a row lights its mark,
+  focusing a label row selects only its label (Shift/⌘/Ctrl adds it), focusing any other row
+  clears the selection; selected marks light their rows. The answer board has no list button and no
+  functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
   kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
-  move and resize like a plane card, the eraser leaves them alone, and their editor fills
+  move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
   tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
@@ -4805,14 +5279,36 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   line, whose chip shows the sector it closes, from the line before it clockwise;
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
   under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
-  line drops it, No fill clears it). Labels sit at an angle inside the circle. Select
+  line drops it, No fill clears it). A label goes where it's clicked, kept as an angle and
+  a share of the radius (`reach`), so it stays put as the card resizes. Select
   (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
   Shift-click, a selection box; Delete removes them all, Escape lets go) and drags the
   one pressed: a bar up or down to its value, a line round to a new
-  angle (off the other lines, its fill going with it), a label round the circle. One of
-  several chosen items takes the others of its kind along: bars up or down by as much
-  (none below 0, one taken to 0 goes), lines and labels round by as far. After
+  angle (off the other lines, its fill going with it), a label anywhere on the card, in
+  the pie or out of it (Epo 2026-11-13; it only went round before). A pie label picked
+  alone wears the board's selection frame, and dragging a corner sizes it (`size`, as a
+  plane label's). One of several
+  chosen items takes the others of its kind along: bars up or down by as much (none
+  below 0, one taken to 0 goes), lines round by as far, labels by as far across. After
   one label the tool goes back to Select, as on the plane.
+- **A chart's data pane** (Epo 2026-11-13, B1 and P1, workspace canvases only): the
+  plane list's button, card and phone sheet (`.capy-plane-list`, its own session
+  choice), the chart drawn beside the card or above the sheet (`pads`), and the typed
+  axis right of the button (dropping to the second row under 460 px). A bar's row is
+  its fill swatch, label and value; a value past the axis's top raises the top to the
+  next numbered line (or a fresh axis past 100 lines), and "+ Bar" adds one a step
+  tall with the caret in its label. A pie's row per slice (`slicesOf`, clockwise
+  from each line) is its swatch, name and share in % with its degrees: the name is the
+  first label inside the pie within the slice (typing one adds it at the slice's middle,
+  reach 0.62; emptied it goes), and a share typed moves the slice's closing line in
+  whole degrees, the slices after it keeping their sizes and the last taking up the
+  rest (the last slice's own share moves its opening line), with fills following their
+  line and labels inside keeping their place in their slice. Labels outside the pie
+  (or a slice's second) are rows of their own. "+ Slice" halves the last slice (or puts
+  the first line at 12 o'clock); ⋮ Delete removes a bar or label, or a slice's opening
+  line, joining it to the one before. A swatch opens the fill row (Bars or Fill) and
+  the next fill picked goes to that bar or slice. Hovering a row lights its bar, slice
+  or label; Escape puts a row being typed back as it was.
 - **See-through cards:** plane and chart paper (`PAPER`) and note fills are half
   see-through so the panel's frost over the page frame shows. An open editor uses the
   same paper with no ground of its own and hides the board's `editor-host` under it
@@ -4825,10 +5321,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   marking model reads, Epo 2026-11-06; 42-47% smaller than drawing at 2,400 px and
   shrinking later), so it stacks as the screen does and
   fits a phone's canvas limit; AFFiNE's own export draws every note under every stroke at
-  the device's scale. A note scrolled out of view is shown for the capture: BlockSuite
+  the device's scale. Notes are drawn by html2canvas-pro (local change 72): html2canvas
+  1.4.1 threw on the `color(srgb …)` Chrome computes for a note's `color-mix()` fill. A
+  note scrolled out of view is shown for the capture: BlockSuite
   hides it with no size, which html2canvas drew as nothing and the capture threw on. On a board wider or taller than 1,568 px, groups of elements more than
   400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
-  the board itself stays as it is. The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
+  the board itself stays as it is. Only a quiz's board (`question`) does this, for its
+  answer area: a workspace canvas is framed where everything is (Epo 2026-11-18). The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
   encode runs in a worker while the drawing stays on the page, and
   comes back as a `File`. `stats().span` is that image's longest side in board units
   (after the far groups are drawn nearer, with the margin), for the answer flow's wide-board
@@ -4845,7 +5344,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `span` at most 1,936.
   - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
     for what the page lays over the board, such as a pinned question card or a top bar;
-    without it the fit leaves room for the board's own toolbar and undo.
+    without it the fit leaves room for the board's own toolbar and undo. The first view is
+    never above 100% (Epo 2026-11-13): a small drawing, one note, fitted to the
+    screen opened at 212%, its 14.8 px text at 31 px; it now opens at 100%, centred.
   - `readOnly` is a teacher's view: BlockSuite's read-only store (pan tool), no toolbars,
     undo, symbol row or selection, and nothing opens for editing, so MathLive never
     loads.
@@ -4864,56 +5365,111 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     length), with a place (`[x,y,w,h]`) on everything but a connector and a group, whose
     places BlockSuite works out (from the ends, each an element id or a finite point; from
     the children) and never stores. Anything else throws a `BoardLoadError` with a
-    `reason`.
+    `reason` on a question's board. A canvas is not opened from `saved`: it mounts on
+    its room's document and draws what does not fit as a placeholder (The canvas's
+    room, below).
   - **One toolbar, Misc per board** (Epo 2026-11-10, superseding the question board's own
-    Charts slot of 2026-11-09): both boards have Graphs, Formulas and **Misc** after the
-    shapes (`sheetTools`). Misc shows each board what it may hold (`tileFits`, by the
-    board `markBoard` names at mount): an answer board the Bar and Pie chart and Image
-    tiles, the workspace canvas also the mind map, emoji, GIFs, stickers, links and the
-    workspace's quizzes and sets. Misc's button opens a panel above the toolbar
+    Charts slot of 2026-11-09): both boards have Graphs, Formulas (GIF & Sticker on the
+    workspace canvas) and **Misc** after the shapes (`sheetTools`). Misc shows each board
+    what it may hold (`tileFits`, by the board `markBoard` names at mount): an answer
+    board the Bar and Pie chart and Image tiles, the workspace canvas also the mind map,
+    the formulas, YouTube and web links and the workspace's quizzes and sets (emoji are the GIF &
+    Sticker picker's third tab since 2026-11-13). Misc's button opens a panel above the toolbar
     (`capy-misc-panel`, right-aligned, Shapes' look): one 360 × 440 frame in every view
     (Epo 2026-11-09, round 2, mock DVxJzY5A3XiYHKuqQPezST), with Back, the title or
     KLIPY's search, and a close in its header and the body scrolling inside, so
     switching views moves nothing; the home view is tiles in groups, each picked up and
     dropped like a slot's piece (a finger's tap puts it in the view's middle); the panel
-    closes once something is down. Its groups:
+    closes once something is down. Every tile fills its grid column, 60 px tall with
+    its art fitted in a 40 × 30 box centred over its name and groups 8 px apart, so
+    every group shows without scrolling (Epo 2026-11-13, C1, mock
+    YahmqxViPqKKRbPjqJmkW5), inside 16px of panel padding (Epo 2026-11-12: the
+    picture tiles were buttons left at the popper's 36px). A panel opened from the
+    toolbar (`openPopper`) keeps its clicks, keys (Escape aside), clipboard and wheel
+    from the board under it, and lifts the toolbar over a selected element's own bar
+    while open; a focused field in it keeps focus as the pointer moves (local change
+    40), so the link field can be typed in. Its groups:
     - **Diagrams:** Bar chart, Pie chart and **Mind map**, AFFiNE's own (`mindmap`
       element, its topics and ideas shapes it lays out), registered on the workspace
       canvas only and without its own toolbar button (`MindmapWithoutTool`); it
       starts as a topic and three ideas.
-    - **Media:** **Emoji** opens a grid of 48 Noto Animated Emoji (Google, CC BY 4.0,
-      credited on the Credits page), shipped in `public/emoji/noto` as 96 px animated
-      WebP (about 5 MB together) with 64 px stills for the grid; a click puts one in
-      the view's middle. **GIF** and **Sticker** open KLIPY's view on its GIFs or
-      Stickers tab (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
+    - **Formulas** (workspace canvas): the Formulas slot's four pieces as tiles, the
+      art fitted to the tile's 40 × 36 box.
+    - **Media:** **Image** picks files from the device. **Link** is below.
+    - **The GIF & Sticker picker** (the slot's, workspace canvas only; Epo 2026-11-13):
+      GIFs, Stickers and Emoji tabs, opening on the one used last. **Emoji** is a grid
+      of 48 Noto Animated Emoji (Google, CC BY 4.0, credited on the Credits page),
+      shipped in `public/emoji/noto` as 96 px animated WebP (about 5 MB together) with
+      64 px stills for the grid, placed at 96 px; its tab has no search, the header
+      shows the slot's name. **GIFs** and **Stickers** are KLIPY's (`boardKlipy.ts` `klipyMedia(kind, …)`, the same API under `/gifs`
       and `/stickers`, `VITE_KLIPY_KEY`): from the student's browser with an anonymous
       per-browser `customer_id`, the `high` content filter, results in KLIPY's order and
       none removed but one off its `*.klipy.com` hosts (its terms), "Search KLIPY" as
       the placeholder in every language (KLIPY's required attribution) and "Powered by
-      KLIPY" under them; while a search loads, a shimmer grid of the final shape stands
-      in (16:10 cells for GIFs, squares on a checker for stickers, which have no
-      background on the canvas either); a GIF without a size places at its file's own,
-      one whose link passes the stored limit says it can't be placed;
+      KLIPY" under them. GIFs sit in two columns, each whole at the shape KLIPY gives
+      and into the shorter column (Epo 2026-11-13, G1, mock LZvdppJpsKTgyeXzEz7VnR, as
+      Discord's picker: a fixed 16:10 cut 19 of the first 24 trending by more than a
+      tenth), keyed by id so a later page leaves earlier cells in place; each shows
+      KLIPY's `blur_preview` (an inline JPEG under 1 KB) until its file has loaded (L2).
+      Stickers stay plain squares, each whole (S1), with no background, as on the
+      canvas. While a search loads, a shimmer stands in, in mixed shapes for GIFs and
+      squares for stickers, 8 px apart (the cells set `height: auto`, since the popper
+      styles make every button 36 px tall). KLIPY pages by 24 (`has_next`): scrolling
+      within 240 px of the end loads the next page onto the grid. Placing one sends
+      KLIPY's share event (`klipyShared`, `POST /{kind}/share/{slug}` with the
+      `customer_id` and the search, empty from trending), which nothing waits on; no
+      `locale` is sent. A mouse picks one up to carry (Epo 2026-11-12; an emoji too): it
+      follows the pointer at the size it lands at (240 px on its longer side, a sticker
+      160, an emoji 96,
+      letterboxed in its cell's box) and lands centred where the board is clicked; a
+      finger's tap or a key puts it in the view's middle, so a finger still scrolls
+      the grid. A GIF without KLIPY's size takes its cell's picture's; one whose link
+      passes the stored limit says it can't be placed;
       the placed GIF stays KLIPY's link, as its terms ask. Without a key the view
-      says search is off; an uploaded GIF is an ordinary image. **Link** takes a web
-      address or YouTube link: a video shows its poster (`i.ytimg.com`) with a play
-      mark, anything else its host and address; a double click opens it in a new tab.
+      says search is off; an uploaded GIF is an ordinary image.
+    - **YouTube** (Epo 2026-11-13, the Link tile renamed, with YouTube's play mark;
+      Y2 taken as recommended) takes a YouTube link or any web address: a video shows
+      its poster (`i.ytimg.com`) with a play mark, anything else its host and
+      address; a double click opens it in a new tab. A placed one's toolbar has
+      **Edit link** (E1, `editLinkAction` and `capy-link-edit`): a field in
+      BlockSuite's toolbar menu with the address selected; Save points the card at
+      the new address where it stands, as wide as it was, 16:9 for a video and a web
+      card's height for a web link, in one undo step. The form stops its clicks,
+      since BlockSuite's menu closes on any click outside its button. Adding and
+      editing share `readLink`.
     - **From the workspace:** **Quiz** and **Flashcards** show the workspace's own as a
-      two-column grid of thumbnails from each material's stored preview (the first
-      question's stem, the title, the question count; a set's first card front on a
-      stacked pair and its card count), from the Files list (`useOwnedMaterials`, which
-      carries previews; `WorkspaceCanvas` lends them through `workspace` in the mount
-      options), with a filter field from six items. A **New** tile comes first: the page
+      two-column grid of thumbnails from each material's stored preview (the title,
+      the first question's stem, the question count; a set's first card front on a
+      stacked pair, the title and its card count), with no edge or question-type pill
+      on a tile, only the hover's fill, and a dashed New tile (Epo 2026-11-13), from
+      the Files list (`useOwnedMaterials`, which
+      carries previews; `useCanvasMaterials` reads it and `useCanvasLinks` lends it
+      through `workspace` in the mount options), with a filter field from six items. A **New** tile comes first: the page
       creates the quiz or set unfiled in the workspace, named as the Create page names
       one (`nextGenerateTitle`), places its card and opens it. A click places a card
-      that runs it (360 × 420 for a quiz, 360 × 260 for a set, `MATERIAL_CARD_SIZE`):
+      that runs it (440 × 500 for a quiz, 400 × 340 for a set, `MATERIAL_CARD_SIZE`):
       the card is the note embed's own runner, answered and checked on the canvas
       (below). A double click on its header opens the material in the workspace for
       editing, and a card whose material the workspace no longer lists shows "can't be
-      opened" and no runner. `WorkspaceCanvas` reads every page of the list before
+      opened" and no runner. `useCanvasMaterials` reads every page of the list before
       lending it (`fetchNextPage` while `hasNextPage`); until then the list is
       `undefined`, the grid shows the New tile alone and a placed card's body loads
       rather than reading as gone.
+    - **Quizzes and flashcards** on the Canvas page (Epo 2026-11-13, mock
+      DnhMYffHEjdxiUansbBDde A + W1, the group named N1 by default): the same two
+      tiles over every quiz and set the person can open (`GET /api/materials` with
+      `scope=member` and no workspace; items they lost access to are left out),
+      latest edited first in one grid. Each tile has its workspace's icon and name
+      under the count, and nothing for one in no workspace; the filter also matches
+      the workspace's name. New makes a quiz or set in no workspace (`POST
+      /api/quizzes`, `POST /api/flashcards` without `workspaceId`) named Quiz 1,
+      Quiz 2… (Flashcards 1…, the first number no listed title has), places its card
+      and opens it. With no workspace page to open one in, New and a double click on
+      a card's header open `CanvasMaterialDialog`: the shared `SimpleDialog` (a
+      full-screen page on a phone) holding the note embed's editor
+      (`AppEmbedEdit`), whose questions open `QuestionDialog`; closing it reads the
+      material again for the cards (`WorkspaceLinks.account` switches the label,
+      the workspace line and the empty text).
     Emoji and GIFs are `affine:embed-capy-picture` blocks (an `<img>` that plays by
     itself), links `affine:embed-capy-link` and quiz or set cards
     `affine:embed-capy-material` (`boardPicture.ts`, `boardCards.ts`): the surface
@@ -4931,11 +5487,17 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `focus` listener, since the app's queries never refetch on focus), and
     `WorkspaceCanvas` invalidates the quiz and material queries of the material the
     item dialog showed when the dialog closes (the dialog's saves go through its live
-    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12): a person who
-    can edit the material (`capabilities.canEdit` from `useMaterial`, read once the
-    card is near) sees Edit at the top of the card's body, which swaps the body for
+    room, not the snapshot query). **Edit on the card** (Epo 2026-11-12; on the
+    toolbar since 2026-11-13): a person who can edit the material
+    (`capabilities.canEditContent` from `useMaterial`, read once the card is near)
+    gets Edit on the card's floating toolbar (`a.edit-card`), not in its body. The
+    page tells the board which cards those are and the board's toolbar names the card
+    being edited, both through `materialCardHosts.ts` (`setCardEditable`,
+    `setCardEditing`, `onCardState`); the board sets a selected card's selection again
+    when that changes, so its toolbar follows. Edit swaps the body for
     the note embed's editor (`AppEmbedEdit`: per-question Edit and Remove for a quiz,
-    per-card Edit and Add card for a set) on its live rooms; Done swaps back and
+    per-card Edit and Add card for a set) on its live rooms; Done (lit, where Edit
+    was) swaps back and
     invalidates the material's quiz and material queries so every card redraws. One
     card edits at a time (`CanvasMaterialCards`): with no note seat to join inside,
     each edited card takes its own places among the user's 22 joined documents. The
@@ -4943,7 +5505,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     its last question, a set keeps its last card. A card stops editing on Done,
     another card's Edit or leaving the board, and each of those reads its material
     again. Edit shows on `canEditContent`, so an owner at their storage limit gets
-    none. The block is a BlockSuite block
+    none. While a card is edited the board's Undo and Redo (the ☰ menu, ⌘Z and ⇧⌘Z
+    or Ctrl+Y on the board, not in a field) act on its quiz's or set's own history,
+    not the canvas's, as the plane's editor takes them while open (Epo 2026-11-13):
+    the editor lends its `UndoTarget` through `UndoSink` (`useLendUndo`, in
+    `collaboration/undo.ts`) to `lendCardUndo`, and `cardUndo()` reads it; a
+    question's dialog keeps its own. A card is placed 440 by 500 screen pixels for a quiz and 400 by 340 for a
+    set (Epo 2026-11-13), and a set's card face takes the height its card has, under
+    the count and above Previous and Next (`fill` on `AppEmbedView`, `StudyBody` and
+    `CardStack`), where a note's set sizes it from the window; a quiz scrolls in its
+    card. The block is a BlockSuite block
     like any other but hosts React: it adopts one `div` per card from the host registry
     (`src/features/canvas/materialCardHosts.ts` — kept out of `src/features/blocksuite`,
     which the app's tsconfig excludes), and `CanvasMaterialCards.tsx`, rendered by
@@ -4990,73 +5561,365 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     any page can write the clipboard. Their renderers check again what they use: a link
     opens only as http(s), an emoji shows only from the list, a GIF only from https
     `*.klipy.com` (`KLIPY_MEDIA_SOURCE`, which the image policy allows too), rotation as a number.
-  - **Stored (Epo 2026-11-09, `todo-workspace-canvas-storage.md`):** the workspace canvas
-    is personal: one per member per workspace, seen by its owner alone, one editor over
-    the whole canvas and no collaboration room (collaboration means resuming the held
-    canvas plan). It is a standalone material of kind `canvas` linked to its workspace
-    by `canvas_workspace_id`, owned and paid for by the member, listed in Files with the
-    drawing icon, never shared or cloned, and deleted with their membership when they
-    leave. `GET /api/workspaces/{id}/canvas` finds or makes it; its document is one
-    `canvas_board` block (embed catalog) naming the board asset, the save's version and
-    the canvas's images, so the asset pruner keeps them. `WorkspaceCanvas.tsx` opens
-    the board from the material's `board` editor asset (`boardAsset.ts`: gzip in the
-    browser, `assetLink` and `DecompressionStream` back), or from this device's unsaved
-    copy (IndexedDB `drawingDrafts`, key `canvas:<material>`: the live `snapshot()` with
-    the material revision it was taken at, written 400 ms after each change and on
-    `pagehide`) when the last save didn't go up and the copy's revision is the material's
-    current one; an older copy (another tab's or device's save landed since) is deleted.
-    It saves 2 s after the last change (`save({ finish: false })`, the cleaned-up document
-    that leaves the drawer's tool and open card alone) and when the page within the app
-    leaves the canvas (`save()`, which finishes an open card's view into it; a save still
-    in flight then rewrites the copy from the document as left, at the revision it lands
-    on), gzipped, uploaded as a new `board` asset under
-    `CANVAS_BOARD_MAX` (2 MiB before gzip, the board catalog; over it the board says so
-    and the last good save stands), then `PUT /api/workspaces/{id}/canvas` with the
-    asset and the revision it read; the server checks the asset is a ready `board`
-    asset of the canvas (images likewise) and counts the version. The save writes the
-    document in SQL even where collaboration is configured: a canvas is never a room,
-    so `UpdateMaterial` sends no content command for its kind (each save writes a whole
-    new block, which a replace-block command refuses). 409 (the same person's
-    other tab saved first) says so, deletes this tab's copy and stops saving until a
-    reload; any other failure waits for the next change or open, the copy holding the
-    work (no retry loop), and the board asset uploaded for the failed save is deleted
-    again. A closed tab keeps the copy only: the upload can't run as a keepalive request.
-    Both routes answer 404 to a non-member (a link or public visitor), and a save naming
-    an asset that isn't a ready board or image asset of the canvas is a 400. A canvas opens no room (the collaboration token route refuses
-    it); the Canvas tab shows to members only, since a link or public visitor has none.
-    Restoring a trashed canvas beside the live one made since is refused (409
-    `canvas_exists`).
+  - **The canvas's room (Epo 2026-11-18, superseding the saved board asset of
+    2026-11-09):** a canvas is a standalone material of kind `canvas`, owned and paid
+    for by the person who made it, any number per member per workspace (Epo
+    2026-11-12, migration 0171), linked to its workspace by `canvas_workspace_id`
+    and never cloned. Its board is the Yjs
+    document of a collaboration room, one room per canvas whether it is private or
+    shared, named `material:<materialId>:schema:<n>` like a note's (`MaterialRoom`),
+    with no `keys` document and no parent. The collaboration server runs it as a note
+    room with its own model, `Model::Board`, beside `Model::Note` and `Model::Item`
+    (`model.rs`). Who holds a canvas, the tokens by role and what revokes them are in
+    [authorization](../authorization-permissions-lifecycles.md#workspace-canvases); the
+    charge and the cap's number in
+    [storage](../backend-storage-quota.md#canvases).
+    - **Opening.** `useCanvasBoard` (both pages mount it) reads the canvas
+      (`GET /api/canvases/{id}`, for its image assets and whose it is) and joins the
+      room through `useItemRoom`, the room client every live item uses, with an
+      awareness of its own. The board mounts once the room has synced under its
+      adopted client id, on the room's document itself (`mountDrawingBoard` with
+      `room: { doc }`, `roomStore.ts`: the room's document is BlockSuite's root and
+      space document and its `blocks` map the store's, so nothing but block edits
+      reaches the room). Every change goes to the room as it is made and nothing is
+      saved from the page; unsent edits are kept on this device as any live item's
+      are. The `drawingDrafts` copies of canvases and the save loop are gone; a
+      quiz's drawing answer and sample keep the in-memory board. Undo is BlockSuite's
+      own manager following the document's client id (`followClientId`), so it
+      reaches a person's own edits only, and a canvas has no previous versions (Epo
+      2026-11-18, "no prev version").
+    - **The view it opens at (Epo 2026-11-19, Q32, Q34, Q35).** A canvas opens where
+      its person last left it on this device (zoom and centre), and only a first open
+      on the device fits everything. `canvasViews.ts` keeps the view per canvas id in
+      one localPrefs record (`capy.canvas.views`, the latest 100 canvases, Q34),
+      written as the board unmounts and when the page is hidden (another tab, a
+      reload, the tab closed, where no unmount runs); `useCanvasBoard` passes it as
+      the board's `kept`, which the board takes only while something on it lies
+      inside that view on this screen, else it fits (Q35: a peer may have moved or
+      removed what was there); a board mounted again on the same canvas in the same
+      tab takes its `view` as it was. The record carries its account, as the Make a quiz runs do
+      (`claimAccountData`): another account's views, or anyone's once signed out, are
+      dropped. Only the two canvas pages keep one; the answer board and
+      `/dev/drawing` fit at every open. BlockSuite's own stored viewport is off
+      (vendor local change 73): it was keyed `board` on every board, so each board
+      opened at the last one's view.
+    - **The first state.** Every canvas starts from the same bytes: one `affine:page`
+      block with id `page` holding one `affine:surface` block with id `surface`, written
+      under Yjs client id 1, which no user is assigned, so two first openers hold one
+      state and no tab can write under it. The editor's own code makes them
+      (`boardFirstState.ts`), a Vitest pins them byte for byte to
+      `collaboration-rs/crates/server/fixtures/board-first-state.bin` (237 bytes), and
+      the collaboration server seeds a canvas with that file at its first open
+      (`Model::Board.state_from_value`); Go writes no Yjs row when it creates one. A
+      tab never makes those blocks: a synced room without exactly one page holding one
+      canvas is "couldn't open" with Retry (`holdsBoard`).
+    - **Protocol 31.** Canvas rooms raised `CLIENT_PROTOCOL` and `MIN_MATERIAL` from
+      30 to 31 ([the gate](#client-protocol-and-the-release-nudge)). The build's
+      contract adds a rule the code does not hold: from here a change to the board
+      catalog (`server/internal/boardcatalog`) raises both together.
+    - **What the room admits.** A board has no rule on what its content is (Epo
+      2026-11-18, "reject nothing"): admission bounds what an update may cost, never
+      its shape. After the checks every material room makes (the 4 MiB sync message,
+      the token, the client-id rule, the marker root), `admit_board` takes an update
+      that:
+      - the room can place (`ydoc::inspect_bounded`): no struct or deleted range
+        ends past clock 2^30 (`ydoc::MAX_CLOCK`, a ceiling for every room since this
+        build: two 11-byte GC structs wrapped a client's clock in a release build and
+        left a stored document that no longer loaded; note, flashcard and source
+        rooms took the same input and refuse it now);
+      - nests no type more than 64 deep below the root (`BOARD_DEPTH`; the editor's
+        deepest is 5). yrs deletes nested types by recursion, and a chain of 8,000
+        maps with one deletion of its top overflowed a worker's 2 MiB stack, which
+        aborts the process;
+      - stays within one work budget of `ydoc::MAX_WORK` (1,000,000) steps that
+        counts what yrs's own count misses: the content copied and walked at every
+        split of an item, conflict scans, the walk from each new struct to its root
+        and the items a deletion removes without naming them. The slowest update a
+        board admits by those costs held the room 48 to 66 ms on an M1 in a release
+        build (the builder's measurements, 2026-11-18); an update's own size is not
+        counted (100,000 map entries took 144 ms there).
+        Only a board counts splits; the other rooms inspect as before;
+      - writes only the `blocks` root (`BOARD_ROOT`) besides the room's own
+        contributor markers;
+      - keeps the state within `CANVAS_BOARD_MAX`, 4 MiB (Epo 2026-11-18), the largest
+        sync message the server takes (`NOTE_MAX_SYNC_BYTES`). The validator keeps an
+        upper bound of the state's bytes; while the bound plus the most the update
+        can add fits, the update enters unmeasured, and near the cap, or when it
+        deletes a type's content without naming it, the state is measured exactly
+        without and with the update, which enters when the state with it fits the cap
+        or is no larger than before. So the cap is never passed, deletions that split
+        items count like growth, a full board can always be thinned, and a person who
+        cleared part of a full board draws again at once. An update that tells the
+        room nothing new (a joiner's step 2) is not sized.
+
+      A refusal closes that writer's channel alone. One for size reaches the tab as
+      `document-rejected` with `document_size_exceeded` and
+      `limits.maxContentBytes` the cap. A store never refuses a board for size, and a
+      board has no repairs, sessions, held deletions, collection, late merge, index
+      request or agent path: an agent inspect or edit, a replace-block command and the
+      live read of a loaded board answer 409 `unsupported_operation`, unreported
+      (`CANVAS_REFUSED`); the live read of a board this process has not loaded answers
+      none, as for any room it does not hold. Known and left open, here as in every
+      room: named deletions written out of order hold a room about 1.7 to 3.4 s per
+      MB (the second Rust review's probe), and note, item and source rooms are still exposed to the split stall and the
+      depth abort a board now refuses (follow-ups for Epo, the second Rust review).
+    - **Unknown content is kept (Epo 2026-11-18, "reject nothing, dont just delete
+      stuff without user acknowledgement", mock A, Artifact FFzLp8Zwcen678YfTEn88s).**
+      Nothing a peer or the stored state brought is refused or removed for its shape,
+      on the server or in the browser. What a tab cannot read (a block or canvas
+      element of a kind this build does not know, or a known one that fails the
+      board's checks) stays in the document as it is and is drawn as a placeholder: a
+      dashed outline with "This block cannot be shown", the words a note's unknown
+      block uses (`material_unsupported_block`). A canvas element's placeholder is
+      BlockSuite's own inert model (vendor local change 62: an unknown element type no
+      longer throws at load or on a remote add); a block's is `capy:unknown` in a
+      note's text or `capy:unknown-card` with a place of its own (`boardUnknown.ts`,
+      drawn by `boardUnknownView.ts`). Neither declares props, so reading one writes
+      nothing, and a selected placeholder has no toolbar. Content is judged as it
+      arrives; a later change to it waits for a reload. A person's own add that the
+      catalog does not take (a paste, a duplicate) is still removed at once
+      (`keepToCatalog` in `boardKeep.ts` acts only on this tab's own action, never on
+      an undo, a peer's update or the loaded state). A question's board still refuses
+      a saved board that does not check out.
+    - **Projection.** The server reads one thing from a board: the editor assets its
+      blocks name, each block map's string `prop:sourceId` of 1 to 64 characters of
+      `[A-Za-z0-9_-]`, whatever the block's flavour (so an image block of a newer
+      editor keeps its asset), each id once, in byte order. The room sends Go the
+      canvas's whole document, one `canvas_board` block with the constant id `board`,
+      `version` the stored version projected and `images: [{ assetId }]`, on the
+      note's cadence (30 s idle, every 5 minutes, on unload). `version` changes with
+      every projection, so the content changes and the charge is recomputed. Go
+      writes the block through `ProjectMaterialContent` with no canvas branch, and
+      its asset pruner keeps the images named and trashes the canvas's others. An
+      update that writes a `prop:sourceId` makes the room project after its next
+      store (`names_asset`, `project_soon`), so an image added, pasted or brought back
+      by Undo, whose asset Go had trashed, is served again within seconds.
+    - **Presence (Epo 2026-11-18, "just the same presence events like others").** A
+      board's state is a note's event with board fields (`Fields::Board` in
+      `presence.rs`, `boardPresence.ts`): `p` the pointer as `[x, y]` in whole board
+      units, each within 1,000,000,000 either side of the origin, or null once it left
+      the board; `b` the selected elements' and blocks' ids, at most 16 of at most 64
+      UTF-16 units each; `s` and `f` a text caret's anchor and focus as base64 Yjs
+      relative positions of at most 64 characters (`f` absent when collapsed);
+      `uploads` a note's upload list, the ids of the images the tab is uploading,
+      at most 100 of at most 32 UTF-16 units each, from a write channel only (a
+      read channel's state naming it, a frozen or full payer's creator included,
+      is dropped whole), so peers can show each as uploading. No name or colour:
+      receivers name and colour a peer from the room's
+      presence. Any other key, type or bound drops the whole state, silently, on the
+      server and in the receiver (`readBoardPresence`), one vector list checking both.
+      BlockSuite's own awareness (its `selectionV2`) stays on the page and never
+      reaches the room. It is sent at most every 50 ms and only on a change; a caret is
+      sent as soon as it is placed, and the pointer goes null as a card's editor
+      opens over it. Whoever may edit the canvas sends and hears it,
+      also while their own board is read-only for a time (a frozen account, a full
+      payer); a workspace viewer sends nothing and the room tells a viewer nothing, as
+      in a note. The page sends by the caller's `role` in the canvas's read
+      (`sendsPresence` in `canvasRights.ts`): an owner or editor sends, a narrowed
+      one on another member's canvas included, as the room relays any channel but a
+      viewer's (`on_awareness`); a viewer does not, and before the read answers
+      nothing is sent. `BoardPresenceMarks` draws the others with the marks a note uses
+      (`PresenceMarks.tsx`, shared with `RemoteCursors.tsx`): a pointer that glides
+      120 ms in board units and follows pan and zoom, one named outline around what a
+      person selected, a caret and tinted range inside a note's text, and for text
+      in a shape or on a connector the outline alone. Nothing shows with the
+      "Show others' cursors" switch off. The presence marks have no mock yet (one
+      outline around a multi-selection, carets without a name flag, and no avatar
+      group on a canvas are as built, to be shown to Epo).
+    - **What a person sees.** While the room joins, the pane's loader
+      (`CanvasOpening`), which says after 5 s that an open slowed by the user's open
+      budget is slowed (`editor_open_slowed`, `FileLoading`). A member's device keeps
+      a copy of what the room confirmed (`deviceCopy.ts`, the `keep` label from the
+      canvas's read, `seed` at the next open): the board shows it at once, offline
+      too, with its tools when the copy says the person could edit. Such a board
+      takes edits before the join (Epo 2026-11-19, Q27 b1, Q31, as a note does;
+      `early` in `itemRoom.ts`). Once the room's token has answered (a slow join,
+      or 30 s unreachable with the API up) the document takes the id the token
+      offers before its first edit (`adopt`): an id assigned to this user that no
+      session bound yet, so the JOIN binds it as any session's (Q236,
+      `ClientIds::holds`) and nothing is re-applied. With no token yet (offline at
+      open) the edits go under the tab's own id, which no room assigned, kept as
+      `late` draft rows (the removals-only gate reading the copy's size, under the
+      offline bound of cap less size less 64 KiB): at the join the room opens on a
+      fresh document from the copy, and the edits are re-applied under the room's
+      id by the catch-up merge (`reauthor`: `mergeLate` with the joined document's
+      id, `applyMerged` re-authored), the board moving onto that document at the
+      view and selection it had (`useCanvasBoard`), its size the board's until the
+      new document's measure. The re-apply is not repeat-safe (text typed into a
+      board note, a note or image added, would go in twice), so before the merged
+      update goes the early rows are flagged refused in place (`reauthoring`): a
+      later open shows them copy-only and never re-applies them. They go once a
+      write of the re-applied edit landed (its whole document, or the refused row
+      a refusal keeps; a move or a leave writes it first) or a receipt covers it;
+      a write that failed leaves them, so storage failing never deletes their only
+      copy. Each recorder keeps its own `late` mark. A field both
+      sides changed (a shape both people moved) takes Yjs's own pick, with no
+      review step (Epo 2026-11-19, Q33, "Yes, one side wins"). What would not show
+      is decided per element and block (`boardHidden.ts`; the merge names hidden
+      edits by top-level block, and every element sits in the one surface block):
+      an early edit is hidden when something both documents held around it is
+      deleted in the merged one. When that is an element or block the merged
+      board no longer shows (another person deleted it), those alone are kept as
+      one hidden refused row and shown in the copy-only recovery (`merged`, the
+      `changed` strip) while the room runs on the merged document; anything else
+      hidden (typing into a text another person replaced) offers the whole early
+      board there, as does a hidden part the merge reports that this check does
+      not find. Reload (asking first) drops it and shows the room. Until the
+      hidden row is stored the early rows stay; if it cannot be, they stay as its
+      copy. Merge code that does not load (the
+      chunk, the worker or its WASM), or flags that cannot be stored, keep the
+      edits as they are, the board read-only under the note's `late-unloaded`
+      strip ("Couldn't sync your edits. Retry or reload the page."), and try
+      again on Retry and on the browser's reconnect (Q295, Q398); the merge's
+      download has no time limit, the board saying Syncing meanwhile. A merge
+      that ran and failed (its 10 s, Q281), a refusal
+      (size or any other) or a token refused at the join (403/404) keep every
+      early edit in the copy-only recovery with Reload asking first, the strokes
+      still on screen, and only the room's refusals toast. A token that says read
+      at the join (a demotion, a freeze) discards them as any read-only turn does
+      (Epo 2026-09-29): a fresh room opens on what was saved, read-only. Each tab
+      writes under its own id, so two tabs of one person drawing early both land;
+      a tab leaves another live tab's late rows alone (`heldDraftSessions`;
+      without Web Locks it may take them, as Q420 accepts for notes). A reload
+      before the join paints the rows earlier sessions left: early ones are
+      re-applied with this session's at the join, as a note's late rows are;
+      ones of a session that held a room's id (it joined, or its token answered)
+      go as at any open (Q326), accepted ones with the joined document and
+      never-accepted ones through the draft send, which goes first (a board
+      joining as it is waits for it at its JOIN, `beforeJoin`). Rows to copy, or
+      a viewer's copy, keep the board locked until the room has synced. The copy's label follows the canvas's read: a rename or a
+      demotion is written with the next copy (`ItemRoom.keepAs`, `relabel`), so the
+      next open paints with the current title and tools. A board's copy is at most
+      its 4 MiB cap, against the 200 MiB the device's copies share. Under the mocks
+      only the scenarios workspace's canvases (`mock-scenario-canvas-N`) keep a
+      copy and drafts, as every MSW scenario fixture does. A room that refuses the person before anything
+      showed (no role, a canvas gone) is the usual unavailable panel
+      (`UnavailableItem`), never saying blocked rather than gone. A canvas read that
+      fails with nothing to show offers Retry and, for an unexpected failure, its
+      error id (Q612); a board whose mount throws says the canvas couldn't be opened,
+      and both reach Sentry (`canvas-open`, `canvas-board`; an API failure is the
+      server's to log). A canvas opened offline with no copy waits ("Waiting for
+      connection") and opens by itself when the connection returns; with the browser
+      online and the service down, the loader stays and at 30 s from the join's start
+      the strip reads "The live collaboration service is unavailable." with Retry
+      (Epo 2026-11-04, D5, C9; `unreachable` and `retry` in `itemRoom.ts`). A
+      workspace viewer of a shared canvas gets a board to pan and zoom with no
+      toolbar (mounted without tools; it mounts once more, at the same view, if the
+      person may then write), with no cue (D9). A frozen account opens under "This
+      file is read-only now." and a full storage under the strip naming whose
+      (`StorageFullBanner`: "Your storage is full." or "Owner of the file has
+      insufficient storage."), picked as a note picks them from the canvas's read
+      (`storageFull`, else an owner's or editor's `role` with `canEditContent` off).
+      An editor's board stops and starts taking edits in place when its access
+      changes (`setLocked`: the view, the history and the board stay). Turned
+      read-only while open (a demotion, a freeze, a full payer), the room discards
+      the unsaved edits and, when there were any, opens afresh on what was saved
+      (Epo 2026-09-29; the `board` option of `itemRoom.ts`), under the read-only strip
+      from then on, and the canvas is read again for why. A revoke while inside (the
+      canvas taken back, the member removed) leaves the board as it was, read-only,
+      under a strip reading "You no longer have access" (`CanvasBoardStrip`, the
+      `access-lost` save strip; where it sits has no mock yet). The strip also
+      carries offline, an outdated build with Reload, edits open for copying, and
+      "Saving is delayed" (closeable) once an edit's receipt has waited 25 s of
+      connected time, as a note's, or the room said a store failed with edits
+      unsaved (`delayed`, `SaveDelayClock`). One strip shows at a time: recovery,
+      access lost, what the device could not store, its offline bound or an
+      outdated build, unreachable, plain offline, storage, read-only, delayed.
+      An edit the room refuses for good, one taking the board past its cap
+      included, is kept on this device as one refused row and opens read-only for
+      copying, as any item's (Developer 2026-09-30; Epo 2026-11-18, nothing deleted
+      without acknowledgement), under the recovery strip; Reload asks first ("Discard
+      these edits and reload?", the note's discard words), then drops them and
+      opens the room afresh. The 7-day toast's Download gives a board's edits as its
+      blocks in JSON, named after the canvas (`draftFile`).
+    - **Save status and size (Epo 2026-11-18, 1B and 2B, mocks `StatusB`,
+      `StatusPhone`, `SizeB`, `SizeFull`).** The board's save status sits just left
+      of its ☰ (`statusSlot`, `CanvasBoardStatus`): `LiveStatus` with its label, the
+      icon alone on a phone as a note's phone header, a spinner while a copy shows
+      before the room joins, its tooltip held open with the slowed line after 5 s.
+      A viewer, who saves nothing, gets what a note's viewer gets (no save status):
+      the offline icon alone (`OfflineStatus`) and no size row. The picker's row
+      stops 8px short of the status and ☰ whatever the status says: the page reads
+      their width as `--capy-board-chrome` (`useCanvasBoard`); a phone's picker
+      fills the row (mock `StatusPhone`, 360 px included), a wider screen's shrinks
+      into it. The status turns compact below 640 px, as a note's header.
+      The room keeps the board's size (`size`, `subscribeSize`): the room's own
+      measure in each receipt (`metrics.contentBytes`, the Yjs v1 encoding the server
+      caps), one encode of this tab's document when idle before the first, plus the
+      bytes of every update applied since; the page hands it to the board
+      (`setRoomSize`), whose menu ends with the size from 75% and, at the cap, "Only
+      edits that remove content will be saved." The server is the judge of what
+      removes content: an update whose state with it is no larger than without it (a
+      deletion) is always admitted, and a growing one at the cap is refused and kept
+      for copying as above. Offline, a board's work stops under the offline-limit
+      strip once its size is within 64 KiB of the cap (the space left), or at 4 MiB
+      of unsent updates (its cap, not the note's 2 MiB), whichever comes first.
+    - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
+      link on its own canvas page (the account's, or its workspace's with
+      `view=canvas`): `useCanvasPicker` asks `GET /api/canvases/{id}` for a `c` the
+      list does not hold once its pages ended, and one answering `trash` is shown
+      read-only with no Rename, sharing or Delete. Its board is the stored state from
+      `GET /api/canvases/{id}/board` (the editor's first state for one never opened),
+      with no room, under the Trash strip with Restore (`TrashBanner`); Restore's
+      refresh asks again, the list is read again, and the canvas opens live.
+    - **The picker's sharing (Epo 2026-11-18, "B, a switch", mock Artifact
+      F2dZxe8XvcW1FAiqMf81NA).** The canvas shown has a "Shared with members" row
+      (`content_shared_with_members`, the file switch's words, Epo 2026-11-18) with the
+      people icon and a switch between Rename and Delete in `CanvasSwitcher`,
+      for its creator while an owner or editor of the workspace (`canvasRights`, the
+      server enforcing the same; provisional, see authorization). The row is the
+      control and stays open. Sharing asks first, as the file switch does (mock
+      `ShareDialog`: "Share this canvas with members?", "Everyone in the workspace will
+      see it. Editors can draw on it.", Cancel and "Share with members"); taking it
+      back does not. The switch shows where it is going while
+      `PATCH /api/canvases/{id}` is on its way, and a refusal is said by a toast. A
+      canvas the person shared carries the people mark before its time, another
+      member's shared canvas reads their name before the time ("Ben · 3d"), and a
+      private one neither. Rename and Delete show for the creator alone. The Canvas
+      tab lists the canvases the person drew in the workspace and the other members'
+      shared ones; nothing announces a share or an unshare, so the list is read again
+      each time the picker opens and after the person's own change. The first canvas
+      is made, with the workspace's name, for a person with none to show, so a
+      member whose list holds only another member's shared canvas opens that one
+      (as built; put to Epo). The Canvas tab shows to members only, since a link or
+      public visitor has no canvas.
   - **The Canvas page (Epo 2026-11-10, mock KNPB4pYUhSSYUJvuKN1ct7 B):** `/canvas`
     (`Canvas.tsx`, Canvas under Tools in the sidebar) is a board: one of the person's
     own canvases, in no workspace. Such a canvas is a standalone `canvas` material with
-    no `canvas_workspace_id` (migration 0167), any number per person, opened and saved
-    exactly as a workspace's is (`useCanvasBoard`, which both pages mount with a
-    `CanvasSource`: `GET` and `PUT /api/canvases/{id}` here, the workspace routes on
-    the Canvas tab), with the same device copy, images and limits, and no workspace
-    cards in Misc. `?c=` names the canvas shown; without one (the sidebar's link) the one
+    no `canvas_workspace_id` (migration 0167), any number per person, opened in its
+    room exactly as a workspace's is (`useCanvasBoard`, which both pages mount), with
+    the same images and limits, and Misc's **Quizzes and flashcards** (above). It is its
+    maker's alone and can never be shared. `?c=` names the canvas shown; without one (the sidebar's link) the one
     already shown stays, else the latest saved of the person's own, and a first one ("My
     canvas") is made for a person who has none. The id routes serve only a person's own
-    canvases: a workspace's opens and saves through its workspace, whose membership it
-    follows. A frozen account draws on what it has and is offered neither New canvas
-    nor Rename. The panel at the top left (`CanvasSwitcher`)
+    canvases, a workspace's while they are a member of it, and another member's
+    once it is shared with that workspace. A frozen account opens what it has
+    read-only (its room token carries `read`) and is offered neither New canvas,
+    Rename nor the sharing switch. The page and the Canvas tab share `useCanvasPicker` (the canvas shown,
+    the first one made, New, Rename, the sharing switch and Delete). The panel at the top left
+    (`CanvasSwitcher`) is the editor's popover (`ToolbarPopoverContent` and its 30px
+    rows, as Plate's All blocks, Epo 2026-11-12) and
     lists every canvas there is (`GET /api/canvases`: their own, latest saved first,
     then each workspace's under its icon and name, leaving out a workspace whose owner's
     account is no longer live), a page of 50 at a time as the menu is scrolled (Epo
     2026-11-10: `cursor` and `nextCursor`, `canvasesQuery` is an infinite query ending
     in `ListEnd`; there is no cap on how many a person makes). The list scrolls in a box
-    of its own, so New canvas, Rename and Delete under it stay in reach. Their own come first so
+    of its own, so New canvas, Rename, the sharing switch and Delete under it stay in reach. Their own come first so
     that a first page without one means they have none, and a canvas the URL names on a
     page not loaded yet has the pages load until it shows or they end. The panel makes
     a new one ("Untitled canvas", numbered when a loaded one has the name), and renames
     or deletes the one shown, as a standalone
     material (`PATCH /api/materials/{id}/metadata`, which leaves the revision alone, and
-    the trash; a deleted canvas's board saves and keeps nothing more, `gone`). A
-    workspace's canvas opens in its workspace, where its quiz and flashcard cards work.
+    the trash; the room's refusal of a canvas being deleted is no news to its board,
+    `gone`). A
+    workspace's canvas opens in its workspace (`?c=` with `view=canvas`), where its quiz
+    and flashcard cards work; there the picker lists that workspace's canvases alone.
     The account chat's file listing leaves canvases out: a canvas is a board, not a
     document the agent reads. On a phone the navigation drawer's button sits beside the
     panel, and the row stops short of the board's own menu. The Files page lists no
     canvas (the rows of earlier that day are gone); a canvas's images still list there
-    and open the canvas they are on, and Trash shows a deleted canvas with its icon.
+    and open the canvas they are on, and Trash shows a deleted canvas with its icon
+    and opens it read-only on its canvas page (above).
   - **Images (Epo 2026-11-09 and 2026-11-10, `todo-board-images.md`):** an image block
     keeps only an id (`sourceId`), and the board reads and stores files through its own
     blob source (`boardBlobs.ts`, `BoardBlobSource`, in place of BlockSuite's in-memory
@@ -5064,31 +5927,34 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     Every way an image arrives (a paste, a drop, a note's slash menu, Misc's Image tile,
     which opens the device's file picker for a phone with no paste or drop) goes
     through BlockSuite's `blobSync.set`, so the source is the one place that sees them.
-    On the workspace canvas (`assetImages` in `boardAsset.ts`) an image is stored at
+    On a canvas (`assetImages` in `boardAsset.ts`) an image is stored at
     once as the canvas material's own `image` editor asset through `uploadEditorAsset`,
     as a note's is: compressed in the browser first (`fitImageOffThread`: WebP where the
-    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the plan's
-    image cap, refused when storage is full, billed to the member and listed on the
-    Files page. The block lands with BlockSuite's hash and shows the local file with the
-    upload state set (`blobState$`); when the upload completes its `sourceId` becomes
-    the asset id and its `size` the stored size, outside the undo history, and a refused
-    image leaves the board with a toast. An image already stored under its id is never
-    stored again: a copy pasted back hands its file to `set` under that id, which the
-    source leaves alone (`stored`). `GET` and `PUT /api/workspaces/{id}/canvas` answer
-    `ownImageAssetIds`, every ready image asset of the canvas, one the pruner trashed
-    included; a save waits for uploads in flight (at most 20 s, `IMAGE_WAIT_MS`, on
-    leaving the canvas too, since the board's document outlives its unmount) and sends
-    as `imageAssetIds` the ids on the board that are in that list or were uploaded
-    since. The pruner then keeps them, and trashes a removed one at the next save once
-    it is over a minute old. An image deleted on the canvas and brought back by undo is
-    named again and that save restores it (`assertCanvasAssets` takes a trashed image,
-    never a trashed board), after which the board asks for its file again
-    (`reloadImages`). An image deleted for good elsewhere (the Files page) is not in the
-    list, so it is left out; a save refused for what it named (400) reads the list again
-    for the next one. An image pasted from another canvas resolves as another material's
-    and is stored again as this one's, also when the board opens with one. Opened again,
-    an image loads from its asset's link (`assetLink`). A tab closed mid-upload keeps the
-    hash in its device copy and shows an empty frame after a reload.
+    browser encodes it, JPEG or PNG where it doesn't, as Safari), capped at the
+    uploader's plan image cap, refused when storage is full, billed to whoever
+    uploaded it (the creator, or an editor of a shared canvas) and listed on their
+    Files page. The image is stored before its block is added: BlockSuite waits for the
+    source's `set` (a file pasted, picked or dropped) and for a copied block's paste
+    (`BoardImageClipboard`), and the one way in where BlockSuite adds the block first, a
+    file pasted into a note's text, waits for `set` on a canvas too
+    (`storedImagePaste`). So a block is never in the room under an id no one can load,
+    leaving mid-upload leaves no empty frame, and a refused image never lands (a
+    toast says so). The block then takes the stored id and size outside the undo
+    history. The board acts only on this tab's own image adds (`change.isLocal`): it
+    never uploads for, rewrites or deletes a block another person added. An image
+    already stored under its id is never stored again: a copy pasted back hands its
+    file to `set` under that id, which the source leaves alone (`stored`).
+    `GET /api/canvases/{id}` answers `ownImageAssetIds`, every ready image asset of the
+    canvas, one the pruner trashed included. The room's projection says which images
+    the board holds, so one taken off the board is trashed and one put back (an undo)
+    is restored with no word from the page, and served again after the room's next
+    store. A peer's image still going up, a deleted image or one the pruner trashed
+    answers 404 to the reader and is asked for again by the next view of it. An image
+    pasted from another canvas resolves as another material's and is stored again as
+    this one's when the tab may write; a reader's board stores nothing. Opened again,
+    an image loads from its asset's link (`assetLink`). Known and left open (the
+    browser fix round's notes): an image uploaded and then abandoned by leaving stays
+    an asset no block names, which the pruner's rule for it was not checked.
     On an **answer board** (`DrawingBoardScreen`) a picture is compressed as it lands
     (`shrink`: `fitImageOffThread` under `BOARD_IMAGE_MAX`, 1 MiB, from the board
     catalog) and refused with a toast past `BOARD_IMAGES_MAX` (10, counting the ones of
@@ -5123,24 +5989,63 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   saved board as an SVG string from its data, for lists, results and marking views
   (Epo 2026-11-06: what's on it, not every detail). It never loads the editor: it imports
   yjs and the small modules the check uses (`boardData.ts` holds the cards' stored shape,
-  limits and chart geometry, `boardGeometry.ts` the framing, `graphTicks.ts` the grid
-  step), 12.7 KB minified on its own. Framed as the marking image is (everything, far
-  groups drawn nearer, 8 px round, on white), stacked by index with a note over a stroke
+  limits and chart geometry, `boardGeometry.ts` the framing, and the graph engine,
+  `src/features/graph/`, for plane cards). Framed as the marking image is (everything, far
+  groups drawn nearer on a quiz's board only, 8 px round, on white), stacked by index with a note over a stroke
   at the same index. Strokes are plain lines thinned to one point per preview pixel and
   never thinner than a pixel; shapes their outline, fill and text; connectors straight
   from end to end with their arrowheads; text and shape labels a line per line break;
-  plane cards their grid (while lines are 6 px apart), axes and marks; charts their bars
+  plane cards as the graph engine draws them on the light export paper (grid, axes with
+  their numbers, marks; no labels or formulas), recorded by its SVG recorder
+  (`SvgRecorder.nested`, ids prefixed per card) at no less than half the card's size, so
+  its lines keep a pixel; charts their bars
   or circle and spokes; formulas their LaTeX as text; notes their box and a line per
   paragraph; a placed quiz or set its box with the title and what it is (text only, the
-  runner being on the canvas alone); pasted images a grey box. No numbers or labels on cards. It checks the board
+  runner being on the canvas alone); pasted images a grey box. No labels on charts. It checks the board
   first and throws the same `BoardLoadError`. `fromBase64` uses `Uint8Array.fromBase64`
   where the browser has it. A plane card with 5 strokes takes 0.4 ms
-  in Node, a 300 KB board (50 strokes of 300 points, 500 marks) 5 ms. Show it as an
+  in Node, a 300 KB board (50 strokes of 300 points) 5 ms (measured before plane cards
+  drew through the engine). Show it as an
   `<img src="data:image/svg+xml,…">` in a list, so rows don't add SVG nodes to the page.
-- **Note cards:** every note on the board is a tight card (8×10 px padding, a 1 px
-  hairline, a 6 px corner, no shadow, the same size while typing), set in
-  `drawingBoard.css` over the note's stored style, since AFFiNE's corner field only takes
-  0/8/16/24/32; the preview draws it the same. AFFiNE's slash menu is registered, offering
+- **Notes:** a note is inline or a card (Epo 2026-11-13, local change 52). Inline is
+  its text on the canvas with no fill, padding or edge (a `transparent` fill, no shadow,
+  no border); every placed note starts inline. On the workspace canvas a double click
+  on empty canvas places an inline text note there and types in it, as the Note
+  tool's Text does; an answer board's double click keeps placing a canvas text label,
+  which has the maths symbol row and the font menu (Epo 2026-11-13, local change 59,
+  the `enable_dblclick_note` flag). The plus on either side of a selected note places
+  the next note there with the caret in its first line (local change 60). An inline
+  note is as wide as its text,
+  wrapping at a card's 498, with its first and last block's margins dropped
+  (`drawingBoard.css`), so its frame hugs the text; its corners scale it and it has no
+  side handles, and an empty one shows its whole placeholder (local change 53). Card
+  keeps its lines, widening it by the card's padding. An inline note's toolbar has no
+  Style button (a card's). A note has no custom height or fold: it is always as tall
+  as its text (local change 55). A card's sides set its width, its text rewrapping and
+  its height following, down to 40 (times its scale), and its corners scale it. A note
+  turns by the frame's knob about its middle (`rotate`, local change 56). Its links
+  are underlined; hovering one while no note is typed in (or a tap on a touch
+  screen) shows its address and Open, a new tab (`boardNoteLinks.ts`, Epo 2026-11-13,
+  L1), as the note's mask keeps the pointer off the link. The chip sits above the
+  link. For a selected note it keeps off the frame and its handles, measured on the
+  note's turned box (the turn is on its inner container): past the frame on the side
+  away from the rotate knob, which it would otherwise cover, else beside the frame at
+  the link's height, else above the link again (a note taller or wider than the
+  screen); it moves when the note is selected under it, and always stays inside the
+  board, over its bottom tool row, so a tap can reach Open. A mouse on its way from
+  the link to the chip keeps it: crossing another link does not move it there unless
+  the pointer rests on it for 150 ms, and reaching the chip ends a hide under way.
+  A card
+  takes its stored style from the style panel (fill half see-through, shadow, border,
+  corner), with 8×10 px padding and
+  the same size while typing (N2, 2026-11-08); note text is weight 500, the app's
+  (headings keep 600/700); its Box shadow is the board's 1 px
+  hairline (`--affine-note-shadow-box` on `.capy-board`). The style panel opens with an
+  Inline | Card switch (Inline on the left; the other sections only for a card), and
+  the note toolbar's Inline button (lit while inline) turns it either way; Card brings
+  the default fill, the Box shadow and corner 8. The preview draws an inline note as
+  its text and a card with its corner, fill, border, or a hairline for any shadow.
+  AFFiNE's slash menu is registered, offering
   text styles, lists, alignment, inline styles, Image, dates and the move/copy/delete
   actions; Image stores its file through the board's blob source, as a pasted image does.
 - **Theme:** the board follows the app's light or dark. The app's dark themes set
@@ -5173,8 +6078,30 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   are set on KaTeX, and a saved answer holding more than 2,000 characters draws
   nothing. Laid-out formulas stay until the board closes. Saving answers still needs
   limits on the server.
+- **Full-screen views in the URL** (Epo 2026-11-13): on the account's Canvas page
+  and a workspace's Canvas tab, a plane's or chart's editor and a quiz card's drawing
+  answer are named in the URL (`open`: the card's id, or `<card>~<part>` for a
+  drawing answer), so opening one is a history step: Back closes it, Forward opens
+  it again, and Done or Escape steps back. `boardEditorShell.ts` tells the page which
+  card's editor opened or closed (`watchBoardEditor`, the board's `onEditor`), the
+  board opens one by id (`openEditor`, false when it holds no plane or chart by that
+  id), and `useCanvasBoard` keeps the two in step; a card's drawing answer reads its
+  open state from `OpenLinkContext` (`useOpenView` in `src/lib/openLink.ts`,
+  scoped per card by `scopedOpenLink`), elsewhere it stays local. A link naming a
+  card no longer on the canvas, a quiz no longer listed or a part the quiz no longer
+  has silently leaves the URL (no toast, Epo 2026-11-18); a card off screen
+  is brought into view so its runner mounts. A nested board (the drawing answer's
+  own plane) keeps its editor out of the URL.
 - **Labels** come from the Maths menu's Label, which can place one on top of a card (a
-  double click there opens the plane), or a double click on empty canvas. They have a
-  maths symbol row while typing. BlockSuite's default canvas font has no
-  face on this board because its font loader has no config, so `drawingBoard.css` aliases
-  it to the app's Fustat, or a label measures in one fallback and draws in another.
+  double click there opens the plane), or, on an answer board, a double click on empty
+  canvas (on the workspace canvas that places an inline note). They have a
+  maths symbol row while typing. Board text starts at 16 px (local change 45; the size
+  menu offers 12, 16, 20, 24, 32, 40, 64 and 128). **Fonts** (local change 44, Epo
+  2026-11-12): the font menu offers Fustat (BlockSuite's default `Inter` name drawn in
+  the app's font), Comic Neue, Lora and JetBrains Mono. BlockSuite's font loader has no
+  config here (AFFiNE fetches its fonts from its CDN), so `drawingBoard.css` declares a
+  face per weight the weight menu knows (300, 400, 600, normal and italic where the font
+  has them) from the `@fontsource` packages; the weight menu lists a font's faces, so a
+  single variable range left it blank. AFFiNE's other names (in mind map styles) alias to
+  Fustat or, for Kalam, Comic Neue. Faces load when first drawn, and the board redraws on
+  `document.fonts` `loadingdone`.

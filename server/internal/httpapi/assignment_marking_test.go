@@ -23,7 +23,7 @@ func markingAssignment(t *testing.T, h http.Handler, texts ...string) string {
 	for i, text := range texts {
 		parts[i] = map[string]any{
 			"id": fmt.Sprintf("q1:part:%d", i+1), "blocks": []map[string]any{{"type": "text", "text": text}},
-			"answer": map[string]any{"type": "open", "accepted": []string{}, "hints": []string{}}, "marks": 2,
+			"answer": map[string]any{"type": "open", "accepted": []string{}}, "marks": 2,
 			"markscheme": []map[string]any{{"text": "Point one", "marks": 2}}, "solution": []any{},
 		}
 	}
@@ -32,31 +32,13 @@ func markingAssignment(t *testing.T, h http.Handler, texts ...string) string {
 		t.Fatalf("set kind: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	t.Cleanup(func() { doReq(t, h, http.MethodPatch, ws, "u_owner", map[string]any{"kind": "personal"}) })
-	quiz := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
-		"name": fmt.Sprintf("Marking %d", time.Now().UnixNano()), "workspaceId": "ws_e2e_private", "topics": []string{},
-		"questions": []map[string]any{{
-			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": parts,
-		}},
-	})
-	if quiz.Code != http.StatusCreated {
-		t.Fatalf("create quiz: status = %d body=%s", quiz.Code, quiz.Body.String())
-	}
-	var made struct{ ID string }
-	_ = json.Unmarshal(quiz.Body.Bytes(), &made)
-	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil) })
-	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
-		"kind": "marked", "title": "Marking", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
-		"attempts": 1, "noLate": false, "latePenaltyPct": 20, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": "ai_approve", "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	})
-	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
-		t.Fatalf("create assignment: status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	var assignment struct{ ID string }
-	_ = json.Unmarshal(rec.Body.Bytes(), &assignment)
-	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/assignments/"+assignment.ID, "u_owner", nil) })
-	return assignment.ID
+	form := gradedQuizForm("Marking", "ai_approve")
+	form["latePenaltyPct"] = 20
+	assignmentID, _ := makeGradedQuiz(t, h, "u_owner", []map[string]any{{
+		"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": parts,
+	}}, form)
+	return assignmentID
 }
 
 type markingReport struct {
@@ -308,7 +290,7 @@ func TestNotMarkedJoinsNoReview(t *testing.T) {
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
 			"parts": []map[string]any{{
 				"id": "open", "blocks": []map[string]any{{"type": "text", "text": "Explain."}},
-				"answer": map[string]any{"type": "open", "accepted": []string{}, "hints": []string{}}, "marks": 2,
+				"answer": map[string]any{"type": "open", "accepted": []string{}}, "marks": 2,
 				"markscheme": []map[string]any{{"text": "Point one", "marks": 2}}, "solution": []any{},
 			}},
 		}},
@@ -358,7 +340,7 @@ func TestReviewCheckLeavesNotMarkedUnrated(t *testing.T) {
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
 			"parts": []map[string]any{{
 				"id": "open", "blocks": []map[string]any{{"type": "text", "text": "Explain."}},
-				"answer": map[string]any{"type": "open", "accepted": []string{}, "hints": []string{}}, "marks": 2,
+				"answer": map[string]any{"type": "open", "accepted": []string{}}, "marks": 2,
 				"markscheme": []map[string]any{{"text": "Point one", "marks": 2}}, "solution": []any{},
 			}},
 		}},

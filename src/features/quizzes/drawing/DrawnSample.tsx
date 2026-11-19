@@ -58,41 +58,58 @@ export function useSampleBoard(sample: DrawnSample | undefined) {
 
 /**
  * A drawing part's optional drawn sample answer in the quiz editor and the
- * question dialog (A1, A2): its drawing with Edit sample answer, or Draw sample
- * answer. Either opens the full board for the author with the question pinned
- * (A3); Done stores it, and Done on an emptied board removes it.
+ * question dialog, in its own Sample answer section (Epo 2026-11-15): the
+ * drawing and Edit sample answer, or Draw sample answer while there is none. Either opens the full board for the author with the question
+ * pinned (A3); Done stores it, and Done on an emptied board removes it. The
+ * board's open state may be held outside, where a menu opens it directly.
  */
 export function DrawnSampleField({
-  labelClassName = 't-label',
+  defaultOpen = false,
   onChange,
+  onOpenChange,
+  open: openProp,
   pinned,
   sample,
   upload,
 }: {
-  /** The label's look, as its editor's other field labels. */
-  labelClassName?: string;
+  defaultOpen?: boolean;
   onChange: (sample: DrawnSample | undefined) => void;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
   pinned: PinnedQuestion;
   sample: DrawnSample | undefined;
   upload: UploadDrawnSample;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(defaultOpen);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const board = useSampleBoard(sample);
   // An existing sample is mounted ahead once its board is here.
   const ahead = useBoardAhead(!sample || !!board);
+  const button = (
+    <Button
+      // An existing sample opens once its board is here.
+      disabled={!!sample && !board}
+      iconLeft="pencil"
+      onClick={() => setOpen(true)}
+      variant="outline"
+    >
+      {sample ? m.drawing_sample_edit() : m.drawing_sample_draw()}
+    </Button>
+  );
   return (
-    <div className="flex flex-col items-start gap-2">
-      <p className={labelClassName}>{m.question_ui_sample_answer()}</p>
-      {board && <DrawingPreview board={board} />}
-      <Button
-        // An existing sample opens once its board is here.
-        disabled={!!sample && !board}
-        iconLeft="pencil"
-        onClick={() => setOpen(true)}
-        variant="outline"
-      >
-        {sample ? m.drawing_sample_edit() : m.drawing_sample_draw()}
-      </Button>
+    <>
+      {sample ? (
+        <div className="flex flex-col items-start gap-2">
+          {board && <DrawingPreview board={board} />}
+          {button}
+        </div>
+      ) : (
+        <div>{button}</div>
+      )}
       {(open || ahead) && (
         <Suspense fallback={null}>
           <DrawingBoardScreen
@@ -119,7 +136,7 @@ export function DrawnSampleField({
           />
         </Suspense>
       )}
-    </div>
+    </>
   );
 }
 

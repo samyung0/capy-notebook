@@ -233,6 +233,9 @@ func (a *api) bankCopyToNewQuiz(ctx context.Context, workspaceID, topicID, topic
 	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 		ActorUserID: userID(ctx), WorkspaceID: workspaceID, WorkspaceName: ws.Name, Kind: "quiz",
 		Title: name, Questions: raw, TopicID: topic, TopicName: topicName, Provenance: provenance,
+		// Hidden from members until shown (Epo 2026-11-16, every quiz an
+		// editor makes).
+		Hidden: true,
 	})
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return "", huma.Error422UnprocessableEntity(err.Error())

@@ -795,7 +795,7 @@ def test_normalize_questions_canonical_ids_and_optional_level():
             "parts": [
                 {
                     "blocks": [{"type": "text", "text": "Explain"}],
-                    "answer": {"type": "open", "accepted": ["Because"], "hints": []},
+                    "answer": {"type": "open", "accepted": ["Because"]},
                     "marks": 3,
                     "markscheme": [
                         {"text": "States the cause", "marks": 1},
@@ -829,7 +829,7 @@ def test_normalize_questions_rejects_legacy_or_partial_output():
     for data in ([{"type": "short", "prompt": "?"}], ["nope", None], []):
         with pytest.raises(workflows.GenerateEmpty):
             workflows.normalize_questions(data)
-    open_answer = {"type": "open", "accepted": ["Because"], "hints": []}
+    open_answer = {"type": "open", "accepted": ["Because"]}
     closed_answer = {"type": "boolean", "correct": True}
     item = {"text": "States the cause", "marks": 1}
     # Old string items, boolean marks, mismatched sums and closed schemes.
@@ -1467,9 +1467,9 @@ def test_inspect_shows_a_notes_quiz_as_its_fence_and_edits_expect_it_back():
 
 
 def test_inspect_prints_figures_and_captions_and_sums_up_a_large_figure():
-    """A chart, plot or graph shows its block as compact JSON without a graph's
-    SVG, summed up past FIGURE_JSON_CHARS; an interactive block shows its
-    caption (Epo 2026-10-21)."""
+    """A chart, plot or graph shows its block as compact JSON, summed up past
+    FIGURE_JSON_CHARS; an interactive block shows its caption (Epo
+    2026-10-21)."""
     chart = {
         "type": "chart",
         "kind": "bar",
@@ -1477,7 +1477,7 @@ def test_inspect_prints_figures_and_captions_and_sums_up_a_large_figure():
         "labels": ["Jan", "Feb"],
         "series": [{"name": "Rain", "values": [3, 4]}],
     }
-    graph = {"type": "graph", "elements": [], "image": {"svg": "<svg>" + "x" * 5000}}
+    graph = {"type": "graph", "elements": []}
     labels = [f"Day {n}" for n in range(600)]
     large = {
         **chart,

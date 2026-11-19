@@ -62,7 +62,7 @@ export function RecordDialog({
           (event.currentTarget as HTMLElement).focus();
         }}
       >
-        <DialogTitle action={phone && remove} className="pb-4 sm:pr-10">
+        <DialogTitle action={phone && remove} className="pb-4">
           {write ? (
             <CommitInput
               aria-label={title.name}

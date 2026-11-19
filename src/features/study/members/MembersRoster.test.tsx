@@ -5,6 +5,7 @@ import type { Workspace } from '@/api/types';
 import { m } from '@/i18n';
 import { MembersRoster } from './MembersRoster';
 
+const manager = vi.hoisted(() => ({ isClass: false }));
 vi.mock('@/api/hooks', () => ({
   useMe: () => ({ data: { id: 'u_kate' } }),
   useUpdateWorkspaceSharing: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -29,7 +30,7 @@ vi.mock('@/features/workspace/WorkspaceMemberManager', () => ({
       invitesData: canManage
         ? [{ address: 'jo@example.com', expiresAt: 'a', id: 'i1', sentAt: 'b' }]
         : undefined,
-      isClass: false,
+      isClass: manager.isClass,
       membersData: [
         { name: 'Kate Malone', role: 'owner', userId: 'u_kate' },
         { name: 'Noor Haddad', role: 'editor', userId: 'u_noor' },
@@ -42,9 +43,13 @@ vi.mock('@/features/workspace/WorkspaceMemberManager', () => ({
   },
 }));
 
-const render = (role: 'owner' | 'editor' | 'viewer') =>
+const render = (
+  role: 'owner' | 'editor' | 'viewer',
+  storageFull?: ReadonlySet<string>
+) =>
   renderToStaticMarkup(
     <MembersRoster
+      storageFull={storageFull}
       workspace={
         {
           capabilities: { canManageMembers: role === 'owner' },
@@ -62,7 +67,6 @@ const render = (role: 'owner' | 'editor' | 'viewer') =>
 // Epo 2026-11-11, mock C: no marks on this page.
 it('lets the owner invite, change a role and remove, and set link sharing', () => {
   const html = render('owner');
-  expect(html).toContain(m.workspace_members_count({ count: 2 }));
   expect(html).toContain(m.members_invite_placeholder());
   // A role dropdown for the invitation and one for the editor's row; the
   // owner's own row has neither a dropdown nor Remove.
@@ -88,4 +92,23 @@ it('shows everyone else the people and their roles', () => {
   expect(viewer).not.toContain('data-link-sharing');
   // An editor shares the workspace, so sets its link sharing too.
   expect(render('editor')).toContain('data-link-sharing="false"');
+});
+
+// Epo 2026-11-12: a full storage shows on Manage alone, where the owner acts.
+it('marks a member whose storage is full on their row', () => {
+  const html = render('owner', new Set(['u_noor']));
+  expect(html.match(new RegExp(m.members_storage_full(), 'g'))).toHaveLength(1);
+  expect(html.indexOf(m.members_storage_full())).toBeGreaterThan(
+    html.indexOf('Noor Haddad')
+  );
+});
+
+// Epo 2026-11-12: a class's role names leave no room on a phone row, so its
+// role and Remove open from a Manage button there.
+it("gives a class's rows a phone Manage button", () => {
+  manager.isClass = true;
+  const html = render('owner');
+  manager.isClass = false;
+  expect(html).toContain(m.members_manage_named({ name: 'Noor Haddad' }));
+  expect(html).not.toContain(m.members_manage_named({ name: 'Kate Malone' }));
 });

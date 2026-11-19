@@ -79,7 +79,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	bankDSN, pool := openTestBank(t, st, dsn)
-	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"open","accepted":["secret-answer"],"hints":[]},"marks":1,"markscheme":[{"text":"secret-scheme","marks":1}],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
+	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"open","accepted":["secret-answer"]},"marks":1,"markscheme":[{"text":"secret-scheme","marks":1}],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
 	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q','t',1,$1,'test')`, q); err != nil {
 		t.Fatal(err)
 	}
@@ -192,8 +192,8 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	}
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
-	file, _ := form.CreateFormFile("file", "graph.svg")
-	_, _ = file.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>`))
+	file, _ := form.CreateFormFile("file", "figure.png")
+	_, _ = file.Write(pngSized(10, 10))
 	_ = form.Close()
 	uploadBytes := append([]byte(nil), body.Bytes()...)
 	upload := httptest.NewRequest("POST", "/api/bank/assets", &body)

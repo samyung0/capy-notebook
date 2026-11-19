@@ -14,7 +14,6 @@ import {
   type QuestionResult,
   ResultScore,
   ResultSquares,
-  ResultsByType,
 } from './ResultSummary';
 
 /** "10 questions · 12 marks". */
@@ -182,7 +181,6 @@ export function QuizScore({
           results={results}
         />
       </div>
-      <ResultsByType results={results} />
     </div>
   );
 }

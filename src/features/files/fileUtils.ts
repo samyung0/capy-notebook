@@ -117,16 +117,6 @@ export function fileCanClone(file: Pick<SourceFile, 'status' | 'indexed'>) {
   return file.status === 'ready' || (file.status === 'failed' && file.indexed);
 }
 
-/** Whether Clone is offered on a workspace's material: while a quiz is under an
- * open assignment, to the owner and teaching assistants alone (Epo 2026-11-04). */
-export function materialCanClone(
-  workspace: Pick<Workspace, 'canClone' | 'role'> | undefined,
-  assigned?: boolean
-) {
-  if (!workspace?.canClone) return false;
-  return !assigned || workspace.role === 'owner' || workspace.role === 'editor';
-}
-
 /** Whether Move to… (another workspace or topic) is offered on a workspace
  * file: its workspace's owner or its payer moves it; other editors keep the
  * topic-only Move (Epo 2026-10-27). */

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
+import { clickTextEnd } from './helpers';
 
 // The note merge view (Epo 2026-10-24, Q251, Q252): edits that could not
 // sync become pieces on this device, a strip offers Review and Discard, and
@@ -28,8 +29,12 @@ async function openNote(page: Page) {
   return editor;
 }
 
+/** Types at the end of the intro, the note's last block: a click below it
+ * would add a paragraph (trailingHint.ts). */
 async function typeAtEnd(page: Page, text: string) {
-  await page.locator('[contenteditable="true"]').first().click();
+  await clickTextEnd(
+    page.locator('[contenteditable="true"]').first().getByText(seed)
+  );
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(text);
 }

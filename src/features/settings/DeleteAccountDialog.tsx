@@ -13,7 +13,7 @@ import type { RequestAccountDeletionReq } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
-import { Input, InputError } from '@/components/ui/Input';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import {
   deletionConfirmation,
@@ -186,9 +186,9 @@ function DeleteAccountDialogInner({
         name="confirmEmail"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <span className="text-fg-secondary text-sm">
+            <InputTitle>
               {m.settings_deletion_confirm({ text: expected ?? '…' })}
-            </span>
+            </InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}

@@ -105,7 +105,6 @@ export function seedScenarioFixtures() {
       {
         answer: {
           accepted: ['The basic unit of life.'],
-          hints: [],
           type: 'open',
         },
         blocks: [{ text: 'What is a cell?', type: 'text' }],

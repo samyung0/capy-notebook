@@ -6,7 +6,6 @@
  */
 import type { FileKind } from './fileKind.ts';
 import type { SearchKind } from './searchKind.ts';
-import type { SearchResultPreview } from './searchResultPreview.ts';
 
 export interface SearchResult {
   fileKind?: FileKind;
@@ -14,10 +13,6 @@ export interface SearchResult {
   iconId?: string;
   id: string;
   kind: SearchKind;
-  /** A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md */
-  preview?: SearchResultPreview;
   subtitle?: string;
-  /** Hour-stable presigned GET of a file's page-1 thumbnail */
-  thumbnailUrl?: string;
   title: string;
 }

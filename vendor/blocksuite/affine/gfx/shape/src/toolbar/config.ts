@@ -192,13 +192,16 @@ export const shapeToolbarConfig = {
             }
           };
 
+        // Capy (local change 43): a colour fills the shape and No fill empties it.
+        // Upstream read `isTransparent` the wrong way round, so a picked colour
+        // was stored with `filled` still false and never drew.
         const onPickFillColor = pickColorWrapper('fillColor', palette => {
           const value = palette.value;
-          const filled = isTransparent(value);
-          const props = packColor('fillColor', value);
+          const filled = !isTransparent(value);
           const crud = ctx.std.get(EdgelessCRUDIdentifier);
           models.forEach(model => {
-            if (filled && !model.filled) {
+            const props = packColor('fillColor', value);
+            if (filled !== model.filled) {
               const color = getTextColor(value, filled);
               Object.assign(props, { filled, color });
             }

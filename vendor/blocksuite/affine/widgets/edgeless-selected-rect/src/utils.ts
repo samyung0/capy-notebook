@@ -313,9 +313,7 @@ export function createEdgelessElement(
       );
     }
     assertType<NoteBlockModel>(note);
-    store.updateBlock(note, () => {
-      note.props.edgeless.collapse = true;
-    });
+    // Capy (local change 60): no fold flag; a note is as tall as its text (55).
     store.addBlock('affine:paragraph', {}, note.id);
 
     element = note;

@@ -9,7 +9,8 @@ export interface ProgressBarProps {
   indeterminate?: boolean;
   segments?: { value: number; tone: UserColor; label: string }[];
   showLabel?: boolean;
-  tone?: UserColor;
+  /** A user colour, or the theme's accent. */
+  tone?: UserColor | 'accent';
   value?: number;
 }
 
@@ -23,6 +24,10 @@ export function ProgressBar({
   segments,
 }: ProgressBarProps) {
   if (tone === 'transparent') tone = 'graphite';
+  const fill =
+    tone === 'accent'
+      ? 'var(--color-action-accent)'
+      : (userColorPair(tone)?.bg ?? userColorPair('graphite')?.bg);
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -33,7 +38,7 @@ export function ProgressBar({
         {indeterminate ? (
           <div
             className="motion-indeterminate h-full w-1/3 rounded-full"
-            style={{ backgroundColor: userColorPair(tone)?.bg }}
+            style={{ backgroundColor: fill }}
           />
         ) : segments ? (
           segments.map((segment) => (
@@ -53,8 +58,7 @@ export function ProgressBar({
               'h-full rounded-full transition-[width] duration-400 ease-(--motion-ease-smooth-out)'
             )}
             style={{
-              backgroundColor:
-                userColorPair(tone)?.bg ?? userColorPair('graphite')?.bg,
+              backgroundColor: fill,
               width: `${pct}%`,
             }}
           />

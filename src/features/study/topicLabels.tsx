@@ -16,7 +16,7 @@ const LABEL: Record<TopicLabel, { className: string; name: () => string }> = {
     name: m.topic_label_familiar,
   },
   mastered: {
-    className: 'bg-solid-success text-white',
+    className: 'bg-solid-mastered text-white',
     name: m.topic_label_mastered,
   },
   needs_practice: {

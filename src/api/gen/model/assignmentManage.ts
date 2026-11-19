@@ -18,14 +18,12 @@ export interface AssignmentManage {
   gradesReleasedAt?: string;
   marking: AssignmentManageMarking;
   notGraded: number;
-  practiceAt?: string;
+  quizChanged?: boolean;
   quizId?: string;
   quizTitle?: string;
-  quizTrashed?: boolean;
-  quizWorkspaceId?: string;
+  quizUpdatedAt?: string;
   showAnswers: AssignmentManageShowAnswers;
   showGrades: AssignmentManageShowGrades;
   shuffle: boolean;
   toApprove: number;
-  toPractice?: boolean;
 }

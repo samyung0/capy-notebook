@@ -360,6 +360,7 @@ it('keeps its draft and mounted thread while a page hides the dock, and drops a 
     <QueryClientProvider client={client}>
       <ChatPanel
         dock={{
+          layout: 'overlay',
           menuItems: [],
           office: false,
           onPageOpen: () => {},
@@ -434,6 +435,7 @@ it('drops a recording when the panel leaves the Agent tab, and carries one betwe
     <QueryClientProvider client={client}>
       <ChatPanel
         dock={{
+          layout: 'overlay',
           menuItems: [],
           office: false,
           onPageOpen: () => {},

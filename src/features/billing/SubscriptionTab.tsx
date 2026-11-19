@@ -165,7 +165,7 @@ function Invoices() {
   }
   if (isPending) return <BillingTableSkeleton columns={columns} />;
   if (data.items.length === 0) {
-    return <p className="text-fg-muted">{m.billing_invoices_empty()}</p>;
+    return <p className="text-fg-muted">{m.common_nothing_yet()}</p>;
   }
   return (
     <BillingTable

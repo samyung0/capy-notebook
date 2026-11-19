@@ -562,11 +562,6 @@
       "targets": ["ingest-queue"],
       "environments": ["uat"]
     },
-    "JEV_TYPESAFE_API_KEY": {
-      "kind": "secret",
-      "targets": ["app"],
-      "required_for": ["app"]
-    },
     "KNOWLEDGE_BASE_B2_APP_KEY": {
       "kind": "secret",
       "targets": ["app", "local"],

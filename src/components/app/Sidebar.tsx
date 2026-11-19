@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { useTodo, useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { GettingStartedRow } from '@/features/guide/GettingStartedRow';
 import { todoCount } from '@/features/study/assignments/todoRows';
 import { VoiceCard } from '@/features/voice/VoiceCard';
@@ -63,7 +64,7 @@ function general(): NavItem[] {
       ? [
           {
             icon: 'knowledge' as IconName,
-            label: m.nav_learning(),
+            label: m.nav_study(),
             to: '/learning',
           },
         ]
@@ -92,7 +93,7 @@ function general(): NavItem[] {
 function tools(): NavItem[] {
   return [
     // Chat across all the user's files (Epo 2026-10-27).
-    { icon: 'ai', label: m.nav_chat(), to: '/chat' },
+    { icon: 'ai', label: m.nav_agent(), to: '/chat' },
     // Canvases of one's own, and every workspace's (Epo 2026-11-10).
     { icon: 'shape', label: m.workspace_section_canvas(), to: '/canvas' },
     { icon: 'filesNav', label: m.nav_files(), to: '/files' },
@@ -150,14 +151,7 @@ function Row({
     >
       <span className="relative shrink-0">
         <Icon name={item.icon} size={19} />
-        {!!unreadCount && (
-          <span
-            className={cn(
-              'absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1',
-              active ? 'ring-action' : 'ring-page'
-            )}
-          />
-        )}
+        {!!unreadCount && <PendingDot className="-top-1 -right-1" />}
       </span>
       <span className="translate-y-px font-semibold" data-label>
         {item.label}
@@ -506,7 +500,7 @@ export function PhoneTopRow({ className }: { className?: string }) {
       {/* On a frosted panel it shows the frost instead of painting over it. */}
       <MobileNavDrawer
         account
-        className="frosted:bg-(--frost-fill) px-3.5 frosted:hover:bg-surface-hover-bg"
+        className="frosted:bg-(--frost-fill) frosted:hover:bg-surface-hover-bg"
       />
       <ProfileMenu
         dot={(unread?.count ?? 0) > 0}

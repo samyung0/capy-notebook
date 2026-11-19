@@ -1,5 +1,6 @@
 import { cn } from '@/lib/cn';
-import { n, type Pt, Rng } from './sketch';
+import { Rng } from '@/lib/rng';
+import { n, type Pt } from './sketch';
 
 /** The board's width and the posts under it, in CSS pixels. */
 export const BOARD_WIDTH = 236;

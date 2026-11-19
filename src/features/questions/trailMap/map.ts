@@ -11,6 +11,7 @@
  * Output is a list of pieces (SVG markup with a left and right edge) so views
  * draw only what is on screen.
  */
+import { Rng } from '@/lib/rng';
 import * as E from './elements';
 import {
   catmull,
@@ -20,7 +21,6 @@ import {
   line,
   n,
   type Pt,
-  Rng,
   sketch,
 } from './sketch';
 

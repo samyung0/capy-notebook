@@ -14,62 +14,67 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// A member's personal workspace canvas (Epo 2026-11-09,
-// todo-workspace-canvas-storage.md): one per member per workspace, seen by
-// its owner alone. The route finds or makes it; the browser uploads its saved
-// board as the material's `board` editor asset and sends the asset's id here.
-
-type canvasInput struct {
-	ID string `path:"id" doc:"Workspace id"`
-}
+// A person's canvases (Epo 2026-11-09, todo-workspace-canvas-storage.md):
+// their own, and the ones they draw in a workspace (any number, Epo
+// 2026-11-12), each private to its creator until they share it with that
+// workspace (Epo 2026-11-18). The board is drawn in the canvas's collaboration
+// room (POST /api/materials/{id}/collaboration-token); these routes list, make,
+// read and share the canvas, and rename and delete are the material's routes.
 
 type canvasBody struct {
-	ID            string   `json:"id" doc:"The canvas material"`
-	Title         string   `json:"title"`
-	Revision      int64    `json:"revision" doc:"The material's revision; a save sends the one it read"`
-	BoardAssetID  string   `json:"boardAssetId" doc:"The saved board's editor asset (gzipped Yjs update); empty before the first save"`
-	Version       int64    `json:"version" doc:"Counts the saves"`
-	ImageAssetIDs []string `json:"imageAssetIds" nullable:"false" doc:"The canvas's images, as image editor assets"`
-	// OwnImageAssetIDs is what the browser names from, so its save is never
-	// refused for an image deleted elsewhere.
-	OwnImageAssetIDs []string  `json:"ownImageAssetIds" nullable:"false" doc:"Every ready image asset of this canvas, one the pruner trashed included: the ids a save may name"`
+	ID               string    `json:"id" doc:"The canvas material"`
+	Title            string    `json:"title"`
+	Revision         int64     `json:"revision" doc:"The material's revision"`
+	Version          int64     `json:"version" doc:"The room's stored version at its last projection; 0 before the first"`
+	ImageAssetIDs    []string  `json:"imageAssetIds" nullable:"false" doc:"The images on the board at its last projection, as image editor assets"`
+	OwnImageAssetIDs []string  `json:"ownImageAssetIds" nullable:"false" doc:"Every ready image asset of this canvas, one the pruner trashed included"`
+	WorkspaceID      string    `json:"workspaceId,omitempty" doc:"The workspace it was drawn in; none for a canvas of one's own"`
+	Shared           bool      `json:"shared" doc:"Shared with its workspace: the members hold it by their workspace role"`
+	Own              bool      `json:"own" doc:"The caller made it"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	// What a note's response says of the caller's editing (editingOf), so the
+	// page tells why it is read-only as a note's does.
+	Role         *store.WorkspaceRole     `json:"role,omitempty" doc:"The caller's role on the canvas: owner (its creator), or their workspace role on another member's shared one; absent on one opened from the Trash"`
+	Capabilities store.AccessCapabilities `json:"capabilities"`
+	StorageFull  store.StorageFullBy      `json:"storageFull,omitempty" doc:"The canvas is view-only because its payer (its creator) is at its storage limit; self when that is the caller. Editors only"`
+	Trash        *store.Trashed           `json:"trash,omitempty" doc:"The canvas is in the Trash, opened read-only from it with every capability off; its board is GET /api/canvases/{id}/board"`
+}
+
+// canvasBoardBody is a trashed canvas's stored board (store.TrashedCanvasBoard).
+type canvasBoardBody struct {
+	Updates [][]byte `json:"updates" nullable:"false" doc:"The board's stored Yjs state as V1 updates, base64, applied in order: the base state, then each update stored after it; empty for a canvas never opened"`
+}
+
+type canvasBoardOutput struct {
+	Body canvasBoardBody
 }
 
 type canvasOutput struct {
 	Body canvasBody
 }
 
-type saveCanvasInput struct {
-	ID   string `path:"id" doc:"Workspace id"`
-	Body struct {
-		Revision      int64    `json:"revision" minimum:"1" doc:"The revision the browser read; another tab's save since is refused (409)"`
-		BoardAssetID  string   `json:"boardAssetId" minLength:"1" maxLength:"64" doc:"The new board asset, uploaded first: a ready board asset of this canvas"`
-		ImageAssetIDs []string `json:"imageAssetIds" maxItems:"1000" doc:"The canvas's images now: ready image assets of this canvas"`
-	}
-}
-
 func (a *api) registerCanvas(api huma.API) {
 	const tag = "materials"
-	reg(api, http.MethodGet, "/api/workspaces/{id}/canvas", "workspaceCanvas", tag,
-		"The caller's own canvas in the workspace, made on first open", http.StatusOK, a.workspaceCanvas)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/canvas", "saveWorkspaceCanvas", tag,
-		"Record a save of the caller's canvas: its new board asset and images; the server counts the version", http.StatusOK, a.saveWorkspaceCanvas)
-	// The account's Canvas page (Epo 2026-11-10): every canvas the caller has,
-	// and canvases of their own in no workspace, saved as a workspace's is.
+	// The account's Canvas page (Epo 2026-11-10) and a workspace's Canvas tab
+	// (Epo 2026-11-12): the caller's canvases, or a workspace's.
 	reg(api, http.MethodGet, "/api/canvases", "listCanvases", tag,
-		"The caller's canvases a page at a time: their own, latest saved first, then their workspaces'", http.StatusOK, a.listCanvases)
+		"Canvases a page at a time: the caller's own, latest saved first, then the ones they drew in their workspaces; or, for a workspace, the ones they drew there and the other members' shared ones", http.StatusOK, a.listCanvases)
 	reg(api, http.MethodPost, "/api/canvases", "createCanvas", tag,
-		"Make a canvas of the caller's own, in no workspace", http.StatusCreated, a.createCanvas)
+		"Make a private canvas of the caller's, in a workspace they are a member of or in none", http.StatusCreated, a.createCanvas)
 	reg(api, http.MethodGet, "/api/canvases/{id}", "getCanvas", tag,
-		"One of the caller's canvases", http.StatusOK, a.getCanvas)
-	reg(api, http.MethodPut, "/api/canvases/{id}", "saveCanvas", tag,
-		"Record a save of one of the caller's canvases, as a workspace canvas's", http.StatusOK, a.saveCanvas)
+		"A canvas the caller made, or one shared with a workspace they are a member of; or one in the caller's Trash, read-only", http.StatusOK, a.getCanvas)
+	// A trashed canvas opens read-only from the Trash as a note or file does
+	// (Epo 2026-11-12): from its stored state, joining no room.
+	reg(api, http.MethodGet, "/api/canvases/{id}/board", "getTrashedCanvasBoard", tag,
+		"The stored board of a canvas in the caller's Trash, to show it read-only; a live canvas's board is its room's", http.StatusOK, a.getTrashedCanvasBoard)
+	reg(api, http.MethodPatch, "/api/canvases/{id}", "updateCanvas", tag,
+		"Share a canvas with the workspace it was drawn in, or take it back", http.StatusOK, a.updateCanvas)
 }
 
 type canvasListInput struct {
-	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
-	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor      string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	WorkspaceID string `query:"workspaceId" maxLength:"64" doc:"This workspace's canvases, latest saved first: the caller's and the other members' shared ones"`
 }
 
 type canvasListOutput struct {
@@ -77,7 +82,12 @@ type canvasListOutput struct {
 }
 
 func (a *api) listCanvases(ctx context.Context, in *canvasListInput) (*canvasListOutput, error) {
-	page, err := a.s.ListCanvases(ctx, userID(ctx), in.Limit, in.Cursor)
+	if in.WorkspaceID != "" {
+		if err := a.requireWorkspaceMember(ctx, in.WorkspaceID); err != nil {
+			return nil, err
+		}
+	}
+	page, err := a.s.ListCanvases(ctx, userID(ctx), in.WorkspaceID, in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -89,12 +99,13 @@ func (a *api) listCanvases(ctx context.Context, in *canvasListInput) (*canvasLis
 
 type createCanvasInput struct {
 	Body struct {
-		Title apimodel.MaterialTitle `json:"title" minLength:"1"`
+		Title       apimodel.MaterialTitle `json:"title" minLength:"1"`
+		WorkspaceID string                 `json:"workspaceId,omitempty" maxLength:"64" doc:"The workspace it is drawn in, the caller a member; none for a canvas of their own"`
 	}
 }
 
-// createCanvas makes a canvas of the caller's own: a material they pay for, so
-// a frozen account makes none.
+// createCanvas makes a canvas of the caller's, private to them: a material
+// they pay for, so a frozen account makes none.
 func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -103,76 +114,76 @@ func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasO
 	if title == "" {
 		return nil, huma.Error422UnprocessableEntity("a canvas needs a name")
 	}
-	mt, err := a.s.CreateCanvas(ctx, userID(ctx), title)
+	if in.Body.WorkspaceID != "" {
+		if err := a.requireWorkspaceMember(ctx, in.Body.WorkspaceID); err != nil {
+			return nil, err
+		}
+	}
+	mt, err := a.s.CreateCanvas(ctx, userID(ctx), title, in.Body.WorkspaceID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out, err := a.canvasResponse(ctx, mt)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return out, nil
+	return a.canvasResponse(ctx, store.Canvas{Material: mt, Role: store.RoleOwner})
 }
 
 type canvasIDInput struct {
 	ID string `path:"id" maxLength:"64" doc:"Canvas material id"`
 }
 
+// getCanvas reads a canvas the caller holds, or else one they may open from
+// the Trash (getTrashedMaterial's rule): no role, so every capability is off.
 func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, error) {
-	mt, err := a.s.OwnCanvas(ctx, userID(ctx), in.ID)
+	canvas, err := a.s.GetCanvas(ctx, userID(ctx), in.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		trashed, trashErr := a.s.TrashedCanvas(ctx, userID(ctx), in.ID)
+		if !errors.Is(trashErr, store.ErrNotFound) {
+			canvas, err = trashed, trashErr
+		}
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out, err := a.canvasResponse(ctx, mt)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return out, nil
+	return a.canvasResponse(ctx, canvas)
 }
 
-type saveOwnCanvasInput struct {
+func (a *api) getTrashedCanvasBoard(ctx context.Context, in *canvasIDInput) (*canvasBoardOutput, error) {
+	updates, err := a.s.TrashedCanvasBoard(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &canvasBoardOutput{Body: canvasBoardBody{Updates: updates}}, nil
+}
+
+type updateCanvasInput struct {
 	ID   string `path:"id" maxLength:"64" doc:"Canvas material id"`
 	Body struct {
-		Revision      int64    `json:"revision" minimum:"1" doc:"The revision the browser read; another tab's save since is refused (409)"`
-		BoardAssetID  string   `json:"boardAssetId" minLength:"1" maxLength:"64" doc:"The new board asset, uploaded first: a ready board asset of this canvas"`
-		ImageAssetIDs []string `json:"imageAssetIds" maxItems:"1000" doc:"The canvas's images now: ready image assets of this canvas"`
+		Shared bool `json:"shared" doc:"Shared with the workspace it was drawn in: the members hold it by their workspace role"`
 	}
 }
 
-func (a *api) saveCanvas(ctx context.Context, in *saveOwnCanvasInput) (*canvasOutput, error) {
+// updateCanvas shares a canvas with its workspace or takes it back. Sharing is
+// an edit, so a frozen account does neither; who may is the store's
+// (store.SetCanvasShared).
+func (a *api) updateCanvas(ctx context.Context, in *updateCanvasInput) (*canvasOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	// One of the caller's own: a workspace's canvas saves through its workspace.
-	if _, err := a.s.OwnCanvas(ctx, userID(ctx), in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	return a.recordCanvasSave(ctx, in.ID, in.Body.BoardAssetID, in.Body.ImageAssetIDs, in.Body.Revision)
-}
-
-// recordCanvasSave is a save of one of the caller's canvases by its material.
-func (a *api) recordCanvasSave(ctx context.Context, materialID, boardAssetID string, images []string, revision int64) (*canvasOutput, error) {
-	if images == nil {
-		images = []string{}
-	}
-	saved, err := a.s.SaveWorkspaceCanvas(ctx, userID(ctx), materialID, boardAssetID, images, revision)
-	if errors.Is(err, store.ErrConflict) {
-		return nil, huma.Error409Conflict("this canvas was saved from another tab; reload to keep drawing")
-	}
+	canvas, err := a.s.SetCanvasShared(ctx, userID(ctx), in.ID, in.Body.Shared)
 	if errors.Is(err, materialdoc.ErrInvalid) {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	// The caller holds the canvas, so the refusal says so (hErr would hide it
+	// as not found).
+	if errors.Is(err, store.ErrForbidden) {
+		return nil, huma.Error403Forbidden("not allowed to share this canvas")
 	}
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out, err := a.canvasResponse(ctx, saved)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return out, nil
+	return a.canvasResponse(ctx, canvas)
 }
 
-// requireWorkspaceMember: a canvas is a member's (Epo 2026-11-09); a link or public
+// requireWorkspaceMember: a workspace's canvases are a member's (Epo 2026-11-09); a link or public
 // visitor, who has a workspace id but no membership, finds none.
 func (a *api) requireWorkspaceMember(ctx context.Context, wsID string) error {
 	role, err := a.s.WorkspaceRole(ctx, userID(ctx), wsID)
@@ -185,52 +196,40 @@ func (a *api) requireWorkspaceMember(ctx context.Context, wsID string) error {
 	return nil
 }
 
-func (a *api) canvasResponse(ctx context.Context, mt store.Material) (*canvasOutput, error) {
-	board, err := materialdoc.ReadCanvasBoard(mt.Content)
+func (a *api) canvasResponse(ctx context.Context, canvas store.Canvas) (*canvasOutput, error) {
+	board, err := materialdoc.ReadCanvasBoard(canvas.Content)
 	if err != nil {
-		return nil, err
+		return nil, hErr(err)
 	}
-	own, err := a.s.CanvasImageAssets(ctx, mt.ID)
+	own, err := a.s.CanvasImageAssets(ctx, canvas.ID)
 	if err != nil {
-		return nil, err
+		return nil, hErr(err)
 	}
 	if own == nil {
 		own = []string{}
 	}
-	return &canvasOutput{Body: canvasBody{
-		ID: mt.ID, Title: mt.Title, Revision: mt.Revision, BoardAssetID: board.BoardAssetID, Version: board.Version,
-		ImageAssetIDs: board.ImageAssetIDs, OwnImageAssetIDs: own, UpdatedAt: mt.UpdatedAt,
-	}}, nil
-}
-
-// workspaceCanvas opens the caller's canvas in the workspace, making it on the
-// first open. Any member has one; a frozen account opens an existing one but
-// makes none (a material it would pay for).
-func (a *api) workspaceCanvas(ctx context.Context, in *canvasInput) (*canvasOutput, error) {
-	if err := a.requireWorkspaceMember(ctx, in.ID); err != nil {
-		return nil, err
+	// As a note's response (materialResponse, getTrashedMaterial): one opened
+	// from the Trash reads as made read-only by its account.
+	readOnly, full := true, false
+	if canvas.Trash == nil {
+		if readOnly, err = a.readOnly(ctx, canvas.OwnerUserID); err != nil {
+			return nil, hErr(err)
+		}
+		if full, err = a.ownerFull(ctx, canvas.OwnerUserID); err != nil {
+			return nil, hErr(err)
+		}
 	}
-	mt, err := a.s.WorkspaceCanvas(ctx, userID(ctx), in.ID)
-	if err != nil {
-		return nil, hErr(err)
+	capabilities, storageFull := editingOf(canvas.Role, readOnly, full, canvas.OwnerUserID, userID(ctx))
+	// A canvas has no members of its own: who holds it is the workspace's.
+	capabilities.CanManageMembers = false
+	body := canvasBody{
+		ID: canvas.ID, Title: canvas.Title, Revision: canvas.Revision, Version: board.Version,
+		ImageAssetIDs: board.ImageAssetIDs, OwnImageAssetIDs: own, WorkspaceID: canvas.CanvasWorkspaceID,
+		Shared: canvas.Shared, Own: canvas.OwnerUserID == userID(ctx), UpdatedAt: canvas.UpdatedAt,
+		Capabilities: capabilities, StorageFull: storageFull, Trash: canvas.Trash,
 	}
-	out, err := a.canvasResponse(ctx, mt)
-	if err != nil {
-		return nil, hErr(err)
+	if canvas.Role != "" {
+		body.Role = &canvas.Role
 	}
-	return out, nil
-}
-
-func (a *api) saveWorkspaceCanvas(ctx context.Context, in *saveCanvasInput) (*canvasOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
-		return nil, err
-	}
-	if err := a.requireWorkspaceMember(ctx, in.ID); err != nil {
-		return nil, err
-	}
-	mt, err := a.s.WorkspaceCanvas(ctx, userID(ctx), in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return a.recordCanvasSave(ctx, mt.ID, in.Body.BoardAssetID, in.Body.ImageAssetIDs, in.Body.Revision)
+	return &canvasOutput{Body: body}, nil
 }
