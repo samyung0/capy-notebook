@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { startAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 // Epo 2026-11-05: staff closing an assignment ends the attempt open on a member's
@@ -9,12 +10,7 @@ test('closing an assignment ends the attempt open on the page, keeping its answe
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio/assignments?assignment=as_paper');
-  // Before you start, as it has a time limit, over the notice told once.
-  await page
-    .getByRole('button', { exact: true, name: m.assignment_start() })
-    .click({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
+  await startAssignmentAsMember(page, 'as_paper');
   await expect(page.locator('[data-assignment-take]')).toBeVisible({
     timeout: 30_000,
   });
@@ -33,8 +29,8 @@ test('closing an assignment ends the attempt open on the page, keeping its answe
   await expect(page.locator('[data-assignment-take]')).toHaveCount(0, {
     timeout: 30_000,
   });
-  // Its one mark is the answer only the page held.
-  await expect(page.getByText('1 / 40')).toBeVisible({ timeout: 30_000 });
+  // Its one mark (of the paper's 77) is the answer only the page held.
+  await expect(page.getByText('1 / 77')).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByRole('heading', { name: m.assignment_submitted() })
   ).toHaveCount(0);

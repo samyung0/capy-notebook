@@ -398,7 +398,9 @@ preload that fails says nothing: only an open the user asked for shows a toast.
   answer to draw, or on focusing the composer or hovering a saved chat. An answer's words hold their
   place unseen for 2 s, so no raw Markdown flashes, then show as they are, marked
   `aria-busy`, and format when the code lands (`data-prose`: `loading`, `slow`,
-  `failed`). A thread stays at its end as that happens if the reader was there. If
+  `failed`). A thread stays at its end as that happens if the reader was there,
+  also as its maths (KaTeX) and code colours draw later still, until the reader
+  scrolls away (a `ResizeObserver` over the thread's rows). If
   it won't load the words stay as they are, which is still the answer: offline with
   no toast of its own, trying once more when the connection is back, otherwise with
   the update toast. A browser that keeps the failed import stays on those words until

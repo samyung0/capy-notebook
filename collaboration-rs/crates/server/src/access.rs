@@ -155,8 +155,8 @@ pub struct LiveAccess {
     pub editor: bool,
     pub frozen: bool,
     pub full: bool,
-    /// Hidden from this actor unless they edit: the material itself, or a quiz
-    /// assigned to this viewer.
+    /// Hidden from this actor unless they edit: the owner's flag, or a graded
+    /// quiz's own quiz.
     pub hidden: bool,
 }
 

@@ -134,9 +134,11 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await expect(
     page.getByRole('button', { name: m.quiz_editor_choose_image() })
   ).toBeVisible();
+  // Its part (a) holds the mark scheme's answer, on the part's closed line
+  // (a question of parts opens with none open from the rail, Epo 2026-11-15).
   await expect(
-    page.getByRole('textbox', { name: m.question_ui_correct_answer() })
-  ).toHaveValue('Metaphase');
+    page.locator('[data-question-open]').getByText('Metaphase', { exact: true })
+  ).toBeVisible();
 });
 
 test("the browser's Back walks the dialog's steps", async ({ page }) => {
@@ -253,9 +255,12 @@ test('an edit on the page reaches the question list', async ({ page }) => {
     .getByRole('button', { name: /State the function/ })
     .click();
   await page.keyboard.type(' Name it.');
-  await expect(page.locator('[data-question-row]').nth(1)).toContainText(
-    'Name it.'
-  );
+  // The rail holds numbers; its outline lists each question's text (Canvas's
+  // rail, Epo 2026-11-15).
+  await page.getByRole('button', { name: m.quiz_editor_navigator() }).click();
+  await expect(
+    page.getByRole('dialog').getByRole('button').nth(1)
+  ).toContainText('Name it.');
 });
 
 test('a failed run says so in the panel and goes back to the pages', async ({

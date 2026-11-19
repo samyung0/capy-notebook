@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { openAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
@@ -35,11 +36,10 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio/assignments?assignment=as_upload');
+  await openAssignmentAsMember(page, 'as_upload');
   await page
     .getByRole('button', { exact: true, name: m.assignment_upload_file() })
     .click({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
   await expect(
     page.getByRole('button', { name: m.assignment_paper_add() })
   ).toBeEnabled({ timeout: 30_000 });

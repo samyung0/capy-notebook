@@ -79,18 +79,18 @@ test('a first open shows no key it does not know, and its list works while it wa
       ),
     QUIZ
   );
-  await page.setViewportSize({ height: 740, width: 360 });
   await page.goto(open(QUIZ));
   const opening = page.locator('[data-quiz-opening]');
+  // The list is the numbers rail (Epo 2026-11-15, the question editor
+  // cards): it opens a card while the cards themselves wait (inert).
   const row = opening.locator('[data-question-row]').first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
-  await expect(
-    opening.getByRole('button', { name: m.quiz_editor_all_questions() })
-  ).toBeVisible();
+  const opened = opening.locator('[data-question-open]');
+  await expect(opened).toBeVisible();
   // The read carries no keys: the answer waits, and nothing warns about it.
-  await expect(opening.locator('[data-keys-pending]').first()).toBeVisible();
-  await expect(opening.getByText(m.quiz_editor_add_solution())).toHaveCount(0);
+  await expect(opened.locator('[data-keys-pending]').first()).toBeVisible();
+  await expect(opened.getByRole('status')).toHaveCount(0);
   await holdTokens(page, null);
   await expect(opening).toHaveCount(0, { timeout: 30_000 });
 });

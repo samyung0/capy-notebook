@@ -1183,16 +1183,11 @@ changes when an assignment opens, closes or is deleted. An unmarked
 assignment's attached files and quizzes keep their own visibility. Clones: see
 [authorization](authorization-permissions-lifecycles.md#class-clones).
 
-What this leaves open: someone already connected when a quiz is assigned keeps
-seeing it, with no keys, until they leave or lose connection (Epo 2026-11-05). The
-room lets them be: their live updates stop when its token next renews, within five
-minutes, and what is on screen stays as it was, with no error, toast or status
-(`ItemRoom.unavailable`; `useLiveQuizQuestions` keeps its last questions, and a quiz
-attempt page its opening read). The quiz's page in a workspace stays too: the next
-refetch of the file list changes nothing while it is open (`alreadyOpen` in
-`CenterContent`). A refused read still ends what shows (Epo 2026-11-05), so a refresh
-of the material answering 404, as when the connection comes back and its last read is
-over 5 seconds old, shows the error page. Past the close a member it did not go
+No reader is ever left connected to a quiz that turns hidden: a graded quiz's quiz
+is made with it and hidden from the start (Epo 2026-11-14 and 2026-11-16, migrations
+0174 and 0180; "Existing quiz" makes a copy), and hiding any other item drains its
+room (`SetItemHidden`), so the room checks hidden at join only
+(`collaboration-rs/crates/server/src/pubsub.rs` `keeps_access`). Past the close a member it did not go
 to has the quiz back at once while grades wait under Show grades Manual, when
 those it went to are still refused (Epo answered for Do not show only). A signed-out browser on a public or link workspace's share page is
 nobody in particular, so an assignee could open it there. An attempt made before

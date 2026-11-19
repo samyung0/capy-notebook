@@ -1991,10 +1991,11 @@ test("a plane's editor is in the canvas's URL: Back closes it, and a missing one
   await editor.getByRole('button', { exact: true, name: 'Done' }).click();
   await expect(page).not.toHaveURL(/[?&]open=/);
   // A link to something no longer on the canvas leaves the URL, silently (Epo
-  // 2026-11-18).
+  // 2026-11-18), once the board shows and holds no such card. A load fetches
+  // the board's chunk again, which is slow on the dev server.
   await page.goto('/workspaces/ws_bio?view=canvas&open=gone-card');
+  await expect(page.locator('.capy-board')).toBeVisible({ timeout: 90_000 });
   await expect(page).not.toHaveURL(/[?&]open=/);
-  await expect(page.locator('.capy-board')).toBeVisible();
 });
 
 test("leaving the canvas with a plane's editor open keeps what the editor writes as it closes", async ({

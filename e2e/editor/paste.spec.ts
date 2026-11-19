@@ -306,7 +306,7 @@ test.describe('paste', () => {
       .toHaveLength(1);
   });
 
-  // With a quiz block selected (clicked), pasted blocks go in right after it
+  // With the caret on a quiz block, pasted blocks go in right after it
   // instead of being dropped, and each pasted quiz block gets its own copy.
   test('puts blocks pasted onto a selected quiz block right after it', async ({
     page,
@@ -341,8 +341,9 @@ test.describe('paste', () => {
     await pasteRefs(['block-held']);
     await expect(quizzes).toHaveCount(1, { timeout: 20_000 });
 
-    // A click on the block's own area, away from its buttons, selects it.
-    await blocks.first().click({ position: { x: 4, y: 4 } });
+    // The caret goes onto the block from the line the paste left it on. (A
+    // click on the block opens its question card, Epo 2026-11-15.)
+    await page.keyboard.press('ArrowUp');
     await pasteRefs(['block-one', 'block-two']);
     await expect(quizzes).toHaveCount(3, { timeout: 20_000 });
     const top = async (index: number) =>

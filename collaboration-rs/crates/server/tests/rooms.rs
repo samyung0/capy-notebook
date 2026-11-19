@@ -8179,59 +8179,6 @@ async fn a_revoke_retries_until_it_can_check_and_reaches_every_server() {
     assert!(acknowledged(&env, &nowhere).await, "a room on no server");
 }
 
-/// Q634 with Epo's 2026-11-05 assignment line (nothing about an assignment
-/// closes a connection): a reader whose quiz was assigned to them after they
-/// joined keeps it until they leave, so someone else's removal does not close
-/// them, though their own join is refused now. Fails if a revoke holds a reader
-/// to the join's hidden check.
-#[tokio::test]
-async fn a_revoke_leaves_a_reader_whose_quiz_was_assigned_to_them() {
-    let Some(env) = env() else { return };
-    let server = start(&env).await;
-    let (owner, editor, note_room) = shared_note(&env, "note").await;
-    let quiz = quiz_material(&env, &owner, "private").await;
-    let client = db(&env).await;
-    client
-        .execute(
-            "UPDATE materials SET workspace_id=(SELECT workspace_id FROM materials WHERE id=$2)
-             WHERE id=$1",
-            &[&quiz, &material_of(&note_room)],
-        )
-        .await
-        .expect("filed");
-    let room = format!("material:{quiz}:schema:1");
-    drop_queued_evictions(&env, &room).await;
-    let reader = member(&env, &note_room, "viewer").await;
-    let mut tab = Client::open(server.port).await;
-    let read = token(&room, &reader, "read");
-    assert_eq!(tab.joined(&room, &read).await, 0);
-    let mut removed = Client::open(server.port).await;
-    removed.joined(&room, &token(&room, &editor, "write")).await;
-    removed.drain().await;
-    client
-        .batch_execute(&format!(
-            "UPDATE workspaces SET kind='class'
-             WHERE id=(SELECT workspace_id FROM materials WHERE id='{quiz}');
-             INSERT INTO assignments (id, workspace_id, kind, title, source_quiz_id, questions, due_at)
-             SELECT 'as_' || id, workspace_id, 'marked', 'IT', id, '[]', now() + interval '1 day'
-             FROM materials WHERE id='{quiz}'"
-        ))
-        .await
-        .expect("assigned to them since");
-    client
-        .execute("DELETE FROM workspace_members WHERE user_id=$1", &[&editor])
-        .await
-        .expect("removed");
-    deliver_evictions(&env, &room).await;
-    closes_quietly(&mut removed).await;
-    stays_connected(&mut tab).await;
-    let mut again = Client::open(server.port).await;
-    assert_eq!(
-        refused_join(&mut again, &room, &read).await,
-        "collaboration-forbidden"
-    );
-}
-
 /// Security regression (Q634): a lapsed plan queues nothing and closes nobody
 /// until a writer's next update, which hears `room-read-only` and closes as at the
 /// storage limit, the same strip; the owner's rooms go read-only because the

@@ -22,12 +22,31 @@ export async function showPanelView(page: Page, name: string) {
   }
   const chat = page.locator('[data-workspace-chat-page]');
   if (!(await chat.isVisible())) {
-    const button = page.locator('[data-workspace-chat-button]');
-    if (await button.isVisible()) await button.click();
+    // An open item is the Files page, whose button may still be on its way.
+    if (/[?&](file|material)=/.test(page.url())) await openChatWindow(page);
     else await railSection(page, m.workspace_section_agent()).click();
   }
   const field = chat.getByRole('textbox', { name: m.chat_placeholder() });
   await field.waitFor();
+}
+
+/** Opens the chat's window from the Files page's chat button. The mock
+ * scenario panel floats over the button's corner, so it leaves the page. The
+ * window opens in a view transition, during which the page takes no pointer
+ * input (Chrome hit-tests its document element). */
+async function openChatWindow(page: Page) {
+  await page.addStyleTag({
+    content: '[data-testid="mock-scenario-panel"] { display: none; }',
+  });
+  await page.locator('[data-workspace-chat-button]').click();
+  await page.evaluate(
+    () =>
+      (
+        document as Document & {
+          activeViewTransition?: { finished: Promise<void> } | null;
+        }
+      ).activeViewTransition?.finished
+  );
 }
 
 /** Shows past chats in an lg viewport, for a row to be opened: over an open
@@ -36,7 +55,7 @@ export async function showPanelView(page: Page, name: string) {
 export async function showChatHistory(page: Page) {
   const button = page.locator('[data-workspace-chat-button]');
   if (await button.isVisible()) {
-    await button.click();
+    await openChatWindow(page);
     await page
       .locator('[data-workspace-chat-page]')
       .getByRole('button', { name: m.chat_history() })

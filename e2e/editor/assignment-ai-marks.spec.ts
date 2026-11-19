@@ -1,34 +1,45 @@
 import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
-// Epo 2026-11-03: what the AI has not marked reads Not marked until the owner
-// runs it; its marks wait for approval, and Approve all takes a question's.
-test('Mark with AI fills the waiting marks, and Approve all takes them', async ({
+/** A row's AI grade to approve, as "AI 1 / 2". */
+const AI_GRADE = new RegExp(`${m.assignment_ai_mark({ mark: '' })}\\d`);
+
+// Epo 2026-11-03: what the AI has not graded waits until the owner runs it; its
+// grades wait for approval, and Approve all takes a question's. On Approve AI
+// grades (Epo 2026-11-14) such an answer's row reads Not graded and its pane
+// says why (mock T3): Ben Lee's grade failed, Farah Ali had no credits.
+test('Grade with AI fills the waiting grades, and Approve all takes them', async ({
   page,
 }) => {
   await page.goto(
     '/workspaces/ws_bio/assignments?assignment=as_paper&tab=approve'
   );
-  const list = page.locator('li button');
-  // Why the AI left each unmarked (T3, Epo 2026-11-08): Grade Error, No credits.
+  const answers = page.locator('[data-answer-row]');
   await expect(
-    list.filter({ hasText: m.assignment_grade_error() }).first()
+    answers.filter({ hasText: m.assignment_not_graded_badge() }).first()
   ).toBeVisible({ timeout: 60_000 });
-  await expect(
-    list.filter({ hasText: m.assignment_no_credits() }).first()
-  ).toBeVisible();
+  await answers.filter({ hasText: 'Ben Lee' }).click();
+  await expect(page.getByText(m.assignment_not_graded_error())).toBeVisible();
+  await answers.filter({ hasText: 'Farah Ali' }).first().click();
+  await expect(page.getByText(m.assignment_not_graded_credits())).toBeVisible();
   const approveAll = page.getByRole('button', {
     exact: true,
     name: m.assignment_approve_all(),
   });
   await expect(approveAll).toBeDisabled();
 
+  // Grade with AI runs on every answer the AI has not graded: Ben's one,
+  // Farah's two and Gus's two (src/mocks/assignments.ts).
   await page
-    .getByRole('button', { exact: true, name: m.assignment_mark_with_ai() })
+    .getByRole('button', {
+      exact: true,
+      name: m.assignment_grade_count_with_ai({ count: 5 }),
+    })
     .click();
-  await expect(list.first()).toContainText(m.assignment_col_ai(), {
-    timeout: 15_000,
-  });
+  await expect(answers.first()).toContainText(AI_GRADE, { timeout: 15_000 });
+  await expect(
+    answers.filter({ hasText: m.assignment_not_graded_badge() })
+  ).toHaveCount(0);
   await expect(approveAll).toBeEnabled();
 
   // A broken rule shows above the marking points, and clears from the answer.
@@ -46,13 +57,9 @@ test('Mark with AI fills the waiting marks, and Approve all takes them', async (
   ).toHaveCount(0);
 
   await approveAll.click();
-  await expect(list.first()).not.toContainText(m.assignment_col_ai(), {
+  await expect(answers.first()).not.toContainText(AI_GRADE, {
     timeout: 15_000,
   });
-  await expect(list.filter({ hasText: m.assignment_not_marked() })).toHaveCount(
-    0
-  );
-  await expect(list.filter({ hasText: m.assignment_no_credits() })).toHaveCount(
-    0
-  );
+  await expect(answers.filter({ hasText: AI_GRADE })).toHaveCount(0);
+  await expect(approveAll).toBeDisabled();
 });

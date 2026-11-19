@@ -374,9 +374,16 @@ test.describe('study progress', () => {
       session: { group: 'workspace', workspaceId: ws.id },
     });
     expect(checkBody.session.items).toHaveLength(2);
-    // A right choice reads Right; only a wrong one reads Your answer.
+    // The pick is tagged Correct, and so is the verdict under the boxes
+    // (Epo 2026-11-18).
     await expect(
-      ownerPage.getByText(m.question_ui_result_right(), { exact: true })
+      ownerPage.getByRole('button', {
+        exact: true,
+        name: `${m.question_ui_true()} ${m.question_ui_result_right()}`,
+      })
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.question_ui_result_right(), { exact: true }).last()
     ).toBeVisible();
     // Next after the last item opens the result: the question right with
     // its mark, the card rated Good.
