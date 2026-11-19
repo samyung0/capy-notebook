@@ -453,12 +453,40 @@ test('an embed that was never near opens one room, which the editor then shares'
   expect(quiz()).toHaveLength(2);
 });
 
+/** The matrix note in the editor, its quiz embed read (as it is far down the
+ * note, its rooms and question cards are not opened). */
+async function openMatrix(page: Page) {
+  const quizRead = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/quizzes/mat_embed_bio_matrix_quiz'),
+    { timeout: 60_000 }
+  );
+  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
+  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  await quizRead;
+}
+
+async function previewOffline(page: Page) {
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { setCollaborationReachable } = await import(path);
+    setCollaborationReachable(false);
+  });
+  await page.context().setOffline(true);
+  await pressPreview(page);
+}
+
+/** The embedded quiz's first long answer, as Preview draws it for answering. */
+const longAnswer = (page: Page) =>
+  preview(page)
+    .getByRole('textbox', { name: m.question_ui_text_and_formulas() })
+    .first();
+
 test('an image the editor showed appears in Preview with no second ask, offline too', async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await page.goto(`/workspaces/ws_bio?material=${MATRIX}`);
-  await expect(editable(page)).toBeVisible({ timeout: 30_000 });
+  await openMatrix(page);
   const image = page.locator('[data-note-mount="live"] img[src]').first();
   await image.scrollIntoViewIfNeeded({ timeout: 30_000 });
   await expect(image).toBeVisible({ timeout: 30_000 });
@@ -467,15 +495,22 @@ test('an image the editor showed appears in Preview with no second ask, offline 
     if (new URL(request.url()).pathname.includes('/editor-assets/'))
       asks.push(request.url());
   });
-  await page.evaluate(async () => {
-    const path = '/src/mocks/collaboration.ts';
-    const { setCollaborationReachable } = await import(path);
-    setCollaborationReachable(false);
-  });
-  await page.context().setOffline(true);
-  await pressPreview(page);
-  await expect(preview(page).locator('img[src]').first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await previewOffline(page);
+  // Preview has drawn its last lazy part, so nothing can still take it down.
+  await expect(longAnswer(page)).toBeAttached({ timeout: 30_000 });
+  await expect(preview(page).locator('img[src]').first()).toBeVisible();
   expect(asks).toEqual([]);
+});
+
+test("Preview draws an embedded quiz's long answer offline: its code came with the editor", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openMatrix(page);
+  await previewOffline(page);
+  const answer = longAnswer(page);
+  await answer.scrollIntoViewIfNeeded({ timeout: 30_000 });
+  await answer.click();
+  await page.keyboard.type('Water moves by osmosis.');
+  await expect(answer).toContainText('Water moves by osmosis.');
 });
