@@ -118,7 +118,7 @@ function CanvasBoard({
         to: '.',
       })
   );
-  const materials = useCanvasMaterials(workspaceId);
+  const { materials, readAt } = useCanvasMaterials(workspaceId);
   // The item dialog's saves go through its live room, not the cards' snapshot
   // query: when the dialog closes or moves on, the material it showed is read
   // again by any card in view (a card's own Edit does the same on Done).
@@ -137,22 +137,28 @@ function CanvasBoard({
     [materials]
   );
   // Its quiz and flashcard cards (Epo 2026-11-09).
-  const { links, onBoard } = useCanvasLinks({
+  const {
+    links,
+    materials: listed,
+    onBoard,
+  } = useCanvasLinks({
     // The New tile: an unfiled quiz or set, named as the Create page names
-    // one ("Biology 101 quiz 2").
+    // one ("Biology 101 quiz 2"), past one just made too.
     create: async (kind) => {
       const made = await createMaterial({
         kind,
         title: nextGenerateTitle(
           kind,
           workspaceName,
-          (materials ?? []).map(({ title }) => title)
+          (links.materials() ?? []).map(({ title }) => title)
         ),
       });
       return { id: made.id, title: made.title };
     },
     materials: linked,
     open: onOpenMaterial,
+    readAt,
+    workspaceId,
   });
   const { openPlane, planeEditor } = usePlaneEditor();
   const state = useCanvasBoard(container, id, {
@@ -172,7 +178,7 @@ function CanvasBoard({
       >
         {/* Reopening the canvas tries again. */}
         <CanvasBoardPanel onRetry={onRetry} state={state} />
-        <CanvasMaterialCards link={link} materials={materials} />
+        <CanvasMaterialCards link={link} materials={listed} />
         <BoardPresenceMarks presence={state.presence} />
         {planeEditor}
       </div>

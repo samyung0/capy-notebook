@@ -54,7 +54,7 @@ function OwnCanvas({
         to: '/canvas',
       })
   );
-  const materials = useCanvasMaterials();
+  const { materials, readAt } = useCanvasMaterials();
   const { data: workspaces } = useWorkspaces();
   const linked = useMemo(() => {
     const icons = new Map(workspaces?.map(({ id, iconId }) => [id, iconId]));
@@ -70,13 +70,15 @@ function OwnCanvas({
   const { mutateAsync: createQuiz } = useCreateQuiz();
   const { mutateAsync: createSet } = useCreateFlashcardSet();
   const [editing, setEditing] = useState<DialogMaterial | null>(null);
-  // What New just made, which the list does not hold yet.
-  const made = useRef<DialogMaterial | null>(null);
-  const { links, onBoard } = useCanvasLinks({
+  const {
+    links,
+    materials: listed,
+    onBoard,
+  } = useCanvasLinks({
     account: true,
-    // Quiz 1, Quiz 2…: the first number no listed one has.
+    // Quiz 1, Quiz 2…: the first number no listed one has, one just made too.
     create: async (kind) => {
-      const taken = new Set(materials?.map(({ title }) => title));
+      const taken = new Set(links.materials()?.map(({ title }) => title));
       const title = (n: number) =>
         kind === 'quiz'
           ? m.drawing_board_new_quiz_title({ n })
@@ -87,22 +89,19 @@ function OwnCanvas({
         kind === 'quiz'
           ? await createQuiz({ name: title(n) })
           : await createSet({ name: title(n) });
-      made.current = { id, kind, title: name };
       return { id, title: name };
     },
     materials: linked,
-    // A card's header opens a listed one, New the one it made: the dialog needs
-    // no read of its own to know which editor to show.
+    // A card's header opens a listed one, New the one it made (listed as it
+    // lands): the dialog needs no read of its own to know which editor to show.
     open: (materialId) => {
-      const known =
-        made.current?.id === materialId
-          ? made.current
-          : linked?.find(({ id }) => id === materialId);
+      const known = links.materials()?.find(({ id }) => id === materialId);
       // A card whose quiz or set is not listed (gone, or the list is still
       // loading) says so itself and opens nothing.
       if (!known) return;
       setEditing({ id: known.id, kind: known.kind, title: known.title });
     },
+    readAt,
   });
   const { openPlane, planeEditor } = usePlaneEditor();
   const state = useCanvasBoard(container, id, {
@@ -119,7 +118,7 @@ function OwnCanvas({
         ref={container}
       >
         <CanvasBoardPanel onRetry={onRetry} state={state} />
-        <CanvasMaterialCards link={link} materials={materials} />
+        <CanvasMaterialCards link={link} materials={listed} />
         <BoardPresenceMarks presence={state.presence} />
         {planeEditor}
         <CanvasMaterialDialog

@@ -1,5 +1,6 @@
 import type { MathfieldElement } from 'mathlive';
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { getLocale } from '@/i18n';
 import { COMMAND_SHORTCUTS } from './graphSyntax';
 import mathFieldStyles from './mathField.css?inline';
@@ -44,6 +45,9 @@ export function GraphRowField({
   });
   callbacks.current = { onChange, onEnter, onMoveOut, onRemoveEmpty, register };
   const initial = useRef(latex);
+  // What the row last heard or was set to: MathLive reports typing a task
+  // later, so a key that acts on the row sends what is typed first.
+  const sent = useRef(latex);
   useLayoutEffect(() => {
     let cancelled = false;
     let cleanup = () => {};
@@ -58,7 +62,11 @@ export function GraphRowField({
       element.mathVirtualKeyboardPolicy = 'auto';
       element.style.cssText =
         'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:15px;line-height:1.2;';
-      const input = () => callbacks.current.onChange(element.value);
+      const input = () => {
+        if (element.value === sent.current) return;
+        sent.current = element.value;
+        callbacks.current.onChange(element.value);
+      };
       // Row keys stop here, before MathLive's handler inside the shadow root.
       const key = (event: KeyboardEvent) => {
         // Escape leaves the row first, as the plane's list did (the editor
@@ -69,16 +77,19 @@ export function GraphRowField({
           element.blur();
           return;
         }
-        const action =
-          event.key === 'Enter'
-            ? callbacks.current.onEnter
-            : event.key === 'Backspace' && !element.value
-              ? callbacks.current.onRemoveEmpty
-              : undefined;
-        if (!action) return;
+        const enter = event.key === 'Enter';
+        const removes =
+          event.key === 'Backspace' &&
+          !element.value &&
+          callbacks.current.onRemoveEmpty;
+        if (!(enter || removes)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        action();
+        // The typing still on its way lands and renders first: Enter typed
+        // fast in the new row moves to the row that typing made after it.
+        flushSync(input);
+        const { onEnter, onRemoveEmpty } = callbacks.current;
+        (enter ? onEnter : onRemoveEmpty)?.();
       };
       const moveOut = (event: Event) => {
         const { direction } = (event as CustomEvent<{ direction: string }>)
@@ -143,8 +154,10 @@ export function GraphRowField({
   });
   // A point dragged on the board rewrites its row.
   useEffect(() => {
-    if (field.current && field.current.value !== latex)
+    if (field.current && field.current.value !== latex) {
       field.current.setValue(latex, { silenceNotifications: true });
+      sent.current = latex;
+    }
   }, [latex]);
   return (
     <span

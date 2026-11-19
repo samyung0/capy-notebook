@@ -45,6 +45,7 @@ const AppEmbedEdit = lazy(() =>
 );
 
 type Placed = MaterialCardHost & { id: string };
+type Listed = Pick<MaterialListItem, 'id' | 'preview'>;
 
 /** The quiz and flashcard cards placed on the workspace canvas (Epo 2026-11-09):
  * each one is the real runner, answered and checked on the canvas. The board lends
@@ -66,10 +67,10 @@ export function CanvasMaterialCards({
   /** The page's URL for what fills the screen: a card's drawing answer is
    * named there under the card's id. */
   link?: OpenLink;
-  /** The quizzes and sets the board's links list (`useCanvasMaterials`),
+  /** The quizzes and sets the board's links list (`useCanvasLinks`),
    * `undefined` until the list has loaded; the card's own header says when a
    * placed one is gone. */
-  materials: MaterialListItem[] | undefined;
+  materials: Listed[] | undefined;
 }) {
   const [cards, setCards] = useState<Placed[]>([]);
   useEffect(
@@ -97,7 +98,7 @@ function PlacedCards({
 }: {
   cards: Placed[];
   link: OpenLink | null;
-  materials: MaterialListItem[] | undefined;
+  materials: Listed[] | undefined;
 }) {
   // The list carries each one's stored preview (a card whose preview isn't
   // stored falls back to the kind's icon).

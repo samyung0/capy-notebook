@@ -2492,6 +2492,13 @@ test("the Canvas page's Misc lists every quiz with its workspace, and New opens 
   await misc.getByRole('searchbox').fill('');
   // New makes one in no workspace (W1), places it and opens its editor in a dialog.
   await misc.getByRole('button', { name: 'New quiz' }).click();
+  // Its card runs as it lands, before the list holds the quiz (read once, not
+  // waited for: the list catches up a call later).
+  const card = page.locator('.capy-card');
+  await expect(card.locator('.title')).toHaveText('Quiz 1');
+  expect(
+    await card.evaluate(({ classList }) => classList.contains('gone'))
+  ).toBe(false);
   const dialog = page.getByRole('dialog', { name: 'Quiz 1' });
   // The editor shows after four calls in a row, each behind the mocks' delay:
   // the quiz is made, read, and its two rooms join one after the other.
@@ -2499,6 +2506,29 @@ test("the Canvas page's Misc lists every quiz with its workspace, and New opens 
     dialog.getByRole('button', { name: 'Add question' })
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('.capy-card .title')).toHaveText('Quiz 1');
+});
+
+test("the workspace canvas's New quiz opens it, and its card runs when the canvas is opened again before the list holds it", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  await page.locator('capy-misc-button').click();
+  const misc = page.locator('capy-misc-panel');
+  await misc.getByRole('button', { exact: true, name: 'Quiz' }).click();
+  await misc.getByRole('button', { name: 'New quiz' }).click();
+  // The quiz opens on the Files page; back on the canvas a call later, the
+  // list's read after the create is still on its way (read once, not waited for).
+  await expect(page).toHaveURL(/material=/);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  const card = page.locator('capy-material-card .capy-card');
+  await expect(card.locator('.title')).toHaveText('Biology 101 quiz 1');
+  expect(
+    await card.evaluate(({ classList }) => classList.contains('gone'))
+  ).toBe(false);
 });
 
 test("the Canvas page is a board of the person's own, and its panel lists and makes canvases", async ({
