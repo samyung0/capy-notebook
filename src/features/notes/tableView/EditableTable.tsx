@@ -411,7 +411,7 @@ export function EditableTable({
                 {write && (
                   <button
                     aria-label={m.table_view_add_column()}
-                    className="flex h-9 w-9 items-center justify-center text-fg-muted outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:bg-surface-hover-bg disabled:opacity-40"
+                    className="flex h-9 w-9 items-center justify-center text-fg-muted outline-none hover:text-fg focus-visible:text-fg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset disabled:opacity-40"
                     disabled={!canAddColumn(block)}
                     onClick={addColumn}
                     title={m.table_view_add_column()}
@@ -443,7 +443,7 @@ export function EditableTable({
       </div>
       {write && (
         <button
-          className="flex h-10 w-full items-center gap-1.5 border-line border-b px-2.5 text-left text-fg-muted text-sm outline-none hover:bg-surface-hover-bg/60 hover:text-fg focus-visible:bg-surface-hover-bg disabled:opacity-40 sm:h-9"
+          className="flex h-10 w-full items-center gap-1.5 border-line border-b px-2.5 text-left text-fg-muted text-sm outline-none hover:text-fg focus-visible:text-fg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset disabled:opacity-40 sm:h-9"
           disabled={!room}
           onClick={onNewRecord}
           type="button"

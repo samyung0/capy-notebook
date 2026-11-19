@@ -1182,7 +1182,10 @@ title 140px on phones) and an end column (the editor's + sits in it) that takes
 the rest, so every row's line runs the block's width as AFFiNE's does (Epo
 2026-11-12), 36px rows, one-line cells cut with an ellipsis, so a
 note's table keeps its shape between View and the editor. The open view is
-each reader's own state; Sort and Group by are stored on the view. A view's
+each reader's own state; Sort and Group by are stored on the view. The block's
+own buttons (+ view, Sort, Group by, New record above it, + column, the
++ New record row and a Kanban lane's + New) are muted and take the text's ink
+on hover with no background (Epo 2026-11-19); tabs and cells keep theirs. A view's
 menu (its name and Delete view, never the last view) opens on a press on the
 open tab or a right-click on any tab, which also opens that view, as Notion's
 and AFFiNE's do (Epo 2026-11-17); the right-click is the tab's alone, not the
@@ -4779,10 +4782,10 @@ aligned while Plate stays in the app). Built so far:
 - **Rhythm** (`tailwind.css`, `.note-editor`): text blocks 8px apart on a 1.5
   line in either note font; the font setting changes the font and its weight
   only.
-- **Column** (`note-column` in `tailwind.css`): 96px margins from a box wider
-  than 640px, capped at 912px unless Full width, in the editor
+- **Column** (`note-column` in `tailwind.css`): 96px margins from a box 880px
+  wide and 48px from 640px (a tablet's pane, Epo 2026-11-19), capped at 912px unless Full width, in the editor
   (`NoteEditorSurface`), the painted note and the preview (`MaterialPreview`),
-  and their footers. The step is a padding clamp on the parent's width, so no
+  and their footers. The steps are a padding max/min on the parent's width, so no
   container is declared. A narrower box keeps Plate's gutters (20px on a
   phone and 40px from `sm`, and always 40px on the editor's right for its
   thread buttons) where the BlockSuite note uses 16px. As in the BlockSuite

@@ -166,7 +166,7 @@ function Lane({
       ))}
       {write && (
         <button
-          className="flex h-8 items-center gap-1.5 rounded-button px-1 text-fg-muted text-sm outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:bg-surface-hover-bg disabled:opacity-40"
+          className="flex h-8 items-center gap-1.5 rounded-button px-1 text-fg-muted text-sm outline-none hover:text-fg focus-visible:text-fg focus-visible:ring-2 focus-visible:ring-action disabled:opacity-40"
           disabled={!canAddRow(block)}
           onClick={() =>
             onNewRecord(lane.option ? { [group.id]: lane.option.id } : {})

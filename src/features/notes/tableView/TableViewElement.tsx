@@ -181,7 +181,7 @@ function AddView({ onAdded }: { onAdded: (viewId: string) => void }) {
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger
         aria-label={m.table_view_add_view()}
-        className="flex size-7 shrink-0 items-center justify-center rounded-button text-fg-muted outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action disabled:opacity-40"
+        className="flex size-7 shrink-0 items-center justify-center rounded-button text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-action disabled:opacity-40"
         disabled={!canAddView(block)}
         title={m.table_view_add_view()}
       >
@@ -237,9 +237,9 @@ function SortControl({ view }: { view: TableViewView }) {
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={m.table_view_sort()}
-          className="h-7 gap-1.5 px-2 font-normal text-fg-muted data-[state=open]:bg-surface-hover-bg data-[state=open]:text-fg max-sm:size-8 max-sm:px-0"
+          className="h-7 gap-1.5 px-2 font-normal data-[state=open]:text-fg max-sm:size-8 max-sm:px-0"
           size="xs"
-          variant="ghost-hover"
+          variant="ghost-muted"
         >
           <Icon name="sort" />
           <span className="hidden max-w-32 truncate sm:inline">
@@ -301,9 +301,9 @@ function GroupByControl({ view }: { view: TableViewView }) {
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
-          className="h-7 gap-1.5 px-2 font-normal text-fg-muted data-[state=open]:bg-surface-hover-bg data-[state=open]:text-fg"
+          className="h-7 gap-1.5 px-2 font-normal data-[state=open]:text-fg"
           size="xs"
-          variant="ghost-hover"
+          variant="ghost-muted"
         >
           <span className="max-w-40 truncate">
             {group
@@ -420,8 +420,8 @@ function TableViewBody() {
             ) : (
               view !== NO_VIEW && <SortControl view={view} />
             )}
-            {/* Borderless like Sort beside it (Epo 2026-11-17), in the
-                text's ink as the action. */}
+            {/* Borderless and muted like Sort beside it, inked on hover
+                with no background (Epo 2026-11-19). */}
             <Button
               className="h-8 gap-1.5 px-2 font-normal sm:h-7"
               disabled={!canAddRow(block)}
@@ -430,7 +430,7 @@ function TableViewBody() {
                 newRecord(group && first ? { [group.id]: first.id } : {})
               }
               size="xs"
-              variant="ghost-hover"
+              variant="ghost-muted"
             >
               <span className="sm:hidden">{m.table_view_new()}</span>
               <span className="hidden sm:inline">
