@@ -1094,13 +1094,22 @@ and [material editor checks](../server/internal/store/share.go#L209).
   item, see the same on a page that showed it live; nothing that writes stays
   on that page (the View/Edit toggles, item actions, Practice) but Properties
   and downloads made from what it shows (Epo 2026-11-20). Kicked (Epo
-  2026-11-20): a read refused after a room that had joined refused the person
-  adds an error toast "You no longer have access", once per item, and the page
-  reads the lists showing the item again. A member removed from the workspace
-  gets a notification event, and their workspace stream ends at its next 25 s
-  access check with reconnects to it refused (404). Either one makes their
-  page read the workspace again: refused, it shows the workspace unavailable
-  with the same toast, once, and the stream goes on without the workspace;
+  2026-11-20): a read refusing access (403 or 404) after the item worked on
+  the page (a room of it synced, or the page's read answered a fetch showing
+  it live there or in the 10 s before), whether the room's refusal or a list
+  dropping the item asked for it, adds an error toast "You no longer have access", once per
+  item, and the page reads the lists showing the item again. A member's shared
+  canvas its maker trashed answers its read (`GET /api/canvases/{id}`) 410
+  `item_deleted` to whoever held it, as a trashed material does (review
+  2026-11-20), so they see it deleted, never kicked; one hard-deleted when its
+  maker leaves the workspace answers 404 and is a kick.
+  A member removed from the workspace gets a notification event, and their
+  workspace stream ends at its next 25 s access check with reconnects to it
+  refused (404). Either one makes their page read the workspace again:
+  refused, it shows the workspace unavailable, with the same toast, once, when
+  the workspace worked on that page (a read of it answered a fetch since it
+  opened or in the 10 s before, or the stream connected with it),
+  and the stream goes on without the workspace;
   still readable (a public or redeemed link workspace), and for a member whose
   role changed, the workspace and its lists read again (Epo 2026-11-20, see
   [error handling](frontend/error-handling.md)). Hiding an item and unsharing

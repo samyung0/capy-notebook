@@ -102,7 +102,8 @@ func TestWorkspaceTreeNotifiesListVisibleWrites(t *testing.T) {
 // Hiding an item from members or showing it again, and sharing a canvas or
 // taking it back, change who lists it, so each raises its workspace's event:
 // a file's as `files`, a material's and a canvas's (which sits in no
-// workspace, migration 0189) as `materials`.
+// workspace, migration 0189) as `materials`. So do a canvas's other
+// list-visible writes: its rename, its trash and its deletion with a leaver.
 func TestWorkspaceTreeNotifiesHidingAndCanvasSharing(t *testing.T) {
 	f := newCanvasFixture(t, "tree-access")
 	ctx := context.Background()
@@ -145,5 +146,25 @@ func TestWorkspaceTreeNotifiesHidingAndCanvasSharing(t *testing.T) {
 			t.Fatal(err)
 		}
 		expect("materials", "a canvas's sharing")
+	}
+	title := "Renamed canvas"
+	if _, err := f.s.UpdateMaterial(ctx, canvas.ID, MaterialPatch{Title: &title, UpdatedBy: f.editor}); err != nil {
+		t.Fatal(err)
+	}
+	expect("materials", "a canvas's rename")
+	if _, err := f.s.TrashMaterial(ctx, f.editor, canvas.ID, "", AgentOperation{}); err != nil {
+		t.Fatal(err)
+	}
+	expect("materials", "a canvas's trash")
+
+	// The leaver's canvases go with the membership (a `files` event for its
+	// submissions may come first).
+	f.canvas(t, f.editor, true)
+	expect("materials", "the second canvas's insert")
+	expect("materials", "the second canvas's sharing")
+	if err := f.s.RemoveWorkspaceMember(ctx, f.user, f.ws.ID, f.editor); err != nil {
+		t.Fatal(err)
+	}
+	for next() != "materials" {
 	}
 }

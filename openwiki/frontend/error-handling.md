@@ -694,9 +694,15 @@ and on a workspace stream refused at connect (404 or 403). Still readable
 list under the workspace and its canvas list read again, so items hidden from
 a viewer go. Refused (`isMissing`): `WorkspaceOpen` shows its unavailable
 state (`WorkspaceError`), as it does for a missing read with the workspace
-still cached, and a page that had shown the workspace gets an error toast
-"You no longer have access" (`editor_access_lost`, no body, id `access-lost`
-as the item's, skipped while that one shows), once per open. A refused
+still cached, and a page the workspace worked on gets an error toast "You no
+longer have access" (`editor_access_lost`, no body, id `access-lost` as the
+item's, skipped while that one shows or waits its turn behind another error),
+once per open. Worked means a read of the workspace answered a fetch (not a
+cache write) since the page opened it, or in the 10 s before (a hover's
+preload, `freshAnswer`, whatever the read's stale time), or the stream
+connected with it; a row cached from the persisted store or an earlier visit
+does not count, so opening a workspace the person was removed from while away says only
+that it is unavailable, whichever read lands first. A refused
 workspace stream is no fault: no Reconnecting card, and the stream
 reconnects without `?workspace=`, so notifications keep arriving until the
 person leaves the page.
@@ -904,9 +910,13 @@ A room's refusal alone keeps the page (Epo 2026-11-05): a reader's as it was, an
 editor's mounted and read-only under the grey "You no longer have access" strip
 with no save status, and the page asks for its read, which may refuse, after a
 4403 close too (Epo 2026-11-20, narrowing Q644; see
-[authorization](../authorization-permissions-lifecycles.md)). A read refused
-after a room that had joined refused the person (kicked: removed, the item
-hidden from members, a canvas unshared) adds an error toast "You no longer have
+[authorization](../authorization-permissions-lifecycles.md)). A read refusing
+access (403 or 404, `isAccessRefused`) after the item worked on the page, a
+room of it synced or the page's read answered a fetch showing it live there or
+in the 10 s before (kicked: removed, the item hidden from members, a canvas unshared;
+the room's refusal, or a list dropping the item, may ask for that read first,
+an open file's header reading it again once its workspace's files list drops
+it), adds an error toast "You no longer have
 access" with no body, once per item (toast id `access-lost`, shared with the
 workspace's), and reads the lists showing the item again (Epo 2026-11-20,
 `useAccessLostNotice` in `accessLostNotice.ts`); a hidden item's or a canvas's

@@ -54,6 +54,7 @@ import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
+  isAccessRefused,
   isRefusedRead,
   useAccessLostNotice,
 } from '@/features/collaboration/accessLostNotice';
@@ -788,12 +789,14 @@ function MaterialContentBody({
     deletedEdits?.status === 'kept' ? deletedDocs : null,
     keptDeleted && { kind: keptDeleted.kind, name: keptDeleted.title }
   );
-  useAccessLostNotice(
-    false,
-    materialId,
-    refused && !deleted,
-    shown?.workspaceId
-  );
+  // Kicked: it worked here, then its read refused the person access. Not for
+  // one opened from the Trash or deleted (a trashed read kept), whose purge is
+  // a deletion.
+  useAccessLostNotice(false, materialId, {
+    read: qk.material(materialId),
+    refused: isAccessRefused(error) && !(trashed || deleted),
+    workspaceId: shown?.workspaceId,
+  });
   const noteBody = (loaded: Material | undefined, editing: boolean) => (
     <NoteBody
       allowExternalAssets={allowExternalAssets}
@@ -1239,7 +1242,8 @@ function PickAFile() {
   );
 }
 
-function FileBody({
+/** An open file's body: its viewer, or what its read says instead. */
+export function FileBody({
   fileId,
   color,
   imageZoom,
@@ -1289,12 +1293,11 @@ function FileBody({
     deletedEdits?.status === 'kept' ? deletedDocs : null,
     kept && { kind: kept.kind, name: kept.name }
   );
-  useAccessLostNotice(
-    true,
-    fileId,
-    refused && !deleted,
-    shownLive.current?.workspaceId
-  );
+  useAccessLostNotice(true, fileId, {
+    read: qk.file(fileId),
+    refused: isAccessRefused(error) && !(trashed || deleted),
+    workspaceId: shownLive.current?.workspaceId,
+  });
   if (isLoading) return <FileLoading />;
   // A refusal ends what shows, as a material's does (Epo 2026-11-05).
   if ((refused || deleted) && !kept) return <UnavailableItem />;

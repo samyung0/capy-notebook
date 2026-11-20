@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import { canvasById, trashedCanvasBoard } from '@/api/canvas';
+import { deletedItemOf } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { CanvasBody, StorageFullBy, Trashed } from '@/api/types';
 import {
@@ -16,6 +17,7 @@ import {
   mountDrawingBoard,
 } from '@/features/blocksuite/drawingBoard';
 import {
+  isAccessRefused,
   isRefusedRead,
   useAccessLostNotice,
 } from '@/features/collaboration/accessLostNotice';
@@ -31,6 +33,7 @@ import {
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
 import { deletedTarget } from '@/features/collaboration/lostEdits';
+import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { m } from '@/i18n';
 import { base64ToBytes } from '@/lib/base64';
@@ -178,22 +181,26 @@ export function useCanvasBoard(
   // turned read-only, for why.
   const [away, setAway] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  // The read refused this person (not found, forbidden, deleted): with the
-  // room's refusal, they were kicked (Epo 2026-11-20).
-  const [refusedRead, setRefusedRead] = useState(false);
+  // Why the read refused this person, if it did: not found or forbidden, with
+  // the room's refusal, they were kicked (Epo 2026-11-20); deleted is the
+  // room's to show (Q39).
+  const [readRefusal, setReadRefusal] = useState<unknown>(null);
   // The canvas's image assets as the server lists them, a trashed one
   // included: an image already the canvas's own is never stored again.
   const own = useRef(new Set<string>());
   useEffect(() => {
     let live = true;
     setFailed(null);
-    setRefusedRead(false);
+    setReadRefusal(null);
     canvasById(id).then(
       (body) => {
         if (!live) return;
         setAway(false);
         for (const asset of body.ownImageAssetIds) own.current.add(asset);
         setCanvas(body);
+        // A read answered on this board: the canvas worked here. One from the
+        // Trash is not lost when purged.
+        if (!body.trash) markItemWorking(false, id);
       },
       (error: unknown) => {
         if (!live) return;
@@ -201,7 +208,8 @@ export function useCanvasBoard(
           setAway(true);
           return;
         }
-        setRefusedRead(isRefusedRead(error));
+        if (isRefusedRead(error) && !deletedItemOf(error))
+          setReadRefusal(error);
         // An API failure is the server's to log (beforeSend drops it); any
         // other throw is this page's.
         captureException(error, { tags: { component: 'canvas-open' } });
@@ -340,7 +348,7 @@ export function useCanvasBoard(
   useEffect(() => {
     if (refusedOpen) setAttempt((count) => count + 1);
   }, [refusedOpen]);
-  const kicked = refusedOpen && refusedRead && !recovery;
+  const kicked = refusedOpen && !!readRefusal && !recovery;
   // Edits that cannot join the room show alone, for copying; a trashed
   // canvas shows its stored board; else the room's document once it holds
   // the room's state, or the device's copy of it.
@@ -621,12 +629,10 @@ export function useCanvasBoard(
     !mounted &&
     (!!canvas || !!failed) &&
     !options.gone?.();
-  useAccessLostNotice(
-    false,
-    id,
-    kicked && !options.gone?.(),
-    canvas?.workspaceId ?? null
-  );
+  useAccessLostNotice(false, id, {
+    refused: kicked && isAccessRefused(readRefusal) && !options.gone?.(),
+    workspaceId: canvas?.workspaceId ?? null,
+  });
   // Offline with nothing shown keeps waiting; the server down with the
   // browser online loads, and says so at 30 s with Retry.
   const waiting =

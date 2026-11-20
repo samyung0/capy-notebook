@@ -74,7 +74,7 @@ import {
   type PresenceStore,
 } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
-import { markRoomRefusal } from '@/features/collaboration/roomRefusals';
+import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import { limitUndo } from '@/features/collaboration/undo';
 import type {
   MaterialDocument,
@@ -1617,10 +1617,8 @@ export function NoteEditorCore({
         }
         // Gone or no longer theirs, an access change (4403) included: the
         // page's read says, and a refused one ends what shows, saying they
-        // lost access when the room had joined (Epo 2026-11-20, narrowing
-        // Q644).
-        if (hasSynced.current && refusal !== 'deleted')
-          markRoomRefusal(false, material.id);
+        // lost access when the note had worked on the page (Epo 2026-11-20,
+        // narrowing Q644).
         void qc.invalidateQueries({ queryKey: qk.material(material.id) });
         // The note stays as it is, read-only under a strip (Epo 2026-11-05):
         // nothing rejoins, and it has no save status.
@@ -1711,6 +1709,8 @@ export function NoteEditorCore({
             if (!isSynced || rejected.current) return;
             markSlowed(false);
             hasSynced.current = true;
+            // The page says so if it later loses the note.
+            markItemWorking(false, material.id);
             reconnector.current?.connected();
             saveDelay.connected();
             if (offlineMode.current || heldEpisode.current) {

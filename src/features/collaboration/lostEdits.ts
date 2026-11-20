@@ -69,10 +69,8 @@ function subscribeShown(listener: () => void) {
  * yet: a room or session draws them after the page reads `kept`, and until
  * then a Download would draw nothing. */
 export function useShowsDeleted(target: DeletedTarget | null) {
-  return useSyncExternalStore(
-    subscribeShown,
-    () => !!target?.keys.some((key) => shownHere.has(key))
-  );
+  const shows = () => !!target?.keys.some((key) => shownHere.has(key));
+  return useSyncExternalStore(subscribeShown, shows, shows);
 }
 
 /** The rows this page shows of a deleted item's documents, by key, matched

@@ -16,6 +16,7 @@ import { clickTextEnd } from './helpers';
  */
 
 type Collaboration = typeof import('../../src/mocks/collaboration');
+type Canvases = typeof import('../../src/mocks/canvas');
 
 // Set to a folder to keep a screenshot of the toast and the strip, at the
 // desktop width and at the narrowest phone's.
@@ -550,6 +551,107 @@ test('a canvas deleted while open downloads its unsent strokes from its strip an
   await expect(strip).toContainText(m.editor_deleted_strip());
   expect(await storedRows(page, CANVAS)).toBeGreaterThan(0);
 });
+
+// Review 2026-11-20 (1): a member's shared canvas its maker deletes while it
+// is open is deleted to them too, whichever of its list (the tree event) and
+// its room tells them first: its read answers `item_deleted`, so the board
+// stays with its unsent strokes under the deleted strip, and no toast says
+// they lost access.
+for (const first of ['list', 'room'] as const)
+  test(`a member's canvas its maker deletes while open shows the deleted strip, with no access-lost toast (${first} first)`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.goto(`${WORKSPACE}?view=canvas`);
+    await page.waitForFunction(() => (window as { __board?: unknown }).__board);
+    await page.addStyleTag({
+      content: '[data-testid="mock-scenario-panel"] { display: none; }',
+    });
+    const theirs = await page.evaluate(async () => {
+      const path = '/src/mocks/canvas.ts';
+      const { mockMemberCanvas } = (await import(path)) as Canvases;
+      return mockMemberCanvas({
+        creatorName: 'Ben',
+        role: 'editor',
+        title: 'Lab diagrams',
+        workspaceId: 'ws_scenarios',
+      });
+    });
+    await navigate(page, `${WORKSPACE}?view=canvas&c=${theirs}`);
+    await expect(
+      page
+        .locator('[data-workspace-canvas]')
+        .getByRole('button', { exact: true, name: 'Lab diagrams' })
+    ).toBeVisible();
+    await expect(
+      page.locator('.capy-board-status [role=status]')
+    ).toHaveAttribute('data-save-state', 'saved');
+    const socket = (up: boolean) =>
+      page.evaluate(
+        async ([id, back]) => {
+          const path = '/src/mocks/collaboration.ts';
+          const { mockBoardSocket } = (await import(path)) as Collaboration;
+          mockBoardSocket(id, back);
+        },
+        [theirs, up] as const
+      );
+    const relist = () =>
+      page.evaluate(async () => {
+        const path = '/src/api/queryClient.ts';
+        const { queryClient } = await import(path);
+        await queryClient.invalidateQueries({ queryKey: ['canvases'] });
+      });
+    // The tab's socket down: the stroke stays on this device.
+    await socket(false);
+    await page.locator('edgeless-pen-tool-button').first().click();
+    const box = await page.locator('affine-edgeless-root').boundingBox();
+    if (!box) throw new Error('no board');
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
+    await page.mouse.down();
+    for (let step = 1; step <= 10; step++)
+      await page.mouse.move(
+        box.x + box.width * (0.4 + step * 0.02),
+        box.y + box.height * (0.4 + step * 0.01)
+      );
+    await page.mouse.up();
+    await expect.poll(() => storedRows(page, theirs)).toBeGreaterThan(0);
+
+    // Ben trashes it: gone from the lists, its room and read deleted.
+    await page.evaluate(async (id) => {
+      const paths = ['/src/mocks/canvas.ts', '/src/mocks/collaboration.ts'];
+      const [canvases, collaboration] = (await Promise.all(
+        paths.map((path) => import(path))
+      )) as [Canvases, Collaboration];
+      canvases.trashMockMemberCanvas(id);
+      collaboration.deleteMockItem(id, {
+        kind: 'canvas',
+        name: 'Lab diagrams',
+      });
+    }, theirs);
+    if (first === 'list') await relist();
+    await socket(true);
+    if (first === 'room') {
+      await expect(page.locator('[data-canvas-strip]')).toContainText(
+        m.editor_deleted_strip(),
+        { timeout: 30_000 }
+      );
+      await relist();
+    }
+
+    const strip = page.locator('[data-canvas-strip]');
+    await expect(strip).toContainText(m.editor_deleted_strip(), {
+      timeout: 30_000,
+    });
+    await page.waitForTimeout(2500);
+    await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
+    await expect(strip).toContainText(m.editor_deleted_strip());
+    await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+    const saving = page.waitForEvent('download');
+    await strip.getByRole('button', { name: m.action_download() }).click();
+    expect((await saving).suggestedFilename()).toBe(
+      `Lab diagrams (${m.lost_edits_file()}).png`
+    );
+  });
 
 const DOCX = 'mock-scenario-docx';
 const DOCX_NAME = 'Scenario document.docx';

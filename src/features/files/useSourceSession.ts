@@ -20,7 +20,7 @@ import {
   reloadDeleted,
   showDeletedDrafts,
 } from '@/features/collaboration/lostEdits';
-import { markRoomRefusal } from '@/features/collaboration/roomRefusals';
+import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
@@ -736,9 +736,8 @@ export function useSourceSession(
           void recorder?.snapshot();
         // Gone or no longer theirs, an access change (4403) included: the
         // file's read says, and a refused one ends what shows, saying they
-        // lost access when the room had joined (Epo 2026-11-20, narrowing
-        // Q644).
-        if (everSynced && !deleted) markRoomRefusal(true, fileId);
+        // lost access when the file had worked on the page (Epo 2026-11-20,
+        // narrowing Q644).
         void qc.invalidateQueries({ queryKey: qk.file(fileId) });
         // The page stays until then: a reader as it was, an editor
         // read-only under a strip saying so.
@@ -1228,6 +1227,8 @@ export function useSourceSession(
             setStatus(everSynced || active.sequence > 0 ? 'saving' : 'saved');
             if (!everSynced) officeMark('synced');
             everSynced = true;
+            // The page says so if it later loses the file.
+            markItemWorking(true, fileId);
             void show();
             setWorkerClientId(provider?.workerClientId);
             setSynced(true);

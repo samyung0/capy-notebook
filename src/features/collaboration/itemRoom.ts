@@ -77,7 +77,7 @@ import {
   renameRefusal,
 } from './renameClient';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
-import { markRoomRefusal } from './roomRefusals';
+import { markItemWorking } from './roomRefusals';
 import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
 /* A live item's room (a flashcard set, a quiz's content or keys document;
@@ -818,6 +818,8 @@ export class ItemRoom {
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
+          // A page showing the item says so if it later loses it.
+          markItemWorking(false, this.materialId);
           if (this.snapshot.offline || this.heldEpisode)
             this.recorder?.connected();
           this.heldEpisode = false;
@@ -1932,10 +1934,9 @@ export class ItemRoom {
 
   /** Refused, an access change (4403) included: the item may be gone or no
    * longer this person's, so the page's reads say (a quiz's own read too),
-   * and a refused one ends what shows, saying they lost access when this
-   * room had joined (Epo 2026-11-20, narrowing Q644). */
+   * and a refused one ends what shows, saying they lost access when the item
+   * had worked on the page (Epo 2026-11-20, narrowing Q644). */
   private refusedAccess() {
-    if (this.snapshot.synced) markRoomRefusal(false, this.materialId);
     for (const queryKey of [
       qk.material(this.materialId),
       qk.quiz(this.materialId),

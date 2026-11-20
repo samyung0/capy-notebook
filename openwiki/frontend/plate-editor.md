@@ -1480,11 +1480,21 @@ should itself refetch and show the 404 error", narrowing Q644): a refused read
 shows "This item is unavailable" (see
 [authorization](../authorization-permissions-lifecycles.md)), a read that
 still answers keeps the strip, and a demotion (a read token) is unchanged.
-When a room that had joined refused them first (an editor's or a reader's
-room, any kind: notes, quizzes, sets, diagrams, canvases, Office and text
-files; `markRoomRefusal` in `roomRefusals.ts`, which marks only an item a page
-watches, so an embed's or a card's room marks nothing, and the mark goes with
-the page), that page also shows an error toast titled "You no longer have
+When the item had worked on that page first (a room of it synced, an
+editor's or a reader's, any kind: notes, quizzes, sets, diagrams, canvases,
+Office and text files; or the page's read answered a fetch showing the item
+live, not trashed, while it showed the item or in the 10 s before it opened,
+such as a hover's preload or the route's loader, whatever the read's stale
+time, so an answer from an earlier visit does not count; never a cache write
+such as `setQueryData` or a restored store: a cache subscription that skips
+manual updates, and `freshAnswer` in `queryClient.ts` over the query cache's
+`onSuccess`; `markItemWorking` in `roomRefusals.ts`, which marks only an item a
+page watches, so an embed's or a card's room marks nothing, and the mark lasts
+while the page shows the item, past a room replaced meanwhile, such as a tab
+hidden for 5 minutes), a read then refusing access (403 or 404,
+`isAccessRefused`; a 410 deleted, 409, 422 or 401 still shows the page's own
+state but toasts nothing, and so does a 404 for an item whose read had shown
+it trashed, its purge being a deletion) also shows an error toast titled "You no longer have
 access" with no body, once per item, under the one id `access-lost` the
 workspace's removal toast has too, and the lists showing the item read again
 (its workspace's Files panel tree, the Files page, Recent, block, canvas,
@@ -1492,10 +1502,24 @@ Study and Continue lists), since the tree event hiding or unsharing raises
 refetches only the open workspace's file, material, topic and canvas lists,
 and a removed member's page shows the workspace unavailable (Epo 2026-11-20,
 `useAccessLostNotice` in `accessLostNotice.ts`, used by `CenterContent`, a
-canvas's board and the account Canvas page's quiz or set dialog). A kicked
-canvas's board goes for the unavailable panel and its picker, read again,
-shows another canvas; edits it shows to copy stay whatever the read says. An
-item simply opened unavailable, or one deleted, says nothing more.
+canvas's board, the canvas picker and the account Canvas page's quiz or set
+dialog). That holds in either order: the tree event reaches members at commit
+and the room's drain or 4403 comes 1 to 2.5 s later through the outbox, so a
+hidden note's list may drop it first and its header's read (the list no longer
+carrying it) refuse before the room does. A file with no room (a PDF, an image,
+or a viewer who never joins one) hears it from its list alone: its header reads
+the file again once its workspace's files list no longer holds it. A kicked
+canvas's board goes for the unavailable panel and its picker, read again, shows
+another canvas; when the picker's list drops the canvas on screen first, its
+read of it refusing toasts before another canvas shows. A member's shared
+canvas its maker trashed answers that read 410 `item_deleted` (review
+2026-11-20), so the picker keeps it on screen while it asks and once deleted,
+and its board shows what its room says: the deleted strip with Download over
+the unsent strokes, no toast. The picker asks that read afresh each time its
+list drops the canvas on screen, never taking an earlier answer for it. Edits a board shows to copy stay whatever the
+read says. An item simply opened unavailable, a stale copy painted before its
+read refused included, an item opened from the Trash, one deleted, or one whose
+content cannot be decoded, says nothing more.
 The service's not found alone, an item room's or a source's, and a source
 save failing `lostAccess: "not_found"` (a trash only queues the room's
 eviction, so a save may land first) ask a fresh token first (review

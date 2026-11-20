@@ -1,6 +1,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import {
   focusManager,
+  hashKey,
   type InfiniteData,
   infiniteQueryOptions,
   keepPreviousData,
@@ -50,7 +51,7 @@ import {
   type StreamEvent,
 } from './eventStream';
 import { pagedRows } from './paged';
-import { isMissing } from './queryClient';
+import { freshAnswer, isMissing } from './queryClient';
 import { persisted } from './queryPersistence';
 import type {
   AccountStatus,
@@ -623,19 +624,17 @@ function accessChangedIn(event: NotificationStreamEvent): string | undefined {
  * (Epo 2026-11-20). Still readable (another role, or removed from a public or
  * redeemed link workspace): its lists too, so items hidden from them go.
  * Refused: the page shows the workspace unavailable (`WorkspaceOpen` on a
- * missing read), and `lost` runs if it showed the workspace. True when
- * refused. */
+ * missing read), and `lost` runs. True when refused. */
 async function recheckWorkspace(
   qc: QueryClient,
   wsId: string,
   lost: () => void
 ): Promise<boolean> {
-  const shown = qc.getQueryData(qk.workspace(wsId)) !== undefined;
   try {
     await qc.fetchQuery({ ...workspaceQuery(wsId), staleTime: 0 });
   } catch (error) {
     if (!isMissing(error)) return false;
-    if (shown) lost();
+    lost();
     return true;
   }
   // Everything under the workspace but its row, just read.
@@ -652,18 +651,36 @@ async function recheckWorkspace(
  * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
  * lists the stream feeds; while disconnected there is no polling, only the
  * banner and a backoff reconnect. Under MSW (the dev mock has no event
- * stream) it hears the mock's events instead. */
+ * stream) it hears the mock's notification and ingest events instead, and
+ * nothing connects or is refused. */
 export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
     // The workspace refused this person: the stream goes on without it.
     let refused = false;
+    // It worked on this page: a read of it answered while the page was open
+    // (or in the seconds before: a hover's preload, the route's loader), or
+    // the stream connected with it. Only then is losing it news; one opened
+    // unavailable, a restored or older row shown meanwhile, says nothing more.
+    const workspaceHash = hashKey(qk.workspace(wsId));
+    let shown = freshAnswer(qc.getQueryCache().get(workspaceHash));
     let told = false;
     const lost = () => {
-      if (told) return;
+      if (told || !shown) return;
       told = true;
       toastAccessLost();
     };
+    const unwatch = wsId
+      ? qc.getQueryCache().subscribe((event) => {
+          if (
+            event.type === 'updated' &&
+            event.action.type === 'success' &&
+            !event.action.manual &&
+            event.query.queryHash === workspaceHash
+          )
+            shown = true;
+        })
+      : () => undefined;
     const followAccess = (event: NotificationStreamEvent) => {
       if (!wsId || accessChangedIn(event) !== wsId) return;
       void recheckWorkspace(qc, wsId, lost).then((gone) => {
@@ -685,7 +702,10 @@ export function useEventStream(wsId: string) {
           applyIngestEvent(qc, wsId, detail);
       };
       window.addEventListener('capy:mock-stream', heard);
-      return () => window.removeEventListener('capy:mock-stream', heard);
+      return () => {
+        unwatch();
+        window.removeEventListener('capy:mock-stream', heard);
+      };
     }
     let stopped = false;
     let controller: AbortController | undefined;
@@ -764,6 +784,7 @@ export function useEventStream(wsId: string) {
               type: 'active',
             });
           delay = 1000;
+          if (streamWs) shown = true;
           setStatus('connected');
           reconcile(streamWs);
         });
@@ -792,6 +813,7 @@ export function useEventStream(wsId: string) {
 
     return () => {
       stopped = true;
+      unwatch();
       controller?.abort();
       if (retryTimer) clearTimeout(retryTimer);
       for (const timer of Object.values(treeTimers)) clearTimeout(timer);

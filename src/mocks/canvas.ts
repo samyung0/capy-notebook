@@ -247,8 +247,40 @@ const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** Its maker deleted it: it goes to their Trash as a note does, its board
  * kept for the Trash to show and Restore to bring back. */
 function trashCanvas(canvas: MockCanvas) {
+  canvas.trash = trashItem(canvas);
+  trash.unshift({ item: canvas.trash });
+}
+
+/** Its maker, another member, deleted their shared canvas (e2e): it goes to
+ * their Trash, not this person's, and its read answers `item_deleted` to this
+ * person, who held it (Q41). Its room is the collaboration mock's
+ * (`deleteMockItem`). */
+export function trashMockMemberCanvas(id: string) {
+  const canvas = canvases.get(id);
+  if (!canvas?.creatorName) throw new Error(`No member's mock canvas ${id}`);
+  canvas.trash = trashItem(canvas);
+}
+
+/** The gateway's 410 for a trashed canvas its reader held (`deletedError`). */
+const deletedCanvas = (canvas: MockCanvas) =>
+  HttpResponse.json(
+    {
+      detail: 'the item was deleted',
+      errors: [
+        {
+          message: 'item_deleted',
+          value: { kind: 'canvas', name: canvas.title },
+        },
+      ],
+      status: 410,
+      title: 'Gone',
+    },
+    { status: 410 }
+  );
+
+function trashItem(canvas: MockCanvas): TrashItem {
   const now = Date.now();
-  const item: TrashItem = {
+  return {
     canRestore: true,
     episodeId: uid('trash'),
     id: canvas.id,
@@ -263,8 +295,6 @@ function trashCanvas(canvas: MockCanvas) {
       ? workspaceOf(canvas.workspaceId)?.name
       : undefined,
   };
-  canvas.trash = item;
-  trash.unshift({ item });
 }
 
 /** A trashed canvas's Trash row, by the episode a request names. */
@@ -453,12 +483,16 @@ export const canvasHandlers = (
       });
     }),
     // One its maker holds, a member's shared one, or one in the caller's
-    // Trash (its maker's alone), read-only.
+    // Trash (its maker's alone), read-only. A member's shared one its maker
+    // trashed answers deleted to whoever held it.
     http.get('/api/canvases/:id', ({ params }) => {
       if (offline()) return HttpResponse.error();
       const canvas = canvases.get(String(params.id));
-      return canvas && (roleOn(canvas) || (canvas.trash && !canvas.creatorName))
-        ? HttpResponse.json(body(canvas))
+      if (!canvas) return notFound();
+      if (roleOn(canvas) || (canvas.trash && !canvas.creatorName))
+        return HttpResponse.json(body(canvas));
+      return canvas.trash && roleOn({ ...canvas, trash: undefined })
+        ? deletedCanvas(canvas)
         : notFound();
     }),
     // A trashed canvas's stored board; none for a live one.

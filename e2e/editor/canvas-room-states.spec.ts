@@ -667,6 +667,41 @@ test('an editor whose access is taken back is told so, and the canvas leaves the
   expect(errors).toEqual([]);
 });
 
+// Review 2026-11-20 (1): the tree event taking a canvas back reaches the page
+// before its room's 4403, so the picker's list read again drops it and its
+// read, asked for the canvas on screen, is refused first. The toast says so
+// before another canvas shows, and the room's close after it adds none.
+test('a canvas taken back that its list drops first is told so before the picker shows another', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  const theirs = await memberCanvas(page, 'editor');
+  await switchTo(page, 'Biology 101', 'Lab diagrams');
+  await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
+  await boardShown(page);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
+
+  await page.evaluate(async (id) => {
+    const paths = ['/src/mocks/canvas.ts', '/src/api/queryClient.ts'];
+    const [canvases, { queryClient }] = await Promise.all(
+      paths.map((path) => import(path))
+    );
+    canvases.unshareMockCanvas(id);
+    await queryClient.invalidateQueries({ queryKey: ['canvases'] });
+  }, theirs);
+  const toast = page
+    .getByRole('alert')
+    .filter({ hasText: 'You no longer have access' });
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  await expect(page).not.toHaveURL(new RegExp(`c=${theirs}`));
+  await expect(picker(page, 'Biology 101')).toBeVisible();
+  await room(page, 'mockRevokeBoard', theirs);
+  await page.waitForTimeout(2500);
+  await expect(toast).toHaveCount(1);
+  await expect(page.locator('.tst-count')).toHaveCount(0);
+});
+
 test('a canvas another person filled to its cap goes removals-only from its size, and takes a stroke once Clear all made room', async ({
   page,
 }) => {

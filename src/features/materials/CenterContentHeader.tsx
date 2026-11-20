@@ -1,11 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { createContext, type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
-import { deletedItemOf } from '@/api/client';
+import { deletedItemOf, qk } from '@/api/client';
 import {
   materialQuery,
   useFile,
+  useFiles,
   useMaterials,
   useWorkspace,
 } from '@/api/hooks';
@@ -271,6 +272,25 @@ function useHeader(
     item.kind === 'file' ? item.id : null,
     { errorBoundary: false }
   );
+  // A file its workspace's list no longer carries (hidden from this person,
+  // their access gone) is read again, as a material the list drops is read
+  // (`readBody`): a file with no room open hears of it from nothing else, and
+  // a refused read shows it unavailable.
+  const listsFile =
+    item.kind === 'file' && !standalone && !trashed && workspaceId !== '';
+  const { data: files } = useFiles(listsFile ? workspaceId : '', {
+    errorBoundary: false,
+  });
+  const unlistedFile =
+    listsFile && !!files && !files.some((row) => row.id === item.id);
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (unlistedFile)
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: qk.file(item.id),
+      });
+  }, [unlistedFile, item.id, queryClient]);
   // Inside a workspace the list entry and the workspace's capabilities cover
   // what the header shows until the body opens. Reading the material itself
   // here would pull the whole document past the heavy-document gate, so the

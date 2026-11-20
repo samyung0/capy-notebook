@@ -190,19 +190,110 @@ for (const [name, url, rows, id, close] of [
       await expect(shown).toBeVisible({ timeout: 3000 });
     }).toPass({ timeout: 60_000 });
     await expect(kickedToast(page)).toBeVisible();
-    // Once: one toast, never counted up.
-    await expect(kickedToast(page)).toHaveCount(1);
-    await expect(page.locator('.tst-count')).toHaveCount(0);
     // No strip: only the toast says it.
     await expect(
       page.getByRole('status').filter({ hasText: m.editor_access_lost() })
     ).toHaveCount(0);
+    // The lists read again drop it, and a note's header reads it again then:
+    // once those had their chance, still one toast, never counted up.
     await expect(listed).toHaveCount(0, { timeout: 15_000 });
+    await page.waitForTimeout(2500);
+    await expect(kickedToast(page)).toHaveCount(1);
+    await expect(page.locator('.tst-count')).toHaveCount(0);
     if (shots && close === 'closeOpenNotesForAccess')
       await page.screenshot({ path: `${shots}/kicked-4403.png` });
     else if (shots && name === 'note')
       await page.screenshot({ path: `${shots}/kicked-unavailable.png` });
   });
+
+// Review 2026-11-20 (1): the tree event hiding a note reaches the page before
+// its room's drain, so its list drops it first and the header's read of it
+// (the list no longer carries it) is refused while its room is still open.
+// It worked here, so the page says it is unavailable with the toast all the
+// same, and the room's refusal after it adds none.
+test('a note its list drops before its room refuses says it is unavailable, with one toast', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(NOTE_URL);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 60_000 }
+  );
+  const listed = page.locator(
+    '[data-workspace-file-tree] a[href*="material=mat_note_1"]'
+  );
+  await expect(listed.first()).toBeVisible({ timeout: 60_000 });
+  // Refused from now, its read stale as five seconds make it, and its list
+  // read again as the tree event does; nothing closes its room.
+  await page.evaluate(async () => {
+    const paths = ['/src/mocks/db.ts', '/src/api/queryClient.ts'];
+    const [db, { queryClient }] = await Promise.all(
+      paths.map((path) => import(path))
+    );
+    const at = db.materials.findIndex(
+      (row: { id: string }) => row.id === 'mat_note_1'
+    );
+    db.materials.splice(at, 1);
+    await queryClient.invalidateQueries({
+      exact: true,
+      queryKey: ['material', 'mat_note_1'],
+      refetchType: 'none',
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ['workspace', 'ws_bio', 'materials'],
+    });
+  });
+  await expect(page.getByText(m.error_not_found_title())).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(kickedToast(page)).toBeVisible();
+  await expect(listed).toHaveCount(0, { timeout: 15_000 });
+  // The room's refusal after it, should any room of it still be open.
+  await refuseRooms(page);
+  await page.waitForTimeout(2500);
+  await expect(kickedToast(page)).toHaveCount(1);
+  await expect(page.locator('.tst-count')).toHaveCount(0);
+});
+
+// Review 2026-11-20 (6): a file with no room (a PDF) hears of a kick from its
+// list alone: once its workspace's files list no longer carries it, its page
+// reads it again, refused, and says it is unavailable with the toast.
+test('a PDF its list drops says it is unavailable, with one toast', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio?file=f_1');
+  await expect(page.getByTestId('content-header')).toBeVisible({
+    timeout: 60_000,
+  });
+  const listed = page.locator('[data-workspace-file-tree] a[href*="file=f_1"]');
+  await expect(listed.first()).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(() => readSettled(page, ['file', 'f_1']))
+    .toBeGreaterThan(0);
+  // Refused from now, and its list read again as the tree event does.
+  await page.evaluate(async () => {
+    const paths = ['/src/mocks/db.ts', '/src/api/queryClient.ts'];
+    const [db, { queryClient }] = await Promise.all(
+      paths.map((path) => import(path))
+    );
+    const at = db.files.findIndex((row: { id: string }) => row.id === 'f_1');
+    db.files.splice(at, 1);
+    await queryClient.invalidateQueries({
+      queryKey: ['workspace', 'ws_bio', 'files'],
+    });
+  });
+  await expect(page.getByText(m.error_not_found_title())).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(kickedToast(page)).toBeVisible();
+  await expect(listed).toHaveCount(0, { timeout: 15_000 });
+  await page.waitForTimeout(2500);
+  await expect(kickedToast(page)).toHaveCount(1);
+  await expect(page.locator('.tst-count')).toHaveCount(0);
+});
 
 // An item simply opened unavailable (its room never joined) says so as any
 // refusal, with no toast: the person lost nothing they had open.

@@ -1,4 +1,9 @@
-import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
+import {
+  MutationCache,
+  type Query,
+  QueryCache,
+  QueryClient,
+} from '@tanstack/react-query';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
@@ -36,6 +41,38 @@ export function isMissing(error: unknown): boolean {
   return (
     isApiError(error) &&
     (error.status === 404 || error.status === 401 || error.status === 410)
+  );
+}
+
+/** Any query, whatever its error type. */
+type AnyQuery = Query<unknown, unknown>;
+
+/** When each query last answered a fetch: a cache write (`setQueryData`,
+ * a restored store) is no answer. */
+const answers = new WeakMap<AnyQuery, number>();
+
+/** Notes a query's fetch answering, for `freshAnswer`; a `QueryCache`'s
+ * `onSuccess`. */
+export function noteAnswer(_data: unknown, query: AnyQuery) {
+  answers.set(query, Date.now());
+}
+
+/** How long a fetch's answer still counts for a page opening on it: a hover's
+ * preload or a route's loader lands seconds before the page shows, while an
+ * answer from an earlier visit is no sign of this one, whatever its stale
+ * time (review 2026-11-20). */
+const OPENING_MS = 10_000;
+
+/** Whether what a query holds is a fetch's answer from the last `OPENING_MS`,
+ * not marked stale since: a page opening on it opens on a real read. */
+export function freshAnswer(query: AnyQuery | undefined) {
+  const at = query && answers.get(query);
+  return (
+    !!query &&
+    at !== undefined &&
+    query.state.status === 'success' &&
+    !query.state.isInvalidated &&
+    Date.now() - at < OPENING_MS
   );
 }
 
@@ -107,6 +144,7 @@ export const queryClient = new QueryClient({
       )
         query.setState({ data: undefined, dataUpdatedAt: 0 });
     },
+    onSuccess: noteAnswer,
   }),
 });
 

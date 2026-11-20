@@ -1,4 +1,4 @@
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryObserver } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 import { m } from '@/i18n';
 import { ApiError, api, qk } from './client';
@@ -10,7 +10,7 @@ import {
   workspaceQuery,
   workspacesQuery,
 } from './hooks';
-import { isMissing } from './queryClient';
+import { isMissing, noteAnswer } from './queryClient';
 import type { SourceFile } from './types';
 
 const state = vi.hoisted(() => ({
@@ -244,8 +244,10 @@ const accessNotice = (
  * makes every read of it refused (404), and `start` opens the stream. */
 function openWorkspace(refuse?: (url: string) => boolean) {
   vi.useFakeTimers();
+  // As the app's, which notes each fetch's answer (`freshAnswer`).
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+    queryCache: new QueryCache({ onSuccess: noteAnswer }),
   });
   state.client = client;
   const server = { gone: false, reads: [] as string[] };
@@ -332,7 +334,9 @@ it('a removed member sees the workspace unavailable with one toast, and the stre
   }
 });
 
-it('a workspace stream refused at connect is no fault: the page shows it unavailable and notifications go on', async () => {
+// Review 2026-11-20 (4): its row cached from an earlier visit is no sign the
+// workspace worked on this page, so one opened unavailable says only that.
+it('a workspace stream refused at connect is no fault: the page shows it unavailable, with no toast, and notifications go on', async () => {
   const page = openWorkspace((url) => url.includes('workspace='));
   const { fetchStream, requests } = page.stream;
   try {
@@ -341,7 +345,7 @@ it('a workspace stream refused at connect is no fault: the page shows it unavail
     await vi.waitFor(() =>
       expect(isMissing(page.workspace.getCurrentResult().error)).toBe(true)
     );
-    expect(state.toast).toHaveBeenCalledExactlyOnceWith(lostToast);
+    expect(state.toast).not.toHaveBeenCalled();
     // Never marked disconnected: no Reconnecting banner.
     expect(page.client.getQueryData(qk.eventStream)).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1000);
@@ -351,6 +355,85 @@ it('a workspace stream refused at connect is no fault: the page shows it unavail
     expect(page.client.getQueryData(qk.eventStream)).toEqual({
       status: 'connected',
     });
+  } finally {
+    page.close();
+  }
+});
+
+// Review 2026-11-20 (4): a read of the workspace that answered while the page
+// was open counts, the stream never having connected with it.
+it('a workspace read that answered on this page makes its later refusal toast once', async () => {
+  const page = openWorkspace((url) => url.includes('workspace='));
+  const { fetchStream, send } = page.stream;
+  try {
+    page.start();
+    // The refused stream reads the workspace, which still answers.
+    await vi.waitFor(() =>
+      expect(page.server.reads).toContain(`/workspaces/${WS}`)
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.waitFor(() => expect(fetchStream).toHaveBeenCalledTimes(2));
+    expect(state.toast).not.toHaveBeenCalled();
+    page.server.gone = true;
+    send('notification', accessNotice('workspace_member_removed'));
+    await vi.waitFor(() =>
+      expect(isMissing(page.workspace.getCurrentResult().error)).toBe(true)
+    );
+    expect(state.toast).toHaveBeenCalledExactlyOnceWith(lostToast);
+  } finally {
+    page.close();
+  }
+});
+
+// Review 2026-11-20 (5): a hover's preload answered the workspace's read just
+// before the page opened on it, fresh, so the page fetched nothing itself:
+// refused at connect, the workspace worked here all the same.
+it('a workspace read answered just before the page opened makes its refusal toast once', async () => {
+  const page = openWorkspace((url) => url.includes('workspace='));
+  try {
+    // Its row cached from an earlier visit; the preload reads it afresh.
+    await page.client.invalidateQueries({
+      queryKey: qk.workspace(WS),
+      refetchType: 'none',
+    });
+    await page.client.prefetchQuery({
+      ...workspaceQuery(WS),
+      staleTime: 60_000,
+    });
+    expect(page.server.reads).toEqual([`/workspaces/${WS}`]);
+    page.server.gone = true;
+    page.start();
+    await vi.waitFor(() =>
+      expect(isMissing(page.workspace.getCurrentResult().error)).toBe(true)
+    );
+    expect(state.toast).toHaveBeenCalledExactlyOnceWith(lostToast);
+  } finally {
+    page.close();
+  }
+});
+
+// Review 2026-11-20, round 3 (1): a member viewed the workspace, went
+// elsewhere and was removed from it, then opens it again within its row's
+// 5 minutes: the row paints with no read, and refused at connect it says only
+// that it is unavailable.
+it('a workspace read from an earlier visit, still within its stale time, makes no refusal toast', async () => {
+  const page = openWorkspace((url) => url.includes('workspace='));
+  try {
+    await page.client.invalidateQueries({
+      queryKey: qk.workspace(WS),
+      refetchType: 'none',
+    });
+    await page.client.prefetchQuery({
+      ...workspaceQuery(WS),
+      staleTime: 5 * 60_000,
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    page.server.gone = true;
+    page.start();
+    await vi.waitFor(() =>
+      expect(isMissing(page.workspace.getCurrentResult().error)).toBe(true)
+    );
+    expect(state.toast).not.toHaveBeenCalled();
   } finally {
     page.close();
   }

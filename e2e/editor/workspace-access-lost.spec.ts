@@ -4,8 +4,8 @@ import { hideScenarioPanel } from './helpers';
 
 // Epo 2026-11-20, as for an item someone was kicked from: a member removed
 // from the workspace their page shows sees it unavailable, with one error
-// toast "You no longer have access", and the events stream goes on without
-// the workspace instead of reconnecting to it.
+// toast "You no longer have access". The mock has no events stream, so how
+// the stream goes on without the workspace is eventStream.test.ts's.
 
 const WORKSPACE = 'ws_bio';
 
@@ -38,7 +38,7 @@ async function removeMember(page: Page) {
 // 360 px.
 const shots = process.env.WORKSPACE_ACCESS_LOST_SCREENSHOTS;
 
-test('a member removed from the open workspace sees it unavailable, with one toast and no Reconnecting', async ({
+test('a member removed from the open workspace sees it unavailable, with one toast', async ({
   page,
 }) => {
   await page.goto(`/workspaces/${WORKSPACE}?material=mat_note_1`);
@@ -62,10 +62,6 @@ test('a member removed from the open workspace sees it unavailable, with one toa
   await expect(toast).toHaveCount(1);
   await expect(toast.locator('.tst-count')).toHaveCount(0);
   await expect(unavailable).toBeVisible();
-  // No Reconnecting card (AccountStatusBanner).
-  await expect(
-    page.locator('[data-connection-status="reconnecting"]')
-  ).toHaveCount(0);
 
   if (shots) {
     await hideScenarioPanel(page);
