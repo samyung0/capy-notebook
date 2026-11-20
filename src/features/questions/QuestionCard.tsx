@@ -17,6 +17,8 @@ import {
   ToolbarPopoverContent,
   ToolbarPopoverGroup,
 } from '@/components/ui/ToolbarPopover';
+import { boardCode, useCodeFailed } from '@/features/materials/blockCode';
+import { CannotShow } from '@/features/materials/CannotShow';
 import {
   DrawnSampleField,
   type UploadDrawnSample,
@@ -1036,6 +1038,9 @@ export function QuestionCard({
   const [openPart, setOpenPart] = useState(firstPart);
   // The part whose sample answer is being added: its text, or its board.
   const [sampleFor, setSampleFor] = useState<string | null>(null);
+  // A drawn sample's board that could not load: "This block cannot be shown"
+  // where Draw sample answer was.
+  const boardFailed = useCodeFailed(boardCode);
   // The part whose Solution was just added, opened in its editor.
   const [solutionFor, setSolutionFor] = useState<string | null>(null);
   const [figure, setFigure] = useState<Figure | null>(null);
@@ -1106,12 +1111,16 @@ export function QuestionCard({
   const solutionButtons = (part: QuestionPart) => (
     <>
       {canAddSample(part) &&
-        footerButton(
-          part.answer.type === 'drawing'
-            ? m.drawing_sample_draw()
-            : m.question_ui_sample_answer_heading(),
-          () => setSampleFor(part.id)
-        )}
+        (part.answer.type === 'drawing' && boardFailed ? (
+          <CannotShow className="px-2.5" />
+        ) : (
+          footerButton(
+            part.answer.type === 'drawing'
+              ? m.drawing_sample_draw()
+              : m.question_ui_sample_answer_heading(),
+            () => setSampleFor(part.id)
+          )
+        ))}
       {canAddSolution(part) &&
         footerButton(m.quiz_editor_worked_solution(), () => addSolution(part))}
     </>
@@ -1621,6 +1630,7 @@ export function QuestionCard({
               )}
               {phone && lone && canAddSample(first) && (
                 <MenuItem
+                  disabled={first.answer.type === 'drawing' && boardFailed}
                   icon={<Icon name="plus" />}
                   label={m.question_ui_sample_answer_heading()}
                   onClick={() => setSampleFor(first.id)}

@@ -21,9 +21,11 @@ import {
 } from '@/features/notes/roomConnection';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from '@/features/notes/saveDelay';
 import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
+import type { LearnerQuestion } from '@/features/questions/types';
 import {
   applyReaderMessage,
   type ReaderLists,
+  readLearnerQuestions,
 } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
@@ -53,7 +55,7 @@ import { dropDeviceCopies } from '@/lib/sourceCache';
 import { copyOf, hiddenEdits } from './boardHidden';
 import { type CopyLabel, keepDeviceCopy, type RoomSeed } from './deviceCopy';
 import { offerExpiredDrafts } from './expiredDrafts';
-import type { NoteSeat } from './noteSeat';
+import { type NoteSeat, roomKey } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { tokenClientIds } from './protocol';
 import {
@@ -477,6 +479,11 @@ export class ItemRoom {
   };
 
   readonly getSnapshot = () => this.snapshot;
+
+  /** A quiz content room's questions as a learner sees them, once synced. */
+  learnerQuestions(): LearnerQuestion[] | undefined {
+    if (this.snapshot.synced) return readLearnerQuestions(this.doc, this.lists);
+  }
 
   private set(patch: Partial<ItemRoomSnapshot>) {
     const next = { ...this.snapshot, ...patch };
@@ -2019,8 +2026,10 @@ export function openItemRoom(
     const room = create(onReplace);
     return { close: () => room.destroy(), room };
   }
-  const key = [materialId, opening.document ?? 'content', !!opening.read].join(
-    ' '
+  const key = roomKey(
+    materialId,
+    opening.document ?? 'content',
+    !!opening.read
   );
   const { release, room } = inside.hold(key, create, onReplace);
   // A reader may have opened it first, and it keeps no device copy.

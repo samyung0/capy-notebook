@@ -2,6 +2,14 @@ import { createContext } from 'react';
 import type { ItemRoom } from './itemRoom';
 import type { RoomProvider } from './roomProvider';
 
+/** The key a note's seat holds an item room by: its material, its document
+ * and whether it reads. */
+export const roomKey = (
+  materialId: string,
+  document: 'content' | 'keys',
+  read: boolean
+) => [materialId, document, read].join(' ');
+
 /** A room that joins inside a note's channel (an embed's RoomProvider). */
 export interface SeatedRoom {
   /** The note's channel ended or joins again; the server closed the room's
@@ -104,6 +112,14 @@ export class NoteSeat {
       },
       room: current.room,
     };
+  }
+
+  /** The content room a copy holds here for `materialId`, if one does. */
+  contentRoom(materialId: string): ItemRoom | undefined {
+    return (
+      this.held.get(roomKey(materialId, 'content', false)) ??
+      this.held.get(roomKey(materialId, 'content', true))
+    )?.room;
   }
 }
 

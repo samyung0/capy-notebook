@@ -340,7 +340,9 @@ card's frost over a page frame.
 A route chunk the deploy removed (a missing `/assets/*` name is a 404
 `no-store` from the assets Worker, deployment-runbook §1) fails as a
 chunk-load error: the router reloads once, then shows "An update is ready"
-with Reload.
+with Reload. A chunk with a stylesheet (the drawing board's, KaTeX's) fails
+in Vite's preload helper first, "Unable to preload CSS for …", which counts
+as a chunk-load error too (`CHUNK_LOAD_PATTERN`).
 
 A page whose entry script, a chunk it needs or a stylesheet fails to load
 while the boot spinner shows (a fresh load in the deploy window, whose old
@@ -407,6 +409,22 @@ preload that fails says nothing: only an open the user asked for shows a toast.
   no toast of its own, trying once more when the connection is back, otherwise with
   the update toast. A browser that keeps the failed import stays on those words until
   a reload.
+
+A note's Preview loads the code its blocks need before it draws, for at most 30 s (Epo
+2026-11-20, plate-editor "Its code"), offline too, so no chunk it needs fails later to its
+pane's boundary. A block or part whose code could not load for a load someone asked for
+(Preview, a drawn graph, a pressed button; an idle preload's failure says nothing) shows
+"This block cannot be shown" in its place (`CannotShow`), decided from how the load
+settled (`useCodeFailed` in `blockCode.ts`), not from a thrown error: a graph whose engine
+failed, wherever a graph shows (KaTeX failing leaves the graph without its formulas); a
+drawing part's Draw, Edit drawing or Open drawing, and a drawn sample's button, wherever
+the board's code failed; an HTML embed's View source, in Preview and in the editor. The
+mutation error toast (`showErrorToast`) shows too, once a chunk, a stale or missing
+chunk's with Reload: the browser keeps the failed import, so only a reload brings it. A
+load that failed offline waits for the window's `online` event, then shows "Some blocks
+couldn't load" with Reload once (`error_chunk_offline_*`; the update copy would be wrong
+there). Code still loading at 30 s shows the same notice in that Preview until it opens
+again.
 
 ## Shared-resource security
 

@@ -223,6 +223,17 @@ describe('frontend error normalization', () => {
     expect(describeError(error).action).toBe('reload');
   });
 
+  // A production chunk with a stylesheet (the drawing board's) fails in Vite's
+  // preload helper, before the import.
+  it("recognizes a chunk's stylesheet that failed to preload", () => {
+    const error = new Error(
+      'Unable to preload CSS for /assets/DrawingBoardScreen-Bx1.css'
+    );
+
+    expect(errorKind(error)).toBe('chunkLoad');
+    expect(describeError(error).action).toBe('reload');
+  });
+
   it('describes code that failed to load offline as offline, not as an update', () => {
     const chunk = new TypeError(
       'Failed to fetch dynamically imported module: /assets/page.js'

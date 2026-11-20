@@ -2738,15 +2738,67 @@ The editor stays mounted, joined and undoable behind it (its mounts hidden and `
 actions stay reachable (Review leaves Preview first), and it reads none of the editor's
 contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
 opens offline and shows text not yet saved; images use the links the editor already holds
-(`resolvedAssetLinks.ts`). Its code is there once the editor is: the static renderer comes
-with the editor's chunk, and `loadEditor` (`NoteBody.tsx`) loads the question text editor
-beside it, which an embedded quiz's long answers take in Preview (`QuestionRunner` loads it
-with the first long answer anywhere else), so drawing it offline needs no chunk the
-editor did not bring; opening a drawing answer's board, a drawn sample or an HTML embed's
-source still loads its own. It
+(`resolvedAssetLinks.ts`). It
 redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
 a collaborator's typing runs through too, and only changed blocks draw again. A room swap
 hands it the next editor without moving the reader.
+
+**Its code** (Epo 2026-11-20: pressing Preview loads the whole note first). Most of it is
+there once the editor is: the static renderer comes with the editor's chunk, and
+`loadEditor` (`NoteBody.tsx`) loads the question text editor beside it, which an embedded
+quiz's long answers take in Preview (`QuestionRunner` loads it with the first long answer
+anywhere else). Embedded quizzes and sets, a drawn sample's picture and the full-screen
+views of images, figures and diagrams come with the editor too. The rest the note's blocks
+need, what they draw with and what their buttons open, Preview loads as it opens and draws
+once all of it has loaded or failed, or 30 s passed (`PREVIEW_CODE_LIMIT_MS`, Epo
+2026-11-20). `codeOf` (`blockCode.ts`) walks the editor's value and each embedded quiz's
+questions as Preview draws them: the synced content room the editor's seat holds of it
+(`NoteSeat.contentRoom`, `ItemRoom.learnerQuestions`, read once an open), else the
+embed's stored read (`qk.quiz`; a quiz not read yet adds nothing). It keeps a top-level
+block's needs while the block is the same object, and a quiz's while its questions are the
+same array:
+
+| Kind | Code | For |
+| --- | --- | --- |
+| `graph` (a note's figure, a question's block) | the graph engine (`graphPaint`) | drawing it |
+| a graph's `formula` | KaTeX | laying out its formulas |
+| `html_embed` | `HtmlEmbedSourceDialog` | View source |
+| a quiz part's `drawing` answer | the drawing board (`DrawingBoardScreen`, BlockSuite) | Draw, Edit drawing, Open drawing |
+| `equation`, `inline_equation`, a formula in a quiz's text, a quiz part's `open` answer | MathLive | drawing formulas; a long answer's Formula |
+
+Each loads once (`BlockCode`), for its lazy component and the preload alike. Until they
+settle (`Promise.allSettled`) the pane shows `PaneLoading` ("Loading preview") at once,
+and nothing when all of it is here already: a load that settled earlier, or MathLive
+registered by another import, counts at once. Each open waits afresh, a reopen before the
+last one's DOM left included. Code a block added while Preview is open needs loads without
+the loader. Edit from the loader goes back to where the editor was.
+
+A load is asked for (`load`) by Preview's walk, a drawn graph and a pressed button (Draw,
+Edit drawing, Open drawing, a drawn sample's, View source); the board's idle load ahead of
+a drawing part (`useBoardAhead`) is a preload (`preload`), whose failure marks nothing, so
+the part keeps Draw and a press asks again. What an asked load could not bring (offline, a
+failed chunk) shows "This block cannot be shown" (`CannotShow`, the words of a note's
+unknown block) in place of what needs it, read from how its load settled
+(`useCodeFailed`), never from a thrown error (a lazy component whose load failed draws the
+notice itself), and the rest of Preview stays: a graph shows it in its place; a drawing
+part in place of its grid and Draw, its Edit drawing or Open drawing, its verdict and a
+drawing already made staying; a drawn sample's field in place of its button, closing an
+open one, and the quiz editor's footer in place of Draw sample answer (the phone's ⋮ item
+disabled); an HTML embed in its toolbar where View source was, the embed itself still
+running. Those hold wherever the graph, the board or the source view show once their code
+failed, Edit included, and the error toast says why, with Reload (once a chunk; a load
+that failed offline shows "Some blocks couldn't load" with Reload once the connection is
+back). The browser keeps a failed import for the document (Chromium 151
+fails a second `import()` of the URL without a request), so a notice stays until a reload,
+which is what the toast offers. Code still loading at 30 s is given up for that open
+(`GivenUpCode`): what needs it shows the notice in Preview as for a failed load, even if it
+arrives meanwhile, until Preview opens again and checks again.
+
+MathLive and KaTeX are quiet: their users keep their own lines (a formula's TeX as text,
+the formula field's could-not-load line, a graph without its formulas), a failure marks
+nothing and is not kept, so `loadKatex` and a formula's `drawing` try again as they do. A
+Mermaid diagram, which draws in its worker, says "Diagrams couldn't load." itself; Preview
+waits for neither the worker nor an HTML embed's frame, which loads from its own site.
 
 Its embeds join inside the editor's `NoteSeat`, whose `writer` makes a reader under it take
 the editor's room of the embed rather than a read channel (the server closes the earlier of
