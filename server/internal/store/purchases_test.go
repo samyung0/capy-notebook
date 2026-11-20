@@ -264,6 +264,55 @@ func TestSavingTheSavedCardAgainArmsNothing(t *testing.T) {
 	}
 }
 
+// Q783 A: card A's setup, created two hours ago, saved A an hour ago; card B,
+// set up since, replaces it, and both B events save it once. Stripe's late
+// redelivery for A then changes nothing: B stays saved and disarmed. Fails
+// with the saved card's time left out of the save.
+func TestALateSaveForAReplacedReloadCardChangesNothing(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	now := time.Now().Truncate(time.Second)
+	cardA := PaymentMethod{ID: "pm_a", Type: "card", SetupCreated: now.Add(-2 * time.Hour)}
+	cardB := PaymentMethod{ID: "pm_b", Type: "card", SetupCreated: now.Add(-30 * time.Minute)}
+	if saved, err := s.SavePaymentMethod(ctx, userID, cardA, false); err != nil || !saved {
+		t.Fatalf("card A saved=%v err=%v", saved, err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE user_credits SET reload_pm_saved_at = now() - interval '1 hour'
+		WHERE user_id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []bool{true, false} {
+		if saved, err := s.SavePaymentMethod(ctx, userID, cardB, false); err != nil || saved != want {
+			t.Fatalf("card B event %d saved=%v err=%v, want %v", i+1, saved, err, want)
+		}
+	}
+	// A reload started since disarmed it.
+	if _, err := s.pool.Exec(ctx, `UPDATE user_credits SET reload_armed = false WHERE user_id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := s.SavePaymentMethod(ctx, userID, cardA, false); saved || !errors.Is(err, ErrReloadCardReplaced) {
+		t.Fatalf("late card A saved=%v err=%v, want ErrReloadCardReplaced", saved, err)
+	}
+	var held string
+	var armed bool
+	if err := s.pool.QueryRow(ctx, `SELECT reload_pm_id, reload_armed FROM user_credits WHERE user_id = $1`,
+		userID).Scan(&held, &armed); err != nil {
+		t.Fatal(err)
+	}
+	if held != "pm_b" || armed {
+		t.Fatalf("card = %q armed = %v, want card B kept disarmed", held, armed)
+	}
+	// A top-up's card is still saved only when none is.
+	topUp := PaymentMethod{ID: "pm_topup", Type: "card"}
+	if saved, err := s.SavePaymentMethod(ctx, userID, topUp, true); err != nil || saved {
+		t.Fatalf("top-up card saved=%v err=%v, want B kept", saved, err)
+	}
+	if saved, err := s.SavePaymentMethod(ctx, newCreditsTestUser(t, s), topUp, true); err != nil || !saved {
+		t.Fatalf("top-up card with none saved: saved=%v err=%v", saved, err)
+	}
+}
+
 func TestReloadOverTheSpendingLimitIsSkippedAndEmailed(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

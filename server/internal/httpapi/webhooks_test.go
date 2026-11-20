@@ -83,8 +83,10 @@ type fakeStore struct {
 	stripeVoidFails int
 	// reloadRetryUnwanted: the reload was turned off or given a new card.
 	reloadRetryUnwanted bool
-	// reloadMethods is each user's saved auto-reload method id.
+	// reloadMethods is each user's saved auto-reload method id, and
+	// reloadSavedAt when it was saved.
 	reloadMethods map[string]string
+	reloadSavedAt map[string]time.Time
 }
 
 func newFakeStore() *fakeStore {
@@ -100,6 +102,7 @@ func newFakeStore() *fakeStore {
 		associated:         map[string]string{},
 		redacted:           map[string]bool{},
 		reloadMethods:      map[string]string{},
+		reloadSavedAt:      map[string]time.Time{},
 	}
 }
 
@@ -236,7 +239,11 @@ func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store
 	if held == pm.ID || (onlyIfNone && held != "") {
 		return false, nil
 	}
+	if held != "" && !pm.SetupCreated.IsZero() && f.reloadSavedAt[userID].After(pm.SetupCreated) {
+		return false, store.ErrReloadCardReplaced
+	}
 	f.reloadMethods[userID] = pm.ID
+	f.reloadSavedAt[userID] = time.Now()
 	return true, nil
 }
 

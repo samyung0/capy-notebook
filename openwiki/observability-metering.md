@@ -982,7 +982,10 @@ through Stripe's API). Whichever arrives second finds that method already saved
 delivery, either event's and Stripe's redeliveries, voids the reloads Stripe is
 still retrying, which is safe to repeat, so a void that failed after the save
 is done by the next delivery (Q782 A); the `billing` event follows the save, or
-such a later void. Turning auto-reload off voids it too,
+such a later void. An event whose card setup (the SetupIntent's `created`)
+predates the saving of the account's current card (`reload_pm_saved_at`), when
+that card is another, is skipped: a late redelivery never brings back a
+replaced card (Q783 A). Turning auto-reload off voids it too,
 and so does `POST /api/billing/auto-reload/cancel-retry` (Cancel retry on the
 notice and the invoice row), which leaves auto-reload on but disarmed. A
 retrying plan invoice's Cancel opens `POST

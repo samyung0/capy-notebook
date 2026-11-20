@@ -702,13 +702,17 @@ func (a *api) reloadMethodSetupSucceeded(
 // save the card arms its one reload. Every delivery voids the reloads Stripe
 // is still retrying, which is safe to repeat, so a void that failed after the
 // save is done by the next delivery (Q782 A); the billing refresh follows the
-// save, or a later delivery's void when the save's own did not go through.
+// save, or a later delivery's void when the save's own did not go through. An
+// event for a card another card saved since replaced changes nothing (Q783 A).
 func (a *api) saveReloadMethod(ctx context.Context, userID, setupIntentID string) error {
 	pm, err := a.stripeSetupMethod(setupIntentID)
 	if err != nil {
 		return err
 	}
 	saved, err := a.wh.SavePaymentMethod(ctx, userID, pm, false)
+	if errors.Is(err, store.ErrReloadCardReplaced) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

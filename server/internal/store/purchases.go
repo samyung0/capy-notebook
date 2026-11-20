@@ -28,6 +28,9 @@ func CreditsMicrosForCents(cents int64) int64 {
 var (
 	ErrNoPaymentMethod         = errors.New("no saved payment method")
 	ErrPaymentMethodNotInstant = errors.New("payment method is not instant")
+	// ErrReloadCardReplaced: the saved reload card is another one, saved after
+	// this card's setup was created (Q783 A).
+	ErrReloadCardReplaced = errors.New("a newer reload card is saved")
 	// The API schema bounds these; reaching the store with one is a bug.
 	errInvalidCreditSetting = errors.New("invalid credit setting")
 )
@@ -62,6 +65,9 @@ type PaymentMethod struct {
 	// fingerprint, empty for any other method (Link earns none). The saved
 	// method keeps it so Usage can tell a card that already earned the grant.
 	CardKey string `json:"-"`
+	// SetupCreated is when the SetupIntent that saved a setup's card was
+	// created (Stripe's whole seconds); zero for a top-up's card.
+	SetupCreated time.Time `json:"-"`
 }
 
 // Instant methods confirm at once; auto-reload accepts only these.
@@ -236,24 +242,49 @@ func (s *Store) SetSpendingLimit(ctx context.Context, userID string, limitCents 
 // SavePaymentMethod stores the auto-reload method and reports whether it did.
 // onlyIfNone keeps an existing one: a top-up's card is saved only when none
 // is. A new card arms one reload; the method already saved is left as it is,
-// since setup Checkout and its SetupIntent both report the same card.
+// since setup Checkout and its SetupIntent both report the same card. A
+// setup's card is refused with ErrReloadCardReplaced when the saved card is
+// another one saved after that setup was created, so a late redelivery never
+// brings back a replaced card (Q783 A).
 func (s *Store) SavePaymentMethod(ctx context.Context, userID string, pm PaymentMethod, onlyIfNone bool) (bool, error) {
 	var expMonth, expYear *int
 	if pm.ExpMonth > 0 {
 		expMonth, expYear = &pm.ExpMonth, &pm.ExpYear
 	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO user_credits (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING;`, userID)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE user_credits
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `INSERT INTO user_credits (user_id) VALUES ($1)
+		ON CONFLICT (user_id) DO NOTHING`, userID); err != nil {
+		return false, err
+	}
+	// The row lock orders concurrent saves: one card's two events, a newer card.
+	var held *string
+	var savedAt *time.Time
+	if err := tx.QueryRow(ctx, `SELECT reload_pm_id, reload_pm_saved_at FROM user_credits
+		WHERE user_id = $1 FOR UPDATE`, userID).Scan(&held, &savedAt); err != nil {
+		return false, err
+	}
+	switch {
+	case held == nil:
+	case *held == pm.ID || onlyIfNone:
+		return false, nil
+	// Stripe's times are whole seconds.
+	case !pm.SetupCreated.IsZero() && savedAt != nil && savedAt.Truncate(time.Second).After(pm.SetupCreated):
+		return false, ErrReloadCardReplaced
+	}
+	if _, err := tx.Exec(ctx, `UPDATE user_credits
 		SET reload_pm_id = $2, reload_pm_type = $3, reload_pm_brand = NULLIF($4, ''),
 		    reload_pm_last4 = NULLIF($5, ''), reload_pm_exp_month = $6, reload_pm_exp_year = $7,
-		    reload_pm_card_key = NULLIF($9, ''), reload_armed = true, updated_at = now()
-		WHERE user_id = $1 AND (NOT $8 OR reload_pm_id IS NULL) AND reload_pm_id IS DISTINCT FROM $2`,
-		userID, pm.ID, pm.Type, pm.Brand, pm.Last4, expMonth, expYear, onlyIfNone, pm.CardKey)
-	return err == nil && tag.RowsAffected() == 1, err
+		    reload_pm_card_key = NULLIF($8, ''), reload_pm_saved_at = now(), reload_armed = true,
+		    updated_at = now()
+		WHERE user_id = $1`,
+		userID, pm.ID, pm.Type, pm.Brand, pm.Last4, expMonth, expYear, pm.CardKey); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
 }
 
 // GrantStarterCredits adds the one-off starter credits for a saved card. Each

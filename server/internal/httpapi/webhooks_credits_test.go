@@ -26,7 +26,9 @@ func newCreditTestServer(t *testing.T, f *fakeStore, outcome billing.ReloadResul
 			return store.PaymentMethod{ID: "pm_topup", Type: "card", CardKey: "card:fp_topup"}, nil
 		},
 		stripeSetupMethod: func(string) (store.PaymentMethod, error) {
-			return store.PaymentMethod{ID: "pm_setup", Type: "card", CardKey: "card:fp_setup"}, nil
+			return store.PaymentMethod{
+				ID: "pm_setup", Type: "card", CardKey: "card:fp_setup", SetupCreated: time.Now().Add(-time.Hour),
+			}, nil
 		},
 		stripeVoidInvoice: func(id string) error {
 			if f.stripeVoidFails > 0 {
@@ -186,6 +188,26 @@ func TestStripeWebhook_ARedeliveredReloadCardSaveVoidsWhatItsFailedVoidLeft(t *t
 	}
 	if !slices.Equal(f.creditCalls, want) || !slices.Equal(*voided, []string{"in_old_card"}) {
 		t.Fatalf("calls = %q voided = %q, want %q and one void", f.creditCalls, *voided, want)
+	}
+}
+
+// Q783 A: Stripe redelivers both events of a card set up an hour ago after a
+// newer card was saved; neither brings the old card back, grants or voids.
+// Fails with the replaced card's event handled as a failure.
+func TestStripeWebhook_ALateEventForAReplacedReloadCardChangesNothing(t *testing.T) {
+	f := newFakeStore()
+	f.stripeCustomers["cus_1"] = "user_1"
+	f.retryingReloads = []string{"in_new_card"}
+	f.reloadMethods["user_1"] = "pm_new"
+	f.reloadSavedAt["user_1"] = time.Now()
+	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+
+	sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", reloadSetupIntent("reload_method", "user_1"))
+	sendStripe(t, srv, "evt_checkout", "checkout.session.completed", reloadSetupCheckout())
+	want := []string{"method user_1 pm_setup false", "method user_1 pm_setup false"}
+	if !slices.Equal(f.creditCalls, want) || len(*voided) != 0 || f.reloadMethods["user_1"] != "pm_new" {
+		t.Fatalf("calls = %q voided = %q card = %q, want %q and the new card kept",
+			f.creditCalls, *voided, f.reloadMethods["user_1"], want)
 	}
 }
 
