@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-
-/** BlockSuite loads only for a drawing part. */
-export const loadBoard = () => import('./DrawingBoardScreen');
+import { boardCode } from '@/features/materials/blockCode';
 
 /** Runs `run` in idle time, but within a second; returns its cancel. */
 export function whenIdle(run: () => void) {
@@ -19,7 +17,8 @@ let holder: object | null = null;
 
 /**
  * Once a drawing part or a sample answer field shows, fetches and evaluates the
- * board's module (about 650 KB gzipped) in idle time. With `ahead`, it then
+ * board's module (about 650 KB gzipped) in idle time; a failure here marks
+ * nothing, and Draw asks again (blockCode). With `ahead`, it then
  * returns true when this part may mount its board hidden, so Draw shows a board
  * that takes a stroke at once (Epo 2026-11-07, fix 4: "the moment they click they
  * should be able to draw already"); the board mounts in idle time too. A first
@@ -33,7 +32,8 @@ export function useBoardAhead(ahead: boolean) {
     let live = true;
     const cancel = whenIdle(
       () =>
-        void loadBoard()
+        void boardCode
+          .preload()
           .then(() => {
             if (!(live && ahead && holder === null)) return;
             holder = me;

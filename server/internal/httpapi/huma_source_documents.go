@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -168,9 +169,9 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 		}
 		return a.browserSourceSession(ctx, session)
 	}
-	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
+	session, err := a.sourceSession(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, err
 	}
 	// After authorization, so an actor without access still reads not found.
 	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
@@ -265,10 +266,26 @@ type sourceCollaborationTokenInput struct {
 	Body *SourceCollaborationTokenBody `required:"false"`
 }
 
-func (a *api) createSourceCollaborationToken(ctx context.Context, in *sourceCollaborationTokenInput) (*sourceTokenOutput, error) {
-	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
+// sourceSession is the editing session of a file the caller may open, or
+// the refusal: a trashed one they could read answers 410 `item_deleted`
+// (deletedError), as both an edit open's session read and its room token
+// do, whichever it hears first.
+func (a *api) sourceSession(ctx context.Context, id string) (store.SourceSession, error) {
+	session, err := a.s.SourceSession(ctx, userID(ctx), id)
 	if err != nil {
-		return nil, hErr(err)
+		live := func() error { _, err := a.s.SourceSession(ctx, userID(ctx), id); return err }
+		if gone := a.deletedError(ctx, agenttools.KindSourceFile, id, err, live); gone != nil {
+			return session, gone
+		}
+		return session, hErr(err)
+	}
+	return session, nil
+}
+
+func (a *api) createSourceCollaborationToken(ctx context.Context, in *sourceCollaborationTokenInput) (*sourceTokenOutput, error) {
+	session, err := a.sourceSession(ctx, in.ID)
+	if err != nil {
+		return nil, err
 	}
 	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
 		return nil, hErr(err)

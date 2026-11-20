@@ -1,7 +1,14 @@
-import { lazy, Suspense, useContext, useMemo, useState } from 'react';
-import type * as Y from 'yjs';
+import {
+  lazy,
+  Suspense,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import * as Y from 'yjs';
 import { uploadEditorAsset } from '@/api/editorAssets';
-import type { Question } from '@/api/types';
+import type { LearnerQuestion, Question } from '@/api/types';
 import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
@@ -19,6 +26,8 @@ import {
   figureRoom,
   moveQuestion,
   removeQuestion,
+  seedQuiz,
+  withEmptyKeys,
   writeQuestion,
 } from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
@@ -135,19 +144,32 @@ export function QuizForm({
 
 /** A quiz's stored edits that cannot join its rooms (refused, or left
  * behind by a room that moved on), read-only to copy until Reload, as a
- * note's are (Epo 2026-10-04). A document without such edits reads live. */
+ * note's are (Epo 2026-10-04). A document without such edits reads live,
+ * except a deleted quiz's content, which no room serves: its questions are
+ * the page's last read (`stored`), beside the keys' edits. */
 export function QuizRecovery({
   recovery,
   rooms,
+  stored,
 }: {
   recovery: NonNullable<QuizRooms['recovery']>;
   rooms: QuizRooms;
+  stored?: LearnerQuestion[];
 }) {
+  const read = rooms.deleted && !recovery.content ? stored : undefined;
+  const lastRead = useMemo(() => {
+    if (!read) return null;
+    const content = new Y.Doc();
+    seedQuiz(content, new Y.Doc(), read.map(withEmptyKeys));
+    return content;
+  }, [read]);
+  useEffect(() => () => lastRead?.destroy(), [lastRead]);
   const questions = useQuizQuestions(
-    recovery.content?.doc ?? rooms.content?.doc,
+    lastRead ?? recovery.content?.doc ?? rooms.content?.doc,
     recovery.keys?.doc ?? rooms.keys?.doc
   );
   const state = recoveryBanner({
+    deleted: !!(recovery.content?.deleted || recovery.keys?.deleted),
     refused: !!(recovery.content?.refused || recovery.keys?.refused),
   });
   return (

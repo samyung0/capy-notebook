@@ -1,6 +1,11 @@
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
-import { isAccountForbiddenError, isApiError } from '@/api/client';
+import {
+  type DeletedItem,
+  deletedItemOf,
+  isAccountForbiddenError,
+  isApiError,
+} from '@/api/client';
 import type { MaterialCollaborationToken } from '@/api/types';
 import { tabAllowance } from '@/features/collaboration/allowance';
 import { setHeld } from '@/features/collaboration/held';
@@ -320,8 +325,20 @@ export async function deleteAccountDrafts(actorId: string): Promise<void> {
   );
 }
 
+/** The materials this account holds stored edits for (their content or a
+ * quiz's keys), by id. */
+export async function draftMaterials(actorId: string): Promise<Set<string>> {
+  const documents = await call<Record<string, string[]>>({
+    op: 'documents',
+    prefix: `${actorId}:material:`,
+  });
+  return new Set(
+    Object.keys(documents).flatMap((key) => documentOf(key)?.id ?? [])
+  );
+}
+
 /** Deletes the stored edits of a document this account lost (a 404, or a 403
- * not about the account itself) and reports them as discarded, when there
+ * not about the account itself), and reports them as discarded, when there
  * were any (edit_incidents). Queued before a live recorder's own discard, it
  * counts that session's rows too. */
 export async function dropLostDrafts(
@@ -515,6 +532,118 @@ export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
   Y.applyUpdate(doc, mergedRows(rows), origin);
 }
 
+/** A deleted item's stored edits as one document (Q39, Q42), drawn from the
+ * rows alone: every session's rows of one lineage (and, for a source, one
+ * base), applied whole, the group edited last first. A board's hidden edits
+ * (Q33, a copy of its early board with what still showed deleted) are a
+ * group of their own: merged with the session's, they would delete that
+ * content from the drawing. A group none of whose rows the document can
+ * place without the room's state is passed over for the next. The group's
+ * newest row says its base; `rows` are the group's rows the document holds,
+ * the only ones its Reload or Download deletes: an update still pending in
+ * it (a crashed online session's, on the room's state) stays for the next
+ * page load's offer. Null when no group places anything. */
+export function deletedDocument(
+  rows: readonly EditDraft[],
+  docOptions?: DocOptions
+): { doc: Y.Doc; newest: EditDraft; rows: EditDraft[] } | null {
+  const groups = new Map<string, EditDraft[]>();
+  for (const row of rows.filter(yjsRow)) {
+    const group = `${row.lineage}\n${row.base ?? ''}\n${!!row.hidden}`;
+    groups.set(group, [...(groups.get(group) ?? []), row]);
+  }
+  const newestOf = (group: EditDraft[]) =>
+    group.reduce((last, row) => (row.savedAt > last.savedAt ? row : last));
+  const ordered = [...groups.values()].sort(
+    (a, b) => newestOf(b).savedAt - newestOf(a).savedAt
+  );
+  for (const group of ordered) {
+    const doc = new Y.Doc(docOptions);
+    applyDrafts(doc, group, null);
+    const holds = holder(doc);
+    const drew = group.filter((row) => holds(row.data));
+    if (drew.length) return { doc, newest: newestOf(group), rows: drew };
+    doc.destroy();
+  }
+  return null;
+}
+
+/** What a deleted item's open page shows of its stored edits, or its
+ * Download drew (Q39, Q42). Its Reload or Download deletes only those rows
+ * (`shownRows`); the rest stay for the next page load's offer. */
+export interface ShownDrafts {
+  /** The document shown: drawn from `rows`, or an open session's own. */
+  doc?: Y.Doc;
+  /** The rows drawn, as they were (a row rewritten since stays). Without
+   * them, the Yjs rows whose every edit the open session's `doc` holds. */
+  rows?: readonly EditDraft[];
+}
+
+/** Whether `doc` holds everything an update adds: each of its structs (a
+ * client's clocks up to its last) and each deletion. */
+function holder(doc: Y.Doc) {
+  const clocks = Y.decodeStateVector(Y.encodeStateVector(doc));
+  const deleted = Y.createDeleteSetFromStructStore(doc.store).clients;
+  // Whether a client's clocks from `clock` up to `end` are all deleted.
+  const covered = (client: number, clock: number, end: number) => {
+    const ranges = deleted.get(client) ?? [];
+    let from = clock;
+    while (from < end) {
+      const range = rangeAt(ranges, from);
+      if (!range) return false;
+      from = range.clock + range.len;
+    }
+    return true;
+  };
+  return (data: Uint8Array) => {
+    for (const [client, clock] of Y.parseUpdateMeta(data).to)
+      if ((clocks.get(client) ?? 0) < clock) return false;
+    for (const [client, ranges] of Y.decodeUpdate(data).ds.clients)
+      for (const { clock, len } of ranges)
+        if (!covered(client, clock, clock + len)) return false;
+    return true;
+  };
+}
+
+/** The deleted range holding `clock`, of ranges in clock order. */
+function rangeAt(ranges: { clock: number; len: number }[], clock: number) {
+  let low = 0;
+  let high = ranges.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const range = ranges[middle];
+    if (range.clock + range.len <= clock) low = middle + 1;
+    else if (range.clock > clock) high = middle - 1;
+    else return range;
+  }
+  return null;
+}
+
+/** The rows of `stored` that `shown` shows: the rows it drew, as they were,
+ * or else the Yjs rows whose every edit its open session's document has. */
+export function shownRows(
+  stored: readonly EditDraft[],
+  shown: ShownDrafts
+): EditDraft[] {
+  if (shown.rows) {
+    const drawn = new Set(shown.rows.map((row) => `${row.id}\n${row.seq}`));
+    return stored.filter((row) => drawn.has(`${row.id}\n${row.seq}`));
+  }
+  const holds = shown.doc ? holder(shown.doc) : null;
+  return stored.filter((row) => yjsRow(row) && !!holds?.(row.data));
+}
+
+/** Deletes the rows of the document `key` that `shown` holds; resolves their
+ * bytes. */
+export async function deleteShownDrafts(
+  key: string,
+  shown: ShownDrafts
+): Promise<number> {
+  const rows = shownRows(await readDrafts(key), shown);
+  await deleteDrafts(rows);
+  return draftBytes(rows);
+}
+
 /** A recovery group as one document, or null when it cannot be drawn: update
  * rows whose base was never stored (a tab closed online, then the room moved). */
 export function recoveryDocument(
@@ -544,17 +673,74 @@ function webLocks(): LockManager | undefined {
   return typeof navigator === 'undefined' ? undefined : navigator.locks;
 }
 
+// The locks this page holds, by name and count: a sweep skips a document an
+// editor or page here holds where the browser has no Web Locks too.
+const heldHere = new Map<string, number>();
+
 /** Holds a lock until the returned release (an editor's session): a sweep
  * skips the documents an editor holds, a late merge the sessions. */
 function holdLock(name: string, mode: LockMode): () => void {
+  heldHere.set(name, (heldHere.get(name) ?? 0) + 1);
+  let released = false;
+  const forget = () => {
+    if (released) return;
+    released = true;
+    const count = (heldHere.get(name) ?? 1) - 1;
+    if (count) heldHere.set(name, count);
+    else heldHere.delete(name);
+  };
   const locks = webLocks();
-  if (!locks) return () => undefined;
+  if (!locks) return forget;
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
   void locks.request(name, { mode }, () => held).catch(() => undefined);
-  return release;
+  return () => {
+    forget();
+    release();
+  };
+}
+
+/** Deletes the rows of the document `key` that `pick` takes, as stored now,
+ * unless an editor or a page holds the document, here or (with Web Locks) in
+ * another tab: a deleted item's toast acts only on what it offered, never on
+ * the edits of a session opened since (a restore, Q40). Resolves the bytes
+ * deleted, or null when the document is held. */
+export async function deleteUnheldDrafts(
+  key: string,
+  pick: (row: EditDraft) => boolean
+): Promise<number | null> {
+  if (heldHere.has(documentLock(key))) return null;
+  const run = async () => {
+    const rows = (await readDrafts(key)).filter(pick);
+    await deleteDrafts(rows);
+    return draftBytes(rows);
+  };
+  const locks = webLocks();
+  if (!(locks && stored(key))) return run();
+  return locks.request(documentLock(key), { ifAvailable: true }, (lock) =>
+    lock ? run() : null
+  );
+}
+
+/** Whether an editor or a page here holds the document `key`. */
+export const draftDocumentHeld = (key: string) =>
+  heldHere.has(documentLock(key));
+
+/** Whether an editor or a page here holds a document of `actorId`'s material
+ * `id`: its content or a quiz's keys. */
+export const materialHeldHere = (actorId: string, id: string) =>
+  [
+    draftKey(actorId, 'material', id),
+    `${draftKey(actorId, 'material', id)}:keys`,
+  ].some(draftDocumentHeld);
+
+/** Holds a document as an editor does, until the returned release: a page
+ * showing a deleted item's unsent edits (Q39) is their one owner, so no sweep
+ * offers or deletes them meanwhile. */
+export function holdDraftDocument(key: string): () => void {
+  return stored(key) ? holdLock(documentLock(key), 'shared') : () => undefined;
 }
 
 /** Takes `name` when no one holds it, until the returned release; null when
@@ -1196,7 +1382,8 @@ export type DraftRecorder = ReturnType<typeof recordDrafts>;
 
 /** Whether the server says this account no longer has the document: a 404,
  * or a 403 that is not about the account itself (suspended, deletion
- * pending), which keeps the drafts. */
+ * pending), which keeps the drafts. A deleted item (410, Q41) is neither:
+ * its drafts are offered (`deletedItemOf`). */
 function goneReason(error: unknown) {
   if (!isApiError(error)) return null;
   if (error.status === 404) return 'not_found';
@@ -1439,31 +1626,51 @@ async function sendPiece(
 // ws: and wss: become http: and https:.
 const WEBSOCKET_SCHEME = /^ws/;
 
+/** A deleted item's stored drafts the load sweep found (Q40): every key of
+ * it (a quiz's keys document beside its content), offered once the sweep
+ * ends. */
+export interface DeletedDrafts {
+  file: boolean;
+  id: string;
+  item: DeletedItem;
+  keys: string[];
+  /** The row ids each document held when they were offered: the toast's
+   * Discard and Download act on those alone (Q40). */
+  offered: Record<string, readonly string[]>;
+}
+
 interface SweepOptions {
   /** The page load's first sweep (the default): drafts of documents the
    * account lost go (once per page load, human/frontend/error-handling.md
-   * 2026-10-04), and it reads every document, settled or not. */
+   * 2026-10-04), drafts of deleted items are offered (`onDeleted`), and it
+   * reads every document, settled or not. */
   cleanup?: boolean;
   /** False once the page signed in as someone else: the sweep stops. */
   current?: () => boolean;
+  /** The load sweep met a deleted item's drafts (Epo 2026-11-20, Q40, Q41):
+   * called once per item after the sweep, and the drafts stay. */
+  onDeleted?: (drafts: DeletedDrafts) => void;
 }
 
 /**
  * One document of a sweep: its drafts go when the account lost it (the load
- * sweep only), else, when `send`, each group of current rows goes to its
- * room, and rows go only after their receipt. A refused group is marked
- * refused, to open read-only as the editor's refusals do, when it draws on
- * its own; one that needs the room's state, and a group only the editor can
- * send, are marked `held`, never sent again: the editor's next open applies
- * a held group of an accepted session and shows any other copy-only
- * (`draftGroups`, Q360). A late group is marked `late`: the editor's next
- * open merges it. Resolves whether the rows are settled for this page load.
+ * sweep only), and stay when the item was deleted, for `deleted` (the load
+ * sweep only) to offer; else, when `send`, each group of current rows goes
+ * to its room, and rows go only after their receipt. A refused group is
+ * marked refused, to open read-only as the editor's refusals do, when it
+ * draws on its own; one that needs the room's state, and a group only the
+ * editor can send, are marked `held`, never sent again: the editor's next
+ * open applies a held group of an accepted session and shows any other
+ * copy-only (`draftGroups`, Q360). A late group is marked `late`: the
+ * editor's next open merges it. Resolves whether the rows are settled for
+ * this page load.
  */
 async function sweepDocument(
   key: string,
   api: SweepApi,
   send: boolean,
-  { cleanup = true, current = () => true }: SweepOptions
+  { cleanup = true, current = () => true }: SweepOptions,
+  deleted: (item: DeletedItem) => void
 ): Promise<boolean> {
   const target = documentOf(key);
   if (!target) return true;
@@ -1473,6 +1680,12 @@ async function sweepDocument(
   try {
     token = await roomToken(api, kind, id, false);
   } catch (error) {
+    // Deleted, not lost: its drafts stay, offered once the load sweep ends.
+    const item = deletedItemOf(error);
+    if (item) {
+      if (cleanup && current()) deleted(item);
+      return true;
+    }
     const missing = goneReason(error);
     // A failed lookup goes again at the next trigger; a lost document's
     // drafts wait for the load sweep, which deletes them (and reads every
@@ -1715,56 +1928,121 @@ const settledRows = new Map<string, string>();
  * One sweep of an account's stored drafts. A document an editor has open
  * (its lock is held) is skipped. Without Web Locks nothing is sent, since a
  * sweep cannot tell which documents an editor holds; lost documents still
- * go. When another tab is sweeping, this one does nothing.
+ * go. When another tab is sweeping, this one does nothing. Resolves the
+ * materials whose drafts stay unsettled by it: deleted (410 `item_deleted`),
+ * held by a page here or another tab's editor, or not answered; null when it
+ * did not sweep (another tab, a sign-out, an outdated page).
  */
 export async function sweepDrafts(
   actorId: string,
   api: SweepApi,
   options: SweepOptions = {}
-) {
-  const { cleanup = true, current = () => true } = options;
+): Promise<ReadonlySet<string> | null> {
+  const { cleanup = true, current = () => true, onDeleted } = options;
   const locks = webLocks();
   const sweep = async () => {
     const documents = await call<Record<string, string[]>>({
       op: 'documents',
       prefix: `${actorId}:`,
     });
+    // Deleted items whose drafts stay, one entry per item.
+    const deleted = new Map<string, DeletedDrafts>();
+    const kept = new Set<string>();
+    const keep = (key: string) => {
+      const target = documentOf(key);
+      if (target?.kind === 'material') kept.add(target.id);
+    };
     for (const [key, ids] of Object.entries(documents)) {
-      if (!current() || outdated) return;
+      if (!current() || outdated) return null;
       const seen = ids.join(' ');
       if (!cleanup && settledRows.get(key) === seen) continue;
+      // An editor or a page here holds it (also without Web Locks).
+      if (heldHere.has(documentLock(key))) {
+        keep(key);
+        continue;
+      }
+      const found = (item: DeletedItem) => {
+        keep(key);
+        const { id, kind } = documentOf(key)!;
+        const entry = deleted.get(`${kind}:${id}`) ?? {
+          file: kind === 'file',
+          id,
+          item,
+          keys: [],
+          offered: {},
+        };
+        entry.keys.push(key);
+        entry.offered[key] = ids;
+        deleted.set(`${kind}:${id}`, entry);
+      };
       const settled = locks
         ? await locks.request(
             documentLock(key),
             { ifAvailable: true },
             async (lock) =>
               !!lock &&
-              (await sweepDocument(key, api, true, { cleanup, current }))
+              (await sweepDocument(key, api, true, { cleanup, current }, found))
           )
-        : await sweepDocument(key, api, false, { cleanup, current });
+        : await sweepDocument(key, api, false, { cleanup, current }, found);
       if (settled) settledRows.set(key, seen);
+      else keep(key);
     }
+    if (!current()) return null;
+    // A page here that began showing one meanwhile owns it now (Q39).
+    for (const drafts of deleted.values())
+      if (!drafts.keys.some((key) => heldHere.has(documentLock(key))))
+        onDeleted?.(drafts);
+    return kept;
   };
   if (!locks) return sweep();
-  await locks.request(SWEEP_LOCK, { ifAvailable: true }, (lock) =>
-    lock ? sweep() : undefined
+  return locks.request(SWEEP_LOCK, { ifAvailable: true }, (lock) =>
+    lock ? sweep() : null
   );
 }
 
-let sweeping: { actorId: string; api: SweepApi } | null = null;
+// The page load's sweep by account: what it kept (`sweepDrafts`), once it
+// ends.
+const loadSweeps = new Map<string, Promise<ReadonlySet<string> | null>>();
+
+/** The materials the page load's draft sweep kept drafts of for `actorId`
+ * (`sweepDrafts`), once it ends; null when it did not sweep or none started.
+ * The device-copy sweep keeps those copies alone. */
+export function loadSweepKept(
+  actorId: string
+): Promise<ReadonlySet<string> | null> {
+  return loadSweeps.get(actorId) ?? Promise.resolve(null);
+}
+
+let sweeping: {
+  actorId: string;
+  api: SweepApi;
+  onDeleted: (drafts: DeletedDrafts) => void;
+} | null = null;
 
 /**
  * Sweeps the signed-in account's stored drafts from any open page (Epo
  * 2026-10-13): once when the page is idle (the load sweep, which also
- * deletes drafts of documents the account lost), when the browser comes back
- * online and when the tab becomes visible. A successful send is silent. The
- * drafts worker starts now, while the page is online: one that cannot load
- * fails every request for the page load.
+ * deletes drafts of documents the account lost and hands `onDeleted` those
+ * of deleted items, Q40), when the browser comes back online and when the
+ * tab becomes visible. A successful send is silent. The drafts worker starts
+ * now, while the page is online: one that cannot load fails every request
+ * for the page load.
  */
-export function startDraftSweeps(actorId: string, api: SweepApi) {
+export function startDraftSweeps(
+  actorId: string,
+  api: SweepApi,
+  onDeleted: (drafts: DeletedDrafts) => void
+) {
   if (sweeping?.actorId === actorId) return;
   const first = !sweeping;
-  sweeping = { actorId, api };
+  sweeping = { actorId, api, onDeleted };
+  let loaded = (_kept: ReadonlySet<string> | null) => {};
+  loadSweeps.set(
+    actorId,
+    new Promise((resolve) => {
+      loaded = resolve;
+    })
+  );
   if (first)
     try {
       draftWorker();
@@ -1773,11 +2051,19 @@ export function startDraftSweeps(actorId: string, api: SweepApi) {
     }
   const run = (cleanup: boolean) => {
     const target = sweeping;
-    if (!target || outdated) return;
-    void sweepDrafts(target.actorId, target.api, {
+    if (!target || outdated) {
+      if (cleanup) loaded(null);
+      return;
+    }
+    const swept = sweepDrafts(target.actorId, target.api, {
       cleanup,
       current: () => sweeping === target,
-    }).catch((error) => console.warn('Draft sweep failed:', error));
+      onDeleted: target.onDeleted,
+    }).catch((error) => {
+      console.warn('Draft sweep failed:', error);
+      return null;
+    });
+    if (cleanup) void swept.then(loaded);
   };
   if (typeof requestIdleCallback === 'function')
     requestIdleCallback(() => run(true));

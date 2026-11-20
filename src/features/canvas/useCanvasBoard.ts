@@ -217,6 +217,7 @@ export function useCanvasBoard(
   const seed = useRoomSeed(id, actorId);
   const { room, snapshot } = useItemRoom(
     id,
+    'canvas',
     !!actorId && seed !== undefined && !trash,
     {
       actorId,

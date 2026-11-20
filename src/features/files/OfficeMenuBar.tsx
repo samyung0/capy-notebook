@@ -540,6 +540,7 @@ export function OfficeHeader({
   runtime: Pick<
     ReturnType<typeof useOfficeRuntime>,
     | 'analysis'
+    | 'banner'
     | 'handoff'
     | 'iframeRef'
     | 'menus'
@@ -584,13 +585,15 @@ export function OfficeHeader({
   const control = (
     <FileModeControl
       canEdit={canEdit}
+      // Deleted (Q39): either mode needs the file that is gone.
       disabled={
-        runtime.mode === 'view'
+        runtime.banner === 'deleted' ||
+        (runtime.mode === 'view'
           ? !runtime.analysis || runtime.sizeLimited
           : !runtime.ready ||
             runtime.saving ||
             runtime.handoff ||
-            runtime.replaced
+            runtime.replaced)
       }
       mode={runtime.mode}
       onChange={runtime.setRuntimeMode}

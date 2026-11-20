@@ -6939,6 +6939,7 @@ components:
             - read_only
             - forbidden
             - not_found
+            - item_deleted
             - unreadable
             - refused
             - changed

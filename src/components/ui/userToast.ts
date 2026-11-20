@@ -47,7 +47,8 @@ const sameToast = (a: Omit<ToastOptions, 'id'>, b: Omit<ToastOptions, 'id'>) =>
   (a.variant ?? 'default') === (b.variant ?? 'default') &&
   a.title === b.title &&
   a.description === b.description &&
-  a.button?.label === b.button?.label;
+  a.button?.label === b.button?.label &&
+  a.secondary?.label === b.secondary?.label;
 
 function add(lane: Lane, toast: QueuedToast) {
   if (lane.shown) lane.queue = [...lane.queue, toast];

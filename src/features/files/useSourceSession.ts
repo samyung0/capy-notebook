@@ -1,7 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import { api, isAccountForbiddenError, isApiError, qk } from '@/api/client';
+import {
+  api,
+  deletedItemOf,
+  isAccountForbiddenError,
+  isApiError,
+  qk,
+} from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import {
@@ -10,10 +16,16 @@ import {
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
+import {
+  reloadDeleted,
+  showDeletedDrafts,
+} from '@/features/collaboration/lostEdits';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
+  type RoomRefusal,
   refusalDropsDrafts,
+  refusalKeepsDrafts,
   roomReconnector,
   roomRefusal,
   sendCheckpointRequest,
@@ -151,6 +163,21 @@ async function bestEffort<T>(work: () => Promise<T>): Promise<T | null> {
     return null;
   }
 }
+
+/** A fresh room token's answer for a file a refusal may mean is deleted:
+ * the request's error (410 `item_deleted`, 404, 403, a 409 for one restored
+ * since, offline), or null for a token. */
+async function askSourceToken(fileId: string): Promise<unknown> {
+  try {
+    await api.post(`/files/${fileId}/collaboration-token`, {});
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
+const isConflict = (value: unknown) =>
+  isApiError(value) && value.status === 409;
 
 export function sessionReported(value: unknown): boolean {
   return value instanceof SourceSessionError;
@@ -383,6 +410,8 @@ export function useSourceSession(
     // Closed for this person's access change (4403), until it syncs again.
     let accessChanged = false;
     let doc: Y.Doc | null = null;
+    // What its deleted strip shows, for the page's Reload (Q39).
+    let shownDeleted: (() => void) | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
     // Back online while the steps are held: saving again (Q328, Q360).
@@ -454,11 +483,29 @@ export function useSourceSession(
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(reason);
     };
-    const fail = (value: unknown) => {
+    // `asked`: a fresh token already answered for this failure.
+    const fail = (value: unknown, asked = false) => {
       if (cancelled) return;
       // Refused before the room opened: the view falls back to view mode.
       if (maintenancePaused(value) && !runtime.current) {
         setPaused(true);
+        return;
+      }
+      // Deleted before its room opened (Q39): nothing of its unsent edits is
+      // on screen, so it is unavailable for now, its edits kept for the next
+      // page load's offer. The page's read says it was deleted.
+      if (deletedItemOf(value)) {
+        void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+        setUnavailable('notFound');
+        return;
+      }
+      // A trashed file's session read may answer its 404 before the token
+      // its 410: a fresh token decides before anything is dropped, and one
+      // that answers keeps the edits under the open's error.
+      if (isApiError(value) && value.status === 404 && !asked) {
+        void askSourceToken(fileId).then((answer) =>
+          fail(answer === null || isConflict(answer) ? undefined : answer, true)
+        );
         return;
       }
       if (isApiError(value) && (value.status === 404 || value.status === 403)) {
@@ -656,6 +703,105 @@ export function useSourceSession(
           setBanner((current) =>
             isRecoveryBanner(current) ? current : offlineBanner()
           );
+      };
+      // Refused for good: deleted, or gone or no longer this user's.
+      // `deleted`: also a service-only not found a fresh token said was.
+      const refusedFor = (
+        refusal: RoomRefusal,
+        failedToken: unknown,
+        deleted: boolean
+      ) => {
+        if (disposed) return;
+        // Deleted (Q39): its unsent edits stay, written whole so they draw
+        // alone, shown read-only under the deleted strip until its Reload
+        // deletes the rows the document shows and loads the page again.
+        if (deleted) {
+          void recorder?.snapshot();
+          if (doc) shownDeleted = showDeletedDrafts(draftKey, { doc });
+          discardHandler.current = async () =>
+            reloadDeleted({ file: true, id: fileId, keys: [draftKey] });
+        }
+        // An account lock keeps them (refusalDropsDrafts), and so does the
+        // service's reason alone, for the file's read or the next page load
+        // to settle. Queued before the recorder's discard, the report counts
+        // this session's rows.
+        else if (refusalDropsDrafts(refusal, failedToken)) {
+          void bestEffort(() =>
+            dropLostDrafts(
+              draftKey,
+              refusal === 'notFound' ? 'not_found' : 'forbidden',
+              report
+            )
+          );
+          void recorder?.discard();
+        } else if (refusalKeepsDrafts(refusal, failedToken))
+          void recorder?.snapshot();
+        // Not told as an access change, it may be gone: the file's read
+        // says, and a refused one ends what shows (Epo 2026-11-05, Q644).
+        if (!accessChanged)
+          void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+        // The page stays until then: a reader as it was, an editor
+        // read-only under a strip saying so.
+        if (session.access === 'write') {
+          clearTimeout(timer);
+          rejectWaiters(new SourceSessionError(m.editor_access_lost()));
+          setDirty(false);
+          setHandoff(false);
+          setStatus('access-lost');
+          setBanner(deleted ? 'deleted' : 'access-lost');
+          setOutdated(true);
+        }
+      };
+      // Refused for good: the session stops here.
+      const end = () => {
+        cancelled = true;
+        provider?.disconnect();
+        // Typing under the strip goes nowhere, so it never reads Saving.
+        if (session.access === 'write') discarded = true;
+      };
+      // The collaboration service's own "not found" with no token answer
+      // behind it is also what a deleted file says: a fresh token decides,
+      // and one that is granted, or answers 409 (restored since), rejoins:
+      // the file is live.
+      const refusedAfterAsking = async (
+        refusal: RoomRefusal,
+        failedToken: unknown
+      ) => {
+        const asks =
+          refusal !== 'deleted' && refusalKeepsDrafts(refusal, failedToken);
+        const answer = asks ? await askSourceToken(fileId) : undefined;
+        if (cancelled) return;
+        if (asks && (answer === null || isConflict(answer))) {
+          reconnect.refused();
+          return;
+        }
+        end();
+        refusedFor(
+          refusal,
+          failedToken,
+          refusal === 'deleted' || !!deletedItemOf(answer)
+        );
+      };
+      // A save the service could not find the file for: a trash only queues
+      // the room's eviction, so a save may land first. A fresh token
+      // decides: deleted keeps the edits under the deleted strip, live (a
+      // token, 409) rejoins, gone (404) goes back to the last save with
+      // every session's drafts dropped, and no answer keeps them for the
+      // file's read.
+      const lostAfterAsking = async () => {
+        const answer = await askSourceToken(fileId);
+        if (cancelled) return;
+        if (answer === null || isConflict(answer)) reconnect.refused();
+        else if (isApiError(answer) && answer.status === 404)
+          reset('not_found');
+        else {
+          end();
+          refusedFor(
+            deletedItemOf(answer) ? 'deleted' : 'notFound',
+            null,
+            !!deletedItemOf(answer)
+          );
+        }
       };
       goOffline = () => {
         if (cancelled || active.recovery || !everSynced || offlineMode) return;
@@ -885,39 +1031,7 @@ export function useSourceSession(
           // The room holds this document's client id for no one: not retried.
           else if (refusal === 'unassigned') refuse();
           else if (refusal === 'outdated') stale();
-          else if (!cancelled) {
-            cancelled = true;
-            provider?.disconnect();
-            // An account lock keeps them (refusalDropsDrafts). Queued before
-            // the recorder's discard, the report counts this session's rows.
-            if (refusalDropsDrafts(refusal, failedToken)) {
-              void bestEffort(() =>
-                dropLostDrafts(
-                  draftKey,
-                  refusal === 'notFound' ? 'not_found' : 'forbidden',
-                  report
-                )
-              );
-              void recorder?.discard();
-            }
-            // Not told as an access change, it may be gone: the file's read
-            // says, and a refused one ends what shows (Epo 2026-11-05, Q644).
-            if (!accessChanged)
-              void qc.invalidateQueries({ queryKey: qk.file(fileId) });
-            // The page stays until then: a reader as it was, an editor
-            // read-only under a strip saying so.
-            if (session.access === 'write') {
-              // Typing under the strip goes nowhere, so it never reads Saving.
-              discarded = true;
-              clearTimeout(timer);
-              rejectWaiters(new SourceSessionError(m.editor_access_lost()));
-              setDirty(false);
-              setHandoff(false);
-              setStatus('access-lost');
-              setBanner('access-lost');
-              setOutdated(true);
-            }
-          }
+          else void refusedAfterAsking(refusal, failedToken);
         },
         onClose: ({ code }) => {
           if (code === 4403) accessChanged = true;
@@ -1058,7 +1172,8 @@ export function useSourceSession(
             event.epoch === session.epoch
           ) {
             if (event.recoverable === false) {
-              if (event.lostAccess) reset(event.lostAccess);
+              if (event.lostAccess === 'not_found') void lostAfterAsking();
+              else if (event.lostAccess) reset(event.lostAccess);
               else refuse();
               return;
             }
@@ -1273,6 +1388,7 @@ export function useSourceSession(
     return () => {
       cancelled = true;
       disposed = true;
+      shownDeleted?.();
       sender?.stop();
       clearTimeout(holdTimer);
       controller.abort();

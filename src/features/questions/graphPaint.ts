@@ -7,6 +7,10 @@ import { PAPER } from '@/features/graph/paper';
 import { viewOf } from '@/features/graph/view';
 import type { GraphBlock } from './types';
 
+/** KaTeX, which Preview loads ahead for a graph's formulas (blockCode's
+ * katexCode). */
+export { loadKatex } from '@/features/graph/formula';
+
 /** Paints `graph` on `canvas` in the light or dark paper and keeps it painted
  * as the canvas resizes; the returned function stops that. */
 export function paintGraph(

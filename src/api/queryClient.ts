@@ -9,6 +9,7 @@ import {
   toastKeyFor,
 } from '@/lib/errors';
 import {
+  deletedItemOf,
   isAccountBlockingError,
   isAccountForbiddenError,
   isApiError,
@@ -29,9 +30,13 @@ declare module '@tanstack/react-query' {
   }
 }
 
-/** Private or missing: one non-disclosing answer for both. */
+/** Private or missing: one non-disclosing answer for both; deleted (410, a
+ * trashed item its reader could open were it not, Q41) is missing too. */
 export function isMissing(error: unknown): boolean {
-  return isApiError(error) && (error.status === 404 || error.status === 401);
+  return (
+    isApiError(error) &&
+    (error.status === 404 || error.status === 401 || error.status === 410)
+  );
 }
 
 function shouldRetry(failureCount: number, error: unknown): boolean {
@@ -42,6 +47,7 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
       error.status === 403 ||
       error.status === 404 ||
       error.status === 409 ||
+      error.status === 410 ||
       error.status === 429)
   ) {
     return false;
@@ -89,10 +95,13 @@ export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     // A failed refetch keeps its data. For a stored query that data can be
     // from an earlier visit, so a resource now private or missing drops it
-    // and the page shows that state instead.
+    // and the page shows that state instead. A deleted one (`item_deleted`)
+    // keeps it: its reader could still open it, and a page showing it keeps
+    // its unsent edits and its header on that read (Q39).
     onError: (error, query) => {
       if (
         isMissing(error) &&
+        !deletedItemOf(error) &&
         isPersisted(query) &&
         query.state.data !== undefined
       )

@@ -62,6 +62,53 @@ func (a *api) trashedFile(ctx context.Context, id string, denied error) (store.F
 	return file, blobPath, err
 }
 
+// deletedError answers a trashed item to a caller who could read it were it
+// not trashed (Epo 2026-11-20, Q41): 410 `item_deleted` with its name and
+// kind, so their unsent edits to it are offered for download while edits to
+// an item whose access went are dropped. Nil for anyone else and for an item
+// already purged, who keep the refusal they had (denied, the non-disclosing
+// 404). Asked by the room tokens, which the drafts check reads, and by the
+// material and file reads an open page makes after a room refusal.
+//
+// `live` is the handler's own check again: an item restored between it and
+// the deleted check answers 409 to ask again, never the 404 that would drop
+// the caller's edits to a live item.
+func (a *api) deletedError(ctx context.Context, kind agenttools.ResourceKind, id string, denied error, live func() error) error {
+	if !errors.Is(denied, store.ErrNotFound) {
+		return nil
+	}
+	deleted := a.s.DeletedMaterial
+	if kind == agenttools.KindSourceFile {
+		deleted = a.s.DeletedFile
+	}
+	item, err := deleted(ctx, userID(ctx), id)
+	if errors.Is(err, store.ErrNotFound) {
+		if live() == nil {
+			return huma.Error409Conflict("the item was restored meanwhile; ask again")
+		}
+		return nil
+	}
+	if err != nil {
+		return hErr(err)
+	}
+	return &huma.ErrorModel{
+		Status: http.StatusGone,
+		Title:  http.StatusText(http.StatusGone),
+		Detail: "the item was deleted",
+		Errors: []*huma.ErrorDetail{{
+			Message: "item_deleted",
+			Value:   map[string]any{"kind": item.Kind, "name": item.Name},
+		}},
+	}
+}
+
+// checked is the moment after a handler's access check (accessChecked).
+func (a *api) checked(id string) {
+	if a.accessChecked != nil {
+		a.accessChecked(id)
+	}
+}
+
 // trashedMaterial is trashedFile for a material, with the edits a room still
 // held projected first, as getMaterial does.
 func (a *api) trashedMaterial(ctx context.Context, id string, project bool, denied error) (store.Material, error) {

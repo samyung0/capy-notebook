@@ -1,12 +1,18 @@
-import { lazy, type ReactNode, Suspense, useContext } from 'react';
+import { type ReactNode, Suspense, useContext } from 'react';
 import { Button } from '@/components/ui/Button';
+import {
+  boardCode,
+  DrawingBoardScreen,
+  useCodeFailed,
+} from '@/features/materials/blockCode';
+import { CannotShow } from '@/features/materials/CannotShow';
 import { stripMarks } from '@/features/questions/parseMarkedText';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import type { QuestionBlock } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { useOpenView } from '@/lib/openLink';
 import type { Answer } from '../grade';
-import { loadBoard, useBoardAhead } from './boardPrefetch';
+import { useBoardAhead } from './boardPrefetch';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import {
   DrawingPreview,
@@ -23,13 +29,14 @@ import {
   isDrawingValue,
 } from './drawingValue';
 
-const DrawingBoardScreen = lazy(loadBoard);
-
 /**
  * A drawing part's answer area. Before drawing, one generic squared grid with
  * Draw answer (E1, Epo 2026-11-06); after Done, the drawing with Edit drawing
  * (D1); checked, the drawing under its verdict with Open drawing, which opens
- * the whole board read only (R1, R4).
+ * the whole board read only (R1, R4). If the board's code could not load for a
+ * press or Preview (an idle preload's failure leaves them), those buttons (and
+ * the grid that holds Draw) are "This block cannot be shown"; the verdict and
+ * a drawing already made stay (Epo 2026-11-20).
  */
 export function DrawingAnswer({
   disabled,
@@ -61,6 +68,7 @@ export function DrawingAnswer({
   const answered = isDrawingValue(value) || storedId !== null;
   const taking = !(review || disabled);
   const ahead = useBoardAhead(taking);
+  const failed = useCodeFailed(boardCode);
   const close = () => setOpen(false);
   const done = (next: DrawingValue | null) => {
     onChange(next);
@@ -75,7 +83,9 @@ export function DrawingAnswer({
         ) : (
           board && <DrawingPreview board={board} />
         )
-      ) : review ? null : (
+      ) : review ? null : failed && taking ? (
+        <CannotShow />
+      ) : (
         // A generic grid, the same for every drawing part: whole 52 px cells
         // across and whole 13 px rows down, about 52:30, plus a pixel for the
         // closing right and bottom lines, so it never stops mid-cell (Epo
@@ -95,7 +105,9 @@ export function DrawingAnswer({
           </div>
         </div>
       )}
-      {answered && taking && (
+      {/* What opens the board, in place of Edit drawing or Open drawing. */}
+      {failed && ((answered && taking) || (board && review)) && <CannotShow />}
+      {answered && taking && !failed && (
         <Button
           iconLeft="pencil"
           onClick={() => setOpen(true)}
@@ -104,7 +116,7 @@ export function DrawingAnswer({
           {m.drawing_answer_edit()}
         </Button>
       )}
-      {board && review && (
+      {board && review && !failed && (
         <Button
           iconRight="navigationForward"
           onClick={() => setOpen(true)}
@@ -114,7 +126,7 @@ export function DrawingAnswer({
           {m.drawing_answer_open()}
         </Button>
       )}
-      {(open || ahead) && (
+      {(open || ahead) && !failed && (
         <Suspense fallback={null}>
           <DrawingBoardScreen
             draft={taking && scope ? drawingDraftKey(scope, partId) : undefined}

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   boardFile,
@@ -6,14 +6,18 @@ import {
   gzipBoard,
   rememberBoardAsset,
 } from '@/features/blocksuite/boardAsset';
+import {
+  boardCode,
+  DrawingBoardScreen,
+  useCodeFailed,
+} from '@/features/materials/blockCode';
+import { CannotShow } from '@/features/materials/CannotShow';
 import type { DrawnSample } from '@/features/questions/types';
 import { m } from '@/i18n';
-import { loadBoard, useBoardAhead } from './boardPrefetch';
+import { useBoardAhead } from './boardPrefetch';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import { DrawingPreview } from './DrawingPreview';
 import type { DrawingValue } from './drawingValue';
-
-const DrawingBoardScreen = lazy(loadBoard);
 
 /** Stores a drawn sample answer as the quiz's own assets and returns them. */
 export type UploadDrawnSample = (value: DrawingValue) => Promise<DrawnSample>;
@@ -61,7 +65,9 @@ export function useSampleBoard(sample: DrawnSample | undefined) {
  * question dialog, in its own Sample answer section (Epo 2026-11-15): the
  * drawing and Edit sample answer, or Draw sample answer while there is none. Either opens the full board for the author with the question
  * pinned (A3); Done stores it, and Done on an emptied board removes it. The
- * board's open state may be held outside, where a menu opens it directly.
+ * board's open state may be held outside, where a menu opens it directly. If
+ * the board's code could not load, the button is "This block cannot be shown"
+ * and the field closes.
  */
 export function DrawnSampleField({
   defaultOpen = false,
@@ -89,7 +95,14 @@ export function DrawnSampleField({
   const board = useSampleBoard(sample);
   // An existing sample is mounted ahead once its board is here.
   const ahead = useBoardAhead(!sample || !!board);
-  const button = (
+  const failed = useCodeFailed(boardCode);
+  // A board that could not load closes, telling whoever holds the open state.
+  useEffect(() => {
+    if (failed && open) setOpen(false);
+  }, [failed, open]);
+  const button = failed ? (
+    <CannotShow />
+  ) : (
     <Button
       // An existing sample opens once its board is here.
       disabled={!!sample && !board}
@@ -110,7 +123,7 @@ export function DrawnSampleField({
       ) : (
         <div>{button}</div>
       )}
-      {(open || ahead) && (
+      {(open || ahead) && !failed && (
         <Suspense fallback={null}>
           <DrawingBoardScreen
             hidden={!open}

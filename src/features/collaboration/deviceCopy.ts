@@ -4,6 +4,11 @@ import { USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
 import type { Material } from '@/api/types';
 import {
+  draftMaterials,
+  loadSweepKept,
+  materialHeldHere,
+} from '@/lib/editDrafts';
+import {
   type DeviceCopyRow,
   deviceCopyMaterials,
   dropDeviceCopies,
@@ -257,18 +262,52 @@ export function keepDeviceCopy(
  * A copy of something this account can no longer read goes, once per page
  * load: a person who never connects to it again would keep it otherwise. Asked
  * in one request per 500 (the route's bound). Left for the next load when the
- * request fails.
+ * request fails. One the page load's draft sweep kept drafts of stays
+ * (`drafts`, `loadSweepKept`: deleted, held or unanswered; the readable check
+ * cannot tell a deleted item from lost access): a deleted quiz's Download
+ * takes its questions from it (Q43); once the edits go, the next load's sweep
+ * drops it. All stay when that sweep did not run, and so does one a page or
+ * editor here holds the drafts of as it would go (deleted after the draft
+ * sweep: that page decides).
  */
 export async function sweepDeviceCopies(
   owner: string,
-  readable: (ids: string[]) => Promise<string[]>
+  readable: (ids: string[]) => Promise<string[]>,
+  drafts: () => Promise<ReadonlySet<string> | null>
 ) {
   const ids = await deviceCopyMaterials(owner);
+  if (!ids.length) return;
+  // After the draft sweep, which says which items' drafts stay.
+  const edited = await drafts();
+  if (!edited) return;
   for (let at = 0; at < ids.length; at += 500) {
     const asked = ids.slice(at, at + 500);
     const kept = new Set(await readable(asked));
-    for (const id of asked) if (!kept.has(id)) await dropDeviceCopies(id);
+    for (const id of asked)
+      if (!(kept.has(id) || edited.has(id) || materialHeldHere(owner, id)))
+        await dropDeviceCopies(id);
   }
+}
+
+/** A copy of an item that was, or may have been, deleted (a discard, an
+ * `item_deleted` answer): it goes as any refusal's, unless this device still
+ * holds stored edits to the item (`owner`'s, `draftMaterials`, the sweep's
+ * rule), whose Download reads a quiz's questions there (Q43). `after`: the
+ * last edits being written, read once they landed. The sweep drops the copy
+ * once the edits go, and decides too when the store cannot be read now or the
+ * account is not known yet. */
+export async function dropDeletedCopies(
+  owner: string | null | undefined,
+  materialId: string,
+  {
+    after,
+    document,
+  }: { after?: Promise<unknown>; document?: DeviceCopyRow['document'] } = {}
+) {
+  await after?.catch(() => undefined);
+  const edited = owner ? await draftMaterials(owner).catch(() => null) : null;
+  if (!edited || edited.has(materialId)) return;
+  await dropDeviceCopies(materialId, document);
 }
 
 /** Runs the sweep once per page load per account, when the page is idle. */
@@ -277,13 +316,17 @@ export function useDeviceCopySweep(owner: string | undefined) {
     if (!owner || swept === owner) return;
     swept = owner;
     const run = () => {
-      void sweepDeviceCopies(owner, async (ids) => {
-        const answer = await api.post<{ ids: string[] }>(
-          '/materials/readable',
-          { ids }
-        );
-        return answer.ids;
-      }).catch(() => undefined);
+      void sweepDeviceCopies(
+        owner,
+        async (ids) => {
+          const answer = await api.post<{ ids: string[] }>(
+            '/materials/readable',
+            { ids }
+          );
+          return answer.ids;
+        },
+        () => loadSweepKept(owner)
+      ).catch(() => undefined);
     };
     if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
     else setTimeout(run, 0);
