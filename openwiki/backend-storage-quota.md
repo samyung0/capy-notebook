@@ -182,8 +182,10 @@ are; a task someone set themself (`assignments.own`) keeps its copies with no
 workspace either, charged to its maker like the rest of it. Its question JSON is `assignments.frozen_bytes`, measured as a material's
 content is and checked by the same gate, so publishing past the limit is refused
 as any creation is, images or not; a trigger moves the charge through the deltas
-(migration `0149_assignment_storage.sql`). Nothing edits a published copy, and the
-trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
+(migration `0149_assignment_storage.sql`). Only a graded quiz from a file edits a
+published copy, its total or its file's name (`rewritePaperTx`): `frozen_bytes`
+is measured again for the same `frozen_by`, unchecked, as it moves by a few bytes;
+the trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
 assignment or the workspace releases both, and a workspace clone leaves them out.
 Purging the publisher deletes the images, as it deletes everything it pays for, but
 keeps the questions, so the class keeps the paper and its members' work, charged to
@@ -299,12 +301,12 @@ objects for the reaper.
   drawing, is charged for it and goes over, into the usual over-quota states.
   A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
   the same way (`reservePaperStorageTx`), within 15 files and the member's
-  source file cap across them; Upload file can only start while storage is not
+  source file cap across them; Upload can only start while storage is not
   full, and the Files page deletes them once marked and closed. A hand-in's
   files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
   reserve the same way within the same bounds, are stored with no parse or
   credits, and the Files page deletes them once the assignment closes.
-  Like Upload file, a hand-in takes a new file only while the member's storage
+  Like Upload, a hand-in takes a new file only while the member's storage
   is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
   upload session; Epo 2026-11-09, Q728 A): a file added while there was room
   still saves past the limit, files already added stay, and Hand in and Undo
@@ -369,7 +371,23 @@ workspace or not (who holds it:
   content writes, so the charge is the board's stored bytes as of its last
   projection (each projection changes the content, since the block carries the
   stored version); a fold between projections is not charged again, and a
-  rename, a share or a trash charges nothing. The creator pays for every
+  rename, a share or a trash charges nothing. The seeded board is charged
+  once its room first seeds it, at its first open (migration 0184, Epo
+  2026-11-20): a canvas is made with no Yjs row, and its room seeds the
+  `material_yjs_documents` row on the first open (`load` → `bootstrap` in
+  `note_store.rs`) and projects nothing for it (stored and projected version
+  1), so an AFTER INSERT trigger on that table rewrites the canvas's content
+  unchanged, which reruns `prepare_material_storage_fields` with the row in
+  place. A canvas opened and left untouched pays for its content and its
+  seeded state; one never opened pays for its content alone. Lock order: that
+  first open charges the payer after the seed's `FOR UPDATE` on the material,
+  its storage delta row taking a key-share lock on the payer's `users` row,
+  while the other charging writes lock the user first and the material after
+  (`lock_boundary` in `access.rs`, `ProjectMaterialContent`). This is safe
+  because those account locks are `FOR NO KEY UPDATE` or `FOR SHARE`, which
+  a key-share lock never waits on, and the paths that lock a user `FOR UPDATE`
+  refuse a canvas first; a future path must not lock a user `FOR UPDATE` and
+  then a canvas row. The creator pays for every
   editor's strokes. Deleting from the board lowers the charge only as far as
   the room's state shrinks. The charge is released with the row.
 - **The cap.** A canvas room's live state is held to `CANVAS_BOARD_MAX`, 4 MiB

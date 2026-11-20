@@ -4,12 +4,17 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AssignmentFilePreview } from './assignmentFilePreview.ts';
 
 export interface AssignmentFile {
   fileId?: string;
   kind: string;
   materialId?: string;
   name: string;
+  /** A text file's opening characters or a material's list-card preview (openwiki/thumbnails.md) */
+  preview?: AssignmentFilePreview;
+  /** Hour-stable presigned GET of a file's page-1 thumbnail; the assignment's own read only */
+  thumbnailUrl?: string;
   workspaceId?: string;
   workspaceName?: string;
 }

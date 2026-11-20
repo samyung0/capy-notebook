@@ -585,6 +585,51 @@ func (s *Store) fileAccess(ctx context.Context, userID, fileID string, trashed b
 	return RoleOwner, nil
 }
 
+// paperReaderSQL: user $2 reads file $1 as the question paper of a published
+// graded quiz from a file that they have started, while still a member of its
+// workspace (Epo 2026-11-20): read through the quiz, as a graded quiz's frozen
+// copy is, even when the file is hidden from members. Never before Start, so a
+// hidden paper stays unread until the clock runs.
+const paperReaderSQL = `EXISTS (SELECT 1 FROM assignment_files af
+	JOIN assignments a ON a.id=af.assignment_id AND a.paper_file AND NOT a.draft
+	JOIN files f ON f.id=af.file_id AND f.workspace_id=a.workspace_id AND f.trashed_at IS NULL
+	JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.user_id=$2
+	WHERE af.file_id=$1 AND EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.user_id=$2))`
+
+func readsAsPaper(ctx context.Context, q rowQueryer, fileID, userID string) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT `+paperReaderSQL, fileID, userID).Scan(&ok)
+	return ok, err
+}
+
+// FileReadRole is FileEffectiveRole for the routes a reader opens a file
+// through (its row, its links, its view session): a file hidden from members
+// also opens, as a viewer, for one reading it as a question paper
+// (paperReaderSQL). Chat, the agent's tools and listings keep the hidden rule.
+func (s *Store) FileReadRole(ctx context.Context, userID, fileID string) (WorkspaceRole, error) {
+	role, err := s.FileEffectiveRole(ctx, userID, fileID)
+	if !errors.Is(err, ErrNotFound) || userID == "" {
+		return role, err
+	}
+	wsID, hidden, ferr := s.fileWorkspace(ctx, fileID, false)
+	if ferr != nil || wsID == "" || !hidden {
+		return "", err
+	}
+	// The workspace's own rules (its owner's account, membership) first.
+	role, rerr := s.WorkspaceEffectiveRole(ctx, userID, wsID)
+	if rerr != nil {
+		return "", err
+	}
+	ok, perr := readsAsPaper(ctx, s.pool, fileID, userID)
+	if perr != nil {
+		return "", perr
+	}
+	if !ok {
+		return "", ErrNotFound
+	}
+	return role, nil
+}
+
 // TopicWorkspaceID resolves the owning workspace of a topic.
 func (s *Store) TopicWorkspaceID(ctx context.Context, topicID string) (string, error) {
 	var wsID string
@@ -2537,9 +2582,6 @@ func (s *Store) cloneMaterialOnce(
 			title, json.RawMessage(clone.content), topicID, scopeTopics, scopeFileNames, clone.src.Color,
 			clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.Revision, parentID, provenance,
 			clone.preview, clone.src.Hidden && dest.workspaceID != ""); err != nil {
-			if isUniqueViolation(err) {
-				return ErrTitleTaken
-			}
 			return err
 		}
 		for _, cid := range clone.cardIDs {

@@ -1,4 +1,4 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { type MouseEvent, useState } from 'react';
 import { useAssignmentReport, useReleaseAssignmentGrades } from '@/api/hooks';
 import type {
@@ -6,16 +6,13 @@ import type {
   AssignmentMemberRow,
   AssignmentPartReport,
   AssignmentQuestionReport,
-  FileKind,
-  MaterialRefType,
   AssignmentReport as ReportData,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button, PageButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -27,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Tabs } from '@/components/ui/Tabs';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import {
@@ -52,33 +50,36 @@ import { QuizReadSplit } from '@/features/quizzes/QuizEditor';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
-import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { useFullscreenSearch } from '@/lib/useFullscreenSearch';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { blockText, questionLine } from '../practice/practiceText';
 import { ListRow, PracticeFrame, Td, Th } from '../practice/studyPage';
 import type { AssignmentsSearch, ReportTab } from '../studyRoutes';
 import { ApproveTab } from './ApproveTab';
 import { BackToAssignments } from './AssignmentAttemptPage';
+import { AssignmentFiles } from './AssignmentFiles';
 import {
   AssignmentPreview,
   PreviewDialog,
   QuizFilePreview,
 } from './AssignmentPreview';
 import { AssignmentSettingsTab, PublishButton } from './AssignmentSettingsTab';
-import { fileLink, reportView } from './assignmentPage';
+import { reportView } from './assignmentPage';
 import {
   dayLabel,
   isGraded,
   markText,
   percentText,
+  questionPaperOf,
   questionRowName,
   takesLateWork,
 } from './assignmentText';
 import { GradedQuizQuestions } from './GradedQuizQuestions';
-import { GradeField } from './GradeField';
-import { HandInMembers } from './HandIns';
+import { GradingTab } from './GradingTab';
+import { GradeText, HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
+import { QuestionPaperView } from './LazyPaper';
 import { MarkingNow } from './MarkingNow';
-import { UnmarkedView } from './MemberAssignment';
 import { PreviewButton } from './PreviewButton';
 
 /** Rows the report opens with, as the board draws them. */
@@ -88,9 +89,8 @@ const CHIP =
   'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
 
 const TAB_LABELS: Record<ReportTab, () => string> = {
-  approve: m.assignment_tab_responses,
+  grading: m.assignment_tab_grading,
   members: m.assignment_tab_members,
-  preview: m.assignment_preview,
   questions: m.assignment_tab_questions,
   responses: m.assignment_tab_responses,
   settings: m.assignment_tab_settings,
@@ -98,9 +98,11 @@ const TAB_LABELS: Record<ReportTab, () => string> = {
 
 /** An assignment's report (boards G3, G3m, A3): the facts as chips, then its
  * tabs, each with its own link. A graded quiz (Epo 2026-11-15, boards Main and
- * Responses) has Questions, its quiz edited in place, Responses and Settings,
+ * Responses) has Questions, its quiz edited in place, Responses, Grading
+ * (Epo 2026-11-19) and Settings,
  * Preview and a draft's Publish in its header; a task lists who has ticked it,
- * with Settings and Preview tabs. */
+ * a Grading tab when it takes files or points (a member's row opens it at
+ * them) and a Settings tab. */
 export function AssignmentReport({
   assignment,
   search,
@@ -117,7 +119,7 @@ export function AssignmentReport({
   // A graded quiz, or an Assignment graded on points (Epo 2026-11-14).
   const graded = isGraded(assignment);
   const draft = !!assignment.draft;
-  const { approving, byQuestion, tab, tabs } = reportView(assignment, search);
+  const { byQuestion, tab, tabs } = reportView(assignment, search);
   const go = (next: AssignmentsSearch) =>
     navigate({
       search: { assignment: assignment.id, ...next },
@@ -129,6 +131,11 @@ export function AssignmentReport({
   // tabs (Epo 2026-11-14); null until one is toggled, the first few open.
   const [opened, setOpened] = useState<string[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  // Grading's and Questions' full screen (`fullscreen` in the URL, as the
+  // workspace's); Escape in a question's field stays the field's.
+  const [fullscreen, setFullscreen] = useFullscreenSearch({
+    fieldsKeepEscape: true,
+  });
   // The quiz editor's Undo and Redo portal into the header, beside its save
   // status, as on the quiz's own page.
   const [editorActions, setEditorActions] = useState<HTMLElement | null>(null);
@@ -136,6 +143,11 @@ export function AssignmentReport({
   const manage = assignment.manage;
   const quizId = manage?.quizId;
   const editing = marked && tab === 'questions';
+  // A file's graded quiz (Epo 2026-11-20): its Questions tab is the file.
+  const paper = questionPaperOf(assignment);
+  // From a tablet up, the quiz editor alone covers the page (Epo 2026-11-19).
+  const wide = useMediaQuery('(min-width: 768px)');
+  const editorFullscreen = editing && !!quizId && wide && fullscreen;
   // No kind, submissions or average here: Responses' numbers hold those (Epo
   // 2026-11-13).
   const chips = [
@@ -173,79 +185,125 @@ export function AssignmentReport({
 
   return (
     <PracticeFrame
-      // The quiz editor fills the page under the tabs, as the quiz page does.
-      className={cn(editing && 'flex flex-col overflow-hidden pb-0 lg:pb-0')}
+      // The quiz editor fills the page under the tabs, as the quiz page does;
+      // so does Grading's split from a tablet up.
+      className={cn(
+        editing && 'flex flex-col overflow-hidden pb-0 lg:pb-0',
+        tab === 'grading' &&
+          'md:flex md:flex-col md:overflow-hidden md:pb-0 lg:pb-0'
+      )}
     >
       {/* Stepped aside past a phone's first Approve screen (tailwind.css). */}
-      <div data-report-head>
+      {/* As a member's attempt reads (Epo 2026-11-19): the title, its chips
+          under it, the actions at the chips' right. */}
+      <div className="flex" data-report-head>
         <BackToAssignments />
       </div>
-      <div
-        className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5"
-        data-report-head
-      >
-        <h1 className="t-page-title min-w-0">{assignment.title}</h1>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Published and not closed yet: Open, in green, first (Epo 2026-11-16). */}
-          {!assignment.draft && !assignment.closedAt && (
-            <span className={cn(CHIP, 'bg-tint-success text-tint-success-fg')}>
-              {m.assignment_state_open()}
-            </span>
-          )}
-          {/* The time limit alone, with no kind before it. */}
-          {assignment.timeLimitMin ? (
-            <span className={cn(CHIP, 'gap-1')}>
-              <Icon className="shrink-0" name="clock" size={14} />
-              {minutesShort(assignment.timeLimitMin)}
-            </span>
-          ) : null}
-          {chips.map((chip) => (
-            <span className={CHIP} key={chip}>
-              {chip}
-            </span>
-          ))}
-          {/* Waiting answers: AI-marked to approve, and not graded (T3). */}
-          {toApprove > 0 && (
-            <span
-              className={cn(CHIP, 'bg-tint-accent-1 text-tint-accent-1-fg')}
-            >
-              {m.assignment_to_approve({ count: toApprove })}
-            </span>
-          )}
-          {notGraded > 0 && (
-            <span className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}>
-              {m.assignment_not_graded({ count: notGraded })}
-            </span>
+      <div className="mt-3" data-report-head>
+        <h1 className="t-page-title truncate" title={assignment.title}>
+          {assignment.title}
+        </h1>
+        {/* One row, never wrapping (Epo 2026-11-20): the actions stay at the
+            chips' right, and chips past the room scroll, as Grading's do. */}
+        <div className="mt-1 flex items-center gap-2 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {/* Published and not closed yet: Open, in green, first (Epo 2026-11-16). */}
+            {!assignment.draft && !assignment.closedAt && (
+              <span
+                className={cn(CHIP, 'bg-tint-success text-tint-success-fg')}
+              >
+                {m.assignment_state_open()}
+              </span>
+            )}
+            {/* The time limit alone, with no kind before it. */}
+            {assignment.timeLimitMin ? (
+              <span className={cn(CHIP, 'gap-1')}>
+                <Icon className="shrink-0" name="clock" size={14} />
+                {minutesShort(assignment.timeLimitMin)}
+              </span>
+            ) : null}
+            {chips.map((chip) => (
+              <span className={CHIP} key={chip}>
+                {chip}
+              </span>
+            ))}
+            {/* Waiting answers: AI-marked to approve, and not graded (T3). */}
+            {toApprove > 0 && (
+              <span
+                className={cn(CHIP, 'bg-tint-accent-1 text-tint-accent-1-fg')}
+              >
+                {m.assignment_to_approve({ count: toApprove })}
+              </span>
+            )}
+            {notGraded > 0 && (
+              <span
+                className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}
+              >
+                {m.assignment_not_graded({ count: notGraded })}
+              </span>
+            )}
+          </div>
+          {(marked || releasable) && (
+            <div className="flex shrink-0 items-center gap-2">
+              {editing && quizId && !editorFullscreen && (
+                <>
+                  {/* Its words from a tablet up: a phone's row keeps
+                      room for the buttons, the icon telling the state. */}
+                  <EditorSaveStatus labelled={wide} store={editorStatus} />
+                  <span className="flex items-center" ref={setEditorActions} />
+                </>
+              )}
+              {/* A published one previews its frozen questions, so it waits
+                  for the report. */}
+              {marked && (
+                <PreviewButton
+                  disabled={!(draft || data || paper !== undefined)}
+                  onClick={() => setPreviewing(true)}
+                />
+              )}
+              {marked && draft && <PublishButton assignment={assignment} />}
+              {releasable && <ReleaseGrades assignment={assignment} />}
+            </div>
           )}
         </div>
-        {(marked || releasable) && (
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {editing && quizId && (
-              <>
-                <EditorSaveStatus labelled store={editorStatus} />
-                <span className="flex items-center" ref={setEditorActions} />
-              </>
-            )}
-            {/* A published one previews its frozen questions, so it waits
-                for the report. */}
-            {marked && (
-              <PreviewButton
-                disabled={!(draft || data)}
-                onClick={() => setPreviewing(true)}
-              />
-            )}
-            {marked && draft && <PublishButton assignment={assignment} />}
-            {releasable && <ReleaseGrades assignment={assignment} />}
-          </div>
-        )}
       </div>
-      <div data-report-head>
+      {/* Grading's full screen at the row's end (Epo 2026-11-19), as the
+          workspace's: the members and the file, nothing else. */}
+      <div className="relative" data-report-head>
         <Tabs
           className="page-bleed page-tabs-px mt-3.5 w-auto"
           onChange={pickTab}
-          tabs={tabs.map((value) => ({ label: TAB_LABELS[value](), value }))}
+          tabs={tabs.map((value) => ({
+            // A task's Grading reads hand-ins when there are no points to give.
+            label:
+              value === 'grading' && !marked && assignment.points === undefined
+                ? m.assignment_tab_hand_ins()
+                : value === 'questions' && paper !== undefined
+                  ? m.assignment_question_paper()
+                  : TAB_LABELS[value](),
+            value,
+          }))}
           value={tab}
         />
+        {/* Grading only with a list to cover; Questions while it edits. */}
+        {((tab === 'grading' && !!data?.members.length) ||
+          (editing && !!quizId)) && (
+          <Button
+            // Its label ends on the content's edge: a graded quiz's Next to
+            // approve, or past the page's padding the hand-in file header's
+            // open-in-new-tab icon.
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2 pr-1 pl-2 max-md:hidden',
+              marked ? 'right-[-4px]' : 'right-[-13px] lg:right-[-25px]'
+            )}
+            iconLeft="maximize"
+            onClick={() => setFullscreen(true)}
+            size="sm"
+            variant="ghost-hover"
+          >
+            {m.material_fullscreen()}
+          </Button>
+        )}
       </div>
       {tab === 'settings' ? (
         <AssignmentSettingsTab
@@ -253,21 +311,53 @@ export function AssignmentReport({
           className="tab-body-mt"
         />
       ) : editing ? (
-        <div className="page-bleed flex min-h-0 flex-1 flex-col">
-          {quizId ? (
-            <FileActionsTarget.Provider value={editorActions}>
-              <GradedQuizQuestions
-                onStatusChange={editorStatus.getState().report}
-                quizId={quizId}
-              />
-            </FileActionsTarget.Provider>
-          ) : (
-            // Its quiz is gone: the questions members were given, to read.
-            data && (
-              <QuizReadSplit
-                questions={data.questions.map((item) => item.question)}
-              />
+        <div
+          className={cn(
+            'flex min-h-0 flex-1 flex-col',
+            // Full screen: the editor alone, its save status, Undo, Redo and
+            // the exit in a bar above it.
+            editorFullscreen ? 'fixed inset-0 z-40 bg-surface' : 'page-bleed'
+          )}
+        >
+          {editorFullscreen && (
+            <div className="flex h-12 shrink-0 items-center justify-end gap-2 border-divider border-b px-4">
+              <EditorSaveStatus labelled store={editorStatus} />
+              <span className="flex items-center" ref={setEditorActions} />
+              <ToolbarButton
+                label={m.material_fullscreen_exit()}
+                onClick={() => setFullscreen(false)}
+              >
+                <Icon name="minimize" />
+              </ToolbarButton>
+            </div>
+          )}
+          {paper === undefined ? (
+            quizId ? (
+              <FileActionsTarget.Provider value={editorActions}>
+                <GradedQuizQuestions
+                  onStatusChange={editorStatus.getState().report}
+                  quizId={quizId}
+                />
+              </FileActionsTarget.Provider>
+            ) : (
+              // Its quiz is gone: the questions members were given, to read.
+              data && (
+                <QuizReadSplit
+                  questions={data.questions.map((item) => item.question)}
+                />
+              )
             )
+          ) : (
+            <QuestionPaperView
+              change={
+                assignment.manage && {
+                  assignmentId: assignment.id,
+                  workspaceId: assignment.workspaceId,
+                }
+              }
+              file={paper}
+              named
+            />
           )}
         </div>
       ) : marked ? (
@@ -281,19 +371,13 @@ export function AssignmentReport({
             title={m.assignment_load_failed()}
             variant="panel"
           />
-        ) : approving ? (
-          <>
-            <div className="mt-4" data-report-head>
-              <BackToAssignments
-                label={m.assignment_tab_responses()}
-                link={{
-                  search: { assignment: assignment.id, tab: 'responses' },
-                  to: '.',
-                }}
-              />
-            </div>
-            <ApproveTab assignment={assignment} report={data} search={search} />
-          </>
+        ) : tab === 'grading' ? (
+          <ApproveTab
+            assignment={assignment}
+            onExitFullscreen={() => setFullscreen(false)}
+            report={data}
+            search={search}
+          />
         ) : (
           <ResponsesTab
             assignment={assignment}
@@ -302,31 +386,47 @@ export function AssignmentReport({
             onOpened={setOpened}
             opened={opened}
             report={data}
-            waiting={
-              manage?.marking === 'manual' ? (manage.toApprove ?? 0) : toApprove
-            }
           />
         )
-      ) : tab === 'preview' ? (
-        <UnmarkedView assignment={assignment} className="tab-body-mt" preview />
+      ) : tab === 'grading' ? (
+        <GradingTab
+          assignment={assignment}
+          go={(next) => void go(next)}
+          loading={isPending}
+          members={data?.members ?? []}
+          onExitFullscreen={() => setFullscreen(false)}
+          search={search}
+        />
       ) : (
         <UnmarkedBody
           assignment={assignment}
           loading={isPending}
           members={data?.members ?? []}
+          onOpen={(member) =>
+            void go({ member: member.userId, tab: 'grading' })
+          }
         />
       )}
       {previewing && (
-        <PreviewDialog onClose={() => setPreviewing(false)}>
+        <PreviewDialog
+          onClose={() => setPreviewing(false)}
+          title={m.assignment_preview()}
+        >
           {/* What members see (Epo 2026-11-13): a published one's frozen
               questions, a draft's quiz file as Publish would freeze it. */}
-          {draft
-            ? quizId && <QuizFilePreview quizId={quizId} />
-            : data && (
+          {paper === undefined ? (
+            draft ? (
+              quizId && <QuizFilePreview quizId={quizId} />
+            ) : (
+              data && (
                 <AssignmentPreview
                   questions={data.questions.map((item) => item.question)}
                 />
-              )}
+              )
+            )
+          ) : (
+            <QuestionPaperView file={paper} named />
+          )}
         </PreviewDialog>
       )}
     </PracticeFrame>
@@ -335,8 +435,8 @@ export function AssignmentReport({
 
 /** Responses (Epo 2026-11-15, board Responses): a View of By member (the
  * members and their marks) or By question (the numbers, then each question's),
- * how many handed in and their average, and at the right Approve AI grades
- * (Mark answers under manual marking), which opens that view. */
+ * how many handed in and their average. Grading is its own tab, so no button
+ * here opens it (Epo 2026-11-19). */
 function ResponsesTab({
   assignment,
   byQuestion,
@@ -344,7 +444,6 @@ function ResponsesTab({
   onOpened,
   opened,
   report,
-  waiting,
 }: {
   assignment: Assignment;
   byQuestion: boolean;
@@ -352,8 +451,6 @@ function ResponsesTab({
   onOpened: (ids: string[]) => void;
   opened: string[] | null;
   report: ReportData;
-  /** Answers waiting for the button's view. */
-  waiting: number;
 }) {
   const manage = assignment.manage;
   const manual = manage?.marking === 'manual';
@@ -412,15 +509,6 @@ function ResponsesTab({
         <span className="t-meta text-fg-muted max-sm:order-last max-sm:basis-full">
           {summary}
         </span>
-        <PageButton
-          className="ml-auto"
-          onClick={() => void go({ tab: 'approve' })}
-        >
-          {manual
-            ? m.assignment_mark_answers()
-            : m.assignment_approve_ai_grades()}
-          {waiting > 0 && <span className="opacity-75">{`· ${waiting}`}</span>}
-        </PageButton>
       </div>
       {byQuestion ? (
         <>
@@ -445,53 +533,29 @@ function UnmarkedBody({
   assignment,
   loading,
   members,
+  onOpen,
 }: {
   assignment: Assignment;
   loading: boolean;
   members: AssignmentMemberRow[];
+  onOpen: (member: AssignmentMemberRow) => void;
 }) {
   return (
     <>
       {!loading && (
         <AssignmentStats assignment={assignment} members={members} />
       )}
-      {assignment.files.length > 0 && (
-        <section className="mt-6.5 max-w-180">
-          <h2 className="t-subtitle">{m.assignment_field_files()}</h2>
-          <ul className="mt-2">
-            {assignment.files.map((file) => (
-              <li
-                className="flex min-h-10 items-center gap-2 border-divider border-b"
-                key={file.fileId ?? file.materialId}
-              >
-                <FileIcon
-                  className="size-4 shrink-0"
-                  name={
-                    file.fileId
-                      ? fileIconName({
-                          kind: file.kind as FileKind,
-                          name: file.name,
-                        })
-                      : materialIconName(file.kind as MaterialRefType)
-                  }
-                />
-                <span className="min-w-0 flex-1 truncate font-semibold">
-                  {file.name}
-                </span>
-                <UnderlineLink asChild className="text-fg">
-                  <Link {...fileLink(file)}>{m.assignment_open()}</Link>
-                </UnderlineLink>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <AssignmentFiles assignment={assignment} />
       <section className="mt-6.5">
         <h2 className="t-subtitle">{m.assignment_tab_members()}</h2>
         {loading ? (
           <SkeletonList className="mt-3" count={5} rowHeight={40} />
         ) : assignment.allowUploads ? (
-          <HandInMembers assignment={assignment} members={members} />
+          <HandInMembers
+            assignment={assignment}
+            members={members}
+            onOpen={onOpen}
+          />
         ) : (
           <ul className="mt-2">
             {members.map((member) => (
@@ -510,13 +574,11 @@ function UnmarkedBody({
                     <LateBadge penaltyPct={member.latePenaltyPct} />
                   )}
                 </span>
-                {/* Staff grade each member here (Epo 2026-11-14). */}
+                {/* Read only: grading is the Grading tab's (Epo 2026-11-19). */}
                 {assignment.points !== undefined && (
-                  <GradeField
-                    assignment={{ ...assignment, points: assignment.points }}
-                    className="shrink-0 py-1"
-                    member={member}
-                  />
+                  <span className="shrink-0">
+                    <GradeText member={member} points={assignment.points} />
+                  </span>
                 )}
               </li>
             ))}
@@ -579,7 +641,7 @@ function MembersTab({
           className="t-meta font-semibold text-tint-accent-1-fg underline decoration-[1.5px] underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
           onClick={(event) => {
             event.stopPropagation();
-            void go({ member: member.userId, tab: 'approve' });
+            void go({ member: member.userId, tab: 'grading' });
           }}
           type="button"
         >
@@ -715,8 +777,10 @@ function AssignmentStats({
       : null,
     marked && assignment.allowUploads
       ? {
-          label: m.assignment_stat_uploads(),
-          value: m.assignment_stat_allowed(),
+          label: m.assignment_field_submission(),
+          value: assignment.uploadOnly
+            ? m.assignment_submission_upload()
+            : m.assignment_submission_both(),
         }
       : null,
   ].filter((stat) => !!stat);
@@ -1031,7 +1095,7 @@ function PartStats({
           </div>
           <UnderlineLink
             className="mt-3 text-fg"
-            onClick={() => void go({ question: question.id, tab: 'approve' })}
+            onClick={() => void go({ question: question.id, tab: 'grading' })}
           >
             {m.assignment_check_marks()}
           </UnderlineLink>

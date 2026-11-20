@@ -7,6 +7,7 @@ import {
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Assignment, AssignmentFormReq, Workspace } from '@/api/types';
+import { Accordion } from '@/components/ui/Accordion';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -31,7 +32,6 @@ import { materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
 import { questionsLabel } from '../practice/practiceText';
 import { studyView } from '../practice/studyView';
-import { AdvancedSection } from './AdvancedSection';
 import {
   AnswersSelect,
   AssignToField,
@@ -47,6 +47,7 @@ import {
   LatePenaltySelect,
   MarkingSelect,
   PointsField,
+  SubmissionSelect,
   SwitchRow,
   TimeLimitSelect,
 } from './assignmentFields';
@@ -224,8 +225,15 @@ export function NewAssignmentDialog({
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent
         aria-describedby={undefined}
+        cardClassName={cn(graded && 'h-full')}
         cardScrollContainerClassName="sm:px-6.25"
-        className="sm:max-w-150"
+        // New graded quiz's Settings takes its Questions' frame, so Next and
+        // Back change only what is in it (Epo 2026-11-19).
+        className={cn(
+          graded
+            ? 'flex flex-col sm:h-[min(680px,88dvh)] sm:max-w-180'
+            : 'sm:max-w-150'
+        )}
         // New graded quiz's steps both have the corner close.
         showCloseButton={!!graded}
       >
@@ -239,7 +247,7 @@ export function NewAssignmentDialog({
               : (title ?? m.assignment_new())}
         </DialogTitle>
         <form
-          className="flex flex-col gap-4 pt-1"
+          className={cn('flex flex-col gap-4 pt-1', graded && 'flex-1')}
           id={formId}
           noValidate
           onSubmit={(event) => {
@@ -376,7 +384,12 @@ export function NewAssignmentDialog({
               Task, Epo 2026-11-14). */}
           {takesPoints && (
             <div className="grid gap-4 sm:grid-cols-2">
-              <PointsField control={control} error={errors.points?.message} />
+              <PointsField
+                control={control}
+                error={errors.points?.message}
+                label={m.assignment_field_points()}
+                name="points"
+              />
             </div>
           )}
           {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
@@ -434,17 +447,18 @@ export function NewAssignmentDialog({
                 <Field label={m.assignment_field_answers()}>
                   <AnswersSelect control={control} />
                 </Field>
+                {/* C1 (Epo 2026-11-08), as a mode (Epo 2026-11-19). */}
+                <div className="sm:col-span-2">
+                  <Field label={m.assignment_field_submission()}>
+                    <SubmissionSelect control={control} />
+                  </Field>
+                </div>
               </div>
-              {/* C1 (Epo 2026-11-08): members may hand in a paper instead. */}
-              <SwitchRow
-                control={control}
-                label={m.assignment_switch_uploads()}
-                name="allowUploads"
-              />
             </div>
           )}
           {(kind === 'marked' || hasDraft || hasPolicy || gradedAssignment) && (
-            <AdvancedSection
+            <Accordion
+              label={m.assignment_advanced()}
               onToggle={() => setAdvancedOpen(!advancedOpen)}
               open={advancedOpen}
             >
@@ -483,12 +497,14 @@ export function NewAssignmentDialog({
                   name="draft"
                 />
               )}
-            </AdvancedSection>
+            </Accordion>
           )}
           {errors.root?.message && (
             <InputError>{errors.root.message}</InputError>
           )}
-          <DialogFooter className="max-sm:hidden sm:pt-2.5">
+          <DialogFooter
+            className={cn('max-sm:hidden sm:pt-2.5', graded && 'mt-auto')}
+          >
             <DialogCancel disabled={saving} size="md" />
             {createButton}
           </DialogFooter>

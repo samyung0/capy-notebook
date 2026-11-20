@@ -1518,9 +1518,6 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
 		}
-		if isUniqueViolation(err) {
-			return "", ErrTitleTaken
-		}
 		return "", err
 	}
 	if mt.ParentMaterialID == "" {
@@ -1800,9 +1797,11 @@ func (s *Store) AssistantMessageContext(ctx context.Context, messageID string) (
 	return
 }
 
-// MaterialTitleTaken reports whether another material in the workspace already
-// uses this title (trimmed, case-insensitive). Empty workspace id is never taken.
-func (s *Store) MaterialTitleTaken(ctx context.Context, workspaceID, title string) (bool, error) {
+// materialTitleTaken reports whether a material Files lists (items.go: a note,
+// quiz or set, not trashed, embedded or a graded quiz's own) uses this title,
+// trimmed and case-insensitive. Names may repeat (Epo 2026-11-20); this only
+// numbers a name nobody typed. Empty workspace id is never taken.
+func (s *Store) materialTitleTaken(ctx context.Context, workspaceID, title string) (bool, error) {
 	if workspaceID == "" {
 		return false, nil
 	}
@@ -1811,19 +1810,22 @@ func (s *Store) MaterialTitleTaken(ctx context.Context, workspaceID, title strin
 		SELECT EXISTS(
 			SELECT 1 FROM materials
 			WHERE workspace_id=$1 AND lower(btrim(title)) = lower(btrim($2::text))
+				AND trashed_at IS NULL AND parent_material_id IS NULL AND assignment_id IS NULL
+				AND kind IN ('note','quiz','flashcards')
 		)`, workspaceID, title).Scan(&taken)
 	return taken, err
 }
 
 // DisambiguateMaterialTitle returns desired if it is free, otherwise
-// "desired 2", "desired 3", … until one is unused in the workspace.
+// "desired 2", "desired 3", … until Files lists none by it; past that, desired
+// as it is, since names may repeat.
 func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desired string) (string, error) {
 	desired = strings.TrimSpace(desired)
 	if desired == "" {
 		desired = "Untitled"
 	}
 	desired = fieldlimits.Clamp(desired, fieldlimits.MaterialTitle)
-	taken, err := s.MaterialTitleTaken(ctx, workspaceID, desired)
+	taken, err := s.materialTitleTaken(ctx, workspaceID, desired)
 	if err != nil {
 		return "", err
 	}
@@ -1833,7 +1835,7 @@ func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desi
 	for n := 2; n < 10000; n++ {
 		suffix := fmt.Sprintf(" %d", n)
 		candidate := fieldlimits.Clamp(desired, fieldlimits.MaterialTitle-utf8.RuneCountInString(suffix)) + suffix
-		taken, err = s.MaterialTitleTaken(ctx, workspaceID, candidate)
+		taken, err = s.materialTitleTaken(ctx, workspaceID, candidate)
 		if err != nil {
 			return "", err
 		}
@@ -1841,7 +1843,7 @@ func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desi
 			return candidate, nil
 		}
 	}
-	return "", ErrTitleTaken
+	return desired, nil
 }
 
 func (s *Store) GetMaterial(ctx context.Context, id string) (Material, error) {
@@ -2081,9 +2083,6 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	}
 	ct, err := tx.Exec(ctx, `UPDATE materials SET `+strings.Join(sets, ", ")+where, args...)
 	if err != nil {
-		if isUniqueViolation(err) {
-			return Material{}, ErrTitleTaken
-		}
 		return Material{}, err
 	}
 	if ct.RowsAffected() == 0 {

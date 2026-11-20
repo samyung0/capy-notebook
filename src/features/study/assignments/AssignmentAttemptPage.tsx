@@ -13,6 +13,7 @@ import type { AssignmentsSearch, studyLink } from '../studyRoutes';
 import { AssignmentSubmitted } from './AssignmentSubmitted';
 import { AssignmentTake } from './AssignmentTake';
 import { AttemptResults } from './AttemptResults';
+import { questionPaperOf } from './assignmentText';
 
 /** The list's name, as the rail has it: Assignments to the class staff who
  * give them out, To do to everyone else (Epo 2026-11-11). */
@@ -66,9 +67,12 @@ export function AssignmentAttemptPage({
 }) {
   const { data, error, isError, isFetchedAfterMount, isPending, refetch } =
     useAssignmentAttempt(attemptId, { errorBoundary: false });
-  const { data: assignment } = useAssignment(data?.assignmentId ?? '', {
-    errorBoundary: false,
-  });
+  const {
+    data: assignment,
+    error: assignmentError,
+    isError: assignmentFailed,
+    refetch: refetchAssignment,
+  } = useAssignment(data?.assignmentId ?? '', { errorBoundary: false });
   // Seen running on this page, it was submitted here (A4 comes first); opened
   // later, it goes straight to its results.
   const ranHere = useRef(false);
@@ -79,7 +83,11 @@ export function AssignmentAttemptPage({
   const waitingForFresh = data?.status === 'running' && !isFetchedAfterMount;
   const readHere = useRef(false);
   if (isFetchedAfterMount && !isError) readHere.current = true;
-  if (isPending || waitingForFresh)
+  // A running upload waits for its assignment, which says whether a file is
+  // its question paper.
+  const paperFirst =
+    data?.status === 'running' && data.paper === 'upload' && !assignment;
+  if (isPending || waitingForFresh || (paperFirst && !assignmentFailed))
     return (
       <PracticeFrame>
         <SkeletonList count={8} rowHeight={36} />
@@ -93,6 +101,17 @@ export function AssignmentAttemptPage({
         <ErrorState
           errorId={unexpectedErrorId(error)}
           onRetry={() => void refetch()}
+          title={m.assignment_load_failed()}
+          variant="panel"
+        />
+      </PracticeFrame>
+    );
+  if (paperFirst)
+    return (
+      <PracticeFrame>
+        <ErrorState
+          errorId={unexpectedErrorId(assignmentError)}
+          onRetry={() => void refetchAssignment()}
           title={m.assignment_load_failed()}
           variant="panel"
         />
@@ -115,6 +134,7 @@ export function AssignmentAttemptPage({
           </IconButton>
         }
         onClosed={closedHere}
+        questionPaper={questionPaperOf(assignment)}
         workspaceId={workspaceId}
       />
     );

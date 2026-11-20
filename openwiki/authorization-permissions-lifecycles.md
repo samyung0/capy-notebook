@@ -467,6 +467,20 @@ unchanged.
   annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
+- **A graded quiz's question paper** (Epo 2026-11-20). A graded quiz made from a
+  file (`assignments.paper_file`) names the file to everyone it is given to,
+  hidden or not; a hidden one's topic, page-1 thumbnail and opening text wait
+  for their Start (`fillAssignmentFiles`). Once a member has started it (any
+  attempt, running or submitted, while they are still a member) they read that
+  one file as a viewer: its row, its links, its view session (`FileReadRole`,
+  which `fileRead` and `fileReadOrPayer` use) and their own PDF marks
+  (`annotationLock`), never before Start, as the frozen copy of a quiz is
+  given only at Start. Never its room: the edit session, the collaboration
+  token and the room's join check (`sourceActorsAllowed`) keep the hidden rule,
+  so they see what was last saved, not staff's typing. Everything else keeps
+  the hidden rule too (`FileEffectiveRole`): chat, the agent's tools, Recent,
+  search and the lists, and the file stays hidden in Files. Staff hide the paper themselves to keep
+  it unread before the quiz; nothing changes the flag for them.
 - **Owned by a graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
   (`materials.assignment_id`, migration 0174) is hidden for good: claiming it
   sets `hidden`, and `materialHiddenSQL` and `live_access` read it as hidden
@@ -705,7 +719,11 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   response as a missing shared workspace. A frozen recipient is refused with
   `account_over_quota`, since joining is an edit. An invite that belongs to
   another account answers the same 404 as a missing one, by invite id or by
-  token, so neither is an existence oracle.
+  token, so neither is an existence oracle. Before Accept the invite page reads
+  the invite (`GET /api/workspace-invites/{token}`: its role and workspace kind,
+  so a class's viewer can agree to what they share) under the same rules, the
+  same 404 wherever Accept would answer one; the in-app notification already
+  names the workspace to that invitee, so this tells them nothing new.
 - Role changes and removals refuse an empty actor rather than reading it as the
   owner.
 - Acceptance locks the workspace first, then locks the owner and recipient
@@ -1259,9 +1277,11 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   (`fileCanClone`).
 - The dialog prefills `Name (copy)` (before a file's extension) while the
   destination is the source's own workspace and the plain name elsewhere,
-  until the user types one. A material title is unique per workspace, so a
-  taken one answers 409 `title_taken`, shown under the name field; file names
-  are not unique. Clone spins and the dialog stays open while pending (Escape,
+  until the user types one. Names may repeat in a workspace, materials' as
+  files' (Epo 2026-11-20, migration 0187); only a name the app makes up (a quiz named after its
+  paper, an untitled note, a generated set, an agent's write) takes the next
+  number, "Name 2", counted against what Files lists (a note, quiz or set,
+  not trashed, embedded or a graded quiz's own; that one keeps its name). Clone spins and the dialog stays open while pending (Escape,
   an outside click and the hidden close button do nothing then); any other
   refusal shows in the dialog (`FormAlert`), not as a toast: a storage refusal
   is the cloner's own (the cloner pays), a file past the cloner's cap the

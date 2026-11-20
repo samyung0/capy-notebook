@@ -128,20 +128,26 @@ test.describe('taking an assignment', () => {
     await expect(page.locator('[data-center-header]')).toBeVisible();
   });
 
-  test('the list on a wider screen says which are answered', async ({
+  // A wider screen lists the numbers as a grid (Epo 2026-11-19), not the
+  // phone's strip.
+  test('the grid on a wider screen says which are answered', async ({
     page,
   }) => {
     await start(page);
     await page.getByText('Mitochondria', { exact: true }).click();
+    const take = page.locator('[data-assignment-take]');
     await expect(
-      rows(page).first().getByRole('img', {
-        name: m.assignment_legend_answered(),
+      take.getByRole('button', {
+        name: `${m.assignment_question_n({ number: 1 })}, ${m.assignment_legend_answered()}`,
       })
     ).toBeVisible({ timeout: 30_000 });
+    // One set of the paper's 21 numbers: the grid's, the strip hidden.
     await expect(
-      page.getByRole('button', {
-        name: m.assignment_question_n({ number: 2 }),
+      take.getByRole('button', {
+        name: new RegExp(
+          `^${m.assignment_question_n({ number: 0 }).replace('0', '\\d+')}, `
+        ),
       })
-    ).toBeHidden();
+    ).toHaveCount(21);
   });
 });

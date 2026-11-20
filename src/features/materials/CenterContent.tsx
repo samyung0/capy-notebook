@@ -3,7 +3,7 @@ import {
   type QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import {
   type ComponentProps,
   lazy,
@@ -116,6 +116,7 @@ import { unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useOnlineStatus } from '@/lib/online';
 import { dropDeviceCopies } from '@/lib/sourceCache';
+import { useFullscreenSearch } from '@/lib/useFullscreenSearch';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
@@ -213,35 +214,9 @@ export function CenterContent({
   // may have (Epo 2026-11-04).
   const fileMode =
     item?.kind === 'file' ? (requestedMode ?? readDocumentMode(item)) : 'view';
-  // Full screen lives in the URL (`?fullscreen=true`) so the back gesture
-  // leaves it; opening another item drops it with the rest of the search.
-  const isFullscreen =
-    useSearch({ select: (search) => search.fullscreen, strict: false }) ===
-    true;
-  const navigate = useNavigate();
-  const router = useRouter();
-  // Set when this pane pushed the entry: leaving pops it, so back afterwards
-  // does not land on the same page again. A loaded full screen URL replaces.
-  const pushedFullscreen = useRef(false);
-  const setFullscreen = useCallback(
-    (on: boolean) => {
-      if (!on && pushedFullscreen.current) {
-        pushedFullscreen.current = false;
-        router.history.back();
-        return;
-      }
-      pushedFullscreen.current = on;
-      void navigate({
-        replace: !on,
-        search: (previous) => ({
-          ...previous,
-          fullscreen: on ? (true as const) : undefined,
-        }),
-        to: '.',
-      });
-    },
-    [navigate, router]
-  );
+  // Full screen lives in the URL; opening another item drops it with the
+  // rest of the search.
+  const [isFullscreen, setFullscreen] = useFullscreenSearch();
   const [editorStatus] = useState(createEditorStatusStore);
   // Stable: the store's own setter, so reporting never re-renders this pane.
   const setEditorStatus = editorStatus.getState().report;
@@ -257,18 +232,6 @@ export function CenterContent({
     setPresence(null);
     setMenuShown(false);
   }, [item?.kind, item?.id]);
-
-  // Escape leaves full screen unless something open (a menu, a dialog)
-  // already took it.
-  useEffect(() => {
-    if (!isFullscreen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented)
-        setFullscreen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isFullscreen, setFullscreen]);
 
   useEffect(() => {
     if (item?.kind === 'file' && requestedMode)

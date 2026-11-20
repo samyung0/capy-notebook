@@ -186,3 +186,33 @@ it('shows a shuffled mcq in its order, the locked option in place, and grades th
     1
   );
 });
+
+// Epo 2026-11-19 (A): choices are the editor's rows; a review tags the wrong
+// pick Wrong and the correct choice left unpicked Correct answer.
+it('reviews an mcq as rows: the wrong pick red, the missed one ringed green', async () => {
+  const question = exampleQuestion('rows', {
+    correct: [1],
+    options: ['Nucleus', 'Mitochondria', 'Ribosome'],
+    type: 'mcq',
+  });
+  question.parts[0].awarded = 0;
+  root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <QuestionRunner
+        answers={{ 'rows-part': [0] }}
+        question={question}
+        review
+      />
+    )
+  );
+  const rows = [...host.querySelectorAll('button[aria-pressed]')];
+  expect(rows.map((row) => row.textContent)).toEqual([
+    `Nucleus${m.question_ui_result_wrong()}`,
+    `Mitochondria${m.question_ui_correct_answer()}`,
+    'Ribosome',
+  ]);
+  expect(rows[0].querySelector('[aria-hidden]')?.className).toContain(
+    'bg-tint-error-fg'
+  );
+});

@@ -269,8 +269,9 @@ func TestMaterialCloneDestinationsMentionsAndTitles(t *testing.T) {
 	if err != nil || child.ParentMaterialID != clone.ID || child.WorkspaceID != target.ID {
 		t.Fatalf("embedded copy = %+v %v", child, err)
 	}
-	if _, err := s.CloneMaterial(ctx, actor, note.ID, CloneTarget{WorkspaceID: target.ID, Name: "lecture COPY"}); !errors.Is(err, ErrTitleTaken) {
-		t.Fatalf("title clash = %v, want ErrTitleTaken", err)
+	// Names may repeat (Epo 2026-11-20): a second copy keeps the name typed.
+	if again, err := s.CloneMaterial(ctx, actor, note.ID, CloneTarget{WorkspaceID: target.ID, Name: "Lecture copy"}); err != nil || again.Title != "Lecture copy" {
+		t.Fatalf("a repeated name = %+v, err %v", again, err)
 	}
 	if _, err := s.CloneMaterial(ctx, actor, cards.ID, CloneTarget{Name: "Embedded"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("embedded row clone = %v, want ErrNotFound", err)

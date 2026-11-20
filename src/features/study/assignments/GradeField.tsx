@@ -5,18 +5,19 @@ import { z } from 'zod';
 import { SetAssignmentGradeBody } from '@/api/gen/validators';
 import { useSetAssignmentGrade } from '@/api/hooks';
 import type { Assignment, AssignmentMemberRow } from '@/api/types';
-import { Input, InputError } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
-import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
-import { typedMark } from './assignmentText';
+import { MarkField } from './MarkField';
 
 /** A member's grade on a graded Assignment (Epo 2026-11-14), entered by staff
- * on the member's row: 0 to its points with one decimal place at most, saved on Enter or on
- * leaving the field; emptied, the grade is cleared. Shows the grade as given;
- * the row's late badge says what the penalty takes off. */
+ * on the Grading tab: 0 to its points with one decimal place at most, saved
+ * on Enter or Save, never on leaving the field, as a graded quiz's marks wait
+ * for Save (Epo 2026-11-19). Emptied, the grade is cleared. Shows the grade as given; the late badge
+ * says what the penalty takes off. */
 export function GradeField({
   assignment,
   className,
@@ -48,7 +49,7 @@ export function GradeField({
   );
   const {
     control,
-    formState: { errors },
+    formState: { errors, isDirty },
     handleSubmit,
     reset,
   } = useForm({
@@ -70,50 +71,51 @@ export function GradeField({
             variant: 'error',
           });
         },
+        // Saved: not dirty, so Save waits for the next change.
+        onSuccess: () =>
+          reset({ points: next === undefined ? '' : String(next) }),
       }
     );
   });
   const label = m.assignment_grade_of({ name: member.name });
   return (
     <form
-      className={cn('flex w-28 flex-col gap-1', className)}
+      className={cn('flex flex-col gap-1', className)}
       noValidate
-      // Inside a row that opens something: typing and clicking stay here.
-      onClick={(event) => event.stopPropagation()}
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
-      <Controller
-        control={control}
-        name="points"
-        render={({ field, fieldState }) => (
-          <Input
-            aria-invalid={fieldState.invalid}
-            aria-label={label}
-            autoComplete="off"
-            disabled={isPending}
-            endText={`/ ${formatPoints(points)}`}
-            inputMode="decimal"
-            name={field.name}
-            onBlur={() => {
-              field.onBlur();
-              void save();
-            }}
-            // Keys that would not make a grade are refused, as in a mark
-            // field (Epo 2026-11-18).
-            onChange={(event) => {
-              const next = typedMark(event.target.value, points);
-              if (next !== undefined) field.onChange(next);
-            }}
-            ref={field.ref}
-            type="text"
-            value={field.value}
-            wrapperClassName="h-8 px-2.5"
-          />
-        )}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Controller
+          control={control}
+          name="points"
+          // The graded quiz's mark field (Epo 2026-11-19): it refuses keys
+          // that would not make a grade, as marks do.
+          render={({ field }) => (
+            <MarkField
+              className="shrink-0"
+              label={label}
+              marks={points}
+              onChange={(next) =>
+                field.onChange(next === null ? '' : String(next))
+              }
+              value={field.value === '' ? null : Number(field.value)}
+            />
+          )}
+        />
+        {/* At the mark field's 32px. */}
+        <Button
+          className="h-8"
+          disabled={isPending || !isDirty}
+          size="sm"
+          type="submit"
+          variant="outline"
+        >
+          {m.action_save()}
+        </Button>
+      </div>
       {errors.points?.message && (
         <InputError>{errors.points.message}</InputError>
       )}

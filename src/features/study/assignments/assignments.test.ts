@@ -16,7 +16,6 @@ import {
   typedMark,
 } from './assignmentText';
 import { questionsWithNoAnswers } from './NoAnswersWarning';
-import { paperMeta } from './useAssignmentStart';
 
 const graded = (
   parts: { marks: number; awarded?: number; pending?: boolean }[]
@@ -58,12 +57,6 @@ it('draws dates as the boards do', () => {
   expect(localInputValue(iso, false)).toBe('2026-11-07T18:00');
 });
 
-it('sizes a paper in the words of Before you start', () => {
-  expect(paperMeta({ marks: 40, questions: 12 })).toBe(
-    `${m.question_ui_question_count({ count: 12 })} · ${m.question_ui_marks({ count: 40 })}`
-  );
-});
-
 it('keeps each report link in the URL', () => {
   const parse = parseAssignmentsSearch;
   expect(parse({ tab: 'members' }).tab).toBe(undefined);
@@ -76,9 +69,9 @@ it('keeps each report link in the URL', () => {
       assignment: 'as1',
       member: 'u1',
       question: 'q3',
-      tab: 'approve',
+      tab: 'grading',
     })
-  ).toMatchObject({ member: 'u1', question: 'q3', tab: 'approve' });
+  ).toMatchObject({ member: 'u1', question: 'q3', tab: 'grading' });
   expect(
     parse({
       assignment: 'as1',
@@ -99,7 +92,18 @@ it('keeps each report link in the URL', () => {
       show: 'topics',
     })
   ).toMatchObject({ member: 'u1', show: 'topics' });
-  // An unknown tab clears, and a question only belongs to Approve AI marks.
+  // Grading's member and file (Epo 2026-11-19).
+  expect(
+    parse({ assignment: 'as1', member: 'u1', tab: 'grading', work: 'f1' })
+  ).toMatchObject({ member: 'u1', tab: 'grading', work: 'f1' });
+  expect(
+    parse({ assignment: 'as1', fullscreen: 'true', tab: 'grading' }).fullscreen
+  ).toBe(true);
+  // Questions' too, which as the first tab has no `tab` in its URL.
+  expect(parse({ assignment: 'as1', fullscreen: 'true' }).fullscreen).toBe(
+    true
+  );
+  // An unknown tab clears, and a question only belongs to Grading.
   expect(parse({ assignment: 'as1', tab: 'x' }).tab).toBe(undefined);
   expect(parse({ assignment: 'as1', question: 'q3' }).question).toBe(undefined);
 });

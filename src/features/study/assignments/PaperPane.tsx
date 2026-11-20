@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
   type SubmissionOf,
-  useOrderPaperFiles,
   usePaperFileLinks,
   useRemovePaperFile,
 } from '@/api/hooks';
@@ -11,12 +10,13 @@ import type { PaperFile, SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import { fileExt, formatFileSize } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
+import { SubmissionFileList, useOpenSubmissionFile } from './HandIns';
+import { SectionLabel } from './todoParts';
 import type { SubmissionFiles } from './useAddSubmissionFiles';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -46,61 +46,23 @@ async function pickedPages(file: File) {
   }
 }
 
-/** Removing and reordering a running paper's files, page by page. */
-type PaperEdit = {
-  dragged: string | null;
-  onDragStart: (fileId: string) => void;
-  onDrop: (fileId: string) => void;
-  onRemove: (file: PaperFile) => void;
-  removing: boolean;
-};
-
-/** One page of a paper, numbered across its files; while it runs, a file's
- * first page carries its remove button and every page drags the file. */
+/** One page of a paper, numbered across its files. */
 function Sheet({
   children,
-  edit,
-  file,
-  firstOfFile,
   number,
   ratio = SHEET_RATIO,
 }: {
   children: React.ReactNode;
-  edit?: PaperEdit;
-  file: PaperFile;
-  firstOfFile: boolean;
   number: number;
   ratio?: number;
 }) {
   return (
-    <div
-      className={cn(
-        'flex min-w-0 flex-col gap-1.5',
-        edit && 'cursor-grab',
-        edit?.dragged === file.id && 'opacity-50'
-      )}
-      data-paper-page={number}
-      draggable={!!edit}
-      onDragOver={edit && ((e) => e.preventDefault())}
-      onDragStart={edit && (() => edit.onDragStart(file.id))}
-      onDrop={edit && (() => edit.onDrop(file.id))}
-    >
+    <div className="flex min-w-0 flex-col gap-1.5" data-paper-page={number}>
       <div
         className="relative w-full overflow-hidden rounded-[3px] border border-[#dcdfdf] bg-white shadow-[0_1px_3px_rgba(0,0,0,.08)]"
         style={{ aspectRatio: ratio }}
       >
         {children}
-        {edit && firstOfFile && (
-          <button
-            aria-label={m.assignment_paper_remove_file({ name: file.name })}
-            className="absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-full bg-black/55 text-white outline-none focus-visible:ring-2 focus-visible:ring-action"
-            disabled={edit.removing}
-            onClick={() => edit.onRemove(file)}
-            type="button"
-          >
-            <Icon name="x" size={14} />
-          </button>
-        )}
       </div>
       <span className="t-meta text-center text-fg-muted">{number}</span>
     </div>
@@ -110,7 +72,6 @@ function Sheet({
 /** One file's pages: a PDF's each, an image as one, any other file as one tile
  * (its text is read as one page, as Make a quiz does). */
 function FilePages({
-  edit,
   file,
   first,
   only,
@@ -118,7 +79,6 @@ function FilePages({
   width,
   of,
 }: {
-  edit?: PaperEdit;
   file: PaperFile;
   /** The paper's number for this file's first page. */
   first: number;
@@ -145,7 +105,7 @@ function FilePages({
   if (!pdf) {
     if (!shown(1)) return null;
     return (
-      <Sheet edit={edit} file={file} firstOfFile number={first}>
+      <Sheet number={first}>
         {file.kind === 'image' ? (
           links?.url && (
             <img
@@ -192,14 +152,7 @@ function FilePages({
       {Array.from({ length: count }, (_, i) => i + 1)
         .filter(shown)
         .map((page) => (
-          <Sheet
-            edit={edit}
-            file={file}
-            firstOfFile={page === 1}
-            key={page}
-            number={first + page - 1}
-            ratio={ratios[page]}
-          >
+          <Sheet key={page} number={first + page - 1} ratio={ratios[page]}>
             <Page
               className="[&_canvas]:h-auto! [&_canvas]:w-full!"
               loading={<Skeleton className="h-full w-full rounded-none" />}
@@ -223,7 +176,6 @@ function FilePages({
  * numbers them; `only` keeps the pages a part was found on (Approve, mock T1). */
 export function PaperPages({
   className,
-  edit,
   files,
   of,
   onCounts,
@@ -231,7 +183,6 @@ export function PaperPages({
   width = 220,
 }: {
   className?: string;
-  edit?: PaperEdit;
   files: readonly PaperFile[];
   of: SubmissionOf;
   /** Each file's pages once known, for the page cap. */
@@ -254,7 +205,6 @@ export function PaperPages({
         first += counts[file.id] ?? 1;
         return (
           <FilePages
-            edit={edit}
             file={file}
             first={start}
             key={file.id}
@@ -269,10 +219,39 @@ export function PaperPages({
   );
 }
 
-/** S5's Your paper (Epo 2026-11-08): the whole paper as a PDF or photos, in
- * order, nothing labelled; files can be removed or dragged into order. Each
- * file goes through the normal upload with the attempt named, by `uploads`,
- * which the page holds so Submit waits for them (finding 6). */
+/** A stored PDF's pages, counted as its copy opens (any other file is one
+ * page). Renders nothing. */
+function PageCount({
+  file,
+  of,
+  onCount,
+}: {
+  file: PaperFile;
+  of: SubmissionOf;
+  onCount: (fileId: string, pages: number) => void;
+}) {
+  const { data: links } = usePaperFileLinks(of, file.id);
+  const url = links?.url;
+  useEffect(() => {
+    if (!url) return;
+    const task = pdfjs.getDocument({ url });
+    task.promise.then(
+      (doc) => {
+        onCount(file.id, doc.numPages);
+        void doc.destroy();
+      },
+      () => undefined
+    );
+    return () => void task.destroy();
+  }, [file.id, onCount, url]);
+  return null;
+}
+
+/** S5's Your answers (Epo 2026-11-08, as a list beside the questions
+ * 2026-11-19): photos or a PDF of the written answers, each file listed with
+ * its size, removable while the attempt runs. Each file goes through the normal
+ * upload with the attempt named, by `uploads`, which the page holds so Submit
+ * waits for them (finding 6). */
 export function PaperPane({
   attemptId,
   files,
@@ -284,27 +263,31 @@ export function PaperPane({
 }) {
   const { ready, uploading } = uploads;
   const { mutate: remove, isPending: removing } = useRemovePaperFile(attemptId);
+  const of = { attemptId };
+  const openFile = useOpenSubmissionFile(of);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  // A PDF's pages as picked, until its own render counts them.
+  const onCount = useRef((fileId: string, pages: number) =>
+    setCounts((prev) =>
+      prev[fileId] === pages ? prev : { ...prev, [fileId]: pages }
+    )
+  ).current;
+  // A PDF's pages as picked, until its stored copy counts them.
   const picked = useRef(new Map<string, number>());
   // Pages of picks still uploading.
   const flying = useRef(0);
+  const pagesOf = (f: PaperFile) =>
+    counts[f.id] ?? picked.current.get(`${f.name}:${f.sizeBytes}`) ?? 1;
+  const held = files.reduce((n, f) => n + pagesOf(f), 0);
   const add = async (list: FileList | null) => {
     if (!list?.length) return;
     const chosen = [...list];
     const pages = await Promise.all(chosen.map(pickedPages));
-    const held = files.reduce(
-      (n, f) =>
-        n +
-        (counts[f.id] ?? picked.current.get(`${f.name}:${f.sizeBytes}`) ?? 1),
-      flying.current
-    );
     const adding = pages.reduce((n, p) => n + p, 0);
-    if (held + adding > PAPER_MAX_PAGES) {
+    if (held + flying.current + adding > PAPER_MAX_PAGES) {
       userToast({
         title: m.assignment_paper_too_many_pages({
           max: PAPER_MAX_PAGES,
-          pages: held + adding,
+          pages: held + flying.current + adding,
         }),
         variant: 'error',
       });
@@ -321,26 +304,22 @@ export function PaperPane({
       flying.current -= adding;
     }
   };
-  const { mutate: order } = useOrderPaperFiles(attemptId);
-  const [dragged, setDragged] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
-  const drop = (onto: string) => {
-    if (!dragged || dragged === onto) return;
-    const ids = files.map((f) => f.id).filter((id) => id !== dragged);
-    ids.splice(ids.indexOf(onto), 0, dragged);
-    order(ids);
-    setDragged(null);
-  };
+  const size = files.reduce((n, f) => n + f.sizeBytes, 0);
 
   return (
-    <div className="mx-auto flex w-full max-w-180 flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto font-extrabold text-[1.25rem] leading-snug tracking-[-0.01rem] max-md:basis-full lg:text-[1.375rem]">
-          {m.assignment_paper_title()}
-        </h2>
+    <section
+      aria-label={m.assignment_your_answers()}
+      className="flex flex-col gap-2"
+    >
+      <div className="flex min-h-8 flex-wrap items-center gap-2">
+        <SectionLabel className="mr-auto whitespace-nowrap max-md:basis-full">
+          {m.assignment_your_answers()}
+        </SectionLabel>
         <Button
           className="md:hidden"
+          disabled={!ready}
           iconLeft="camera"
           onClick={() => camera.current?.click()}
           size="sm"
@@ -379,44 +358,39 @@ export function PaperPane({
           type="file"
         />
       </div>
-      <p className="t-meta text-fg-secondary">{m.assignment_paper_hint()}</p>
-      {files.length === 0 && uploading.length === 0 && (
-        <p className="text-fg-muted">{m.assignment_paper_empty()}</p>
-      )}
-      {files.length > 0 && (
+      {files.length === 0 && uploading.length === 0 ? (
+        <p className="t-meta text-fg-muted">{m.assignment_paper_empty()}</p>
+      ) : (
         <p className="t-meta text-fg-secondary">
-          {files.length === 1
-            ? m.assignment_paper_file_meta({
-                name: files[0]!.name,
-                size: formatFileSize(files[0]!.sizeBytes),
-              })
-            : m.assignment_paper_file_meta({
-                name: m.assignment_paper_files({ count: files.length }),
-                size: formatFileSize(
-                  files.reduce((n, f) => n + f.sizeBytes, 0)
-                ),
-              })}
+          {[
+            files.length === 1
+              ? m.assignment_paper_one_file()
+              : m.assignment_paper_files({ count: files.length }),
+            formatFileSize(size),
+            m.assignment_paper_pages_used({
+              max: PAPER_MAX_PAGES,
+              pages: held,
+            }),
+          ].join(' · ')}
         </p>
       )}
-      <PaperPages
-        className="grid-cols-3 sm:grid-cols-5"
-        edit={{
-          dragged,
-          onDragStart: setDragged,
-          onDrop: drop,
-          onRemove: (file) => remove(file.id),
-          removing,
-        }}
+      {files
+        .filter((file) => file.kind === 'pdf')
+        .map((file) => (
+          <PageCount file={file} key={file.id} of={of} onCount={onCount} />
+        ))}
+      <SubmissionFileList
         files={files}
-        of={{ attemptId }}
-        onCounts={setCounts}
-        width={160}
+        meta={(file) =>
+          pagesOf(file) > 1
+            ? `${m.assignment_paper_n_pages({ count: pagesOf(file) })} · ${formatFileSize(file.sizeBytes)}`
+            : formatFileSize(file.sizeBytes)
+        }
+        onOpen={(file) => void openFile(file)}
+        onRemove={(file) => remove(file.id)}
+        removing={removing}
+        uploading={uploading}
       />
-      {uploading.map((name) => (
-        <p className="t-meta text-fg-secondary" key={name}>
-          {m.assignment_paper_uploading({ name })}
-        </p>
-      ))}
-    </div>
+    </section>
   );
 }

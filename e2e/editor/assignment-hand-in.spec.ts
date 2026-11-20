@@ -28,14 +28,15 @@ test('a member adds their work and hands it in', async ({ page }) => {
   ).toBeVisible();
 });
 
-// T2: the Members tab says who handed in what, and a file opens in the viewer.
+// T2: the Members tab says who handed in what, and a file opens in a new tab.
 test('staff open what a member handed in', async ({ page }) => {
   await page.goto('/workspaces/ws_bio/assignments?assignment=as_lab');
+  // Four of the mock class's 18 (src/mocks/workspaceMembers.ts).
   await expect(
-    page.getByText(m.assignment_stat_of({ done: 4, total: 6 }))
+    page.getByText(m.assignment_stat_of({ done: 4, total: 18 }))
   ).toBeVisible({ timeout: 30_000 });
+  // A PDF opens its signed link in a new tab (Epo 2026-11-19).
+  const opened = page.context().waitForEvent('page');
   await page.getByRole('button', { name: 'Lab write-up.pdf' }).click();
-  await expect(
-    page.getByRole('dialog', { name: 'Lab write-up.pdf' })
-  ).toBeVisible();
+  await (await opened).close();
 });

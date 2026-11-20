@@ -60,7 +60,13 @@ export function NewAssignmentMenu({
               {m.assignment_new_menu()}
             </Button>
           ) : (
-            <PageButton iconLeft="plus" iconRight="chevronDown">
+            // Two icons already fill it out: 16px a side, not the 20px of
+            // a header button with one (Epo 2026-11-19).
+            <PageButton
+              className="px-4"
+              iconLeft="plus"
+              iconRight="chevronDown"
+            >
               {m.assignment_new_menu()}
             </PageButton>
           )

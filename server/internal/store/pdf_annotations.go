@@ -93,11 +93,24 @@ func validatePDFAnnotation(in PDFAnnotationBody) error {
 	return nil
 }
 
-// annotationLock admits any reader of the file. Saving or deleting a mark
-// (write) is a content edit, refused when the actor or the file's payer is
-// frozen or the payer is at its storage limit.
+// annotationLock admits any reader of the file, a hidden question paper's
+// starters too (FileReadRole: their own marks on it, never its room). Saving
+// or deleting a mark (write) is a content edit, refused when the actor or the
+// file's payer is frozen or the payer is at its storage limit.
 func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file string, write bool) (string, error) {
-	if _, _, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false, nil, false); err != nil {
+	_, _, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false, nil, false)
+	if errors.Is(err, ErrNotFound) {
+		// readsAsPaper holds their membership, so the role check is skipped
+		// (admitted); the owner's lifecycle still refuses them.
+		var paper bool
+		if paper, err = readsAsPaper(ctx, tx, file, actor); err == nil {
+			err = ErrNotFound
+			if paper {
+				_, _, err = s.sourceLockTx(ctx, tx, file, []string{actor}, false, nil, true)
+			}
+		}
+	}
+	if err != nil {
 		return "", err
 	}
 	if write {

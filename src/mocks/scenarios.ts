@@ -106,6 +106,10 @@ export const mockScenarioOptions = [
     label: 'Account deletion: transfer required',
   },
   { id: 'invite-success', label: 'Invitation accept success' },
+  {
+    id: 'invite-class-success',
+    label: 'Invitation accept success: class member',
+  },
   { id: 'chat-tool-failed', label: 'Chat tool failure' },
   { id: 'chat-undo-refused', label: 'Chat edit effect + refused undo' },
   { id: 'chat-pending-sources', label: 'Chat pending source warning' },
@@ -195,6 +199,7 @@ export const permanentScenarios: readonly string[] = [
   'workspace-401',
   'workspace-404',
   'invite-unavailable',
+  'invite-class-success',
   'account-suspended',
   'account-deleted',
   'account-deletion-pending',
@@ -308,6 +313,21 @@ export function getMockScenarioHandlers(
             role: 'editor',
             userId: user.id,
             workspaceId: workspaces[0].id,
+          })
+        ),
+      ];
+    case 'invite-class-success':
+      return [
+        http.get('/api/workspace-invites/:token', () =>
+          HttpResponse.json({ role: 'viewer', workspaceKind: 'class' })
+        ),
+        http.post('/api/workspace-invites/:token/accept', () =>
+          HttpResponse.json({
+            createdAt: new Date().toISOString(),
+            name: user.name,
+            role: 'viewer',
+            userId: user.id,
+            workspaceId: 'ws_bio',
           })
         ),
       ];

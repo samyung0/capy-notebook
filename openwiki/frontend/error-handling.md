@@ -84,9 +84,7 @@ inline, not as a toast, so the draft and its context stay on screen:
 
 - The confirm button shows a spinner and the dialog stays open while the
   request runs; Escape, an outside click and the close button do nothing then.
-- A typed refusal about one field shows under that field (a taken title,
-  `title_taken`).
-- Anything else shows in `FormAlert` (src/components/ui/FormAlert.tsx) at the
+- A refusal shows in `FormAlert` (src/components/ui/FormAlert.tsx) at the
   bottom of the form; `cloneErrorMessage` maps storage, plan-cap, credit and
   access refusals to their copy. An unexpected failure adds its error id.
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
@@ -217,7 +215,7 @@ carries already-localized copy. A 409 always names its conflict:
 `revision_conflict` (a stale revision: someone else changed it first, with
 Reload) is distinct from `account_deletion_busy`, `subscription_exists`,
 `subscription_active`, `account_state_changed`, `clone_source_changed`,
-`title_taken`, `transfer_self` and `nothing_to_process`. The Go store's
+`transfer_self` and `nothing_to_process`. The Go store's
 specific conflicts wrap `ErrConflict`, so internal callers still see a
 conflict. Zod's own messages follow the UI locale (`z.config` in
 `src/i18n/index.ts`), and question validation throws or reports paraglide
@@ -411,7 +409,9 @@ preload that fails says nothing: only an open the user asked for shows a toast.
   `aria-busy`, and format when the code lands (`data-prose`: `loading`, `slow`,
   `failed`). A thread stays at its end as that happens if the reader was there,
   also as its maths (KaTeX) and code colours draw later still, until the reader
-  scrolls away (a `ResizeObserver` over the thread's rows). If
+  scrolls up (a `ResizeObserver` over the thread and its rows; only a move up over
+  a thread of unchanged height leaves the end, since the browser's scroll anchoring
+  moves a thread at its end, up or down, as its rows change height). If
   it won't load the words stay as they are, which is still the answer: offline with
   no toast of its own, trying once more when the connection is back, otherwise with
   the update toast. A browser that keeps the failed import stays on those words until

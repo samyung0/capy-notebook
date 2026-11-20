@@ -231,9 +231,9 @@ to Epo as visual options, not a call made in code.
   `--surface-page-hover` without one, N1), the 36px icon sits on its
   bottom-left edge in a 2px card-coloured ring, and the ⋮ on the banner is
   `CardActions`, the one button the file cards use too: a plain 24px circle in
-  the card's colour, with a larger invisible hit area. From 1280px with a
-  mouse it shows on the card's hover, focus or open menu; narrower and on touch
-  screens it always shows. Below: the name (14px bold, one line, L1), the topic
+  the card's colour, with a larger invisible hit area. With a mouse
+  (`pointer-fine`), at any width (Epo 2026-11-19), it shows on the card's
+  hover, focus or open menu; on touch screens it always shows. Below: the name (14px bold, one line, L1), the topic
   count (`chapterCount` until chapters become topics), then access and tags as
   22px boxes with 6px corners. The card border is `--divider`. The settings
   cover picker previews the same face; covers and the picker are unchanged.

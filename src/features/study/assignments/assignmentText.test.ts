@@ -7,6 +7,7 @@ import {
   dayTimeLabel,
   dueText,
   latePolicy,
+  questionRowName,
   timeLabel,
 } from './assignmentText';
 
@@ -87,4 +88,24 @@ it('keeps the late penalty only on what is graded', () => {
     latePolicy({ ...policy, kind: 'unmarked', points: 20 }).latePenaltyPct
   ).toBe(20);
   expect(latePolicy({ ...policy, kind: 'unmarked' }).latePenaltyPct).toBe(0);
+});
+
+// Epo 2026-11-19: a number-labelled part reads Q19 (2), as a lettered one does.
+it("names a part's row with its label in brackets", () => {
+  const parts = [
+    { id: 'p1' },
+    { group: 'g', id: 'p2' },
+    { group: 'g', id: 'p3' },
+  ];
+  const groups = [{ blocks: [], id: 'g' }];
+  expect(questionRowName(19, { labels: 'numbers', parts }, 'p1')).toBe(
+    'Q19 (1)'
+  );
+  expect(questionRowName(19, { groups, labels: 'numbers', parts }, 'p3')).toBe(
+    'Q19 (2)(ii)'
+  );
+  expect(questionRowName(18, { groups, labels: 'letters', parts }, 'p2')).toBe(
+    'Q18 (b)(i)'
+  );
+  expect(questionRowName(3)).toBe('Q3');
 });
