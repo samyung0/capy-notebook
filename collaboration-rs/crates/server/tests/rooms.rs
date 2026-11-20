@@ -10979,7 +10979,7 @@ async fn the_projection_catch_up_leaves_a_note_in_trash_until_it_is_restored() {
     assert_eq!(logs.count(&["unload projection failed", &material]), 0);
     client
         .execute(
-            "UPDATE materials SET trashed_at=NULL WHERE id=$1",
+            "UPDATE materials SET trashed_at=NULL, trash_episode_id=NULL, purge_after=NULL WHERE id=$1",
             &[&material],
         )
         .await
@@ -11060,7 +11060,8 @@ async fn trash_keeping_rooms(env: &Env, material: &str) {
     let mut client = db(env).await;
     let tx = client.transaction().await.expect("transaction");
     tx.execute(
-        "UPDATE materials SET trashed_at=now() WHERE id=$1",
+        "UPDATE materials SET trashed_at=now(), trash_episode_id='ep_'||id,
+         purge_after=now() + interval '30 days' WHERE id=$1",
         &[&material],
     )
     .await
@@ -11127,7 +11128,7 @@ async fn a_server_edits_projection_refused_in_trash_is_not_reported() {
     let client = db(&env).await;
     client
         .execute(
-            "UPDATE materials SET trashed_at=NULL WHERE id=$1",
+            "UPDATE materials SET trashed_at=NULL, trash_episode_id=NULL, purge_after=NULL WHERE id=$1",
             &[&material],
         )
         .await
