@@ -12,10 +12,16 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
-import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
+import {
+  deletedItemOf,
+  isApiError,
+  isMaterialContentUnreadable,
+  qk,
+} from '@/api/client';
 import {
   materialTokenQuery,
   useFile,
@@ -29,6 +35,7 @@ import type {
   Material,
   Provenance,
   Region,
+  SourceFile,
   Topic,
   Trashed,
   UserColor,
@@ -36,6 +43,7 @@ import type {
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
+import { SaveBanner } from '@/components/banners/SaveBanner';
 import { PageButton } from '@/components/ui/Button';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
@@ -45,12 +53,18 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
   copyLabel,
+  dropDeletedCopies,
   keepsCopyOf,
   type RoomCopy,
   useKeepMaterialCopy,
   useMaterialCopy,
   useRoomSeed,
 } from '@/features/collaboration/deviceCopy';
+import {
+  deletedTarget,
+  reloadDeleted,
+  useDeletedEdits,
+} from '@/features/collaboration/lostEdits';
 import {
   createPresenceStore,
   type PresenceConnection,
@@ -350,6 +364,7 @@ export function CenterContent({
                             readOnly={readOnly}
                             standalone={standalone}
                             topics={topics}
+                            trashed={trashed}
                             workspaceId={workspaceId}
                           />
                         </div>
@@ -395,6 +410,7 @@ export function CenterContent({
                                 onImageZoomChange={setImageZoom}
                                 page={item.page}
                                 regions={item.regions}
+                                trashed={trashed}
                               />
                             )}
                           </div>
@@ -661,18 +677,67 @@ function MaterialContentBody({
   // An item's last read, painting until this one answers.
   const copied = useMaterialCopy(materialId, isStatic ? null : me?.id);
   const refused = isRefusedRead(error);
-  // No access, or gone: what this device kept of it goes too.
+  // Deleted (Q39): its read answers `item_deleted`, or to its trash readers
+  // (its payer, the workspace's owner) the trashed item, here on a page not
+  // opened from the Trash.
+  const deleted = !!deletedItemOf(error) || (!trashed && !!loaded?.trash);
+  // No access, or gone: what this device kept of it goes too, but a deleted
+  // item's while this device holds edits to it (`dropDeletedCopies`).
   const lost =
-    isApiError(error) && (error.status === 403 || error.status === 404);
+    deleted ||
+    (isApiError(error) && (error.status === 403 || error.status === 404));
+  const owner = me?.id;
   useEffect(() => {
     if (!lost) return;
-    void dropDeviceCopies(materialId);
+    if (deleted) void dropDeletedCopies(owner, materialId);
+    else void dropDeviceCopies(materialId);
     // Signed links outlast access by their lifetime, but no further (Epo Q678 A).
     forgetAssetLinks();
-  }, [lost, materialId]);
+  }, [lost, deleted, owner, materialId]);
+  // Deleted while this page showed it, live or from its device copy: that
+  // stays, read-only, while this device holds unsent edits to it (`kept`),
+  // shown to copy until Reload (a note's drawn from them, as its Download
+  // draws them); with none it is unavailable as any refusal.
+  const shownLive = useRef<Material | undefined>(undefined);
+  const showing = loaded ?? copied;
+  if (!deleted && showing) shownLive.current = showing;
+  const shown = shownLive.current;
+  const deletedDocs = deletedTarget(
+    me?.id,
+    false,
+    materialId,
+    shown?.kind === 'quiz'
+  );
+  const deletedEdits = useDeletedEdits(
+    deletedDocs,
+    deleted && !!shown,
+    shown?.kind === 'note'
+  );
+  const keptDeleted =
+    deleted && deletedEdits?.status !== 'none' ? shown : undefined;
+  // A deleted note's kept edits drawn from the stored rows alone, as its
+  // Download draws them: what its strip says shows, and its Reload deletes.
+  const deletedNote = deletedEdits?.status === 'kept' && deletedEdits.note;
+  const drawnNote = useMemo(
+    () =>
+      keptDeleted && deletedNote
+        ? {
+            ...keptDeleted,
+            content: { ...keptDeleted.content, value: deletedNote },
+            contentOmitted: false,
+          }
+        : undefined,
+    [keptDeleted, deletedNote]
+  );
+  // Its editor went: the header's save status with it.
+  useEffect(() => {
+    if (drawnNote) onEditorStatusChange(null);
+  }, [drawnNote, onEditorStatusChange]);
   // A refusal ends what shows; a read that could not answer leaves it, an open
   // editor included.
-  const material = refused ? undefined : (loaded ?? copied ?? undefined);
+  const material =
+    keptDeleted ??
+    (refused || deleted ? undefined : (loaded ?? copied ?? undefined));
   useKeepMaterialCopy(
     loaded?.kind === 'note' ? undefined : loaded,
     isStatic ? null : me?.id,
@@ -696,7 +761,7 @@ function MaterialContentBody({
   // A device copy paints before its read answers, and while the read cannot
   // answer (the browser offline, the server down), until it refuses.
   // Keyed as the note below: the paint keeps its DOM as the read answers.
-  if (!material && seed?.row.kind === 'note' && !refused)
+  if (!material && seed?.row.kind === 'note' && !(refused || deleted))
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1" key="note">
@@ -717,7 +782,7 @@ function MaterialContentBody({
           (kind && UNREADABLE_TITLES[kind]?.()) ?? m.material_decode_title()
         }
       />
-    ) : refused ? (
+    ) : refused || deleted ? (
       <UnavailableItem />
     ) : (
       <FileError
@@ -726,21 +791,31 @@ function MaterialContentBody({
       />
     );
   }
-  // The highest mode this reader may have.
+  // The highest mode this reader may have; a deleted item's kept edits show
+  // in its editor, which its room or the drawn note keeps read-only.
   const activeMode =
-    !(forceReadOnly || readOnly) && material.capabilities.canEditContent
+    !(forceReadOnly || (readOnly && !keptDeleted)) &&
+    material.capabilities.canEditContent
       ? 'edit'
       : 'view';
   // Refused by its room, an editor stays mounted and read-only, showing what it
-  // holds rather than the older read (Epo 2026-11-05).
-  const editorMounted = activeMode === 'edit' || readOnly === 'access_lost';
+  // holds rather than the older read (Epo 2026-11-05), and so does a deleted
+  // item's with unsent edits (Q39).
+  const editorMounted =
+    activeMode === 'edit' || readOnly === 'access_lost' || !!keptDeleted;
   const roomCopy: RoomCopy = {
     keep: me && keepsCopyOf(material) ? copyLabel(material, me.id) : undefined,
     seed,
   };
   // Its payer (whoever created it) at the storage limit opens it view-only
-  // under a strip saying so (uploader pays).
-  const readOnlyStrip = material.storageFull ? (
+  // under a strip saying so (uploader pays). A deleted note's edits show under
+  // the deleted strip; an item room's editor draws its own (`recovery`).
+  const readOnlyStrip = keptDeleted ? (
+    drawnNote &&
+    deletedDocs && (
+      <SaveBanner onReload={() => reloadDeleted(deletedDocs)} state="deleted" />
+    )
+  ) : material.storageFull ? (
     <StorageFullBanner by={material.storageFull} />
   ) : (
     readOnly && (
@@ -755,16 +830,38 @@ function MaterialContentBody({
       />
     )
   );
+  if (drawnNote)
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {readOnlyStrip}
+        <div className="min-h-0 flex-1" key="deleted-note">
+          <NoteBody
+            allowExternalAssets={false}
+            editing={false}
+            material={drawnNote}
+            materialId={materialId}
+            onEditorStatusChange={onEditorStatusChange}
+            onReadOnly={onReadOnly}
+            owner={me?.id}
+            seed={null}
+            staticNote
+          />
+        </div>
+      </div>
+    );
+  // A deleted item's Preview and Practice need the server it is gone from.
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
       <QuizEditor
         // Preview: the quiz as members get it (Epo 2026-11-15).
-        action={<QuizPreviewButton quizId={materialId} />}
+        action={!keptDeleted && <QuizPreviewButton quizId={materialId} />}
         copy={roomCopy}
         key={materialId}
         onPresenceChange={onPresenceChange}
         onStatusChange={onEditorStatusChange}
-        practice={<PracticeButton kind="quiz" materialId={materialId} />}
+        practice={
+          !keptDeleted && <PracticeButton kind="quiz" materialId={materialId} />
+        }
         quizId={materialId}
         sources={
           <SourcesLine
@@ -789,7 +886,9 @@ function MaterialContentBody({
             {editorMounted ? (
               <LiveFlashcards
                 action={
-                  <PracticeButton kind="flashcards" materialId={materialId} />
+                  !keptDeleted && (
+                    <PracticeButton kind="flashcards" materialId={materialId} />
+                  )
                 }
                 copy={roomCopy}
                 onPresenceChange={onPresenceChange}
@@ -1097,6 +1196,7 @@ function FileBody({
   page,
   regions,
   citation,
+  trashed,
 }: {
   fileId: string;
   color?: UserColor;
@@ -1105,9 +1205,11 @@ function FileBody({
   page?: number;
   regions?: Region[];
   citation?: OfficeCitation;
+  /** Opened from the Trash: its trashed read is what shows. */
+  trashed: boolean;
 }) {
   const {
-    data: file,
+    data: read,
     error,
     isLoading,
     isError,
@@ -1115,9 +1217,24 @@ function FileBody({
   } = useFile(fileId, {
     errorBoundary: false,
   });
+  const { data: me } = useMe({ errorBoundary: false });
+  // Deleted while this page showed it (Q39), its read answering
+  // `item_deleted` or, to its trash readers, trashed: as a material's, its
+  // last live read stays while this device holds unsent edits to it, the
+  // editor under its deleted strip (useSourceSession).
+  const deleted = !!deletedItemOf(error) || (!trashed && !!read?.trash);
+  const shownLive = useRef<SourceFile | undefined>(undefined);
+  if (read && !deleted) shownLive.current = read;
+  const deletedEdits = useDeletedEdits(
+    deletedTarget(me?.id, true, fileId),
+    deleted && !!shownLive.current
+  );
+  const kept =
+    deleted && deletedEdits?.status !== 'none' ? shownLive.current : undefined;
+  const file = kept ?? (deleted ? undefined : read);
   if (isLoading) return <FileLoading />;
   // A refusal ends what shows, as a material's does (Epo 2026-11-05).
-  if (isRefusedRead(error)) return <UnavailableItem />;
+  if ((isRefusedRead(error) || deleted) && !kept) return <UnavailableItem />;
   if (!file && isError)
     return (
       <FileError

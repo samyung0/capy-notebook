@@ -1,4 +1,8 @@
-import { isAccountForbiddenError, isApiError } from '@/api/client';
+import {
+  deletedItemOf,
+  isAccountForbiddenError,
+  isApiError,
+} from '@/api/client';
 import {
   COLLABORATION_FORBIDDEN_REASON,
   COLLABORATION_LATE_REASON,
@@ -11,6 +15,7 @@ import {
 /** What an editor does with a refused room connection. */
 export type RoomRefusal =
   | 'readOnly'
+  | 'deleted'
   | 'notFound'
   | 'forbidden'
   | 'outdated'
@@ -23,7 +28,9 @@ export type RoomRefusal =
  * that failed before one could be sent (the provider then reports its own
  * "Failed to get token" text). `outdated`: this build's client protocol is
  * refused, so only a page reload helps. `late`: the session is older than the
- * room's collection window, so its edits go through the late merge. Anything
+ * room's collection window, so its edits go through the late merge.
+ * `deleted`: the token request answered that the item was deleted (410
+ * `item_deleted`, Q41), so unsent edits stay to copy (Q39). Anything
  * unnamed (an expired token, a room being reset) is worth retrying with a
  * fresh token.
  */
@@ -34,6 +41,7 @@ export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
   // A read token on reconnect is thrown by the token function itself, so the
   // provider wraps the reason in its own text.
   if (reason.includes(COLLABORATION_READ_ONLY_REASON)) return 'readOnly';
+  if (deletedItemOf(tokenError)) return 'deleted';
   const status = isApiError(tokenError) ? tokenError.status : undefined;
   if (reason === COLLABORATION_NOT_FOUND_REASON || status === 404)
     return 'notFound';
@@ -44,23 +52,35 @@ export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
 
 /**
  * Whether a refusal means this user no longer has the document, so its stored
- * edits go: a missing or trashed document, or the gateway's 403 for the
- * document itself. An account-level 403 (suspended, deletion pending) keeps
- * them, and so does the collaboration service's forbidden reason alone, which
- * an account lock gives too; the load-time sweep settles that case.
+ * edits go: the API's 404 for its token (a missing document, or one whose
+ * access went), or its 403 for the document itself. The collaboration
+ * service's reasons alone keep them: its "not found" is also a deleted item,
+ * whose edits are offered (Q39), and its forbidden an account lock; the
+ * page's read or the load-time sweep settles those. An account-level 403
+ * (suspended, deletion pending) keeps them too.
  */
 export function refusalDropsDrafts(
   refusal: RoomRefusal,
   tokenError?: unknown
 ): boolean {
-  if (refusal === 'notFound') return true;
+  if (!isApiError(tokenError)) return false;
+  if (refusal === 'notFound') return tokenError.status === 404;
   return (
     refusal === 'forbidden' &&
-    isApiError(tokenError) &&
     tokenError.status === 403 &&
     !isAccountForbiddenError(tokenError)
   );
 }
+
+/** A refusal whose stored edits stay for now, written whole so they draw
+ * alone: the item was deleted (Q39), or the collaboration service said it
+ * was not found with no token answer behind it, which a deleted item says
+ * too; the page's read decides. */
+export const refusalKeepsDrafts = (
+  refusal: RoomRefusal,
+  tokenError?: unknown
+) =>
+  refusal === 'deleted' || (refusal === 'notFound' && !isApiError(tokenError));
 
 /**
  * Sends a checkpoint request only once the room synced. The server handles a

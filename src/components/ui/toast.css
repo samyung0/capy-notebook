@@ -229,6 +229,14 @@
     background: var(--tst-fg);
     border-radius: 999px;
   }
+  /* The other choice beside the filled one (a deleted item's Discard, Epo
+     2026-11-20): unfilled, ringed in the text colour. */
+  .tst-action[data-kind="plain"] {
+    color: var(--tst-fg);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--tst-fg) 28%, transparent);
+  }
   .tst-close {
     display: grid;
     place-items: center;
@@ -256,6 +264,9 @@
   @media (hover: hover) {
     .tst-action:hover {
       background: color-mix(in srgb, var(--tst-fg) 82%, var(--tst-bg));
+    }
+    .tst-action[data-kind="plain"]:hover {
+      background: color-mix(in srgb, var(--tst-fg) 10%, transparent);
     }
     .tst-close:hover {
       color: var(--tst-fg);

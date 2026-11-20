@@ -37,6 +37,7 @@ export function useLiveSetCards(
         // Shared with another copy of the set in the note (r6 S-2).
         const { close: leave, room } = openItemRoom(setId, {
           inside,
+          kind: 'flashcards',
           onReplace: () => setGeneration((value) => value + 1),
           read: true,
         });

@@ -1062,7 +1062,13 @@ and [material editor checks](../server/internal/store/share.go#L209).
   a material's and a file's alike (`isRefusedRead` in `CenterContent`), for "This
   item is unavailable": it never says blocked rather than gone. So nobody keeps
   viewing a deleted item past their next read, and someone removed while offline
-  sees that page too. A close
+  sees that page too. A deleted item is told apart (`item_deleted`, 410, see
+  Trash): an editor holding unsent edits to it keeps them on screen read-only
+  under "This item was deleted. Your unsaved edits are shown here to copy
+  until you reload." until its Reload discards them; with none the page says
+  it is unavailable (Q39, Epo 2026-11-19). Its trash readers, read the trashed
+  item, see the same on a page that showed it live; nothing that writes stays
+  on that page (the View/Edit toggles, item actions, Practice). A close
   for one person's access change (4403, no notice) joins again in every room kind,
   so the token says what they have now: a read token gives an editor the read-only
   strip and keeps a reader live, a refused one gives the above.
@@ -2326,7 +2332,35 @@ still holds are projected first) and the editor-asset resolve for the
 material's own images and audio, and `GET /api/files/{id}/annotations` for
 a PDF (still only the caller's own marks, shown read-only; Epo 2026-11-12,
 "Yes, load them"). Every write (a mark included), room token and record-open
-still refuses a trashed row, and the app joins no room for it. Opening an
+still refuses a trashed row, and the app joins no room for it.
+
+Deleted is not no access (Epo 2026-11-20, Q41 option 3; no new columns): a
+trashed material or file this person could read were it not trashed (the
+same visibility rules, `materialAccess` and `fileAccess` in `store/share.go`
+run on the trashed row) answers its room token request
+(`POST /api/materials/{id}/collaboration-token`, a quiz's keys included, and
+`POST /api/files/{id}/collaboration-token`, and an edit open's session read
+`GET /api/files/{id}/source-session`, which races its token) and its read
+(`GET /api/materials/{id}`, `GET /api/files/{id}`, once the trash reader
+fallback above finds nothing) `410` with the code `item_deleted` and the item's `name`
+(a material's title, a file's name) and `kind` in the error's value
+(`deletedError` in `huma_trash.go`). Its name is read only while it is
+still trashed, and a deleted check that finds nothing runs the handler's
+live check once more: an item restored in between answers 409 to ask again,
+never a 404 that would drop the caller's unsent edits to a live item. A
+trash that commits after a handler's access check, before its later reads
+(the material token's owner, room and quiz reads, the material read, the
+source session's file row), answers 410 the same way, never a 404. The
+browser asks a 409 again: a room's first token shortly, still connecting, and
+a room the service refused as not found rejoins. A
+quiz or set embedded in a note and
+trashed on its own, its note live, answers 410 too to whoever can read the
+note. Anyone else, a hidden item for the
+members it is hidden from (its live rooms are drained, so their edits were
+never applied: Epo, "it sshould be rare"), and a purged row answer the
+non-disclosing 404 as before. The browser offers a deleted item's unsent
+edits, and drops those of an item whose access went silently
+([plate-editor](frontend/plate-editor.md), the draft sweep). Opening an
 item from the Trash drops its reads cached while it was live, so it never
 paints live first: the page shows a strip with the purge date and Restore, and restoring
 reopens it live. A note's embedded quizzes and sets stay unreadable, because

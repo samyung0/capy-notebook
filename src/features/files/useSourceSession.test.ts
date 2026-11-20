@@ -67,6 +67,7 @@ const { createSourceProvider, recorder, sending, takeSourceOpen } = vi.hoisted(
       disconnected: vi.fn(),
       dispose: vi.fn(async () => {}),
       sequence: 0,
+      snapshot: vi.fn(async () => {}),
     },
     // The draft send of never-accepted stored steps: settled by `release`.
     sending: { done: false, kept: false, nows: 0, release: () => {} },
@@ -77,6 +78,12 @@ const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries }),
 }));
+// A fresh room token's answer: not found by default.
+const tokenPost = vi.hoisted(() => vi.fn());
+vi.mock('@/api/client', async (load) => {
+  const client = await load<typeof import('@/api/client')>();
+  return { ...client, api: { ...client.api, post: tokenPost } };
+});
 vi.mock('@/api/hooks', () => ({ useMe: () => ({ data: { id: 'u_1' } }) }));
 vi.mock('./sourceOpen', () => ({ takeSourceOpen }));
 vi.mock('./sourceProvider', async (load) => ({
@@ -107,12 +114,14 @@ vi.mock('@/lib/editDrafts', async (load) => ({
     };
   }),
   dropExpiredGroup: vi.fn(),
+  dropLostDrafts: vi.fn(async () => undefined),
   openRecoveryGroup: vi.fn(async () => null),
   readDrafts: vi.fn(async () => []),
   recordDrafts: vi.fn(() => recorder),
 }));
 
 import * as Y from 'yjs';
+import { ApiError } from '@/api/client';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import {
   COLLABORATION_NOT_FOUND_REASON,
@@ -121,6 +130,7 @@ import {
 import {
   DRAFT_EXPIRY_MS,
   dropExpiredGroup,
+  dropLostDrafts,
   type EditDraft,
   openRecoveryGroup,
   readDrafts,
@@ -185,6 +195,10 @@ async function open(session: SourceSession = SESSION) {
 
 beforeEach(() => {
   hooks.reset();
+  tokenPost.mockReset();
+  tokenPost.mockRejectedValue(new ApiError(404, 'Not Found'));
+  recorder.discard.mockClear();
+  vi.mocked(dropLostDrafts).mockClear();
   sending.done = false;
   sending.kept = false;
   sending.nows = 0;
@@ -249,11 +263,84 @@ describe('an Office edit session opening while its base downloads', () => {
     options.onAuthenticationFailed?.({
       reason: COLLABORATION_NOT_FOUND_REASON,
     });
-    expect(render()).toMatchObject({
-      banner: 'access-lost',
-      outdated: true,
-      unavailable: null,
+    await vi.waitFor(() =>
+      expect(render()).toMatchObject({
+        banner: 'access-lost',
+        outdated: true,
+        unavailable: null,
+      })
+    );
+  });
+
+  // Review 2026-11-20 (3, 4): the room's own not found, and a fresh token
+  // is granted or says the file was restored since (409): it is live, and
+  // the session rejoins.
+  it.each([
+    ['answers that the file was restored since', false],
+    ['is granted', true],
+  ])('rejoins when a fresh token %s', async (_, granted) => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    if (granted) tokenPost.mockResolvedValue(TOKEN);
+    else tokenPost.mockRejectedValue(new ApiError(409, 'Conflict'));
+    options.onAuthenticationFailed?.({
+      reason: COLLABORATION_NOT_FOUND_REASON,
     });
+    const provider = createSourceProvider.mock.results[0].value;
+    await vi.waitFor(() => expect(provider.disconnect).toHaveBeenCalled());
+    expect(render()).toMatchObject({ banner: null, outdated: false });
+  });
+
+  // Review 2026-11-20 (4): a trash only queues the room's eviction, so a
+  // save may land first and fail not found; a fresh token decides before
+  // anything is discarded.
+  const saveLost = (options: SourceProviderConfig) =>
+    options.onStateless?.({
+      payload: JSON.stringify({
+        epoch: SESSION.epoch,
+        fileId: SESSION.fileId,
+        lostAccess: 'not_found',
+        recoverable: false,
+        type: 'source-checkpoint-failed',
+      }),
+    });
+
+  it('keeps the edits under the deleted strip when a save fails not found on a deleted file', async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    tokenPost.mockRejectedValue(
+      new ApiError(410, 'Gone', undefined, {
+        code: 'item_deleted',
+        kind: 'doc',
+        name: 'Plan.docx',
+      })
+    );
+    saveLost(options);
+    await vi.waitFor(() =>
+      expect(render()).toMatchObject({ banner: 'deleted', outdated: true })
+    );
+    expect(recorder.snapshot).toHaveBeenCalled();
+    expect(recorder.discard).not.toHaveBeenCalled();
+    expect(dropLostDrafts).not.toHaveBeenCalled();
+  });
+
+  it('rejoins when a save fails not found on a file that is live', async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    tokenPost.mockResolvedValue(TOKEN);
+    saveLost(options);
+    const provider = createSourceProvider.mock.results[0].value;
+    await vi.waitFor(() => expect(provider.disconnect).toHaveBeenCalled());
+    expect(recorder.discard).not.toHaveBeenCalled();
+    expect(render().banner).toBeNull();
+  });
+
+  it('goes back to the last save, its drafts dropped, when a fresh token says not found too', async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    saveLost(options);
+    await vi.waitFor(() => expect(dropLostDrafts).toHaveBeenCalled());
+    expect(recorder.discard).toHaveBeenCalled();
   });
 
   // Epo 2026-11-05 (Q644): it may be gone, so the file's read says.
@@ -264,9 +351,11 @@ describe('an Office edit session opening while its base downloads', () => {
     options.onAuthenticationFailed?.({
       reason: COLLABORATION_NOT_FOUND_REASON,
     });
-    expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: qk.file(SESSION.fileId),
-    });
+    await vi.waitFor(() =>
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: qk.file(SESSION.fileId),
+      })
+    );
     expect(render().unavailable).toBeNull();
   });
 
@@ -278,11 +367,41 @@ describe('an Office edit session opening while its base downloads', () => {
     options.onAuthenticationFailed?.({
       reason: COLLABORATION_NOT_FOUND_REASON,
     });
+    await vi.waitFor(() =>
+      expect(render()).toMatchObject({
+        banner: 'access-lost',
+        unavailable: null,
+      })
+    );
     expect(invalidateQueries).not.toHaveBeenCalled();
-    expect(render()).toMatchObject({
-      banner: 'access-lost',
-      unavailable: null,
-    });
+  });
+
+  // Review 2026-11-20 (3): a trashed file's session read may answer 404
+  // before its token's 410; a fresh token decides before anything goes.
+  it('keeps the stored edits of an open refused 404 while a fresh token says deleted', async () => {
+    takeSourceOpen.mockRejectedValue(new ApiError(404, 'Not Found'));
+    tokenPost.mockRejectedValue(
+      new ApiError(410, 'Gone', undefined, {
+        code: 'item_deleted',
+        kind: 'doc',
+        name: 'Plan.docx',
+      })
+    );
+    render();
+    await vi.waitFor(() => expect(render().unavailable).toBe('notFound'));
+    expect(tokenPost).toHaveBeenCalledWith(
+      '/files/f_1/collaboration-token',
+      {}
+    );
+    expect(dropLostDrafts).not.toHaveBeenCalled();
+  });
+
+  it('drops the stored edits of an open refused 404 once a fresh token says so too', async () => {
+    takeSourceOpen.mockRejectedValue(new ApiError(404, 'Not Found'));
+    tokenPost.mockRejectedValue(new ApiError(404, 'Not Found'));
+    render();
+    await vi.waitFor(() => expect(dropLostDrafts).toHaveBeenCalled());
+    expect(render().unavailable).toBe('notFound');
   });
 
   it('ends the session with the file error when the base cannot be read', async () => {

@@ -268,6 +268,10 @@ func (a *api) getFile(ctx context.Context, in *fileIDInput) (*fileOutput, error)
 	if err != nil {
 		// Opened from the Trash: read-only.
 		if res, _, err = a.trashedFile(ctx, in.ID, err); err != nil {
+			live := func() error { _, err := a.fileRead(ctx, in.ID); return err }
+			if gone := a.deletedError(ctx, agenttools.KindSourceFile, in.ID, err, live); gone != nil {
+				return nil, gone
+			}
 			return nil, hErr(err)
 		}
 		// Its /preview route answers only live files; links signs its bytes.

@@ -83,6 +83,7 @@ export function LiveFlashcards({
   const actorId = me?.id ?? null;
   const { room, snapshot } = useItemRoom(
     setId,
+    'flashcards',
     (enabled || held) && !!actorId && (!copy || copy.seed !== undefined),
     { actorId, inside, keep: copy?.keep, seed: copy?.seed, wake }
   );

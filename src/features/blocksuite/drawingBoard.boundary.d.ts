@@ -76,6 +76,8 @@ export function mountDrawingBoard(
   closeEditor: () => void;
   fit: (padding: [number, number, number, number]) => void;
   has: (id: string) => boolean;
+  /** The whole board as a PNG, as Download as image draws it. */
+  image: () => Promise<Blob>;
   openEditor: (id: string) => boolean;
   presence: BoardPresenceView | null;
   reveal: (id: string) => void;
@@ -87,6 +89,8 @@ export function mountDrawingBoard(
    * error colour at it. null (no room) shows none. */
   setRoomSize: (size: { bytes: number; max: number } | null) => void;
   snapshot: () => string;
+  /** Resolves once the board first shows (`image` draws it from then). */
+  ready: Promise<void>;
   /** Just left of the ☰ in the board's chrome, for the page's save status (a
    * portal); empty, it takes no room. */
   statusSlot: HTMLElement;

@@ -84,8 +84,11 @@ import { mockResumeStream } from './chatResume';
 import { mockChatStream } from './chatStream';
 import { mockUndo } from './chatUndo';
 import {
+  deletedByPeer,
+  lostByPeer,
   mockMaterialRoom,
   noteTokenHold,
+  roomRefusedReader,
   savedSourceState,
   sourceRoom,
   sourceRoomName,
@@ -798,7 +801,83 @@ function gradeOne(
 
 seedExtractionFiles();
 
+/** The `item_deleted` answer, or a lost item's 404, else nothing. */
+const deletedResponse = (id: string) => {
+  if (lostByPeer(id)) return new HttpResponse(null, { status: 404 });
+  const item = deletedByPeer(id);
+  if (!item) return;
+  return HttpResponse.json(
+    {
+      detail: 'the item was deleted',
+      errors: [
+        {
+          message: 'item_deleted',
+          value: { kind: item.kind, name: item.name },
+        },
+      ],
+      status: 410,
+      title: 'Gone',
+    },
+    { status: 410 }
+  );
+};
+
+/** An item deleted (`deleteMockItem`), as the gateway answers its token and
+ * read to someone who could read it were it not trashed (Q41): its payer's
+ * read by the trash fallback, the trashed item; and one this person lost
+ * (`loseMockAccess`), answered as missing. */
+const deletedAnswer = ({
+  params,
+  request,
+}: {
+  params: Record<string, unknown>;
+  request: Request;
+}) => {
+  const id = String(params.id);
+  const trashed =
+    !lostByPeer(id) &&
+    deletedByPeer(id)?.payer &&
+    request.method === 'GET' &&
+    payersRead(id);
+  if (trashed) return HttpResponse.json(trashed);
+  return deletedResponse(id);
+};
+
+/** A deleted item's read to its payer, as the Go trash fallback answers:
+ * no role, so every capability is off, with its trash state. */
+function payersRead(id: string) {
+  const trash = {
+    canRestore: true,
+    episodeId: 'mock-deleted',
+    purgeAfter: new Date(Date.now() + TRASH_RETENTION_MS).toISOString(),
+  };
+  const file = db.files.find((row) => row.id === id);
+  if (file) return { ...file, trash };
+  const material = db.materials.find((row) => row.id === id);
+  if (!material) return null;
+  return {
+    ...db.learnerMaterial(material),
+    capabilities: {
+      canEdit: false,
+      canEditContent: false,
+      canManageMembers: false,
+      canView: true,
+    },
+    trash,
+  };
+}
+
 export const handlers = [
+  http.post('/api/materials/:id/collaboration-token', deletedAnswer),
+  http.get('/api/materials/:id', deletedAnswer),
+  http.post('/api/files/:id/collaboration-token', deletedAnswer),
+  http.get('/api/files/:id', deletedAnswer),
+  // An edit open's session answers as its token does, to its payer too.
+  http.get('/api/files/:id/source-session', ({ params, request }) =>
+    new URL(request.url).searchParams.get('view') === 'true'
+      ? undefined
+      : deletedResponse(String(params.id))
+  ),
   ...extractionHandlers(
     (workspaceId, title, questions, hidden) => {
       const quiz = db.makeMaterial({
@@ -955,6 +1034,8 @@ export const handlers = [
         );
   }),
   http.post('/api/files/:id/collaboration-token', async ({ params }) => {
+    if (roomRefusedReader(String(params.id)))
+      return new HttpResponse(null, { status: 404 });
     const session = await mockSourceSession(String(params.id));
     if (!session) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json(
@@ -2677,7 +2758,8 @@ export const handlers = [
     '/api/materials/:id/collaboration-token',
     async ({ params, request }) => {
       const material = db.materials.find((item) => item.id === params.id);
-      if (!material) return new HttpResponse(null, { status: 404 });
+      if (!material || roomRefusedReader(material.id))
+        return new HttpResponse(null, { status: 404 });
       await noteTokenHold(material.id);
       const body = (await request.json().catch(() => null)) as {
         access?: string;

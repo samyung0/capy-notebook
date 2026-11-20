@@ -161,6 +161,12 @@ A page whose resource can be private or missing (workspace, flashcard study and
 edit, quiz attempt) uses `meta: { errorBoundary: 'unlessMissing' }` instead: 401 and 404
 stay in the page as the non-disclosing private-or-unavailable state, and every
 other failure without data goes to the boundary with its normal copy and Retry.
+A deleted item's 410 `item_deleted` (Q41, `deletedItemOf` in `api/client.ts`)
+counts as missing (`isMissing`) and is never retried; an item's page tells it
+apart only to keep unsent edits on screen (plate-editor, the draft sweep). A
+stored (persisted) read that fails with it keeps its data, unlike a 401 or
+404's: its reader could still open the item, and the page showing it keeps its
+header and its unsent edits on that read.
 
 The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
@@ -259,6 +265,11 @@ dialogs, drawers and the phone chat button (S1, E2 and P3, Epo 2026-11-03):
   past 40px down or 80px sideways, or flicked, it flies on the way it was
   thrown and closes; otherwise it springs back (ding's swipe, Epo
   2026-11-09). A drag never starts on a button.
+- A toast may carry a second, plain action (`secondary`) before its filled
+  one: unfilled, ringed in the text colour at 28%, the same size (a deleted
+  item's Discard beside Download, Epo 2026-11-20, Q40). Too narrow for the
+  copy and its buttons, the pill puts every button together on a row of its
+  own at the right (its wrap is measured on the last, the ×).
 - Its look (board K2) is in `appearance.md` § Shared pieces.
 
 ## Persisted query cache
@@ -309,7 +320,7 @@ not offline use: without a service worker the app itself does not load offline.
   keeps them in memory for the page's life, which only means no Undo after a
   reload.
 - Restored queries are marked stale, so each refetches on first use regardless
-  of `staleTime`. A stored query whose refetch answers 401 or 404 drops its data,
+  of `staleTime`. A stored query whose refetch answers 401, 404 or 410 drops its data,
   so a workspace the account lost shows the private state, not last visit's copy.
 - Deleting a workspace drops its cached queries once its page is left (the
   settings dialog leaves for `/workspaces` first, or the open page would refetch

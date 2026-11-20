@@ -3,6 +3,7 @@
  * backend can be dropped in later by changing `API_BASE`.
  */
 import { authHeaders, USE_MSW } from './auth';
+import type { Material, SourceFile } from './types';
 
 export const API_BASE = '/api';
 
@@ -87,6 +88,25 @@ export function isProviderBusyError(err: unknown): err is ApiError {
  * a missing material, which the UI reports as deleted. */
 export function isMaterialContentUnreadable(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'material_content_unreadable';
+}
+
+/** A trashed item this person could read were it not trashed: the server's
+ * 410 `item_deleted` with its name and kind (Epo 2026-11-20, Q41), which
+ * tells deleted apart from no access (the non-disclosing 404). */
+export interface DeletedItem {
+  /** A material's kind, or a file's (its name gives the format). */
+  kind: Material['kind'] | SourceFile['kind'];
+  /** A material's title, or a file's name. */
+  name: string;
+}
+
+export function deletedItemOf(err: unknown): DeletedItem | null {
+  if (!(isApiError(err) && err.status === 410 && err.code === 'item_deleted'))
+    return null;
+  const { kind, name } = err.body ?? {};
+  return typeof kind === 'string' && typeof name === 'string'
+    ? { kind: kind as DeletedItem['kind'], name }
+    : null;
 }
 
 const ACCOUNT_FORBIDDEN_CODES = new Set([

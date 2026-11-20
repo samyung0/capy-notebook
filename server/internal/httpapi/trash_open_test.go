@@ -17,7 +17,7 @@ import (
 // TestTrashedFileOpensForItsTrashReaders: a trashed file opens on the file
 // page from the Trash (Epo 2026-11-12), so its normal reads answer its trash
 // readers with its trash state and signed bytes; a member who only reads its
-// workspace still finds nothing.
+// workspace is told it was deleted (Q41) and gets none of its bytes.
 func TestTrashedFileOpensForItsTrashReaders(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
@@ -78,9 +78,10 @@ func TestTrashedFileOpensForItsTrashReaders(t *testing.T) {
 		t.Fatalf("owner links = %d %s", rec.Code, rec.Body.String())
 	}
 
-	for _, path := range []string{"/api/files/" + id, "/api/files/" + id + "/links"} {
-		if rec := doReq(t, h, http.MethodGet, path, "u_viewer", nil); rec.Code != http.StatusNotFound {
-			t.Fatalf("viewer %s = %d %s", path, rec.Code, rec.Body.String())
-		}
+	if rec := doReq(t, h, http.MethodGet, "/api/files/"+id, "u_viewer", nil); rec.Code != http.StatusGone {
+		t.Fatalf("viewer read = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodGet, "/api/files/"+id+"/links", "u_viewer", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("viewer links = %d %s", rec.Code, rec.Body.String())
 	}
 }

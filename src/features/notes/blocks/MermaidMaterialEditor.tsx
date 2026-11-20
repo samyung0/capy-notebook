@@ -104,6 +104,7 @@ export default function MermaidMaterialEditor({
   const actorId = me?.id ?? null;
   const { room, snapshot } = useItemRoom(
     materialId,
+    kind,
     !!actorId && copy.seed !== undefined,
     { actorId, keep: copy.keep, seed: copy.seed }
   );

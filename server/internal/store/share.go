@@ -221,6 +221,18 @@ func materialEffectiveAccess(
 	q rowQueryer,
 	userID, matID string,
 ) (WorkspaceRole, error) {
+	return materialAccess(ctx, q, userID, matID, false)
+}
+
+// materialAccess is materialEffectiveAccess over a live material, or with
+// trashed over a trashed one: the role the caller would have were it not
+// trashed (DeletedMaterial).
+func materialAccess(
+	ctx context.Context,
+	q rowQueryer,
+	userID, matID string,
+	trashed bool,
+) (WorkspaceRole, error) {
 	if userID == "" {
 		return "", ErrNotFound
 	}
@@ -243,9 +255,9 @@ func materialEffectiveAccess(
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
 			ON wm.workspace_id=w.id AND wm.user_id=$2`+canvasAccessJoins+`
-		WHERE m.id=$1 AND m.trashed_at IS NULL AND owner.deleted_at IS NULL
+		WHERE m.id=$1 AND (m.trashed_at IS NOT NULL)=$3 AND owner.deleted_at IS NULL
 			AND owner.deletion_requested_at IS NULL
-			AND (owner.suspended_at IS NULL OR owner.id=$2)`, matID, userID).Scan(
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, matID, userID, trashed).Scan(
 		&materialOwner,
 		&materialPrivacy,
 		&wsID,
@@ -264,9 +276,15 @@ func materialEffectiveAccess(
 	if err != nil {
 		return "", err
 	}
-	// An embedded material is reachable exactly as its note is.
+	// An embedded material is reachable exactly as its note is (trashed with
+	// it). Its block removed from a live note, it is trashed alone and was
+	// reachable as that note still is.
 	if parentID != nil {
-		return materialEffectiveAccess(ctx, q, userID, *parentID)
+		role, err := materialAccess(ctx, q, userID, *parentID, trashed)
+		if trashed && errors.Is(err, ErrNotFound) {
+			return materialAccess(ctx, q, userID, *parentID, false)
+		}
+		return role, err
 	}
 	row := materialAccessRow{
 		materialOwner: materialOwner, materialPrivacy: materialPrivacy,
@@ -475,14 +493,14 @@ func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) 
 // FileWorkspaceID resolves the owning workspace of a file (for access checks);
 // "" for a standalone file, whose access is FileEffectiveRole's.
 func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, error) {
-	wsID, _, err := s.fileWorkspace(ctx, fileID)
+	wsID, _, err := s.fileWorkspace(ctx, fileID, false)
 	return wsID, err
 }
 
 // fileWorkspace is a file's workspace ("" when standalone) and whether it is
-// hidden from members.
-func (s *Store) fileWorkspace(ctx context.Context, fileID string) (wsID string, hidden bool, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), hidden FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID, &hidden)
+// hidden from members; a trashed file's with trashed.
+func (s *Store) fileWorkspace(ctx context.Context, fileID string, trashed bool) (wsID string, hidden bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), hidden FROM files WHERE id=$1 AND (trashed_at IS NOT NULL)=$2`, fileID, trashed).Scan(&wsID, &hidden)
 	if isNoRows(err) {
 		return "", false, ErrNotFound
 	}
@@ -494,10 +512,55 @@ func (s *Store) fileWorkspace(ctx context.Context, fileID string) (wsID string, 
 // 2026-10-27), hidden by the owner's lifecycle as a standalone material is.
 // A file hidden from members is not found for a viewer (Epo 2026-11-03).
 func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (WorkspaceRole, error) {
+	return s.fileAccess(ctx, userID, fileID, false)
+}
+
+// DeletedItem names a trashed item for a caller who could read it were it
+// not trashed (Epo 2026-11-20, Q41): their unsent edits to it are offered,
+// while edits to an item whose access went are dropped. Name is a material's
+// title or a file's name; Kind its material or file kind.
+type DeletedItem struct {
+	Name string
+	Kind string
+}
+
+// DeletedMaterial is the trashed material matID for a caller who could read
+// it were it not trashed (materialAccess, so hidden, standalone and canvas
+// rules all hold); anyone else, a live material and a purged one are
+// ErrNotFound.
+func (s *Store) DeletedMaterial(ctx context.Context, userID, matID string) (DeletedItem, error) {
+	if _, err := materialAccess(ctx, s.pool, userID, matID, true); err != nil {
+		return DeletedItem{}, err
+	}
+	// Still trashed as its name is read: one restored since is not deleted.
+	var item DeletedItem
+	err := s.pool.QueryRow(ctx, `SELECT title, kind FROM materials WHERE id=$1 AND trashed_at IS NOT NULL`, matID).Scan(&item.Name, &item.Kind)
+	if isNoRows(err) {
+		return DeletedItem{}, ErrNotFound
+	}
+	return item, err
+}
+
+// DeletedFile is DeletedMaterial for a file (fileAccess).
+func (s *Store) DeletedFile(ctx context.Context, userID, fileID string) (DeletedItem, error) {
+	if _, err := s.fileAccess(ctx, userID, fileID, true); err != nil {
+		return DeletedItem{}, err
+	}
+	var item DeletedItem
+	err := s.pool.QueryRow(ctx, `SELECT name, kind FROM files WHERE id=$1 AND trashed_at IS NOT NULL`, fileID).Scan(&item.Name, &item.Kind)
+	if isNoRows(err) {
+		return DeletedItem{}, ErrNotFound
+	}
+	return item, err
+}
+
+// fileAccess is FileEffectiveRole over a live file, or with trashed over a
+// trashed one.
+func (s *Store) fileAccess(ctx context.Context, userID, fileID string, trashed bool) (WorkspaceRole, error) {
 	if userID == "" {
 		return "", ErrNotFound
 	}
-	wsID, hidden, err := s.fileWorkspace(ctx, fileID)
+	wsID, hidden, err := s.fileWorkspace(ctx, fileID, trashed)
 	if err != nil {
 		return "", err
 	}
@@ -511,9 +574,9 @@ func (s *Store) FileEffectiveRole(ctx context.Context, userID, fileID string) (W
 	var owned bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM files f JOIN users owner ON owner.id=f.user_id
-		WHERE f.id=$1 AND f.workspace_id IS NULL AND f.trashed_at IS NULL AND f.user_id=$2
+		WHERE f.id=$1 AND f.workspace_id IS NULL AND (f.trashed_at IS NOT NULL)=$3 AND f.user_id=$2
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL)`,
-		fileID, userID).Scan(&owned); err != nil {
+		fileID, userID, trashed).Scan(&owned); err != nil {
 		return "", err
 	}
 	if !owned {

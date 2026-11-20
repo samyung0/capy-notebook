@@ -51,6 +51,7 @@ import {
 } from '@/features/collaboration/CollaborationHold';
 import {
   copyLabel,
+  dropDeletedCopies,
   keepDeviceCopy,
   keepsCopyOf,
   type RoomSeed,
@@ -178,6 +179,7 @@ import {
 import {
   type RoomReconnector,
   refusalDropsDrafts,
+  refusalKeepsDrafts,
   roomReconnector,
   roomRefusal,
   sendCheckpointRequest,
@@ -1403,11 +1405,19 @@ export function NoteEditorCore({
   const handleStatelessEvent = useCallback(
     (payload: string) => {
       // It may be gone: the page's read says, and a refusal ends what shows
-      // (Epo 2026-11-05).
-      if (isDiscardNotice(payload))
-        void queryClient.invalidateQueries({
-          queryKey: qk.material(material.id),
-        });
+      // (Epo 2026-11-05). Unsent edits are written whole first: online they
+      // are update rows the room's state places, and a deleted note's page
+      // shows them from the rows alone (Q39).
+      if (isDiscardNotice(payload)) {
+        const read = () =>
+          void queryClient.invalidateQueries({
+            queryKey: qk.material(material.id),
+          });
+        void (recorder.current?.snapshot() ?? Promise.resolve()).then(
+          read,
+          read
+        );
+      }
       const event = parseCollaborationEvent(payload);
       if (!event) return;
       if (
@@ -1576,21 +1586,35 @@ export function NoteEditorCore({
           storageOk.current || !(hasUnsavedWork() || recorder.current?.unsaved)
         );
       } else {
-        // Refused on connecting: the device copy goes, which holds no unique
-        // work.
-        void dropDeviceCopies(material.id);
-        // The note's stored edits go too (not for an account lock); queued
-        // before the recorder's discard, the report counts this session's
-        // rows.
-        if (refusalDropsDrafts(refusal, failedToken)) {
-          // Written first, so the drop below takes it too.
-          copy.stop();
-          void dropLostDrafts(
-            draftKey,
-            refusal === 'notFound' ? 'not_found' : 'forbidden',
-            reportIncident
-          ).catch((error) => console.warn('Draft storage failed:', error));
-          void recorder.current?.discard();
+        // Deleted (Q39), or not found by the collaboration service alone,
+        // which a deleted note says too: its unsent edits stay, written whole
+        // so they draw alone, for the page to show read-only until its
+        // Reload, or for the next page load to settle; the device copy stays
+        // while this device holds edits to it, that snapshot included
+        // (`dropDeletedCopies`). Its offline and delay strips go: the page's
+        // read says what shows.
+        if (refusalKeepsDrafts(refusal, failedToken)) {
+          const after = recorder.current?.snapshot();
+          void dropDeletedCopies(currentUserId, material.id, { after });
+          reportOffline.current?.(null);
+          reportSaveDelayed.current?.(false);
+        } else {
+          // Refused on connecting: the device copy goes, which holds no
+          // unique work.
+          void dropDeviceCopies(material.id);
+          // The note's stored edits go too (not for an account lock); queued
+          // before the recorder's discard, the report counts this session's
+          // rows.
+          if (refusalDropsDrafts(refusal, failedToken)) {
+            // Written first, so the drop below takes it too.
+            copy.stop();
+            void dropLostDrafts(
+              draftKey,
+              refusal === 'notFound' ? 'not_found' : 'forbidden',
+              reportIncident
+            ).catch((error) => console.warn('Draft storage failed:', error));
+            void recorder.current?.discard();
+          }
         }
         // Not told as an access change, it may be gone: the page's read says,
         // and a refused one ends what shows (Epo 2026-11-05, Q644).
@@ -1606,6 +1630,43 @@ export function NoteEditorCore({
         setAccessLost(true);
         reportUnavailable.current?.();
       }
+    };
+    // Each rejoin's token; a refusal is kept for onAuthenticationFailed.
+    const roomToken = async (previousToken?: string) => {
+      let token: MaterialCollaborationToken;
+      try {
+        token = await getMaterialCollaborationToken(material.id, {
+          previousToken,
+        });
+      } catch (error) {
+        tokenError.current = error;
+        throw error;
+      }
+      // The room moved (a discard) while this tab was away: the new room in
+      // the cache remounts the editor onto it.
+      if (token.room !== collaborationToken.room) {
+        qc.setQueryData(
+          ['material', material.id, 'collaboration-token'],
+          token
+        );
+        throw new Error('collaboration room moved');
+      }
+      // A reconnect after the account froze gets a read token.
+      if (token.access === 'read') {
+        readOnlyNow.current(true);
+        throw new Error(COLLABORATION_READ_ONLY_REASON);
+      }
+      lastToken.current = token.token;
+      return token.token;
+    };
+    // The service closed the room on the open socket: the reconnector rejoins.
+    const roomClosed = ({ code }: { code: number }) => {
+      if (code === 4403) accessChanged.current = true;
+      roomSynced.current = false;
+      markSlowed(false);
+      reconnector.current?.closed(
+        socketOpen(roomProvider(editorRef.current)?.provider)
+      );
     };
     // While its never-accepted steps are held, a JOIN waits for the draft
     // send to take them (Q327), and the hold's connect asks for a send at
@@ -1684,6 +1745,7 @@ export function NoteEditorCore({
                     materialId: material.id,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
+                    onClose: roomClosed,
                     onPresence: reportPresence,
                     onSlowed: (slowed: boolean) =>
                       slowed ? slowedNow.current() : markSlowed(false),
@@ -1691,6 +1753,7 @@ export function NoteEditorCore({
                       handleStatelessEvent(payload);
                     },
                     onStep1: hiddenTyping.armed,
+                    token: roomToken,
                     unsentFrom: joinVersion,
                   },
                   type: 'mock',
@@ -1700,14 +1763,7 @@ export function NoteEditorCore({
                     beforeJoin,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
-                    onClose: ({ code }: { code: number }) => {
-                      if (code === 4403) accessChanged.current = true;
-                      roomSynced.current = false;
-                      markSlowed(false);
-                      reconnector.current?.closed(
-                        socketOpen(roomProvider(editorRef.current)?.provider)
-                      );
-                    },
+                    onClose: roomClosed,
                     onPresence: reportPresence,
                     onSlowed: (slowed: boolean) =>
                       slowed ? slowedNow.current() : markSlowed(false),
@@ -1717,34 +1773,7 @@ export function NoteEditorCore({
                     onStep1: hiddenTyping.armed,
                     sleepsHidden: true,
                     storedFrom: seed?.version,
-                    token: async (previousToken?: string) => {
-                      let token: MaterialCollaborationToken;
-                      try {
-                        token = await getMaterialCollaborationToken(
-                          material.id,
-                          { previousToken }
-                        );
-                      } catch (error) {
-                        tokenError.current = error;
-                        throw error;
-                      }
-                      // The room moved (a discard) while this tab was away:
-                      // the new room in the cache remounts the editor onto it.
-                      if (token.room !== collaborationToken.room) {
-                        qc.setQueryData(
-                          ['material', material.id, 'collaboration-token'],
-                          token
-                        );
-                        throw new Error('collaboration room moved');
-                      }
-                      // A reconnect after the account froze gets a read token.
-                      if (token.access === 'read') {
-                        readOnlyNow.current(true);
-                        throw new Error(COLLABORATION_READ_ONLY_REASON);
-                      }
-                      lastToken.current = token.token;
-                      return token.token;
-                    },
+                    token: roomToken,
                     // Stored drafts not yet covered by a receipt (Q236).
                     unsent: () => !!recorder.current?.unsaved,
                     unsentFrom: joinVersion,

@@ -127,6 +127,9 @@ type api struct {
 	streamMu             sync.Mutex
 	streamByUser         map[string]int
 	streamTotal          int
+	// accessChecked runs after a handler's access check, where a trash can
+	// commit before its later reads; set by tests only.
+	accessChecked func(id string)
 	// uploads admits the gateway uploads (upload_queue.go).
 	uploads *uploadQueue
 	// undos run the requests for one chat Undo step one at a time

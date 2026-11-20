@@ -15,7 +15,9 @@ import { FileBanner } from './FileBanner';
  *   `expired`: the edits are past the 7-day expiry, too old to sync. All
  *   three show the edits read-only for copying (Office and text files and
  *   item rooms; a note opens the merge view instead, Q251); Reload is the
- *   only way out, so these cannot be closed.
+ *   only way out, so these cannot be closed. `deleted`: the item was
+ *   deleted with unsent edits on this device (Q39), shown the same way for
+ *   every editor; its Reload discards them.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
@@ -34,6 +36,7 @@ import { FileBanner } from './FileBanner';
 export type SaveBannerState =
   | 'access-lost'
   | 'delayed'
+  | 'deleted'
   | 'late-unloaded'
   | 'offline'
   | 'offline-unstored'
@@ -51,14 +54,21 @@ export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
 }
 
 export function isRecoveryBanner(state: SaveBannerState | null) {
-  return state === 'refused' || state === 'changed' || state === 'expired';
+  return (
+    state === 'refused' ||
+    state === 'changed' ||
+    state === 'expired' ||
+    state === 'deleted'
+  );
 }
 
 /** The strip of a copy-only group of stored edits. */
 export function recoveryBanner(group: {
+  deleted?: boolean;
   expired?: boolean;
   refused: boolean;
 }): SaveBannerState {
+  if (group.deleted) return 'deleted';
   if (group.expired) return 'expired';
   return group.refused ? 'refused' : 'changed';
 }
@@ -70,6 +80,7 @@ const MESSAGES: Record<
   'access-lost': () => m.editor_access_lost(),
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
+  deleted: () => m.editor_deleted_strip(),
   expired: () => m.editor_recovery_expired(),
   'late-unloaded': () => m.editor_late_unloaded(),
   offline: () => m.editor_offline_banner(),
@@ -142,6 +153,7 @@ export function SaveBanner({
       testId="save-banner"
       tone={
         state === 'access-lost' ||
+        state === 'deleted' ||
         state === 'offline' ||
         state === 'offline-limit' ||
         state === 'late-unloaded' ||

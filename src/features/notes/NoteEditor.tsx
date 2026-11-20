@@ -37,7 +37,10 @@ import {
 } from '@/components/banners/SaveBanner';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { userToast } from '@/components/ui/userToast';
-import type { RoomSeed } from '@/features/collaboration/deviceCopy';
+import {
+  dropDeletedCopies,
+  type RoomSeed,
+} from '@/features/collaboration/deviceCopy';
 import type { PresenceConnection } from '@/features/collaboration/presence';
 import { FileError, UnavailableItem } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
@@ -157,12 +160,18 @@ export function NoteEditor({
   seed?: RoomSeed | null;
 }) {
   const {
-    data: material,
+    data: read,
     error,
     isLoading,
   } = useMaterial(materialId, {
     errorBoundary: false,
   });
+  // Deleted while open, its trash readers read it trashed (Q39): the editor
+  // keeps its last live read, read-only by its room's refusal, while the
+  // page shows what this device kept of it.
+  const live = useRef<Material | undefined>(undefined);
+  if (read && !read.trash) live.current = read;
+  const material = read?.trash ? live.current : read;
 
   if (isLoading) return null;
   if (isMaterialContentUnreadable(error)) {
@@ -335,9 +344,10 @@ function CollaborativeNoteEditor({
   const storedKey = meData
     ? draftKey(meData.id, 'material', material.id)
     : null;
-  // The editor already dropped the stored edits and turned read-only
-  // (NoteEditorCore), staying mounted under a strip saying so (Epo 2026-11-05);
-  // only a refused read ends what shows, which this doesn't ask for.
+  // The editor already dropped the stored edits (kept for a deleted item, whose
+  // page shows them, Q39) and turned read-only (NoteEditorCore), staying
+  // mounted under a strip saying so (Epo 2026-11-05); only a refused read ends
+  // what shows, which this doesn't ask for.
   const onUnavailable = useCallback(
     () => onReadOnly?.('access_lost'),
     [onReadOnly]
@@ -420,11 +430,23 @@ function CollaborativeNoteEditor({
         editIncidentReporter('material', material.id)
       ).catch(() => undefined);
   }, [storedKey, tokenDropsDrafts, tokenStatus, material.id]);
-  // Refused on connecting: the device copy goes, which holds no unique work.
-  const tokenRefused = tokenStatus === 404 || tokenStatus === 403;
+  // Refused on connecting, or deleted (whose stored edits the page shows,
+  // Q39): the device copy goes, which holds no unique work; a deleted note's
+  // while this device holds edits to it (`dropDeletedCopies`).
+  const tokenRefused =
+    tokenStatus === 404 || tokenStatus === 403 || tokenStatus === 410;
+  // Deleted before its first join: the painted note stays while the page's
+  // read says what shows (Q39).
+  const tokenDeleted = tokenStatus === 410;
+  const owner = meData?.id;
   useEffect(() => {
-    if (tokenRefused) void dropDeviceCopies(material.id);
-  }, [tokenRefused, material.id]);
+    if (tokenDeleted) void dropDeletedCopies(owner, material.id);
+    else if (tokenRefused) void dropDeviceCopies(material.id);
+  }, [tokenRefused, tokenDeleted, owner, material.id]);
+  useEffect(() => {
+    if (tokenDeleted)
+      void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+  }, [tokenDeleted, material.id, qc]);
   // The room threw away the state the copy holds (a new lineage).
   const copyMoved =
     !!seed &&
@@ -566,7 +588,7 @@ function CollaborativeNoteEditor({
   // token rides the open connection instead. A failure that is no refusal
   // keeps the painted note under the strip's Retry (Epo 2026-11-04).
   if (!collaborationTokenData) {
-    if (tokenStatus === 404 || tokenStatus === 403)
+    if (tokenRefused && !tokenDeleted)
       return (
         <Replacing onShown={onShown}>
           <UnavailableItem />

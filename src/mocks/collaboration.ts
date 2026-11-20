@@ -801,11 +801,17 @@ interface MockCollaborationOptions {
   materialId: string;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
+  /** As the room provider's: the service closed the room on the open
+   * socket (a deleted note's discard), which the editor rejoins. */
+  onClose?: (event: { code: number }) => void;
   onPresence?: (connections: PresenceConnection[]) => void;
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   /** As the room provider's: the room's state vector before the sync. */
   onStep1?: (stateVector: Uint8Array) => void;
+  /** As the room provider's token request, which only a deleted note's
+   * rejoin asks for here (`deleteMockItem`): its refusal is the join's. */
+  token?: () => Promise<string>;
   /** As the room provider's: the stored version the session's JOIN names
    * for drafts it applies (in-place GC). */
   unsentFrom?: number;
@@ -839,6 +845,17 @@ export function setMockReportedVersion(materialId: string, version: number) {
   versionsOf(materialId).reported = version;
 }
 
+// Notes whose saves the service never confirms (`holdNoteReceipts`): their
+// typing stays unacknowledged, its update rows stored.
+const heldNoteReceipts = new Set<string>();
+
+/** The service takes a note's edits but confirms no save while `hold`
+ * (e2e): what was typed online stays unacknowledged. */
+export function holdNoteReceipts(materialId: string, hold: boolean) {
+  if (hold) heldNoteReceipts.add(materialId);
+  else heldNoteReceipts.delete(materialId);
+}
+
 const outdated = { reason: COLLABORATION_OUTDATED_REASON };
 const refused = { reason: COLLABORATION_NOT_FOUND_REASON };
 // Set by refuseThisBuild(): a note room refuses every join until the page
@@ -859,6 +876,8 @@ class MockCollaborationProvider implements UnifiedProvider {
     disconnect: () => void;
     readonly reportedVersion: number;
     sendStateless: (payload: string) => void;
+    /** The in-page socket is open while the service is reachable. */
+    readonly socketStatus: 'connected' | 'disconnected';
     unsentFrom: (version: number) => void;
   };
   readonly type = 'mock';
@@ -911,6 +930,9 @@ class MockCollaborationProvider implements UnifiedProvider {
         return versions.reported;
       },
       sendStateless: (payload: string) => this.handleStateless(payload),
+      get socketStatus() {
+        return reachable() ? 'connected' : 'disconnected';
+      },
       unsentFrom: (version: number) => {
         versions.marks.push(version);
       },
@@ -938,6 +960,10 @@ class MockCollaborationProvider implements UnifiedProvider {
     if (!reachable()) return;
     if (buildRefused) {
       this.options.onAuthenticationFailed?.(outdated);
+      return;
+    }
+    if (deletedByPeer(this.options.materialId)) {
+      void this.refusedAtToken();
       return;
     }
     // The room moved while this editor was away: its token request names the
@@ -1019,8 +1045,33 @@ class MockCollaborationProvider implements UnifiedProvider {
   }
 
   announceRefused() {
+    refusedReaders.add(this.options.materialId);
     this.disconnect();
     this.options.onAuthenticationFailed?.(refused);
+  }
+
+  /** Its note was deleted (`deleteMockItem`), in the service's order: the
+   * discard's notice, the room closed on the open socket (a close, no
+   * disconnect), and the editor's rejoin after its reconnect delay refused
+   * at its token (`connect`). */
+  deleted(materialId: string) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.options.onStateless?.({ payload: ROOM_DISCARDED });
+    materialProviders.delete(this);
+    this.leave?.();
+    this.leave = undefined;
+    this.room = undefined;
+    this.isConnected = false;
+    this.isSynced = false;
+    this.onSyncChange?.(false);
+    this.options.onClose?.({ code: 4000 });
+  }
+
+  /** The token request refused (the editor holds its error), told as the
+   * room provider tells it. */
+  private async refusedAtToken() {
+    await this.options.token?.().catch(() => undefined);
+    this.options.onAuthenticationFailed?.({ reason: 'Failed to get token' });
   }
 
   /** The service closed this note's channel (an eviction): the editor
@@ -1068,6 +1119,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     if (event.type !== 'checkpoint-request' || typeof event.id !== 'string') {
       return;
     }
+    if (heldNoteReceipts.has(this.options.materialId)) return;
     try {
       const metrics = checkpointRoom(this.room);
       this.options.onStateless?.({
@@ -1148,6 +1200,19 @@ class MockSourceProvider implements SourceProvider {
     if (event.type !== 'checkpoint-request' || typeof event.id !== 'string')
       return;
     const fileId = this.room.target.id;
+    if (lostSourceSaves.delete(fileId)) {
+      this.room.retired = true;
+      const lost = JSON.stringify({
+        checkpointIds: [event.id],
+        epoch: Number(this.config.name.split(':')[3]),
+        fileId,
+        lostAccess: 'not_found',
+        recoverable: false,
+        type: 'source-checkpoint-failed',
+      });
+      queueMicrotask(() => this.config.onStateless?.({ payload: lost }));
+      return;
+    }
     if (refusedSourceSaves.delete(fileId)) {
       // Refused for good: the room goes back to its last checkpoint (it is
       // never saved again) and the client keeps its edits for recovery.
@@ -1191,8 +1256,13 @@ class MockSourceProvider implements SourceProvider {
   }
 
   // The in-page room never closes a connection by itself; after a drain
-  // the reconnect joins again.
+  // the reconnect joins again. A deleted file's rejoin is refused at its
+  // token, as a note's is.
   connect() {
+    if (deletedByPeer(this.room.target.id)) {
+      this.refusedAtToken();
+      return;
+    }
     if (!this.drained) return;
     this.drained = false;
     this.socketStatus = undefined;
@@ -1231,8 +1301,29 @@ class MockSourceProvider implements SourceProvider {
   }
 
   announceRefused() {
+    refusedReaders.add(this.room.target.id);
     this.disconnect();
     this.config.onAuthenticationFailed?.(refused);
+  }
+
+  /** Its file was deleted (`deleteMockItem`): the rejoin's token refused. */
+  deleted(fileId: string) {
+    if (this.room.target.id !== fileId || !this.isAuthenticated) return;
+    this.disconnect();
+    this.refusedAtToken();
+  }
+
+  /** The token request refused (the session holds its error), told as the
+   * room provider tells it. The in-page room never asked the join's own
+   * token, so the session's first answer is the one it opened with: the
+   * reconnect that follows asks the API (`connect`). */
+  private refusedAtToken() {
+    void this.config
+      .token()
+      .catch(() => undefined)
+      .then(() =>
+        this.config.onAuthenticationFailed?.({ reason: 'Failed to get token' })
+      );
   }
 
   announceReadOnly() {
@@ -1368,12 +1459,84 @@ export function admitMockNoteDrafts(materialId: string, update: Uint8Array) {
   if (!room) throw new Error(`Mock room for ${materialId} is not open`);
   Y.applyUpdate(room.document, update);
 }
+// Items whose room refused this reader (`refuseOpenRooms`): their fresh
+// token answers 404 too, as the API's to someone who lost them (a note's is
+// asked again as the refusal asks for its read).
+const refusedReaders = new Set<string>();
+export const roomRefusedReader = (id: string) => refusedReaders.has(id);
+
 /** Every open room refuses this reader when it rejoins: it was hidden from
  * them, or they lost their access. Returns how many there were. */
 export function refuseOpenRooms() {
   const open = [...materialProviders, ...sourceProviders, ...itemProviders];
   for (const provider of open) provider.announceRefused();
   return open.length;
+}
+const DELETED = 'capy.scenario.deleted';
+/** An item someone deleted (`deleteMockItem`), as the API names it to this
+ * tab (`item_deleted`, Q41); `payer` when this person pays for it, whose read
+ * the trash fallback answers. Null when it was not. Kept in session storage,
+ * so a reload still hears it. */
+export function deletedByPeer(
+  id: string
+): { kind: string; name: string; payer?: boolean } | null {
+  if (!browser) return null;
+  const deleted = JSON.parse(sessionStorage.getItem(DELETED) ?? '{}') as Record<
+    string,
+    { kind: string; name: string; payer?: boolean }
+  >;
+  return deleted[id] ?? null;
+}
+const ROOM_DISCARDED = JSON.stringify({
+  evictionId: 'mock-deleted',
+  mode: 'discard',
+});
+/** An item moved to the Trash (Q39), by another person or in another tab:
+ * from now on its token answers `item_deleted` with `item`, and so does its
+ * read, but to its payer (`payer`), whom the trash fallback answers with the
+ * trashed item. Every open room of it is discarded, as the service's trash
+ * does, its rejoin refused at the token. `queued`: the room's eviction is
+ * still queued, so an open file's room stays and its next save fails not
+ * found, as the service's save of a trashed file does. */
+export function deleteMockItem(
+  id: string,
+  item: { kind: string; name: string; payer?: boolean },
+  queued = false
+) {
+  sessionStorage.setItem(
+    DELETED,
+    JSON.stringify({
+      ...JSON.parse(sessionStorage.getItem(DELETED) ?? '{}'),
+      [id]: item,
+    })
+  );
+  if (queued) {
+    lostSourceSaves.add(id);
+    return;
+  }
+  for (const provider of [
+    ...materialProviders,
+    ...sourceProviders,
+    ...itemProviders,
+    ...boardProviders,
+  ])
+    provider.deleted(id);
+}
+const LOST = 'capy.scenario.lost';
+/** Whether this person lost an item (`loseMockAccess`), kept across reloads. */
+export function lostByPeer(id: string) {
+  if (!browser) return false;
+  return (
+    JSON.parse(sessionStorage.getItem(LOST) ?? '[]') as string[]
+  ).includes(id);
+}
+/** Another person took this person's access to an item (removed them, hid
+ * it): from now on its token and read answer the non-disclosing 404. */
+export function loseMockAccess(id: string) {
+  sessionStorage.setItem(
+    LOST,
+    JSON.stringify([...JSON.parse(sessionStorage.getItem(LOST) ?? '[]'), id])
+  );
 }
 /** The collaboration service's refusal once the account freezes, or a writer
  * lowered to a reader: every open room turns read-only for its writer. Returns
@@ -1387,6 +1550,8 @@ const failedSourceSaves = new Set<string>();
 export function failNextSourceSave(fileId: string) {
   failedSourceSaves.add(fileId);
 }
+// Files whose next save fails not found (`deleteMockItem`, `queued`).
+const lostSourceSaves = new Set<string>();
 const refusedSourceSaves = new Set<string>();
 export function refuseNextSourceSave(fileId: string) {
   refusedSourceSaves.add(fileId);
@@ -1443,6 +1608,7 @@ export function resetScenarioRooms() {
   sourceSessionsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();
+  lostSourceSaves.clear();
   holdSourceSaveReceipts(false);
   for (const [name, room] of rooms) {
     if (!room.target.id.startsWith('mock-scenario-')) continue;
@@ -1709,8 +1875,18 @@ class MockItemProvider implements ItemProvider {
   }
 
   announceRefused() {
+    refusedReaders.add(this.config.name.split(':')[1]);
     this.disconnect();
     this.config.onAuthenticationFailed?.(refused);
+  }
+
+  /** Its item was deleted (`deleteMockItem`): the discard's notice and
+   * close; the fresh room's token is refused. */
+  deleted(materialId: string) {
+    if (this.config.name.split(':')[1] !== materialId || !this.joined) return;
+    this.stateless(ROOM_DISCARDED);
+    this.disconnect();
+    this.config.onClose?.({ code: 4000, reason: 'collaboration room evicted' });
   }
 
   announceReadOnly() {
@@ -2181,6 +2357,14 @@ class MockBoardProvider implements ItemProvider {
       return;
     }
     this.close(4400, 'read-only connection sent a document update');
+  }
+
+  /** Its canvas was deleted (`deleteMockItem`): the discard's notice and
+   * close; the fresh room's token is refused. */
+  deleted(materialId: string) {
+    if (this.materialId !== materialId || !this.leave) return;
+    this.config.onStateless?.({ payload: ROOM_DISCARDED });
+    this.close(4000, 'collaboration room evicted');
   }
 
   /** The service closed this channel alone. */

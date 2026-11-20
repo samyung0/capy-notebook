@@ -72,12 +72,22 @@ const drafts = vi.hoisted(() => ({
   report: undefined as unknown,
   rows: [] as unknown[],
   unsaved: true,
+  // The recorder's dispose wrote its document (unsaved work remained).
+  written: false,
 }));
-vi.mock('@/lib/editDrafts', () => ({
+// A deleted item's drawing is the real one (`deletedDocument`, `shownRows`).
+const shownDeleted = vi.hoisted(() => [] as { key: string; rows: unknown }[]);
+vi.mock('@/lib/editDrafts', async (load) => ({
   applyDrafts: vi.fn(),
   DRAFT_SEND_WAIT_MS: 30_000,
   deleteDrafts: vi.fn(async () => {
     drafts.rows = [];
+  }),
+  deletedDocument: (await load<typeof import('@/lib/editDrafts')>())
+    .deletedDocument,
+  deleteShownDrafts: vi.fn(async (key: string, rows: unknown) => {
+    shownDeleted.push({ key, rows });
+    return 0;
   }),
   draftGroups: async (
     rows: { expired?: boolean; lineage: string; refused?: boolean }[],
@@ -98,6 +108,10 @@ vi.mock('@/lib/editDrafts', () => ({
   },
   draftKey: (actor: string, kind: string, id: string) =>
     `${actor}:${kind}:${id}`,
+  // The item's stored edits on this device: rows, or the recorder's last.
+  draftMaterials: vi.fn(
+    async () => new Set(drafts.rows.length || drafts.written ? ['q'] : [])
+  ),
   draftSender: vi.fn(() => {
     const settled = new Promise<void>((resolve) => {
       sending.release = () => {
@@ -121,6 +135,7 @@ vi.mock('@/lib/editDrafts', () => ({
   }),
   dropExpiredGroup: vi.fn(),
   heldDraftSessions: async () => new Set<string>(),
+  holdDraftDocument: () => () => undefined,
   readDrafts: vi.fn(async () => drafts.rows),
   recordDrafts: (options: {
     onLost?: () => void;
@@ -147,6 +162,8 @@ vi.mock('@/lib/editDrafts', () => ({
       },
       dispose: async () => {
         drafts.disposed += 1;
+        await null;
+        if (drafts.unsaved) drafts.written = true;
       },
       refuse() {
         drafts.refused += 1;
@@ -158,6 +175,7 @@ vi.mock('@/lib/editDrafts', () => ({
     };
   },
   recoveryDocument: () => new Y.Doc(),
+  shownRows: (await load<typeof import('@/lib/editDrafts')>()).shownRows,
   // Rows with a stored token and no accepted mark go through the send.
   splitOpenDrafts: (rows: { accepted?: true; grants?: string[] }[]) => ({
     apply: rows.filter((row) => row.accepted || !row.grants),
@@ -168,13 +186,20 @@ vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock('@/api/queryClient', () => ({ queryClient: { invalidateQueries } }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
+vi.mock('@/lib/sourceCache', async (load) => ({
+  ...(await load<typeof import('@/lib/sourceCache')>()),
+  dropDeviceCopies: vi.fn(async () => undefined),
+}));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
 const { NoteSeat } = await import('./noteSeat');
 const { applyDrafts } = await import('@/lib/editDrafts');
 const { itemEditingStopped } = await import('./itemRoom');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
-const { draftSender, dropExpiredGroup } = await import('@/lib/editDrafts');
+const { draftMaterials, draftSender, dropExpiredGroup } = await import(
+  '@/lib/editDrafts'
+);
+const { dropDeviceCopies } = await import('@/lib/sourceCache');
 const { userToast } = await import('@/components/ui/userToast');
 
 beforeEach(() => {
@@ -193,6 +218,10 @@ beforeEach(() => {
   drafts.gate = null;
   drafts.recorded = 0;
   drafts.unsaved = true;
+  drafts.written = false;
+  shownDeleted.length = 0;
+  vi.mocked(draftMaterials).mockClear();
+  vi.mocked(dropDeviceCopies).mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -201,7 +230,10 @@ afterEach(() => {
 });
 
 async function started(onReplace = vi.fn()) {
-  const room = new ItemRoom('q', { drafts: { actorId: 'u' }, onReplace });
+  const room = new ItemRoom('q', {
+    drafts: { actorId: 'u', kind: 'quiz' },
+    onReplace,
+  });
   await room.start();
   return { onReplace, room };
 }
@@ -293,11 +325,13 @@ it('shares one room between two copies of an embed in a note', async () => {
   const replaces = [vi.fn(), vi.fn()];
   const first = openItemRoom('q', {
     inside: seat,
+    kind: 'quiz',
     onReplace: replaces[0],
     read: true,
   });
   const second = openItemRoom('q', {
     inside: seat,
+    kind: 'quiz',
     onReplace: replaces[1],
     read: true,
   });
@@ -311,6 +345,7 @@ it('shares one room between two copies of an embed in a note', async () => {
   const keys = openItemRoom('q', {
     document: 'keys',
     inside: seat,
+    kind: 'quiz',
     onReplace: vi.fn(),
   });
   expect(keys.room).not.toBe(first.room);
@@ -330,6 +365,7 @@ it('shares one room between two copies of an embed in a note', async () => {
   // The next copy opens a fresh room.
   const third = openItemRoom('q', {
     inside: seat,
+    kind: 'quiz',
     onReplace: vi.fn(),
     read: true,
   });
@@ -424,16 +460,17 @@ it('joins again after a close for this person, and the token decides', async () 
 });
 
 // Epo 2026-11-05 (Q644): a refusal with no such close may mean the item is gone,
-// so the page's read says.
+// so the page's read says, once a fresh token said it was not deleted.
 it('asks for the read when refused with no access change first', async () => {
   const { room } = await started();
   const [provider] = providers;
   await provider.config.token();
   provider.config.onSynced?.({ state: true });
+  tokens.push(new ApiError(404, 'Not Found'));
   provider.config.onAuthenticationFailed?.({
     reason: COLLABORATION_NOT_FOUND_REASON,
   });
-  expect(room.getSnapshot().status).toBe('unavailable');
+  await vi.waitFor(() => expect(room.getSnapshot().status).toBe('unavailable'));
   expect(invalidateQueries).toHaveBeenCalledWith({
     queryKey: qk.material('q'),
   });
@@ -551,7 +588,7 @@ it('starts nothing when destroyed while its stored rows are grouped', async () =
     answer = resolve;
   });
   const sends = vi.mocked(draftSender).mock.calls.length;
-  const room = new ItemRoom('q', { drafts: { actorId: 'u' } });
+  const room = new ItemRoom('q', { drafts: { actorId: 'u', kind: 'quiz' } });
   const starting = room.start();
   await vi.advanceTimersByTimeAsync(0);
   room.destroy();
@@ -1013,7 +1050,7 @@ it("keeps a full canvas's refused edits to copy, and opens afresh", async () => 
   const onReplace = vi.fn();
   const room = new ItemRoom('q', {
     board: { max: 4096 },
-    drafts: { actorId: 'u' },
+    drafts: { actorId: 'u', kind: 'canvas' },
     onReplace,
   });
   await room.start();
@@ -1042,7 +1079,7 @@ it("keeps a board's size from its receipts and stops offline work at the space l
   vi.stubGlobal('navigator', { onLine: false });
   const room = new ItemRoom('q', {
     board: { max: 100_000 },
-    drafts: { actorId: 'u' },
+    drafts: { actorId: 'u', kind: 'canvas' },
     onReplace: vi.fn(),
   });
   await room.start();
@@ -1078,7 +1115,7 @@ it('opens a fresh room when a board turns read-only with unsaved edits', async (
   const onReplace = vi.fn();
   const room = new ItemRoom('q', {
     board: { max: 4096 },
-    drafts: { actorId: 'u' },
+    drafts: { actorId: 'u', kind: 'canvas' },
     onReplace,
   });
   await room.start();
@@ -1176,5 +1213,160 @@ it('takes nothing between a close for this person and the next sync', async () =
   // Still theirs: the next sync takes edits again.
   provider.config.onSynced?.({ state: true });
   expect(room.getSnapshot().stopped).toBe(false);
+  room.destroy();
+});
+
+/** A closed session's whole document, as its recorder leaves it. */
+function stateRow(doc: Y.Doc, lineage: string, session: string) {
+  return {
+    data: Y.encodeStateAsUpdate(doc),
+    id: `${session}:state`,
+    key: 'u:material:q',
+    kind: 'state',
+    lineage,
+    savedAt: Date.now(),
+    seq: 1,
+    session,
+  };
+}
+
+const gone = () =>
+  new ApiError(410, 'Gone', undefined, {
+    code: 'item_deleted',
+    kind: 'quiz',
+    name: 'Cell quiz',
+  });
+
+// Q39 (review 2026-11-20): a quiz deleted before this room joined shows its
+// stored edits drawn from the rows alone, read-only, and says it is deleted,
+// which keeps a quiz's keys room beside it. What it draws is its newest
+// group; an older lineage's rows stay out of what it shows.
+it("shows a deleted item's newest stored edits for copying, and only those", async () => {
+  const shown = new Y.Doc();
+  shown.getMap('questions').set('q1', 'Mitosis');
+  const older = new Y.Doc();
+  older.getMap('questions').set('q0', 'Meiosis');
+  const newest = stateRow(shown, 'material:q:schema:2', 'b');
+  const old = { ...stateRow(older, 'material:q:schema:1', 'a'), savedAt: 1 };
+  drafts.rows = [old, newest];
+  tokens.push(gone());
+  const { room } = await started();
+  await vi.waitFor(() => expect(room.getSnapshot().recovery).not.toBeNull());
+  const snapshot = room.getSnapshot();
+  expect(snapshot).toMatchObject({
+    deleted: true,
+    recovery: { deleted: true, refused: true },
+    status: 'saved',
+  });
+  expect(snapshot.recovery?.doc.getMap('questions').toJSON()).toEqual({
+    q1: 'Mitosis',
+  });
+  expect(snapshot.recovery?.rows).toEqual([newest]);
+  room.destroy();
+});
+
+// A quiz whose only unsent edits are to its keys: its content room has
+// nothing to draw, so it is unavailable, but deleted, so its keys room stays
+// for the keys' edits (liveQuizRooms).
+it('says a deleted item with no stored edits is deleted and unavailable', async () => {
+  tokens.push(gone());
+  const { room } = await started();
+  await vi.waitFor(() => expect(room.getSnapshot().status).toBe('unavailable'));
+  expect(room.getSnapshot()).toMatchObject({ deleted: true, recovery: null });
+  room.destroy();
+});
+
+// Review 2026-11-20 (3): a token's 409 says the item was restored between
+// the server's checks: the first one asks again shortly, still connecting,
+// and one after the service's own not found rejoins.
+it('asks again after a first token answered that the item was restored since', async () => {
+  tokens.push(new ApiError(409, 'Conflict'));
+  const { room } = await started();
+  expect(room.getSnapshot().status).not.toBe('offline');
+  expect(providers).toHaveLength(0);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(providers).toHaveLength(1);
+  room.destroy();
+});
+
+// A granted token says the item is live too (review 2026-11-20 (4)), and
+// no answer (offline, a server error) says nothing: it joins again, its copy
+// kept (review 2026-11-20 (5)).
+it.each([
+  ['answers that it was restored since', new ApiError(409, 'Conflict')],
+  ['is granted', { access: 'write', room: 'material:q:schema:1' }],
+  ['fails with a server error', new ApiError(503, 'Service Unavailable')],
+  ['gets no answer', new TypeError('Failed to fetch')],
+])(
+  "rejoins when a fresh token after the service's own not found %s",
+  async (_, answer) => {
+    const { room } = await started();
+    const [provider] = providers;
+    provider.config.onSynced?.({ state: true });
+    tokens.push(answer);
+    provider.config.onAuthenticationFailed?.({
+      reason: COLLABORATION_NOT_FOUND_REASON,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(provider.disconnects).toBe(1);
+    expect(provider.connects).toBe(2);
+    expect(room.getSnapshot().status).not.toBe('unavailable');
+    expect(dropDeviceCopies).not.toHaveBeenCalled();
+    room.destroy();
+  }
+);
+
+// Review 2026-11-20 (3): a deleted quiz's Download reads its questions from
+// the device copy, which stays while this device holds edits to the item
+// (`dropDeletedCopies`, the device-copy sweep's rule).
+it("keeps a deleted item's device copy while this device holds edits to it", async () => {
+  const shown = new Y.Doc();
+  shown.getMap('questions').set('q1', 'Mitosis');
+  drafts.rows = [stateRow(shown, 'material:q:schema:1', 'a')];
+  tokens.push(gone());
+  const { room } = await started();
+  await vi.waitFor(() => expect(room.getSnapshot().recovery).not.toBeNull());
+  await vi.waitFor(() => expect(draftMaterials).toHaveBeenCalledWith('u'));
+  expect(dropDeviceCopies).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+it("drops a deleted item's device copy when this device holds no edits to it", async () => {
+  tokens.push(gone());
+  const { room } = await started();
+  await vi.waitFor(() =>
+    expect(dropDeviceCopies).toHaveBeenCalledWith('q', undefined)
+  );
+  room.destroy();
+});
+
+// A discard (a trash sends one first): the edits only the recorder held are
+// written as it stops, and they keep the copy too.
+it("keeps the device copy for the recorder's last edits when a discard ends the room", async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  const [notice, close] = evicted('discard');
+  provider.config.onStateless?.(notice);
+  provider.config.onClose?.(close);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.written).toBe(true);
+  expect(draftMaterials).toHaveBeenCalledWith('u');
+  expect(dropDeviceCopies).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// The collaboration service's "not found" with no token answer behind it is
+// also a deleted item's (review 2026-11-20): a fresh token decides, and a
+// deleted one ends this room for a fresh one, its edits kept.
+it("asks a fresh token after the service's own not found, and a deleted item moves to a fresh room", async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  tokens.push(gone());
+  provider.config.onAuthenticationFailed?.({
+    reason: COLLABORATION_NOT_FOUND_REASON,
+  });
+  await vi.waitFor(() => expect(onReplace).toHaveBeenCalled());
+  expect(drafts.discarded).toBe(0);
   room.destroy();
 });

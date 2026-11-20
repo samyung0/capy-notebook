@@ -476,12 +476,19 @@ export function QuizEditor({
         <div className="h-full overflow-y-auto px-4 py-6 sm:px-10">
           <div className="mx-auto flex max-w-205 flex-col gap-6">
             {head}
-            <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
+            <QuizRecovery
+              recovery={rooms.recovery}
+              rooms={rooms}
+              stored={stored}
+            />
           </div>
         </div>
       ) : refused ? (
         <QuizReadSplit
-          banner={<FileBanner message={m.editor_access_lost()} />}
+          // Deleted, its edits not drawn yet: the recovery's strip follows.
+          banner={
+            !rooms.deleted && <FileBanner message={m.editor_access_lost()} />
+          }
           head={head}
           questions={questions.length ? questions : stored}
           sources={sources}

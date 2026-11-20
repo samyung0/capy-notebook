@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { createContext, type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
+import { deletedItemOf } from '@/api/client';
 import {
   materialQuery,
   useFile,
@@ -247,8 +248,12 @@ export function EditorSaveStatus({
 function useHeader(
   item: OpenItem,
   workspaceId: string,
-  standalone: boolean
+  standalone: boolean,
+  trashed: boolean
 ): {
+  /** Deleted while open (Q39): its read answers `item_deleted`, or trashed on
+   * a page not opened from the Trash. */
+  deleted: boolean;
   file?: SourceFile;
   icon: FileIconName;
   title?: string;
@@ -262,9 +267,10 @@ function useHeader(
   materialCapabilities?: AccessCapabilities;
   showImageZoom: boolean;
 } {
-  const { data: fileData } = useFile(item.kind === 'file' ? item.id : null, {
-    errorBoundary: false,
-  });
+  const { data: fileData, error: fileError } = useFile(
+    item.kind === 'file' ? item.id : null,
+    { errorBoundary: false }
+  );
   // Inside a workspace the list entry and the workspace's capabilities cover
   // what the header shows until the body opens. Reading the material itself
   // here would pull the whole document past the heavy-document gate, so the
@@ -289,7 +295,7 @@ function useHeader(
   // Otherwise the body the pane opened is read from the cache: Edit is per
   // item (its payer's storage and lifecycle, uploader pays), which the
   // workspace's capabilities cannot say.
-  const { data: materialData } = useQuery({
+  const { data: materialData, error: materialError } = useQuery({
     ...materialQuery(item.kind === 'material' ? item.id : null),
     enabled: readBody,
     meta: { errorBoundary: false },
@@ -304,6 +310,7 @@ function useHeader(
         (!fileData.workspaceId || !!workspace?.canClone),
       canMoveTo:
         !!fileData && !fileData.trash && fileCanMoveTo(fileData, workspace),
+      deleted: !!deletedItemOf(fileError) || (!trashed && !!fileData?.trash),
       file: fileData,
       icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),
@@ -314,9 +321,12 @@ function useHeader(
   const capabilities =
     materialData?.capabilities ??
     (listed ? workspace?.capabilities : undefined);
+  const deleted =
+    !!deletedItemOf(materialError) || (!trashed && !!materialData?.trash);
   if (!mt || !capabilities) {
     return {
       canClone: false,
+      deleted,
       icon: '_file',
       showImageZoom: false,
       title: mt?.title,
@@ -331,6 +341,7 @@ function useHeader(
       (standalone
         ? !('workspaceId' in mt && mt.workspaceId)
         : !!workspace?.canClone),
+    deleted,
     icon: materialIconName(kind),
     material: mt,
     materialCapabilities: capabilities,
@@ -360,8 +371,11 @@ export function Header({
   oneColumn,
   phoneItems = [],
   presence,
+  trashed = false,
 }: {
   oneColumn?: OneColumnChrome;
+  /** Opened from the Trash: its trashed read is what shows. */
+  trashed?: boolean;
   /** The open file's buttons a phone has no room for, first in ⋮ there
    * (Preview, Epo 2026-11-16; `usePhoneMenuItem`). */
   phoneItems?: MenuItem[];
@@ -393,20 +407,24 @@ export function Header({
   const {
     canClone,
     canMoveTo,
+    deleted,
     file,
     icon,
     material,
     materialCapabilities,
     title,
     showImageZoom,
-  } = useHeader(item, workspaceId, standalone);
+  } = useHeader(item, workspaceId, standalone, trashed);
   const navigate = useNavigate();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   const office = !!file && !!officeFormatOf(file);
   // A standalone material's owner shares it from here as from its card.
   const shareable =
-    material && 'isOwner' in material && material.isOwner && !readOnly
+    material &&
+    'isOwner' in material &&
+    material.isOwner &&
+    !(readOnly || deleted)
       ? material
       : undefined;
   const [sharing, setSharing] = useState(false);
@@ -432,7 +450,7 @@ export function Header({
   // never moved, cloned or trashed on its own.
   const owned =
     !!material && 'assignmentId' in material && !!material.assignmentId;
-  const canHide = !itemReadOnly && !!workspaceId && !owned;
+  const canHide = !(itemReadOnly || deleted) && !!workspaceId && !owned;
   // Only a hidden item says so (Epo 2026-11-16): a visible one shows nothing,
   // and the ⋮ menu's "Shared with members" switch hides it.
   const hiddenChip = (file?.hidden || material?.hidden) && (
@@ -509,12 +527,16 @@ export function Header({
         canClone={canClone}
         canMoveTo={canMoveTo}
         color={color}
+        // Deleted (Q39): nothing of the item's own (rename, move, share,
+        // download, delete) works against the server it is gone from.
         content={
-          file
-            ? toFileActionTarget(file)
-            : material
-              ? toMaterialActionTarget(material)
-              : undefined
+          deleted
+            ? undefined
+            : file
+              ? toFileActionTarget(file)
+              : material
+                ? toMaterialActionTarget(material)
+                : undefined
         }
         display="menu"
         key={`${item.kind}:${item.id}`}

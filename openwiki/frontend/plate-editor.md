@@ -1476,7 +1476,17 @@ account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) keep the page, a reader's as it was and
 an editor's read-only under the "You no longer have access" strip; with no 4403
 close before it the page asks for its read, and a refused read shows "This item
-is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)),
+is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)).
+The service's not found alone, an item room's or a source's, and a source
+save failing `lostAccess: "not_found"` (a trash only queues the room's
+eviction, so a save may land first) ask a fresh token first (review
+2026-11-20): `item_deleted` keeps the edits under the deleted strip, a granted
+token or a 409 (restored since) rejoins, and only a 404 (an item room's 403
+too) goes on as above (a source save's back to the last save, its drafts
+dropped). No answer (offline, a server error) keeps everything: an item room
+joins again with its device copy, a source keeps its edits for the file's
+read.
+
 `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
 `collaboration-unassigned-id` is not retried (see [client ids](#client-ids)),
@@ -2573,7 +2583,65 @@ once per page load, which asks each stored document's token endpoint. A 403 abou
 (`account_suspended`, `account_deletion_pending`: `isAccountForbiddenError`)
 keeps them, and so does the collaboration service's forbidden reason alone,
 which an account lock gives too; the sweep settles that case
-(`refusalDropsDrafts`).
+(`refusalDropsDrafts`). A note that was deleted (moved to the Trash) is not
+lost: its token answers 410 `item_deleted` to whoever could read it (see
+[authorization](../authorization-permissions-lifecycles.md), What a refusal
+shows), and its rows stay (Epo 2026-11-19 and 2026-11-20, Q39-Q41). Its trash
+readers (its payer, the workspace's owner) are read the trashed item instead,
+which a page not opened from the Trash takes as deleted too: the creator
+trashing their own note in another tab sees the same strip, never the Trash's.
+The open editor writes its whole document once more (`snapshot`, so the rows
+draw without the room) and turns read-only as for a refusal, the recorder
+keeping the rows until it unmounts; the page, whose read answers the same,
+keeps the item on screen under "This item was deleted. Your unsaved edits are
+shown here to copy until you reload." while this device holds unsent edits to
+it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
+offers or deletes them meanwhile, and dismissing a toast already offering
+them), and says "This item is unavailable" when it holds none or cannot read
+its store. An item counts as shown once its read or its device copy painted
+it, on its workspace's page and on its own (`/materials/:id`, which keeps the
+page mounted instead of its error or Trash view). A note is drawn from its
+stored rows alone, as its Download draws it (`deletedNote`): the newer of the
+room document its Yjs rows draw (`deletedDocument`, the newest lineage and
+base group) and its newest saved copy (Q229), its merge view's pieces last,
+painted static, with each image, audio, embedded quiz or set and interactive
+block a line saying it is not included. Office and text files show the same
+strip as their session banner (`deleted`), and quizzes, sets, diagrams and
+canvases as their recovery view's (`ItemRecovery.deleted`, drawn the same
+way); a quiz's writer keeps its keys room while a fresh token is asked, so
+edits to its keys alone show beside its questions as last read. While
+deleted, nothing that writes or needs the server stays: the View/Edit
+toggles, a note's Preview and ⋮ item actions (rename, move, share, download,
+delete), a quiz's or set's Practice.
+
+What shows, what Download writes and what Reload deletes come from one
+drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
+lineage and base, a board's hidden edits from Q33 always a group of their
+own, since they copy the early board with what still showed deleted), and
+Reload or Download deletes the rows of that group as drawn (by id and seq);
+an open session's own document deletes the rows it holds. Rows of another
+group, another tab's lineage, an older base or an unreviewed piece stay and
+come back as the next page load's toast. The toast acts on the rows it
+offered (`DeletedDrafts.offered`, the ids each document held then): its
+Download draws only those, and its Discard deletes only those, neither
+touching a document an editor holds (`deleteUnheldDrafts`), so a toast left
+open across a restore and a live open never takes that session's edits.
+Online, a note's unacknowledged typing is update rows only, which no
+drawing places without the room: the discard's notice writes its whole
+document before the page's read is asked again, so the page, which hears
+`item_deleted` from that read before the rejoin's token, draws it. Item
+rooms and file sessions draw from their own document. A quiz whose keys
+alone have edits takes its questions from this device's copy of its
+content room, which the copy sweep keeps while any edits to the item are
+stored (`sweepDeviceCopies`); with none, its file says the questions are
+not included. Reload and Discard are counted as
+`discard_unsaved` with the reason `item_deleted`, apart from a lost item's
+silent `not_found`. A read of the store that fails deletes nothing and shows
+the item unavailable. The collaboration service's "not found" alone (no API
+answer behind it) keeps the rows and asks a fresh token, whose 410 or 404
+decides (`refusalKeepsDrafts`); only the API's 404 drops them. A file whose
+session cannot open because it was deleted (410 at open) shows unavailable,
+its rows kept for the next page load's offer.
 
 The lineage moves whenever the server throws away room state a client may
 hold (see below), so stored or in-memory edits from another lineage are never
@@ -2618,8 +2686,23 @@ copy (`src/features/collaboration/deviceCopy.ts`, stored by
 - **Lost access** (C3): a brief stale glimpse is accepted and there is no remote
   wipe. A person refused on connecting loses the copy (`dropDeviceCopies`), and
   at each page load `POST /api/materials/readable` answers which kept ids the
-  account can still read, in one query, and the rest go (`sweepDeviceCopies`). A
-  material read answered 403 or 404 removes them at once, the last read included.
+  account can still read, in one query, and the rest go (`sweepDeviceCopies`),
+  but for one whose drafts that load's draft sweep kept (`loadSweepKept`: a
+  deleted item's, answered `item_deleted`; one a page here or another tab's
+  editor holds; one it could not answer). A deleted quiz's Download reads its
+  questions there (Q43); the readable check cannot tell deleted from lost
+  access, so the device-copy sweep waits for the draft sweep and does nothing
+  when it did not run (another tab swept), nor one whose drafts a page or
+  editor here holds as it goes (`materialHeldHere`: deleted after the draft
+  sweep, that page decides). A material read answered 403 or 404 removes
+  them at once, the last read included.
+- **Deleted** (review 2026-11-20): every path that drops a deleted item's copy
+  (the room's `item_deleted` refusal or 410 token, a discard's eviction, the
+  page's deleted read, a note's deleted token) keeps it while this device holds
+  stored edits to the item (`dropDeletedCopies`, `draftMaterials`), read once
+  the editor's last rows landed (its recorder's dispose or snapshot); the next
+  load's sweep drops it once they go. An unknown account or an unreadable store
+  keeps it for that sweep.
 
 - **What a copy is.** The room's state as one row per document, written whole:
   never per key, and only when nothing of this device's is unsent
@@ -3020,7 +3103,26 @@ sweep stops when the page signs in as someone else.
 For each other document of the signed-in account the sweep asks the token
 endpoint the editor uses (a file's `POST /files/<id>/collaboration-token`
 too). A 403 or 404 deletes the rows (above) in the load sweep only, once per
-page load; a later sweep that meets one leaves it for the next load. A read
+page load; a later sweep that meets one leaves it for the next load. A 410
+`item_deleted` keeps them, and the load sweep offers each such item once it
+ends (`onDeleted`, its quiz keys with it), unless a page here shows it: one
+error toast, "Edits to “{title}” can't sync" / "It was deleted.", with
+Discard (plain, ringed), Download (filled) and × (Epo 2026-11-20, Q40 A,
+Q44 1; `offerDeletedEdits` in `deletedEditsToast.ts`, apart from `lostEdits.ts` so the rooms that import the latter never reach the file writers, which the board's typecheck would then take in). Rows that make no file (no group draws, or an
+Office file's base is gone; `canSaveDeletedEdits`, checked before the toast
+shows) get Discard and × alone, the body "It was deleted, and these edits
+can't be downloaded." (review 2026-11-20). Download saves the file made from the rows alone
+(`deletedEditsFile.ts`, loaded with the toast; no server call) and then deletes
+them uncounted; Discard deletes them, counted; × keeps them for the next page
+load's toast. The file is "{title} (unsaved edits).{ext}", a file keeping its
+own extension: an Office file through the export worker over the base
+stored with the rows (no seed: the rows hold the whole state), a text file's
+source, a note as Markdown with images, audio, embedded quizzes and sets and
+interactive blocks as lines saying they are not included (Q42 A), a canvas
+as the PNG Download as image draws, on a read-only board mounted off screen
+on the rebuilt document (Q43 A), a quiz's questions with its keys as JSON, a
+set as .tsv, a diagram as .mmd. A file that cannot be made keeps the rows and
+says so. A read
 token sends nothing. A quiz's keys
 (stored as `<actor>:material:<id>:keys`) follow the quiz's own token, then
 go with the keys token (`{ document: 'keys' }`, room `keys:<id>:schema:<n>`);
@@ -4939,7 +5041,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   (layer by layer, so what the screen covers is covered) but with nothing moved
   nearer. BlockSuite's own `ExportManager.exportPng` is not used: it draws every note
   under every stroke, offsets blocks by 50 units, and gives nothing when one image's
-  file is missing. A board that cannot be drawn says so in a toast.
+  file is missing. An image whose file cannot load is drawn as a light box saying
+  "Image not available" at its place (Epo 2026-11-20, Q43 A). A board that cannot
+  be drawn says so in a toast. The board's `image()` draws the same PNG and `ready`
+  resolves at its first view, for a deleted canvas's Download off screen.
   On a canvas (`setRoomSize`, Epo 2026-11-18, 2B) the menu ends, from 75% of the
   room's cap, with a divider and `Size: 3,150/4,096 KB`, kilobytes rounded up as a
   note's size line (`documentStats.ts`); at the cap the row is in the error colour
