@@ -362,7 +362,10 @@ test('DOCX view mode selects and copies text from its text layer', async ({
   });
   // The window has moved once the pages near the top went plain text; the
   // first page keeps its positioned mirror while it holds the selection.
-  const mirrors = frame.locator('.layout-page-mirror');
+  // The text layer's pages, not the screen-reader layer's beside them (Q753 C).
+  const mirrors = frame.locator(
+    '.canvas-page-mirror--selectable > .layout-page-mirror'
+  );
   await expect(mirrors.nth(2)).toHaveClass(/layout-page-mirror-text/, {
     timeout: 15_000,
   });
@@ -1245,10 +1248,12 @@ test.describe('DOCX on a phone', () => {
       .context()
       .grantPermissions(['clipboard-read', 'clipboard-write']);
     const frame = await open(page);
-    const run = (text: string) =>
+    // View's text layer, not the screen-reader layer beside it, whose whole
+    // words come first (Q753 C); Edit has the one mirror.
+    const run = (text: string, layer = '.canvas-page-mirror--selectable') =>
       frame
         .locator(
-          '.layout-page-mirror:not(.layout-page-mirror-text) .layout-run-text'
+          `${layer} > .layout-page-mirror:not(.layout-page-mirror-text) .layout-run-text`
         )
         .filter({ hasText: new RegExp(`^${text}$`) })
         .first();
@@ -1280,7 +1285,9 @@ test.describe('DOCX on a phone', () => {
     await editMode(page);
     expect(await fitted(frame)).toBeLessThan(816 * 0.4);
     // Edit's mirror reads the title's last line whole.
-    await expect(run('交流學習團活動計劃書')).toBeAttached({ timeout: 60_000 });
+    await expect(
+      run('交流學習團活動計劃書', '.canvas-page-mirror')
+    ).toBeAttached({ timeout: 60_000 });
     const box = async (text: string) => {
       const glyph = glyphs.get(text);
       const sheet = await pageOne().boundingBox();

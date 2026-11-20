@@ -217,10 +217,14 @@ export async function expectRichContent(
       await expect(
         frame.getByRole('img', { exact: true, name: chart }).first()
       ).toBeAttached();
-    // The three pictures carry no alternative text.
-    await expect(frame.locator('[role="img"]:not([aria-label])')).toHaveCount(
-      3
-    );
+    // The three pictures carry no alternative text. View's per-letter text
+    // layer, hidden from screen readers, repeats a positioned page's beside
+    // its whole-word layer (Q753 C): only the read ones count.
+    await expect(
+      frame.locator(
+        '[role="img"]:not([aria-label]):not(.canvas-page-mirror--selectable[aria-hidden="true"] *)'
+      )
+    ).toHaveCount(3);
     await expect(
       frame.getByRole('region', { name: 'Page footer' }).first()
     ).toBeAttached();
