@@ -501,13 +501,6 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	if errors.Is(err, store.ErrTitleTaken) {
-		writeJSON(w, http.StatusConflict, map[string]string{
-			"code":    "title_taken",
-			"message": "a material with this name already exists in this workspace",
-		})
-		return
-	}
 	if errors.Is(err, store.ErrTooManyTopics) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"code":    "too_many_topics",

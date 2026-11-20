@@ -311,7 +311,7 @@ describe('error ids', () => {
     ],
     [
       'a typed refusal',
-      new ApiError(409, 'Conflict', undefined, { code: 'title_taken' }, id),
+      new ApiError(409, 'Conflict', undefined, { code: 'too_many_topics' }, id),
       null,
     ],
     ['a 404', new ApiError(404, 'Not Found', undefined, null, id), null],

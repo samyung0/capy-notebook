@@ -115,6 +115,7 @@ import {
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { PREF_KEYS, readPref, removePref, writePref } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -124,6 +125,15 @@ const AddPracticeDialog = lazy(() =>
     default: mod.AddPracticeDialog,
   }))
 );
+/** A stored last open item (PREF_KEYS.openItem). */
+function isLastOpen(
+  value: unknown
+): value is { id: string; kind: 'file' | 'material' } {
+  if (typeof value !== 'object' || value === null) return false;
+  const { id, kind } = value as Record<string, unknown>;
+  return typeof id === 'string' && (kind === 'file' || kind === 'material');
+}
+
 /** A search value's ids: the paper's or the answer files'. */
 const splitIds = (ids: string | undefined) =>
   ids ? ids.split(',').filter(Boolean) : [];
@@ -348,6 +358,15 @@ function WorkspaceOpen() {
   const railShown = useMediaQuery('(min-width: 768px)');
   const oneColumnLayout = !lg;
   const searchedOpenItem = openItemFromSearch(search);
+  // The last open item, for the rail's Files to open again (Epo 2026-11-20).
+  const openItemKey = PREF_KEYS.openItem(workspaceId);
+  const openedId = searchedOpenItem?.id;
+  const openedKind = searchedOpenItem?.kind;
+  useEffect(() => {
+    if (openedId && openedKind)
+      writePref(openItemKey, { id: openedId, kind: openedKind });
+    else if (search.view === 'files') removePref(openItemKey);
+  }, [openItemKey, openedId, openedKind, search.view]);
   // The page a child route draws in the centre (Assignments, Members, Study's
   // tabs); an open file or material is the Files page instead.
   const routePage = useChildMatches({
@@ -464,6 +483,8 @@ function WorkspaceOpen() {
   const keepChat = lg && chatOver ? { view: 'chat' as const } : {};
   function setOpenItem(item: OpenItem | null) {
     setCitationTarget(null);
+    // Closed (trashed from the tree, say): Files no longer opens on it.
+    if (!item) removePref(openItemKey);
     navigate({ ...home, replace: true, search: searchFromOpenItem(item) });
   }
 
@@ -564,9 +585,21 @@ function WorkspaceOpen() {
     }
     setSideOpen(true);
     setCitationTarget(null);
+    // From another page Files opens on what was last open there, while it is
+    // still listed (or before the lists load); on Files itself (a tablet's
+    // open item) it is the list.
+    const last =
+      page === 'files' ? null : readPref(openItemKey, null, isLastOpen);
+    const listed =
+      !!last &&
+      (last.kind === 'file'
+        ? !files || files.some((file) => file.id === last.id)
+        : !materials || materials.some((material) => material.id === last.id));
     if (next in SECTION_PAGE)
       openStudy(SECTION_PAGE[next as keyof typeof SECTION_PAGE]);
     else if (next === 'dashboard') openDashboard();
+    else if (next === 'files' && last && listed)
+      navigate({ ...home, search: searchFromOpenItem(last) });
     else
       navigate({
         ...home,

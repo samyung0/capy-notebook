@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListAssignmentsDir } from './listAssignmentsDir.ts';
+import type { ListAssignmentsKind } from './listAssignmentsKind.ts';
 import type { ListAssignmentsSort } from './listAssignmentsSort.ts';
 
 export type ListAssignmentsParams = {
@@ -20,6 +21,10 @@ done?: boolean;
  * Comma-separated topic ids: only those on one of them
  */
 topic?: string;
+/**
+ * Only graded quizzes (marked) or only assignments (unmarked); none keeps both
+ */
+kind?: ListAssignmentsKind;
 /**
  * A column to order by, open ones still first; none is the page's own order
  */

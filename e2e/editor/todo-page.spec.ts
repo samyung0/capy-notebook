@@ -23,7 +23,7 @@ test('To do groups each class, and a row opens its details', async ({
   await expect(page).toHaveURL(
     (url) =>
       url.searchParams.has('assignment') &&
-      url.searchParams.get('tab') === 'approve',
+      url.searchParams.get('tab') === 'grading',
     { timeout: 30_000 }
   );
 });

@@ -15,7 +15,7 @@ import {
   saveAssignmentDrawing,
   useSubmitAssignmentAttempt,
 } from '@/api/hooks';
-import type { AssignmentAttempt } from '@/api/types';
+import type { AssignmentAttempt, AssignmentFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -50,13 +50,17 @@ import {
   emptyAnswer,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { QuizSplit, RowMark } from '@/features/quizzes/QuizSplit';
+import { QuizSplit } from '@/features/quizzes/QuizSplit';
 import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
-import { PaperPane } from './LazyPaper';
+import { PaperPane, QuestionPaperCard, QuestionPaperView } from './LazyPaper';
+import { NumberStrip, QuestionNumbers } from './QuestionNumbers';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
+
+/** Answers written into a field, which an upload's questions leave out. */
+const WRITTEN = new Set(['short', 'open', 'drawing']);
 
 /** How long typing rests before answers save. */
 const SAVE_AFTER_MS = 2000;
@@ -94,26 +98,6 @@ function questionHeading(question: LearnerQuestion | Question): {
   return { rest: question, text: '' };
 }
 
-/** A list row's answered mark (Epo 2026-11-13): a purple tick once every part
- * is answered, a ring while only some are. */
-export function AnsweredMark({
-  complete,
-  label,
-}: {
-  complete: boolean;
-  label: string;
-}) {
-  return (
-    <RowMark label={label}>
-      {complete ? (
-        <Icon className="text-solid-accent-1" name="check" size={16} />
-      ) : (
-        <span className="size-2.5 rounded-full border-2 border-solid-accent-1" />
-      )}
-    </RowMark>
-  );
-}
-
 /** The answering pane's room around its question. */
 export const TAKE_PANE =
   'px-4 pt-6 pb-6 sm:px-6 md:pb-24 lg:px-21.5 lg:pt-12 lg:pb-10';
@@ -130,15 +114,24 @@ export function TakeQuestion({
   question,
 }: {
   answers: Answers;
-  children: ReactNode;
+  children?: ReactNode;
   number: number;
   onChange: (partId: string, value: Answer) => void;
-  /** Answered on paper (S5): the question alone, no field to answer in. */
+  /** Answered by upload (S5): the question alone, no field to answer in. */
   paper?: boolean;
   question: LearnerQuestion | Question;
 }) {
   const type = question.parts[0]?.answer.type as QuestionType | undefined;
   const heading = useMemo(() => questionHeading(question), [question]);
+  const written = useMemo(
+    () =>
+      new Set(
+        question.parts
+          .filter((part) => WRITTEN.has(part.answer.type))
+          .map((part) => part.id)
+      ),
+    [question]
+  );
   return (
     <div className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3">
       <p className="t-meta text-fg-secondary">
@@ -158,17 +151,18 @@ export function TakeQuestion({
         <QuestionRunner
           answers={answers}
           disabled={paper}
-          frameAnswer={paper ? () => null : undefined}
+          // On paper the options still show, read only; a field to write in
+          // does not.
+          frameAnswer={
+            paper
+              ? (partId, runner) => (written.has(partId) ? null : runner)
+              : undefined
+          }
           headerMarks={false}
           onChange={onChange}
           question={heading.rest}
         />
       </div>
-      {paper && (
-        <p className="t-meta rounded-lg bg-page-hover px-3 py-2.5 text-fg-secondary">
-          {m.assignment_paper_on_paper()}
-        </p>
-      )}
       {children}
     </div>
   );
@@ -269,9 +263,13 @@ export function AssignmentTake({
   attempt,
   leave,
   onClosed,
+  questionPaper,
   workspaceId,
 }: {
   attempt: AssignmentAttempt;
+  /** A file's graded quiz (Epo 2026-11-20): its question paper, read in the
+   * file viewer in place of the questions; null when it can't be opened. */
+  questionPaper?: AssignmentFile | null;
   /** The way out on a phone, which has no header here (answers stay saved). */
   leave?: ReactNode;
   /** Staff closed it while it was open here: its results come next. */
@@ -280,10 +278,9 @@ export function AssignmentTake({
 }) {
   const qc = useQueryClient();
   const questions = attempt.questions as LearnerQuestion[];
-  // Answered on paper (S5): the questions read only, then Your paper.
+  // Answered by upload (S5): the questions read only beside Your answers.
   const paper = attempt.paper === 'upload';
   const files = attempt.paperFiles;
-  const [paperOpen, setPaperOpen] = useState(paper);
   const [wantedIndex, setIndex] = useState(0);
   // New questions can be fewer: the last one stands in.
   const index = Math.min(wantedIndex, Math.max(questions.length - 1, 0));
@@ -476,23 +473,22 @@ export function AssignmentTake({
   // A multi-part question with some of its parts left isn't done.
   const isComplete = (q: (typeof questions)[number]) =>
     q.parts.every((part) => answered(answers[part.id]));
-  const stateLabel = (q: (typeof questions)[number]) =>
-    isComplete(q)
-      ? m.assignment_legend_answered()
-      : isAnswered(q)
-        ? m.assignment_legend_part_answered()
-        : m.assignment_legend_not_answered();
   const answeredCount = questions.filter(isAnswered).length;
   const unanswered = questions.length - answeredCount;
   const go = (next: number) => {
     void flush();
-    setPaperOpen(false);
     setIndex(next);
   };
-  const paperLabel =
-    files.length === 1
-      ? m.assignment_paper_one_file()
-      : m.assignment_paper_files({ count: files.length });
+  const open = (id: string) => go(questions.findIndex((q) => q.id === id));
+  const items = questions.map((q) => ({
+    id: q.id,
+    marked: bookmarks.includes(q.id),
+    state: isComplete(q)
+      ? ('complete' as const)
+      : isAnswered(q)
+        ? ('answered' as const)
+        : ('empty' as const),
+  }));
 
   // A timed attempt always shows its clock; one only a due date ends shows it
   // in the last hour (Epo 2026-11-08).
@@ -561,186 +557,133 @@ export function AssignmentTake({
                 {submitButton}
               </div>
             </header>
-            <QuizSplit
-              below={
-                paper && (
-                  <>
-                    <div className="mx-2 my-2 h-px bg-divider" />
-                    <button
-                      aria-current={paperOpen || undefined}
-                      className={cn(
-                        'grid min-h-9 w-full cursor-pointer grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13.5px] outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
-                        paperOpen && 'bg-page-hover hover:bg-page-hover'
-                      )}
-                      data-paper-row
-                      onClick={() => setPaperOpen(true)}
-                      type="button"
-                    >
-                      <Icon
-                        className="text-fg-secondary"
-                        name="fileText"
-                        size={18}
-                      />
-                      <span className="truncate font-semibold">
-                        {m.assignment_paper_title()}
-                      </span>
-                      <span className="text-fg-muted text-xs">
-                        {paperLabel}
-                      </span>
-                    </button>
-                  </>
-                )
-              }
-              current={paperOpen ? undefined : question?.id}
-              onBack={() => undefined}
-              onOpen={(id) => go(questions.findIndex((q) => q.id === id))}
-              onQuestion
-              phoneStrip={
-                <div className="flex shrink-0 items-center border-divider border-b md:hidden">
-                  <span className="shrink-0 pl-2">{leave}</span>
-                  <nav
-                    aria-label={m.assignment_questions_nav()}
-                    className="min-w-0 flex-1"
-                  >
-                    <ol className="flex gap-2 overflow-x-auto px-2.5 py-2.5 [scrollbar-width:none]">
-                      {questions.map((q, i) => {
-                        const marked = bookmarks.includes(q.id);
-                        const name = [
-                          m.assignment_question_n({ number: i + 1 }),
-                          stateLabel(q),
-                          ...(marked ? [m.assignment_legend_bookmarked()] : []),
-                        ].join(', ');
-                        return (
-                          <li className="shrink-0" key={q.id}>
-                            <button
-                              aria-current={
-                                i === index && !paperOpen ? 'step' : undefined
-                              }
-                              aria-label={name}
-                              className={cn(
-                                'relative grid size-9 place-items-center rounded-[10px] border font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
-                                isComplete(q)
-                                  ? 'border-transparent bg-tint-accent-1 text-tint-accent-1-fg'
-                                  : isAnswered(q)
-                                    ? 'border-solid-accent-1 border-dashed text-fg'
-                                    : 'border-line text-fg',
-                                i === index &&
-                                  !paperOpen &&
-                                  'border-2 border-solid-accent-1 border-solid'
-                              )}
-                              onClick={() => go(i)}
-                              type="button"
-                            >
-                              {i + 1}
-                              {marked && (
-                                <Icon
-                                  className="absolute top-0 right-0.5 text-solid-accent-1"
-                                  name="bookmark"
-                                  size={11}
-                                />
-                              )}
-                            </button>
-                          </li>
-                        );
-                      })}
-                      {paper && (
-                        <li className="shrink-0">
-                          <button
-                            aria-current={paperOpen ? 'step' : undefined}
-                            className={cn(
-                              'inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-line px-2.5 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action',
-                              paperOpen &&
-                                'border-2 border-solid-accent-1 border-solid'
-                            )}
-                            onClick={() => setPaperOpen(true)}
-                            type="button"
-                          >
-                            <Icon name="fileText" size={16} />
-                            {m.assignment_paper_chip()}
-                          </button>
-                        </li>
-                      )}
-                    </ol>
-                  </nav>
+            {paper && questionPaper !== undefined ? (
+              // A file's graded quiz (mock Attempt): the question paper's
+              // card above Your answers at the side, the file in the
+              // workspace's viewer beside them; a phone reads the file
+              // first, its name and Download over it, Your answers under it.
+              <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[300px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)]">
+                <div className="flex items-center gap-1 border-divider border-b py-1.5 pr-4 pl-2 md:hidden">
+                  {leave}
+                  <span className="truncate font-bold">{attempt.title}</span>
                 </div>
-              }
-              questions={questions}
-              rowEnd={(q) => (
-                <>
-                  {bookmarks.includes(q.id) && (
-                    <RowMark label={m.assignment_legend_bookmarked()}>
-                      <Icon
-                        className="text-solid-accent-1"
-                        name="bookmark"
-                        size={18}
-                      />
-                    </RowMark>
-                  )}
-                  {!paper && isAnswered(q) ? (
-                    <AnsweredMark
-                      complete={isComplete(q)}
-                      label={stateLabel(q)}
-                    />
-                  ) : (
-                    questionMarks(q)
-                  )}
-                </>
-              )}
-            >
-              <div className={TAKE_PANE}>
-                {paperOpen && (
+                <aside className="flex flex-col gap-4 border-divider border-t px-4 py-3 max-md:order-last max-md:max-h-[40dvh] max-md:overflow-y-auto md:min-h-0 md:overflow-y-auto md:border-t-0 md:border-r">
+                  <QuestionPaperCard
+                    className="border-divider border-b pb-4 max-md:hidden"
+                    file={questionPaper}
+                  />
                   <PaperPane
                     attemptId={attempt.id}
                     files={files}
                     uploads={uploads}
                   />
-                )}
-                {!paperOpen && question && (
-                  <TakeQuestion
-                    answers={answers}
-                    key={question.id}
-                    number={index + 1}
-                    onChange={change}
-                    paper={paper}
-                    question={question}
-                  >
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <Button
-                        iconLeft="bookmark"
-                        onClick={() => toggleBookmark(question.id)}
-                        size="sm"
-                        variant={
-                          bookmarks.includes(question.id) ? 'gray' : 'outline'
-                        }
+                </aside>
+                <div className="min-h-0 flex-1">
+                  <QuestionPaperView file={questionPaper} />
+                </div>
+              </div>
+            ) : paper ? (
+              // Answered by upload (S5, Epo 2026-11-19): Your answers beside
+              // every question in one scroll, read only.
+              // One Your answers: phones scroll it above the questions.
+              <div className="min-h-0 flex-1 overflow-y-auto md:grid md:grid-cols-[300px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
+                <div className="flex items-center gap-1 border-divider border-b py-1.5 pr-4 pl-2 md:hidden">
+                  {leave}
+                  <span className="truncate font-bold">{attempt.title}</span>
+                </div>
+                <aside className="border-divider border-b px-4 py-3 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
+                  <PaperPane
+                    attemptId={attempt.id}
+                    files={files}
+                    uploads={uploads}
+                  />
+                </aside>
+                <div className="md:min-h-0 md:overflow-y-auto">
+                  <div className={TAKE_PANE}>
+                    {questions.map((q, i) => (
+                      <div
+                        className="border-divider border-b py-8 first:pt-0 last:border-b-0"
+                        key={q.id}
                       >
-                        {m.assignment_bookmark()}
-                      </Button>
-                      <div className="ml-auto flex items-center gap-2">
+                        <TakeQuestion
+                          answers={answers}
+                          number={i + 1}
+                          onChange={change}
+                          paper
+                          question={q}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <QuizSplit
+                current={question?.id}
+                numbers={
+                  <QuestionNumbers
+                    bookmarks
+                    current={question?.id}
+                    items={items}
+                    onOpen={open}
+                  />
+                }
+                onBack={() => undefined}
+                onOpen={open}
+                onQuestion
+                phoneStrip={
+                  <NumberStrip
+                    current={question?.id}
+                    items={items}
+                    onOpen={open}
+                    start={leave}
+                  />
+                }
+                questions={questions}
+              >
+                <div className={TAKE_PANE}>
+                  {question && (
+                    <TakeQuestion
+                      answers={answers}
+                      key={question.id}
+                      number={index + 1}
+                      onChange={change}
+                      question={question}
+                    >
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                         <Button
-                          disabled={index === 0}
-                          iconLeft="arrowLeft"
-                          onClick={() => go(index - 1)}
-                          variant="outline"
-                        >
-                          {m.action_previous()}
-                        </Button>
-                        <Button
-                          disabled={!paper && index === questions.length - 1}
-                          iconRight="arrowRight"
-                          onClick={() =>
-                            index === questions.length - 1
-                              ? setPaperOpen(true)
-                              : go(index + 1)
+                          iconLeft="bookmark"
+                          onClick={() => toggleBookmark(question.id)}
+                          size="sm"
+                          variant={
+                            bookmarks.includes(question.id) ? 'gray' : 'outline'
                           }
                         >
-                          {m.action_next()}
+                          {m.assignment_bookmark()}
                         </Button>
+                        <div className="ml-auto flex items-center gap-2">
+                          <Button
+                            disabled={index === 0}
+                            iconLeft="arrowLeft"
+                            onClick={() => go(index - 1)}
+                            variant="outline"
+                          >
+                            {m.action_previous()}
+                          </Button>
+                          <Button
+                            disabled={index === questions.length - 1}
+                            iconRight="arrowRight"
+                            onClick={() => go(index + 1)}
+                          >
+                            {m.action_next()}
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  </TakeQuestion>
-                )}
-              </div>
-            </QuizSplit>
+                    </TakeQuestion>
+                  )}
+                </div>
+              </QuizSplit>
+            )}
             <div className="flex shrink-0 items-center gap-3 border-divider border-t px-4 py-2.5 md:hidden">
               {clock}
               <span className="ml-auto flex items-center gap-3">

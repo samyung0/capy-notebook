@@ -1062,7 +1062,9 @@ closed; a member's page always asks for them), `done` keeps the caller's done
 ones (a member's Show done; staff always ask), and `topic` (comma-separated)
 keeps those covering one of the topics, its quiz's or one its questions name as
 their own, as Practice's filter does (staff's Filter, the list pages'
-`FilterPopover`, offering every topic of the workspace, no Other files). Each
+`FilterPopover`, offering every topic of the workspace, no Other files), and
+`kind` (`marked` or `unmarked`) keeps only graded quizzes or only assignments
+(staff's Filter's Kind, Epo 2026-11-19; both picked sends none, keeping both). Each
 row's question topic ids are read from its JSON once (`questionTopicIDsSQL`:
 the posted questions, a draft's quiz content), for the filter, the sort and
 `topicIds` alike.
@@ -1306,7 +1308,9 @@ attempt (with `marking` on each part held) carry `marking`, which Approve
 shows in place of a row's badge or waiting text, Responses By member in place of
 "to approve", and the member's submitted page and results as Marking… (each
 waiting part too); the report and the attempt are read again every 3 s while
-anything says it, and under Show grades Manual the flag still shows, telling
+anything says it, and each report read invalidates the attempts whose answer
+rows moved (`changedAttempts`, Epo 2026-11-19), so Grading's open answer takes
+the AI's marks as they land rather than after its 5-minute stale time, and under Show grades Manual the flag still shows, telling
 nothing of the marks. With Approve
 AI marks on, its mark waits beside the answer (`aiAwards`, `aiComment`, `aiFlag`)
 where only staff read it; off, it is the mark at once (`markedBy: "ai"`). A part left
@@ -1323,7 +1327,7 @@ alone). Set per assignment in New assignment's Advanced; marked work with a due
 date only, and the penalty on marks or a grade only (the store refuses anything
 else, `checkLatePolicy`), so with no due date Advanced holds Draft only.
 
-Advanced (Epo 2026-11-04, `AdvancedSection.tsx`) is an accordion holding the policy
+Advanced (Epo 2026-11-04, `Accordion` in `src/components/ui/Accordion.tsx`) is an accordion holding the policy
 and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded assignment's Show
 grades and Show answers sit at its top (Epo 2026-11-12). It starts closed unless a
 saved assignment holds something other than the defaults there, a draft, No late
@@ -1385,15 +1389,96 @@ points and solutions (`gradedWithoutKeys`), so an early submitter has no answers
 pass on while classmates still answer; per-part marks still show on submit.
 Reopening hides the keys again.
 
-**Answering on paper** (Epo 2026-11-08, todo-file-submissions.md 5a, migration
-0161, mocks C1, S4, S5, T1, F1, F2):
-- New assignment's "Allow submission with uploads" (`allow_uploads`) lets a member
-  pick Upload file beside Attempt online in Before you start, which then shows
-  for every such assignment, timed or not. Upload file needs storage not full
-  (S6); the attempt runs with `attempts.paper = 'upload'`, the clock covering the
-  upload. Typed and uploaded answers never mix in one attempt.
-- The page shows the questions read only (no answer fields) and Your paper as the
-  last row. Its files are the member's own standalone uploads through the normal
+**A graded quiz from a file** (Epo 2026-11-20, migration 0186, mock "Graded
+quiz from a file"): Existing file's file row asks for its "Total marks" (whole,
+1 to 1000, the form's `totalMarks`, which only this graded quiz has) and makes
+it with `POST /api/files/{id}/graded-quiz` (`MakeFileGradedQuiz`, the caller an
+editor of the file's workspace), its untitled name the file's without the
+extension.
+- `paper_file` marks it; its one `assignment_files` row is the question paper,
+  read live, not copied (Epo: a copy would mean publishing every edit). It is
+  Upload only and Manual grading only, which Settings shows locked and the
+  server keeps on every save, with its file.
+- Its frozen copy is one question with no words and one open part worth N
+  (`paperQuestion`), whose one marking point is the file's name, so attempts,
+  the clock, Grading's typed mark, late penalties and released grades work as
+  any graded quiz's. A draft holds the copy from the start; Publish gives it
+  out as it is.
+- Handing in skips the read (`paper` goes straight to `read`): no AI maps pages
+  or marks anything, and Grading shows every page of the hand-in with one mark
+  out of N and no AI line.
+- The member's attempt shows the Question paper card (name, Download of the
+  latest saved state) above Your answers, and the file in the workspace's own
+  viewer beside them (on a phone the file first, its name and Download over it,
+  Your answers under it). A member reads it in View: an Office, text or CSV file
+  is one `GET /api/files/{id}/source-session?view=true` (its saved edits read
+  once), a PDF, image or audio its signed link; no room joins, so they see what
+  was last saved, not live typing. The report's Questions tab is Question paper,
+  the same viewer, where staff who may edit the file can; Preview shows it too.
+- Who reads it (Epo 2026-11-20, "just like quiz"): those it is given to see its
+  name; once they start they read the file through the quiz, even when it is
+  hidden from members in Files (`FileReadRole`,
+  authorization-permissions-lifecycles.md › Hidden from members). A visible
+  file stays readable in Files to every member, so staff hide a paper they want
+  unread before the quiz (its picker row says "Hidden from members"). One moved,
+  trashed or deleted reads "The question paper can't be opened".
+- Total marks (Epo 2026-11-20, mock "File quiz follow-ups" A): Settings shows
+  it beside Marking and saves it with the rest (`setPaperMarksTx`). Marks
+  already given stay as they are, out of the new total, as Canvas and Google
+  Classroom keep them; Save asks first while any submission is graded (the
+  staff summary's `graded`, past members' included), saying theirs change only
+  by hand. A total below a mark
+  given is refused (409 `total_below_mark`, shown under the field). The stored
+  copy, every submission's graded copy and totals, and running attempts'
+  totals follow (`rewritePaperTx`).
+- Change file (Epo 2026-11-20, as Gradescope's Replace template PDF): staff's
+  button on the Question paper tab, also when the file is gone, opens the
+  workspace's files in Existing file's rows; `PUT
+  /api/assignments/{id}/paper-file` (`ChangePaperFile`) moves the one
+  `assignment_files` row and renames the marking point. Answers and marks stay,
+  and those who started read the new file from their next open (the read rule
+  follows the row); open pages reread (`assignment_updated`).
+- Results (Epo 2026-11-20, mock "File quiz follow-ups" boards 6 and 7, as Canvas
+  and Classroom show a hand-in's grade): the member's page has the total and
+  percent, then Feedback, the comment staff wrote on its one question in
+  Grading (there is no separate feedback field), then Your answers with Open
+  on each file (its signed link; "No files handed in." when there are none)
+  and the Question paper with Open (the viewer
+  in Preview's dialog) and Download; no question row and no outcome chips.
+  While grades are held back it shows the two file sections alone. Staff
+  opening a member's attempt (Epo 2026-11-20, "a file is not a quiz
+  question") get the same page with Grade (one mark out of the total) and
+  Feedback (the comment box) in Feedback's place, saved as Grading saves
+  them, Save waiting for a change; then Answers and the Question paper. Until
+  it is marked the score reads "– / 40", not "0 / 0". Neither page has
+  dividers (Epo 2026-11-20, "remove all dividers"). Grading is the same
+  (Epo 2026-11-20): the members, then that pane for the one picked, Save
+  moving on to the next waiting; no questions column, chips or Overview, and
+  a phone opens on the members.
+
+**Answering by upload** (Epo 2026-11-08, todo-file-submissions.md 5a, migrations
+0161 and 0185, mocks C1, S2, S5, T1, F1, F2):
+- A marked assignment's Submission (Epo 2026-11-19) is Online assessment only,
+  Upload only (`upload_only`, which needs `allow_uploads`), or Online assessment
+  or upload (`allow_uploads` alone). For the last, Before you start asks "How
+  will you answer?" with two cards, Online assessment and Upload, and says the
+  choice can't be switched once started (S2); upload-only starts as an upload
+  and the server refuses it online. Before you start lists the questions, marks,
+  time limit, attempts and (with one mode) the submission as an item's
+  properties do (`PropertyList`), and opens for any timed assignment or one that
+  takes uploads. Upload needs storage not full (S6); the attempt runs with
+  `attempts.paper = 'upload'`, the clock covering the upload. Typed and uploaded
+  answers never mix in one attempt.
+- An online assessment lists its questions as numbers only (`QuestionNumbers`,
+  the same grid in staff's Preview): a six-column grid in the list's place, each
+  square filled when answered, dashed when partly, ringed when open, a bookmark
+  in its corner, with what each look means under it; phones keep the number
+  strip above the question (`NumberStrip`).
+- An upload attempt shows Your answers at the left (above the questions on
+  phones) and every question in one scroll, read only: choices, matching and
+  ordering show their options, written answer fields don't. Your answers lists
+  each file with its size (a PDF's pages too), a ⋮ to open or remove it, and the
+  files, size and pages used. Its files are the member's own standalone uploads through the normal
   source upload with `attemptId` (`files.attempt_id`, in `attempt_position`
   order): ingest runs and charges them as any upload, but credits never refuse
   one and its bytes save past the storage limit. A photo or an Office file's
@@ -1405,9 +1490,8 @@ Reopening hides the keys again.
   file is refused as it is picked, by the normal upload's browser analysis
   (`localSourceAnalysisInput`, codes `password_protected` and `unreadable`, in
   `useAddSubmissionFiles`, so hand-ins too), with its own message, while the
-  other picked files upload (Q726 A); such a PDF counts no pages. They can be
-  removed and dragged into order
-  until Submit, which waits while a file uploads (the clock's own submit does
+  other picked files upload (Q726 A); such a PDF counts no pages. They keep
+  the order they were added in and can be removed until Submit, which waits while a file uploads (the clock's own submit does
   not, finding 6), and never list in Files, search, Recent or account chat;
   their member opens them read only (no editing session, finding 4).
 - An upload attempt's matching options and ordering items are shuffled with the
@@ -1446,9 +1530,12 @@ Reopening hides the keys again.
   still `reading`: a read that failed, never ran, or runs now) is above zero;
   it is the same `mark-with-ai` call, reading without grading on each
   member's credits (Q725).
-- Approve shows a part's pages of the paper with Whole paper a click away (T1),
-  through `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member,
-  or staff once submitted).
+- Grading shows a part's pages of the paper (T1), or the whole paper where it
+  was found on none, under the paper's files by name: each underlined
+  (`SubmissionFileLink`, Epo 2026-11-19) and opening its signed link, a PDF or
+  photo in the browser and anything else downloading; both read
+  `GET /api/assignment-attempts/{id}/paper/{fileId}/links` (the member, or
+  staff once submitted).
 - The Files page lists a paper's files once every part is marked and the
   assignment has closed with its grades out, as Files › Canvas does for
   assignment drawings (Epo 2026-11-08; one list with the member's other files
@@ -1473,8 +1560,35 @@ Marked paper's start, Q728 A): the refusal toasts the storage-limit copy, a
 file added while there was room still saves past the limit, and Hand in and
 Undo still work. The report's chip reads
 "N of M handed in", and its Members tab lists each member's date (Late past the
-due date) and files, which open in a viewer of their pages with Open file for a
-single one. The Files page lists a hand-in's files once the assignment
+due date) and what they handed in, each file by name opening it in a new tab,
+under no Member header (the section's title says it), grades read only; a row
+opens the Grading tab at that member (Epo 2026-11-19, as a graded quiz's row
+opens the attempt). **Grading** (`tab=grading`, `GradingTab.tsx`, mock A after
+Google Classroom's grading tool; named Hand-ins when there are no points) is
+the tab of an Assignment taking files or graded on points: the members on the
+left in the app's `Accordion` (folds by hand), the open one (`member=<user
+id>`, else the first who handed in) showing when they handed in, their files
+with sizes (`work=<file id>` the one shown; not `file`, which the workspace
+route owns) and the grade (`GradeField` on the graded quiz's `MarkField`, with
+Save); the file on the right in the workspace's own viewers, `PdfView` with
+its page count and zoom in the pane's header and `ImageViewer` with the
+header's zoom, or FileViewer's `UnsupportedPreview` with the hand-in's
+download (a .docx), and an open-in-new-tab icon, the three buttons one run with no gaps. From md up, Full screen (icon and label) at the right end of Grading's tabs row puts `fullscreen=true` in the URL (`useFullscreenSearch`, the workspace viewer's hook) and covers the sidebar, title and tabs, leaving the members and the file; switching members keeps it, and the file header's exit icon (the Count row's, with no files) or Escape leaves it. A graded quiz's Questions tab has the same Full screen while its quiz edits (Epo 2026-11-19): the editor (rail and cards) covers the page under a 48px bar holding its save status, Undo, Redo and the exit icon, which move there from the header; Escape leaves it except from inside a field (an input, a text or math editor: `useFullscreenSearch({ fieldsKeepEscape: true })`, the report's both tabs). A phone
+drills down: the list, then the member's file with their details under it.
+One without uploads has no file side. A file opens on its signed link itself,
+with no app page between (Epo 2026-11-19): the link is signed to show a PDF or
+photo inline and download anything else (`blob.ReadHeaders`). The file name
+(`SubmissionFileLink`, in Members and under a paper answer in a graded quiz's
+Grading) and Grading's open-in-new-tab icon and Download call
+`useOpenSubmissionFile`: it fetches the link through `paperFileLinksQuery`,
+whose cache stays fresh only until half a minute before the link's
+`expiresAt` (read links are signed for `B2_LINK_TTL`, 5 minutes), with no
+retry; a PDF or photo goes to a new tab opened on the click itself (a blocked
+one says so, with no fallback onto the page), anything else downloads through
+a hidden frame, so the page neither leaves nor raises Leave site. A mounted
+viewer keeps the bytes it loaded. The mock signs for 5 minutes too and serves
+its files as blob URLs, which a new tab opens as it would the real link (a
+data: URL it refuses). The Files page lists a hand-in's files once the assignment
 closes, by hand or at a No late due date.
 
 **Show grades** (C4, S7, T5; Epo 2026-11-08, migration 0160 `grades_shown`,
@@ -1507,12 +1621,15 @@ before them (`FileActionsTarget`). Questions edits the graded quiz's own quiz
 questions to read when the quiz is gone); after publishing, edits reach members
 only on Republish (Settings). Responses opens with a row: View, a select of By
 member (default) or By question (`by=question`), "n of m handed in · average
-x / y" (the mean of the marks and totals the members' rows show), and at the
-right Approve AI grades · n (Mark answers under manual marking, its count every
-waiting answer) as a dark button opening (the select and button 36px, as
-Preview, Epo 2026-11-16) Approve AI grades (`tab=approve`) under
-a "← Responses" link. Older links still open: a graded quiz's `tab=members` is
-Responses By member and `tab=preview` its first tab. By question's folded rows
+x / y" (the mean of the marks and totals the members' rows show), the select
+36px as Preview (Epo 2026-11-16). Marking is the Grading tab (`tab=grading`,
+its own tab between Responses and Settings since Epo 2026-11-19), so the row
+has no Approve AI grades button any more (Epo 2026-11-19). The report's head
+reads as a member's attempt: the back link, then the title on one line (an
+ellipsis, the full title on hover) with its chips under it 4px down, the
+actions (save status, Preview, Publish, Release grades) at the right, top
+aligned; below 20rem of room the actions wrap under. Older links still open: a graded quiz's `tab=members` is
+Responses By member, and an unknown tab (the old `tab=preview`) its first tab. By question's folded rows
 are one 36px line from md, as By member's table rows (Epo 2026-11-16). By
 question shows a row of numbers first, Submitted
 "n of m", Average, Average time (the mean of members' minutes), and Attempts
@@ -1526,7 +1643,7 @@ key where the bars do not mark it, an open part's sample answer or a drawing
 part's drawn one, and the Solution. An open question folds on a click
 anywhere on it but a control or a text selection. A question of several parts
 lists each part on a row of its own (Epo 2026-11-14, board C), named with its
-full label, "Q18 (a)(i)" or "Q19.2", with its own type, marks and numbers (the
+full label, "Q18 (a)(i)" or "Q19 (2)" (Epo 2026-11-19, not "Q19.2"), with its own type, marks and numbers (the
 report's `parts[].percent` and `.average`, taken as the question's are); opened,
 it shows "From Q18", the question's stem and its group's text and figures above
 them; a one-part question's row shows its group's too. The first three rows start open,
@@ -1534,7 +1651,7 @@ and what is opened or folded by hand stays so across the report's tabs, held by
 the report, Epo 2026-11-14). By member lists
 submitted, Late with its penalty, Missing, minutes taken, mark, "n to approve"; a row opens that
 member's Results (whose back link returns to Responses), where any mark and
-comment can change. Approve AI grades takes `&question=` and `&member=` (A3 by
+comment can change. Grading takes `&question=` and `&member=` (A3 by
 question, A3b by member). Percent,
 average and the table's Average count from the first marked result: the
 five-result minimum (§11.8) no longer applies to assignments (Epo 2026-11-13). An unmarked
@@ -1554,8 +1671,12 @@ header's ⋮, Epo 2026-11-16), and no tabs. Its Practice ("Study" until Epo
 set's does (`QuizPaneTitle`: the edit view's cards, the read view's open
 question, and on phones above its question list): its Responses
 waits for an endpoint listing members' practice attempts. An unmarked
-assignment's Preview tab (`tab=preview`) shows the member's page
-(`UnmarkedView`) with Mark as done, Hand in and Add files off. The links
+assignment has Members and Settings tabs only, a draft Settings alone: its
+Preview tab went (Epo 2026-11-19, "theres literally nothing to preview"). Its
+Files, on the report and on the member's page alike (`AssignmentFiles`), are
+rows that open each file or the Files page's cards (`ItemCard`, a file's
+page-1 thumbnail signed by `GET /api/assignments/{id}` and a text file's or
+material's preview), with the Files page's list and grid toggle. The links
 `/workspaces/{id}/study/assignments/{id}` redirect to this URL.
 
 **Marks.** `POST /api/assignment-attempts/{id}/marks` sets one question's marks,
@@ -1563,10 +1684,12 @@ from 0 up to each point's or closed part's marks with at most one decimal place
 (Epo 2026-11-18; staff type them in `MarkField`, on the member's result and the
 Approve tab, which refuses keys past one decimal place or above the marks,
 with no message, as `GradeField` does for a grade), and its comment.
-Totals move in the same transaction. A row the AI marked reads its mark and its
-pane starts from it, so Approve saves what shows; changing a mark approves it too.
+Totals move in the same transaction. A row the AI marked reads its mark in a
+purple chip until approved, then plain (no "AI" before it: the question says AI
+marked, Epo 2026-11-19), and its pane starts from it, so Approve saves what shows; changing a mark approves it too.
 A rule the answer broke shows as a warning above its marking points (red for copying
-and instructions to the marker, amber for any other), with an icon on its row. Clear
+and instructions to the marker, amber for any other), not on its row (Epo
+2026-11-19: it is about the marks taken off, not the grading). Clear
 warning takes it off at once (`clearWarning`), and Approve keeps it for the member
 unless it was cleared. While the keys are hidden from them a member reads no warning until the
 assignment closes, since it could quote the marking scheme while they can still
@@ -1580,13 +1703,26 @@ the AI over all of those across the assignment, one attempt at a time per payer,
 with "Grading 12 of 40 answers…" from the report's `marking` while it runs. Nothing
 retries by itself (Epo 2026-11-03).
 
-**Approve AI grades** (Epo 2026-11-14, a view of Responses since 2026-11-15, after Gradescope and Crowdmark;
-`ApproveTab`). A row above the columns holds what is assignment-wide: "{n} to
+**A graded quiz's Grading** (Epo 2026-11-14 as Approve AI grades, a view of
+Responses from 2026-11-15, its own Grading tab since 2026-11-19, after
+Gradescope and Crowdmark; `ApproveTab`). A row above the columns holds what is assignment-wide: "{n} to
 approve · {k} not graded", Grade {k} with AI (only when some wait; Read papers again
 under manual marking), an "Only {name}" chip when opened from a member's "to approve"
-on Responses By member, Overview and Next to approve. Below, from `lg` three columns: the
-open questions under To approve (count of waiting answers) and Done (tick), the
-chosen question's members (waiting first, Approve all), and the grading pane. From
+on Responses By member, Overview and Next to approve. Below, from `lg` three columns: every
+question (Epo 2026-11-19; the report's `answers` hold a row for every answer)
+under To approve (count of waiting answers) and Done (tick), "AI marked" in the
+accent colour after "Q3 · 6 marks" on one with a written or drawn part unless
+Marking is Manual; the chosen question's members (waiting first, Approve all),
+and the grading pane, showing a written answer as the member's results do (Epo
+2026-11-19: `OpenPart`, Your answer boxed, Marking points | AI | Awarded, the
+sample answer and Solution; under 448px of its own width the points and the
+mark alone). A question marked by rule opens the results' own staff
+view (`ResultBody`: the member's answer against the key, a Mark field per
+part, a comment, Save marks), a read paper's pages above it, or the whole
+paper while it waits to be read. From `md` each column scrolls on its own, the two
+lists with no scrollbar, and Full screen at the tabs row's end covers the page
+with the row and the columns (`fullscreen=true`, exit at the row's end or
+Escape), as a task's Grading. From
 `md` to `lg` (T1) the questions become a strip of chips (count or tick) above members
 | pane. Below `md` (P1) it goes one screen at a time: the question list with
 Overview and Start approving (the first waiting answer), a question's members under
@@ -1595,7 +1731,7 @@ Approve kept at the bottom. Past the list the tab carries `data-approve-drill`, 
 `tailwind.css` hides the workspace header and the report's head (back link, title,
 tabs) while it does. Approve and Next move to the next waiting answer in question order, on to the
 next question once one is cleared. Overview opens Crowdmark's grid in a dialog:
-members × open questions, purple for To approve, amber for Not graded,
+members × questions, purple for To approve, amber for Not graded,
 plain once approved, "–" for no answer; a cell opens that answer. The report header
 chips, the Assignments row and By member's link use the same colours: purple
 for to approve, amber for not graded.
@@ -1622,11 +1758,10 @@ tab's Details; empty is not graded, whole points 1 to 1000; a Task has none, and
 the store refuses points on a graded quiz or a task). Graded, the form adds Show
 grades (in Advanced; Settings' Marking and results) and the late penalty, and an
 ungraded one sends Show grades Automatic and no penalty. Its staff enter each
-member's grade on the report's Members tab, on the member's row where the
-hand-in's files open (`GradeField`: a Grade column on `HandInMembers`, a field at
-the end of a plain one's row), from 0 to the points with at most one decimal
-place, saved on
-Enter or on leaving the field, emptied to clear it (`PUT
+member's grade on the Grading tab (`GradeField`), the Members tab showing it
+read only (Epo 2026-11-19, as a graded quiz's Responses), from 0 to the points
+with at most one decimal place, saved on Enter or Save, never on
+leaving the field (as quiz marks wait for Save), emptied to clear it (`PUT
 /api/assignments/{id}/grades/{userId}`, `SetAssignmentGrade`: staff only, as
 quiz marks, for anyone it went to, ticked or not, open or closed; a draft or an
 ungraded one refuses). Every read takes the grade where a graded quiz takes its
@@ -1653,7 +1788,14 @@ and teaching assistants each member's practice and attempts), and one button; a
 member who dismissed the earlier wording is not told again (`SharingNotice.tsx`, `GET` and
 `PUT /api/workspaces/{id}/sharing-notice`). Dismissing it counts as told, once per member
 row, so leaving and rejoining tells again. Staff and personal workspaces never see
-it. The board's own line about topic labels waits for topic summaries, and its Join
+it. A class's viewer agrees to it on the invite page instead (Epo 2026-11-19):
+before Accept the page reads the invite (`GET /api/workspace-invites/{token}`, its
+role and workspace kind, for the invitee alone) and a class viewer's shows "By
+accepting this invitation, you agree to share the following with the class's owner
+and teaching assistants: Your practice and attempts"; Accept marks the notice told
+and goes straight into the class, so its first open (an assignment link's Before you
+start included) never stacks a second dialog. The in-class dialog stays for a member
+who joined some other way or became a viewer later. The board's own line about topic labels waits for topic summaries, and its Join
 step and "What members see" link for an invite preview and board G5.
 
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
@@ -1856,16 +1998,20 @@ tells the class's staff and that member (`publishSweptTodo`).
 (a class's staff) offers Assignment and Graded quiz; a personal workspace's To do
 offers Task and Graded quiz; a class member keeps a plain New task. Assignment and
 Task open `NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked
-form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz with a
-"1 Settings › 2 Questions" stepper (hidden on a phone; Epo 2026-11-16 put
-Settings first, as Canvas, Google Classroom and Moodle set a quiz up before its
-questions). Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
+form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with Settings
+first (Epo 2026-11-16, as Canvas, Google Classroom and Moodle set a quiz up
+before its questions) and no stepper in the title (Epo 2026-11-19). Both steps
+take one frame, 720px wide (so the five tabs show) and `min(680px, 88dvh)` tall,
+and the step after the first opens in its place without the dialog's open
+motion (`DialogStep`), so Next and Back read as one dialog. Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
 the due date required, the title left empty to take its quiz's name ("The quiz's
 name"), and Next, which saves nothing and hands the values on. Step 2 is Add quiz (`AddPracticeDialog` with `graded`) with five tabs:
-Existing quiz first (Practice's quizzes, one picked and copied whole), then
+Existing file first (Practice's quizzes and the workspace's files in the
+Convert file menu's 36px rows; a quiz is copied whole, a file becomes the
+question paper of a graded quiz from a file, below), then
 Convert, Generate, From the bank and Create blank, each sending the settings
 with its questions in one request (The owned quiz). Back returns to Settings
-with what was filled in (on a phone, the header's back arrow). Existing quiz
+with what was filled in (on a phone, the header's back arrow). Existing file
 and From the bank say Create; Generate,
 Convert and Create blank say Create draft. Convert's pages and run stay in the
 dialog's own state, with no Hide the quiz switch. Cancel leaves nothing behind.

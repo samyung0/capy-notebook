@@ -126,7 +126,6 @@ export function CloneItemDialog({
     control,
     formState: { isSubmitting },
     handleSubmit,
-    setError,
     setValue,
     trigger,
   } = useForm<{ name: string }>({
@@ -189,10 +188,6 @@ export function CloneItemDialog({
       // dialog mounted.
       onClose();
     } catch (error) {
-      if (isApiError(error) && error.code === 'title_taken') {
-        setError('name', { message: m.error_title_taken_body() });
-        return;
-      }
       setFormError({
         errorId: unexpectedErrorId(error),
         message: cloneErrorMessage(error),

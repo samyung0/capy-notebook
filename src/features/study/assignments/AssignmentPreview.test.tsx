@@ -65,12 +65,12 @@ it('answers on the page alone, the list ticking them', async () => {
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[data-type]')?.click()
   );
-  // The answered question's row carries its tick.
+  // The answered question's number says so.
   expect(
     container
-      .querySelector('[data-question-row="q1"]')
-      ?.querySelector(`[aria-label="${m.assignment_legend_answered()}"]`)
-  ).not.toBeNull();
+      .querySelector('[data-question-number="q1"]')
+      ?.getAttribute('aria-label')
+  ).toContain(m.assignment_legend_answered());
   expect(save).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });

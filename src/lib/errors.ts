@@ -160,11 +160,6 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_clone_source_changed_body(),
         title: m.error_clone_source_changed_title(),
       };
-    case 'title_taken':
-      return {
-        description: m.error_title_taken_body(),
-        title: m.error_title_taken_title(),
-      };
     case 'too_many_topics':
       return {
         description: m.error_too_many_topics_body({

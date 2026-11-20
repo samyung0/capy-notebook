@@ -365,7 +365,7 @@ function ViewButton({
 }
 
 /** Add or remove a value from a filter selection. */
-export function toggleValue(list: string[], value: string): string[] {
+export function toggleValue<T extends string>(list: T[], value: T): T[] {
   return list.includes(value)
     ? list.filter((item) => item !== value)
     : [...list, value];

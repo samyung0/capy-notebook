@@ -34,6 +34,7 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"/api/workspaces/{id}/members:",
 		"/api/workspaces/{id}/invites:",
 		"/api/workspaces/{id}/invites/{inviteId}:",
+		"/api/workspace-invites/{token}:",
 		"/api/workspace-invites/{token}/accept:",
 		"/api/materials/{id}/discussions:",
 		"/api/materials/{id}/collaboration-token:",

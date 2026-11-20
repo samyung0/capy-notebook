@@ -37,16 +37,22 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
   await openAssignmentAsMember(page, 'as_upload');
-  await page
-    .getByRole('button', { exact: true, name: m.assignment_upload_file() })
+  const before = page.getByRole('dialog');
+  await before
+    .getByRole('radio', { name: m.assignment_mode_upload() })
     .click({ timeout: 30_000 });
+  await before
+    .getByRole('button', { exact: true, name: m.assignment_start() })
+    .click();
   await expect(
     page.getByRole('button', { name: m.assignment_paper_add() })
   ).toBeEnabled({ timeout: 30_000 });
   await page.locator('input[type=file]').first().setInputFiles([PAGE, PAGE]);
-  await expect(page.locator('[data-paper-page="2"]')).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(
+    page
+      .getByRole('region', { name: m.assignment_your_answers() })
+      .getByRole('listitem')
+  ).toHaveCount(2, { timeout: 15_000 });
   await page
     .getByRole('button', { exact: true, name: m.assignment_submit() })
     .first()
@@ -65,15 +71,12 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
   await asScenario(
     page,
     null,
-    '/workspaces/ws_bio/assignments?assignment=as_upload&tab=approve&member=u_1'
+    '/workspaces/ws_bio/assignments?assignment=as_upload&tab=grading&member=u_1'
   );
-  await page
-    .getByRole('button', { name: m.assignment_paper_whole() })
-    .first()
-    .click({ timeout: 30_000 });
-  await expect(page.locator('[data-paper-page="2"] img')).toBeVisible({
-    timeout: 15_000,
-  });
+  // The paper's files show by name, each opening its signed link.
+  await expect(
+    page.getByRole('button', { exact: true, name: 'flat.png' }).first()
+  ).toBeVisible({ timeout: 30_000 });
 
   // Staff mark what waits and close the assignment.
   await page.evaluate(async (id) => {

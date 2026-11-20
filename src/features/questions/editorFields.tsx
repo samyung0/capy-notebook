@@ -34,6 +34,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { MatchingGrid } from './MatchingGrid';
+import { ChoiceMarker, CorrectTag } from './QuestionView';
 import {
   type MarkItem,
   multipleAnswers,
@@ -497,43 +498,6 @@ export function AnswerTypeSelect({
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-/** "Correct" after a key's row, in green (board Main). */
-function CorrectTag() {
-  return (
-    <span className="shrink-0 whitespace-nowrap font-bold text-[12.5px] text-tint-success-fg">
-      {m.question_ui_status_correct()}
-    </span>
-  );
-}
-
-/** A choice's marker: a radio, or a box for Multiple answer. Checked, it is
- * the correct answer, in green. */
-export function ChoiceMarker({
-  checked,
-  className,
-  multiple,
-}: {
-  checked: boolean;
-  className?: string;
-  multiple: boolean;
-}) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        // A pixel up, to sit level with its row's text (Epo 2026-11-15).
-        'relative -top-px grid size-4.5 shrink-0 place-items-center border-2 border-line-strong text-surface',
-        multiple ? 'rounded-[4px]' : 'rounded-full',
-        checked && 'border-tint-success-fg bg-tint-success-fg',
-        checked && !multiple && 'shadow-[inset_0_0_0_3px_var(--color-surface)]',
-        className
-      )}
-    >
-      {checked && multiple && <Icon name="check" size={12} strokeWidth={3} />}
-    </span>
   );
 }
 

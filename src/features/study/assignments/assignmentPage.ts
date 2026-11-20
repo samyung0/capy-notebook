@@ -5,38 +5,46 @@ import {
   type ReportTab,
 } from '../studyRoutes';
 
-type ReportKind = Pick<Assignment, 'draft' | 'kind'>;
+type ReportKind = Pick<Assignment, 'allowUploads' | 'draft' | 'kind'> &
+  Partial<Pick<Assignment, 'points'>>;
 
 /** A report's tabs (Epo 2026-11-15): a graded quiz's Questions | Responses |
- * Settings, a draft's Questions | Settings; a task's Members | Settings |
- * Preview, a draft's Settings | Preview. The first is the tab with no `tab`. */
-export function reportTabs({ draft, kind }: ReportKind): ReportTab[] {
+ * Grading | Settings (Epo 2026-11-19), a draft's Questions | Settings; a task's Members | Settings, with
+ * Grading between when it takes files or is graded on points (Epo
+ * 2026-11-19), a draft's Settings alone (no Preview: there is nothing to
+ * preview). The first is the tab with no `tab`. */
+export function reportTabs({
+  allowUploads,
+  draft,
+  kind,
+  points,
+}: ReportKind): ReportTab[] {
   if (kind === 'marked')
     return draft
       ? ['questions', 'settings']
-      : ['questions', 'responses', 'settings'];
-  return draft ? ['settings', 'preview'] : ['members', 'settings', 'preview'];
+      : ['questions', 'responses', 'grading', 'settings'];
+  if (draft) return ['settings'];
+  return allowUploads || points !== undefined
+    ? ['members', 'grading', 'settings']
+    : ['members', 'settings'];
 }
 
-/** The tab a report's URL shows, links from before Responses included: a
- * graded quiz's `members` is Responses By member, `approve` Responses' Approve
- * AI grades and `preview` (now a header button) its first tab. */
+/** The tab a report's URL shows: a graded quiz's `members` is Responses By
+ * member. */
 export function reportView(
   assignment: ReportKind,
   { by, tab }: Pick<AssignmentsSearch, 'by' | 'tab'>
 ) {
   const tabs = reportTabs(assignment);
   const responses = tabs.includes('responses');
-  const approving = responses && tab === 'approve';
   const shown: ReportTab =
-    approving || (responses && tab === 'members')
+    responses && tab === 'members'
       ? 'responses'
       : tab && tabs.includes(tab)
         ? tab
         : tabs[0];
   return {
-    approving,
-    byQuestion: shown === 'responses' && !approving && by === 'question',
+    byQuestion: shown === 'responses' && by === 'question',
     tab: shown,
     tabs,
   };

@@ -12,6 +12,10 @@ const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'
 );
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
+// A phone's width: Grading's lists and pane one screen at a time.
+Object.assign(window, {
+  matchMedia: () => ({ addListener() {}, matches: false, removeListener() {} }),
+});
 
 const opened = vi.hoisted(() => ({ ids: [] as string[] }));
 const runAI = vi.hoisted(() => vi.fn());
@@ -72,6 +76,7 @@ it('lists a member twice by attempt and opens the one picked', async () => {
         assignment={
           { attempts: 3, id: 'as1', workspaceId: 'ws1' } as Assignment
         }
+        onExitFullscreen={() => {}}
         report={report}
         search={{}}
       />
@@ -109,6 +114,7 @@ it('lists a paper waiting to be read on a question with no open part', async () 
         assignment={
           { attempts: 1, id: 'as1', workspaceId: 'ws1' } as Assignment
         }
+        onExitFullscreen={() => {}}
         report={
           {
             answers: [
@@ -122,7 +128,6 @@ it('lists a paper waiting to be read on a question with no open part', async () 
       />
     )
   );
-  expect(document.body.textContent).not.toContain(m.assignment_no_open());
   expect(document.querySelectorAll('[data-answer-row]')).toHaveLength(1);
   expect(
     [...document.querySelectorAll('button')].some(
@@ -149,6 +154,7 @@ it('offers Read papers again under manual marking while a paper waits to be read
             workspaceId: 'ws1',
           } as Assignment
         }
+        onExitFullscreen={() => {}}
         report={{ ...report, papersToRead: 1 }}
         search={{}}
       />
@@ -173,6 +179,7 @@ it("badges a row whose paper file can't be read Not graded", async () => {
         assignment={
           { attempts: 1, id: 'as1', workspaceId: 'ws1' } as Assignment
         }
+        onExitFullscreen={() => {}}
         report={
           {
             ...report,
@@ -199,6 +206,7 @@ it('shows Marking… on the rows being marked only', async () => {
         assignment={
           { attempts: 3, id: 'as1', workspaceId: 'ws1' } as Assignment
         }
+        onExitFullscreen={() => {}}
         report={
           {
             ...report,
@@ -232,6 +240,7 @@ it('steps from a question to its members and on to an answer', async () => {
         assignment={
           { attempts: 3, id: 'as1', workspaceId: 'ws1' } as Assignment
         }
+        onExitFullscreen={() => {}}
         report={report}
         search={{}}
       />
@@ -250,5 +259,77 @@ it('steps from a question to its members and on to an answer', async () => {
     (document.querySelector('[data-answer-row]') as HTMLElement).click()
   );
   expect(drill()).toBe('answer');
+  act(() => root.unmount());
+});
+
+// Epo 2026-11-19: Grading lists every question, the AI's marked AI marked.
+it('lists questions marked by rule too, AI marked on the written ones', async () => {
+  const closed = {
+    id: 'q2',
+    parts: [{ answer: { type: 'mcq' }, id: 'p2', marks: 1 }],
+    stem: [],
+  };
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 1, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        onExitFullscreen={() => {}}
+        report={
+          {
+            answers: [
+              answer('at_1', 1, true),
+              { ...answer('at_1', 1, false), marks: 1, questionId: 'q2' },
+            ],
+            members: [{ attemptId: 'at_1', name: 'Ada', userId: 'u1' }],
+            questions: [
+              { parts: [], question, submitted: 1 },
+              { parts: [], question: closed, submitted: 1 },
+            ],
+          } as unknown as AssignmentReport
+        }
+        search={{}}
+      />
+    )
+  );
+  const rows = [
+    ...document.querySelectorAll('[data-question-row]'),
+  ] as HTMLElement[];
+  expect(rows.map((row) => row.dataset.questionRow)).toEqual(['q1', 'q2']);
+  expect(rows[0].textContent).toContain(m.assignment_ai_marked());
+  expect(rows[1].textContent).not.toContain(m.assignment_ai_marked());
+  act(() => root.unmount());
+});
+
+// Epo 2026-11-20 ("a file is not a quiz question"): a graded quiz from a file
+// lists its members with no questions or Overview, a phone starting there.
+it("lists a file quiz's members with no questions column", async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          {
+            attempts: 3,
+            id: 'as1',
+            manage: { marking: 'manual' },
+            paperFile: true,
+            workspaceId: 'ws1',
+          } as unknown as Assignment
+        }
+        onExitFullscreen={() => {}}
+        report={report}
+        search={{}}
+      />
+    )
+  );
+  expect(document.querySelector('[data-question-row]')).toBeNull();
+  expect(document.querySelectorAll('[data-answer-row]')).toHaveLength(2);
+  // The members are the phone's first screen, not a step in.
+  expect(document.querySelector('[data-approve-drill]')).toBeNull();
+  expect(document.body.textContent).not.toContain(m.assignment_overview());
+  expect(document.body.textContent).toContain(m.assignment_start_approving());
   act(() => root.unmount());
 });

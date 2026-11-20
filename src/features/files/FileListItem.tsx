@@ -98,6 +98,8 @@ export function FileListItem({
           <span
             className={cn(
               'min-w-0 flex-1 translate-y-px truncate',
+              // Not shared with members: muted (Epo 2026-11-20).
+              file.hidden && 'text-fg-muted',
               failed && 'text-solid-error'
             )}
           >
@@ -152,7 +154,7 @@ export function FileListItem({
                     })
                 : undefined
             }
-            propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
+            propertiesClassName=""
             propertyLabelClassName="text-fg-secondary"
             readOnly={readOnly}
             renameTitle={m.files_rename()}

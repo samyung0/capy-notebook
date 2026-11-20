@@ -415,7 +415,8 @@ func TestOwnMarkedTask(t *testing.T) {
 		t.Fatalf("submitted = %+v, err %v", done, err)
 	}
 	report, err := f.s.GetAssignmentReport(ctx, f.viewer, task.ID, now.Add(time.Minute))
-	if err != nil || len(report.Members) != 1 || len(report.Answers) != 1 {
+	// A row per question answered, closed ones too (Epo 2026-11-19).
+	if err != nil || len(report.Members) != 1 || len(report.Answers) != 3 {
 		t.Fatalf("its maker's report = %+v, err %v", report, err)
 	}
 	marked, err := f.s.MarkAssignmentAnswer(ctx, f.viewer, run.ID, AssignmentMark{

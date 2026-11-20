@@ -1,12 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import { AdvancedSection } from './AdvancedSection';
+import { Accordion } from './Accordion';
 
 const render = (open: boolean) =>
   renderToStaticMarkup(
-    <AdvancedSection onToggle={() => {}} open={open}>
+    <Accordion label="Advanced" onToggle={() => {}} open={open}>
       <span>Inside</span>
-    </AdvancedSection>
+    </Accordion>
   );
 
 it('keeps its panel mounted and inert while closed, so it animates both ways', () => {
