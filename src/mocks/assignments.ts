@@ -2254,6 +2254,21 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
   return refs;
 }
 
+/** A name the app makes up takes the next number beside one the workspace
+ * lists, as the server's DisambiguateMaterialTitle (Epo 2026-11-20: names
+ * typed may repeat). */
+export function numberedTitle(wsId: string, title: string) {
+  const listed = new Set(
+    workspaceMaterialRefs(wsId, 'owner').map((ref) =>
+      ref.title.trim().toLowerCase()
+    )
+  );
+  let candidate = title;
+  for (let n = 2; listed.has(candidate.trim().toLowerCase()); n++)
+    candidate = `${title} ${n}`;
+  return candidate;
+}
+
 /** The viewer's submissions on the Files page: papers of closed assignments,
  * every part marked; hand-ins of closed ones. */
 export function submittedPapers(): SubmittedPaper[] {

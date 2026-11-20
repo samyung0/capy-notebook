@@ -1271,9 +1271,11 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   (`fileCanClone`).
 - The dialog prefills `Name (copy)` (before a file's extension) while the
   destination is the source's own workspace and the plain name elsewhere,
-  until the user types one. A material title is unique per workspace, so a
-  taken one answers 409 `title_taken`, shown under the name field; file names
-  are not unique. Clone spins and the dialog stays open while pending (Escape,
+  until the user types one. Names may repeat in a workspace, materials' as
+  files' (Epo 2026-11-20, migration 0187); only a name the app makes up (a quiz named after its
+  paper, an untitled note, a generated set, an agent's write) takes the next
+  number, "Name 2", counted against what Files lists (a note, quiz or set,
+  not trashed, embedded or a graded quiz's own; that one keeps its name). Clone spins and the dialog stays open while pending (Escape,
   an outside click and the hidden close button do nothing then); any other
   refusal shows in the dialog (`FormAlert`), not as a toast: a storage refusal
   is the cloner's own (the cloner pays), a file past the cloner's cap the

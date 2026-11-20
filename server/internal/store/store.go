@@ -99,10 +99,6 @@ var ErrAccountLifecycleChanged = errors.New("account lifecycle changed")
 // role. Shared-resource probing still uses ErrNotFound.
 var ErrForbidden = errors.New("forbidden")
 
-// ErrTitleTaken means another material in the same workspace already uses that
-// title (case-insensitive, trimmed). Standalone materials are not in this set.
-var ErrTitleTaken = errors.New("material title already used in this workspace")
-
 // ErrTooManyTopics means the workspace already has its owner's plan's
 // topics per workspace (planlimits.Limits.TopicsPerWorkspace).
 var ErrTooManyTopics = errors.New("workspace already has the maximum number of topics")

@@ -48,7 +48,7 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 	reg(h, http.MethodPost, "/authority", "authority", "test", "test", 200,
 		fail(hErr(errors.Join(store.ErrAuthorityUnavailable, errors.New(leakedSecret)))))
 	reg(h, http.MethodPost, "/busy", "busy", "test", "test", 200, fail(hErr(&providerBusyError{RetryAfterSeconds: 10})))
-	reg(h, http.MethodPost, "/conflict", "conflict", "test", "test", 200, fail(hErr(store.ErrTitleTaken)))
+	reg(h, http.MethodPost, "/conflict", "conflict", "test", "test", 200, fail(hErr(store.ErrNothingToProcess)))
 	reg(h, http.MethodPost, "/paused", "paused", "test", "test", 200,
 		fail(hErr(fmt.Errorf("%s: %w", leakedSecret, store.ErrOfficeEditingPaused))))
 	reg(h, http.MethodPost, "/unreadable", "unreadable", "test", "test", 200,
@@ -86,7 +86,7 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 		{"/busy", 503, "provider_busy"},
 		{"/bank", 503, "bank_unavailable"},
 		{"/typed-middleware", 503, "ai_unavailable"},
-		{"/conflict", 409, "title_taken"},
+		{"/conflict", 409, "nothing_to_process"},
 		{"/paused", 423, "office_editing_paused"},
 		{"/unreadable", 422, "material_content_unreadable"},
 	} {

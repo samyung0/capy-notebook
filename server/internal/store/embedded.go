@@ -17,8 +17,7 @@ import (
 // material_ref block. The note owns their lifecycle: they share its workspace,
 // stay private and unfiled, follow it through trash, restore, purge and clone,
 // and are trashed when their reference leaves the note. Their stored name is
-// a random UUID that is never displayed (embeddedName), so it never collides
-// with the workspace's unique titles.
+// a random UUID that is never displayed (embeddedName).
 
 // embeddedName is the stored name of a new or copied embedded row.
 func embeddedName() string { return uuid.NewString() }

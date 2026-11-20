@@ -2519,9 +2519,6 @@ func (s *Store) cloneMaterialOnce(
 			title, json.RawMessage(clone.content), topicID, scopeTopics, scopeFileNames, clone.src.Color,
 			clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.Revision, parentID, provenance,
 			clone.preview, clone.src.Hidden && dest.workspaceID != ""); err != nil {
-			if isUniqueViolation(err) {
-				return ErrTitleTaken
-			}
 			return err
 		}
 		for _, cid := range clone.cardIDs {

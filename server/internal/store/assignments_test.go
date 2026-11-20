@@ -1279,8 +1279,9 @@ func TestGradedQuizMadeWithItsQuiz(t *testing.T) {
 		Kind: MaterialQuiz, Title: "Refused", Content: content, GradedQuiz: undated}); !errors.As(err, &refused) {
 		t.Fatalf("an undated graded quiz: %v", err)
 	}
-	if taken, err := f.s.MaterialTitleTaken(ctx, f.ws.ID, "Refused"); err != nil || taken {
-		t.Fatalf("a refused graded quiz left its quiz: %v, err %v", taken, err)
+	var left int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM materials WHERE workspace_id=$1 AND title='Refused'`, f.ws.ID).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("a refused graded quiz left %d quizzes, err %v", left, err)
 	}
 }
 
@@ -1344,6 +1345,24 @@ func TestCopyQuizToGradedQuiz(t *testing.T) {
 	first, firstQuiz := copyOf(f.quiz.ID, qs, "Term 1")
 	if first.Questions != 3 || firstQuiz.Title != "Term 1" || !firstQuiz.Hidden {
 		t.Fatalf("copied = %+v, quiz %+v", first, firstQuiz)
+	}
+	// A made-up name is numbered against what Files lists (Epo 2026-11-20):
+	// the graded quiz's own quiz is not there, a second listed "Term 1" is.
+	if name, err := f.s.DisambiguateMaterialTitle(ctx, f.ws.ID, "Term 1"); err != nil || name != "Term 1" {
+		t.Fatalf("beside a graded quiz's own quiz = %q, err %v", name, err)
+	}
+	listed, err := materialdoc.QuizDocument(json.RawMessage(assignmentQuestions), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+			Kind: MaterialQuiz, Title: "Term 1", Content: listed}); err != nil {
+			t.Fatalf("a repeated name: %v", err)
+		}
+	}
+	if name, err := f.s.DisambiguateMaterialTitle(ctx, f.ws.ID, "Term 1"); err != nil || name != "Term 1 2" {
+		t.Fatalf("beside a listed quiz = %q, err %v", name, err)
 	}
 	image := imageOf(firstQuiz.ID)
 	if image.ID == assetID || image.MaterialID != firstQuiz.ID || image.UserID != f.editor {

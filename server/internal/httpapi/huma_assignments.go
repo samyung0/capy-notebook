@@ -270,14 +270,11 @@ func (a *api) copyQuizToGradedQuiz(ctx context.Context, in *copyQuizToGradedQuiz
 	if err != nil {
 		return nil, err
 	}
+	// Its own quiz is never listed, so its name stands as given.
 	form := assignmentForm(in.Body.GradedQuiz)
-	title, err := a.s.DisambiguateMaterialTitle(ctx, ws.ID, form.Title)
-	if err != nil {
-		return nil, hErr(err)
-	}
 	res, err := a.s.CopyQuizToGradedQuiz(ctx, store.QuizCopy{
 		ActorID: userID(ctx), WorkspaceID: ws.ID, WorkspaceName: ws.Name,
-		SourceID: source.ID, Questions: qs, Title: title, Form: form,
+		SourceID: source.ID, Questions: qs, Title: form.Title, Form: form,
 	}, time.Now())
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())

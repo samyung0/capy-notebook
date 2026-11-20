@@ -221,9 +221,6 @@ func mapHTTPError(err error) error {
 			}},
 		}
 	}
-	if errors.Is(err, store.ErrTitleTaken) {
-		return conflictError("title_taken", "a material with this name already exists in this workspace")
-	}
 	if errors.Is(err, store.ErrTooManyTopics) {
 		return conflictError("too_many_topics", "this workspace already has the maximum number of topics")
 	}

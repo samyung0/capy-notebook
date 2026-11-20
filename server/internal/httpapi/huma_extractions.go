@@ -267,11 +267,6 @@ func (a *api) createExtraction(ctx context.Context, in *createExtractionInput) (
 	if err := checkExtractionRequest(in.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if taken, err := a.s.MaterialTitleTaken(ctx, wsID, title); err != nil {
-		return nil, hErr(err)
-	} else if taken {
-		return nil, hErr(store.ErrTitleTaken)
-	}
 	// A graded quiz's form is checked before credits are reserved and kept
 	// with the run; its quiz is made with it (Epo 2026-11-16).
 	gradedQuiz := gradedQuizForm(in.Body.GradedQuiz)
@@ -512,9 +507,15 @@ func (a *api) finishExtraction(ctx context.Context, run store.Extraction, actor,
 	if qs := strings.TrimSpace(string(ev.Questions)); qs == "" || qs == "[]" || qs == "null" {
 		return fail("extraction_empty", "No questions could be read from the selected pages.")
 	}
-	title, err := a.s.DisambiguateMaterialTitle(ctx, run.WorkspaceID, run.Title)
-	if err != nil {
-		return fail("extraction_failed", "The quiz could not be saved.")
+	// A quiz named after its paper takes the next number beside a listed one; a
+	// graded quiz's own is never listed, so keeps the name.
+	title := run.Title
+	if run.GradedQuiz == nil {
+		numbered, err := a.s.DisambiguateMaterialTitle(ctx, run.WorkspaceID, run.Title)
+		if err != nil {
+			return fail("extraction_failed", "The quiz could not be saved.")
+		}
+		title = numbered
 	}
 	figures := newAgentFigures(run.ID, "extraction", ev.Figures)
 	questions, err := figures.resolveQuestions(ev.Questions)
