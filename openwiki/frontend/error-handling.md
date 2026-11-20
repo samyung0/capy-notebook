@@ -544,7 +544,18 @@ note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
-stays. A canvas does the same: its board shows what was saved before (a
+stays. A demotion's notice usually comes first: it reads the workspace and its
+open items again (view-only) before the rooms close, and an open note, quiz,
+set or diagram editor drops to view on that read under the same strip, once a
+live answer on the page had said this person may edit (a trashed read, every
+right off, is none: restored, the item edits again); someone demoted while
+away opens with no strip (D1). Without the notice, a quiz's keys refused as
+read-only at a token, as the demotion lands, read the same way, never as lost
+access or offline, and a first token that reads while the item's read said
+they may edit asks for that read again, which lowers the page. A quiz or set edits again, its strip gone, once a read says
+this person may (raised again, or its payer's storage freed; Q642 C), while a
+note or diagram stays read-only until a reload. A canvas does the
+same: its board shows what was saved before (a
 fresh room, since its document still holds the discarded edits) under the
 same strip, or under the storage strip naming whose storage is full, picked
 from the canvas's read as a note's are (plate-editor.md, the canvas room).

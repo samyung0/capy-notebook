@@ -1111,13 +1111,26 @@ and [material editor checks](../server/internal/store/share.go#L209).
   opened or in the 10 s before, or the stream connected with it),
   and the stream goes on without the workspace;
   still readable (a public or redeemed link workspace), and for a member whose
-  role changed, the workspace and its lists read again (Epo 2026-11-20, see
-  [error handling](frontend/error-handling.md)). Hiding an item and unsharing
+  role changed, the workspace, its lists and its open items read again (Epo
+  2026-11-20, see [error handling](frontend/error-handling.md)). Hiding an item and unsharing
   a canvas raise the workspace's `tree` event (migration 0189), which
   refetches the open workspace's file, material, topic and canvas lists. A close
   for one person's access change (4403, no notice) joins again in every room kind,
   so the token says what they have now: a read token gives an editor the read-only
-  strip and keeps a reader live, a refused one gives the above.
+  strip and keeps a reader live, a refused one gives the above. A lowered role's
+  notice reads the workspace and its items again before that close: an item
+  editor open then (a note, a quiz, a set, a diagram) drops to view on that
+  read under the same read-only strip, once a live answer had said this person
+  may edit (not a trashed read: restored, the item edits again); someone
+  lowered while away opens with no strip (D1), and someone lowered between the
+  item's read and its rooms' first token gets the strip from the read that
+  token asks for. A quiz's keys
+  token refused as read-only (403 `collaboration-read-only`, at their first
+  token or a rejoin) counts as read-only, not as lost access, and joins nothing
+  more. A quiz or set lowered while open edits again once a read says this
+  person may (raised again, Q642 C; a full payer's storage freed, which takes
+  no right), its editor opening anew; a note or a diagram stays read-only until
+  a reload.
 - ACL and lifecycle mutations enqueue room/user evictions transactionally in a
   database outbox. Redis delivery is retried with one stable eviction ID and is
   complete only after every active collaboration instance returns a positive

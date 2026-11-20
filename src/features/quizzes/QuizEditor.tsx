@@ -19,7 +19,10 @@ import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import type { RoomCopy } from '@/features/collaboration/deviceCopy';
-import { itemEditingStopped } from '@/features/collaboration/itemRoom';
+import {
+  itemEditingStopped,
+  useReportReadOnly,
+} from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
   UndoButtons,
@@ -29,6 +32,7 @@ import {
   useReportPresence,
 } from '@/features/collaboration/presence';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
+import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { duplicateQuestion } from '@/features/questions/questionEdits';
 import {
@@ -381,6 +385,7 @@ export function QuizEditor({
   practice,
   copy,
   onPresenceChange,
+  onReadOnly,
   onStatusChange,
   sources,
   stored,
@@ -388,6 +393,9 @@ export function QuizEditor({
   topicId,
   workspaceId,
 }: {
+  /** Its rooms turned read-only (a demotion, a frozen account): the page
+   * reads it under its strip, as a set's or a diagram's editor reports it. */
+  onReadOnly?: (code?: ReadOnlyCode) => void;
   /** The quiz's workspace ('' for none) and its topic, for its questions'
    * own topics (Epo 2026-11-15). */
   workspaceId?: string;
@@ -437,6 +445,9 @@ export function QuizEditor({
     onStatusChange,
   ]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
+  // Lowered after its rooms could write here: the page reads it under its
+  // strip. One opened read-only shows no cue (D1).
+  const wrote = useReportReadOnly(rooms, quizId, onReadOnly);
   useReportPresence(onPresenceChange, rooms.presence);
   // Once its question shows in the paint, and again as the page replaces it:
   // the page opens that question, its list row may be out of view.
@@ -502,9 +513,8 @@ export function QuizEditor({
               {rooms.readOnlyCode === 'unsupported_block' ? (
                 <FileBanner message={m.editor_unsupported_block_strip()} />
               ) : (
-                rooms.access !== 'write' && (
-                  <FileBanner message={m.editor_read_only_strip()} />
-                )
+                rooms.access !== 'write' &&
+                wrote && <FileBanner message={m.editor_read_only_strip()} />
               )}
               {rooms.offline && <SaveBanner state={rooms.offline} />}
             </>

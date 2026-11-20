@@ -15,6 +15,7 @@ import type { RoomCopy } from '@/features/collaboration/deviceCopy';
 import {
   itemEditingStopped,
   useItemRoom,
+  useReportReadOnly,
 } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
@@ -131,10 +132,9 @@ export default function MermaidMaterialEditor({
   ]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
-  useEffect(() => {
-    if (snapshot.access === 'read')
-      onReadOnly(snapshot.readOnlyCode ?? undefined);
-  }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
+  // Lowered after its room could write here: the page reads it under its
+  // strip. One opened read-only shows no cue (D1).
+  useReportReadOnly(snapshot, materialId, onReadOnly);
   const refused = snapshot.status === 'unavailable';
   useEffect(() => {
     if (refused) onReadOnly('access_lost');

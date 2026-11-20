@@ -18,6 +18,19 @@ const lowerRooms = (page: Page) =>
     return announceReadOnly() as number;
   });
 
+/** This person lowered to viewer in the workspace (`demoteMockMember`; with
+ * `notice` false, main's order: no role-change notice reads the workspace).
+ * Returns how many item rooms closed. */
+const demoteMember = (page: Page, workspaceId: string, notice = true) =>
+  page.evaluate(
+    async ([id, withNotice]) => {
+      const path = '/src/mocks/collaboration.ts';
+      const { demoteMockMember } = await import(path);
+      return demoteMockMember(id, withNotice) as number;
+    },
+    [workspaceId, notice] as const
+  );
+
 const editable = (page: Page) =>
   page.locator('[data-slate-editor="true"][contenteditable="true"]');
 
@@ -147,6 +160,13 @@ for (const [name, url, rows, id, close] of [
     'closeOpenNotesForAccess',
   ],
   ['quiz', QUIZ, 'materials', 'qz_bio_near', 'refuseOpenRooms'],
+  [
+    'quiz closed for an access change (4403)',
+    QUIZ,
+    'materials',
+    'qz_bio_near',
+    'closeOpenItemsForAccess',
+  ],
   [
     'text file',
     '/workspaces/ws_bio?file=f_3&mode=edit',
@@ -347,4 +367,304 @@ for (const [name, url] of [
       timeout: 15_000,
     });
     await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+  });
+
+// A demotion as the server makes it: the role-change notice reads the
+// workspace again (view-only now) at once, and the item's rooms close for the
+// access change (4403) and rejoin on a read token later. The workspace's read
+// drops the editor to view before its rooms hear, and the strip shows all the
+// same (Epo 2026-11-05: a lowered editor reads on under it). `closed`: the
+// rooms the access change closes (every kind's, a quiz's content and keys).
+for (const [name, url, workspaceId, closed] of [
+  ['quiz', QUIZ, 'ws_bio', 2],
+  ['flashcard set', CARDS, 'ws_scenarios', 1],
+  ['diagram', DIAGRAM, 'ws_bio', 1],
+  ['note', NOTE_URL, 'ws_bio', 1],
+] as const)
+  test(`a ${name} editor demoted to viewer reads on under the read-only strip`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.goto(url);
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 60_000 }
+    );
+    expect(await demoteMember(page, workspaceId)).toBe(closed);
+    await expect(page.getByText(m.editor_read_only_strip())).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+    await expect(page.getByText(m.error_not_found_title())).toHaveCount(0);
+    await expect(kickedToast(page)).toHaveCount(0);
+  });
+
+// Main's order (UAT membership.spec, 65bdfc1e8): no notice reads the
+// workspace, the content room closes for the access change (4403), and the
+// quiz's keys, asking their first token as the demotion lands, are refused as
+// read-only (403 `collaboration-read-only`). The quiz reads on under the
+// read-only strip, not as refused; and once the quiz's read after it answered
+// (view-only), the page's view keeps the strip.
+test('a quiz opened as its editor is demoted reads under the read-only strip', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const keysAsked = page.waitForRequest(
+    (request) =>
+      request.url().includes('/qz_bio_near/collaboration-token') &&
+      !!request.postData()?.includes('"keys"'),
+    { timeout: 60_000 }
+  );
+  await page.goto(QUIZ);
+  await keysAsked;
+  // Its token held (MSW's latency), the keys join nothing yet; the content
+  // room closes once it has joined.
+  await expect
+    .poll(() => demoteMember(page, 'ws_bio', false), { intervals: [50] })
+    .toBe(1);
+  const read = ['material', 'qz_bio_near'] as const;
+  const before = await readSettled(page, read);
+  expect(before).toBeGreaterThan(0);
+  const strip = page.getByText(m.editor_read_only_strip());
+  await expect(strip).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(() => readSettled(page, read), { timeout: 15_000 })
+    .toBeGreaterThan(before);
+  // The editor is gone, its Preview with it.
+  await expect(
+    page.getByRole('button', { exact: true, name: m.assignment_preview() })
+  ).toHaveCount(0);
+  await expect(strip).toBeVisible();
+  await expect(page.locator('[data-question-id]').first()).toBeVisible();
+  await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+  await expect(page.getByText(m.error_not_found_title())).toHaveCount(0);
+  await expect(kickedToast(page)).toHaveCount(0);
+});
+
+// A read of the quiz after the demotion (another tab's change, a refetch)
+// finds it view-only and the page draws it for viewing: the strip stays, as
+// the quiz told the page it reads.
+test('a demoted quiz editor keeps the read-only strip when its quiz is read again', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(QUIZ);
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 60_000 }
+  );
+  expect(await demoteMember(page, 'ws_bio', false)).toBe(2);
+  const strip = page.getByText(m.editor_read_only_strip());
+  await expect(strip).toBeVisible({ timeout: 15_000 });
+  const read = ['material', 'qz_bio_near'] as const;
+  await expect.poll(() => readSettled(page, read)).toBeGreaterThan(0);
+  const before = await readSettled(page, read);
+  await page.evaluate(async (queryKey) => {
+    const path = '/src/api/queryClient.ts';
+    const { queryClient } = await import(path);
+    await queryClient.invalidateQueries({ queryKey });
+  }, read);
+  await expect
+    .poll(() => readSettled(page, read), { timeout: 15_000 })
+    .toBeGreaterThan(before);
+  // The editor is gone, its Preview with it.
+  await expect(
+    page.getByRole('button', { exact: true, name: m.assignment_preview() })
+  ).toHaveCount(0);
+  await expect(strip).toBeVisible();
+});
+
+/** The mock's role change (`raiseMockMember`): editor again, with its notice. */
+const raiseMember = (page: Page, workspaceId: string) =>
+  page.evaluate(async (id) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { raiseMockMember } = await import(path);
+    raiseMockMember(id);
+  }, workspaceId);
+
+/** The payer of `id` at its storage limit, or free again: its read says so from
+ * now on, a full payer's rooms turn read-only (`room-read-only`), and the page
+ * reads it again, as the storage strip's next read would. */
+const payerFull = (page: Page, id: string, full: boolean, announce = true) =>
+  page.evaluate(
+    async ([materialId, isFull, rooms]) => {
+      const paths = [
+        '/src/mocks/db.ts',
+        '/src/mocks/collaboration.ts',
+        '/src/api/queryClient.ts',
+      ];
+      const [db, collaboration, { queryClient }] = await Promise.all(
+        paths.map((path) => import(path))
+      );
+      const row = db.materials.find(
+        (item: { id: string }) => item.id === materialId
+      );
+      row.capabilities = { ...row.capabilities, canEditContent: !isFull };
+      row.storageFull = isFull ? 'payer' : undefined;
+      if (isFull && rooms) collaboration.announceReadOnly();
+      await queryClient.invalidateQueries({
+        queryKey: ['material', materialId],
+      });
+    },
+    [id, full, announce] as const
+  );
+
+/** Goes to `url` in the app, as a link does: the page's caches stay. */
+const visit = (page: Page, url: string) =>
+  page.evaluate((to) => {
+    history.pushState({}, '', to);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, url);
+
+const SETS = [
+  ['quiz', QUIZ, 'ws_bio', 'qz_bio_near', m.quiz_add_question()],
+  [
+    'flashcard set',
+    CARDS,
+    'ws_scenarios',
+    'mock-scenario-cards',
+    m.flashcards_add_card(),
+  ],
+] as const;
+
+// A full payer's storage takes no right: the quiz or set reads under the
+// storage strip, and edits again once a read says the payer has room.
+for (const [name, url, , id, add] of SETS)
+  test(`a ${name} editor whose payer's storage fills edits again once it has room`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.goto(url);
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 60_000 }
+    );
+    const adds = page.getByRole('button', { exact: true, name: add });
+    await payerFull(page, id, true);
+    const storage = page.getByText(m.storage_payer_full_strip());
+    await expect(storage).toBeVisible({ timeout: 15_000 });
+    await expect(adds).toHaveCount(0);
+    await payerFull(page, id, false);
+    await expect(adds.first()).toBeEnabled({ timeout: 15_000 });
+    await expect(storage).toHaveCount(0);
+    await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
+  });
+
+// A full payer's storage takes no right, read before the rooms say anything:
+// a diagram, which a lowering keeps read-only until a reload, reads under the
+// storage strip alone and edits again once the payer has room.
+test("a diagram editor whose payer's storage fills, its room silent, edits again once it has room", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio?material=mat_2');
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 60_000,
+  });
+  await payerFull(page, 'mat_2', true, false);
+  const storage = page.getByText(m.storage_payer_full_strip());
+  await expect(storage).toBeVisible({ timeout: 15_000 });
+  await expect(saveState).toHaveCount(0);
+  await payerFull(page, 'mat_2', false);
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 15_000,
+  });
+  await expect(storage).toHaveCount(0);
+  await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
+});
+
+// Q642 C: a quiz or set editor demoted, then raised again, edits again once
+// the raise's notice reads the workspace and the item (nothing closes for it).
+for (const [name, url, workspaceId, , add] of SETS)
+  test(`a ${name} editor demoted and raised again edits it again`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.goto(url);
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 60_000 }
+    );
+    await demoteMember(page, workspaceId);
+    const strip = page.getByText(m.editor_read_only_strip());
+    await expect(strip).toBeVisible({ timeout: 15_000 });
+    await raiseMember(page, workspaceId);
+    await expect(
+      page.getByRole('button', { exact: true, name: add }).first()
+    ).toBeEnabled({ timeout: 15_000 });
+    await expect(strip).toHaveCount(0);
+  });
+
+// D1: someone demoted while away opens the item with no view-only cue, though
+// its device copy (kept under MSW for the scenario items alone) paints an
+// editor's page and the workspace's kept read still says they may edit.
+for (const [name, url, workspaceId, read] of [
+  [
+    'quiz',
+    `${SCENARIOS}mock-scenario-quiz`,
+    'ws_scenarios',
+    ['material', 'mock-scenario-quiz'],
+  ],
+  ['flashcard set', CARDS, 'ws_scenarios', ['material', 'mock-scenario-cards']],
+] as const)
+  test(`a ${name} editor demoted while away opens it with no strip`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.goto(url);
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 60_000 }
+    );
+    // Away on the workspace's page, demoted with no notice. As at a reload, the
+    // item's read goes and the workspace's kept read (persisted) still says
+    // they may edit.
+    await visit(page, `/workspaces/${workspaceId}`);
+    await expect(page.getByTestId('editor-save-state')).toHaveCount(0);
+    await page.evaluate(
+      async ([id, queryKey, text]) => {
+        const paths = [
+          '/src/api/queryClient.ts',
+          '/src/mocks/collaboration.ts',
+        ];
+        const [{ queryClient }, { demoteMockMember }] = await Promise.all(
+          paths.map((path) => import(path))
+        );
+        const workspace = ['workspace', id];
+        const kept = queryClient.getQueryData(workspace);
+        demoteMockMember(id, false);
+        queryClient.setQueryData(workspace, kept);
+        queryClient.removeQueries({ exact: true, queryKey });
+        // Whether the strip ever shows from here on.
+        const seen = window as unknown as { stripSeen: boolean };
+        seen.stripSeen = false;
+        new MutationObserver(() => {
+          if (document.body.innerText.includes(text)) seen.stripSeen = true;
+        }).observe(document.body, {
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+      },
+      [workspaceId, read, m.editor_read_only_strip()] as const
+    );
+    await visit(page, url);
+    await expect
+      .poll(() => readSettled(page, read), { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    // Its view, the editor gone with the room it may have joined meanwhile.
+    await expect(page.getByTestId('content-header')).toBeVisible();
+    await expect(page.getByTestId('editor-save-state')).toHaveCount(0);
+    await page.waitForTimeout(3000);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { stripSeen: boolean }).stripSeen
+      )
+    ).toBe(false);
   });

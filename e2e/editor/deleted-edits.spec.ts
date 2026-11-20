@@ -377,6 +377,36 @@ test('a note deleted by another person while open with nothing unsent says it is
   await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
 });
 
+// Review 2026-11-20: a trashed read has every right off; that is no demotion,
+// so the note restored edits again, with no read-only strip.
+test('a note its creator trashed elsewhere and restored while open edits again', async ({
+  page,
+}) => {
+  await page.goto(`${WORKSPACE}?material=${NOTE}`);
+  await expect(editor(page)).toContainText(SEED, { timeout: 30_000 });
+  const saveState = page.getByTestId('editor-save-state');
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  await deleteItem(page, NOTE, 'note', 'Scenario note', true);
+  await expect(page.getByText(m.error_not_found_title())).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page.evaluate(async (id) => {
+    const paths = ['/src/mocks/collaboration.ts', '/src/api/queryClient.ts'];
+    const [rooms, { queryClient }] = await Promise.all(
+      paths.map((path) => import(path))
+    );
+    (rooms as Collaboration).restoreMockItem(id);
+    await queryClient.invalidateQueries({ queryKey: ['material', id] });
+  }, NOTE);
+  await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+  await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
+  // Its live editor, writable.
+  await seedText(page);
+});
+
 // Review 2026-11-20: the creator trashing their own note in another tab is
 // read the trashed note (the trash fallback), and this page says deleted, not
 // the Trash's strip.

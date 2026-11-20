@@ -1,4 +1,5 @@
 import {
+  hashKey,
   type InfiniteData,
   type QueryClient,
   useQueryClient,
@@ -32,6 +33,7 @@ import {
   useMe,
   useRecordOpen,
 } from '@/api/hooks';
+import { answeredAt, freshAnswer } from '@/api/queryClient';
 import type {
   ItemPage,
   Material,
@@ -654,6 +656,7 @@ function MaterialContentBody({
   const isStatic = staticNote || trashed;
   const {
     data: loaded,
+    dataUpdatedAt,
     error,
     isPending,
     refetch,
@@ -666,6 +669,12 @@ function MaterialContentBody({
   const [readOnly, setReadOnly] = useState<ReadOnlyCode | 'access' | null>(
     null
   );
+  // When this person last lost editing here (`readOnly` 'access').
+  const loweredAt = useRef(0);
+  const lower = useCallback(() => {
+    loweredAt.current = Date.now();
+    setReadOnly('access');
+  }, []);
   const queryClient = useQueryClient();
   const onReadOnly = useCallback(
     (code?: ReadOnlyCode) => {
@@ -675,9 +684,28 @@ function MaterialContentBody({
         void queryClient.invalidateQueries({
           queryKey: qk.material(materialId),
         });
-      setReadOnly(code ?? 'access');
+      if (code) setReadOnly(code);
+      else lower();
     },
-    [materialId, queryClient]
+    [lower, materialId, queryClient]
+  );
+  // When the item's read last answered a fetch: a cache write (a mutation's
+  // rollback) is no answer.
+  const readAnswered = () =>
+    answeredAt(
+      queryClient
+        .getQueryCache()
+        .get<unknown, unknown>(hashKey(qk.material(materialId)))
+    );
+  // Its read answered fresh as the page opened (a preload, the route's
+  // loader), not kept from an earlier visit.
+  const [openedAt] = useState(Date.now);
+  const [openedLive] = useState(() =>
+    freshAnswer(
+      queryClient
+        .getQueryCache()
+        .get<unknown, unknown>(hashKey(qk.material(materialId)))
+    )
   );
   const overBar = useContext(FloatingBarContext);
   // The static renderer ahead of the paint, for a note or what may turn out to
@@ -797,6 +825,47 @@ function MaterialContentBody({
     refused: isAccessRefused(error) && !(trashed || deleted),
     workspaceId: shown?.workspaceId,
   });
+  // Lowered after a live answer said this person may edit: the workspace's
+  // read or the item's own says they may not now (a demotion's notice reads
+  // them before the item's rooms close, 4403, and rejoin on a read token).
+  // The editor goes before its rooms could say so, and it reads on under the
+  // strip, as that token makes it. A full payer's storage takes no right
+  // (its own strip, `storageFull`), and someone lowered while away opens with
+  // no cue (D1). A refused read shows its own page instead.
+  //
+  // A live answer: the item's read answered on this page, or as it opened, not
+  // its device copy nor a read kept from an earlier visit, which may hold last
+  // visit's rights; nor a deleted item's (a trashed read has every right off).
+  const live =
+    loaded && !deleted && (openedLive || readAnswered() > openedAt)
+      ? loaded.capabilities
+      : undefined;
+  const mayEdit = live && !forceReadOnly && live.canEdit;
+  const editorShown = useRef(false);
+  useEffect(() => {
+    if (mayEdit === undefined || readOnly) return;
+    if (mayEdit) editorShown.current = true;
+    else if (editorShown.current) {
+      editorShown.current = false;
+      lower();
+    }
+  }, [lower, mayEdit, readOnly]);
+  // A quiz or set lowered here edits again once a read after it says this
+  // person may (Q642 C: its rooms turn editable at their next token, its
+  // editor opening anew); a note or a diagram stays read-only until a reload,
+  // and every kind keeps a code's strip (lost access, an unsupported block).
+  const raisable = loaded?.kind === 'quiz' || loaded?.kind === 'flashcards';
+  useEffect(() => {
+    if (
+      readOnly === 'access' &&
+      raisable &&
+      !forceReadOnly &&
+      live?.canEditContent &&
+      readAnswered() > loweredAt.current
+    )
+      setReadOnly(null);
+    // A new read runs this again (`dataUpdatedAt`).
+  }, [dataUpdatedAt, forceReadOnly, live, raisable, readOnly]);
   const noteBody = (loaded: Material | undefined, editing: boolean) => (
     <NoteBody
       allowExternalAssets={allowExternalAssets}
@@ -912,6 +981,7 @@ function MaterialContentBody({
         copy={roomCopy}
         key={materialId}
         onPresenceChange={onPresenceChange}
+        onReadOnly={onReadOnly}
         onStatusChange={onEditorStatusChange}
         practice={
           !keptDeleted && <PracticeButton kind="quiz" materialId={materialId} />

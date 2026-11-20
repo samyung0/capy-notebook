@@ -439,7 +439,7 @@ it('a workspace read from an earlier visit, still within its stale time, makes n
   }
 });
 
-it('a role change, or a removal from a workspace still readable, reads the workspace and its lists again', async () => {
+it('a role change, or a removal from a workspace still readable, reads the workspace, its lists and its items again', async () => {
   const page = openWorkspace();
   const { fetchStream, send } = page.stream;
   try {
@@ -455,10 +455,15 @@ it('a role change, or a removal from a workspace still readable, reads the works
         pageParams: [],
         pages: [],
       });
+      // An item of it the page holds: its read follows the new role.
+      page.client.setQueryData(qk.material('mt_1'), { workspaceId: WS });
       send('notification', accessNotice(kind));
       await vi.waitFor(() => expect(page.filesReads()).toBe(reads));
       expect(
         page.client.getQueryState([...qk.canvases, WS])?.isInvalidated
+      ).toBe(true);
+      expect(
+        page.client.getQueryState(qk.material('mt_1'))?.isInvalidated
       ).toBe(true);
     }
     expect(page.workspace.getCurrentResult().error).toBeNull();

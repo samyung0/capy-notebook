@@ -1480,6 +1480,34 @@ should itself refetch and show the 404 error", narrowing Q644): a refused read
 shows "This item is unavailable" (see
 [authorization](../authorization-permissions-lifecycles.md)), a read that
 still answers keeps the strip, and a demotion (a read token) is unchanged.
+A demotion's notice comes first: the role-change notification reads the
+workspace and its open items again at once (`recheckWorkspace`), view-only now,
+while the rooms' 4403 comes 1 to 2.5 s later through the outbox. An item a live
+answer said this person may edit (its read answered a fetch on this page or in
+the 10 s before it opened, `freshAnswer` and `answeredAt`; never its device
+copy, the kept workspace read or a cache write such as a mutation's rollback;
+nor a trashed read, every right off, so one deleted and restored while open
+edits again) drops to view when that read or the workspace's says they may
+not (`canEdit` false; a full payer's storage takes no right and keeps its own
+strip), under the same read-only strip (`MaterialContentBody` in
+`CenterContent.tsx` reports it as its rooms' read token would). Its rooms'
+close and read token after it change nothing more; the view then opens as any
+reader's, a quiz's dropping its keys copy. Without the notice first (none, or a
+late one; UAT 2026-11-20) the rooms say it: a quiz, set or diagram editor
+reports a room turned read-only to the page (`useReportReadOnly`) once a token
+on this page gave it write access, so someone demoted while away opens with no
+view-only cue (D1), their copy's editor paint going quietly to the reader's
+view. A first token that reads while the item's read says they may edit
+(demoted between the two) asks for that read again, which then lowers the page
+as above. A quiz's keys asking a token as the demotion lands, at their first
+(`ItemRoom.start`) or at a rejoin after the 4403, are refused as read-only (403
+`collaboration-read-only`), which reads, joining nothing more, never as lost
+access or a retry into the offline strip; the quiz then reads on its content
+room alone (`useQuizRooms`). A quiz or set lowered here edits again once a read
+answered after it says this person may (Q642 C): raised again (the notice's reads) or its
+payer's storage freed, the page drops its strip and the editor opens anew. A
+note or a diagram stays read-only until a reload, and every kind keeps a
+code's strip (lost access, an unsupported block).
 When the item had worked on that page first (a room of it synced, an
 editor's or a reader's, any kind: notes, quizzes, sets, diagrams, canvases,
 Office and text files; or the page's read answered a fetch showing the item

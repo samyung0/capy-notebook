@@ -2784,8 +2784,17 @@ export const handlers = [
       const write = material.capabilities.canEdit && body?.access !== 'read';
       if (keys && material.kind !== 'quiz')
         return new HttpResponse(null, { status: 404 });
-      // A quiz's keys go to editors who can write only (Epo 2026-10-10).
-      if (keys && !write) return new HttpResponse(null, { status: 403 });
+      // A quiz's keys go to editors who can write only (Epo 2026-10-10), the
+      // server's reason saying so.
+      if (keys && !write)
+        return HttpResponse.json(
+          {
+            detail: 'collaboration-read-only',
+            status: 403,
+            title: 'Forbidden',
+          },
+          { status: 403 }
+        );
       const room = mockMaterialRoom(material.id);
       // Viewers get read channels (Epo 2026-10-10, D1), as does anyone who
       // asks for one (REVIEW5 N2).

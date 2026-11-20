@@ -897,6 +897,9 @@ class MockCollaborationProvider implements UnifiedProvider {
   private joined = false;
   // The page's beforeJoin holding the JOIN (a held draft send, Q360).
   private waiting: Promise<void> | null = null;
+  /** Closed for an access change that left the room readable: the rejoin
+   * asks its token first, which says what this person may do now. */
+  private tokenFirst = false;
   private readonly onReachability = () => {
     if (!reachable()) this.drop();
     else if (this.wanted) this.connect();
@@ -967,6 +970,20 @@ class MockCollaborationProvider implements UnifiedProvider {
       refusedReaders.has(this.options.materialId)
     ) {
       void this.refusedAtToken();
+      return;
+    }
+    const { token } = this.options;
+    if (this.tokenFirst && token) {
+      this.tokenFirst = false;
+      token().then(
+        () => {
+          if (this.wanted) this.connect();
+        },
+        (error: unknown) =>
+          this.options.onAuthenticationFailed?.({
+            reason: `Failed to get token: ${error instanceof Error ? error.message : String(error)}`,
+          })
+      );
       return;
     }
     // The room moved while this editor was away: its token request names the
@@ -1070,6 +1087,17 @@ class MockCollaborationProvider implements UnifiedProvider {
     if (!this.isConnected) return;
     refusedReaders.add(this.options.materialId);
     this.closed(4403);
+  }
+
+  /** This person lowered in its workspace (`demoteMockMember`): the service
+   * closes the room on the open socket (4403, no notice, Q634), and the
+   * editor's rejoin takes a token first, a read one now. */
+  demoted(materialIds: ReadonlySet<string>) {
+    if (!(this.isConnected && materialIds.has(this.options.materialId)))
+      return false;
+    this.tokenFirst = true;
+    this.closed(4403);
+    return true;
   }
 
   /** The room closed on the open socket: a close, no disconnect. */
@@ -1497,6 +1525,82 @@ export function closeOpenNotesForAccess() {
   return open.length;
 }
 
+/** Every open item room (a quiz's, a set's, a diagram's) closes for an access
+ * change (4403), as for a removal when its row goes from the mock: its
+ * rejoin's token is refused. Returns how many there were. */
+export function closeOpenItemsForAccess() {
+  return [...itemProviders].filter((provider) => provider.accessChanged())
+    .length;
+}
+
+const ROLES = {
+  editor: {
+    canEdit: true,
+    canEditContent: true,
+    canManageMembers: false,
+    canView: true,
+  },
+  viewer: {
+    canEdit: false,
+    canEditContent: false,
+    canManageMembers: false,
+    canView: true,
+  },
+};
+
+/** This person's role in `workspaceId` changed: the workspace and its items
+ * read with it from now on, and the role-change notification reaches the tab
+ * at once (the events stream; `notice` false for none). Returns its items. */
+function changeMockRole(
+  workspaceId: string,
+  role: keyof typeof ROLES,
+  notice: boolean
+) {
+  const workspace = db.workspaces.find((row) => row.id === workspaceId);
+  if (workspace) Object.assign(workspace, { capabilities: ROLES[role], role });
+  const items = db.materials.filter((row) => row.workspaceId === workspaceId);
+  for (const item of items)
+    Object.assign(item, { capabilities: ROLES[role], role });
+  const now = new Date().toISOString();
+  if (notice)
+    window.dispatchEvent(
+      new CustomEvent('capy:mock-stream', {
+        detail: {
+          notification: {
+            at: now,
+            data: { role, workspaceId, workspaceName: workspace?.name },
+            id: `n_role_${now}`,
+            kind: 'workspace_role_changed',
+          },
+          type: 'created',
+        },
+      })
+    );
+  return items;
+}
+
+/** This person lowered to viewer in `workspaceId`, as the server does it
+ * (`changeMockRole`), and every open room of the workspace, notes' included,
+ * closes for the access change (4403, Q634) with no notice of its own, its
+ * rejoin's token answering read (a quiz's keys refused as read-only). Returns
+ * how many rooms closed. */
+export function demoteMockMember(workspaceId: string, notice = true) {
+  const ids = new Set(
+    changeMockRole(workspaceId, 'viewer', notice).map((item) => item.id)
+  );
+  return [...materialProviders, ...itemProviders].filter((provider) =>
+    provider instanceof MockCollaborationProvider
+      ? provider.demoted(ids)
+      : provider.accessChanged(ids)
+  ).length;
+}
+
+/** This person raised to editor in `workspaceId` (`changeMockRole`): nothing
+ * closes, not even for them (Q634); the notice reads the workspace again. */
+export function raiseMockMember(workspaceId: string) {
+  changeMockRole(workspaceId, 'editor', true);
+}
+
 /** Every open room refuses this reader when it rejoins: it was hidden from
  * them, or they lost their access. Returns how many there were. */
 export function refuseOpenRooms() {
@@ -1553,6 +1657,20 @@ export function deleteMockItem(
     ...boardProviders,
   ])
     provider.deleted(id);
+}
+/** A deleted item restored from the Trash (`deleteMockItem`): its token and
+ * read answer as before. */
+export function restoreMockItem(id: string) {
+  const deleted = JSON.parse(sessionStorage.getItem(DELETED) ?? '{}') as Record<
+    string,
+    unknown
+  >;
+  sessionStorage.setItem(
+    DELETED,
+    JSON.stringify(
+      Object.fromEntries(Object.entries(deleted).filter(([key]) => key !== id))
+    )
+  );
 }
 const LOST = 'capy.scenario.lost';
 /** Whether this person lost an item (`loseMockAccess`), kept across reloads. */
@@ -1858,12 +1976,23 @@ function persistItem(room: Room) {
 }
 
 class MockItemProvider implements ItemProvider {
-  private readonly leave: () => void;
+  private leave: () => void = () => undefined;
   private readonly config: RoomProviderConfig;
-  private joined = true;
+  private joined = false;
+  /** The first connect took the open's own token, as the room provider's. */
+  private connected = false;
+  /** Closed for an access change: the next connect asks a fresh token. */
+  private rejoins = false;
+  private destroyed = false;
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
+    this.join();
+  }
+
+  /** Joins the in-page room, synced at once. */
+  private join() {
+    const { config } = this;
     itemProviders.add(this);
     const room = itemRoom(config.name);
     this.leave = join(room, {
@@ -1871,6 +2000,7 @@ class MockItemProvider implements ItemProvider {
       onPresence: config.onPresence,
       origin: this,
     });
+    this.joined = true;
     const quiz =
       config.name.startsWith('material:') &&
       db.materials.find((row) => row.id === room.target.id)?.kind === 'quiz';
@@ -1901,7 +2031,26 @@ class MockItemProvider implements ItemProvider {
     queueMicrotask(() => this.stateless(receipt));
   }
 
-  connect() {}
+  connect() {
+    if (!this.connected) {
+      this.connected = true;
+      void this.config.token().catch(() => undefined);
+      return;
+    }
+    if (this.joined || !this.rejoins) return;
+    this.rejoins = false;
+    // The rejoin's token says what this person may do now; a refusal is told
+    // as the room provider tells it.
+    this.config.token().then(
+      () => {
+        if (!this.destroyed) this.join();
+      },
+      (error: unknown) =>
+        this.config.onAuthenticationFailed?.({
+          reason: `Failed to get token: ${error instanceof Error ? error.message : String(error)}`,
+        })
+    );
+  }
 
   wake() {}
 
@@ -1914,6 +2063,21 @@ class MockItemProvider implements ItemProvider {
     refusedReaders.add(this.config.name.split(':')[1]);
     this.disconnect();
     this.config.onAuthenticationFailed?.(refused);
+  }
+
+  /** The service closed this room on the open socket for this person's
+   * access change (4403, Q634), with no notice: the rejoin's token says what
+   * they may do now (`connect`). Only `materialIds`' rooms, when named. */
+  accessChanged(materialIds?: ReadonlySet<string>) {
+    const id = this.config.name.split(':')[1];
+    if (!this.joined || (materialIds && !materialIds.has(id))) return false;
+    this.rejoins = true;
+    this.disconnect();
+    this.config.onClose?.({
+      code: 4403,
+      reason: 'collaboration access changed',
+    });
+    return true;
   }
 
   /** Its item was deleted (`deleteMockItem`): the discard's notice and
@@ -1944,6 +2108,7 @@ class MockItemProvider implements ItemProvider {
   }
 
   destroy() {
+    this.destroyed = true;
     this.disconnect();
   }
 }

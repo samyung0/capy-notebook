@@ -463,6 +463,56 @@ it('joins again after a close for this person, and the token decides', async () 
   room.destroy();
 });
 
+// A quiz's keys room started as its editor is demoted: its first token is
+// refused as read-only, as the server refuses keys to anyone who cannot write.
+// That is the room turning read-only, not lost access.
+it('reads a keys room whose first token is refused as read-only, asking for no read', async () => {
+  tokens.push(new ApiError(403, 'Forbidden', 'collaboration-read-only'));
+  const room = new ItemRoom('q', {
+    document: 'keys',
+    drafts: { actorId: 'u', kind: 'quiz' },
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(room.getSnapshot()).toMatchObject({ access: 'read', offline: null });
+  expect(room.getSnapshot().status).not.toBe('unavailable');
+  expect(providers).toHaveLength(0);
+  expect(invalidateQueries).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// A quiz's keys closed for the demotion (4403): their rejoin's token is
+// refused as read-only, and the room reads, joining nothing more, rather than
+// retrying the refusal into the offline strip.
+it('reads a keys room whose rejoin is refused as read-only, joining no more', async () => {
+  const room = new ItemRoom('q', {
+    document: 'keys',
+    drafts: { actorId: 'u', kind: 'quiz' },
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({
+    code: 4403,
+    reason: 'collaboration access changed',
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(provider.connects).toBe(2);
+  tokens.push(new ApiError(403, 'Forbidden', 'collaboration-read-only'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(room.getSnapshot()).toMatchObject({ access: 'read', offline: null });
+  expect(provider.connects).toBe(2);
+  room.destroy();
+});
+
 // Epo 2026-11-05 (Q644): a refusal with no such close may mean the item is gone,
 // so the page's read says, once a fresh token said it was not deleted.
 it('asks for the read when refused with no access change first', async () => {

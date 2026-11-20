@@ -57,6 +57,11 @@ export function noteAnswer(_data: unknown, query: AnyQuery) {
   answers.set(query, Date.now());
 }
 
+/** When a query's fetch last answered (0 for none): a cache write, such as a
+ * mutation's rollback, does not move it. */
+export const answeredAt = (query: AnyQuery | undefined) =>
+  (query && answers.get(query)) ?? 0;
+
 /** How long a fetch's answer still counts for a page opening on it: a hover's
  * preload or a route's loader lands seconds before the page shows, while an
  * answer from an earlier visit is no sign of this one, whatever its stale

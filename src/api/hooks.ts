@@ -643,6 +643,14 @@ async function recheckWorkspace(
     queryKey: qk.workspace(wsId),
   });
   void qc.invalidateQueries({ queryKey: [...qk.canvases, wsId] });
+  // Its items' reads: an open one says what this person may do with it now
+  // (a quiz or set raised again edits, Q642 C).
+  void qc.invalidateQueries({
+    predicate: ({ queryKey, state }) =>
+      queryKey.length === 2 &&
+      (state.data as Material | undefined)?.workspaceId === wsId,
+    queryKey: ['material'],
+  });
   return false;
 }
 
