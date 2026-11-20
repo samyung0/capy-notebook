@@ -15,7 +15,9 @@ vi.mock('@/api/hooks', () => ({
   saveAssignmentAnswers: save,
   useSubmitAssignmentAttempt: () => ({ isPending: false, mutate: vi.fn() }),
 }));
-vi.mock('@tanstack/react-query', () => ({
+// The rest is real: the app's shared QueryClient loads through blockCode.
+vi.mock('@tanstack/react-query', async (load) => ({
+  ...(await load<typeof import('@tanstack/react-query')>()),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock('./LazyPaper', () => ({ PaperPane: () => null }));
