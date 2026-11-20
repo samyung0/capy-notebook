@@ -316,11 +316,12 @@ test('Preview and back leaves a chat citation where it finished', async ({
   const source = page.getByTitle(m.chat_source_number({ n: 1 })).first();
   await expect(source).toBeVisible({ timeout: 60_000 });
   await source.click();
-  const flashed = page.locator('[data-citation-flash]');
-  await expect(flashed).toHaveText('Third paragraph gamma', {
-    timeout: 30_000,
-  });
-  await expect(flashed).toHaveCount(0);
+  // The paint flashes it until the editor takes over, which flashes it again:
+  // the editor's flash is the last.
+  await expect(
+    page.locator('[data-note-mount] [data-citation-flash]')
+  ).toHaveText('Third paragraph gamma', { timeout: 30_000 });
+  await expect(page.locator('[data-citation-flash]')).toHaveCount(0);
   await pressPreview(page);
   await expect(preview(page)).toContainText('Third paragraph gamma');
   // A replayed flash ends on its own, so watch for it starting.

@@ -9,6 +9,7 @@ import {
   type PickerKind,
   pickerTokenScopes,
 } from '@/lib/onedrivePicker';
+import { msalClientId } from './msalConfig';
 
 const KIND_AUTHORITY = {
   personal: 'https://login.microsoftonline.com/consumers',
@@ -20,16 +21,6 @@ let appPromise: Promise<PublicClientApplication> | undefined;
 function configuredAuthority(): string | undefined {
   const value = import.meta.env.VITE_MSAL_AUTHORITY?.trim();
   return value || undefined;
-}
-
-function msalClientId(): string {
-  const id = import.meta.env.VITE_MSAL_CLIENT_ID?.trim() ?? '';
-  if (!id) throw new Error('MSAL_CONFIG');
-  return id;
-}
-
-export function assertMsalConfigured(): void {
-  msalClientId();
 }
 
 export async function msalPickerApp(): Promise<PublicClientApplication> {

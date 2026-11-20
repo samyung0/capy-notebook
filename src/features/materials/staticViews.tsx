@@ -12,6 +12,12 @@ import { MEDIA_CAPTION_CLASS } from '@/features/notes/nodeStyles';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import {
+  HtmlEmbedSourceDialog,
+  htmlSourceCode,
+  useCodeFailed,
+} from './blockCode';
+import { CannotShow } from './CannotShow';
 import type {
   HtmlEmbedElement,
   MaterialRefElement,
@@ -268,12 +274,9 @@ export function FigurePreview({
   );
 }
 
-const HtmlEmbedSourceDialog = lazy(
-  () => import('@/features/notes/blocks/HtmlEmbedSourceDialog')
-);
-
 /** An interactive HTML block in its sandboxed frame, with View source in the
- * app. */
+ * app, or "This block cannot be shown" in its place when the source view's
+ * code could not load. */
 export function HtmlEmbedView({
   caption,
   html,
@@ -281,6 +284,7 @@ export function HtmlEmbedView({
 }: Pick<HtmlEmbedElement, 'caption' | 'html' | 'id'>) {
   const [viewing, setViewing] = useState(false);
   const publicPage = useContext(PublicPageContext);
+  const failed = useCodeFailed(htmlSourceCode);
   return (
     <>
       <HtmlEmbed
@@ -288,7 +292,10 @@ export function HtmlEmbedView({
         html={html}
         id={id}
         toolbar={
-          !publicPage && (
+          !publicPage &&
+          (failed ? (
+            <CannotShow inToolbar />
+          ) : (
             <ToolbarButton
               label={m.html_embed_view_source()}
               onClick={() => setViewing(true)}
@@ -296,10 +303,10 @@ export function HtmlEmbedView({
             >
               <EditorIcon name="code" />
             </ToolbarButton>
-          )
+          ))
         }
       />
-      {viewing && (
+      {viewing && !failed && (
         <Suspense fallback={null}>
           <HtmlEmbedSourceDialog
             html={html}

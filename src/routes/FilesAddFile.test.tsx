@@ -100,7 +100,7 @@ vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   useAccountFrozen: () => false,
 }));
 // Its Add to field, as a button that picks Biology.
-vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
+vi.mock('@/features/workspace/AddSourceDialog', () => ({
   AddSourceDialog: ({
     onDestinationChange,
     workspaceId,
@@ -114,7 +114,6 @@ vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
       type="button"
     />
   ),
-  addSourceIntent: {},
 }));
 
 const { act } = await import('react');

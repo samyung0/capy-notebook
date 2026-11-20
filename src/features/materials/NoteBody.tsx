@@ -20,11 +20,11 @@ import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { materialTokenQuery } from '@/api/hooks';
-import type { Material } from '@/api/types';
+import type { Material, Quiz } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { PageButton } from '@/components/ui/Button';
-import { Skeleton, Spinner } from '@/components/ui/feedback';
+import { PaneLoading, Skeleton, Spinner } from '@/components/ui/feedback';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import {
   type CopyLabel,
@@ -66,9 +66,11 @@ import {
   restoreNotePosition,
   settleNotePlace,
 } from '@/features/notes/roomSwap';
+import type { LearnerQuestion } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { forgetNoteCopy } from '@/lib/sourceCache';
+import { type BlockCode, codeOf, GivenUpCode } from './blockCode';
 import {
   type MaterialDocument,
   type MaterialValue,
@@ -82,10 +84,11 @@ import type { NoteCitationTarget } from './openItem';
 import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route: it loads behind a
- * painted note, never before one. Preview's code is here once the editor is
- * (Q669: Preview opens offline): the static renderer comes with the editor,
- * and an embedded quiz's long answers take the question text editor, which
- * QuestionRunner otherwise loads with the first one. */
+ * painted note, never before one. Most of Preview's code is here once the
+ * editor is (Q669: Preview opens offline): the static renderer comes with the
+ * editor, and an embedded quiz's long answers take the question text editor,
+ * which QuestionRunner otherwise loads with the first one. What else the
+ * note's blocks need Preview loads as it opens (blockCode). */
 const loadEditor = () =>
   Promise.all([
     import('@/features/notes/NoteEditor'),
@@ -441,6 +444,17 @@ function LiveNote({
  * didn't change keep their identity and aren't drawn again. */
 const PREVIEW_REFRESH_MS = 250;
 
+/** How long Preview waits for its blocks' code before drawing anyway (Epo
+ * 2026-11-20: 30 s). A block whose code has not arrived by then shows "This
+ * block cannot be shown", as for a failed load, until Preview opens again. The
+ * loader shows at once. */
+const PREVIEW_CODE_LIMIT_MS = 30_000;
+
+const NONE_GIVEN_UP: ReadonlySet<BlockCode> = new Set();
+
+const allSettled = (code: Set<BlockCode>) =>
+  [...code].every((needed) => needed.settled);
+
 /** The first of a static note's blocks under its scroller's top edge. */
 function previewPlace(box: HTMLElement) {
   const root = box.querySelector('[data-slate-editor]');
@@ -457,7 +471,10 @@ function previewPlace(box: HTMLElement) {
 /** The whole note as its readers read it, drawn from the text in the editor kept
  * behind it (Epo 2026-11-06), so it reads no body and shows what's typed, saved yet
  * or not. A collaborator's typing reaches it through the same editor, and a room
- * swap hands it the next editor without moving the reader. */
+ * swap hands it the next editor without moving the reader. It draws once the code
+ * its blocks need has loaded or failed, or PREVIEW_CODE_LIMIT_MS passed (Epo
+ * 2026-11-20), the pane's loader showing meanwhile; each open checks again, and
+ * code later blocks need loads without it. */
 function NotePreview({
   box,
   drawn,
@@ -480,6 +497,60 @@ function NotePreview({
 }) {
   const [value, setValue] = useState(() => editor.children as MaterialValue);
   drawn.current = value;
+  // An embedded quiz's questions as Preview draws them: the room the editor
+  // holds of it, read once an open, or else the editor's embed's read.
+  const queryClient = useQueryClient();
+  const questionsOf = useMemo(() => {
+    const live = new Map<string, LearnerQuestion[] | undefined>();
+    return (quizId: string) => {
+      if (!live.has(quizId))
+        live.set(quizId, seat?.contentRoom(quizId)?.learnerQuestions());
+      return (
+        live.get(quizId) ??
+        queryClient.getQueryData<Quiz>(qk.quiz(quizId))?.questions
+      );
+    };
+  }, [place, queryClient, seat]);
+  const code = useMemo(() => codeOf(value, questionsOf), [questionsOf, value]);
+  const latest = useRef(code);
+  latest.current = code;
+  // Each open waits afresh: a reopen before the last one's DOM left keeps
+  // this mount.
+  const [wait, setWait] = useState(() => ({
+    givenUp: NONE_GIVEN_UP,
+    place,
+    ready: allSettled(code),
+  }));
+  if (wait.place !== place)
+    setWait({ givenUp: NONE_GIVEN_UP, place, ready: allSettled(code) });
+  const { givenUp, ready } = wait;
+  useEffect(() => {
+    let live = true;
+    void Promise.allSettled([...code].map((needed) => needed.load())).then(
+      () => {
+        if (live) setWait((now) => (now.ready ? now : { ...now, ready: true }));
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [code, place]);
+  useEffect(() => {
+    const limit = setTimeout(() => {
+      setWait((now) =>
+        now.ready
+          ? now
+          : {
+              ...now,
+              givenUp: new Set(
+                [...latest.current].filter((needed) => !needed.settled)
+              ),
+              ready: true,
+            }
+      );
+    }, PREVIEW_CODE_LIMIT_MS);
+    return () => clearTimeout(limit);
+  }, [place]);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     setValue(editor.children as MaterialValue);
@@ -496,6 +567,7 @@ function NotePreview({
   }, [editor]);
   // The same block at the same height, before the browser paints it.
   useLayoutEffect(() => {
+    if (!ready) return;
     const scroller = box.current;
     const index = drawn.current.findIndex((block) => block.id === place.block);
     const block = scroller?.querySelector('[data-slate-editor]')?.children[
@@ -507,16 +579,22 @@ function NotePreview({
       top -
       scroller.getBoundingClientRect().top -
       offsetWithin(place.offset, height);
-  }, [box, drawn, place]);
+  }, [box, drawn, place, ready]);
   return (
     <div className="h-full overflow-auto" ref={box}>
       <NoteDisplayToggles />
-      <Suspense fallback={<NoteSkeleton />}>
-        <NoteSeatContext.Provider value={seat}>
-          <PaintedNote label={label} material={material} value={value} />
-        </NoteSeatContext.Provider>
-        <DocumentAttribution material={material} value={value} />
-      </Suspense>
+      {ready ? (
+        <Suspense fallback={<NoteSkeleton />}>
+          <GivenUpCode.Provider value={givenUp}>
+            <NoteSeatContext.Provider value={seat}>
+              <PaintedNote label={label} material={material} value={value} />
+            </NoteSeatContext.Provider>
+          </GivenUpCode.Provider>
+          <DocumentAttribution material={material} value={value} />
+        </Suspense>
+      ) : (
+        <PaneLoading message={m.files_loading_preview()} />
+      )}
     </div>
   );
 }

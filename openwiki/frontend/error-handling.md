@@ -349,7 +349,9 @@ card's frost over a page frame.
 A route chunk the deploy removed (a missing `/assets/*` name is a 404
 `no-store` from the assets Worker, deployment-runbook §1) fails as a
 chunk-load error: the router reloads once, then shows "An update is ready"
-with Reload.
+with Reload. A chunk with a stylesheet (the drawing board's, KaTeX's) fails
+in Vite's preload helper first, "Unable to preload CSS for …", which counts
+as a chunk-load error too (`CHUNK_LOAD_PATTERN`).
 
 A page whose entry script, a chunk it needs or a stylesheet fails to load
 while the boot spinner shows (a fresh load in the deploy window, whose old
@@ -388,18 +390,22 @@ a connection that is down while the browser reports online still takes
 TanStack's reload.
 
 Two pieces of a workspace page load only when wanted (Q619), so a failed load
-leaves the page. Hover or focus loads each ahead of the click, except offline, where
-it asks for nothing, since the browser would keep the failure until a reload. A
-preload that fails says nothing: only an open the user asked for shows a toast.
+leaves the page. Each loads ahead of the press, except offline, where it asks for
+nothing, since the browser would keep the failure until a reload. A preload that
+fails says nothing: only an open the user asked for shows a toast.
 
-- **Add file** (`LazyAddSourceDialog`; the file panel, the Dashboard, the Files page,
-  the Indexing tab, a failed file's row). With its code not here on the click, a
-  loading toast shows from 300 ms. A press or key once that toast is up means the
-  user moved elsewhere, as does leaving the page: nothing opens later, and the code
-  keeps loading for the next time. If it won't load, a toast says so and nothing
-  opens: offline the offline copy, stalled past 20 s the connection copy, otherwise
-  "An update is ready" with Reload. Any of these also ends a pending return from
-  connecting a drive, so re-entering the page doesn't try Import again.
+- **Add file's drive pickers** (`AddSourceDialog`: the Google Drive picker and
+  OneDrive's with MSAL). The dialog itself comes with the page and opens at once,
+  offline too (Epo 2026-11-20); Import opening loads the pickers' code, and a
+  picker pressed waits for it, both pickers disabled; closing the dialog
+  meanwhile ends the press, so nothing opens when the code arrives. If it won't
+  load the dialog stays, and "An update is ready" with Reload says so; offline
+  the page's offline toast shows again (`toastOffline`, under its id, so it
+  replaces the workspace's instead of stacking; the Files page has none of its
+  own, and a workspace's closes after 12 s). A press
+  checks OneDrive's settings (`msalConfig.ts`, no MSAL) before it opens the
+  picker's window, and opens none while its last load had failed; if the code
+  arrives after all, that press ends quietly and the next opens the window.
 - **The chat's Markdown** (`Prose`) loads once a workspace page is first idle
   (Q681, `preloadProseWhenIdle`: at most 5 s after it opened, 2 s without
   `requestIdleCallback`), so saved chats read formatted offline later; offline at
@@ -416,6 +422,22 @@ preload that fails says nothing: only an open the user asked for shows a toast.
   no toast of its own, trying once more when the connection is back, otherwise with
   the update toast. A browser that keeps the failed import stays on those words until
   a reload.
+
+A note's Preview loads the code its blocks need before it draws, for at most 30 s (Epo
+2026-11-20, plate-editor "Its code"), offline too, so no chunk it needs fails later to its
+pane's boundary. A block or part whose code could not load for a load someone asked for
+(Preview, a drawn graph, a pressed button; an idle preload's failure says nothing) shows
+"This block cannot be shown" in its place (`CannotShow`), decided from how the load
+settled (`useCodeFailed` in `blockCode.ts`), not from a thrown error: a graph whose engine
+failed, wherever a graph shows (KaTeX failing leaves the graph without its formulas); a
+drawing part's Draw, Edit drawing or Open drawing, and a drawn sample's button, wherever
+the board's code failed; an HTML embed's View source, in Preview and in the editor. The
+mutation error toast (`showErrorToast`) shows too, once a chunk, a stale or missing
+chunk's with Reload: the browser keeps the failed import, so only a reload brings it. A
+load that failed offline waits for the window's `online` event, then shows "Some blocks
+couldn't load" with Reload once (`error_chunk_offline_*`; the update copy would be wrong
+there). Code still loading at 30 s shows the same notice in that Preview until it opens
+again.
 
 ## Shared-resource security
 
@@ -807,8 +829,7 @@ The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:
 `delayed` ("Saving is delayed. Your recent changes aren't saved yet."); the
 offline states (grey `offline`: "Can't connect to Capy. Your edits are saved
-on this device and will sync when you reconnect. They may be rejected or
-lost."; red `offline-unstored`: "Your edits can't be saved on this device.
+on this device and will sync when you reconnect."; red `offline-unstored`: "Your edits can't be saved on this device.
 Keep this tab open until you reconnect."; grey `offline-limit`: "You've
 reached the offline edit limit for this file. Reconnect to keep editing.",
 see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)); and the
