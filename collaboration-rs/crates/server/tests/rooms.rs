@@ -148,7 +148,12 @@ async fn start_logged(env: &Env) -> (Server, Logs) {
 
 /// `start_logged` with `extra` settings.
 async fn start_logged_with(env: &Env, extra: &[(&str, &str)]) -> (Server, Logs) {
-    let mut server = launch(env, env.api.as_deref(), extra, Stdio::piped()).await;
+    start_logged_at(env, env.api.as_deref(), extra).await
+}
+
+/// `start_logged_with` with `api` as its gateway.
+async fn start_logged_at(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) -> (Server, Logs) {
+    let mut server = launch(env, api, extra, Stdio::piped()).await;
     let logs = Logs::default();
     let stdout = server.child.stdout.take().expect("piped output");
     let lines = logs.0.clone();
@@ -10998,6 +11003,54 @@ async fn the_projection_catch_up_leaves_a_note_in_trash_until_it_is_restored() {
     let row = projected().await;
     assert_eq!(row.get::<_, i64>(0), stored, "projected once restored");
     assert!(row.get::<_, String>(1).contains("base lagging"));
+}
+
+/// Q778 A: only a refusal for a material in Trash is quiet. A projection the
+/// gateway refuses with 404 for a note not in Trash (the stand-in gateway has
+/// no projection route) stays a failure: the on-demand projection answers 503
+/// without the in-Trash refusal, the row records the error and it is
+/// reported. Fails if any 404 is taken for the in-Trash refusal.
+#[tokio::test]
+async fn a_projection_404_for_a_note_not_in_trash_is_recorded_and_reported() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let (server, logs) = start_logged_at(&env, Some(&gateway.url), &[]).await;
+    let (_, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    writer.type_text(" lagging").await;
+    writer.stored_past(1).await;
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{material}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 503, "{body}");
+    assert_eq!(body.get("code"), None, "{body}");
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("(404)")),
+        "{body}"
+    );
+    let error: Option<String> = db(&env)
+        .await
+        .query_one(
+            "SELECT projection_error FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("row")
+        .get(0);
+    assert!(
+        error.is_some_and(|error| error.contains("(404)")),
+        "the 404 is recorded"
+    );
+    assert!(
+        logs.has(&["captured error", &material]).await,
+        "the 404 is reported"
+    );
+    assert_eq!(logs.count(&["projection refused", &material]), 0);
 }
 
 /// Moves a material to Trash in a transaction that also takes back the

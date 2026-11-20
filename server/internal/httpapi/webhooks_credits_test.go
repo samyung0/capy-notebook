@@ -211,10 +211,20 @@ func TestStripeWebhook_ALateEventForAReplacedReloadCardChangesNothing(t *testing
 	}
 }
 
+// A SetupIntent of another user or kind, of a customer bound to nobody, or
+// without a customer or payment method saves nothing and is not associated.
 func TestStripeWebhook_SetupIntentOfAnotherUserOrKindIsNotOurs(t *testing.T) {
+	with := func(key string, value any) map[string]any {
+		object := reloadSetupIntent("reload_method", "user_1")
+		object[key] = value
+		return object
+	}
 	for name, object := range map[string]map[string]any{
-		"another user": reloadSetupIntent("reload_method", "user_2"),
-		"another kind": reloadSetupIntent("topup", "user_1"),
+		"another user":        reloadSetupIntent("reload_method", "user_2"),
+		"another kind":        reloadSetupIntent("topup", "user_1"),
+		"an unbound customer": with("customer", "cus_2"),
+		"no customer":         with("customer", nil),
+		"no payment method":   with("payment_method", nil),
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFakeStore()

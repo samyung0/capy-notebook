@@ -264,6 +264,49 @@ func TestSavingTheSavedCardAgainArmsNothing(t *testing.T) {
 	}
 }
 
+// Setup Checkout's two events for one card may be handled at once (Q760 A):
+// of eight saves of a new card over the saved one, all waiting on the row,
+// one saves it, so it arms once. Fails without the save's row lock ordering
+// them (each would read the old card and save the new one).
+func TestConcurrentSavesOfOneNewCardSaveItOnce(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	if _, err := s.SavePaymentMethod(ctx, userID, PaymentMethod{ID: "pm_old", Type: "card"}, false); err != nil {
+		t.Fatal(err)
+	}
+	// The row is held while the saves start, so they all reach it at once.
+	hold, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hold.Exec(ctx, `SELECT 1 FROM user_credits WHERE user_id = $1 FOR UPDATE`, userID); err != nil {
+		t.Fatal(err)
+	}
+	card := PaymentMethod{ID: "pm_new", Type: "card", SetupCreated: time.Now().Add(time.Hour)}
+	var saved atomic.Int32
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			ok, err := s.SavePaymentMethod(ctx, userID, card, false)
+			if err != nil {
+				t.Error(err)
+			}
+			if ok {
+				saved.Add(1)
+			}
+		})
+	}
+	time.Sleep(500 * time.Millisecond)
+	if err := hold.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	if got := saved.Load(); got != 1 {
+		t.Fatalf("%d concurrent saves saved the card, want 1", got)
+	}
+}
+
 // Q783 A: card A's setup, created two hours ago, saved A an hour ago; card B,
 // set up since, replaces it, and both B events save it once. Stripe's late
 // redelivery for A then changes nothing: B stays saved and disarmed. Fails
