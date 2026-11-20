@@ -2441,6 +2441,15 @@ design, option d), and the nudge's release file on 2026-10-17.
   The two 30s met in one merge; 31 covers both, and `MIN_SOURCE` stays 30.
   The quiz-figure and canvas changes land together, so their deploy request
   names "client protocol 30 -> 31, material 29 -> 31".
+  The second Q691 pin (b3b0e6bc8: DOCX View's screen readers read a
+  whole-word layer beside the per-letter text layer, View starts the painting
+  CJK face's core as layout starts, a CJK face failing to open while editing
+  is the slice notice and opens again online, the XLSX viewer builds its grid
+  geometry once and a wrapped cell's row refits after recalculation, a PPTX
+  key reads only its slide) raised `CLIENT_PROTOCOL` to 32 and `MIN_SOURCE`
+  to 32, so source tabs on the older pin (protocols 30 and 31) reload;
+  `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request names "client protocol 31 -> 32, source 30 -> 32".
 
 #### When to bump
 
