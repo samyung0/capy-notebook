@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -28,6 +29,10 @@ func newCreditTestServer(t *testing.T, f *fakeStore, outcome billing.ReloadResul
 			return store.PaymentMethod{ID: "pm_setup", Type: "card", CardKey: "card:fp_setup"}, nil
 		},
 		stripeVoidInvoice: func(id string) error {
+			if f.stripeVoidFails > 0 {
+				f.stripeVoidFails--
+				return errors.New("stripe unavailable")
+			}
 			*voided = append(*voided, id)
 			return nil
 		},
@@ -79,19 +84,25 @@ func TestStripeWebhook_TopUpCreditsSavesCardAndVoidsRetryingReloads(t *testing.T
 	}
 }
 
+// reloadSetupCheckout is the setup Checkout that saves the auto-reload card
+// through SetupIntent seti_1.
+func reloadSetupCheckout() map[string]any {
+	return map[string]any{
+		"id":           "cs_setup",
+		"mode":         "setup",
+		"customer":     "cus_1",
+		"setup_intent": "seti_1",
+		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
+	}
+}
+
 func TestStripeWebhook_SetupCheckoutReplacesTheReloadCard(t *testing.T) {
 	f := newFakeStore()
 	f.stripeCustomers["cus_1"] = "user_1"
 	f.retryingReloads = []string{"in_old_card"}
 	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
 
-	sendStripe(t, srv, "evt_setup", "checkout.session.completed", map[string]any{
-		"id":           "cs_setup",
-		"mode":         "setup",
-		"customer":     "cus_1",
-		"setup_intent": "seti_1",
-		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
-	})
+	sendStripe(t, srv, "evt_setup", "checkout.session.completed", reloadSetupCheckout())
 	// The new card ends Stripe's retries of the old one.
 	if !slices.Equal(f.creditCalls, []string{"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card"}) ||
 		!slices.Equal(*voided, []string{"in_old_card"}) {
@@ -116,19 +127,12 @@ func reloadSetupIntent(kind, userID string) map[string]any {
 // credits, voids the old card's retries and publishes (the void and the publish
 // share voidReloadsAndPublish), and the second changes nothing more.
 func TestStripeWebhook_SetupIntentSavesTheReloadCardOnce(t *testing.T) {
-	setupCheckout := map[string]any{
-		"id":           "cs_setup",
-		"mode":         "setup",
-		"customer":     "cus_1",
-		"setup_intent": "seti_1",
-		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
-	}
 	type event struct {
 		id, kind string
 		object   map[string]any
 	}
 	intent := event{"evt_intent", "setup_intent.succeeded", reloadSetupIntent("reload_method", "user_1")}
-	checkout := event{"evt_checkout", "checkout.session.completed", setupCheckout}
+	checkout := event{"evt_checkout", "checkout.session.completed", reloadSetupCheckout()}
 	for name, order := range map[string][]event{
 		"intent first":   {intent, checkout},
 		"checkout first": {checkout, intent},
@@ -152,6 +156,36 @@ func TestStripeWebhook_SetupIntentSavesTheReloadCardOnce(t *testing.T) {
 				t.Fatalf("calls = %q voided = %q, want %q and one void", f.creditCalls, *voided, want)
 			}
 		})
+	}
+}
+
+// Q782 A: a delivery that saved the card and then failed to void the old
+// card's retrying reload is redelivered by Stripe, and that redelivery voids
+// it though the card is saved already; the other event then finds nothing
+// left. Fails with a delivery that saves nothing skipping the void.
+func TestStripeWebhook_ARedeliveredReloadCardSaveVoidsWhatItsFailedVoidLeft(t *testing.T) {
+	f := newFakeStore()
+	f.stripeCustomers["cus_1"] = "user_1"
+	f.retryingReloads = []string{"in_old_card"}
+	f.stripeVoidFails = 1
+	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+	intent := reloadSetupIntent("reload_method", "user_1")
+
+	body := stripeBody(t, "evt_intent", "setup_intent.succeeded", intent)
+	resp := post(t, srv.URL+"/webhooks/stripe", signStripe(t, testStripeSecret, body), body)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusOK || len(*voided) != 0 {
+		t.Fatalf("first delivery status = %d voided = %q, want a failure", resp.StatusCode, *voided)
+	}
+	sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", intent)
+	sendStripe(t, srv, "evt_checkout", "checkout.session.completed", reloadSetupCheckout())
+	want := []string{
+		"method user_1 pm_setup false", "starter user_1 card:fp_setup",
+		"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card",
+		"method user_1 pm_setup false", "starter user_1 card:fp_setup",
+	}
+	if !slices.Equal(f.creditCalls, want) || !slices.Equal(*voided, []string{"in_old_card"}) {
+		t.Fatalf("calls = %q voided = %q, want %q and one void", f.creditCalls, *voided, want)
 	}
 }
 

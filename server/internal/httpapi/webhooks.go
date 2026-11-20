@@ -698,9 +698,11 @@ func (a *api) reloadMethodSetupSucceeded(
 
 // saveReloadMethod saves the card a setup SetupIntent confirmed as the
 // auto-reload method. A hosted setup sends both checkout.session.completed and
-// setup_intent.succeeded; whichever comes second finds the card saved and
-// changes nothing more, so the card arms one reload and voids the old card's
-// retries once.
+// setup_intent.succeeded, and Stripe redelivers one that failed: the first to
+// save the card arms its one reload. Every delivery voids the reloads Stripe
+// is still retrying, which is safe to repeat, so a void that failed after the
+// save is done by the next delivery (Q782 A); the billing refresh follows the
+// save, or a later delivery's void when the save's own did not go through.
 func (a *api) saveReloadMethod(ctx context.Context, userID, setupIntentID string) error {
 	pm, err := a.stripeSetupMethod(setupIntentID)
 	if err != nil {
@@ -712,12 +714,12 @@ func (a *api) saveReloadMethod(ctx context.Context, userID, setupIntentID string
 	}
 	// The grant is once per account and card, so this also completes a retry
 	// whose earlier attempt saved the card and then failed.
-	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil || !saved {
+	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
 		return err
 	}
 	// A new card ends Stripe's retries of the old one.
 	retrying, err := a.wh.RetryingReloadInvoices(ctx, userID)
-	if err != nil {
+	if err != nil || (!saved && len(retrying) == 0) {
 		return err
 	}
 	return a.voidReloadsAndPublish(ctx, userID, retrying)

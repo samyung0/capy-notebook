@@ -75,8 +75,12 @@ type fakeStore struct {
 	redacted        map[string]bool
 	// creditCalls logs purchased-credit store calls in order.
 	creditCalls []string
-	// retryingReloads is what GrantTopUp reports for the caller to void.
+	// retryingReloads is what GrantTopUp reports for the caller to void; a
+	// void takes its invoice out.
 	retryingReloads []string
+	// stripeVoidFails is how many of Stripe's next voids fail
+	// (newCreditTestServer).
+	stripeVoidFails int
 	// reloadRetryUnwanted: the reload was turned off or given a new card.
 	reloadRetryUnwanted bool
 	// reloadMethods is each user's saved auto-reload method id.
@@ -215,6 +219,9 @@ func (f *fakeStore) GrantTopUp(
 
 func (f *fakeStore) MarkReloadVoid(_ context.Context, invoiceID string) error {
 	f.creditCalls = append(f.creditCalls, "void "+invoiceID)
+	// A copy: the caller may still be ranging over the list it was handed.
+	f.retryingReloads = slices.DeleteFunc(slices.Clone(f.retryingReloads),
+		func(id string) bool { return id == invoiceID })
 	return nil
 }
 

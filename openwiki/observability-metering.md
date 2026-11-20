@@ -978,8 +978,11 @@ reload invoice Stripe is still retrying. The card is saved from the session's
 carrying the same `kind=reload_method` and `user_id` metadata, whose customer is
 bound to that user (Q760 A; the CI credits journeys create such SetupIntents
 through Stripe's API). Whichever arrives second finds that method already saved
-(`SavePaymentMethod` reports it unchanged) and arms, voids and publishes
-nothing more. Turning auto-reload off voids it too,
+(`SavePaymentMethod` reports it unchanged) and arms nothing more. Every
+delivery, either event's and Stripe's redeliveries, voids the reloads Stripe is
+still retrying, which is safe to repeat, so a void that failed after the save
+is done by the next delivery (Q782 A); the `billing` event follows the save, or
+such a later void. Turning auto-reload off voids it too,
 and so does `POST /api/billing/auto-reload/cancel-retry` (Cancel retry on the
 notice and the invoice row), which leaves auto-reload on but disarmed. A
 retrying plan invoice's Cancel opens `POST
