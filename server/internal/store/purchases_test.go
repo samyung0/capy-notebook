@@ -500,6 +500,37 @@ func TestDailySyncRereadsUnsettledReloadsWithoutEndingANewWindow(t *testing.T) {
 	}
 }
 
+// Q785 A: a saved card ends the retries charged to other cards, never its own.
+func TestReloadInvoicesRetryingOnOtherCardsLeavesTheSavedCards(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	seedCredits(t, s, userID, 0, 0)
+	insert := func(id, status, card string) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `INSERT INTO credit_purchases
+			(id, user_id, kind, status, amount_cents, credits_micros, stripe_invoice_id, reload_pm_id)
+			VALUES ($1, $2, 'reload', $3, 1000, $4, 'in_'||$1, NULLIF($5, ''))`,
+			id, userID, status, CreditsMicrosForCents(1000), card); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("cp_"+userID+"_old", "retrying", "pm_old")
+	insert("cp_"+userID+"_same", "retrying", "pm_new")
+	insert("cp_"+userID+"_unknown", "retrying", "")
+	insert("cp_"+userID+"_paid", "paid", "pm_old")
+
+	got, err := s.ReloadInvoicesRetryingOnOtherCards(ctx, userID, "pm_new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	want := []string{"in_cp_" + userID + "_old", "in_cp_" + userID + "_unknown"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("voidable = %q, want %q", got, want)
+	}
+}
+
 // Security: the starter credits come once per account and once per card. A
 // replayed event, a second card on the same account, the same card on another
 // account and a method with no card key grant nothing, and concurrent events

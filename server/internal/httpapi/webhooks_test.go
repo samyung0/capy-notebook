@@ -78,6 +78,9 @@ type fakeStore struct {
 	// retryingReloads is what GrantTopUp reports for the caller to void; a
 	// void takes its invoice out.
 	retryingReloads []string
+	// retryingReloadCards names the card a retrying invoice charges; an
+	// invoice missing here charges another card.
+	retryingReloadCards map[string]string
 	// stripeVoidFails is how many of Stripe's next voids fail
 	// (newCreditTestServer).
 	stripeVoidFails int
@@ -283,6 +286,12 @@ func (f *fakeStore) ReloadRetryUnwanted(context.Context, string) (bool, error) {
 
 func (f *fakeStore) RetryingReloadInvoices(_ context.Context, userID string) ([]string, error) {
 	return f.retryingReloads, nil
+}
+
+func (f *fakeStore) ReloadInvoicesRetryingOnOtherCards(_ context.Context, _ string, pmID string) ([]string, error) {
+	return slices.DeleteFunc(slices.Clone(f.retryingReloads), func(invoice string) bool {
+		return f.retryingReloadCards[invoice] == pmID
+	}), nil
 }
 
 func (f *fakeStore) ReleaseDispute(_ context.Context, paymentIntentID string) (string, error) {

@@ -217,8 +217,16 @@ test('study progress: a quiz finished, a set studied and a short review are reco
       await clicked(page, '/api/review/check', m.review_check()),
       200
     );
+    // The pick is tagged Correct, and so is the verdict under the boxes
+    // (Epo 2026-11-18).
     await expect(
-      page.getByText(m.question_ui_result_right(), { exact: true })
+      page.getByRole('button', {
+        exact: true,
+        name: `${m.question_ui_true()} ${m.question_ui_result_right()}`,
+      })
+    ).toBeVisible();
+    await expect(
+      page.getByText(m.question_ui_result_right(), { exact: true }).last()
     ).toBeVisible();
     await page
       .getByRole('button', { exact: true, name: m.action_next() })
