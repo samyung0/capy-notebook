@@ -2677,12 +2677,17 @@ shown here to copy until you reload." while this device holds unsent edits to
 it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
 offers or deletes them meanwhile, and dismissing a toast already offering
 them), and says "This item is unavailable" when it holds none or cannot read
-its store. A deleted quiz, set or diagram never reads as lost access: a room
-that hears of it first (its fresh room's token answering 410 while the page's
-read is still out) holds what it showed read-only, with no strip and no save
-status, and reports nothing to the page (`ItemRoomSnapshot.deleted`), so the
-page's read alone says what shows; once that read said deleted, the item
-restored and read again opens its editor anew on a fresh room. An item counts
+its store. A deleted note, quiz, set or diagram never reads as lost access: a
+room that hears of it first (its rejoin's or fresh room's token answering 410
+while the page's read is still out) holds what it showed read-only, with no
+strip and no save status, and reports nothing to the page
+(`ItemRoomSnapshot.deleted`; a note's in `NoteEditorCore`), so the page's read
+alone says what shows; once that read said deleted, the item restored and read
+again opens its editor anew on a fresh room. A not-found from the
+collaboration service alone, which a deleted item says too, asks one fresh
+token: an item room's (`notFoundByRoom`) reports lost access only on a 404 or
+403 and rejoins on a live token or no answer, and a note's, whose editor stays
+read-only, reports it unless that token is a 410. An item counts
 as shown once its read or its device copy painted it, on its workspace's page
 and on its own (`/materials/:id`, which keeps the page mounted instead of its
 error or Trash view). A note is drawn from its

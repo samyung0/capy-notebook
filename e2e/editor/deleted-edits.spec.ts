@@ -407,6 +407,8 @@ test('a note its creator trashed elsewhere and restored while open edits again',
     timeout: 30_000,
   });
   await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
+  // Deleted, never kicked: no lost-access strip once restored either.
+  await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
   // Its live editor, writable.
   await seedText(page);
 });
@@ -440,11 +442,12 @@ const storedContent = (page: Page, id: string) =>
     return JSON.stringify(material?.content ?? null);
   }, id);
 
-// A set's or a diagram's room hears of the deletion (its fresh room's token,
-// 410) before the page's read does: it says unavailable as a note does, never
-// that access went (Epo 2026-11-20), and restored and read again it edits on
-// a fresh room.
+// A note's, a set's or a diagram's room hears of the deletion (its rejoin's
+// or fresh room's token, 410) before the page's read does: it says
+// unavailable, never that access went (Epo 2026-11-20), and restored and read
+// again it edits on a fresh room.
 for (const [name, url, id, kind, title] of [
+  ['note', `${WORKSPACE}?material=${NOTE}`, NOTE, 'note', 'Scenario note'],
   [
     'flashcard set',
     '/workspaces/ws_scenarios?material=mock-scenario-cards',
@@ -487,8 +490,15 @@ for (const [name, url, id, kind, title] of [
     await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
     await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
     // An edit lands, stored through the fresh room.
-    const edit = kind === 'flashcards' ? 'Restored card' : '%% restored';
-    if (kind === 'flashcards') {
+    const edit = {
+      diagram: '%% restored',
+      flashcards: 'Restored card',
+      note: 'Restored note.',
+    }[kind];
+    if (kind === 'note') {
+      await clickTextEnd(await seedText(page));
+      await page.keyboard.type(` ${edit}`);
+    } else if (kind === 'flashcards') {
       await page
         .getByRole('button', { exact: true, name: m.flashcards_add_card() })
         .first()
