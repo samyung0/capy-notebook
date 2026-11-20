@@ -12,7 +12,7 @@ import type { Browser, Locator, Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
 import { showNoteToolbar } from '../../helpers/editor';
 import { showPanelView } from '../../helpers/panelView';
-import { openQuestionDialog } from '../../helpers/quizEditor';
+import { openQuestionCard } from '../../helpers/quizEditor';
 import { m } from '../../i18n';
 import {
   api,
@@ -1141,14 +1141,14 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
   const before = await charge(run);
   const quizSize = Number((await materialRow(run, quizId)).size_bytes);
   const page = run.owner.page;
-  await page.goto(`${run.env.appUrl}/materials/${quizId}`);
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: m.question_ui_add_block() }).click();
+  // The question's card edits in place (Epo 2026-11-15): Add image picks a
+  // file and the image goes in once uploaded, with no Save.
+  await openQuestionCard(page, `${run.env.appUrl}/materials/${quizId}`);
+  const chooser = page.waitForEvent('filechooser');
   await page
-    .getByRole('button', { exact: true, name: m.question_ui_image() })
+    .getByRole('button', { exact: true, name: m.question_ui_add_image() })
     .click();
-  await dialog.locator('input[type="file"]').setInputFiles({
+  await (await chooser).setFiles({
     buffer: png,
     mimeType: 'image/png',
     name: 'field-photo.png',
@@ -1158,28 +1158,11 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
     () => materialAssets(run, quizId),
     (rows) => rows.length === 1 && rows[0].status === 'ready'
   );
-  await dialog
-    .getByRole('textbox', { name: m.question_ui_description() })
-    .fill('Field photo');
-  // No Save: Back goes back to the question, where the new block stays
-  // selected under its floating toolbar. Esc closes the toolbar, then a second
-  // Esc the dialog.
-  await dialog
-    .getByRole('button', { exact: true, name: m.action_back() })
-    .click();
-  const blockActions = page.getByRole('toolbar', {
-    name: m.question_ui_block_actions(),
-  });
-  await expect(blockActions).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(blockActions).toBeHidden();
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
   const [uploaded] = await materialAssets(run, quizId);
   await run.poll(
     'quiz image projected',
     () => contentText(run, quizId),
-    (text) => text.includes(uploaded.id) && text.includes('Field photo')
+    (text) => text.includes(uploaded.id)
   );
   const [asset, ...rest] = await materialAssets(run, quizId);
   assert.deepEqual(rest, []);
@@ -1296,30 +1279,21 @@ export async function pastedQuizCopies(
   return copies;
 }
 
-/** Quiz editor: select the image block and delete it; the edit is live, so
- * the dialog just closes. */
+/** Quiz editor: the image's Remove block in the question's card; the edit is
+ * live. The image is the card's only figure. */
 async function removeQuizImage(run: UatRun, quizId: string, assetId: string) {
   const page = run.owner.page;
-  await page.goto(`${run.env.appUrl}/materials/${quizId}`);
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  await dialog
-    .getByRole('button', {
-      name: m.question_ui_select_block({ type: m.question_ui_image() }),
-    })
-    .click();
-  // The block toolbar is portaled outside the dialog, like the note editor's.
-  await page
-    .getByRole('toolbar', { name: m.question_ui_block_actions() })
-    .getByRole('button', { exact: true, name: m.question_ui_delete() })
-    .click();
-  await expect(
-    dialog.getByRole('button', {
-      name: m.question_ui_select_block({ type: m.question_ui_image() }),
-    })
-  ).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  const card = await openQuestionCard(
+    page,
+    `${run.env.appUrl}/materials/${quizId}`
+  );
+  const remove = card.getByRole('button', {
+    exact: true,
+    name: m.question_ui_remove_block(),
+  });
+  await expect(remove).toHaveCount(1);
+  await remove.click();
+  await expect(remove).toHaveCount(0);
   await run.poll(
     'quiz projected without its image',
     () => contentText(run, quizId),

@@ -329,8 +329,11 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   await expect(quizTab.locator('[data-quiz-opening]')).toHaveCount(0, {
     timeout: 60_000,
   });
+  // The Add bar's Add question (the question rail holds another).
   await expect(
-    quizTab.getByRole('button', { name: m.quiz_add_question() })
+    quizTab
+      .getByRole('toolbar', { name: m.quiz_editor_add_bar() })
+      .getByRole('button', { exact: true, name: m.quiz_add_question() })
   ).toBeVisible();
 
   // The bystander: a second editor on the note and the DOCX.
