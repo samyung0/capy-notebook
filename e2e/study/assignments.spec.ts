@@ -126,12 +126,9 @@ test.describe('assignments', () => {
     ).json()) as { items: { id: string }[] };
     expect(listed.items.map((item) => item.id)).toEqual([assignment.id]);
 
-    // The member answers on their page.
+    // The member answers on their page. Accept told them what a class member
+    // shares, so no notice opens (Epo 2026-11-19).
     await viewerPage.goto(`/workspaces/${workspaceId}/assignments`);
-    // Told once what a class member shares (Epo 2026-11-04).
-    await viewerPage
-      .getByRole('button', { exact: true, name: m.sharing_notice_ok() })
-      .click();
     await viewerPage
       .getByRole('button', { exact: true, name: m.assignment_start() })
       .locator('visible=true')

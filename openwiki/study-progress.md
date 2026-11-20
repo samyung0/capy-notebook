@@ -1718,7 +1718,8 @@ and the grading pane, showing a written answer as the member's results do (Epo
 sample answer and Solution; under 448px of its own width the points and the
 mark alone). A question marked by rule opens the results' own staff
 view (`ResultBody`: the member's answer against the key, a Mark field per
-part, a comment, Save marks), a read paper's pages above it. From `md` each column scrolls on its own, the two
+part, a comment, Save marks), a read paper's pages above it, or the whole
+paper while it waits to be read. From `md` each column scrolls on its own, the two
 lists with no scrollbar, and Full screen at the tabs row's end covers the page
 with the row and the columns (`fullscreen=true`, exit at the row's end or
 Escape), as a task's Grading. From

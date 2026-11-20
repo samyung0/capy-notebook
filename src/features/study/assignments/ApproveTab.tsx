@@ -812,9 +812,9 @@ function MarkPane({
       </div>
     );
   // Marked by rule: the member's answer as their results show it, its mark
-  // staff's to change, a read paper's pages above it (a paper still to read
-  // waits on the form below).
-  if (!row.waiting && !question.parts.some((p) => modelMarked(p.answer.type)))
+  // staff's to change, above it a read paper's pages or, still to read, the
+  // whole paper (the form below has only the AI's parts to show).
+  if (!question.parts.some((p) => modelMarked(p.answer.type)))
     return (
       <div className="flex flex-col">
         <AnswerHead

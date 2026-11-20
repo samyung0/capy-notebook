@@ -1017,18 +1017,32 @@ function seed() {
   );
   const files = db.files.filter((f) => f.workspaceId === WS);
   // The past paper's own quiz file, holding the questions its two assignments
-  // were published with, so their Questions tab and Preview read the same
-  // questions, as publishing leaves them (hidden, as a graded quiz's is).
+  // were published with (hidden, as a graded quiz's is), its first question
+  // edited since: as_paper's quizChanged, so Republish has a change to send.
   const paperQuiz =
     quizzes[0] &&
     db.makeMaterial({
       ...quizzes[0],
       content: createMaterialDocument([
-        quizNode({ questions: pastPaper() }, 'qz_paper'),
+        quizNode(
+          {
+            questions: [
+              mcq(
+                'q1',
+                "Which organelle releases most of a cell's energy?",
+                ['Nucleus', 'Mitochondria', 'Ribosome', 'Golgi body'],
+                1
+              ),
+              ...pastPaper().slice(1),
+            ],
+          },
+          'qz_paper'
+        ),
       ]),
       hidden: true,
       id: 'qz_paper',
-      title: 'Past paper 2025 P1',
+      // Not the paper's own name, which Make a quiz from that paper takes.
+      title: 'Past paper 2025 P1 quiz',
       topicId: null,
     });
   if (paperQuiz) db.materials.push(paperQuiz);

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
-/** A row's AI grade to approve, as "AI 1 / 2". */
-const AI_GRADE = new RegExp(`${m.assignment_ai_mark({ mark: '' })}\\d`);
+/** A row's AI grade to approve: its grade in a purple chip titled To approve
+ * (the question already says AI marked; Epo 2026-11-19). */
+const AI_GRADE = `[title="${m.assignment_section_to_approve()}"]`;
 
 // Epo 2026-11-03: what the AI has not graded waits until the owner runs it; its
 // grades wait for approval, and Approve all takes a question's. On Approve AI
@@ -36,7 +37,9 @@ test('Grade with AI fills the waiting grades, and Approve all takes them', async
       name: m.assignment_grade_count_with_ai({ count: 5 }),
     })
     .click();
-  await expect(answers.first()).toContainText(AI_GRADE, { timeout: 15_000 });
+  await expect(answers.first().locator(AI_GRADE)).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(
     answers.filter({ hasText: m.assignment_not_graded_badge() })
   ).toHaveCount(0);
@@ -57,9 +60,6 @@ test('Grade with AI fills the waiting grades, and Approve all takes them', async
   ).toHaveCount(0);
 
   await approveAll.click();
-  await expect(answers.first()).not.toContainText(AI_GRADE, {
-    timeout: 15_000,
-  });
-  await expect(answers.filter({ hasText: AI_GRADE })).toHaveCount(0);
+  await expect(answers.locator(AI_GRADE)).toHaveCount(0, { timeout: 15_000 });
   await expect(approveAll).toBeDisabled();
 });
