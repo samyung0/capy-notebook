@@ -450,32 +450,54 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   waits for Summary. A row opens the quiz in the workspace.
 - Add practice (whoever may edit: a class's staff, a personal workspace's owner
   and editors, whose quiz rows also open the quiz; off in a frozen workspace)
-  opens Add quiz, one dialog with four tabs (Epo 2026-11-11, `AddPractice.tsx`,
+  opens New quiz (Add quiz until Epo 2026-11-20), one dialog with four ways (Epo 2026-11-11, `AddPractice.tsx`,
   at `study/practice?make=files`, so Study stays behind it and Cancel
   returns there; the Dashboard's Make a quiz opens it too, at `?make=files`
   on the workspace's own URL).
-  The tabs run Convert to quiz, Generate quiz, From the bank, Create blank
-  (Epo 2026-11-16), and share one height (680px, at most 88dvh; phones full
-  screen): a tab's body scrolls inside it, so switching tabs or adding files
-  never resizes the dialog, and From the bank's list fills what is left.
-  **Convert to quiz** comes first and opens by default (Epo 2026-11-14). **Create
+  The ways are Extract from file, Generate quiz, From question bank, Create
+  blank (Epo 2026-11-16; Extract from file and From question bank were Convert
+  to quiz and From the bank until Epo 2026-11-20). The dialog opens on them as
+  cards, in place of a tab row (Epo 2026-11-20, board B of the quiz source
+  cards mock, the cards drawn smaller): each card is the shared `Tile` with a
+  `description`, holding a line drawing (`QuizWayArt.tsx`, in theme colours so
+  dark mode follows; From question bank an open archive box with a document
+  pulled up, Create blank a wide dashed card), the way's name and a line on
+  what it does. From sm they sit in two rows (Epo 2026-11-20), three and two
+  for New graded quiz's five, two and two for New quiz's four, and phones list
+  them with the drawing beside the words; the cards' footer has Cancel. Their
+  dialog fits them (Epo 2026-11-20, `other.fit`): as tall as they are and as
+  wide as cards of about 230px (760px, or 520px for four), growing to the
+  ways' one size once one is picked.
+  Picking one opens it under its name, and Back (from sm; the header's arrow on
+  phones) returns to the cards, the way keeping what was picked in it. Every
+  way shares one size (1040px wide since Epo
+  2026-11-20, for From question bank's three columns; 88dvh tall like the pages, with a
+  compact footer, `SimpleDialog`'s `compactFooter`; phones full screen): a way's body scrolls inside it, so moving between ways or adding files
+  never resizes the dialog, and From question bank's list fills what is left.
+  **Extract from file** comes first (Epo 2026-11-14), and a link or reload
+  with files picked (`?make=files&paper=…`, or a later step) opens on it. **Create
   blank** (Create quiz until Epo 2026-11-16) is a gallery like Add file's Create tab: Blank quiz and one template
   per answer type (`quizTemplates.ts`), each tile picturing its example
   question; Create makes "{workspace} quiz {n}" holding that one complete
-  question (none for Blank) and opens it to edit. **Generate quiz** is Make my
-  own practice's form (`useMakePractice`) without Mix in, for everyone, and
-  returns to Practice once made. Its From select marks Topics and Files with
+  question (none for Blank). **Generate quiz** is Make my
+  own practice's form (`useMakePractice`) without Mix in, for everyone. Its From select marks Topics and Files with
   their icons; Files is Convert's field (Choose a file over the chosen rows,
   a searchable menu of the workspace's readable files and notes), at most 5
   (`GENERATE_FILES_MAX`, `fieldlimits.GenerateFiles`, the request's
-  `maxItems`). **Convert to quiz** is Make a quiz from a
-  file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot, so
-  Continue goes on to its pages and run. The step's switch, Hide the quiz,
+  `maxItems`). **Extract from file** is Make a quiz from a
+  file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot
+  (`onBack` to the cards, `other` for the cards or another way), so Back and
+  Continue sit at the footer's end like every way's, and Continue goes on to
+  its pages and run. The step's switch, Hide the quiz,
   starts on here too (Epo 2026-11-16, every quiz an editor makes starts
-  hidden; it was off here, so the quiz listed on members' Practice at once). **From the bank**
+  hidden; it was off here, so the quiz listed on members' Practice at once). **From question bank**
   (Epo 2026-11-14, `BankPicker.tsx`) copies picked item bank questions into a
-  new "{workspace} quiz {n}"; Create opens it, as Create blank does
-  (`question-bank.md`, Item banks).
+  new "{workspace} quiz {n}" (`question-bank.md`, Item banks). Once a way's
+  quiz is made (Extract's too, should its run end with the dialog on it) the
+  dialog closes on the page behind it and a Quiz created toast's Open opens
+  the quiz (Epo 2026-11-20, in place of opening it; `made` in
+  `AddPractice.tsx`, which is also `MakeQuizDialog`'s `onDone`). A run
+  confirmed and left to the panel ends there as before.
   Everyone else gets Make my own practice (below).
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
@@ -626,7 +648,15 @@ gets one only they can reach: their own standalone material, charged to them,
 linked by `materials.practice_workspace_id` and `practice_topic_id`. Those links
 count only for its maker (`reviewPool`, `newPool`, `itemCounts`,
 `Material.StudyWorkspaceID`), so it feeds their labels and reviews, shows on their
-Practice marked Only you, and lists in their own Files. Its sources are what they
+Practice marked Only you, and lists in their own Files. Its quiz read says
+`onlyYou` (the Quiz API, from `practice_workspace_id`), and its attempt page
+shows an Only you chip after the title (Epo 2026-11-20, board D of the hidden
+quiz callout mock: Practice's lock and words, icon alone on phones; no button,
+as nobody can share it: the Hidden switch needs a workspace item,
+`SetItemHidden`). The first one opened on a browser points at it in the same
+accent callout as the Hidden chip's: "Only you can see this quiz", "Your own
+quiz cannot be shared to other members." and Got it
+(`capy.tips.ownPractice`; `OnlyYouChip` in `HiddenChip.tsx`). Its sources are what they
 can read (`VisibleSourceItems`), and the pipeline reads hidden items only for an
 editor (`readsHidden`).
 
@@ -1068,17 +1098,27 @@ their own, as Practice's filter does (staff's Filter, the list pages'
 row's question topic ids are read from its JSON once (`questionTopicIDsSQL`:
 the posted questions, a draft's quiz content), for the filter, the sort and
 `topicIds` alike.
-Open ones come first by due date, then the closed ones latest due first; no due
-date goes last, newest posted first. `sort` (title, kind, topic, posted, due)
-and `dir` order by a column header's pick instead, open ones still first, a row
-without the value last; topic sorts by the first topic the row shows (its
+With no `sort` the server puts open ones first by due date, then the closed
+ones latest due first; no due date goes last, newest posted first. The page
+always sends one: Posted, newest first, until a column header is picked (Epo
+2026-11-20, `useAssignmentSort`). `sort` (title, kind, topic, posted, due) and
+`dir` order by that column, open ones still first, a row without the value last; topic sorts by the first topic the row shows (its
 quiz's, else its questions' first in topic order). `useAssignments` is an infinite query; the
 page's `ListEnd`, on the page's own scroller, reads the next page as it nears
 the end. Closed rows are muted (opacity 55%), as To do's done rows are.
 Below the `@4xl` container the staff's table becomes one row per assignment:
-its title, its kind, its progress bar, and "Due Sat 14 Nov" at the row's end
-(Epo 2026-11-16, in place of the average, which the wide table's Average
-column keeps).
+its title, its progress bar, and "Due Sat 14 Nov" at the row's end (Epo
+2026-11-16, in place of the average, which the wide table's Average column
+keeps); no kind line, so it takes two lines (Epo 2026-11-20, the wide table's
+Kind column keeps it). The wide table keeps Posted's label whole (`Th`'s
+`fit`), as it starts sorted and its dates alone are narrower. Anyone else's
+page there, a class member's or a personal workspace's To do, is To do's table
+for that workspace (Epo 2026-11-20, "the two todo should align"):
+`TodoSection` with `page`, the Dashboard's To do with a page title, New (New
+task for a class member), Show done and the To do page's selection bar
+(Mark as done, Mark as not done), newest posted first; a row opens To do's
+details dialog. It reads To do's list (`GET /api/todo`), not the paged
+assignments list, which only staff's table reads now.
 
 **Words** (Epo 2026-11-14). A class's marked assignment is a *Graded quiz*: it
 owns a quiz of its own (`materials.assignment_id`, migration
@@ -1094,7 +1134,7 @@ publishing posts it.
 2026-11-16; until then the quiz was made first and waited, `graded_pending`,
 for a second request to take it). Each way of getting questions carries the
 graded quiz's settings as `gradedQuiz` (an `AssignmentFormReq`, kind marked,
-no `quizId`): Create blank (`CreateMaterialReq`), From the bank (`BankQuizReq`)
+no `quizId`): Create blank (`CreateMaterialReq`), From question bank (`BankQuizReq`)
 and Existing quiz (`POST /api/quizzes/{id}/graded-copy`, a copy of one of the
 workspace's practice quizzes, never another graded quiz's own, which is an
 assignment already, nor one made only for oneself; its questions given fresh
@@ -1109,9 +1149,12 @@ sends Generate's, Convert's and Create blank's as drafts, so AI-made or empty
 questions are read before anything goes out, except a task for oneself, which
 has no draft (`checkOwnTask`). Settings may leave the title empty: each way then
 sends its quiz's name (the picked quiz's, "{workspace} quiz {n}", the
-generated or converted quiz's title). Once made, the dialog opens the graded
-quiz on its report's Questions tab (a task for oneself on its page), Epo
-2026-11-16. `POST
+generated or converted quiz's title). Once made, the dialog closes on the page
+behind it with a Graded quiz created toast (Epo 2026-11-20, in place of
+opening it, Epo 2026-11-16): Open goes to its report's Questions tab (a task
+for oneself to its page) and Undo deletes it, wherever it was made (the
+Assignments page, To do, a member profile). The Assignments page's own toast
+is left to Assignment. `POST
 /api/workspaces/{id}/assignments` no longer makes a graded quiz from a quiz id.
 An owned quiz never lists (Files, the file tree, Recent, search, Practice, Study,
 reviews and new items, pickers, Explore, a workspace clone with its images, the
@@ -1328,13 +1371,14 @@ date only, and the penalty on marks or a grade only (the store refuses anything
 else, `checkLatePolicy`), so with no due date Advanced holds Draft only.
 
 Advanced (Epo 2026-11-04, `Accordion` in `src/components/ui/Accordion.tsx`) is an accordion holding the policy
-and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded assignment's Show
-grades and Show answers sit at its top (Epo 2026-11-12). It starts closed unless a
+and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded quiz's Show
+grades and Show answers sit at its top (Epo 2026-11-12, back in it 2026-11-20 after
+two days on the form). It starts closed unless a
 saved assignment holds something other than the defaults there, a draft, No late
 submissions or a penalty (`advancedStartsOpen`, Claude's pick), Shuffle, or grades or
-answers other than Automatic and After assignment close. Once opened it
-scrolls itself into view, since it opens at the dialog's foot, below the fold on a
-phone. Editing a published assignment has no Draft only, and one with no due date
+answers other than Automatic and After assignment close. Opening it never
+scrolls the dialog (Epo 2026-11-20); rows it opens below the fold are scrolled to
+by hand. Editing a published assignment has no Draft only, and one with no due date
 has no Advanced at all.
 
 Both kinds follow the same rules (Epo 2026-11-09, "same rules", migration 0162
@@ -1390,8 +1434,9 @@ pass on while classmates still answer; per-part marks still show on submit.
 Reopening hides the keys again.
 
 **A graded quiz from a file** (Epo 2026-11-20, migration 0186, mock "Graded
-quiz from a file"): Existing file's file row asks for its "Total marks" (whole,
-1 to 1000, the form's `totalMarks`, which only this graded quiz has) and makes
+quiz from a file"): Settings asks a file for its "Points" (whole, 1 to 1000,
+the form's `totalMarks`, which only this graded quiz has; "Total marks" until
+Epo 2026-11-20 named it as Assignments' Points) and makes
 it with `POST /api/files/{id}/graded-quiz` (`MakeFileGradedQuiz`, the caller an
 editor of the file's workspace), its untitled name the file's without the
 extension.
@@ -1422,8 +1467,8 @@ extension.
   file stays readable in Files to every member, so staff hide a paper they want
   unread before the quiz (its picker row says "Hidden from members"). One moved,
   trashed or deleted reads "The question paper can't be opened".
-- Total marks (Epo 2026-11-20, mock "File quiz follow-ups" A): Settings shows
-  it beside Marking and saves it with the rest (`setPaperMarksTx`). Marks
+- Points, the total (Epo 2026-11-20, mock "File quiz follow-ups" A; named
+  Points later that day): the Settings tab shows it beside Marking and saves it with the rest (`setPaperMarksTx`). Marks
   already given stay as they are, out of the new total, as Canvas and Google
   Classroom keep them; Save asks first while any submission is graded (the
   staff summary's `graded`, past members' included), saying theirs change only
@@ -1801,9 +1846,10 @@ step and "What members see" link for an invite preview and board G5.
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
 `store/assignment_todo.go`) lists what the viewer has to do across the classes
 they own or belong to, as a table (`TodoTable`; Epo 2026-11-10, board K at
-Artifact EwrCcGhudqpqvwTYQtqaeJ): Billing's table style with an icon on each
-header, a group per class with its open count that folds, and columns To do,
-Details and Due. Phones stack each row's due date and details under its title.
+Artifact EwrCcGhudqpqvwTYQtqaeJ): Billing's table style with the Study pages'
+header cells (`Th`, as Assignments' tables; no icons since Epo 2026-11-20), a
+group per class with its open count that folds, and columns To do,
+Details, Posted (the day it went out, Epo 2026-11-20) and Due. Phones stack each row's due date and details under its title.
 Tabs To do (open work and answers waiting, with its count, all of it in one read)
 and Done (`GET /api/todo/done`, `ListTodoDone`, `qk.todoDone` under `qk.todo`,
 read only while the tab is open: what was given to the viewer that they finished
@@ -1811,9 +1857,12 @@ or ticked off by hand, with the quiz's mark, "Waiting for marks" or "Not handed
 in", or that closed undone, dated by the day it was done, ticked off or closed; thirty a page, the next loading near the end as on
 Files, sorted and filtered in SQL with an offset cursor; a row a later page
 repeats is skipped). The headers sort, all in the URL (`parseTodoSearch`:
-`tab=done`, `sort=title`, `dir` only against the column's own order,
-`type=quiz,task`): To do by Due (classes with answers waiting first) or by To do
-(title, classes by name), in the browser; Done by its date, on the server.
+`tab=done`, `sort=due` or `sort=title`, `dir` only against the column's own
+order, `type=quiz,task`): To do by Posted, newest first, until another header is
+picked (Epo 2026-11-20), by Due, soonest first (with Posted, classes with
+answers waiting first, then the one whose first row leads), or by To do (title,
+classes by name), in the browser; Done by its date, on the server, its Posted
+column not sorting.
 Neither sorts nor filters by class (Epo 2026-11-10: class against personal stays
 inside the workspace). A class with nothing to show is left out. Due reads
 "Today, 15:40" and "Tomorrow, 09:00" for the next two days, and Overdue past it
@@ -1960,11 +2009,11 @@ and its answer events log under the quiz's own workspace, as practising the quiz
 does, so that workspace's row is key-shared before the accounts
 (`taskRow.lockQuizWorkspaceTx`). What a
 class gave out still hides while the workspace is personal. The task sits in its
-maker's To do and Done under the workspace's name, in the Dashboard's To do and a
-member's Assignments list; its tick is the plain task's, and it opens To do's
-details dialog wherever it is listed (`OwnTaskDetails`, which ticks as the To do
-page does: a plain task's tick is its done, a quiz's or a hand-in's asks first
-and only clears To do), with Delete and Edit in
+maker's To do and Done under the workspace's name, in the Dashboard's To do and
+the workspace's To do page; its tick is the plain task's, and it opens To do's
+details dialog wherever it is listed (ticking as the To do page does: a plain
+task's tick is its done, a quiz's or a hand-in's asks first and only clears To
+do), with Delete and Edit in
 the footer and, for one with a quiz, Start quiz, Continue quiz or See results:
 Edit opens the same form, Delete asks and then deletes the task for good (`DELETE
 /api/assignments/{id}`, its maker only, also while frozen). Its results page
@@ -1998,36 +2047,53 @@ tells the class's staff and that member (`publishSweptTodo`).
 (a class's staff) offers Assignment and Graded quiz; a personal workspace's To do
 offers Task and Graded quiz; a class member keeps a plain New task. Assignment and
 Task open `NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked
-form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with Settings
-first (Epo 2026-11-16, as Canvas, Google Classroom and Moodle set a quiz up
-before its questions) and no stepper in the title (Epo 2026-11-19). Both steps
-take one frame, 720px wide (so the five tabs show) and `min(680px, 88dvh)` tall,
-and the step after the first opens in its place without the dialog's open
-motion (`DialogStep`), so Next and Back read as one dialog. Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
-the due date required, the title left empty to take its quiz's name ("The quiz's
-name"), and Next, which saves nothing and hands the values on. Step 2 is Add quiz (`AddPracticeDialog` with `graded`) with five tabs:
-Existing file first (Practice's quizzes and the workspace's files in the
-Convert file menu's 36px rows; a quiz is copied whole, a file becomes the
-question paper of a graded quiz from a file, below), then
-Convert, Generate, From the bank and Create blank, each sending the settings
-with its questions in one request (The owned quiz). Back returns to Settings
-with what was filled in (on a phone, the header's back arrow). Existing file
-and From the bank say Create; Generate,
-Convert and Create blank say Create draft. Convert's pages and run stay in the
-dialog's own state, with no Hide the quiz switch. Cancel leaves nothing behind.
-A member profile's Assign quiz (Epo 2026-11-16, was Assign practice) opens the
-same dialog with that member as the only assignee and Generate on their weakest
-topic. Editing a graded quiz shows its quiz as a locked field. Making a quiz
+form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with its
+questions first and Settings last (Epo 2026-11-20, reversing 2026-11-16's
+Settings first, which followed Canvas, Google Classroom and Moodle: what was
+picked decides some settings, and Title can start on its name). There is no
+stepper in the title (Epo 2026-11-19). It is one dialog (`MakeQuizDialog` with
+`tabs.settings`), 1040px wide (Epo 2026-11-20, for From question bank's three
+columns; every way and Settings alike, so moving between them never resizes it) and 88dvh
+tall, and Settings shows in place of the steps before it, which stay mounted, so
+Back finds the pick as it was. Step 1 is New quiz's (`AddPracticeDialog` with
+`graded`) opening on five ways as cards (Epo 2026-11-20, board B), each step
+under its way's name: Existing file first (Practice's quizzes and the
+workspace's files in the Convert file menu's 36px rows; a quiz is copied whole, a
+file becomes the question paper of a graded quiz from a file, below), then
+Extract from file (was Convert to quiz), Generate quiz, From question bank (was
+From the bank) and Create blank. Each way's Next (Extract's after its pages)
+hands its pick (`GradedSource`: name, whether it is a file or a draft, and how
+to send it) to Settings and saves nothing. Step 2 is Settings
+(`useAssignmentForm` with `graded`, the form `NewAssignmentDialog` wraps): the
+marked fields, the due date required, Title starting on the pick's name (a
+quiz's title, a file's name without its extension, Generate's "{topic}
+practice", a bank or blank quiz's "{workspace} quiz {n}") and following later
+picks until something is typed. A file's Settings show Marking locked at Manual
+grading only with Points (the total, typed) beside it, and Submission locked at
+Upload only, as its Settings tab does; picking a quiz again puts back what they
+were. A quiz's Settings show its Points beside Marking, fixed: its questions'
+marks as members would get them (`useQuizFileQuestions`, the stored questions
+followed live, those with answers), loaded when it is picked. Show grades and
+Show answers are at the top of Advanced (Epo 2026-11-20). Create
+sends the pick with the settings in one request (The owned quiz) and a failure
+shows above the footer; Existing file and From question bank say Create,
+Generate, Extract and Create blank say Create draft. Back returns to the pick
+(on a phone, the header's back arrow). Extract's pages and run stay in the
+dialog's own state, with no Hide the quiz switch, and its run shows once
+Create starts it. Cancel leaves nothing behind. A member profile's Assign quiz
+(Epo 2026-11-16, was Assign practice) opens the same dialog with that member as
+the only assignee and Generate on their weakest topic. Editing a graded quiz shows its quiz as a locked field. Making a quiz
 refreshes `qk.practice`.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b) is the To do page's `TodoTable` for one
 class (Epo 2026-11-12, `single`: no group row): a box on every row, the row opening
-its details, Due and To do sorting it. A member's To do is what went to them; staff's
+its details, Posted (newest first to start, as the page, Epo 2026-11-20), Due and
+To do sorting it. A member's To do is what went to them; staff's
 holds answers to approve and anything they gave themselves, with New assignment (New
 task for everyone else) at its top right, which turns to Mark as done (Mark as not
 done for done rows) while rows are selected, using the page's `useTodoTicks`. Show
 done brings finished ones back, muted, and keeps a row in place as it is marked
-(`keepTicked`). Narrower than the table's 560px, beside an open panel, it stacks
+(`keepTicked`). Narrower than the table's 680px, beside an open panel, it stacks
 each row's facts under it as phones do. Empty, it says Nothing to do. Activity gains
 "assigned" rows, to whoever it went to and staff.
 

@@ -7552,6 +7552,7 @@ export const CreateQuizResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "onlyYou": zod.boolean().optional(),
   "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -7647,6 +7648,7 @@ export const GetQuizResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "onlyYou": zod.boolean().optional(),
   "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -7806,6 +7808,7 @@ export const GetQuizForEditResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "onlyYou": zod.boolean().optional(),
   "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -8034,6 +8037,7 @@ export const UpdateQuizMetadataResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "onlyYou": zod.boolean().optional(),
   "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({
@@ -8115,6 +8119,7 @@ export const UpdateQuizSharingResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "name": zod.string(),
+  "onlyYou": zod.boolean().optional(),
   "parentMaterialId": zod.string().optional(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "provenance": zod.object({

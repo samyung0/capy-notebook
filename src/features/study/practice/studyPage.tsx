@@ -44,7 +44,9 @@ export function Th<S extends string>({
 }: {
   children?: ReactNode;
   className?: string;
-  sort?: { sorting: ColumnSort<S>; value: S };
+  /** `fit`: the label stays whole, widening its column, where the column's
+   * cells alone would cut it. */
+  sort?: { fit?: boolean; sorting: ColumnSort<S>; value: S };
 }) {
   return (
     <th
@@ -60,6 +62,7 @@ export function Th<S extends string>({
     >
       {sort && typeof children === 'string' ? (
         <SortHeader
+          fit={sort.fit}
           label={children}
           sorting={sort.sorting}
           value={sort.value}

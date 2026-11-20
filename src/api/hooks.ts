@@ -2654,9 +2654,10 @@ export function useCreateEmbeddedMaterial() {
 
 /** Create a workspace material of any kind; non-note kinds pass content
  * holding their element. */
-export function useCreateMaterial(wsId: string) {
+export function useCreateMaterial(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (body: CreateMaterialReq) =>
       api.post<Material>(`/workspaces/${wsId}/materials`, body),
     onSuccess: (mt) => {
@@ -2672,10 +2673,11 @@ export function useCreateMaterial(wsId: string) {
 }
 
 /** A quiz in the workspace copied from picked bank questions, images and all
- * (Add quiz's From the bank). */
-export function useCreateBankQuiz(wsId: string) {
+ * (New quiz's From the bank). */
+export function useCreateBankQuiz(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: ({
       bank,
       ...body

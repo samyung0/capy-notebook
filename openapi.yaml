@@ -6614,6 +6614,8 @@ components:
           type: boolean
         name:
           type: string
+        onlyYou:
+          type: boolean
         parentMaterialId:
           type: string
         privacy:

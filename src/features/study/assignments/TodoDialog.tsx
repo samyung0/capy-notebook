@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
-import { useDeleteAssignment, useTodoTick } from '@/api/hooks';
+import { useDeleteAssignment } from '@/api/hooks';
 import type { Assignment, TodoWorkspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
@@ -22,7 +22,7 @@ import {
 } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { assignmentFileIcon, useOpenAssignment } from './todoParts';
-import { isPlainTask, isTicked, type TodoRow } from './todoRows';
+import { isPlainTask, type TodoRow } from './todoRows';
 
 /** A handed-in quiz's or hand-in's line: its mark (a graded Assignment's
  * grade) when it shows, else that it waits for marks, else that it is handed
@@ -383,56 +383,6 @@ export function TodoDialog({
         )}
       </div>
     </SimpleDialog>
-  );
-}
-
-/** A task its viewer set themself, opened inside its workspace (the Dashboard's
- * To do, a member's To do): To do's details, ticked here as the To do page
- * ticks. A plain task's tick is its done; a quiz's or a hand-in's asks first
- * and only clears To do, and a submitted one can't be unticked. */
-export function OwnTaskDetails({
-  onClose,
-  task,
-  workspace,
-}: {
-  onClose: () => void;
-  task: Assignment;
-  workspace: { iconId: string; id: string; name: string };
-}) {
-  const { mutate: tick } = useTodoTick();
-  const [asking, setAsking] = useState(false);
-  const plain = isPlainTask(task);
-  const ticked = isTicked(task);
-  const row = { a: task, approval: false, ticked };
-  const send = (checked: boolean) => {
-    tick([{ checked, id: task.id, task: plain, workspaceId: workspace.id }]);
-    onClose();
-  };
-  if (asking)
-    return (
-      <TodoCheckDialog
-        onClose={onClose}
-        onConfirm={() => send(true)}
-        rows={[row]}
-      />
-    );
-  return (
-    <TodoDialog
-      canTick={!task.closed && (plain || !task.mine?.done)}
-      onClose={onClose}
-      onTick={(checked) =>
-        checked && !plain ? setAsking(true) : send(checked)
-      }
-      row={row}
-      ticked={ticked}
-      workspace={{
-        iconId: workspace.iconId,
-        items: [],
-        manages: false,
-        name: workspace.name,
-        workspaceId: workspace.id,
-      }}
-    />
   );
 }
 

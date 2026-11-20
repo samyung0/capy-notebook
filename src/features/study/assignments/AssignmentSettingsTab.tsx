@@ -410,7 +410,7 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
               <PointsField
                 control={control}
                 error={errors.totalMarks?.message}
-                label={m.assignment_field_total_marks()}
+                label={m.assignment_field_points()}
                 name="totalMarks"
               />
             )}
@@ -461,7 +461,7 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
           {!!dueAt && (marked || gradedAssignment) && !noLate && (
             <div className="flex min-h-8 items-center justify-between gap-4">
               <InputTitle>{m.assignment_field_late_penalty()}</InputTitle>
-              <LatePenaltySelect className="w-37.5" control={control} />
+              <LatePenaltySelect control={control} layout="row" />
             </div>
           )}
         </div>

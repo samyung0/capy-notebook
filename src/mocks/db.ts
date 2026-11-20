@@ -3233,6 +3233,10 @@ export function mockSharePath(mt: Material): string | undefined {
 /** Every mock material belongs to the mock user. */
 export const mockAuthor = { avatarUrl: user.avatarUrl, name: user.name };
 
+/** A class member's own practice quizzes (Make my own practice in the member
+ * scenario): their quiz reads say Only you, as the server's do. */
+export const ownPractice = new Set<string>();
+
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): EditableQuiz {
   const { questions } =
@@ -3254,6 +3258,7 @@ export function quizFromMaterial(mt: Material): EditableQuiz {
     questions,
     revision: mt.revision,
     sharePath: mockSharePath(mt),
+    ...(ownPractice.has(mt.id) ? { onlyYou: true } : {}),
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
   };

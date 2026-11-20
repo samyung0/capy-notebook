@@ -2205,6 +2205,7 @@ func (s *Store) quizFromMaterial(mt Material) (Quiz, error) {
 		Topics: topics, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
 		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance, ParentMaterialID: mt.ParentMaterialID,
 		SharePath: materialSharePath(s.shareLinkSecret, string(mt.Kind), mt.ID, mt.WorkspaceID, mt.ParentMaterialID),
+		OnlyYou:   mt.PracticeWorkspaceID != "",
 		IsOwner:   mt.IsOwner, CanEdit: mt.Capabilities.CanEdit, CanEditContent: mt.Capabilities.CanEditContent,
 	}, nil
 }

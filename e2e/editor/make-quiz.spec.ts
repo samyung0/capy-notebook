@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { pickExtract } from '../helpers/makeQuiz';
 import { m } from '../i18n';
 
 // Make a quiz on the mock (one dialog from the files to the questions found, then the
@@ -59,6 +60,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await page
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
+  await pickExtract(page);
   await expect(
     dialog(page).getByRole('button', { name: m.action_continue() })
   ).toBeDisabled();
@@ -146,6 +148,7 @@ test("the browser's Back walks the dialog's steps", async ({ page }) => {
   await page
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
+  await pickExtract(page);
   await dialog(page)
     .getByRole('button', { name: m.file_choose() })
     .first()
@@ -292,6 +295,7 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
   await page
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
+  await pickExtract(page);
   await dialog(page)
     .getByRole('button', { name: m.file_choose() })
     .first()
@@ -497,6 +501,7 @@ for (const [name, width, height] of [
     await page.addStyleTag({
       content: '[data-testid=mock-scenario-panel] { display: none }',
     });
+    await pickExtract(page);
     await dialog(page)
       .getByRole('button', { name: m.file_choose() })
       .first()
@@ -542,6 +547,7 @@ test('the file menu scrolls with the wheel, names only a read file and greys out
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .first()
     .click({ timeout: 60_000 });
+  await pickExtract(page);
   await dialog(page).getByText(m.file_choose()).first().click();
   const list = page.locator(
     '[data-radix-popper-content-wrapper] .overflow-y-auto'

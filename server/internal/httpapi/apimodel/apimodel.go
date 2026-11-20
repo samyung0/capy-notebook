@@ -398,6 +398,8 @@ type Quiz struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
 	SharePath     string           `json:"sharePath,omitempty"`
+	// OnlyYou is a class member's own practice quiz, theirs alone.
+	OnlyYou bool `json:"onlyYou,omitempty"`
 	// Author is the owner a shared page shows; only the single-quiz read fills it.
 	Author *store.MaterialAuthor `json:"author,omitempty"`
 	// ParentMaterialID is the note a quiz is embedded in (a quick check).
@@ -419,7 +421,7 @@ func FromQuiz(q store.Quiz) Quiz {
 		Revision: q.Revision,
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Topics: q.Topics, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, SharePath: q.SharePath, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
+		Privacy: q.Privacy, SharePath: q.SharePath, OnlyYou: q.OnlyYou, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
 	if out.Topics == nil {

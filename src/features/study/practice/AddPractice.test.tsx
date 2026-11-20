@@ -1,14 +1,14 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
-import type { MakeQuizDialog } from '@/features/makeQuiz/MakeQuizDialog';
+import { shownToasts } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { AddPracticeDialog } from './AddPractice';
 
 vi.mock('@/api/hooks', () => ({
-  useCopyQuizToGradedQuiz: () => ({ isPending: false, mutate: vi.fn() }),
-  useCreateBankQuiz: () => ({ isPending: false, mutate: vi.fn() }),
-  useCreateMaterial: () => ({ isPending: false, mutate: vi.fn() }),
+  useCopyQuizToGradedQuiz: () => ({ mutateAsync: vi.fn() }),
+  useCreateBankQuiz: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useCreateMaterial: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useFiles: () => ({
     data: [
       {
@@ -20,7 +20,7 @@ vi.mock('@/api/hooks', () => ({
       },
     ],
   }),
-  useMakeFileGradedQuiz: () => ({ isPending: false, mutate: vi.fn() }),
+  useMakeFileGradedQuiz: () => ({ mutateAsync: vi.fn() }),
   useMaterials: () => ({ data: [] }),
   usePractice: () => ({
     data: { items: [{ id: 'qz1', kind: 'quiz', size: 12, title: 'Osmosis' }] },
@@ -28,24 +28,26 @@ vi.mock('@/api/hooks', () => ({
 }));
 // Outside a dialog here, where Cancel has nothing to close.
 vi.mock('@/components/ui/Dialog', () => ({ DialogCancel: () => null }));
-// Convert to quiz's own dialog: the tabs it is handed are what is under test.
+// Extract from file's own dialog: the ways it is handed, and what it calls
+// once a quiz is made, are what is under test.
+let onDone: ((quizId: string) => void) | undefined;
 vi.mock('@/features/makeQuiz/MakeQuizDialog', () => ({
-  MakeQuizDialog: ({
-    tabs,
-  }: {
+  MakeQuizDialog: (props: {
+    onDone: (quizId: string) => void;
     tabs: {
       other?: { body: ReactNode; footer: ReactNode };
-      strip: ReactNode;
       title: string;
     };
-  }) => (
-    <div data-files-tab={String(!tabs.other)}>
-      <h2>{tabs.title}</h2>
-      {tabs.strip}
-      {tabs.other?.body}
-      {tabs.other?.footer}
-    </div>
-  ),
+  }) => {
+    onDone = props.onDone;
+    return (
+      <div data-files-tab={String(!props.tabs.other)}>
+        <h2>{props.tabs.title}</h2>
+        {props.tabs.other?.body}
+        {props.tabs.other?.footer}
+      </div>
+    );
+  },
 }));
 vi.mock('./MakePractice', () => ({
   useMakePractice: () => ({
@@ -56,56 +58,93 @@ vi.mock('./MakePractice', () => ({
   }),
 }));
 
-const render = (graded?: ComponentProps<typeof AddPracticeDialog>['graded']) =>
+const render = (
+  graded?: ComponentProps<typeof AddPracticeDialog>['graded'],
+  paper: string[] = [],
+  onClose: () => void = () => undefined,
+  onOpenQuiz: (id: string) => void = () => undefined
+) =>
   renderToStaticMarkup(
     <AddPracticeDialog
       graded={graded}
       make={
         {
-          initial: { answers: [], paper: [] },
-          onClose: () => undefined,
+          initial: { answers: [], paper },
+          onClose,
           step: 'files',
           workspaceId: 'ws',
           workspaceName: 'Biology 101',
-        } as unknown as ComponentProps<typeof MakeQuizDialog>
+        } as unknown as ComponentProps<typeof AddPracticeDialog>['make']
       }
-      onOpenQuiz={() => undefined}
+      onOpenQuiz={onOpenQuiz}
     />
   );
 
-// Epo 2026-11-14: Add quiz opens on Convert to quiz, its first tab; Create
-// blank comes last (Epo 2026-11-16).
-it('opens Add quiz on Convert to quiz, the first of its four tabs', () => {
+// Each text's place in the markup: all there, in this order.
+const inOrder = (html: string, texts: string[]) => {
+  const at = texts.map((text) => html.indexOf(text));
+  return (
+    !at.includes(-1) && at.every((index, i) => i === 0 || index > at[i - 1])
+  );
+};
+
+// Epo 2026-11-20, board B: New quiz (was Add quiz) opens on its four ways as
+// cards, Extract from file (was Convert to quiz) first and Create blank last
+// (Epo 2026-11-16), each saying what it does.
+it('opens New quiz on its four ways, each with what it does', () => {
   const html = render();
-  expect(html).toContain(m.practice_add_quiz());
-  const at = [
-    m.practice_tab_convert(),
-    m.practice_tab_generate(),
-    m.practice_tab_bank(),
-    m.practice_tab_create(),
-  ].map((tab) => html.indexOf(tab));
-  expect(at.every((index) => index >= 0)).toBe(true);
-  expect(at).toEqual([...at].sort((a, b) => a - b));
-  expect(html).toContain('data-files-tab="true"');
+  expect(html).toContain(m.practice_new_quiz());
+  expect(html).toContain('data-files-tab="false"');
+  expect(
+    inOrder(html, [
+      m.practice_tab_convert(),
+      m.practice_way_convert(),
+      m.practice_tab_generate(),
+      m.practice_way_generate(),
+      m.practice_tab_bank(),
+      m.practice_way_bank(),
+      m.practice_tab_create(),
+      m.practice_way_create(),
+    ])
+  ).toBe(true);
 });
 
-// Epo 2026-11-16: New graded quiz's Questions step starts on Existing file,
-// a quiz or (2026-11-20) a file the workspace already has, ahead of the four
-// ways to make one.
-it("opens New graded quiz's Questions on Existing file, listing the workspace's quizzes and files", () => {
+// Epo 2026-11-16: New graded quiz may start from Existing file, a quiz or
+// (2026-11-20) a file the workspace already has, ahead of the four ways to
+// make one; Settings come after the pick (2026-11-20).
+it('opens New graded quiz on its five ways, Existing file first', () => {
   const html = render({
-    form: {} as never,
-    onBack: () => undefined,
     onMade: () => undefined,
+    onNext: () => undefined,
     title: 'New graded quiz',
   });
-  const at = [
-    m.assignment_tab_existing(),
-    m.practice_tab_convert(),
-    m.practice_tab_create(),
-  ].map((tab) => html.indexOf(tab));
-  expect(at).toEqual([...at].sort((a, b) => a - b));
-  expect(html).toContain('data-files-tab="false"');
-  expect(html).toContain('Osmosis');
-  expect(html).toContain('Mock paper.pdf');
+  expect(html).toContain('<h2>New graded quiz</h2>');
+  expect(
+    inOrder(html, [
+      m.assignment_tab_existing(),
+      m.practice_way_existing(),
+      m.practice_tab_convert(),
+      m.practice_tab_create(),
+    ])
+  ).toBe(true);
+});
+
+// A link or reload with a paper picked is Extract from file's.
+it('opens on Extract from file when the address has files picked', () => {
+  const html = render(undefined, ['f1']);
+  expect(html).toContain('data-files-tab="true"');
+  expect(html).toContain(`<h2>${m.practice_tab_convert()}</h2>`);
+});
+
+// Epo 2026-11-20: a quiz made closes the dialog, and its toast opens it.
+it('closes once a quiz is made, its toast opening it', () => {
+  const onClose = vi.fn();
+  const onOpenQuiz = vi.fn();
+  render(undefined, [], onClose, onOpenQuiz);
+  onDone?.('qz9');
+  expect(onClose).toHaveBeenCalled();
+  const toast = shownToasts().other;
+  expect(toast?.title).toBe(m.practice_quiz_created());
+  toast?.button?.onClick();
+  expect(onOpenQuiz).toHaveBeenCalledWith('qz9');
 });

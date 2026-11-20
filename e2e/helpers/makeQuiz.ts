@@ -55,8 +55,16 @@ export const sentRuns = (page: Page) =>
         .capyQuizRunRequests
   );
 
-/** Upload a file, from the files step's first menu. */
+/** New quiz opens on its ways (Epo 2026-11-20, board B): pick Extract from
+ * file's card for its files step. */
+export const pickExtract = (page: Page) =>
+  quizDialog(page)
+    .getByRole('button', { name: m.practice_tab_convert() })
+    .click({ timeout: 30_000 });
+
+/** Upload a file, from Extract from file's first menu. */
 export async function uploadPaper(page: Page, name: string, buffer: Buffer) {
+  await pickExtract(page);
   await quizDialog(page)
     .getByRole('button', { name: m.file_choose() })
     .first()
@@ -189,7 +197,7 @@ export function expectRealPages(drawn: DrawnSheet[], format: 'docx' | 'pptx') {
   expect(new Set(drawn.map((page) => page.base64)).size).toBe(drawn.length);
 }
 
-/** Selects `number` alone and presses Convert to quiz: the sheet says it is picked,
+/** Selects `number` alone and presses Extract from file: the sheet says it is picked,
  * the bar counts one, and Extract waits for nothing. Answers the run's id. */
 export async function extractPage(page: Page, number: number) {
   await pageSheet(page, number).click();

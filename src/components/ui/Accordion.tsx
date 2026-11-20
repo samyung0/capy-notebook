@@ -5,7 +5,9 @@ import { cn } from '@/lib/cn';
 /** The app's accordion (Epo 2026-11-04, first New assignment's Advanced): a
  * chevron and its label toggle a panel that stays mounted, so it animates
  * both ways, and is inert while closed. `className` styles the toggle (the
- * Grading tab's member rows run full width). */
+ * Grading tab's member rows run full width). Opening or closing never scrolls
+ * anything (Epo 2026-11-20): what it opens below the fold is scrolled to by
+ * hand, and a scroller that holds one at its foot keeps bottom padding. */
 export function Accordion({
   children,
   className,
@@ -40,19 +42,7 @@ export function Accordion({
         />
         {label}
       </button>
-      <div
-        className="motion-accordion"
-        data-open={open}
-        inert={!open}
-        // It opens at the dialog's foot, which on a phone is below the fold.
-        onTransitionEnd={(event) => {
-          if (open && event.propertyName === 'grid-template-rows')
-            event.currentTarget.scrollIntoView({
-              behavior: 'smooth',
-              block: 'nearest',
-            });
-        }}
-      >
+      <div className="motion-accordion" data-open={open} inert={!open}>
         {/* The child clips, so it keeps room for the controls' focus rings; the
             rows pad inside it, since padding can't collapse. */}
         <div className="-mx-1 px-1">

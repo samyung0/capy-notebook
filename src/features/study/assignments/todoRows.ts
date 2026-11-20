@@ -60,6 +60,8 @@ const compareRows = (sort: TodoView['sort'], ascending: boolean) => {
   return (x: Assignment, y: Assignment) => {
     if (sort === 'title')
       return dir * x.title.localeCompare(y.title, undefined, { numeric: true });
+    if (sort === 'posted')
+      return dir * (Date.parse(x.postedAt) - Date.parse(y.postedAt));
     const a = dueKey(x);
     const b = dueKey(y);
     if (a === b) return 0;
@@ -73,8 +75,9 @@ const typeOf = (a: Assignment): TodoType =>
 
 /** The To do tab's classes (Epo 2026-11-10, board K): answers waiting first,
  * then the open rows, in the sort's order. What's done or ticked off has moved
- * to Done, closed or not (done for them is done). By due, classes with answers
- * waiting come first, then the one due soonest; by To do, classes go by name.
+ * to Done, closed or not (done for them is done). By Posted or Due, classes
+ * with answers waiting come first, then the one whose first row leads (newest
+ * posted, due soonest); by To do, classes go by name.
  * The tasks with no workspace (an empty id, Epo 2026-11-11) stay first. */
 export function todoSections(
   workspaces: TodoWorkspace[],

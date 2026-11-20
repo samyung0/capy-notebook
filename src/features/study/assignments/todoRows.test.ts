@@ -157,6 +157,22 @@ it('sorts rows by title, and classes by name', () => {
   expect(rowIds(reversed[0])).toEqual(['b', 'a']);
 });
 
+// Epo 2026-11-20: To do starts newest posted first.
+it('sorts rows by posted date, and classes by their newest', () => {
+  const posted = (id: string, day: number) =>
+    row(id, { postedAt: `2026-11-${String(day).padStart(2, '0')}T09:00:00Z` });
+  const classes = [
+    workspace('Art', [posted('old', 2)]),
+    workspace('Biology', [posted('mid', 10), posted('new', 18)]),
+  ];
+  const sections = todoSections(
+    classes,
+    view({ ascending: false, sort: 'posted' })
+  );
+  expect(ids(sections)).toEqual(['Biology', 'Art']);
+  expect(rowIds(sections[0])).toEqual(['new', 'mid']);
+});
+
 it('keeps the tasks with no workspace first under either sort', () => {
   const classes = [
     workspace('Art', [row('a', { dueAt: '2026-11-01T00:00:00Z', title: 'A' })]),

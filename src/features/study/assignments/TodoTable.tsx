@@ -7,21 +7,17 @@ import {
 } from 'react';
 import { useHideTodoDone, useTodoTick } from '@/api/hooks';
 import type { Assignment } from '@/api/types';
-import {
-  ariaSort,
-  type ColumnSort,
-  SortHeader,
-  sortDirection,
-} from '@/components/app/SortHeader';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { useIsPhone } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import type { TodoSort } from '@/lib/listSearch';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { Th } from '../practice/studyPage';
 import { dateLabel, dueText } from './assignmentText';
 import {
   handedInText,
@@ -134,41 +130,6 @@ function RowTitle({ row }: { row: TodoRow }) {
     );
   if (a.kind === 'marked') return chip;
   return <span className="min-w-0 truncate">{a.title}</span>;
-}
-
-function HeaderCell<S extends string>({
-  className,
-  icon,
-  label,
-  sort,
-  sorting,
-}: {
-  className?: string;
-  icon: IconName;
-  label: string;
-  sort?: S;
-  sorting: ColumnSort<S>;
-}) {
-  return (
-    <th
-      aria-sort={sort ? ariaSort(sortDirection(sorting, sort)) : undefined}
-      className={cn(
-        // py-2.5 as Billing's and Files' tables.
-        't-meta whitespace-nowrap py-2.5 pr-4 font-medium text-fg-muted',
-        className
-      )}
-    >
-      {/* A block like the select-all box beside it, so both centre alike. */}
-      <span className="flex items-center gap-1.5">
-        <Icon className="shrink-0 -translate-y-px" name={icon} size={18} />
-        {sort ? (
-          <SortHeader fit label={label} sorting={sorting} value={sort} />
-        ) : (
-          label
-        )}
-      </span>
-    </th>
-  );
 }
 
 const needsAsking = (row: TodoRow) => row.approval || !isPlainTask(row.a);
@@ -325,14 +286,14 @@ export function TodoTable({
   ticks: TodoTicks;
 }) {
   const phone = useIsPhone();
-  // Narrower than the table's 560px (the Dashboard beside an open panel):
+  // Narrower than the table's 680px (the Dashboard beside an open panel):
   // the stacked rows instead of a table that scrolls sideways.
   const box = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const measure = () => setNarrow(el.clientWidth < 560);
+    const measure = () => setNarrow(el.clientWidth < 680);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -342,7 +303,7 @@ export function TodoTable({
   // Posted by from xl only, so the titles keep their room on a laptop; a
   // rendered column, not a hidden one, so the group rows' span matches.
   const wide = useMediaQuery('(min-width: 1280px)');
-  const columns = wide ? 5 : 4;
+  const columns = wide ? 6 : 5;
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const [opened, setOpened] = useState<string | null>(null);
   const rows = sections.flatMap((s) =>
@@ -529,10 +490,12 @@ export function TodoTable({
   return (
     <div ref={box}>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] table-fixed text-left text-sm">
+        <table className="w-full min-w-[680px] table-fixed text-left text-sm">
           <thead>
-            <tr className="border-divider border-b">
-              <th className="w-9 py-2.5 pr-2 pl-1">
+            {/* The Study pages' header cells (Epo 2026-11-20: no icons,
+                styled as Assignments'), in by the cells' own padding. */}
+            <tr>
+              <th className="w-9 border-divider border-b py-1.5 pr-2 pl-1">
                 <span className="flex">
                   <Checkbox
                     aria-label={m.files_select_all()}
@@ -544,33 +507,30 @@ export function TodoTable({
                   />
                 </span>
               </th>
-              <HeaderCell
-                icon="list"
-                label={m.todo_col_todo()}
-                sort={doneTab ? undefined : ('title' as const)}
-                sorting={sorting}
-              />
+              <Th
+                className="pr-4 pl-0"
+                sort={doneTab ? undefined : { sorting, value: 'title' }}
+              >
+                {m.todo_col_todo()}
+              </Th>
               {wide && (
-                <HeaderCell
-                  className="w-40"
-                  icon="profile"
-                  label={m.todo_fact_posted()}
-                  sorting={sorting}
-                />
+                <Th className="w-40 pr-4 pl-0">{m.todo_fact_posted()}</Th>
               )}
-              <HeaderCell
-                className="w-44"
-                icon="info"
-                label={m.todo_col_details()}
-                sorting={sorting}
-              />
-              <HeaderCell
-                className="w-36 pr-1"
-                icon="schedule"
-                label={doneTab ? m.todo_col_done_on() : m.todo_col_due()}
-                sort={doneTab ? ('done' as const) : ('due' as const)}
-                sorting={sorting}
-              />
+              <Th className="w-44 pr-4 pl-0">{m.todo_col_details()}</Th>
+              {/* When it went out (Epo 2026-11-20), the To do tab's first
+                  sort, newest first. */}
+              <Th
+                className="w-32 pr-4 pl-0"
+                sort={doneTab ? undefined : { sorting, value: 'posted' }}
+              >
+                {m.assignment_col_posted()}
+              </Th>
+              <Th
+                className="w-36 pr-1 pl-0"
+                sort={{ sorting, value: doneTab ? 'done' : 'due' }}
+              >
+                {doneTab ? m.todo_col_done_on() : m.todo_col_due()}
+              </Th>
             </tr>
           </thead>
           <tbody>
@@ -618,6 +578,11 @@ export function TodoTable({
                         )}
                         <td className="py-2 pr-4">
                           <Details doneTab={doneTab} row={row} />
+                        </td>
+                        <td className="whitespace-nowrap py-2 pr-4">
+                          <span className="t-meta">
+                            {dateLabel(row.a.postedAt)}
+                          </span>
                         </td>
                         <td className="whitespace-nowrap py-2 pr-1">
                           <DueCell a={row.a} doneTab={doneTab} />

@@ -12,7 +12,7 @@ import {
   EXTRACTION_PAGES_MAX,
   EXTRACTION_QUESTION_CREDITS,
 } from '@/api/limits.generated';
-import type { AssignmentFormReq, SourceFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { useIsPhone } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -21,9 +21,10 @@ import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 
 import { useOfficeRuntime } from '@/features/files/useOfficeRuntime';
+import type { GradedSource } from '@/features/study/assignments/gradedSource';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy, unexpectedErrorId } from '@/lib/errors';
+import { CopyError, errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import { type DrawnPage, drawnPage } from './drawnPages';
 import {
@@ -446,19 +447,17 @@ export function usePageStep({
   active,
   answers,
   file,
-  graded,
   hidden,
   onCancel,
   onChangeFiles,
   onFile,
+  onNext,
   onStarted,
   paper,
   workspaceId,
 }: {
   active: boolean;
   answers: string[];
-  /** A graded quiz's settings: the run makes it with its quiz. */
-  graded?: AssignmentFormReq;
   /** The files step's switch: the quiz starts hidden from members. */
   hidden: boolean;
   /** The file on show, from the address; a phone's list when there is none. */
@@ -467,6 +466,9 @@ export function usePageStep({
   /** Back to the files, with what was chosen and picked. */
   onChangeFiles: () => void;
   onFile: (fileId: string | undefined) => void;
+  /** New graded quiz's: the pages picked go on to its Settings, whose Create
+   * starts the run that makes the graded quiz with its quiz. */
+  onNext?: (source: GradedSource) => void;
   onStarted: (runId: string) => void;
   paper: string[];
   workspaceId: string;
@@ -476,7 +478,12 @@ export function usePageStep({
   const { data: materials } = useMaterials(workspaceId, {
     errorBoundary: false,
   });
-  const { mutate: start, isPending, error } = useCreateExtraction(workspaceId);
+  const {
+    error,
+    isPending,
+    mutate: start,
+    mutateAsync: startAsync,
+  } = useCreateExtraction(workspaceId);
   const chosen = [...paper, ...answers];
   const chosenKey = chosen.join(',');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -795,31 +802,40 @@ export function usePageStep({
                     first.name,
                     (materials ?? []).map((row) => row.title)
                   );
-                  start(
-                    {
-                      ...extractionRequest(
-                        title,
-                        paperFiles.map((row) => row.id),
-                        answerFiles.map((row) => row.id),
-                        selected,
-                        hidden,
-                        drawn
-                      ),
-                      // An untitled graded quiz is named after its quiz.
-                      ...(graded && {
-                        gradedQuiz: { ...graded, title: graded.title || title },
-                      }),
-                    },
-                    { onSuccess: (run) => onStarted(run.id) }
+                  const request = extractionRequest(
+                    title,
+                    paperFiles.map((row) => row.id),
+                    answerFiles.map((row) => row.id),
+                    selected,
+                    hidden,
+                    drawn
                   );
+                  if (!onNext) {
+                    start(request, { onSuccess: (run) => onStarted(run.id) });
+                    return;
+                  }
+                  // Its questions are read before the graded quiz goes out.
+                  onNext({
+                    draft: true,
+                    name: title,
+                    send: (gradedQuiz) =>
+                      startAsync({ ...request, gradedQuiz }).then(
+                        (run) => onStarted(run.id),
+                        (failed: unknown) => {
+                          throw new CopyError(
+                            extractionRefusal(failed) ??
+                              errorCopy(failed, m.source_try_again())
+                          );
+                        }
+                      ),
+                  });
                 }}
                 type="button"
               >
                 {isPending ? (
                   <Spinner />
-                ) : graded ? (
-                  // Its questions are read before the graded quiz goes out.
-                  m.assignment_create_draft()
+                ) : onNext ? (
+                  m.action_next()
                 ) : (
                   m.make_quiz_extract()
                 )}

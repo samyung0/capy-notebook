@@ -1,10 +1,9 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { useQuiz } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import type { LearnerQuestion, Question } from '@/features/questions/types';
 import { type Answers, emptyAnswer } from '@/features/quizzes/grade';
-import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
+import { useQuizFileQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizSplit } from '@/features/quizzes/QuizSplit';
 import { m } from '@/i18n';
 import { answered, TAKE_PANE, TakeQuestion } from './AssignmentTake';
@@ -156,17 +155,7 @@ export function AssignmentPreview({
 const NONE: LearnerQuestion[] = [];
 
 /** A quiz file as members would get it (a draft's on Publish, a practice
- * quiz's on Study), read as the quiz page reads it (the stored questions,
- * then the live room's), and only the questions with answers, which
- * publishing freezes (D4). */
+ * quiz's on Study). */
 export function QuizFilePreview({ quizId }: { quizId: string }) {
-  const { data } = useQuiz(quizId, { errorBoundary: false, fresh: true });
-  const stored = data?.questions ?? NONE;
-  const live = useLiveQuizQuestions(quizId, stored, !!data);
-  const kept = new Set(stored.map((question) => question.id));
-  return (
-    <AssignmentPreview
-      questions={live.filter((question) => kept.has(question.id))}
-    />
-  );
+  return <AssignmentPreview questions={useQuizFileQuestions(quizId) ?? NONE} />;
 }

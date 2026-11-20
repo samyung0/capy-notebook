@@ -544,9 +544,11 @@ unchanged.
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
 - **Every quiz an editor makes starts hidden** (Epo 2026-11-16): an owner or
-  editor shows it to members from its Hidden chip or ⋮ menu when it is ready.
+  editor shows it to members from its Hidden chip or ⋮ menu when it is ready
+  (the first hidden quiz opened on a browser points at the chip in a callout,
+  [appearance](frontend/appearance.md)).
   Generate (`huma_generate.go`, an editor's quiz), Create quiz (`createQuiz`
-  and `createMaterial` with kind quiz), From the bank (`CreateQuizFromBank`,
+  and `createMaterial` with kind quiz), From question bank (`CreateQuizFromBank`,
   `bankCopyToNewQuiz`) and the chat agent's quiz (`internal_materials.go`, in a
   workspace) insert it with `hidden`; a viewer's own practice quiz is a
   standalone material nobody else reaches, and a quiz embedded in a note

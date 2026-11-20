@@ -45,6 +45,8 @@ import {
   FileSearchMenu,
   RemoveFileButton,
 } from '@/features/files/FileSearchMenu';
+import { questionMarks } from '@/features/questions/types';
+import { useQuizFileQuestions } from '@/features/quizzes/liveQuizReads';
 import { matchesSearch } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -542,7 +544,8 @@ type Controlled = { control: Control<AssignmentFormReq> };
 
 /** A whole number of marks: a class's Assignment's Points (Epo 2026-11-14,
  * board Task), empty is not graded, staff then grading each member out of
- * them; or a graded quiz from a file's Total marks (Epo 2026-11-20). */
+ * them; or a graded quiz from a file's, the total it is marked out of (Epo
+ * 2026-11-20). */
 export function PointsField({
   control,
   error,
@@ -576,6 +579,26 @@ export function PointsField({
             value={field.value ?? ''}
           />
         )}
+      />
+    </Field>
+  );
+}
+
+/** A quiz copied into a graded quiz: its Points are its questions' marks as
+ * members would get them, fixed (Epo 2026-11-20). Empty while it loads. */
+export function QuizPointsField({ quizId }: { quizId: string }) {
+  const questions = useQuizFileQuestions(quizId);
+  const total = questions?.reduce(
+    (sum, question) => sum + questionMarks(question),
+    0
+  );
+  return (
+    <Field label={m.assignment_field_points()}>
+      <Input
+        aria-label={m.assignment_field_points()}
+        disabled
+        readOnly
+        value={total ?? ''}
       />
     </Field>
   );
@@ -710,9 +733,12 @@ export function SubmissionSelect({
 
 /** When members see their grades (C4). */
 export function GradesSelect({
-  className,
   control,
-}: Controlled & { className?: string }) {
+  layout,
+}: Controlled & {
+  /** At the end of a row, the shared row width (as the Settings page's). */
+  layout?: 'row';
+}) {
   return (
     <Controller
       control={control}
@@ -721,7 +747,7 @@ export function GradesSelect({
         <Select onValueChange={field.onChange} value={field.value}>
           <SelectTrigger
             aria-label={m.assignment_field_grades()}
-            className={className}
+            layout={layout}
           >
             <SelectValue />
           </SelectTrigger>
@@ -740,14 +766,23 @@ export function GradesSelect({
 }
 
 /** When members see the answers (C3). */
-export function AnswersSelect({ control }: Controlled) {
+export function AnswersSelect({
+  control,
+  layout,
+}: Controlled & {
+  /** At the end of a row, the shared row width (as the Settings page's). */
+  layout?: 'row';
+}) {
   return (
     <Controller
       control={control}
       name="showAnswers"
       render={({ field }) => (
         <Select onValueChange={field.onChange} value={field.value}>
-          <SelectTrigger aria-label={m.assignment_field_answers()}>
+          <SelectTrigger
+            aria-label={m.assignment_field_answers()}
+            layout={layout}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -768,9 +803,12 @@ export function AnswersSelect({ control }: Controlled) {
 }
 
 export function LatePenaltySelect({
-  className,
   control,
-}: Controlled & { className?: string }) {
+  layout,
+}: Controlled & {
+  /** At the end of a row, the shared row width (as the Settings page's). */
+  layout?: 'row';
+}) {
   return (
     <Controller
       control={control}
@@ -782,7 +820,7 @@ export function LatePenaltySelect({
         >
           <SelectTrigger
             aria-label={m.assignment_field_late_penalty()}
-            className={className}
+            layout={layout}
           >
             <SelectValue />
           </SelectTrigger>

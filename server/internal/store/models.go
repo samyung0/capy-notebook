@@ -308,6 +308,9 @@ type Quiz struct {
 	Hidden bool `json:"-"`
 	// SharePath is the signed share link of a standalone quiz.
 	SharePath string `json:"sharePath,omitempty"`
+	// OnlyYou is a class member's own practice quiz (Make my own practice),
+	// which only they can reach: its attempt page says so (Epo 2026-11-20).
+	OnlyYou bool `json:"onlyYou,omitempty"`
 	// ParentMaterialID is the note a quiz is embedded in (a quick check).
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	// Provenance is the source material's attribution record; the attempt page

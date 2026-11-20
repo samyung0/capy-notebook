@@ -869,6 +869,113 @@ function payersRead(id: string) {
   };
 }
 
+/** Generate quiz. `own`: a class member's Make my own practice, which the
+ * server makes their own standalone quiz, linked to the workspace and theirs
+ * alone (the member scenario's). */
+export const generateHandler = (own: boolean) =>
+  http.post('/api/workspaces/:id/generate', async ({ params, request }) => {
+    await delay(900);
+    const opts = (await request.json()) as GenerateOptions;
+    const wsId = String(params.id);
+    const ws = db.workspaces.find((w) => w.id === wsId);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    const { count } = opts;
+    if (!count || !opts.types?.length) {
+      return HttpResponse.json(
+        { message: 'count and types are required' },
+        { status: 400 }
+      );
+    }
+    const unknownFile = (opts.fileIds ?? []).find(
+      (id) =>
+        !db.files.some((file) => file.id === id && file.workspaceId === wsId)
+    );
+    if (unknownFile) {
+      return HttpResponse.json(
+        { message: `unknown file id "${unknownFile}"` },
+        { status: 400 }
+      );
+    }
+    const unknownTopic = (opts.topics ?? []).find(
+      (id) => !db.topics.some((ch) => ch.id === id && ch.workspaceId === wsId)
+    );
+    if (unknownTopic) {
+      return HttpResponse.json(
+        { message: `unknown topic id "${unknownTopic}"` },
+        { status: 400 }
+      );
+    }
+    const wsName = ws.name;
+    const topics = opts.topics ?? [];
+    const fileIds = opts.fileIds ?? [];
+    const scopeTopicNames = topics
+      .map((cid) => db.topics.find((c) => c.id === cid)?.name)
+      .filter(Boolean) as string[];
+    const selectedFileIds = new Set(fileIds);
+    for (const topicId of topics) {
+      const topic = db.topics.find((item) => item.id === topicId);
+      for (const fileId of topic?.fileIds ?? []) selectedFileIds.add(fileId);
+    }
+    const scopeFileNames = [...selectedFileIds]
+      .map((fid) => db.files.find((f) => f.id === fid)?.name)
+      .filter(Boolean) as string[];
+    const title = opts.title?.trim() ?? '';
+    if (!title) {
+      return HttpResponse.json(
+        { message: 'title is required' },
+        { status: 400 }
+      );
+    }
+    if ([...title].length > createMaterialBodyTitleMax) {
+      return HttpResponse.json(
+        { message: 'validation failed' },
+        { status: 422 }
+      );
+    }
+
+    const qs: Question[] = Array.from({ length: count }, (_, i) => {
+      const type = opts.types[i % opts.types.length];
+      const answer = structuredClone(
+        exampleAnswers.find((answer) => answer.type === type)!
+      );
+      const question = exampleQuestion(crypto.randomUUID(), answer);
+      question.parts[0].blocks = [
+        { text: `Generated ${type} question ${i + 1}?`, type: 'text' },
+      ];
+      return question;
+    });
+    const name = numberedTitle(wsId, title);
+    const quizMat = db.makeMaterial({
+      ...ownerMaterialAccess,
+      content: quizDocument(qs),
+      createdAt: new Date().toISOString(),
+      // An editor's quiz starts hidden from members, as the server makes it;
+      // a member's own practice is in no workspace, theirs alone.
+      hidden: !own,
+      id: uid('qz'),
+      kind: 'quiz',
+      privacy: 'private',
+      scopeFileNames,
+      scopeTopics: scopeTopicNames,
+      title: name,
+      topicId: null,
+      workspaceId: own ? '' : wsId,
+      workspaceName: own ? '' : wsName,
+    });
+    db.materials.unshift(quizMat);
+    if (own) db.ownPractice.add(quizMat.id);
+    if (opts.gradedQuiz)
+      quizMat.assignmentId = addMockGradedQuiz(
+        wsId,
+        opts.gradedQuiz,
+        quizMat.id
+      );
+    return HttpResponse.json({
+      assignmentId: quizMat.assignmentId,
+      quiz: db.quizFromMaterial(quizMat),
+    });
+  });
+
 export const handlers = [
   http.post('/api/materials/:id/collaboration-token', deletedAnswer),
   http.get('/api/materials/:id', deletedAnswer),
@@ -3276,106 +3383,7 @@ export const handlers = [
       text: body.before?.trim() ? 'with a natural continuation.' : '',
     });
   }),
-  http.post('/api/workspaces/:id/generate', async ({ params, request }) => {
-    await delay(900);
-    const opts = (await request.json()) as GenerateOptions;
-    const wsId = String(params.id);
-    const ws = db.workspaces.find((w) => w.id === wsId);
-    if (!ws) return new HttpResponse(null, { status: 404 });
-    const { count } = opts;
-    if (!count || !opts.types?.length) {
-      return HttpResponse.json(
-        { message: 'count and types are required' },
-        { status: 400 }
-      );
-    }
-    const unknownFile = (opts.fileIds ?? []).find(
-      (id) =>
-        !db.files.some((file) => file.id === id && file.workspaceId === wsId)
-    );
-    if (unknownFile) {
-      return HttpResponse.json(
-        { message: `unknown file id "${unknownFile}"` },
-        { status: 400 }
-      );
-    }
-    const unknownTopic = (opts.topics ?? []).find(
-      (id) => !db.topics.some((ch) => ch.id === id && ch.workspaceId === wsId)
-    );
-    if (unknownTopic) {
-      return HttpResponse.json(
-        { message: `unknown topic id "${unknownTopic}"` },
-        { status: 400 }
-      );
-    }
-    const wsName = ws.name;
-    const topics = opts.topics ?? [];
-    const fileIds = opts.fileIds ?? [];
-    const scopeTopicNames = topics
-      .map((cid) => db.topics.find((c) => c.id === cid)?.name)
-      .filter(Boolean) as string[];
-    const selectedFileIds = new Set(fileIds);
-    for (const topicId of topics) {
-      const topic = db.topics.find((item) => item.id === topicId);
-      for (const fileId of topic?.fileIds ?? []) selectedFileIds.add(fileId);
-    }
-    const scopeFileNames = [...selectedFileIds]
-      .map((fid) => db.files.find((f) => f.id === fid)?.name)
-      .filter(Boolean) as string[];
-    const title = opts.title?.trim() ?? '';
-    if (!title) {
-      return HttpResponse.json(
-        { message: 'title is required' },
-        { status: 400 }
-      );
-    }
-    if ([...title].length > createMaterialBodyTitleMax) {
-      return HttpResponse.json(
-        { message: 'validation failed' },
-        { status: 422 }
-      );
-    }
-
-    const qs: Question[] = Array.from({ length: count }, (_, i) => {
-      const type = opts.types[i % opts.types.length];
-      const answer = structuredClone(
-        exampleAnswers.find((answer) => answer.type === type)!
-      );
-      const question = exampleQuestion(crypto.randomUUID(), answer);
-      question.parts[0].blocks = [
-        { text: `Generated ${type} question ${i + 1}?`, type: 'text' },
-      ];
-      return question;
-    });
-    const name = numberedTitle(wsId, title);
-    const quizMat = db.makeMaterial({
-      ...ownerMaterialAccess,
-      content: quizDocument(qs),
-      createdAt: new Date().toISOString(),
-      // An editor's quiz starts hidden from members, as the server makes it.
-      hidden: true,
-      id: uid('qz'),
-      kind: 'quiz',
-      privacy: 'private',
-      scopeFileNames,
-      scopeTopics: scopeTopicNames,
-      title: name,
-      topicId: null,
-      workspaceId: wsId,
-      workspaceName: wsName,
-    });
-    db.materials.unshift(quizMat);
-    if (opts.gradedQuiz)
-      quizMat.assignmentId = addMockGradedQuiz(
-        wsId,
-        opts.gradedQuiz,
-        quizMat.id
-      );
-    return HttpResponse.json({
-      assignmentId: quizMat.assignmentId,
-      quiz: db.quizFromMaterial(quizMat),
-    });
-  }),
+  generateHandler(false),
   /* ---------------- quizzes & attempts ---------------- */
   http.post('/api/quizzes', async ({ request }) => {
     const body = (await request.json()) as Partial<EditableQuiz>;

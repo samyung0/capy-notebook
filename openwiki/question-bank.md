@@ -508,8 +508,9 @@ names it (see [agentic-retrieval.md](agentic-retrieval.md), Make a quiz, and
 
 `src/features/makeQuiz`, for those who may edit the workspace (a viewer's `?make=`
 link shows the Dashboard). The Dashboard's Make a quiz and Study's Add practice open
-it as Add quiz (Epo 2026-11-14): its files step is the Convert to quiz tab, first and
-open by default, beside Generate quiz, From the bank and Create blank (`tabs`, [study
+it as New quiz (Epo 2026-11-14, Add quiz until 2026-11-20): its files step is the Extract from file way (Convert to
+quiz until Epo 2026-11-20), the first of the cards New quiz opens on (Epo 2026-11-20),
+beside Generate quiz, From question bank and Create blank (`tabs`, [study
 progress](study-progress.md)); a new assignment's Make a quiz from a file opens it
 alone. The files step's footer holds a switch, Hide the quiz (Epo
 2026-11-11), on by default wherever the dialog opens (Epo 2026-11-16; it was off from
@@ -574,7 +575,7 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   image file picks pages, answer files too; an image is picked already, and a text file goes
   whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
   the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
-  Change files, Cancel (not on phones) and Convert to quiz (Extract questions until Epo 2026-11-11), and sticks on phones. Change
+  Change files, Cancel (not on phones) and Extract from file (Extract questions until Epo 2026-11-11, then Convert to quiz until 2026-11-20; Next in New graded quiz), and sticks on phones. Change
   files goes back and keeps the picks of files left in. Extract waits for answer files still
   reading, an answer file with no page picked and Word or PowerPoint pages still drawing. One
   that failed after the dialog says so in the list and doesn't hold the run. A refusal shows
@@ -1112,7 +1113,7 @@ My bank, is left out (the list too once empty), as a quiz question's is
 ignored. The list shows a coloured badge per topic, in the class's topic
 order, before the plain tags (column Topic and tags, `TopicAndTags`), and
 `topics=` (comma-separated ids) keeps questions carrying any of them. The bank page
-(class bank and My bank) and From the bank have one Filter button at every
+(class bank and My bank) and From question bank have one Filter button at every
 width, as Practice's (Epo 2026-11-15, `BankFilter` in `TopicAndTags.tsx`): a
 Topic group in a class bank whose class has topics, then a Tags group, still
 sent as `topics=` and `tags=`. The bank dialog
@@ -1137,13 +1138,18 @@ offering the bank's tags from `GET …/tags`, the generated tag validators),
 saved with the question in one create or `PUT /api/item-banks/{bank}/questions/{id}`.
 Other callers (/qb, Make a quiz's list) show no Tags.
 
-Questions go out through Add quiz's **From the bank** tab (`BankPicker.tsx`,
-for Study's Add practice and a graded quiz's Questions step, which sends the
+Questions go out through New quiz's **From question bank** way (From the bank until Epo
+2026-11-20; `BankPicker.tsx`, for Study's Add practice and New graded quiz's first step,
+whose Settings sends the
 graded quiz's settings with the picks, Epo 2026-11-16): a switch between
 the banks the caller may use there (`GET /api/item-banks?workspaceId=`; My bank
 alone shows no switch; its options say the class's name and Personal, without
 "bank", Epo 2026-11-16), Search, Filter, Select all N (loads every page of the
-filter first) and a box per question with its text, types, marks and tags. Picks
+filter first) and a box per question with its text, types, marks and tags. A dialog
+wider than 48rem (Epo 2026-11-20: New quiz, New graded quiz and the editor's dialog are
+1040px wide) puts the banks in a column on the left (vertical `Tabs`) and the questions in
+three columns of cards (its rows padded 10px), a picked card's border in the accent; a narrower one, a tablet's or
+a phone's, keeps the switch above one column of rows (container queries, `@3xl`). Picks
 belong to the bank shown: switching banks starts them over; they keep the order
 picked across searches. The footer counts "N questions · M marks", or says why
 the picks exceed a quiz's bounds (`quizBounds`). The primary button calls

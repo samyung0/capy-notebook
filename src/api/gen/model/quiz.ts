@@ -19,6 +19,7 @@ export interface Quiz {
   id: string;
   isOwner: boolean;
   name: string;
+  onlyYou?: boolean;
   parentMaterialId?: string;
   privacy: Privacy;
   provenance?: Provenance;

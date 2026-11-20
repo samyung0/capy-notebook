@@ -37,10 +37,12 @@ import {
   FileSearchMenu,
   RemoveFileButton,
 } from '@/features/files/FileSearchMenu';
+import type { GradedSource } from '@/features/study/assignments/gradedSource';
 import { matchesSearch } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
+  CopyError,
   deferStorageRefusal,
   describeError,
   unexpectedErrorId,
@@ -270,23 +272,19 @@ function Field({
 /** The generate form and its Start, for a dialog to lay out: Make my own
  * practice's, and Add practice's Generate quiz tab. */
 export function useMakePractice({
-  gradedQuiz,
   initialTopicId,
   mixable = true,
   onMade,
   onlyYou,
   workspaceId,
 }: {
-  /** A graded quiz's settings (Epo 2026-11-16): the quiz is made with its
-   * graded quiz, saved as a draft to be read before it goes out. */
-  gradedQuiz?: AssignmentFormReq;
   /** The topic it starts on: Summary's weakest. */
   initialTopicId?: string;
   /** Off where the quiz is for the members, who have answered nothing of the
    * maker's (Add practice). */
   mixable?: boolean;
   /** Stays on the page once the quiz is made, rather than opening it to answer:
-   * a teacher making one for Add quiz or a graded quiz. */
+   * a teacher making one for New quiz or a graded quiz. */
   onMade?: (quizId: string, assignmentId?: string) => void;
   onlyYou: boolean;
   workspaceId: string;
@@ -331,21 +329,19 @@ export function useMakePractice({
       (o) => o.id === id
     )?.name;
 
-  async function start() {
+  const picked = from === 'topics' ? chosenTopics : pickedFiles;
+  const title = m.practice_own_title({
+    name: nameOf(picked[0])?.slice(0, 80) ?? '',
+  });
+  /** Made with its graded quiz when there is one (Epo 2026-11-16), whose
+   * Settings then says a failure. */
+  async function start(gradedQuiz?: AssignmentFormReq) {
     setFormError(null);
-    const picked = from === 'topics' ? chosenTopics : pickedFiles;
-    const title = m.practice_own_title({
-      name: nameOf(picked[0])?.slice(0, 80) ?? '',
-    });
     try {
       const made = (await generate({
         count,
         fileIds: from === 'files' ? picked : [],
-        // An untitled graded quiz is named after its quiz.
-        gradedQuiz: gradedQuiz && {
-          ...gradedQuiz,
-          title: gradedQuiz.title || title,
-        },
+        gradedQuiz,
         mix: mixable && mix,
         title,
         topics: from === 'topics' ? picked : [],
@@ -359,10 +355,15 @@ export function useMakePractice({
           to: '/quizzes/$quizId/attempt',
         });
     } catch (error) {
+      const pending =
+        isApiError(error) && error.code === 'pending_sources_too_large';
       // A frozen or storage refusal shows as the workspace status instead.
-      if (isApiError(error) && error.code === 'pending_sources_too_large')
+      if (!pending && deferStorageRefusal(error)) return;
+      if (gradedQuiz)
+        throw pending ? new CopyError(m.source_pending_context()) : error;
+      if (pending)
         setFormError({ errorId: null, message: m.source_pending_context() });
-      else if (!deferStorageRefusal(error))
+      else
         setFormError({
           errorId: unexpectedErrorId(error),
           message: describeError(error).description,
@@ -372,11 +373,7 @@ export function useMakePractice({
 
   const startButton = (
     <Button disabled={!ready || isPending} onClick={() => void start()}>
-      {isPending
-        ? m.generating_quiz()
-        : gradedQuiz
-          ? m.assignment_create_draft()
-          : m.review_start()}
+      {isPending ? m.generating_quiz() : m.review_start()}
     </Button>
   );
   const body = (
@@ -450,7 +447,16 @@ export function useMakePractice({
       {onlyYou ? m.practice_credits_only_you() : m.practice_credits()}
     </>
   );
-  return { body, credits, isPending, startButton };
+  // New graded quiz's pick: its questions are read before it goes out.
+  const source: GradedSource | undefined = ready
+    ? {
+        busyLabel: m.generating_quiz(),
+        draft: true,
+        name: title,
+        send: start,
+      }
+    : undefined;
+  return { body, credits, isPending, source, startButton };
 }
 
 /** Make my own practice (Epo 2026-11-04, boards P3 and T5): a quiz written from

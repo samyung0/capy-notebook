@@ -80,11 +80,13 @@ function RowResult({ question }: { question: Question | undefined }) {
 /** The app's study page header: one row, as a file's in the workspace. */
 function StudyHeader({
   actions,
+  badge,
   meta,
   onBack,
   title,
 }: {
   actions: ReactNode;
+  badge?: ReactNode;
   meta: string;
   onBack?: () => void;
   title: string;
@@ -102,6 +104,7 @@ function StudyHeader({
         />
       )}
       <h1 className="min-w-0 truncate font-bold">{title}</h1>
+      {badge}
       <p className="t-meta shrink-0 text-fg-muted">{meta}</p>
       <div className="ml-auto flex shrink-0 items-center gap-2 empty:hidden">
         {actions}
@@ -119,6 +122,7 @@ const WideBody = ({ children }: { children: ReactNode }) => (
 );
 export function AttemptBody({
   actions,
+  badge,
   byline,
   control,
   embedded,
@@ -134,6 +138,8 @@ export function AttemptBody({
   trail,
 }: {
   actions?: ReactNode;
+  /** After the app page's title: a member's own practice's Only you. */
+  badge?: ReactNode;
   /** The owner, on shared links. */
   byline?: ReactNode;
   /** The try in progress and how a question is checked: on the account,
@@ -356,6 +362,7 @@ export function AttemptBody({
                 )}
               </>
             }
+            badge={badge}
             meta={
               checkedCount > 0
                 ? m.quiz_study_progress({

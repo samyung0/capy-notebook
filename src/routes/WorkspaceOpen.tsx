@@ -9,7 +9,6 @@ import {
   useSearch,
 } from '@tanstack/react-router';
 import {
-  type ComponentProps,
   lazy,
   type RefObject,
   Suspense,
@@ -62,7 +61,7 @@ import {
 } from '@/features/guide/tourStore';
 import type {
   MakeQuizChoice,
-  MakeQuizDialog,
+  MakeQuizSteps,
 } from '@/features/makeQuiz/MakeQuizDialog';
 import { addQuizRun, useQuizDialogKey } from '@/features/makeQuiz/quizRuns';
 import { CenterContent } from '@/features/materials/CenterContent';
@@ -922,20 +921,19 @@ function WorkspaceOpen() {
       <Navigate {...studyLink(workspaceId, 'practice')} replace />
     ));
   const makeChoice = { answers: search.answers, paper: search.paper };
-  /** Make a quiz from a file's dialog, which Add practice wraps in its tabs:
-   * every step is an address under `make`. */
+  /** Make a quiz from a file's dialog, one of Add practice's ways: every step
+   * is an address under `make`. */
   const makeQuizProps = (
     step: NonNullable<typeof search.make>
-  ): ComponentProps<typeof MakeQuizDialog> => ({
+  ): MakeQuizSteps => ({
     file: search.quizFile,
     initial: {
       answers: splitIds(search.answers),
       paper: splitIds(search.paper),
     },
     // Back to the page behind it, the Dashboard when none. A move to another
-    // path (Add practice opening its new quiz, Back off Practice) already
-    // closed it: the dialog reports that close too, and navigating again
-    // would drop where the move went.
+    // path (Back off Practice) already closed it: the dialog reports that
+    // close too, and navigating again would drop where the move went.
     onClose: () => {
       if (!('make' in router.latestLocation.search)) return;
       void navigate({ search: {}, to: '.' });
@@ -944,8 +942,6 @@ function WorkspaceOpen() {
       addQuizRun({ ...choice, id: run.id, workspaceId });
       openDashboard();
     },
-    onDone: (quizId) =>
-      void navigate({ ...home, replace: true, search: { material: quizId } }),
     onFile: (file) =>
       void navigate({
         // A phone's Back returns to the list; wider, the list stays beside it.
@@ -1285,8 +1281,8 @@ function WorkspaceOpen() {
       )}
       {making && search.make && (
         <Suspense fallback={null}>
-          {/* Add quiz from Study's Add practice and the Dashboard's Make a quiz
-              (Epo 2026-11-14). */}
+          {/* New quiz from Study's Add practice and the Dashboard's Make a quiz
+              (Epo 2026-11-14); its Quiz created toast opens the quiz. */}
           <AddPracticeDialog
             key={quizDialogKey}
             make={makeQuizProps(search.make)}

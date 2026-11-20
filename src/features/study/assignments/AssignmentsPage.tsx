@@ -5,7 +5,6 @@ import {
   useAssignment,
   useAssignments,
   useDeleteAssignment,
-  useSetAssignmentDone,
   useTopics,
   useWorkspace,
 } from '@/api/hooks';
@@ -14,7 +13,7 @@ import { ErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
 import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
 import type { ColumnSort } from '@/components/app/SortHeader';
-import { Button, PageButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -32,17 +31,15 @@ import { studyView } from '../practice/studyView';
 import type { AssignmentsSearch } from '../studyRoutes';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
 import { AssignmentReport } from './AssignmentReport';
-import { dayLabel, kindLabel, markText, percentText } from './assignmentText';
-import { LateBadge } from './LateBadge';
-import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
+import { dayLabel, kindLabel, percentText } from './assignmentText';
 import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentMenu } from './NewAssignmentMenu';
-import { OwnTaskDetails } from './TodoDialog';
-import { useAssignmentStart } from './useAssignmentStart';
+import { TodoSection } from './TodoSection';
 
-/** The workspace's To do, Assignments to a class's staff (boards W1, W2 for
- * staff, W3 for members; its own page on the rail since Epo 2026-11-11), the
- * workspace's centre page at `assignments`. */
+/** The workspace's To do, Assignments to a class's staff (boards W1, W2; its
+ * own page on the rail since Epo 2026-11-11), the workspace's centre page at
+ * `assignments`. Anyone else's is To do's table for this workspace (Epo
+ * 2026-11-20), as its Dashboard shows it. */
 export function AssignmentsPage({
   search,
   workspaceId,
@@ -76,7 +73,11 @@ export function AssignmentsPage({
   return studyView(ws).manages ? (
     <StaffList key={workspaceId} workspaceId={workspaceId} />
   ) : (
-    <MemberList workspaceId={workspaceId} />
+    // A member's or a personal workspace's: the To do page's table for this
+    // workspace (Epo 2026-11-20), as its Dashboard shows it.
+    <PracticeFrame className="@container">
+      <TodoSection manages={false} page workspace={ws} />
+    </PracticeFrame>
   );
 }
 
@@ -116,27 +117,24 @@ export function AssignmentDetail({
   );
 }
 
-/** A column sort the server runs (Epo 2026-11-13): none active is the
- * page's own order; text starts A to Z, dates newest first. */
+/** A column sort the server runs (Epo 2026-11-13), open ones still before
+ * closed ones: Posted, newest first, until another column is picked (Epo
+ * 2026-11-20); text starts A to Z, dates newest first. */
 function useAssignmentSort() {
-  const [sort, setSort] = useState<{
+  const [server, setSort] = useState<{
     ascending: boolean;
-    by: AssignmentSort | 'order';
-  }>({ ascending: true, by: 'order' });
-  const sorting: ColumnSort<AssignmentSort | 'order'> = {
-    ascending: sort.ascending,
+    by: AssignmentSort;
+  }>({ ascending: false, by: 'posted' });
+  const sorting: ColumnSort<AssignmentSort> = {
+    ascending: server.ascending,
     ascendingFirst: ['title', 'kind', 'topic'],
     onSortChange: (by, ascending) => setSort({ ascending, by }),
-    sort: sort.by,
+    sort: server.by,
   };
-  const server =
-    sort.by === 'order'
-      ? undefined
-      : { ascending: sort.ascending, by: sort.by };
   return { server, sorting };
 }
 
-/** The owner's and teaching assistants' table (W1, W2): open ones by due date,
+/** The owner's and teaching assistants' table (W1, W2): open ones newest first,
  * closed ones behind Show closed. A row opens the report. */
 function StaffList({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
@@ -182,19 +180,18 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
         {/* The title alone: no hint text beside it (Epo 2026-11-13). */}
         <h1 className="t-page-title">{m.study_panel_assignments()}</h1>
         <NewAssignmentMenu
-          onCreated={(created) =>
+          // New graded quiz says its own, with Open (GradedQuizDialog).
+          onCreated={(created) => {
+            if (created.kind === 'marked') return;
             userToast({
               button: {
                 label: m.assignment_undo(),
                 onClick: () => remove(created.id),
               },
-              title:
-                created.kind === 'marked'
-                  ? m.assignment_created_graded()
-                  : m.assignment_created(),
+              title: m.assignment_created(),
               variant: 'success',
-            })
-          }
+            });
+          }}
           own={false}
           workspaceId={workspaceId}
         />
@@ -277,7 +274,9 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
                 <Th sort={{ sorting, value: 'topic' as const }}>
                   {m.practice_col_topics()}
                 </Th>
-                <Th sort={{ sorting, value: 'posted' as const }}>
+                {/* Its whole label: it starts sorted (Epo 2026-11-20), and its
+                      dates alone are narrower. */}
+                <Th sort={{ fit: true, sorting, value: 'posted' as const }}>
                   {m.assignment_col_posted()}
                 </Th>
                 <Th sort={{ sorting, value: 'due' as const }}>
@@ -335,10 +334,9 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
                 onOpen={() => void open(row.id)}
               >
                 <div className="min-w-0 flex-1">
+                  {/* Title and progress only, two lines (Epo 2026-11-20):
+                        the kind is the wide table's column. */}
                   <StaffTitle row={row} />
-                  <div className="t-meta mt-0.5 truncate text-fg-muted">
-                    {kindLabel(row)}
-                  </div>
                   <div className="mt-1">
                     <Progress bar row={row} />
                   </div>
@@ -417,279 +415,5 @@ function Progress({ bar, row }: { bar?: boolean; row: Assignment }) {
         </span>
       )}
     </span>
-  );
-}
-
-/** A member's table (W3): what is assigned to them with Start or Mark done;
- * Show done brings back finished ones and their marks. A row opens its page. */
-function MemberList({ workspaceId }: { workspaceId: string }) {
-  const navigate = useNavigate();
-  const { data: ws } = useWorkspace(workspaceId);
-  const [showDone, setShowDone] = useState(false);
-  const { server, sorting } = useAssignmentSort();
-  const {
-    data,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    isError,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    isPending,
-    refetch,
-  } = useAssignments(
-    workspaceId,
-    { closed: true, done: showDone, sort: server, topics: [] },
-    { errorBoundary: false }
-  );
-  const revealRef = useLoadingReveal(isPending);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const { mutate: setDone, isPending: ticking } =
-    useSetAssignmentDone(workspaceId);
-  const { dialog, start, starting } = useAssignmentStart(workspaceId);
-  const [adding, setAdding] = useState(false);
-  const [openTask, setOpenTask] = useState<Assignment | null>(null);
-  // Done ones come only with Show done, a page at a time.
-  const rows = data?.pages.flatMap((page) => page.items) ?? [];
-  // The task as last read; marked done, it leaves the list but not its dialog.
-  const task = openTask
-    ? (rows.find((row) => row.id === openTask.id) ?? openTask)
-    : undefined;
-  const open = (row: Assignment) => {
-    // A task they set themself opens its details here.
-    if (row.own) return setOpenTask(row);
-    return navigate({
-      search: {
-        assignment: row.id,
-        ...(row.kind === 'marked' && row.mine?.countedAttemptId
-          ? { attempt: row.mine.countedAttemptId }
-          : {}),
-      },
-      to: '.',
-    });
-  };
-  const action = (row: Assignment) => {
-    const mine = row.mine;
-    if (!mine) return null;
-    // A graded Assignment's grade, once given and shown (Epo 2026-11-14).
-    if (row.kind === 'unmarked' && mine.mark !== undefined)
-      return (
-        <span className="font-bold">
-          {markText(mine.mark, mine.total ?? 0)}
-        </span>
-      );
-    if (row.kind === 'unmarked')
-      return mine.done ? (
-        <span className="t-meta font-semibold text-fg-muted">
-          {row.allowUploads
-            ? m.assignment_col_handed_in()
-            : m.assignment_done()}
-        </span>
-      ) : // One that takes files is handed in from its page (S3); a closed one
-      // takes no tick.
-      row.allowUploads || row.closedAt ? null : (
-        <Button
-          disabled={ticking}
-          onClick={(event) => {
-            event.stopPropagation();
-            setDone({ done: true, id: row.id });
-          }}
-          size="sm"
-          variant="outline"
-        >
-          {m.assignment_mark_done()}
-        </Button>
-      );
-    if (mine.done && row.gradesHidden)
-      return (
-        <span className="t-meta inline-flex h-5.5 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs">
-          {m.assignment_submitted()}
-        </span>
-      );
-    if (mine.done)
-      return (
-        <span className="font-bold">
-          {markText(mine.mark ?? 0, (mine.total ?? 0) - mine.waitingMarks)}
-        </span>
-      );
-    if (row.closedAt)
-      return (
-        <span className="t-meta font-semibold text-tint-error-fg">
-          {m.assignment_missing()}
-        </span>
-      );
-    return (
-      <Button
-        disabled={starting}
-        onClick={(event) => {
-          event.stopPropagation();
-          start(row);
-        }}
-        size="sm"
-      >
-        {mine.runningAttemptId ? m.assignment_continue() : m.assignment_start()}
-      </Button>
-    );
-  };
-  return (
-    <PracticeFrame className="@container" ref={scrollRef}>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.25">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3">
-          <h1 className="t-page-title">{m.nav_todo()}</h1>
-        </div>
-        {/* Where staff have New: only they give out assignments (Epo
-            2026-11-10), so a member's is a task for themself; a personal
-            workspace's New also makes a graded quiz (Epo 2026-11-14). */}
-        {ws?.role &&
-          (ws.kind === 'class' ? (
-            <PageButton iconLeft="plus" onClick={() => setAdding(true)}>
-              {m.todo_new_task()}
-            </PageButton>
-          ) : (
-            <NewAssignmentMenu own workspaceId={workspaceId} />
-          ))}
-      </div>
-      <div className="mt-4 mb-1.25 flex items-center gap-2 md:mb-2">
-        <Button
-          className="px-2.5"
-          iconLeft="view"
-          onClick={() => setShowDone(!showDone)}
-          size="sm"
-          variant="outline"
-        >
-          {showDone ? m.assignment_hide_done() : m.assignment_show_done()}
-        </Button>
-      </div>
-      {isPending ? (
-        <SkeletonList className="mt-6" count={4} rowHeight={40} />
-      ) : isError ? (
-        <ErrorState
-          className="h-auto py-20"
-          errorId={unexpectedErrorId(error)}
-          onRetry={() => void refetch()}
-          title={m.assignment_load_failed()}
-          variant="panel"
-        />
-      ) : rows.length === 0 ? (
-        // The To do page's empty line.
-        <p className="t-subtitle py-20 text-center font-normal text-fg-muted">
-          {m.todo_empty()}
-        </p>
-      ) : (
-        <div ref={revealRef}>
-          <table className="@2xl:table hidden w-full border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <Th sort={{ sorting, value: 'title' as const }}>
-                  {m.assignment_col_assignment()}
-                </Th>
-                <Th sort={{ sorting, value: 'kind' as const }}>
-                  {m.assignment_col_kind()}
-                </Th>
-                <Th sort={{ sorting, value: 'posted' as const }}>
-                  {m.assignment_col_posted()}
-                </Th>
-                <Th sort={{ sorting, value: 'due' as const }}>
-                  {m.assignment_col_due()}
-                </Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  className={cn(
-                    'cursor-pointer hover:[&>td]:bg-surface-hover-bg',
-                    row.closed && '[&>td]:opacity-55'
-                  )}
-                  key={row.id}
-                  onClick={() => void open(row)}
-                >
-                  <Td className="w-full max-w-0">
-                    <MemberTitle row={row} />
-                  </Td>
-                  <Td muted>{kindLabel(row)}</Td>
-                  <Td muted>{dayLabel(row.postedAt)}</Td>
-                  <Td muted>{row.dueAt ? dayLabel(row.dueAt) : '–'}</Td>
-                  <Td className="text-right">{action(row)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <ul className="@2xl:hidden">
-            {rows.map((row) => (
-              <ListRow
-                className={cn('cursor-pointer', row.closed && 'opacity-55')}
-                key={row.id}
-                onClick={() => void open(row)}
-              >
-                <div className="min-w-0 flex-1">
-                  <MemberTitle row={row} />
-                  <div className="t-meta mt-0.5 truncate text-fg-muted">
-                    {[
-                      kindLabel(row),
-                      row.dueAt
-                        ? m.assignment_due({ date: dayLabel(row.dueAt) })
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </div>
-                </div>
-                {action(row)}
-              </ListRow>
-            ))}
-          </ul>
-          {/* Scrolling near the end reads the next page. */}
-          <ListEnd
-            fetchNextPage={fetchNextPage}
-            hasNextPage={hasNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-            isFetchNextPageError={isFetchNextPageError}
-            root={scrollRef}
-          />
-        </div>
-      )}
-      {dialog}
-      {adding && (
-        <NewAssignmentDialog
-          onClose={() => setAdding(false)}
-          onDone={() => setAdding(false)}
-          own
-          title={m.todo_new_task()}
-          workspaceId={workspaceId}
-        />
-      )}
-      {task && ws && (
-        <OwnTaskDetails
-          onClose={() => setOpenTask(null)}
-          task={task}
-          workspace={ws}
-        />
-      )}
-    </PracticeFrame>
-  );
-}
-
-function MemberTitle({ row }: { row: Assignment }) {
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span
-        className={cn(
-          'truncate font-semibold',
-          row.mine?.done && 'text-fg-muted'
-        )}
-      >
-        {row.title}
-      </span>
-      {row.mine?.late && <LateBadge penaltyPct={row.mine.latePenaltyPct} />}
-      {row.mine?.missing && !row.closedAt && (
-        <span className="t-meta shrink-0 font-semibold text-tint-error-fg">
-          {row.latePenaltyPct > 0
-            ? m.assignment_overdue_penalty({ percent: row.latePenaltyPct })
-            : m.assignment_overdue()}
-        </span>
-      )}
-    </div>
   );
 }

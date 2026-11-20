@@ -34,11 +34,13 @@ const question = (id: string, text: string, marks: number) =>
     updatedAt: '2026-11-12T10:00:00Z',
   }) satisfies ItemBankQuestion;
 
-const create = vi.hoisted(() => vi.fn());
+const create = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve({ assignmentId: 'as_1', id: 'qz_1' }))
+);
 const copy = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
   useCopyBankQuestions: () => ({ isPending: false, mutate: copy }),
-  useCreateBankQuiz: () => ({ isPending: false, mutate: create }),
+  useCreateBankQuiz: () => ({ isPending: false, mutateAsync: create }),
   useTopics: (wsId: string) => ({
     data: wsId ? [{ id: 'tp_cells', name: 'Cells', workspaceId: wsId }] : [],
   }),
@@ -102,10 +104,11 @@ const { BankQuestionsDialog, useBankPicker } = await import('./BankPicker');
 
 const form = { kind: 'marked', title: 'Cells check' } as AssignmentFormReq;
 
+// New graded quiz's: the pick goes on, and its Settings sends it.
 function Harness() {
-  const { action, body, note } = useBankPicker({
+  const { body, note, source } = useBankPicker({
     active: true,
-    gradedQuiz: form,
+    graded: true,
     label: m.action_continue(),
     onMade: () => {},
     title: () => 'Biology quiz 1',
@@ -115,7 +118,9 @@ function Harness() {
     <>
       {body}
       <p data-note>{note}</p>
-      {action}
+      <button onClick={() => void source?.send(form)} type="button">
+        {m.action_continue()}
+      </button>
     </>
   );
 }
@@ -147,15 +152,12 @@ it('copies the questions picked from the bank shown', async () => {
   expect(note()).toContain(m.question_ui_question_count({ count: 2 }));
   expect(note()).toContain(m.question_ui_marks({ count: 3 }));
   await click(byText('button', m.action_continue()));
-  expect(create).toHaveBeenCalledWith(
-    {
-      bank: 'ws_bio',
-      gradedQuiz: form,
-      questionIds: ['bq2', 'bq1'],
-      title: 'Biology quiz 1',
-    },
-    expect.anything()
-  );
+  expect(create).toHaveBeenCalledWith({
+    bank: 'ws_bio',
+    gradedQuiz: form,
+    questionIds: ['bq2', 'bq1'],
+    title: 'Biology quiz 1',
+  });
 
   await click(byText('button', m.bank_personal()));
   expect(note()).toBe('');
