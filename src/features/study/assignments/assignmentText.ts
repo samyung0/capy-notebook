@@ -1,5 +1,6 @@
 import type {
   Assignment,
+  AssignmentFile,
   AssignmentFormReq,
   AssignmentGradedQuestion,
 } from '@/api/types';
@@ -271,3 +272,13 @@ export function questionRowName(
   return top ? `Q${number} (${top})${rest}` : `Q${number} ${label}`;
 }
 const NUMBER_LABEL = /^(\d+)\.?(.*)$/;
+
+/** A file's graded quiz's question paper (Epo 2026-11-20): its one file, or
+ * null once the caller can no longer open it (trashed, hidden from members).
+ * Undefined for any other assignment. */
+export function questionPaperOf(
+  assignment: Pick<Assignment, 'files' | 'paperFile'> | undefined
+): AssignmentFile | null | undefined {
+  if (!assignment?.paperFile) return;
+  return assignment.files.find((file) => file.fileId) ?? null;
+}

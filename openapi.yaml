@@ -453,6 +453,8 @@ components:
           type: boolean
         own:
           type: boolean
+        paperFile:
+          type: boolean
         points:
           format: int64
           type: integer
@@ -495,6 +497,7 @@ components:
         - drawingParts
         - allowUploads
         - uploadOnly
+        - paperFile
         - topicIds
         - files
         - gradesHidden
@@ -823,6 +826,11 @@ components:
           maxLength: 120
           minLength: 1
           type: string
+        totalMarks:
+          format: int64
+          maximum: 1000
+          minimum: 1
+          type: integer
         uploadOnly:
           type: boolean
       required:
@@ -917,6 +925,9 @@ components:
         done:
           format: int64
           type: integer
+        graded:
+          format: int64
+          type: integer
         gradesReleasedAt:
           format: date-time
           type: string
@@ -965,6 +976,7 @@ components:
         - done
         - toApprove
         - notGraded
+        - graded
         - approvalsCheckedOff
       type: object
     AssignmentMark:
@@ -3702,6 +3714,21 @@ components:
         - state
         - lastEditedAt
       type: object
+    FileGradedQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/FileGradedQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: The graded quiz's settings (marked, no quizId, with totalMarks); a draft holds its question already
+      required:
+        - gradedQuiz
+      type: object
     FileIndexLimit:
       enum:
         - page_limit
@@ -5993,6 +6020,23 @@ components:
         - kind
         - sizeBytes
         - status
+      type: object
+    PaperFileReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PaperFileReq.json
+          format: uri
+          readOnly: true
+          type: string
+        fileId:
+          description: A file of the graded quiz's workspace
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+        - fileId
       type: object
     PastReview:
       additionalProperties: false
@@ -10535,6 +10579,38 @@ paths:
       summary: Have the AI mark the answers still waiting, in the background
       tags:
         - Assignments
+  /api/assignments/{id}/paper-file:
+    put:
+      operationId: changeAssignmentPaperFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaperFileReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Point a graded quiz from a file at another file of its workspace, keeping answers and marks
+      tags:
+        - Assignments
   /api/assignments/{id}/publish:
     post:
       operationId: publishAssignment
@@ -12698,6 +12774,40 @@ paths:
       summary: Create source room token
       tags:
         - Source collaboration
+  /api/files/{id}/graded-quiz:
+    post:
+      operationId: makeFileGradedQuiz
+      parameters:
+        - description: "The file: its question paper"
+          in: path
+          name: id
+          required: true
+          schema:
+            description: "The file: its question paper"
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileGradedQuizReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make a graded quiz whose question paper is a file of the workspace, answered by upload and marked by hand
+      tags:
+        - Assignments
   /api/files/{id}/hidden:
     put:
       operationId: setFileHidden

@@ -16,6 +16,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import { SubmissionFileList, useOpenSubmissionFile } from './HandIns';
+import { SectionLabel } from './todoParts';
 import type { SubmissionFiles } from './useAddSubmissionFiles';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -313,9 +314,9 @@ export function PaperPane({
       className="flex flex-col gap-2"
     >
       <div className="flex min-h-8 flex-wrap items-center gap-2">
-        <p className="mr-auto whitespace-nowrap font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem] max-md:basis-full">
+        <SectionLabel className="mr-auto whitespace-nowrap max-md:basis-full">
           {m.assignment_your_answers()}
-        </p>
+        </SectionLabel>
         <Button
           className="md:hidden"
           disabled={!ready}

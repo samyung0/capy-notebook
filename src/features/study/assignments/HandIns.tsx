@@ -170,7 +170,9 @@ export function YourWork({
 
 /** A submission's files, each with its ⋮ to open it and, while it takes
  * changes, remove it; then the files still uploading. Your work's and Your
- * answers' list (Epo 2026-11-19). */
+ * answers' list (Epo 2026-11-19); a file quiz's results list them with an
+ * Open button on each and no lines between (`results`, mock
+ * QEetGvcmf2vvkVfqcYAKLz; Epo 2026-11-20 "remove all dividers"). */
 export function SubmissionFileList({
   className,
   files,
@@ -178,12 +180,14 @@ export function SubmissionFileList({
   onOpen,
   onRemove,
   removing,
+  results = false,
   uploading,
 }: {
   className?: string;
   files: readonly PaperFile[];
   meta: (file: PaperFile) => string;
   onOpen: (file: PaperFile) => void;
+  results?: boolean;
   /** Absent once it takes no changes. */
   onRemove?: (file: PaperFile) => void;
   removing: boolean;
@@ -193,18 +197,37 @@ export function SubmissionFileList({
     <ul className={className}>
       {files.map((file) => (
         <li
-          className="flex min-h-10 items-center gap-2 border-divider border-b"
+          className={cn(
+            'flex min-h-10 items-center gap-2',
+            !results && 'border-divider border-b'
+          )}
           key={file.id}
         >
           <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
-          <button
-            className="min-w-0 flex-1 truncate text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
-            onClick={() => onOpen(file)}
-            type="button"
-          >
-            {file.name}
-          </button>
+          {results ? (
+            <span className="min-w-0 flex-1 truncate font-semibold">
+              {file.name}
+            </span>
+          ) : (
+            <button
+              className="min-w-0 flex-1 truncate text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
+              onClick={() => onOpen(file)}
+              type="button"
+            >
+              {file.name}
+            </button>
+          )}
           <span className="t-meta shrink-0 text-fg-muted">{meta(file)}</span>
+          {results && (
+            <Button
+              aria-label={m.assignment_open_named({ name: file.name })}
+              onClick={() => onOpen(file)}
+              size="sm"
+              variant="outline"
+            >
+              {m.assignment_open()}
+            </Button>
+          )}
           {onRemove && (
             <Menu
               items={[

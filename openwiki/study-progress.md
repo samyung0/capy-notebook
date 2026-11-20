@@ -1389,8 +1389,75 @@ points and solutions (`gradedWithoutKeys`), so an early submitter has no answers
 pass on while classmates still answer; per-part marks still show on submit.
 Reopening hides the keys again.
 
+**A graded quiz from a file** (Epo 2026-11-20, migration 0186, mock "Graded
+quiz from a file"): Existing file's file row asks for its "Total marks" (whole,
+1 to 1000, the form's `totalMarks`, which only this graded quiz has) and makes
+it with `POST /api/files/{id}/graded-quiz` (`MakeFileGradedQuiz`, the caller an
+editor of the file's workspace), its untitled name the file's without the
+extension.
+- `paper_file` marks it; its one `assignment_files` row is the question paper,
+  read live, not copied (Epo: a copy would mean publishing every edit). It is
+  Upload only and Manual grading only, which Settings shows locked and the
+  server keeps on every save, with its file.
+- Its frozen copy is one question with no words and one open part worth N
+  (`paperQuestion`), whose one marking point is the file's name, so attempts,
+  the clock, Grading's typed mark, late penalties and released grades work as
+  any graded quiz's. A draft holds the copy from the start; Publish gives it
+  out as it is.
+- Handing in skips the read (`paper` goes straight to `read`): no AI maps pages
+  or marks anything, and Grading shows every page of the hand-in with one mark
+  out of N and no AI line.
+- The member's attempt shows the Question paper card (name, Download of the
+  latest saved state) above Your answers, and the file in the workspace's own
+  viewer beside them (on a phone the file first, its name and Download over it,
+  Your answers under it). A member reads it in View: an Office, text or CSV file
+  is one `GET /api/files/{id}/source-session?view=true` (its saved edits read
+  once), a PDF, image or audio its signed link; no room joins, so they see what
+  was last saved, not live typing. The report's Questions tab is Question paper,
+  the same viewer, where staff who may edit the file can; Preview shows it too.
+- Who reads it (Epo 2026-11-20, "just like quiz"): those it is given to see its
+  name; once they start they read the file through the quiz, even when it is
+  hidden from members in Files (`FileReadRole`,
+  authorization-permissions-lifecycles.md › Hidden from members). A visible
+  file stays readable in Files to every member, so staff hide a paper they want
+  unread before the quiz (its picker row says "Hidden from members"). One moved,
+  trashed or deleted reads "The question paper can't be opened".
+- Total marks (Epo 2026-11-20, mock "File quiz follow-ups" A): Settings shows
+  it beside Marking and saves it with the rest (`setPaperMarksTx`). Marks
+  already given stay as they are, out of the new total, as Canvas and Google
+  Classroom keep them; Save asks first while any submission is graded (the
+  staff summary's `graded`, past members' included), saying theirs change only
+  by hand. A total below a mark
+  given is refused (409 `total_below_mark`, shown under the field). The stored
+  copy, every submission's graded copy and totals, and running attempts'
+  totals follow (`rewritePaperTx`).
+- Change file (Epo 2026-11-20, as Gradescope's Replace template PDF): staff's
+  button on the Question paper tab, also when the file is gone, opens the
+  workspace's files in Existing file's rows; `PUT
+  /api/assignments/{id}/paper-file` (`ChangePaperFile`) moves the one
+  `assignment_files` row and renames the marking point. Answers and marks stay,
+  and those who started read the new file from their next open (the read rule
+  follows the row); open pages reread (`assignment_updated`).
+- Results (Epo 2026-11-20, mock "File quiz follow-ups" boards 6 and 7, as Canvas
+  and Classroom show a hand-in's grade): the member's page has the total and
+  percent, then Feedback, the comment staff wrote on its one question in
+  Grading (there is no separate feedback field), then Your answers with Open
+  on each file (its signed link; "No files handed in." when there are none)
+  and the Question paper with Open (the viewer
+  in Preview's dialog) and Download; no question row and no outcome chips.
+  While grades are held back it shows the two file sections alone. Staff
+  opening a member's attempt (Epo 2026-11-20, "a file is not a quiz
+  question") get the same page with Grade (one mark out of the total) and
+  Feedback (the comment box) in Feedback's place, saved as Grading saves
+  them, Save waiting for a change; then Answers and the Question paper. Until
+  it is marked the score reads "– / 40", not "0 / 0". Neither page has
+  dividers (Epo 2026-11-20, "remove all dividers"). Grading is the same
+  (Epo 2026-11-20): the members, then that pane for the one picked, Save
+  moving on to the next waiting; no questions column, chips or Overview, and
+  a phone opens on the members.
+
 **Answering by upload** (Epo 2026-11-08, todo-file-submissions.md 5a, migrations
-0161 and 0184, mocks C1, S2, S5, T1, F1, F2):
+0161 and 0185, mocks C1, S2, S5, T1, F1, F2):
 - A marked assignment's Submission (Epo 2026-11-19) is Online assessment only,
   Upload only (`upload_only`, which needs `allow_uploads`), or Online assessment
   or upload (`allow_uploads` alone). For the last, Before you start asks "How
@@ -1938,10 +2005,12 @@ and the step after the first opens in its place without the dialog's open
 motion (`DialogStep`), so Next and Back read as one dialog. Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
 the due date required, the title left empty to take its quiz's name ("The quiz's
 name"), and Next, which saves nothing and hands the values on. Step 2 is Add quiz (`AddPracticeDialog` with `graded`) with five tabs:
-Existing quiz first (Practice's quizzes, one picked and copied whole), then
+Existing file first (Practice's quizzes and the workspace's files in the
+Convert file menu's 36px rows; a quiz is copied whole, a file becomes the
+question paper of a graded quiz from a file, below), then
 Convert, Generate, From the bank and Create blank, each sending the settings
 with its questions in one request (The owned quiz). Back returns to Settings
-with what was filled in (on a phone, the header's back arrow). Existing quiz
+with what was filled in (on a phone, the header's back arrow). Existing file
 and From the bank say Create; Generate,
 Convert and Create blank say Create draft. Convert's pages and run stay in the
 dialog's own state, with no Hide the quiz switch. Cancel leaves nothing behind.

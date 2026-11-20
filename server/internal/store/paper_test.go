@@ -279,3 +279,124 @@ func TestUploadOnlyStartsAsUpload(t *testing.T) {
 		t.Fatalf("start = %+v, err %v", run.Paper, err)
 	}
 }
+
+// TestFileGradedQuiz: a graded quiz made from a file is upload only, its
+// question paper the file, which a member reads once they start even while it
+// is hidden from members, and its hand-in waits for staff's one mark with no
+// read; changing its settings keeps the file.
+func TestFileGradedQuiz(t *testing.T) {
+	f := newAssignmentFixture(t, "filequiz")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
+	thumb := "thumbs/" + uid("t") + ".webp"
+	if _, err := f.s.pool.Exec(ctx, `UPDATE files SET hidden=true, kind='pdf', thumbnail_key=$2 WHERE id=$1`, file.ID, thumb); err != nil {
+		t.Fatal(err)
+	}
+	form := f.form(t, now.Add(time.Hour))
+	total := 80
+	form.QuizID, form.Questions, form.Title, form.TotalMarks = "", nil, "Mock paper", &total
+	created, err := f.s.MakeFileGradedQuiz(ctx, f.user, f.ws.ID, file.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.PaperFile || !created.UploadOnly || created.Marks != 80 || len(created.Files) != 1 || *created.Files[0].FileID != file.ID {
+		t.Fatalf("made = %+v", created)
+	}
+	// Named to the member, unread until they start: not even its page 1.
+	given, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now)
+	if err != nil || len(given.Files) != 1 || given.Files[0].ThumbnailKey != "" {
+		t.Fatalf("member's = %+v, err %v", given.Files, err)
+	}
+	if _, err := f.s.FileReadRole(ctx, f.viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("read before start: err %v", err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, true, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role, err := f.s.FileReadRole(ctx, f.viewer, file.ID); err != nil || role != RoleViewer {
+		t.Fatalf("read once started = %q, err %v", role, err)
+	}
+	if given, err = f.s.GetAssignment(ctx, f.viewer, created.ID, now); err != nil || given.Files[0].ThumbnailKey != thumb {
+		t.Fatalf("started member's = %+v, err %v", given.Files, err)
+	}
+	if _, err := f.s.ListPDFAnnotations(ctx, f.viewer, file.ID); err != nil {
+		t.Fatalf("own marks: err %v", err)
+	}
+	// Read once, never its room: the edit session keeps the hidden rule.
+	if _, err := f.s.SourceSession(ctx, f.viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("source session: err %v", err)
+	}
+	// Only the paper's routes: the hidden rule stands elsewhere, and for a
+	// classmate who has not started.
+	if _, err := f.s.FileEffectiveRole(ctx, f.viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("effective role: err %v", err)
+	}
+	if _, err := f.s.FileReadRole(ctx, f.other, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("classmate's read: err %v", err)
+	}
+	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Paper != PaperRead || done.WaitingAnswers != 1 {
+		t.Fatalf("handed in = %s, waiting %d", done.Paper, done.WaitingAnswers)
+	}
+	q := done.Questions[0]
+	part := q["parts"].([]any)[0].(map[string]any)
+	marked, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+		QuestionID: q["id"].(string), Parts: []AssignmentPartMark{{PartID: part["id"].(string), Items: []float64{54}}},
+	}, now.Add(2*time.Minute))
+	if err != nil || marked.Correct != 54 || marked.WaitingAnswers != 0 {
+		t.Fatalf("marked = %v, waiting %d, err %v", marked.Correct, marked.WaitingAnswers, err)
+	}
+	// A new total keeps the mark given, out of it; none below it.
+	total = 50
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now.Add(3*time.Minute)); !errors.Is(err, ErrPaperTotalBelowMark) {
+		t.Fatalf("a total below the mark given: err %v", err)
+	}
+	total = 100
+	form.Title, form.Marking, form.UploadOnly = "Mock paper 2025", MarkingAI, false
+	updated, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now.Add(3*time.Minute))
+	if err != nil || updated.Title != "Mock paper 2025" || !updated.UploadOnly || len(updated.Files) != 1 || updated.Marks != 100 || updated.Manage.Graded != 1 {
+		t.Fatalf("updated = %+v, err %v", updated, err)
+	}
+	if after, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now); err != nil || after.Correct != 54 || after.Total != 100 {
+		t.Fatalf("after the new total = %v / %v, err %v", after.Correct, after.Total, err)
+	}
+	// Change file: the starter reads the new paper, hidden too, not the old one.
+	next := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
+	if _, err := f.s.pool.Exec(ctx, `UPDATE files SET hidden=true WHERE id=$1`, next.ID); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := f.s.ChangePaperFile(ctx, f.user, created.ID, next.ID, now)
+	if err != nil || len(changed.Files) != 1 || *changed.Files[0].FileID != next.ID {
+		t.Fatalf("changed = %+v, err %v", changed.Files, err)
+	}
+	if role, err := f.s.FileReadRole(ctx, f.viewer, next.ID); err != nil || role != RoleViewer {
+		t.Fatalf("new paper = %q, err %v", role, err)
+	}
+	// Its marking point names the new file in the member's graded copy too.
+	renamed, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := renamed.Questions[0]["parts"].([]any)[0].(map[string]any)["markscheme"].([]any)[0].(map[string]any)
+	if item["text"] != next.Name {
+		t.Fatalf("marking point = %v", item["text"])
+	}
+	if _, err := f.s.FileReadRole(ctx, f.viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old paper: err %v", err)
+	}
+	// A draft holds its copy, and Publish gives it out.
+	form.Draft, total = true, 20
+	draft, err := f.s.MakeFileGradedQuiz(ctx, f.user, f.ws.ID, file.ID, form, now)
+	if err != nil || !draft.Draft || draft.Marks != 20 {
+		t.Fatalf("draft = %+v, err %v", draft, err)
+	}
+	published, err := f.s.PublishAssignment(ctx, f.user, draft.ID, nil, now)
+	if err != nil || published.Draft || published.Marks != 20 || published.Questions != 1 {
+		t.Fatalf("published = %+v, err %v", published, err)
+	}
+}

@@ -16,9 +16,12 @@ import { NumberStrip, QuestionNumbers } from './QuestionNumbers';
 export function PreviewDialog({
   children,
   onClose,
+  title,
 }: {
   children: ReactNode;
   onClose: () => void;
+  /** "Preview"; a member reading the question paper, "Question paper". */
+  title: string;
 }) {
   return (
     <SimpleDialog
@@ -27,7 +30,7 @@ export function PreviewDialog({
       className="flex h-[88dvh] flex-col gap-0"
       onClose={onClose}
       open
-      title={m.assignment_preview()}
+      title={title}
       width={1200}
     >
       {/* The split runs to the card's edges, under a line below the title. */}
@@ -47,7 +50,7 @@ export function QuizPreviewDialog({
   quizId: string;
 }) {
   return (
-    <PreviewDialog onClose={onClose}>
+    <PreviewDialog onClose={onClose} title={m.assignment_preview()}>
       <QuizFilePreview quizId={quizId} />
     </PreviewDialog>
   );

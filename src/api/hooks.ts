@@ -3450,6 +3450,36 @@ export function useCopyQuizToGradedQuiz(workspaceId: string) {
   });
 }
 
+/** A graded quiz whose question paper is a workspace file (Epo 2026-11-20),
+ * answered by upload and marked by hand out of `marks`. */
+export function useMakeFileGradedQuiz(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: ({
+      fileId,
+      gradedQuiz,
+    }: {
+      fileId: string;
+      /** Its `totalMarks` is what each hand-in is marked out of. */
+      gradedQuiz: AssignmentFormReq;
+    }) => api.post<Assignment>(`/files/${fileId}/graded-quiz`, { gradedQuiz }),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+/** A graded quiz from a file's Change file (Epo 2026-11-20): answers and marks
+ * stay. */
+export function useChangePaperFile(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (fileId: string) =>
+      api.put<Assignment>(`/assignments/${id}/paper-file`, { fileId }),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
+  });
+}
+
 /** A graded quiz made by a quiz maker (its `gradedQuiz`): the lists it joins. */
 export function useRefreshAssignments(workspaceId: string) {
   const qc = useQueryClient();

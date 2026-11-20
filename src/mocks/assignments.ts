@@ -14,6 +14,7 @@ import type {
   MarkedDrawing,
   MaterialRef,
   PaperFile,
+  PaperFileReq,
   SharingNotice,
   SubmittedPaper,
   TodoDonePage,
@@ -82,6 +83,8 @@ type Row = {
   files: { fileId?: string; materialId?: string }[];
   /** A class's Assignment graded out of this many (Epo 2026-11-14). */
   points?: number;
+  /** A graded quiz whose question paper is its one file (Epo 2026-11-20). */
+  paperFile?: boolean;
 };
 type Attempt = {
   id: string;
@@ -1003,6 +1006,7 @@ function seedAttempt(
     submittedAt,
     userId,
   });
+  return id;
 }
 
 function seed() {
@@ -1101,6 +1105,23 @@ function seed() {
       // ones borrow the workspace's.
       quizId: quizzes[1]?.id,
       title: 'Inheritance worksheet',
+    },
+    // A graded quiz from a file (Epo 2026-11-20): read in the viewer,
+    // answered by upload, marked by hand.
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(5),
+      files: [{ fileId: 'f_1' }],
+      id: 'as_paperfile',
+      kind: 'marked',
+      marking: 'manual',
+      paperFile: true,
+      postedAt: at(-1, 9),
+      questions: [paperQuestion('Cell structure.pdf', 40)],
+      timeLimitMin: 45,
+      title: 'Cell structure test',
+      uploadOnly: true,
     },
     // Members hand in files with Hand in (Epo 2026-11-08, S3/T2).
     {
@@ -1286,6 +1307,64 @@ function seed() {
     ];
     for (const q of attempt.graded)
       for (const part of q.parts) part.pages = [1];
+  }
+  // Ben handed in the file's graded quiz: one mark to give, every page shown.
+  const fromFile = rows.get('as_paperfile')!;
+  seedAttempt(fromFile, ben, 0, 1, 38, 0);
+  for (const attempt of attempts.values()) {
+    if (attempt.assignmentId !== fromFile.id) continue;
+    attempt.paper = 'read';
+    attempt.answers = {};
+    attempt.paperFiles = [
+      {
+        id: 'f_scan',
+        kind: 'image',
+        name: 'Cell structure answers.jpg',
+        sizeBytes: 1_400_000,
+        status: 'ready',
+      },
+    ];
+    for (const q of attempt.graded)
+      for (const part of q.parts) {
+        part.awarded = 0;
+        part.pages = [];
+        part.pending = true;
+      }
+  }
+  // The Member scenario's own, marked with a comment (mock
+  // QEetGvcmf2vvkVfqcYAKLz board 6).
+  const mine = attempts.get(seedAttempt(fromFile, db.user.id, 0, 0, 41, 1))!;
+  mine.paper = 'read';
+  mine.answers = {};
+  mine.paperFiles = [
+    {
+      id: 'f_mine_scan',
+      kind: 'image',
+      name: 'Cell structure answers.jpg',
+      sizeBytes: 1_400_000,
+      status: 'ready',
+    },
+    {
+      id: 'f_mine_q3',
+      kind: 'pdf',
+      name: 'Question 3 working.pdf',
+      sizeBytes: 380_000,
+      status: 'ready',
+    },
+  ];
+  const [graded] = mine.graded;
+  if (graded) {
+    graded.parts = graded.parts.map((part) => ({
+      ...part,
+      awarded: 31.5,
+      itemAwards: [31.5],
+      pages: [],
+      pending: false,
+    }));
+    graded.comment =
+      'Good labelling of the organelles. In 1(b), say why the larger surface area matters: more water and mineral ions are absorbed. 3(c) mixes up the cell wall and the cell membrane.';
+    graded.commentBy = 'u_mock_rivera';
+    graded.commentByName = 'Ms Rivera';
   }
   const genetics = rows.get('as_genetics')!;
   for (const [i, id] of class6.entries())
@@ -1509,7 +1588,8 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
       parts: q.parts.map((p) => ({
         ...p,
         awarded: 0,
-        pages: [1],
+        // A file's graded quiz is marked on every page, with no read.
+        pages: row.paperFile ? [] : [1],
         pending: true,
       })),
     }));
@@ -1540,7 +1620,10 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
   const ticked = [...(done.get(row.id)?.keys() ?? [])].filter((id) =>
     assigned.includes(id)
   );
-  const decided = countedRows.map((a) => totals(a.graded));
+  // As the server's NULLIF: an attempt with nothing decided has no share.
+  const decided = countedRows
+    .map((a) => totals(a.graded))
+    .filter((d) => d.total - d.waitingMarks > 0);
   const mine = assigned.includes(db.user.id)
     ? counted(row, db.user.id)
     : undefined;
@@ -1622,6 +1705,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     marks,
     noLate: row.noLate,
     own: !!row.own,
+    paperFile: !!row.paperFile,
     points: row.points,
     postedAt: row.postedAt,
     postedBy: row.own
@@ -1662,6 +1746,13 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                     graded.length
                   : undefined,
             done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            // Submissions with every mark decided, past members' too.
+            graded: [...attempts.values()].filter(
+              (a) =>
+                a.assignmentId === row.id &&
+                a.submittedAt &&
+                totals(a.graded).waitingAnswers === 0
+            ).length,
             gradesReleasedAt: row.gradesReleasedAt,
             marking: row.marking,
             notGraded:
@@ -2027,10 +2118,56 @@ function applyForm(row: Row, body: AssignmentFormReq) {
   row.allowUploads = !!body.allowUploads;
   row.uploadOnly = row.kind === 'marked' && !!body.uploadOnly;
   row.points = body.points ?? undefined;
+  // A file's graded quiz keeps its file, its upload and its hand marking.
+  if (row.paperFile) {
+    row.allowUploads = true;
+    row.uploadOnly = true;
+    row.marking = 'manual';
+    return;
+  }
   row.files = body.files.map(({ fileId, materialId }) => ({
     fileId,
     materialId,
   }));
+}
+
+/** A file's graded quiz's frozen copy (paperQuestion in the store): one open
+ * part worth its marks, its one marking point the file's name. */
+function paperQuestion(name: string, marks: number): Question {
+  return {
+    id: newId('q'),
+    labels: 'letters',
+    layout: 'paper',
+    parts: [
+      {
+        answer: { accepted: [], type: 'open' },
+        blocks: [],
+        id: newId('p'),
+        marks,
+        markscheme: [{ marks, text: name }],
+        solution: [],
+      },
+    ],
+    stem: [],
+  } as unknown as Question;
+}
+
+/** Edits a file's graded quiz's one part and marking point, in its copy and
+ * each attempt's graded copy (rewritePaperTx in the store). */
+function editPaper(
+  row: Row,
+  edit: (part: QuestionPart, item: { marks: number; text: string }) => void
+) {
+  const parts = [
+    row.questions?.[0]?.parts[0],
+    ...[...attempts.values()]
+      .filter((a) => a.assignmentId === row.id)
+      .map((a) => a.graded[0]?.parts[0]),
+  ];
+  for (const part of parts) {
+    const item = part?.markscheme?.[0];
+    if (part && item) edit(part, item);
+  }
 }
 
 /** Freezes the quiz as publishing does. */
@@ -2336,6 +2473,28 @@ export const assignmentHandlers = (viewer: Viewer) => {
       rows.set(row.id, row);
       return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
     }),
+    // Existing file: a workspace file as a graded quiz's question paper.
+    http.post('/api/files/:id/graded-quiz', async ({ params, request }) => {
+      const file = db.files.find((f) => f.id === params.id);
+      if (!file?.workspaceId) return gone();
+      const { gradedQuiz } = (await request.json()) as {
+        gradedQuiz: AssignmentFormReq;
+      };
+      const marks = gradedQuiz.totalMarks ?? 0;
+      seed();
+      const row = addRow(
+        file.workspaceId,
+        { ...gradedQuiz, kind: 'marked' },
+        false
+      );
+      row.paperFile = true;
+      row.files = [{ fileId: file.id }];
+      row.allowUploads = true;
+      row.uploadOnly = true;
+      row.marking = 'manual';
+      row.questions = [paperQuestion(file.name, marks)];
+      return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
+    }),
     // Existing quiz: a copy of a workspace quiz made into a new graded quiz.
     http.post('/api/quizzes/:id/graded-copy', async ({ params, request }) => {
       const source = db.materials.find(
@@ -2394,7 +2553,50 @@ export const assignmentHandlers = (viewer: Viewer) => {
     http.put('/api/assignments/:id', async ({ params, request }) => {
       const row = rowOf(params.id);
       if (!row) return gone();
-      applyForm(row, (await request.json()) as AssignmentFormReq);
+      const body = (await request.json()) as AssignmentFormReq;
+      // A file's graded quiz's new total: the marks given stay, none above it.
+      const marks = body.totalMarks;
+      if (row.paperFile && marks !== undefined) {
+        const highest = Math.max(
+          0,
+          ...[...attempts.values()]
+            .filter((a) => a.assignmentId === row.id && a.submittedAt)
+            .map((a) => totals(a.graded).correct)
+        );
+        if (highest > marks)
+          return HttpResponse.json(
+            {
+              detail: "the total can't go below a mark already given",
+              errors: [{ message: 'total_below_mark' }],
+              status: 409,
+            },
+            { status: 409 }
+          );
+        editPaper(row, (part, item) => {
+          part.marks = marks;
+          item.marks = marks;
+        });
+      }
+      applyForm(row, body);
+      return HttpResponse.json(toAssignment(row, viewer));
+    }),
+    // Change file: another workspace file as the question paper.
+    http.put('/api/assignments/:id/paper-file', async ({ params, request }) => {
+      const row = rowOf(params.id);
+      if (!row?.paperFile) return gone();
+      const { fileId } = (await request.json()) as PaperFileReq;
+      const file = db.files.find(
+        (f) => f.id === fileId && f.workspaceId === row.workspaceId
+      );
+      if (!file)
+        return HttpResponse.json(
+          { detail: 'a file is not in this workspace', status: 422 },
+          { status: 422 }
+        );
+      row.files = [{ fileId }];
+      editPaper(row, (_, item) => {
+        item.text = file.name;
+      });
       return HttpResponse.json(toAssignment(row, viewer));
     }),
     http.delete('/api/assignments/:id', ({ params }) => {

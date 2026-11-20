@@ -102,6 +102,8 @@ export function FileListItem({
           <span
             className={cn(
               'min-w-0 flex-1 translate-y-px truncate',
+              // Not shared with members: muted (Epo 2026-11-20).
+              file.hidden && 'text-fg-muted',
               failed && 'text-solid-error'
             )}
           >

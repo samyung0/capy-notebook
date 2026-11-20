@@ -502,12 +502,26 @@ type AssignmentFormReq struct {
 	// Points grades a class's Assignment out of this many (Epo 2026-11-14);
 	// absent, it is not graded. A graded quiz and a task have none.
 	Points *AssignmentPoints `json:"points,omitempty"`
+	// TotalMarks is a graded quiz from a file's total, what each hand-in is
+	// marked out of (Epo 2026-11-20); it has one, nothing else does.
+	TotalMarks *AssignmentPoints `json:"totalMarks,omitempty"`
 }
 
 // CopyQuizToGradedQuizReq makes a graded quiz from a copy of a quiz (Epo
 // 2026-11-16).
 type CopyQuizToGradedQuizReq struct {
 	GradedQuiz AssignmentFormReq `json:"gradedQuiz" doc:"The graded quiz's settings (marked, no quizId); its title also names the new quiz"`
+}
+
+// FileGradedQuizReq makes a graded quiz from a file (Epo 2026-11-20).
+type FileGradedQuizReq struct {
+	GradedQuiz AssignmentFormReq `json:"gradedQuiz" doc:"The graded quiz's settings (marked, no quizId, with totalMarks); a draft holds its question already"`
+}
+
+// PaperFileReq changes a graded quiz from a file's question paper (Epo
+// 2026-11-20, "Change file").
+type PaperFileReq struct {
+	FileID string `json:"fileId" minLength:"1" maxLength:"64" doc:"A file of the graded quiz's workspace"`
 }
 
 // GradedQuestion is one checked question with its key and, on each part, the

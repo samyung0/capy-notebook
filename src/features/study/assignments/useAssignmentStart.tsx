@@ -16,7 +16,7 @@ import { ChoiceMarker } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
-import { minutesText } from './assignmentText';
+import { minutesText, questionPaperOf } from './assignmentText';
 
 /** Starting a marked assignment, from its row, the Dashboard or its link:
  * a running attempt opens; a time limit asks first, since Start starts the
@@ -110,10 +110,21 @@ function BeforeYouStart({
         </DialogTitle>
         {/* What it holds, as an item's properties (Epo 2026-11-19). */}
         <PropertyList className="mt-3">
-          <PropertyRow
-            label={m.question_ui_questions()}
-            value={String(assignment.questions)}
-          />
+          {/* A file's graded quiz names its question paper (2026-11-20). */}
+          {assignment.paperFile ? (
+            <PropertyRow
+              label={m.assignment_question_paper()}
+              value={
+                questionPaperOf(assignment)?.name ??
+                m.assignment_question_paper_gone()
+              }
+            />
+          ) : (
+            <PropertyRow
+              label={m.question_ui_questions()}
+              value={String(assignment.questions)}
+            />
+          )}
           <PropertyRow
             label={m.question_ui_part_marks()}
             value={String(assignment.marks)}

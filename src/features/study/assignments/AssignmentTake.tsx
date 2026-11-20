@@ -15,7 +15,7 @@ import {
   saveAssignmentDrawing,
   useSubmitAssignmentAttempt,
 } from '@/api/hooks';
-import type { AssignmentAttempt } from '@/api/types';
+import type { AssignmentAttempt, AssignmentFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -55,7 +55,7 @@ import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
-import { PaperPane } from './LazyPaper';
+import { PaperPane, QuestionPaperCard, QuestionPaperView } from './LazyPaper';
 import { NumberStrip, QuestionNumbers } from './QuestionNumbers';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 
@@ -263,9 +263,13 @@ export function AssignmentTake({
   attempt,
   leave,
   onClosed,
+  questionPaper,
   workspaceId,
 }: {
   attempt: AssignmentAttempt;
+  /** A file's graded quiz (Epo 2026-11-20): its question paper, read in the
+   * file viewer in place of the questions; null when it can't be opened. */
+  questionPaper?: AssignmentFile | null;
   /** The way out on a phone, which has no header here (answers stay saved). */
   leave?: ReactNode;
   /** Staff closed it while it was open here: its results come next. */
@@ -553,7 +557,32 @@ export function AssignmentTake({
                 {submitButton}
               </div>
             </header>
-            {paper ? (
+            {paper && questionPaper !== undefined ? (
+              // A file's graded quiz (mock Attempt): the question paper's
+              // card above Your answers at the side, the file in the
+              // workspace's viewer beside them; a phone reads the file
+              // first, its name and Download over it, Your answers under it.
+              <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[300px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)]">
+                <div className="flex items-center gap-1 border-divider border-b py-1.5 pr-4 pl-2 md:hidden">
+                  {leave}
+                  <span className="truncate font-bold">{attempt.title}</span>
+                </div>
+                <aside className="flex flex-col gap-4 border-divider border-t px-4 py-3 max-md:order-last max-md:max-h-[40dvh] max-md:overflow-y-auto md:min-h-0 md:overflow-y-auto md:border-t-0 md:border-r">
+                  <QuestionPaperCard
+                    className="border-divider border-b pb-4 max-md:hidden"
+                    file={questionPaper}
+                  />
+                  <PaperPane
+                    attemptId={attempt.id}
+                    files={files}
+                    uploads={uploads}
+                  />
+                </aside>
+                <div className="min-h-0 flex-1">
+                  <QuestionPaperView file={questionPaper} />
+                </div>
+              </div>
+            ) : paper ? (
               // Answered by upload (S5, Epo 2026-11-19): Your answers beside
               // every question in one scroll, read only.
               // One Your answers: phones scroll it above the questions.

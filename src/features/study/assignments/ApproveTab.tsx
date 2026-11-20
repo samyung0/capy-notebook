@@ -35,7 +35,7 @@ import { errorCopy } from '@/lib/errors';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { questionLine } from '../practice/practiceText';
 import type { AssignmentsSearch } from '../studyRoutes';
-import { OpenPart, ResultBody } from './AttemptResults';
+import { OpenPart, PaperQuizResults, ResultBody } from './AttemptResults';
 import { markText } from './assignmentText';
 import { SubmissionFileLink } from './HandIns';
 import { PaperPages } from './LazyPaper';
@@ -73,7 +73,10 @@ const NOT_GRADED = cn(CHIP, 'bg-tint-warning text-tint-warning-fg');
  * Members tab's "2 to approve") keeps the counts and Next to one member's
  * answers. Rows the AI couldn't grade (no credits, a file, an error) read Not
  * graded; the pane says why. `fullscreen` covers the page with it, as a
- * task's Grading. */
+ * task's Grading. A graded quiz from a file has no questions to list (Epo
+ * 2026-11-20, "a file is not a quiz question"): its members, then the pane
+ * as staff's page for one attempt has it, Grade, Feedback, the answers and
+ * the question paper. */
 export function ApproveTab({
   assignment,
   onExitFullscreen,
@@ -93,6 +96,10 @@ export function ApproveTab({
   );
   // Graded by hand (A4): no AI grades to approve; the AI only reads papers.
   const manual = assignment.manage?.marking === 'manual';
+  // A file's graded quiz: no questions column, chips or Overview grid; a
+  // phone starts at its members.
+  const paper = !!assignment.paperFile;
+  const top: Screen = paper ? 'members' : 'questions';
   // Every question (Epo 2026-11-19); the AI marks those with a written or
   // drawn part.
   const listed = report.questions;
@@ -128,7 +135,7 @@ export function ApproveTab({
     return row ? selection(row) : rows[0] ? selection(rows[0]) : null;
   });
   const [overview, setOverview] = useState(false);
-  const [screen, setScreen] = useState<Screen>('questions');
+  const [screen, setScreen] = useState<Screen>(top);
   const current = report.answers.find((row) => same(row, selected));
   // The list changed under the selection: take its first row.
   useEffect(() => {
@@ -284,12 +291,12 @@ export function ApproveTab({
       )}
       // Past the question list on a phone the page's own back link leads out,
       // so the workspace header and the report's head step aside (CSS).
-      data-approve-drill={screen === 'questions' ? undefined : screen}
+      data-approve-drill={screen === top ? undefined : screen}
     >
       <div
         className={cn(
           'flex flex-wrap items-center gap-2 border-divider py-3 md:border-b',
-          screen !== 'questions' && 'max-md:hidden'
+          screen !== top && 'max-md:hidden'
         )}
       >
         <span className="t-meta text-fg-secondary">
@@ -336,15 +343,23 @@ export function ApproveTab({
           </span>
         )}
         <span className="flex-1 max-md:hidden" />
-        <div className="grid gap-2 max-md:basis-full max-md:grid-cols-2 md:flex">
-          <Button
-            iconLeft="grid"
-            onClick={() => setOverview(true)}
-            size="sm"
-            variant="outline"
-          >
-            {m.assignment_overview()}
-          </Button>
+        <div
+          className={cn(
+            'grid gap-2 max-md:basis-full md:flex',
+            // A file's quiz has no Overview: Start approving runs the width.
+            !paper && 'max-md:grid-cols-2'
+          )}
+        >
+          {!paper && (
+            <Button
+              iconLeft="grid"
+              onClick={() => setOverview(true)}
+              size="sm"
+              variant="outline"
+            >
+              {m.assignment_overview()}
+            </Button>
+          )}
           <Button
             className="md:hidden"
             disabled={!next && !current?.waiting}
@@ -378,87 +393,111 @@ export function ApproveTab({
           )}
         </div>
       </div>
-      <div className="flex gap-2 overflow-x-auto border-divider border-b py-3 [scrollbar-width:none] max-md:hidden lg:hidden">
-        {[...toDo, ...done].map(chip)}
-      </div>
+      {!paper && (
+        <div className="flex gap-2 overflow-x-auto border-divider border-b py-3 [scrollbar-width:none] max-md:hidden lg:hidden">
+          {[...toDo, ...done].map(chip)}
+        </div>
+      )}
       {/* From a tablet up each column scrolls on its own, the lists with no
           scrollbar; their rows reach 10px past each side, hence the room. */}
-      <div className="flex min-h-0 flex-col md:grid md:flex-1 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[248px_250px_minmax(0,1fr)]">
+      <div
+        className={cn(
+          'flex min-h-0 flex-col md:grid md:flex-1',
+          paper
+            ? 'md:grid-cols-[250px_minmax(0,1fr)]'
+            : 'md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[248px_250px_minmax(0,1fr)]'
+        )}
+      >
+        {!paper && (
+          <div
+            className={cn(
+              'border-divider pt-1 md:max-lg:hidden lg:-ml-3 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden lg:border-r lg:pr-5 lg:pb-6 lg:pl-3 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
+              screen !== 'questions' && 'max-md:hidden'
+            )}
+          >
+            {toDo.length > 0 && (
+              <>
+                <p className="t-label pt-3 pb-1.5 text-fg-muted uppercase">
+                  {m.assignment_section_to_approve()}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {toDo.map(questionRow)}
+                </ul>
+              </>
+            )}
+            {done.length > 0 && (
+              <>
+                <p className="t-label pt-3 pb-1.5 text-fg-muted uppercase">
+                  {m.assignment_section_done()}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {done.map(questionRow)}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
         <div
           className={cn(
-            'border-divider pt-1 md:max-lg:hidden lg:-ml-3 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden lg:border-r lg:pr-5 lg:pb-6 lg:pl-3 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden',
-            screen !== 'questions' && 'max-md:hidden'
-          )}
-        >
-          {toDo.length > 0 && (
-            <>
-              <p className="t-label pt-3 pb-1.5 text-fg-muted uppercase">
-                {m.assignment_section_to_approve()}
-              </p>
-              <ul className="flex flex-col gap-0.5">{toDo.map(questionRow)}</ul>
-            </>
-          )}
-          {done.length > 0 && (
-            <>
-              <p className="t-label pt-3 pb-1.5 text-fg-muted uppercase">
-                {m.assignment_section_done()}
-              </p>
-              <ul className="flex flex-col gap-0.5">{done.map(questionRow)}</ul>
-            </>
-          )}
-        </div>
-        <div
-          className={cn(
-            'border-divider md:-ml-3 md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:border-r md:pt-3 md:pr-5 md:pb-6 md:pl-3 lg:ml-0 lg:px-5 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden',
+            'border-divider md:-ml-3 md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:border-r md:pt-3 md:pr-5 md:pb-6 md:pl-3 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden',
+            // The middle column from lg; a file's quiz keeps it first.
+            !paper && 'lg:ml-0 lg:px-5',
             screen !== 'members' && 'max-md:hidden'
           )}
         >
-          <div className="flex flex-col items-start gap-3.5 md:hidden">
-            <UnderlineLink
-              className="text-fg"
-              iconLeft="navigationBack"
-              noArrow
-              onClick={() => goTo('questions')}
-            >
-              {m.assignment_back_to_questions()}
-            </UnderlineLink>
-            {question && (
-              <div>
-                <p className="t-meta text-fg-secondary">
-                  {`Q${numberOf(question)} · ${marksText(questionMarks(questionOf(question) as Question))}`}
-                </p>
-                <TextView
-                  className="font-semibold"
-                  marks
-                  text={questionLine(questionOf(question))}
-                />
-              </div>
-            )}
-          </div>
-          <div className="flex items-center justify-between gap-2 pb-2 max-md:pt-4">
-            <span className="t-meta text-fg-secondary">
-              {m.assignment_to_approve({
-                count: rows.filter(
-                  (row) => row.waiting && (manual || row.aiMarked)
-                ).length,
-              })}
-            </span>
-            <span
-              className={cn(manual && 'hidden')}
-              title={approvable ? undefined : m.assignment_approve_all_waits()}
-            >
-              <Button
-                disabled={!approvable || approving}
-                onClick={() =>
-                  question && approveAll(question, { onError: failed })
-                }
-                size="sm"
-                variant="outline"
+          {!paper && (
+            <div className="flex flex-col items-start gap-3.5 md:hidden">
+              <UnderlineLink
+                className="text-fg"
+                iconLeft="navigationBack"
+                noArrow
+                onClick={() => goTo('questions')}
               >
-                {m.assignment_approve_all()}
-              </Button>
-            </span>
-          </div>
+                {m.assignment_back_to_questions()}
+              </UnderlineLink>
+              {question && (
+                <div>
+                  <p className="t-meta text-fg-secondary">
+                    {`Q${numberOf(question)} · ${marksText(questionMarks(questionOf(question) as Question))}`}
+                  </p>
+                  <TextView
+                    className="font-semibold"
+                    marks
+                    text={questionLine(questionOf(question))}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          {/* One question's count: a file's quiz has the toolbar's alone. */}
+          {!paper && (
+            <div className="flex items-center justify-between gap-2 pb-2 max-md:pt-4">
+              <span className="t-meta text-fg-secondary">
+                {m.assignment_to_approve({
+                  count: rows.filter(
+                    (row) => row.waiting && (manual || row.aiMarked)
+                  ).length,
+                })}
+              </span>
+              <span
+                className={cn(manual && 'hidden')}
+                title={
+                  approvable ? undefined : m.assignment_approve_all_waits()
+                }
+              >
+                <Button
+                  disabled={!approvable || approving}
+                  onClick={() =>
+                    question && approveAll(question, { onError: failed })
+                  }
+                  size="sm"
+                  variant="outline"
+                >
+                  {m.assignment_approve_all()}
+                </Button>
+              </span>
+            </div>
+          )}
           <ul className="flex flex-col gap-0.5">
             {rows.map((row) => {
               const person = names.get(row.userId);
@@ -513,9 +552,11 @@ export function ApproveTab({
               noArrow
               onClick={() => goTo('members')}
             >
-              {m.assignment_back_to_members({
-                number: question ? numberOf(question) : 0,
-              })}
+              {paper
+                ? m.assignment_tab_members()
+                : m.assignment_back_to_members({
+                    number: question ? numberOf(question) : 0,
+                  })}
             </UnderlineLink>
             {position >= 0 && (
               <span className="t-meta text-fg-secondary">
@@ -751,6 +792,25 @@ function MarkPane({
     | undefined;
   if (isPending || !attempt || !question)
     return <SkeletonList count={5} rowHeight={40} />;
+  // A file's graded quiz (Epo 2026-11-20): whose it is, then staff's page
+  // for one attempt, Save moving on as Approve does.
+  if (assignment.paperFile)
+    return (
+      <div className="flex flex-col">
+        <AnswerMember
+          assignment={assignment}
+          attemptNumber={row.attemptNumber}
+          avatar={avatar}
+          name={name}
+        />
+        <PaperQuizResults
+          assignment={assignment}
+          attempt={attempt}
+          onSaved={onApproved}
+          staff
+        />
+      </div>
+    );
   // Marked by rule: the member's answer as their results show it, its mark
   // staff's to change, a read paper's pages above it (a paper still to read
   // waits on the form below).
@@ -1029,21 +1089,46 @@ function AnswerHead({
           {`(${marksText(marks)})`}
         </span>
       </h2>
-      <div className="mt-4 flex items-center gap-2.5">
-        <Avatar
-          aria-hidden
-          className="size-7 shrink-0 text-[11px]"
-          name={name}
-          src={avatar || undefined}
-        />
-        <span className="font-semibold">{name}</span>
-        {assignment.attempts > 1 && (
-          <span className="t-meta text-fg-muted">
-            {m.assignment_attempt_number({ number: attemptNumber })}
-          </span>
-        )}
-      </div>
+      <AnswerMember
+        assignment={assignment}
+        attemptNumber={attemptNumber}
+        avatar={avatar}
+        className="mt-4"
+        name={name}
+      />
     </>
+  );
+}
+
+/** Whose answer it is, and which attempt when there are several. */
+function AnswerMember({
+  assignment,
+  attemptNumber,
+  avatar,
+  className,
+  name,
+}: {
+  assignment: Assignment;
+  attemptNumber: number;
+  avatar?: string;
+  className?: string;
+  name: string;
+}) {
+  return (
+    <div className={cn('flex items-center gap-2.5', className)}>
+      <Avatar
+        aria-hidden
+        className="size-7 shrink-0 text-[11px]"
+        name={name}
+        src={avatar || undefined}
+      />
+      <span className="font-semibold">{name}</span>
+      {assignment.attempts > 1 && (
+        <span className="t-meta text-fg-muted">
+          {m.assignment_attempt_number({ number: attemptNumber })}
+        </span>
+      )}
+    </div>
   );
 }
 

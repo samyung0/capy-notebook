@@ -52,6 +52,9 @@ var (
 	ErrAttemptFinished = errors.New("this attempt has been submitted")
 	// ErrAssignmentQuizGone refuses publishing a draft whose quiz was deleted.
 	ErrAssignmentQuizGone = errors.New("the quiz this assignment was made from is gone")
+	// ErrPaperTotalBelowMark refuses a file's graded quiz a total below a mark
+	// already given (setPaperMarksTx).
+	ErrPaperTotalBelowMark = errors.New("the total can't go below a mark already given")
 )
 
 // AssignmentInputError refuses a form value; its text is shown as is.
@@ -105,6 +108,10 @@ type Assignment struct {
 	// UploadOnly: a marked one is answered by upload only, never in the app
 	// (Epo 2026-11-19); it goes with AllowUploads.
 	UploadOnly bool `json:"uploadOnly"`
+	// PaperFile: a graded quiz made from a file (Epo 2026-11-20), its question
+	// paper the one entry of Files, read live; answered by upload only and
+	// marked by hand out of Marks.
+	PaperFile bool `json:"paperFile"`
 	// TopicIDs: its quiz's topic, then the other topics its questions name as
 	// their own (questionTopicsSQL), or its files' with the most-used first.
 	TopicIDs []string         `json:"topicIds" nullable:"false"`
@@ -189,6 +196,10 @@ type AssignmentManage struct {
 	// 2026-11-08, mock T3).
 	ToApprove int `json:"toApprove"`
 	NotGraded int `json:"notGraded"`
+	// Graded counts submissions with every mark decided, past members' too: a
+	// graded quiz from a file asks before its total changes while any is
+	// (Epo 2026-11-20), as setPaperMarksTx checks them all.
+	Graded int `json:"graded"`
 	// ApprovalsCheckedOff: the caller ticked the answers waiting off their To do
 	// (SetAssignmentTodoCheck), and none was submitted since.
 	ApprovalsCheckedOff bool `json:"approvalsCheckedOff"`
@@ -297,9 +308,15 @@ type AssignmentForm struct {
 	Shuffle        bool
 	AllowUploads   bool
 	UploadOnly     bool
-	Files          []AssignmentFileRef
+	// PaperFile: a graded quiz whose question paper is its one file
+	// (MakeFileGradedQuiz); set by the server, never read from a request.
+	PaperFile bool
+	Files     []AssignmentFileRef
 	// Points grades an Assignment (unmarked, not one's own task); nil, none.
 	Points *int
+	// TotalMarks is a file's graded quiz's total (Epo 2026-11-20), and only
+	// theirs: what each hand-in is marked out of.
+	TotalMarks *int
 }
 
 // AssignmentFileRef names one file or material of an unmarked assignment.
@@ -380,7 +397,7 @@ var assignmentCols = `a.id, COALESCE(a.workspace_id, ''), a.kind, a.title, a.pos
 	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.allow_uploads, a.upload_only,
 	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
 		WHERE p->'answer'->>'type' = 'drawing'), a.own, COALESCE(a.created_by, ''),
-	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), m.updated_at, a.points,
+	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), m.updated_at, a.points, a.paper_file,
 	` + questionTopicsSQL
 
 // questionTopicIDsSQL is every topic id assignment a's questions name as
@@ -419,7 +436,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &topicID,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.UploadOnly, &a.DrawingParts, &a.Own, &maker, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &questionTopics); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.UploadOnly, &a.DrawingParts, &a.Own, &maker, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &a.PaperFile, &questionTopics); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
@@ -549,17 +566,22 @@ const countedAttemptOrder = attemptMarkSQL + ` / NULLIF(t.total, 0) DESC NULLS L
 func (s *Store) fillAssignmentFiles(ctx context.Context, userID string, ids []string, at map[string]int, list []Assignment) error {
 	// A task of one's own holds files from anywhere, each read while its maker
 	// can still open it; an assignment's are its workspace's.
+	// A file's graded quiz names its question paper to those given it, hidden
+	// or not; a hidden one's topic, page 1 and opening text wait for their
+	// Start, as FileReadRole opens it then.
 	rows, err := s.pool.Query(ctx, `SELECT af.assignment_id, f.id, m.id, COALESCE(f.name, m.title), COALESCE(f.kind::text, m.kind::text),
-			COALESCE(f.topic_id, m.topic_id), fw.id, COALESCE(fw.name, ''),
-			COALESCE(f.thumbnail_key, ''), COALESCE(f.preview, m.preview)
+			CASE WHEN o.shown THEN COALESCE(f.topic_id, m.topic_id) END, fw.id, COALESCE(fw.name, ''),
+			CASE WHEN o.shown THEN COALESCE(f.thumbnail_key, '') ELSE '' END, CASE WHEN o.shown THEN COALESCE(f.preview, m.preview) END
 		FROM assignment_files af
 		JOIN assignments a ON a.id=af.assignment_id
 		LEFT JOIN files f ON f.id=af.file_id AND f.trashed_at IS NULL
 		LEFT JOIN materials m ON m.id=af.material_id AND m.trashed_at IS NULL
 		LEFT JOIN workspaces fw ON fw.id=COALESCE(f.workspace_id, m.workspace_id)
+		CROSS JOIN LATERAL (SELECT NOT a.own AND NOT workspace_item_visible(COALESCE(f.hidden, `+materialHiddenSQL+`), a.workspace_id, $2) AS unseen) v
+		CROSS JOIN LATERAL (SELECT NOT v.unseen OR EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.user_id=$2) AS shown) o
 		WHERE af.assignment_id = ANY($1) AND (f.id IS NOT NULL OR m.id IS NOT NULL)
 			AND CASE WHEN a.own THEN (f.id IS NULL OR (`+ownTaskFileSQL("$2")+`)) AND (m.id IS NULL OR (`+ownTaskMaterialSQL("$2")+`))
-				ELSE workspace_item_visible(COALESCE(f.hidden, `+materialHiddenSQL+`), a.workspace_id, $2) END
+				ELSE (a.paper_file AND NOT a.draft AND f.workspace_id=a.workspace_id) OR NOT v.unseen END
 		ORDER BY af.assignment_id, af.position`, ids, userID)
 	if err != nil {
 		return err
@@ -646,30 +668,32 @@ func (s *Store) fillAssignmentManage(ctx context.Context, userID string, ids []s
 				AND EXISTS (SELECT 1 FROM jsonb_array_elements(q->'parts') p
 					WHERE p->>'pending' = 'true' AND NOT p ? 'aiAwards')
 			GROUP BY 1),
+		gr AS (SELECT t.assignment_id, count(*)::int AS n FROM attempts t
+			WHERE t.assignment_id = ANY($1) AND t.submitted_at IS NOT NULL AND t.waiting_answers = 0 GROUP BY 1),
 		k AS (SELECT x.assignment_id FROM assignment_todo_checks x
 			WHERE x.assignment_id = ANY($1) AND x.user_id=$2 AND x.approvals
 				AND x.checked_at >= COALESCE((SELECT max(t.submitted_at) FROM attempts t
 					WHERE t.assignment_id=x.assignment_id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0), '-infinity'))
 		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), v.mean, COALESCE(w.n, 0), COALESCE(u.n, 0),
-			k.assignment_id IS NOT NULL
+			k.assignment_id IS NOT NULL, COALESCE(gr.n, 0)
 		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
 		LEFT JOIN v ON v.assignment_id=c.assignment_id
 		LEFT JOIN w ON w.assignment_id=c.assignment_id LEFT JOIN u ON u.assignment_id=c.assignment_id
-		LEFT JOIN k ON k.assignment_id=c.assignment_id`, ids, userID)
+		LEFT JOIN k ON k.assignment_id=c.assignment_id LEFT JOIN gr ON gr.assignment_id=c.assignment_id`, ids, userID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id string
-		var assigned, ticked, submitted, waiting, ungraded int
+		var assigned, ticked, submitted, waiting, ungraded, graded int
 		var mean *float64
 		var checkedOff bool
-		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff); err != nil {
+		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff, &graded); err != nil {
 			return err
 		}
 		m := list[at[id]].Manage
-		m.Assigned, m.Done, m.ToApprove, m.NotGraded = assigned, ticked+submitted, waiting, ungraded
+		m.Assigned, m.Done, m.ToApprove, m.NotGraded, m.Graded = assigned, ticked+submitted, waiting, ungraded, graded
 		m.ApprovalsCheckedOff = checkedOff
 		// From the first submission: staff see every member's mark anyway (Epo
 		// 2026-11-13 dropped the five-result minimum here).
@@ -982,7 +1006,7 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID, actorID string, f
 		if !form.Draft && form.DueAt == nil {
 			return assignmentInput("choose a due date")
 		}
-		if len(form.Files) > 0 {
+		if len(form.Files) > 0 && !form.PaperFile {
 			return assignmentInput("a marked assignment takes a quiz, not files")
 		}
 		if form.UploadOnly && !form.AllowUploads {
@@ -992,6 +1016,12 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID, actorID string, f
 		return assignmentInput("an unmarked assignment has no quiz or time limit")
 	} else if form.UploadOnly {
 		return assignmentInput("only a marked assignment is upload-only")
+	}
+	if form.PaperFile != (form.TotalMarks != nil) {
+		return assignmentInput("a graded quiz from a file, and only that, has total marks")
+	}
+	if form.TotalMarks != nil && (*form.TotalMarks < 1 || *form.TotalMarks > fieldlimits.AssignmentPoints) {
+		return assignmentInput("total marks are 1 to " + strconv.Itoa(fieldlimits.AssignmentPoints))
 	}
 	if form.Points != nil {
 		if form.Kind != AssignmentUnmarked || own {
@@ -1256,17 +1286,17 @@ func (s *Store) createAssignmentTx(ctx context.Context, tx pgx.Tx, actorID, wsID
 	}
 	id := uid("as")
 	if _, err := tx.Exec(ctx, `INSERT INTO assignments (id, workspace_id, created_by, kind, title, source_quiz_id,
-			due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, upload_only, posted_at, created_at, own, points)
-		VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$21,$17,$17,$19,$20)`,
+			due_at, time_limit_min, attempts_allowed, no_late, late_penalty_pct, assign_all, draft, marking, answers_shown, grades_shown, shuffle, allow_uploads, upload_only, posted_at, created_at, own, points, paper_file)
+		VALUES ($1,NULLIF($2::text,''),$3,$4,$5,NULLIF($6::text,''),$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16,$18,$21,$17,$17,$19,$20,$22)`,
 		id, wsID, actorID, form.Kind, strings.TrimSpace(form.Title), form.QuizID,
 		form.DueAt, form.TimeLimitMin, form.Attempts, form.NoLate, form.LatePenaltyPct, form.AssignAll,
-		form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own, form.Points, form.UploadOnly); err != nil {
+		form.Marking, form.ShowAnswers, form.ShowGrades, form.Shuffle, now, form.AllowUploads, own, form.Points, form.UploadOnly, form.PaperFile); err != nil {
 		return "", err
 	}
 	if err := writeAssignmentLists(ctx, tx, id, form); err != nil {
 		return "", err
 	}
-	if form.Kind == AssignmentMarked {
+	if form.Kind == AssignmentMarked && form.QuizID != "" {
 		if _, err := tx.Exec(ctx, `UPDATE materials SET assignment_id=$1, hidden=true WHERE id=$2`, id, form.QuizID); err != nil {
 			return "", err
 		}
@@ -1305,6 +1335,64 @@ func (s *Store) CheckGradedQuiz(ctx context.Context, actorID, wsID string, form 
 	return err
 }
 
+// MakeFileGradedQuiz makes a graded quiz from a file of workspace wsID (Epo
+// 2026-11-20): the file is its question paper, read live rather than copied,
+// members answer by upload, and staff mark each hand-in out of marks by hand.
+// Its frozen copy is one open part worth marks (paperQuestion), so attempts,
+// marking, late penalties and released grades read as any graded quiz's. A
+// draft holds the copy already, which Publish gives out as it is.
+func (s *Store) MakeFileGradedQuiz(ctx context.Context, actorID, wsID, fileID string, form AssignmentForm, now time.Time) (Assignment, error) {
+	if err := checkGradedQuizForm(form); err != nil {
+		return Assignment{}, err
+	}
+	// The range is checkAssignmentForm's, in the transaction.
+	if form.TotalMarks == nil {
+		return Assignment{}, assignmentInput("give the total marks")
+	}
+	marks := *form.TotalMarks
+	var name string
+	if err := s.pool.QueryRow(ctx, `SELECT name FROM files WHERE id=$1`, fileID).Scan(&name); err != nil {
+		if isNoRows(err) {
+			return Assignment{}, ErrNotFound
+		}
+		return Assignment{}, err
+	}
+	form.PaperFile, form.AllowUploads, form.UploadOnly, form.Marking = true, true, true, MarkingManual
+	form.Files = []AssignmentFileRef{{FileID: fileID}}
+	form.Questions = []map[string]any{paperQuestion(name, marks)}
+	var id string
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		var err error
+		if id, err = s.createAssignmentTx(ctx, tx, actorID, wsID, form, now); err != nil || !form.Draft {
+			return err
+		}
+		frozen, err := json.Marshal(form.Questions)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE assignments SET questions=$2, question_count=1, total_marks=$3 WHERE id=$1`, id, frozen, marks)
+		return err
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// paperQuestion is a file's graded quiz's frozen copy: one question with no
+// words and one open part worth the quiz's marks, the whole hand-in, whose one
+// marking point is the file's name, so staff type one mark as for any open part.
+func paperQuestion(name string, marks int) map[string]any {
+	return map[string]any{
+		"id": uid("q"), "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": []any{map[string]any{
+			"id": uid("p"), "blocks": []any{}, "answer": map[string]any{"type": "open", "accepted": []any{}},
+			"marks": float64(marks), "solution": []any{},
+			"markscheme": []any{map[string]any{"text": truncateRunes(name, fieldlimits.QuestionMarkItem), "marks": float64(marks)}},
+		}},
+	}
+}
+
 // makeGradedQuizTx makes the graded quiz (mt.GradedQuiz) that owns mt, a
 // workspace quiz written in this transaction with its images (Epo
 // 2026-11-16: the dialog sends the settings and the questions together). A
@@ -1339,13 +1427,19 @@ func (s *Store) makeGradedQuizTx(ctx context.Context, tx pgx.Tx, mt Material, no
 	return s.createAssignmentTx(ctx, tx, mt.CreatedBy, mt.WorkspaceID, form, now)
 }
 
-// writeAssignmentLists replaces its named assignees and files.
-func writeAssignmentLists(ctx context.Context, tx pgx.Tx, id string, form AssignmentForm) error {
+// writeAssignees replaces its named assignees.
+func writeAssignees(ctx context.Context, tx pgx.Tx, id string, form AssignmentForm) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM assignment_assignees WHERE assignment_id=$1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO assignment_assignees (assignment_id, user_id)
-		SELECT $1::text, unnest($2::text[])`, id, uniqueStrings(form.Assignees)); err != nil {
+	_, err := tx.Exec(ctx, `INSERT INTO assignment_assignees (assignment_id, user_id)
+		SELECT $1::text, unnest($2::text[])`, id, uniqueStrings(form.Assignees))
+	return err
+}
+
+// writeAssignmentLists replaces its named assignees and files.
+func writeAssignmentLists(ctx context.Context, tx pgx.Tx, id string, form AssignmentForm) error {
+	if err := writeAssignees(ctx, tx, id, form); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM assignment_files WHERE assignment_id=$1`, id); err != nil {
@@ -1503,15 +1597,19 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 			return ErrNotFound
 		}
 		var kind string
-		var draft bool
+		var draft, paperFile bool
 		var quizID *string
-		if err := tx.QueryRow(ctx, `SELECT kind, draft, source_quiz_id FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&kind, &draft, &quizID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT kind, draft, source_quiz_id, paper_file FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&kind, &draft, &quizID, &paperFile); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
 			return err
 		}
-		form.Kind, form.Draft, form.QuizID = kind, draft, ""
+		form.Kind, form.Draft, form.QuizID, form.PaperFile = kind, draft, "", paperFile
+		// A file's graded quiz keeps its file, its upload and its hand marking.
+		if paperFile {
+			form.Files, form.AllowUploads, form.UploadOnly, form.Marking = nil, true, true, MarkingManual
+		}
 		if quizID != nil {
 			form.QuizID = *quizID
 		}
@@ -1534,12 +1632,187 @@ func (s *Store) UpdateAssignment(ctx context.Context, actorID, id string, form A
 				return err
 			}
 		}
+		if paperFile {
+			if err := setPaperMarksTx(ctx, tx, id, *form.TotalMarks); err != nil {
+				return err
+			}
+			return writeAssignees(ctx, tx, id, form)
+		}
 		return writeAssignmentLists(ctx, tx, id, form)
 	})
 	if err != nil {
 		return Assignment{}, err
 	}
 	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// setPaperMarksTx changes a file's graded quiz's total (Epo 2026-11-20): the
+// marks given stay as they are, out of the new total, as Canvas and Google
+// Classroom keep them; staff change them by hand. A total below a mark given
+// is refused. The caller holds the assignment's row.
+func setPaperMarksTx(ctx context.Context, tx pgx.Tx, id string, marks int) error {
+	var total, highest float64
+	if err := tx.QueryRow(ctx, `SELECT a.total_marks::float8, COALESCE((SELECT max(t.correct) FROM attempts t
+			WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL), 0)::float8
+		FROM assignments a WHERE a.id=$1`, id).Scan(&total, &highest); err != nil {
+		return err
+	}
+	if total == float64(marks) {
+		return nil
+	}
+	if highest > float64(marks) {
+		return ErrPaperTotalBelowMark
+	}
+	return rewritePaperTx(ctx, tx, id, func(part, item map[string]any) {
+		part["marks"], item["marks"] = float64(marks), float64(marks)
+	})
+}
+
+// ChangePaperFile points a file's graded quiz at another file of its
+// workspace (Epo 2026-11-20, "Change file", as Gradescope replaces a template
+// PDF): answers and marks stay, and those who started read the new file from
+// their next open (paperReaderSQL follows the row). A file gone from it is
+// chosen again the same way.
+func (s *Store) ChangePaperFile(ctx context.Context, actorID, id, fileID string, now time.Time) (Assignment, error) {
+	row, err := s.taskRow(ctx, s.pool, id)
+	if err != nil {
+		return Assignment{}, err
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		staff, err := s.lockTaskTx(ctx, tx, row.wsID, actorID, true)
+		if err != nil {
+			return err
+		}
+		if !row.mayChange(staff, actorID) {
+			return ErrNotFound
+		}
+		var paperFile bool
+		if err := tx.QueryRow(ctx, `SELECT paper_file FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&paperFile); err != nil {
+			if isNoRows(err) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if !paperFile {
+			return assignmentInput("only a graded quiz from a file has a question paper")
+		}
+		var name string
+		err = tx.QueryRow(ctx, `SELECT name FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL
+			AND workspace_item_visible(hidden, workspace_id, $3)`, fileID, row.wsID, actorID).Scan(&name)
+		if isNoRows(err) {
+			return assignmentInput("a file is not in this workspace")
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM assignment_files WHERE assignment_id=$1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO assignment_files (assignment_id, file_id, position) VALUES ($1, $2, 0)`, id, fileID); err != nil {
+			return err
+		}
+		return rewritePaperTx(ctx, tx, id, func(_, item map[string]any) {
+			item["text"] = truncateRunes(name, fieldlimits.QuestionMarkItem)
+		})
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// rewritePaperTx edits the one part of a file's graded quiz (paperQuestion)
+// and its one marking point, in its stored copy and in each submission's
+// graded copy, whose totals follow; a running attempt holds only its total.
+// The stored copy's bytes are charged again to whoever froze it: a total's
+// digits or a file's name move it by a few bytes, so no limit is checked.
+func rewritePaperTx(ctx context.Context, tx pgx.Tx, id string, edit func(part, item map[string]any)) error {
+	var raw []byte
+	if err := tx.QueryRow(ctx, `SELECT questions FROM assignments WHERE id=$1`, id).Scan(&raw); err != nil {
+		return err
+	}
+	qs, err := decodeFrozen(raw)
+	if err != nil {
+		return err
+	}
+	if err := editPaperPart(qs, edit); err != nil {
+		return err
+	}
+	_, marks := questionMarks(qs[0])
+	frozen, err := json.Marshal(qs)
+	if err != nil {
+		return err
+	}
+	size, err := storageJSONSizeTx(ctx, tx, string(frozen))
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE assignments SET questions=$2, total_marks=$3,
+		frozen_bytes=CASE WHEN frozen_by IS NULL THEN frozen_bytes ELSE $4 END WHERE id=$1`, id, frozen, marks, size); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE attempts SET total=$2 WHERE assignment_id=$1 AND submitted_at IS NULL`, id, marks); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT id, questions FROM attempts WHERE assignment_id=$1 AND submitted_at IS NOT NULL FOR UPDATE`, id)
+	if err != nil {
+		return err
+	}
+	graded := map[string][]byte{}
+	for rows.Next() {
+		var attempt string
+		var stored []byte
+		if err := rows.Scan(&attempt, &stored); err != nil {
+			rows.Close()
+			return err
+		}
+		graded[attempt] = stored
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for attempt, stored := range graded {
+		qs, err := decodeFrozen(stored)
+		if err != nil {
+			return err
+		}
+		if err := editPaperPart(qs, edit); err != nil {
+			return err
+		}
+		correct, total, waitingMarks, waitingAnswers := attemptTotals(qs)
+		pct := 0
+		if total > 0 {
+			pct = int(correct / total * 100)
+		}
+		next, err := json.Marshal(qs)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE attempts SET questions=$2, correct=$3, total=$4, pct=$5, waiting_marks=$6, waiting_answers=$7 WHERE id=$1`,
+			attempt, next, correct, total, pct, waitingMarks, waitingAnswers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// editPaperPart hands edit the copy's one part and its one marking point.
+func editPaperPart(qs []map[string]any, edit func(part, item map[string]any)) error {
+	if len(qs) == 1 {
+		parts, _ := qs[0]["parts"].([]any)
+		if len(parts) == 1 {
+			part, _ := parts[0].(map[string]any)
+			items, _ := part["markscheme"].([]any)
+			if len(items) == 1 {
+				if item, ok := items[0].(map[string]any); ok {
+					edit(part, item)
+					return nil
+				}
+			}
+		}
+	}
+	return errors.New("a file's graded quiz has one part with one marking point")
 }
 
 // PublishAssignment gives a draft to its members. questions is its quiz's
@@ -1554,10 +1827,11 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 			return err
 		}
 		var kind string
-		var draft bool
+		var draft, paperFile bool
 		var due *time.Time
 		var quizID *string
-		if err := tx.QueryRow(ctx, `SELECT kind, draft, due_at, source_quiz_id FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&kind, &draft, &due, &quizID); err != nil {
+		var stored []byte
+		if err := tx.QueryRow(ctx, `SELECT kind, draft, due_at, source_quiz_id, paper_file, questions FROM assignments WHERE id=$1 FOR UPDATE`, id).Scan(&kind, &draft, &due, &quizID, &paperFile, &stored); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
@@ -1565,6 +1839,13 @@ func (s *Store) PublishAssignment(ctx context.Context, actorID, id string, qs []
 		}
 		if !draft {
 			return nil
+		}
+		// A file's draft holds its copy (MakeFileGradedQuiz); it has no quiz.
+		if paperFile {
+			var err error
+			if qs, err = decodeFrozen(stored); err != nil {
+				return err
+			}
 		}
 		if kind == AssignmentMarked && due == nil {
 			return assignmentInput("choose a due date")

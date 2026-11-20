@@ -384,7 +384,12 @@ export function NewAssignmentDialog({
               Task, Epo 2026-11-14). */}
           {takesPoints && (
             <div className="grid gap-4 sm:grid-cols-2">
-              <PointsField control={control} error={errors.points?.message} />
+              <PointsField
+                control={control}
+                error={errors.points?.message}
+                label={m.assignment_field_points()}
+                name="points"
+              />
             </div>
           )}
           {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:

@@ -467,6 +467,20 @@ unchanged.
   annotations in `sourceActorsAllowed`), the collaboration server in
   `live_access`, and the internal document reads the pipeline uses through
   the same two.
+- **A graded quiz's question paper** (Epo 2026-11-20). A graded quiz made from a
+  file (`assignments.paper_file`) names the file to everyone it is given to,
+  hidden or not; a hidden one's topic, page-1 thumbnail and opening text wait
+  for their Start (`fillAssignmentFiles`). Once a member has started it (any
+  attempt, running or submitted, while they are still a member) they read that
+  one file as a viewer: its row, its links, its view session (`FileReadRole`,
+  which `fileRead` and `fileReadOrPayer` use) and their own PDF marks
+  (`annotationLock`), never before Start, as the frozen copy of a quiz is
+  given only at Start. Never its room: the edit session, the collaboration
+  token and the room's join check (`sourceActorsAllowed`) keep the hidden rule,
+  so they see what was last saved, not staff's typing. Everything else keeps
+  the hidden rule too (`FileEffectiveRole`): chat, the agent's tools, Recent,
+  search and the lists, and the file stays hidden in Files. Staff hide the paper themselves to keep
+  it unread before the quiz; nothing changes the flag for them.
 - **Owned by a graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
   (`materials.assignment_id`, migration 0174) is hidden for good: claiming it
   sets `hidden`, and `materialHiddenSQL` and `live_access` read it as hidden

@@ -18,6 +18,14 @@ vi.mock('@/api/hooks', () => ({
   useStartAssignment: () => ({ isPending: false, mutate: vi.fn() }),
   useWorkspace: () => ({ data: undefined }),
 }));
+// The file viewer's lazy parts: the card by its file's name alone.
+vi.mock('./LazyPaper', () => ({
+  PaperPages: () => null,
+  QuestionPaperCard: ({ file }: { file: { name: string } | null }) => (
+    <p>{file?.name}</p>
+  ),
+  QuestionPaperView: () => null,
+}));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => (
     <a href="/">{children}</a>
@@ -27,6 +35,9 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const { createRoot } = await import('react-dom/client');
+const { QueryClient, QueryClientProvider } = await import(
+  '@tanstack/react-query'
+);
 const { AttemptResults } = await import('./AttemptResults');
 
 const part = (id: string) => ({
@@ -205,5 +216,109 @@ it('lists each part of a question as its own row', async () => {
   expect(rows[0]).toContain('Q1 (a)');
   expect(rows[0]).toContain('First part');
   expect(rows[1]).toContain('Q1 (b)');
+  act(() => root.unmount());
+});
+
+// Epo 2026-11-20 (mock QEetGvcmf2vvkVfqcYAKLz boards 6 and 7): a graded quiz
+// from a file reads as a hand-in, its one question's comment as Feedback.
+const paperAssignment = {
+  files: [{ fileId: 'f1', kind: 'pdf', name: 'Cell structure.pdf' }],
+  paperFile: true,
+  postedBy: 'Kate',
+  workspaceId: 'ws1',
+} as unknown as Assignment;
+const paperAttempt = {
+  ...attempt,
+  answers: {},
+  correct: 31.5,
+  gradesHidden: false,
+  mark: 31.5,
+  paperFiles: [
+    {
+      id: 'a1',
+      kind: 'image',
+      name: 'Cell answers.jpg',
+      sizeBytes: 1000,
+      status: 'ready',
+    },
+  ],
+  questions: [
+    {
+      ...attempt.questions[0],
+      comment: 'Good labelling',
+      commentByName: 'Kate Malone',
+      parts: [
+        {
+          answer: { type: 'open' },
+          awarded: 31.5,
+          blocks: [],
+          id: 'p1',
+          itemAwards: [31.5],
+          marks: 40,
+          markscheme: [{ marks: 40, text: 'Cell structure.pdf' }],
+          solution: [],
+        },
+      ],
+    },
+  ],
+  total: 40,
+  userName: 'Ben',
+} as unknown as AssignmentAttempt;
+
+async function renderPaper(assignment: Assignment, shown: AssignmentAttempt) {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AttemptResults assignment={assignment} attempt={shown} />
+      </QueryClientProvider>
+    )
+  );
+  return { host, root, text: host.textContent ?? '' };
+}
+
+it("shows a file quiz's member the feedback, their files and the paper, with no question row", async () => {
+  const { root, text } = await renderPaper(paperAssignment, paperAttempt);
+  expect(text).toContain(m.assignment_feedback());
+  expect(text).toContain('Kate Malone · Good labelling');
+  expect(text).toContain('Cell answers.jpg');
+  expect(text).toContain('Cell structure.pdf');
+  expect(text).not.toContain('Q1');
+  act(() => root.unmount());
+});
+
+// Epo 2026-11-20 ("a file is not a quiz question"): staff read it as a
+// hand-in too, its one mark and comment in Grade.
+it("gives staff a file quiz's grade and answers, with no question row", async () => {
+  const { root, text, host } = await renderPaper(
+    { ...paperAssignment, manage: {} } as Assignment,
+    paperAttempt
+  );
+  expect(text).toContain(m.assignment_col_grade());
+  expect(text).toContain(m.assignment_answers());
+  expect(text).toContain('Cell answers.jpg');
+  expect(text).not.toContain('Q1');
+  const comment = host.querySelector<HTMLInputElement>(
+    `input[aria-label="${m.assignment_comment_for({ name: 'Ben' })}"]`
+  );
+  expect(comment?.value).toBe('Good labelling');
+  const mark = host.querySelector<HTMLInputElement>(
+    `input[aria-label="${m.assignment_grade_of({ name: 'Ben' })}"]`
+  );
+  expect(mark?.value).toBe('31.5');
+  act(() => root.unmount());
+});
+
+it("shows a file quiz's files alone while grades wait for release", async () => {
+  const { root, text } = await renderPaper(paperAssignment, {
+    ...paperAttempt,
+    gradesHidden: true,
+  });
+  expect(text).toContain(m.assignment_grades_hidden_note({ name: 'Kate' }));
+  expect(text).toContain('Cell answers.jpg');
+  expect(text).not.toContain('Good labelling');
+  expect(text).not.toContain('Q1');
   act(() => root.unmount());
 });

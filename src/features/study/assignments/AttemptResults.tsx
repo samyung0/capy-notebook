@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
+import { formatFileSize } from '@/features/files/fileUtils';
 import { AiWarning } from '@/features/questions/AiWarning';
 import { answerLabels } from '@/features/questions/editorFields';
 import { QuestionBlockView, TextView } from '@/features/questions/QuestionView';
@@ -38,6 +39,7 @@ import { blockText, questionLine } from '../practice/practiceText';
 import { PracticeFrame } from '../practice/studyPage';
 import { studyLink } from '../studyRoutes';
 import { BackToAssignments, type ProfileOrigin } from './AssignmentAttemptPage';
+import { PreviewDialog } from './AssignmentPreview';
 import {
   dayLabel,
   markText,
@@ -46,11 +48,15 @@ import {
   type Outcome,
   percentText,
   questionOutcome,
+  questionPaperOf,
   questionRowName,
 } from './assignmentText';
+import { SubmissionFileList, useOpenSubmissionFile } from './HandIns';
 import { LateBadge } from './LateBadge';
+import { QuestionPaperCard, QuestionPaperView } from './LazyPaper';
 import { MarkField } from './MarkField';
 import { MarkingNow } from './MarkingNow';
+import { SectionLabel } from './todoParts';
 import { useAssignmentStart } from './useAssignmentStart';
 
 const OUTCOME_CHIP: Record<Outcome, string> = {
@@ -92,7 +98,7 @@ export function AttemptResults({
   fromProfile?: ProfileOrigin;
 }) {
   if (attempt.gradesHidden)
-    return <HiddenResults attempt={attempt} postedBy={assignment.postedBy} />;
+    return <HiddenResults assignment={assignment} attempt={attempt} />;
   return (
     <MarkedResults
       assignment={assignment}
@@ -103,14 +109,16 @@ export function AttemptResults({
 }
 
 /** Results while grades wait for release (S7): the questions with whether
- * each was answered, and no marks, outcomes, comments or keys. */
+ * each was answered, and no marks, outcomes, comments or keys; a file's
+ * graded quiz, its files. */
 function HiddenResults({
+  assignment,
   attempt,
-  postedBy,
 }: {
+  assignment: Assignment;
   attempt: AssignmentAttempt;
-  postedBy: string;
 }) {
+  const { postedBy } = assignment;
   const questions = attempt.questions as AssignmentGradedQuestion[];
   const answered = (q: AssignmentGradedQuestion) =>
     q.parts.some((part) => {
@@ -132,30 +140,233 @@ function HiddenResults({
             ? m.assignment_grades_hidden_note({ name: postedBy })
             : m.assignment_grades_hidden_note_anon()}
         </p>
-        <ol className="mt-4 border-divider border-t">
-          {questions.map((question, i) => (
-            <li
-              className="grid min-h-10 grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 border-divider border-b"
-              key={question.id}
-            >
-              <span className="t-meta font-bold text-fg-muted">{`Q${i + 1}`}</span>
-              <span className="truncate">
-                <TextView
-                  className="whitespace-nowrap"
-                  marks
-                  text={questionLine(question as Question)}
-                />
-              </span>
-              <span className="t-meta text-fg-muted">
-                {answered(question)
-                  ? m.assignment_answered()
-                  : m.assignment_blank()}
-              </span>
-            </li>
-          ))}
-        </ol>
+        {assignment.paperFile ? (
+          <PaperQuizFiles
+            assignment={assignment}
+            attempt={attempt}
+            staff={false}
+          />
+        ) : (
+          <ol className="mt-4 border-divider border-t">
+            {questions.map((question, i) => (
+              <li
+                className="grid min-h-10 grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 border-divider border-b"
+                key={question.id}
+              >
+                <span className="t-meta font-bold text-fg-muted">{`Q${i + 1}`}</span>
+                <span className="truncate">
+                  <TextView
+                    className="whitespace-nowrap"
+                    marks
+                    text={questionLine(question as Question)}
+                  />
+                </span>
+                <span className="t-meta text-fg-muted">
+                  {answered(question)
+                    ? m.assignment_answered()
+                    : m.assignment_blank()}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </PracticeFrame>
+  );
+}
+
+/** A file's graded quiz's results (Epo 2026-11-20, mock
+ * QEetGvcmf2vvkVfqcYAKLz boards 6 and 7, as Canvas and Classroom show a
+ * hand-in): the comment on its one question as Feedback, then the files
+ * handed in and the question paper; no question row, a file being no
+ * question (Epo: "a file is not a quiz question"). Staff get its Grade in
+ * the Feedback's place. */
+export function PaperQuizResults({
+  assignment,
+  attempt,
+  onSaved,
+  staff,
+}: {
+  assignment: Assignment;
+  attempt: AssignmentAttempt;
+  /** Grading: on to the next member once the mark is saved. */
+  onSaved?: () => void;
+  staff: boolean;
+}) {
+  const question = (attempt.questions as AssignmentGradedQuestion[])[0];
+  return (
+    <>
+      {staff && question ? (
+        <PaperGrade
+          assignment={assignment}
+          attempt={attempt}
+          onSaved={onSaved}
+          question={question}
+        />
+      ) : (
+        question?.comment && (
+          <section
+            aria-label={m.assignment_feedback()}
+            className="mt-6 flex flex-col gap-2.5"
+          >
+            <SectionLabel>{m.assignment_feedback()}</SectionLabel>
+            <CommentLine question={question} />
+          </section>
+        )
+      )}
+      <PaperQuizFiles assignment={assignment} attempt={attempt} staff={staff} />
+    </>
+  );
+}
+
+/** Staff's Grade for a file's graded quiz: one mark out of its total and the
+ * comment its member reads as Feedback, saved as Grading saves them (its one
+ * part's one marking point). */
+function PaperGrade({
+  assignment,
+  attempt,
+  onSaved,
+  question,
+}: {
+  assignment: Assignment;
+  attempt: AssignmentAttempt;
+  onSaved?: () => void;
+  question: AssignmentGradedQuestion;
+}) {
+  const [part] = question.parts;
+  const savedMark = !part || part.pending ? null : (part.itemAwards?.[0] ?? 0);
+  const savedComment = question.comment ?? '';
+  const [mark, setMark] = useState(savedMark);
+  const [comment, setComment] = useState(savedComment);
+  // A mark saved here or in Grading: the fields follow, as GradeField's do.
+  useEffect(() => {
+    setMark(savedMark);
+    setComment(savedComment);
+  }, [savedMark, savedComment]);
+  const { mutate, isPending } = useMarkAssignmentAnswer(
+    assignment.workspaceId,
+    assignment.id
+  );
+  if (!part) return null;
+  // Saving signs the comment, so an untouched Save would re-sign it.
+  const changed = mark !== savedMark || comment.trim() !== savedComment;
+  const save = () =>
+    mutate(
+      {
+        attemptId: attempt.id,
+        mark: {
+          comment: comment.trim(),
+          parts: [{ items: [mark ?? 0], partId: part.id }],
+          questionId: question.id,
+        },
+      },
+      {
+        onError: (error) =>
+          userToast({
+            title: errorCopy(error, m.assignment_mark_failed()),
+            variant: 'error',
+          }),
+        // Grading moves on instead, as its Approve does.
+        onSuccess: () =>
+          onSaved
+            ? onSaved()
+            : userToast({
+                title: m.assignment_mark_saved(),
+                variant: 'success',
+              }),
+      }
+    );
+  // Grade, then the comment under the Feedback its member reads it as.
+  return (
+    <>
+      <section
+        aria-label={m.assignment_col_grade()}
+        className="mt-6 flex flex-col gap-2.5"
+      >
+        <SectionLabel>{m.assignment_col_grade()}</SectionLabel>
+        <MarkField
+          className="self-start"
+          label={m.assignment_grade_of({ name: attempt.userName })}
+          marks={part.marks}
+          onChange={setMark}
+          value={mark}
+        />
+      </section>
+      <section
+        aria-label={m.assignment_feedback()}
+        className="mt-6 flex flex-col gap-2.5"
+      >
+        <SectionLabel>{m.assignment_feedback()}</SectionLabel>
+        <Input
+          aria-label={m.assignment_comment_for({ name: attempt.userName })}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder={m.assignment_comment_for({ name: attempt.userName })}
+          value={comment}
+        />
+        <div className="flex justify-end">
+          {/* The mark field's height, as Grade's Save (GradeField). */}
+          <Button
+            className="h-8"
+            disabled={isPending || mark === null || !changed}
+            onClick={save}
+            size="sm"
+          >
+            {m.assignment_save_marks()}
+          </Button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+/** A file's graded quiz's Your answers (staff's Answers), each opening on its
+ * signed link, and its question paper, opening in the workspace's viewer as
+ * Preview does. */
+function PaperQuizFiles({
+  assignment,
+  attempt,
+  staff,
+}: {
+  assignment: Assignment;
+  attempt: AssignmentAttempt;
+  staff: boolean;
+}) {
+  const answers = staff ? m.assignment_answers() : m.assignment_your_answers();
+  const open = useOpenSubmissionFile({ attemptId: attempt.id });
+  const [reading, setReading] = useState(false);
+  const paper = questionPaperOf(assignment) ?? null;
+  return (
+    <>
+      <section aria-label={answers} className="mt-6 flex flex-col gap-1">
+        <SectionLabel>{answers}</SectionLabel>
+        {attempt.paperFiles.length === 0 && (
+          // Submitted with none, or deleted from Files after.
+          <p className="t-meta text-fg-muted">{m.assignment_paper_none()}</p>
+        )}
+        <SubmissionFileList
+          files={attempt.paperFiles}
+          meta={(file) => formatFileSize(file.sizeBytes)}
+          onOpen={(file) => void open(file)}
+          removing={false}
+          results
+          uploading={[]}
+        />
+      </section>
+      <QuestionPaperCard
+        className="mt-6"
+        file={paper}
+        onOpen={() => setReading(true)}
+      />
+      {/* Gone while open (trashed, unshared): the dialog goes with it. */}
+      {reading && paper && (
+        <PreviewDialog
+          onClose={() => setReading(false)}
+          title={m.assignment_question_paper()}
+        >
+          <QuestionPaperView file={paper} named />
+        </PreviewDialog>
+      )}
+    </>
   );
 }
 
@@ -171,6 +382,8 @@ function MarkedResults({
   const staff = !!assignment.manage;
   // A task's maker runs it and takes it: the attempt here is their own.
   const taker = !staff || !!assignment.own;
+  // A file's graded quiz reads as a hand-in, to its member and its staff.
+  const paperQuiz = assignment.paperFile;
   const { dialog, start, starting } = useAssignmentStart(
     assignment.workspaceId
   );
@@ -243,7 +456,10 @@ function MarkedResults({
                   (Epo 2026-11-19). */}
               <p className="flex items-baseline gap-2.5 whitespace-nowrap">
                 <span className="font-extrabold text-[1.875rem] leading-none tracking-[-0.02rem] sm:text-[2.125rem]">
-                  {markText(attempt.mark, decided)}
+                  {/* A file's one mark not given yet: "– / 40", as its field. */}
+                  {paperQuiz && decided === 0
+                    ? `– / ${formatPoints(attempt.total)}`
+                    : markText(attempt.mark, decided)}
                 </span>
                 {decided > 0 && (
                   <span className="font-semibold text-base text-fg-muted">
@@ -255,7 +471,8 @@ function MarkedResults({
                 <LateBadge penaltyPct={attempt.latePenaltyPct} />
               )}
             </div>
-            {attempt.latePenaltyPct > 0 && (
+            {/* Nothing marked yet has no mark before the penalty. */}
+            {attempt.latePenaltyPct > 0 && decided > 0 && (
               // On phones it wraps under the mark rather than squeezing the title.
               <p className="t-meta mt-1 w-0 min-w-full text-fg-muted sm:w-auto sm:min-w-0 sm:whitespace-nowrap">
                 {m.assignment_before_penalty({
@@ -265,27 +482,33 @@ function MarkedResults({
             )}
           </div>
         </div>
-        <div className="mt-5.5 flex flex-wrap items-center gap-2">
-          {(['right', 'partly', 'wrong', 'waiting'] as const).map(
-            (outcome) =>
-              counts[outcome] > 0 && (
-                <span className={cn(CHIP, OUTCOME_CHIP[outcome])} key={outcome}>
-                  {`${counts[outcome]} ${OUTCOME_LABEL[outcome]().toLowerCase()}`}
-                </span>
-              )
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            {left && (
-              <Button
-                disabled={starting}
-                onClick={() => start(assignment)}
-                variant="outline"
-              >
-                {m.assignment_attempt_again()}
-              </Button>
-            )}
+        {(!paperQuiz || left) && (
+          <div className="mt-5.5 flex flex-wrap items-center gap-2">
+            {!paperQuiz &&
+              (['right', 'partly', 'wrong', 'waiting'] as const).map(
+                (outcome) =>
+                  counts[outcome] > 0 && (
+                    <span
+                      className={cn(CHIP, OUTCOME_CHIP[outcome])}
+                      key={outcome}
+                    >
+                      {`${counts[outcome]} ${OUTCOME_LABEL[outcome]().toLowerCase()}`}
+                    </span>
+                  )
+              )}
+            <div className="ml-auto flex items-center gap-2">
+              {left && (
+                <Button
+                  disabled={starting}
+                  onClick={() => start(assignment)}
+                  variant="outline"
+                >
+                  {m.assignment_attempt_again()}
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
         {attempt.marking && <MarkingNow className="t-meta mt-3" />}
         {attempt.waitingAnswers > 0 && !staff && (
           <p className="t-meta mt-3 text-fg-secondary">
@@ -298,25 +521,33 @@ function MarkedResults({
           </p>
         )}
         {dialog}
-        <ol className="mt-4 border-divider border-t">
-          {rows.map((row) => (
-            <ResultRow
-              assignment={assignment}
-              attempt={attempt}
-              key={row.id}
-              onToggle={() =>
-                setOpened((list) =>
-                  list.includes(row.id)
-                    ? list.filter((id) => id !== row.id)
-                    : [...list, row.id]
-                )
-              }
-              open={opened.includes(row.id)}
-              row={row}
-              staff={staff}
-            />
-          ))}
-        </ol>
+        {paperQuiz ? (
+          <PaperQuizResults
+            assignment={assignment}
+            attempt={attempt}
+            staff={staff}
+          />
+        ) : (
+          <ol className="mt-4 border-divider border-t">
+            {rows.map((row) => (
+              <ResultRow
+                assignment={assignment}
+                attempt={attempt}
+                key={row.id}
+                onToggle={() =>
+                  setOpened((list) =>
+                    list.includes(row.id)
+                      ? list.filter((id) => id !== row.id)
+                      : [...list, row.id]
+                  )
+                }
+                open={opened.includes(row.id)}
+                row={row}
+                staff={staff}
+              />
+            ))}
+          </ol>
+        )}
       </div>
     </PracticeFrame>
   );
@@ -745,23 +976,30 @@ export function ResultBody({
           </div>
         </div>
       ) : (
-        commentHere &&
-        question.comment && (
-          <div className="flex items-center gap-2.5">
-            <Avatar
-              aria-hidden
-              className="size-6.5 text-[10px]"
-              name={question.commentByName ?? ''}
-              src={question.commentByAvatarUrl || undefined}
-            />
-            <p className="min-w-0">
-              <b className="font-bold">{question.commentByName}</b>
-              {' · '}
-              {question.comment}
-            </p>
-          </div>
-        )
+        commentHere && question.comment && <CommentLine question={question} />
       )}
+    </div>
+  );
+}
+
+/** A question's comment as its member reads it: who wrote it, then it, the
+ * avatar centred on its first line when it runs to several. */
+function CommentLine({ question }: { question: AssignmentGradedQuestion }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="flex h-lh shrink-0 items-center">
+        <Avatar
+          aria-hidden
+          className="size-6.5 text-[10px]"
+          name={question.commentByName ?? ''}
+          src={question.commentByAvatarUrl || undefined}
+        />
+      </span>
+      <p className="min-w-0">
+        <b className="font-bold">{question.commentByName}</b>
+        {' · '}
+        {question.comment}
+      </p>
     </div>
   );
 }

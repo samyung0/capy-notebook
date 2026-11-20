@@ -70,6 +70,7 @@ import {
   isGraded,
   markText,
   percentText,
+  questionPaperOf,
   questionRowName,
   takesLateWork,
 } from './assignmentText';
@@ -77,6 +78,7 @@ import { GradedQuizQuestions } from './GradedQuizQuestions';
 import { GradingTab } from './GradingTab';
 import { GradeText, HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
+import { QuestionPaperView } from './LazyPaper';
 import { MarkingNow } from './MarkingNow';
 import { PreviewButton } from './PreviewButton';
 
@@ -141,6 +143,8 @@ export function AssignmentReport({
   const manage = assignment.manage;
   const quizId = manage?.quizId;
   const editing = marked && tab === 'questions';
+  // A file's graded quiz (Epo 2026-11-20): its Questions tab is the file.
+  const paper = questionPaperOf(assignment);
   // From a tablet up, the quiz editor alone covers the page (Epo 2026-11-19).
   const wide = useMediaQuery('(min-width: 768px)');
   const editorFullscreen = editing && !!quizId && wide && fullscreen;
@@ -191,19 +195,18 @@ export function AssignmentReport({
     >
       {/* Stepped aside past a phone's first Approve screen (tailwind.css). */}
       {/* As a member's attempt reads (Epo 2026-11-19): the title, its chips
-          under it, the actions at the right. */}
+          under it, the actions at the chips' right. */}
       <div className="flex" data-report-head>
         <BackToAssignments />
       </div>
-      <div
-        className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-3"
-        data-report-head
-      >
-        <div className="min-w-0 flex-[1_1_20rem]">
-          <h1 className="t-page-title truncate" title={assignment.title}>
-            {assignment.title}
-          </h1>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      <div className="mt-3" data-report-head>
+        <h1 className="t-page-title truncate" title={assignment.title}>
+          {assignment.title}
+        </h1>
+        {/* One row, never wrapping (Epo 2026-11-20): the actions stay at the
+            chips' right, and chips past the room scroll, as Grading's do. */}
+        <div className="mt-1 flex items-center gap-2 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {/* Published and not closed yet: Open, in green, first (Epo 2026-11-16). */}
             {!assignment.draft && !assignment.closedAt && (
               <span
@@ -240,27 +243,29 @@ export function AssignmentReport({
               </span>
             )}
           </div>
+          {(marked || releasable) && (
+            <div className="flex shrink-0 items-center gap-2">
+              {editing && quizId && !editorFullscreen && (
+                <>
+                  {/* Its words from a tablet up: a phone's row keeps
+                      room for the buttons, the icon telling the state. */}
+                  <EditorSaveStatus labelled={wide} store={editorStatus} />
+                  <span className="flex items-center" ref={setEditorActions} />
+                </>
+              )}
+              {/* A published one previews its frozen questions, so it waits
+                  for the report. */}
+              {marked && (
+                <PreviewButton
+                  disabled={!(draft || data || paper !== undefined)}
+                  onClick={() => setPreviewing(true)}
+                />
+              )}
+              {marked && draft && <PublishButton assignment={assignment} />}
+              {releasable && <ReleaseGrades assignment={assignment} />}
+            </div>
+          )}
         </div>
-        {(marked || releasable) && (
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {editing && quizId && !editorFullscreen && (
-              <>
-                <EditorSaveStatus labelled store={editorStatus} />
-                <span className="flex items-center" ref={setEditorActions} />
-              </>
-            )}
-            {/* A published one previews its frozen questions, so it waits
-                for the report. */}
-            {marked && (
-              <PreviewButton
-                disabled={!(draft || data)}
-                onClick={() => setPreviewing(true)}
-              />
-            )}
-            {marked && draft && <PublishButton assignment={assignment} />}
-            {releasable && <ReleaseGrades assignment={assignment} />}
-          </div>
-        )}
       </div>
       {/* Grading's full screen at the row's end (Epo 2026-11-19), as the
           workspace's: the members and the file, nothing else. */}
@@ -273,7 +278,9 @@ export function AssignmentReport({
             label:
               value === 'grading' && !marked && assignment.points === undefined
                 ? m.assignment_tab_hand_ins()
-                : TAB_LABELS[value](),
+                : value === 'questions' && paper !== undefined
+                  ? m.assignment_question_paper()
+                  : TAB_LABELS[value](),
             value,
           }))}
           value={tab}
@@ -324,20 +331,33 @@ export function AssignmentReport({
               </ToolbarButton>
             </div>
           )}
-          {quizId ? (
-            <FileActionsTarget.Provider value={editorActions}>
-              <GradedQuizQuestions
-                onStatusChange={editorStatus.getState().report}
-                quizId={quizId}
-              />
-            </FileActionsTarget.Provider>
-          ) : (
-            // Its quiz is gone: the questions members were given, to read.
-            data && (
-              <QuizReadSplit
-                questions={data.questions.map((item) => item.question)}
-              />
+          {paper === undefined ? (
+            quizId ? (
+              <FileActionsTarget.Provider value={editorActions}>
+                <GradedQuizQuestions
+                  onStatusChange={editorStatus.getState().report}
+                  quizId={quizId}
+                />
+              </FileActionsTarget.Provider>
+            ) : (
+              // Its quiz is gone: the questions members were given, to read.
+              data && (
+                <QuizReadSplit
+                  questions={data.questions.map((item) => item.question)}
+                />
+              )
             )
+          ) : (
+            <QuestionPaperView
+              change={
+                assignment.manage && {
+                  assignmentId: assignment.id,
+                  workspaceId: assignment.workspaceId,
+                }
+              }
+              file={paper}
+              named
+            />
           )}
         </div>
       ) : marked ? (
@@ -388,16 +408,25 @@ export function AssignmentReport({
         />
       )}
       {previewing && (
-        <PreviewDialog onClose={() => setPreviewing(false)}>
+        <PreviewDialog
+          onClose={() => setPreviewing(false)}
+          title={m.assignment_preview()}
+        >
           {/* What members see (Epo 2026-11-13): a published one's frozen
               questions, a draft's quiz file as Publish would freeze it. */}
-          {draft
-            ? quizId && <QuizFilePreview quizId={quizId} />
-            : data && (
+          {paper === undefined ? (
+            draft ? (
+              quizId && <QuizFilePreview quizId={quizId} />
+            ) : (
+              data && (
                 <AssignmentPreview
                   questions={data.questions.map((item) => item.question)}
                 />
-              )}
+              )
+            )
+          ) : (
+            <QuestionPaperView file={paper} named />
+          )}
         </PreviewDialog>
       )}
     </PracticeFrame>

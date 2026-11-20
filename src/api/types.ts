@@ -406,6 +406,7 @@ export type {
   MembersProgress,
   MembersTopic,
   MissedQuestion,
+  PaperFileReq,
   PastReview,
   Practice,
   PracticeItem,

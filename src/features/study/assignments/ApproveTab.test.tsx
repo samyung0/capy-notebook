@@ -302,3 +302,34 @@ it('lists questions marked by rule too, AI marked on the written ones', async ()
   expect(rows[1].textContent).not.toContain(m.assignment_ai_marked());
   act(() => root.unmount());
 });
+
+// Epo 2026-11-20 ("a file is not a quiz question"): a graded quiz from a file
+// lists its members with no questions or Overview, a phone starting there.
+it("lists a file quiz's members with no questions column", async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          {
+            attempts: 3,
+            id: 'as1',
+            manage: { marking: 'manual' },
+            paperFile: true,
+            workspaceId: 'ws1',
+          } as unknown as Assignment
+        }
+        onExitFullscreen={() => {}}
+        report={report}
+        search={{}}
+      />
+    )
+  );
+  expect(document.querySelector('[data-question-row]')).toBeNull();
+  expect(document.querySelectorAll('[data-answer-row]')).toHaveLength(2);
+  // The members are the phone's first screen, not a step in.
+  expect(document.querySelector('[data-approve-drill]')).toBeNull();
+  expect(document.body.textContent).not.toContain(m.assignment_overview());
+  expect(document.body.textContent).toContain(m.assignment_start_approving());
+  act(() => root.unmount());
+});

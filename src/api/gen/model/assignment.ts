@@ -29,6 +29,7 @@ export interface Assignment {
   mine?: AssignmentMine;
   noLate: boolean;
   own: boolean;
+  paperFile: boolean;
   points?: number;
   postedAt: string;
   postedBy: string;
