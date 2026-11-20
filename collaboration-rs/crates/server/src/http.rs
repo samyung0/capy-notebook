@@ -477,6 +477,17 @@ fn unavailable(route: &str, reason: &str, body: Value) -> Response {
     json_response(StatusCode::SERVICE_UNAVAILABLE, body)
 }
 
+/// A projection the gateway refused because the material is in Trash, logged
+/// at info already (Q778 A): an explicit refusal in the shape the gateway
+/// expects (503 `unavailable_target`), which it neither reports nor, after a
+/// replace-block, takes for a failed edit (Q784 A).
+fn in_trash() -> Response {
+    json_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        json!({ "code": "unavailable_target", "message": crate::projection::IN_TRASH }),
+    )
+}
+
 /// `/internal/commands`: the replace-block command.
 async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
     if !authorized(&app, &headers) {
@@ -509,11 +520,11 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
             &message,
             json!({ "code": "unavailable_target", "message": message }),
         ),
+        // The edit applied; its projection was refused.
+        Err(message) if message == crate::projection::IN_TRASH => in_trash(),
         Err(message) => {
             let conflict = message.contains("concurrently") || message.contains("no longer exists");
-            // A projection refused for a material in Trash was logged at
-            // info already: no failure (Q778 A).
-            if !conflict && message != crate::projection::IN_TRASH {
+            if !conflict {
                 crate::observe::capture(&message, None, &[("stage", "service_command")]);
             }
             let status = if conflict {
@@ -633,6 +644,7 @@ async fn project(
             StatusCode::OK,
             json!({ "projected": true, "yjsVersion": version }),
         ),
+        Err(message) if message == crate::projection::IN_TRASH => in_trash(),
         Err(message) => json_response(
             StatusCode::SERVICE_UNAVAILABLE,
             json!({ "message": message }),

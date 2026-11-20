@@ -10904,9 +10904,11 @@ async fn a_save_receipt_reaches_the_editor_before_its_projection() {
 /// moved to Trash before its room projected keeps a lagging projection. The
 /// gateway refuses the room's own projections (on demand, at unload), which is
 /// no failure: an info line, no projection error, no report, no unload
-/// warning. The 5 s catch-up leaves the note while it is in Trash and projects
-/// it once restored. Fails if a refusal for a note in Trash is recorded or
-/// reported, or if the catch-up tries the trashed note (a third refusal).
+/// warning; the on-demand projection answers the explicit in-Trash refusal
+/// (Q784 A). The 5 s catch-up leaves the note while it is in Trash and
+/// projects it once restored. Fails if a refusal for a note in Trash is
+/// recorded or reported, or if the catch-up tries the trashed note (a third
+/// refusal).
 #[tokio::test]
 async fn the_projection_catch_up_leaves_a_note_in_trash_until_it_is_restored() {
     let Some(env) = env() else { return };
@@ -10927,7 +10929,10 @@ async fn the_projection_catch_up_leaves_a_note_in_trash_until_it_is_restored() {
         &serde_json::json!({}),
     )
     .await;
+    // The explicit in-Trash refusal (Q784 A).
     assert_eq!(status, 503, "{body}");
+    assert_eq!(body["code"], "unavailable_target", "{body}");
+    assert_eq!(body["message"], "the material is in Trash");
     assert!(
         logs.has(&refused).await,
         "the room's projection was refused"
@@ -11040,9 +11045,10 @@ async fn committed_past(env: &Env, material: &str, before: i64) -> i64 {
 /// Q778 A: a server edit's own projection refused because its note went to
 /// Trash after the rows committed (in the 3 s `SERVICE_LATER` gap) is no
 /// failure either: the agent edit answers its receipt with no warning, and
-/// the replace-block command answers 503 with the reason and reports
-/// nothing. Fails if the agent edit logs its warning or the command
-/// reports the refusal.
+/// the replace-block command answers the explicit in-Trash refusal (503
+/// `unavailable_target`, Q784 A) and reports nothing. Fails if the agent
+/// edit logs its warning or the command reports the refusal or answers
+/// another refusal.
 #[tokio::test]
 async fn a_server_edits_projection_refused_in_trash_is_not_reported() {
     let Some(env) = env() else { return };
@@ -11078,6 +11084,7 @@ async fn a_server_edits_projection_refused_in_trash_is_not_reported() {
     trash_keeping_rooms(&env, &material).await;
     let (status, answer) = replaced.await.expect("command");
     assert_eq!(status, 503, "{answer}");
+    assert_eq!(answer["code"], "unavailable_target", "{answer}");
     assert_eq!(answer["message"], "the material is in Trash");
     let refused = ["projection refused", "in Trash", material.as_str()];
     for _ in 0..100 {

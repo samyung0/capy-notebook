@@ -3729,8 +3729,12 @@ version remains ahead of `projected_version`, so a slow older failure cannot
 restore `projection_error` after newer content succeeds.
 A service command commits its row and then projects before it answers; the
 handler returns 503 when that projection fails, even though the Yjs change is
-already durable and remains eligible for the normal lag retry (a refusal for a
-material in Trash answers 503 too, unreported, and waits for a restore).
+already durable and remains eligible for the normal lag retry. A refusal for a
+material in Trash, there and on the on-demand projection, is the explicit
+in-Trash refusal, 503 `unavailable_target` with `projection::IN_TRASH` as its
+message (Q784 A): unreported on both sides, the gateway answers the
+replace-block edit as applied (`store.inTrashRefusal`) and serves a Trash read the stored projection, and the projection waits for a
+restore.
 
 The final durable store takes the material advisory lock, then follows the same
 SQL row-lock order as Go mutations: workspace row (when present), contributor
