@@ -635,12 +635,12 @@ type Comment struct {
 // markdown materials plus the workspace's quizzes and flashcardSets. TopicID lets the
 // tree group refs under their topic (null = unfiled).
 type MaterialRef struct {
-	ID        string          `json:"id"`
-	Type      MaterialRefType `json:"type"`
-	Title     string          `json:"title"`
-	TopicID   *string         `json:"topicId"`
-	Position  int64           `json:"position"`
-	CreatedAt time.Time       `json:"createdAt"`
+	ID        string       `json:"id"`
+	Kind      MaterialKind `json:"kind"`
+	Title     string       `json:"title"`
+	TopicID   *string      `json:"topicId"`
+	Position  int64        `json:"position"`
+	CreatedAt time.Time    `json:"createdAt"`
 	// SizeBytes lets the client decide how to open a document before paying to
 	// fetch it. Maintained by the materials trigger as octet_length(content).
 	SizeBytes int64 `json:"sizeBytes"`

@@ -1010,15 +1010,15 @@ function WorkspaceOpen() {
     (page === 'agent' && (lg ? <div /> : chatList));
   // The page's one h1: the Dashboard, Study's pages, a quiz and a flashcards set
   // head themselves with theirs.
-  const openMaterialType =
+  const openMaterialKind =
     openItem?.kind === 'material'
-      ? materials?.find((mt) => mt.id === openItem.id)?.type
+      ? materials?.find((mt) => mt.id === openItem.id)?.kind
       : undefined;
   const headsItself =
     !!studyContent ||
     page === 'dashboard' ||
-    openMaterialType === 'quiz' ||
-    openMaterialType === 'flashcards';
+    openMaterialKind === 'quiz' ||
+    openMaterialKind === 'flashcards';
   const viewer = (
     <Panel className="w-full" frost="center" sectionClassName="h-full gap-0">
       {!headsItself && <h1 className="sr-only">{ws.name}</h1>}

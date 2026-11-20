@@ -2,11 +2,12 @@
 // Purchased credits, auto-reload and the monthly spending limit
 // (openwiki/observability-metering.md, "Purchased credits, top-ups and
 // auto-reload"), in the billing lane. Each journey has its own owner, whose
-// Stripe customer the app creates on the first credit Checkout. The auto-reload
-// card only comes in through hosted Checkout in setup mode, so that step fills
-// Stripe's page with published test cards (`completeCheckout`). A paid top-up
-// needs payment Checkout, which stops on Stripe's hCaptcha challenge headless:
-// those steps are in creditsManual.spec.ts, run by hand. Everything else uses
+// Stripe customer the app creates on the first credit Checkout. Headless,
+// Stripe's hosted Checkout stops on an hCaptcha challenge, in setup mode too
+// (Q756 A): the auto-reload card is saved through Stripe's API from the setup
+// Checkout the dialog opens, and the app takes it from `setup_intent.succeeded`
+// (`saveCardThroughApi`, Q760 A). Paid top-ups and filling the hosted pages are
+// in creditsManual.spec.ts, run by hand. Everything else uses
 // the app's own UI and API, or the Stripe API where it stands in for the
 // dashboard (refunds, an invoice Stripe gave up on, paying it). Reloads start
 // at once by setting the threshold to the balance the app reports. Stripe and
@@ -17,7 +18,6 @@ import { m } from '../../i18n';
 import {
   availableOf,
   billing,
-  completeCheckout,
   creditsRow,
   DECLINES,
   declinedReload,
@@ -33,7 +33,6 @@ import {
   invoiceId,
   MICROS,
   money,
-  nested,
   notice,
   openSubscription,
   processedEvent,
@@ -43,13 +42,13 @@ import {
   raiseCreditsUsed,
   reloadCount,
   saveAutoReload,
+  saveCardThroughApi,
   setAutoReload,
   setLimit,
   settledReload,
   shortDate,
   skippedSubject,
   sleep,
-  startCheckout,
   starterGrantFor,
   switchAutoReloadOff,
   TOP_UP_CENTS,
@@ -73,7 +72,7 @@ import {
 } from './providers';
 import { expect, test } from './runtime';
 
-test('starter credits, the monthly limit, a card saved through setup Checkout, auto-reload, a skipped reload mailed in en and zh, and a half refund', async ({
+test('starter credits, the monthly limit, a card saved through the API, auto-reload, a skipped reload mailed in en and zh, and a half refund', async ({
   run,
 }) => {
   test.setTimeout(1_200_000);
@@ -172,27 +171,23 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   await expect(page.getByText(m.billing_limit_none())).toBeVisible();
   expect((await creditsRow(run, owner)).spending_limit_cents).toBeNull();
 
-  // The auto-reload card through hosted setup Checkout (4242): the switch
-  // with no card opens the dialog, Add a card, and the reopened dialog shows
-  // the card by itself.
+  // The auto-reload card (4242), saved through the API from the setup Checkout
+  // the dialog opens: the switch with no card opens the dialog, Add a card,
+  // and the reopened dialog shows the card by itself.
   const reloadDialog = page.getByRole('dialog', {
     name: m.billing_auto_reload(),
   });
   await page.getByRole('switch', { name: m.billing_auto_reload() }).click();
   await expect(reloadDialog.getByText(m.billing_payment_none())).toBeVisible();
-  const { customerId } = await startCheckout(
+  const { customerId } = await saveCardThroughApi(
     run,
     owner,
-    '/api/billing/payment-method',
     () =>
       reloadDialog
         .getByRole('button', { exact: true, name: m.billing_payment_add() })
-        .click()
+        .click(),
+    VISA
   );
-  await completeCheckout(run, page, VISA);
-  await expect(reloadDialog.getByText(visa('4242'))).toBeVisible({
-    timeout: 60_000,
-  });
   const saved = await creditsRow(run, owner);
   expect(saved.reload_pm_last4).toBe('4242');
   // The first saved card adds the starter credits unless an earlier UAT
@@ -401,19 +396,24 @@ test('a declined auto-reload retries; a reload Stripe gave up on can still be pa
   const toggle = page.getByRole('switch', { name: m.billing_auto_reload() });
   const dialog = page.getByRole('dialog', { name: m.billing_auto_reload() });
 
-  // Auto-reload on with no card opens the dialog; Add a card is hosted
-  // Checkout in setup mode, here with the card whose charges decline.
+  // Auto-reload on with no card opens the dialog; Add a card opens hosted
+  // Checkout in setup mode, and the card whose charges decline is saved
+  // through the API in its place.
   await openSubscription(run, page);
   await toggle.click();
   await expect(dialog.getByText(m.billing_payment_none())).toBeVisible();
-  const { customerId, session: setup } = await startCheckout(
+  const {
+    customerId,
+    intent,
+    session: setup,
+  } = await saveCardThroughApi(
     run,
     owner,
-    '/api/billing/payment-method',
     () =>
       dialog
         .getByRole('button', { exact: true, name: m.billing_payment_add() })
-        .click()
+        .click(),
+    DECLINES
   );
   // Handoff question 1: setup mode with the billing address required.
   await run.attach('q1-setup-checkout-params', {
@@ -429,25 +429,14 @@ test('a declined auto-reload retries; a reload Stripe gave up on can still be pa
     mode: 'setup',
     payment_method_types: ['card', 'link'],
   });
-  await completeCheckout(run, page, DECLINES);
-  // The return reopens the dialog, which shows the new card once the
-  // webhook's billing event has refetched billing.
-  await expect(dialog.getByText(visa('0341'))).toBeVisible({ timeout: 60_000 });
   const declining = await creditsRow(run, owner);
   expect(declining.reload_pm_last4).toBe('0341');
   await processedEvent(
     run,
-    'checkout.session.completed',
+    'setup_intent.succeeded',
     since,
-    (value) => value.id === setup.id
+    (value) => value.id === intent.id
   );
-  // The billing address went to the customer: reload invoices tax from it.
-  expect(
-    nested(
-      (await stripeRequest(run.env, `/v1/customers/${customerId}`)).address,
-      'country'
-    )
-  ).toBe('US');
 
   // Saved from that dialog at the balance as threshold, auto-reload turns on
   // (a new account starts armed) and the worker starts a reload, which
@@ -649,14 +638,17 @@ test('a declined auto-reload retries; a reload Stripe gave up on can still be pa
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
   await expect(dialog.getByText(visa('0341'))).toBeVisible();
-  await startCheckout(run, owner, '/api/billing/payment-method', () =>
-    dialog
-      .getByRole('button', { exact: true, name: m.billing_payment_change() })
-      .click()
+  // Change, saved through the API: the reopened dialog shows the new card by
+  // itself.
+  await saveCardThroughApi(
+    run,
+    owner,
+    () =>
+      dialog
+        .getByRole('button', { exact: true, name: m.billing_payment_change() })
+        .click(),
+    VISA
   );
-  await completeCheckout(run, page, VISA);
-  // The reopened dialog shows the new card by itself.
-  await expect(dialog.getByText(visa('4242'))).toBeVisible({ timeout: 60_000 });
   await dialog
     .getByRole('button', { exact: true, name: m.action_cancel() })
     .click();
@@ -711,17 +703,20 @@ test('spent to zero through the app: work at zero is refused, the request that f
   const dialog = page.getByRole('dialog', { name: m.billing_auto_reload() });
   const workspaceId = await workspace(run, 'credits-spend');
 
-  // The declining card, saved through hosted setup Checkout. Auto-reload
-  // stays off while the balance is spent, so the worker starts nothing.
+  // The declining card, saved through the API from the dialog's setup
+  // Checkout. Auto-reload stays off while the balance is spent, so the worker
+  // starts nothing.
   await openSubscription(run, page);
   await toggle.click();
-  await startCheckout(run, owner, '/api/billing/payment-method', () =>
-    dialog
-      .getByRole('button', { exact: true, name: m.billing_payment_add() })
-      .click()
+  await saveCardThroughApi(
+    run,
+    owner,
+    () =>
+      dialog
+        .getByRole('button', { exact: true, name: m.billing_payment_add() })
+        .click(),
+    DECLINES
   );
-  await completeCheckout(run, page, DECLINES);
-  await expect(dialog.getByText(visa('0341'))).toBeVisible({ timeout: 60_000 });
   await dialog
     .getByRole('button', { exact: true, name: m.action_cancel() })
     .click();
@@ -840,19 +835,21 @@ test('spent to zero through the app: work at zero is refused, the request that f
   await sleep(15_000);
   expect(await reloadCount(run, owner)).toBe(1);
 
-  // A new card (Change, hosted setup Checkout) re-arms auto-reload: at zero
+  // A new card (Change, saved through the API) re-arms auto-reload: at zero
   // its reload starts, is paid, and work resumes.
   await openSubscription(run, page);
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
-  await startCheckout(run, owner, '/api/billing/payment-method', () =>
-    dialog
-      .getByRole('button', { exact: true, name: m.billing_payment_change() })
-      .click()
+  await saveCardThroughApi(
+    run,
+    owner,
+    () =>
+      dialog
+        .getByRole('button', { exact: true, name: m.billing_payment_change() })
+        .click(),
+    VISA
   );
-  await completeCheckout(run, page, VISA);
-  await expect(dialog.getByText(visa('4242'))).toBeVisible({ timeout: 60_000 });
   await dialog
     .getByRole('button', { exact: true, name: m.action_cancel() })
     .click();
@@ -955,21 +952,23 @@ test('saving auto-reload again during a charge arms nothing, and a paid Pro rene
     (value) => value.id === firstInvoiceId
   );
 
-  // The reload card through hosted setup Checkout (4242), then auto-reload
-  // on at the highest threshold the dialog takes, which one reload never
-  // lifts credits past: the worker starts a reload at once, and only arming
+  // The reload card (4242, saved through the API), then auto-reload on at
+  // the highest threshold the dialog takes, which one reload never lifts
+  // credits past: the worker starts a reload at once, and only arming
   // decides whether another follows. The same settings saved every few
   // hundred milliseconds through its charge arm nothing: one reload, paid,
   // and auto-reload disarmed.
   await openSubscription(run, page);
   await page.getByRole('switch', { name: m.billing_auto_reload() }).click();
-  await startCheckout(run, owner, '/api/billing/payment-method', () =>
-    dialog
-      .getByRole('button', { exact: true, name: m.billing_payment_add() })
-      .click()
+  await saveCardThroughApi(
+    run,
+    owner,
+    () =>
+      dialog
+        .getByRole('button', { exact: true, name: m.billing_payment_add() })
+        .click(),
+    VISA
   );
-  await completeCheckout(run, page, VISA);
-  await expect(dialog.getByText(visa('4242'))).toBeVisible({ timeout: 60_000 });
   const threshold = setAutoReloadBodyThresholdCreditsMax;
   expect(await saveAutoReload(page, threshold)).toBe(true);
   const saves: number[] = [];

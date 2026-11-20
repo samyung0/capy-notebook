@@ -2155,11 +2155,10 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 	defer rows.Close()
 	for rows.Next() {
 		var r MaterialRef
-		var kind MaterialKind
 		var provenance []byte
 		if err := rows.Scan(
 			&r.ID,
-			&kind,
+			&r.Kind,
 			&r.Title,
 			&r.TopicID,
 			&r.Position,
@@ -2175,7 +2174,6 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 		if r.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
-		r.Type = kind.RefType()
 		out = append(out, r)
 	}
 	return out, rows.Err()

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -25,9 +26,15 @@ func newCreditTestServer(t *testing.T, f *fakeStore, outcome billing.ReloadResul
 			return store.PaymentMethod{ID: "pm_topup", Type: "card", CardKey: "card:fp_topup"}, nil
 		},
 		stripeSetupMethod: func(string) (store.PaymentMethod, error) {
-			return store.PaymentMethod{ID: "pm_setup", Type: "card", CardKey: "card:fp_setup"}, nil
+			return store.PaymentMethod{
+				ID: "pm_setup", Type: "card", CardKey: "card:fp_setup", SetupCreated: time.Now().Add(-time.Hour),
+			}, nil
 		},
 		stripeVoidInvoice: func(id string) error {
+			if f.stripeVoidFails > 0 {
+				f.stripeVoidFails--
+				return errors.New("stripe unavailable")
+			}
 			*voided = append(*voided, id)
 			return nil
 		},
@@ -79,23 +86,156 @@ func TestStripeWebhook_TopUpCreditsSavesCardAndVoidsRetryingReloads(t *testing.T
 	}
 }
 
+// reloadSetupCheckout is the setup Checkout that saves the auto-reload card
+// through SetupIntent seti_1.
+func reloadSetupCheckout() map[string]any {
+	return map[string]any{
+		"id":           "cs_setup",
+		"mode":         "setup",
+		"customer":     "cus_1",
+		"setup_intent": "seti_1",
+		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
+	}
+}
+
 func TestStripeWebhook_SetupCheckoutReplacesTheReloadCard(t *testing.T) {
 	f := newFakeStore()
 	f.stripeCustomers["cus_1"] = "user_1"
 	f.retryingReloads = []string{"in_old_card"}
 	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
 
-	sendStripe(t, srv, "evt_setup", "checkout.session.completed", map[string]any{
-		"id":           "cs_setup",
-		"mode":         "setup",
-		"customer":     "cus_1",
-		"setup_intent": "seti_1",
-		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
-	})
+	sendStripe(t, srv, "evt_setup", "checkout.session.completed", reloadSetupCheckout())
 	// The new card ends Stripe's retries of the old one.
 	if !slices.Equal(f.creditCalls, []string{"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card"}) ||
 		!slices.Equal(*voided, []string{"in_old_card"}) {
 		t.Fatalf("calls = %q voided = %q", f.creditCalls, *voided)
+	}
+}
+
+// reloadSetupIntent is a confirmed SetupIntent with the reload metadata setup
+// Checkout gives its own and CI journeys give theirs (Q760 A).
+func reloadSetupIntent(kind, userID string) map[string]any {
+	return map[string]any{
+		"id":             "seti_1",
+		"status":         "succeeded",
+		"customer":       "cus_1",
+		"payment_method": "pm_setup",
+		"metadata":       map[string]string{"kind": kind, "user_id": userID},
+	}
+}
+
+// A hosted setup sends setup_intent.succeeded and checkout.session.completed
+// for one card, in either order: the first saves it, grants the starter
+// credits, voids the old card's retries and publishes (the void and the publish
+// share voidReloadsAndPublish), and the second changes nothing more.
+func TestStripeWebhook_SetupIntentSavesTheReloadCardOnce(t *testing.T) {
+	type event struct {
+		id, kind string
+		object   map[string]any
+	}
+	intent := event{"evt_intent", "setup_intent.succeeded", reloadSetupIntent("reload_method", "user_1")}
+	checkout := event{"evt_checkout", "checkout.session.completed", reloadSetupCheckout()}
+	for name, order := range map[string][]event{
+		"intent first":   {intent, checkout},
+		"checkout first": {checkout, intent},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeStore()
+			f.stripeCustomers["cus_1"] = "user_1"
+			f.retryingReloads = []string{"in_old_card"}
+			srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+			for _, e := range order {
+				sendStripe(t, srv, e.id, e.kind, e.object)
+				if f.associated[e.id] != "user_1" {
+					t.Fatalf("%s associated with %q", e.kind, f.associated[e.id])
+				}
+			}
+			want := []string{
+				"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card",
+				"method user_1 pm_setup false", "starter user_1 card:fp_setup",
+			}
+			if !slices.Equal(f.creditCalls, want) || !slices.Equal(*voided, []string{"in_old_card"}) {
+				t.Fatalf("calls = %q voided = %q, want %q and one void", f.creditCalls, *voided, want)
+			}
+		})
+	}
+}
+
+// Q782 A: a delivery that saved the card and then failed to void the old
+// card's retrying reload is redelivered by Stripe, and that redelivery voids
+// it though the card is saved already; the other event then finds nothing
+// left. Fails with a delivery that saves nothing skipping the void.
+func TestStripeWebhook_ARedeliveredReloadCardSaveVoidsWhatItsFailedVoidLeft(t *testing.T) {
+	f := newFakeStore()
+	f.stripeCustomers["cus_1"] = "user_1"
+	f.retryingReloads = []string{"in_old_card"}
+	f.stripeVoidFails = 1
+	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+	intent := reloadSetupIntent("reload_method", "user_1")
+
+	body := stripeBody(t, "evt_intent", "setup_intent.succeeded", intent)
+	resp := post(t, srv.URL+"/webhooks/stripe", signStripe(t, testStripeSecret, body), body)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusOK || len(*voided) != 0 {
+		t.Fatalf("first delivery status = %d voided = %q, want a failure", resp.StatusCode, *voided)
+	}
+	sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", intent)
+	sendStripe(t, srv, "evt_checkout", "checkout.session.completed", reloadSetupCheckout())
+	want := []string{
+		"method user_1 pm_setup false", "starter user_1 card:fp_setup",
+		"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card",
+		"method user_1 pm_setup false", "starter user_1 card:fp_setup",
+	}
+	if !slices.Equal(f.creditCalls, want) || !slices.Equal(*voided, []string{"in_old_card"}) {
+		t.Fatalf("calls = %q voided = %q, want %q and one void", f.creditCalls, *voided, want)
+	}
+}
+
+// Q783 A: Stripe redelivers both events of a card set up an hour ago after a
+// newer card was saved; neither brings the old card back, grants or voids.
+// Fails with the replaced card's event handled as a failure.
+func TestStripeWebhook_ALateEventForAReplacedReloadCardChangesNothing(t *testing.T) {
+	f := newFakeStore()
+	f.stripeCustomers["cus_1"] = "user_1"
+	f.retryingReloads = []string{"in_new_card"}
+	f.reloadMethods["user_1"] = "pm_new"
+	f.reloadSavedAt["user_1"] = time.Now()
+	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+
+	sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", reloadSetupIntent("reload_method", "user_1"))
+	sendStripe(t, srv, "evt_checkout", "checkout.session.completed", reloadSetupCheckout())
+	want := []string{"method user_1 pm_setup false", "method user_1 pm_setup false"}
+	if !slices.Equal(f.creditCalls, want) || len(*voided) != 0 || f.reloadMethods["user_1"] != "pm_new" {
+		t.Fatalf("calls = %q voided = %q card = %q, want %q and the new card kept",
+			f.creditCalls, *voided, f.reloadMethods["user_1"], want)
+	}
+}
+
+// A SetupIntent of another user or kind, of a customer bound to nobody, or
+// without a customer or payment method saves nothing and is not associated.
+func TestStripeWebhook_SetupIntentOfAnotherUserOrKindIsNotOurs(t *testing.T) {
+	with := func(key string, value any) map[string]any {
+		object := reloadSetupIntent("reload_method", "user_1")
+		object[key] = value
+		return object
+	}
+	for name, object := range map[string]map[string]any{
+		"another user":        reloadSetupIntent("reload_method", "user_2"),
+		"another kind":        reloadSetupIntent("topup", "user_1"),
+		"an unbound customer": with("customer", "cus_2"),
+		"no customer":         with("customer", nil),
+		"no payment method":   with("payment_method", nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeStore()
+			f.stripeCustomers["cus_1"] = "user_1"
+			srv, _ := newCreditTestServer(t, f, billing.ReloadResult{})
+			sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", object)
+			if len(f.creditCalls) != 0 || f.associated["evt_intent"] != "" || !f.redacted["evt_intent"] {
+				t.Fatalf("calls = %q associated = %q redacted = %t", f.creditCalls,
+					f.associated["evt_intent"], f.redacted["evt_intent"])
+			}
+		})
 	}
 }
 

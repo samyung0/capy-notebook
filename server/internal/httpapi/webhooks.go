@@ -41,7 +41,7 @@ type webhookStore interface {
 	AccountAccess(ctx context.Context, userID string) (store.AccountStatus, error)
 	GrantTopUp(ctx context.Context, userID, checkoutSessionID, paymentIntentID string, amountCents int64) (bool, []string, error)
 	MarkReloadVoid(ctx context.Context, invoiceID string) error
-	SavePaymentMethod(ctx context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error
+	SavePaymentMethod(ctx context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) (bool, error)
 	GrantStarterCredits(ctx context.Context, userID, cardKey string) (bool, error)
 	MarkReloadPaid(ctx context.Context, purchaseID, invoiceID, paymentIntentID string) error
 	MarkReloadFailed(ctx context.Context, purchaseID, invoiceID string, nextAttempt time.Time, declineReason string) error
@@ -443,6 +443,13 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 				procErr = a.grantSubscriptionStarter(r.Context(), userID, sess.Subscription.ID)
 			}
 		}
+	case "setup_intent.succeeded":
+		var si stripe.SetupIntent
+		if err := json.Unmarshal(event.Data.Raw, &si); err != nil {
+			procErr = err
+			break
+		}
+		associated, procErr = a.reloadMethodSetupSucceeded(r.Context(), &si, event.ID, claim)
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var sub stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
@@ -640,22 +647,7 @@ func (a *api) creditCheckoutCompleted(
 		if sess.SetupIntent == nil {
 			return true, nil
 		}
-		pm, err := a.stripeSetupMethod(sess.SetupIntent.ID)
-		if err != nil {
-			return true, err
-		}
-		if err := a.wh.SavePaymentMethod(ctx, userID, pm, false); err != nil {
-			return true, err
-		}
-		if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
-			return true, err
-		}
-		// A new card ends Stripe's retries of the old one.
-		retrying, err := a.wh.RetryingReloadInvoices(ctx, userID)
-		if err != nil {
-			return true, err
-		}
-		return true, a.voidReloadsAndPublish(ctx, userID, retrying)
+		return true, a.saveReloadMethod(ctx, userID, sess.SetupIntent.ID)
 	}
 	// Top-ups accept instant methods only, so a completed session is paid.
 	if sess.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid || sess.PaymentIntent == nil {
@@ -669,13 +661,72 @@ func (a *api) creditCheckoutCompleted(
 	if err != nil {
 		return true, err
 	}
-	if err := a.wh.SavePaymentMethod(ctx, userID, pm, true); err != nil {
+	if _, err := a.wh.SavePaymentMethod(ctx, userID, pm, true); err != nil {
 		return true, err
 	}
 	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
 		return true, err
 	}
 	return true, a.voidReloadsAndPublish(ctx, userID, retrying)
+}
+
+// reloadMethodSetupSucceeded saves the auto-reload card from a SetupIntent
+// carrying the reload metadata setup Checkout puts on its own, which CI
+// journeys also create through Stripe's API (Q760 A). Its customer must be
+// bound to the user its metadata names; anything else is not ours.
+func (a *api) reloadMethodSetupSucceeded(
+	ctx context.Context, si *stripe.SetupIntent, eventID, claim string,
+) (bool, error) {
+	if si.Metadata["kind"] != billing.KindReloadMethod || si.Customer == nil || si.PaymentMethod == nil {
+		return false, nil
+	}
+	userID, err := a.wh.UserIDByStripeCustomer(ctx, si.Customer.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if userID == "" || si.Metadata["user_id"] != userID {
+		return false, nil
+	}
+	if err := a.wh.AssociateWebhookEvent(ctx, "stripe", eventID, claim, userID); err != nil {
+		return false, err
+	}
+	return true, a.saveReloadMethod(ctx, userID, si.ID)
+}
+
+// saveReloadMethod saves the card a setup SetupIntent confirmed as the
+// auto-reload method. A hosted setup sends both checkout.session.completed and
+// setup_intent.succeeded, and Stripe redelivers one that failed: the first to
+// save the card arms its one reload. Every delivery voids the reloads Stripe
+// is still retrying, which is safe to repeat, so a void that failed after the
+// save is done by the next delivery (Q782 A); the billing refresh follows the
+// save, or a later delivery's void when the save's own did not go through. An
+// event for a card another card saved since replaced changes nothing (Q783 A).
+func (a *api) saveReloadMethod(ctx context.Context, userID, setupIntentID string) error {
+	pm, err := a.stripeSetupMethod(setupIntentID)
+	if err != nil {
+		return err
+	}
+	saved, err := a.wh.SavePaymentMethod(ctx, userID, pm, false)
+	if errors.Is(err, store.ErrReloadCardReplaced) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// The grant is once per account and card, so this also completes a retry
+	// whose earlier attempt saved the card and then failed.
+	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
+		return err
+	}
+	// A new card ends Stripe's retries of the old one.
+	retrying, err := a.wh.RetryingReloadInvoices(ctx, userID)
+	if err != nil || (!saved && len(retrying) == 0) {
+		return err
+	}
+	return a.voidReloadsAndPublish(ctx, userID, retrying)
 }
 
 // grantSubscriptionStarter gives the starter credits for the card a Pro

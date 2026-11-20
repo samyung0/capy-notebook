@@ -10,6 +10,7 @@ import { verify } from './evidence';
 import {
   arrayField,
   claimStripeCustomer,
+  expireStripeCheckout,
   object,
   stringField,
   stripeRequest,
@@ -422,12 +423,86 @@ export async function startCheckout(
   return { customerId, session };
 }
 
+/** Stripe's test payment method for each card number the journeys save. */
+const testPaymentMethods = {
+  [DECLINES]: 'pm_card_chargeCustomerFail',
+  [VISA]: 'pm_card_visa',
+};
+
+/**
+ * Saves `card` as the auto-reload card through Stripe's API (Q760 A), since
+ * hosted setup Checkout answers headless CI with an hCaptcha. `start` opens the
+ * dialog's setup Checkout so the app binds the customer; that session is
+ * expired, the customer gets the billing address reload invoices tax from
+ * (the hosted page saves it there), and a SetupIntent with the session's
+ * reload metadata is confirmed. The app saves the card from its
+ * `setup_intent.succeeded`; back on the page's return URL, the reopened dialog
+ * shows it once the webhook's billing event has refetched billing.
+ */
+export async function saveCardThroughApi(
+  run: UatRun,
+  actor: Actor,
+  start: () => Promise<void>,
+  card: typeof VISA | typeof DECLINES
+) {
+  const { customerId, session } = await startCheckout(
+    run,
+    actor,
+    '/api/billing/payment-method',
+    start
+  );
+  const sessionId = stringField(session, 'id');
+  await expireStripeCheckout(run.env, sessionId, run.id, actor.id);
+  await stripeRequest(
+    run.env,
+    `/v1/customers/${customerId}`,
+    'POST',
+    {
+      'address[city]': 'New York',
+      'address[country]': 'US',
+      'address[line1]': '1 Main Street',
+      'address[postal_code]': '10001',
+      'address[state]': 'NY',
+    },
+    `${run.id}-${sessionId}-address`
+  );
+  const metadata = object(session.metadata);
+  const intent = await stripeRequest(
+    run.env,
+    '/v1/setup_intents',
+    'POST',
+    {
+      confirm: 'true',
+      customer: customerId,
+      'metadata[kind]': stringField(metadata, 'kind'),
+      'metadata[user_id]': stringField(metadata, 'user_id'),
+      payment_method: testPaymentMethods[card],
+      'payment_method_types[]': 'card',
+      usage: 'off_session',
+    },
+    `${run.id}-${sessionId}-setup-intent`
+  );
+  expect(intent.status).toBe('succeeded');
+  await actor.page.goto(
+    new URL(
+      '/billing?tab=subscription&reload=method',
+      run.env.appUrl
+    ).toString()
+  );
+  await expect(
+    actor.page
+      .getByRole('dialog', { name: m.billing_auto_reload() })
+      .getByText(visa(card.slice(-4)))
+  ).toBeVisible({ timeout: 60_000 });
+  return { customerId, intent, session };
+}
+
 /**
  * Pays, or saves, a Stripe test card on the hosted Checkout page and waits to
- * be back on the Subscription tab. Only top-up and card-saving Checkout land
- * here: they have no API equivalent. Headless, payment Checkout stops on
- * Stripe's hCaptcha challenge, so top-ups run by hand (creditsManual.spec.ts,
- * headed, with time for a person to answer it).
+ * be back on the Subscription tab. Headless, both payment and card-saving
+ * Checkout stop on Stripe's hCaptcha challenge, so only creditsManual.spec.ts
+ * lands here (headed, by hand, with time for a person to answer it); CI saves
+ * cards with saveCardThroughApi and has no paid top-up.
  */
 export async function completeCheckout(
   run: UatRun,

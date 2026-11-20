@@ -180,17 +180,19 @@ Per file it reports:
   (`appJsCss`, `officeRuntimeJs` from the runtime's origin, `engineWasm` with
   each module in `engineWasmModules`, `fonts` with the CJK slice indexes
   (`slices.json`), `fontDecoder` for `fontpack.wasm`, `sourceFile`, `other`
-  with the MSW answers, and `total`; `downloads.ts`): `requests`,
-  `bodiesSent` (fetches whose body crossed the wire), `encodedKiB` (bodies as
-  encoded, also those not sent), `transferredKiB` (what vite preview sent,
+  with the MSW answers, and `total`; `downloads.ts`), each as the browser
+  reports its fetches: `requests`, `bodiesSent` (fetches whose body crossed
+  the wire), `transferredKiB` (what crossed the wire from vite preview,
   headers included: it gzips text, JavaScript, CSS and JSON responses over
-  1 KB and sends WASM, fonts and other binaries as built) and
-  `withStoredBrotliKiB` (the same with each WASM and TTF body sent at the
-  brotli-11 `.br` the Office Worker stores and serves; packed `.zst` faces
-  go as stored either way, and the gzipped text stays as vite preview sent
-  it, where production's edge compresses with brotli). A fetch the HTTP
-  cache or
-  MSW's service worker answered (the app's origin only: its API, the source
+  1 KB and sends WASM, fonts and other binaries as built), `encodedKiB` (the
+  bodies as they arrived, also those not sent), `decodedKiB` (the same
+  decoded) and `withStoredBrotliKiB` (`transferredKiB` with each WASM and TTF
+  body at the brotli-11 `.br` the Office Worker stores and serves; packed
+  `.zst` faces go as stored either way, and the gzipped text stays as vite
+  preview sent it, where production's edge compresses with brotli). A filter
+  that decodes plain-HTTP answers before the browser sees them (found on the
+  Windows developer PC, 2026-11-20) makes `encodedKiB` equal `decodedKiB`
+  for text there. A fetch the HTTP cache or MSW's service worker answered (the app's origin only: its API, the source
   file and most app chunks, bench only) transfers nothing in its realm's
   timing, and a revalidation (vite preview sends ETags) only its headers. The
   test's context starts cold and keeps no disk cache, so `docx_edit` downloads

@@ -148,6 +148,9 @@ func TestOversizedContentCommandIsALimitRefusal(t *testing.T) {
 // authority's 503 unavailable_target) applied nothing: an
 // expected outcome, so its error is not reported, while any other authority
 // 503 still is. The caller's answer is the unavailable authority's either way.
+// One whose projection was refused because the material went to Trash
+// applied: it is answered as applied and reports nothing (Q784 A; fails if
+// it is taken for an unavailable authority).
 func TestRoomUnavailableContentCommandIsNotReported(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -176,16 +179,18 @@ func TestRoomUnavailableContentCommandIsNotReported(t *testing.T) {
 	reporting := sentry.SetHubOnContext(ctx, sentry.NewHub(client, sentry.NewScope()))
 
 	for _, tc := range []struct {
-		answer string
-		events int32
+		answer  string
+		events  int32
+		applied bool
 	}{
-		{`{"code":"unavailable_target","message":"collaboration room is being reset"}`, 0},
-		{`{"message":"collaboration room unavailable"}`, 1},
+		{`{"code":"unavailable_target","message":"collaboration room is being reset"}`, 0, false},
+		{`{"message":"collaboration room unavailable"}`, 1, false},
+		{`{"code":"unavailable_target","message":"the material is in Trash"}`, 0, true},
 	} {
 		answer.Store(tc.answer)
 		events.events.Store(0)
 		handled, err := s.applyAuthoritativeContentCommand(ctx, material.ID, "u_owner", current, desired, nil)
-		if !handled || !errors.Is(err, ErrAuthorityUnavailable) {
+		if !handled || (tc.applied && err != nil) || (!tc.applied && !errors.Is(err, ErrAuthorityUnavailable)) {
 			t.Fatalf("%s: handled=%v err=%v", tc.answer, handled, err)
 		}
 		obs.CaptureErr(reporting, err, nil)

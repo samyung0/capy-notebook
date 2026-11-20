@@ -75,10 +75,18 @@ type fakeStore struct {
 	redacted        map[string]bool
 	// creditCalls logs purchased-credit store calls in order.
 	creditCalls []string
-	// retryingReloads is what GrantTopUp reports for the caller to void.
+	// retryingReloads is what GrantTopUp reports for the caller to void; a
+	// void takes its invoice out.
 	retryingReloads []string
+	// stripeVoidFails is how many of Stripe's next voids fail
+	// (newCreditTestServer).
+	stripeVoidFails int
 	// reloadRetryUnwanted: the reload was turned off or given a new card.
 	reloadRetryUnwanted bool
+	// reloadMethods is each user's saved auto-reload method id, and
+	// reloadSavedAt when it was saved.
+	reloadMethods map[string]string
+	reloadSavedAt map[string]time.Time
 }
 
 func newFakeStore() *fakeStore {
@@ -93,6 +101,8 @@ func newFakeStore() *fakeStore {
 		checkoutAllowed:    true,
 		associated:         map[string]string{},
 		redacted:           map[string]bool{},
+		reloadMethods:      map[string]string{},
+		reloadSavedAt:      map[string]time.Time{},
 	}
 }
 
@@ -212,6 +222,9 @@ func (f *fakeStore) GrantTopUp(
 
 func (f *fakeStore) MarkReloadVoid(_ context.Context, invoiceID string) error {
 	f.creditCalls = append(f.creditCalls, "void "+invoiceID)
+	// A copy: the caller may still be ranging over the list it was handed.
+	f.retryingReloads = slices.DeleteFunc(slices.Clone(f.retryingReloads),
+		func(id string) bool { return id == invoiceID })
 	return nil
 }
 
@@ -220,9 +233,18 @@ func (f *fakeStore) GrantStarterCredits(_ context.Context, userID, cardKey strin
 	return cardKey != "", nil
 }
 
-func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error {
+func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) (bool, error) {
 	f.creditCalls = append(f.creditCalls, fmt.Sprintf("method %s %s %t", userID, pm.ID, onlyIfNone))
-	return nil
+	held := f.reloadMethods[userID]
+	if held == pm.ID || (onlyIfNone && held != "") {
+		return false, nil
+	}
+	if held != "" && !pm.SetupCreated.IsZero() && f.reloadSavedAt[userID].After(pm.SetupCreated) {
+		return false, store.ErrReloadCardReplaced
+	}
+	f.reloadMethods[userID] = pm.ID
+	f.reloadSavedAt[userID] = time.Now()
+	return true, nil
 }
 
 func (f *fakeStore) MarkReloadPaid(_ context.Context, purchaseID, invoiceID, paymentIntentID string) error {

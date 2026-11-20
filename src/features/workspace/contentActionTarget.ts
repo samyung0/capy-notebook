@@ -41,7 +41,7 @@ export function toMaterialActionTarget(
     createdAt: material.createdAt,
     hidden: material.hidden,
     id: material.id,
-    kind: 'type' in material ? material.type : material.kind,
+    kind: material.kind,
     topicId: material.topicId,
     ...('maxDepth' in material
       ? { maxDepth: material.maxDepth, nodeCount: material.nodeCount }

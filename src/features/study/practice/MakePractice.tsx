@@ -76,7 +76,7 @@ export function practiceSources(
       .filter((f) => f.indexed && (f.topicId ?? null) === topicId)
       .map((f) => ({ icon: fileIconName(f), id: f.id, name: f.name })),
     ...materials
-      .filter((mt) => mt.type === 'note' && (mt.topicId ?? null) === topicId)
+      .filter((mt) => mt.kind === 'note' && (mt.topicId ?? null) === topicId)
       .map((mt) => ({
         icon: materialIconName('note'),
         id: mt.id,

@@ -332,7 +332,6 @@ function useHeader(
       title: mt?.title,
     };
   }
-  const kind = 'type' in mt ? mt.type : mt.kind;
   const embedded = 'parentMaterialId' in mt && !!mt.parentMaterialId;
   return {
     canClone:
@@ -342,7 +341,7 @@ function useHeader(
         ? !('workspaceId' in mt && mt.workspaceId)
         : !!workspace?.canClone),
     deleted,
-    icon: materialIconName(kind),
+    icon: materialIconName(mt.kind),
     material: mt,
     materialCapabilities: capabilities,
     showImageZoom: false,
@@ -462,10 +461,7 @@ export function Header({
             : undefined
         }
         // The first hidden quiz says what Hidden means (Epo 2026-11-20).
-        tip={
-          !!material &&
-          ('type' in material ? material.type : material.kind) === 'quiz'
-        }
+        tip={material?.kind === 'quiz'}
       />
       {shareDialog}
     </>

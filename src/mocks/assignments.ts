@@ -2241,13 +2241,13 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
       createdAt: mt.createdAt,
       hidden: mt.hidden,
       id: mt.id,
+      kind: mt.kind,
       maxDepth: mt.maxDepth,
       nodeCount: mt.nodeCount,
       position: mt.position,
       sizeBytes: mt.contentBytes,
       title: mt.title,
       topicId: mt.topicId,
-      type: mt.kind,
     }))
     .filter((ref) => viewer === 'owner' || !ref.hidden)
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));

@@ -271,6 +271,10 @@ export function useOfficeRuntime({
   );
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
+  // The frame's editor before it reports ready, once ready, or failed before
+  // that (a face failing as the file opens): a later save never clears that
+  // failure's error (Q781 A).
+  const frameOpen = useRef<'opening' | 'ready' | 'failed'>('opening');
   // The frame whose editor failed to render (Q687): its strip offers Reload.
   const [crashedFrame, setCrashedFrame] = useState<number | null>(null);
   // The source document the frame was loaded with: a frame still showing an
@@ -390,9 +394,15 @@ export function useOfficeRuntime({
     await sourceRef.current.save();
   }, [request]);
 
-  // A save that went through supersedes an earlier editing error.
+  // A save that went through supersedes an earlier editing error, not the
+  // error of an editor that failed to open.
   useEffect(() => {
-    if (mode === 'edit' && source.status === 'saved') setError(null);
+    if (
+      mode === 'edit' &&
+      source.status === 'saved' &&
+      frameOpen.current !== 'failed'
+    )
+      setError(null);
   }, [mode, source.status]);
 
   useEffect(() => {
@@ -544,6 +554,7 @@ export function useOfficeRuntime({
       ) ||
         (format === 'docx' && !workerClientId))
     ) {
+      frameOpen.current = 'failed';
       setError(m.error_file_body());
       return;
     }
@@ -725,6 +736,7 @@ export function useOfficeRuntime({
       if (message.type === 'initialized') {
         officeMark('runtime-initialized');
         notices.frame();
+        frameOpen.current = 'opening';
         setReplicaReady(false);
         setMenus(null);
         bannerSent.current = '';
@@ -822,6 +834,7 @@ export function useOfficeRuntime({
       }
       if (message.type === 'ready') {
         officeMark('ready');
+        if (frameOpen.current === 'opening') frameOpen.current = 'ready';
         setAnalysis(message.analysis);
         // Edit frames report ready too (for their timings); their errors stay.
         if (modeRef.current === 'view') {
@@ -842,6 +855,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'error') {
+        if (frameOpen.current === 'opening') frameOpen.current = 'failed';
         // The runtime's own text is English engine detail; the host owns copy.
         if (message.crashed) {
           // The ribbon went with the editor, which sends no more menus: the

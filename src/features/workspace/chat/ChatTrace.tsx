@@ -7,7 +7,7 @@ import type {
   ChatSteps,
   ChatWaitingPhase,
   Citation,
-  MaterialRefType,
+  MaterialKind,
   ResourceEffect,
   ResourceRef,
   UndoRef,
@@ -69,7 +69,7 @@ const MATERIAL_KINDS = new Set<string>([
   'diagram',
 ]);
 const materialKind = (kind?: string) =>
-  kind && MATERIAL_KINDS.has(kind) ? (kind as MaterialRefType) : undefined;
+  kind && MATERIAL_KINDS.has(kind) ? (kind as MaterialKind) : undefined;
 
 function useDelayed(on: boolean, ms: number) {
   const [shown, setShown] = useState(false);

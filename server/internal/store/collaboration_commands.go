@@ -161,9 +161,16 @@ func (s *Store) applyAuthoritativeContentCommand(
 			message = response.Status
 		}
 		var refusal struct {
-			Code string `json:"code"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(responseBody, &refusal)
+		// The edit applied and only its projection was refused, the material
+		// having gone to Trash meanwhile: the edit is answered as applied, its
+		// projection waiting for a restore (Q784 A).
+		if inTrashRefusal(response, refusal.Code, refusal.Message) {
+			return true, nil
+		}
 		return true, authorityFailure(response, refusal.Code, message)
 	}
 }

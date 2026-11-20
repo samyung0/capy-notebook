@@ -126,7 +126,7 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 	for _, m := range refs {
 		items = append(items, documentListItem{
 			Kind: agenttools.KindMaterial, ID: m.ID, Title: m.Title, Format: "plate",
-			MaterialKind: string(m.Type), TopicID: m.TopicID, Editable: true,
+			MaterialKind: string(m.Kind), TopicID: m.TopicID, Editable: true,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})

@@ -2451,6 +2451,15 @@ design, option d), and the nudge's release file on 2026-10-17.
   The two 30s met in one merge; 31 covers both, and `MIN_SOURCE` stays 30.
   The quiz-figure and canvas changes land together, so their deploy request
   names "client protocol 30 -> 31, material 29 -> 31".
+  The second Q691 pin (b3b0e6bc8: DOCX View's screen readers read a
+  whole-word layer beside the per-letter text layer, View starts the painting
+  CJK face's core as layout starts, a CJK face failing to open while editing
+  is the slice notice and opens again online, the XLSX viewer builds its grid
+  geometry once and a wrapped cell's row refits after recalculation, a PPTX
+  key reads only its slide) raised `CLIENT_PROTOCOL` to 32 and `MIN_SOURCE`
+  to 32, so source tabs on the older pin (protocols 30 and 31) reload;
+  `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request names "client protocol 31 -> 32, source 30 -> 32".
 
 #### When to bump
 
@@ -3852,7 +3861,17 @@ handler's CPU went from ~140 ms to ~30 ms. Its body read deadline is 15 s,
 the collaboration service's own timeout for the call, instead of Huma's 5 s.
 Rows where `projected_version < stored_version` and no instance holds the room
 are projected by the server's 5 s pending scan once they have been idle 30 s
-(the same `COLLABORATION_PROJECTION_IDLE_MS`).
+(the same `COLLABORATION_PROJECTION_IDLE_MS`). The scan
+(`note_store::pending_projections`) leaves out materials in Trash, whose
+projection the gateway refuses (404); a restored material lags again and is
+taken up once idle (Q778 A, after Sentry CAPY-BACKEND-1Y: 25 trashed rows
+would otherwise be retried every 5 s and hold back every newer one). A
+projection refused for a material the database has in Trash (a room's idle,
+unload or on-demand projection, or a server edit's, racing the move) is
+logged at info as `projection refused` and neither recorded, reported nor
+warned about (`projection::IN_TRASH`); any other 404 stays a failure. A
+canvas's board room projects through the same paths, so the same holds for a
+canvas in Trash.
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed
 store or advance `stored_version` again. The lag scanner projects the committed
@@ -3863,7 +3882,12 @@ version remains ahead of `projected_version`, so a slow older failure cannot
 restore `projection_error` after newer content succeeds.
 A service command commits its row and then projects before it answers; the
 handler returns 503 when that projection fails, even though the Yjs change is
-already durable and remains eligible for the normal lag retry.
+already durable and remains eligible for the normal lag retry. A refusal for a
+material in Trash, there and on the on-demand projection, is the explicit
+in-Trash refusal, 503 `unavailable_target` with `projection::IN_TRASH` as its
+message (Q784 A): unreported on both sides, the gateway answers the
+replace-block edit as applied (`store.inTrashRefusal`) and serves a Trash read the stored projection, and the projection waits for a
+restore.
 
 The final durable store takes the material advisory lock, then follows the same
 SQL row-lock order as Go mutations: workspace row (when present), contributor
