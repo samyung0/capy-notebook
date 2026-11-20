@@ -798,8 +798,7 @@ The save banner (`SaveBanner`, `src/components/banners/SaveBanner.tsx`) is one
 strip under the file or note header with one state at a time:
 `delayed` ("Saving is delayed. Your recent changes aren't saved yet."); the
 offline states (grey `offline`: "Can't connect to Capy. Your edits are saved
-on this device and will sync when you reconnect. They may be rejected or
-lost."; red `offline-unstored`: "Your edits can't be saved on this device.
+on this device and will sync when you reconnect."; red `offline-unstored`: "Your edits can't be saved on this device.
 Keep this tab open until you reconnect."; grey `offline-limit`: "You've
 reached the offline edit limit for this file. Reconnect to keep editing.",
 see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)); and the

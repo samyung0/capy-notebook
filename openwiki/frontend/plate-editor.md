@@ -2475,8 +2475,7 @@ deploy order.
 An editor that can edit keeps editing while its room cannot be reached: the
 browser went offline, or reconnecting failed for 30 s. Its header shows
 Offline and the `offline` save banner reads "Can't connect to Capy. Your edits
-are saved on this device and will sync when you reconnect. They may be
-rejected or lost." until the room syncs again. Readers (Note View, study
+are saved on this device and will sync when you reconnect." until the room syncs again. Readers (Note View, study
 pages) hold no edits and keep what they painted; opening the app offline is not
 supported.
 

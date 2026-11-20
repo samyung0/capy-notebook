@@ -1290,7 +1290,7 @@
   "editor_status_unsaved": "未保存，正在重试…",
   "editor_save_failed": "保存失败",
   "editor_save_delayed": "保存已延迟。你最近的更改尚未保存。",
-  "editor_offline_banner": "无法连接到 Capy。你的编辑已保存在此设备上，重新连接后会自动同步。这些编辑可能会被拒绝或丢失。",
+  "editor_offline_banner": "无法连接到 Capy。你的编辑已保存在此设备上，重新连接后会自动同步。",
   "editor_offline_unstored": "你的编辑无法保存在此设备上。请在重新连接前保持此标签页打开。",
   "editor_offline_limit": "你已达到此文件的离线编辑上限。请重新连接以继续编辑。",
   "editor_late_unloaded": "无法同步你的编辑。请重试或重新加载页面。",
