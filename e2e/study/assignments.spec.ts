@@ -158,7 +158,10 @@ test.describe('assignments', () => {
       await ownerApi.get(`/api/assignments/${assignment.id}/report`)
     ).json();
     expect(report.members[0].waitingAnswers).toBe(1);
-    expect(report.answers[0].waiting).toBe(true);
+    // Every answer is listed (Epo 2026-11-19): the open one alone waits.
+    expect(
+      report.answers.filter((row: { waiting: boolean }) => row.waiting)
+    ).toHaveLength(1);
     const attemptId = report.members[0].attemptId as string;
 
     // Nobody but the owner's side reads a member's report.
