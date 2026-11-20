@@ -1414,6 +1414,8 @@ pub async fn edit_material(
                 let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
             }
         }
+        // Logged at info already: no failure (Q778 A).
+        Err(error) if error == projection::IN_TRASH => {}
         // The change is durable; the pending scan catches the projection up
         // and the receipt keeps reporting projectionPending until then.
         Err(error) => observe::log(

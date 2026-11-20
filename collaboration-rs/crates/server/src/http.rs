@@ -502,7 +502,9 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
         ),
         Err(message) => {
             let conflict = message.contains("concurrently") || message.contains("no longer exists");
-            if !conflict {
+            // A projection refused for a material in Trash was logged at
+            // info already: no failure (Q778 A).
+            if !conflict && message != crate::projection::IN_TRASH {
                 crate::observe::capture(&message, None, &[("stage", "service_command")]);
             }
             let status = if conflict {

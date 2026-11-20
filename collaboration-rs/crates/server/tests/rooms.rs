@@ -11091,6 +11091,209 @@ async fn a_save_receipt_reaches_the_editor_before_its_projection() {
     );
 }
 
+/// Q778 A (Epo 2026-11-18, after Sentry CAPY-BACKEND-1Y): a note edited and
+/// moved to Trash before its room projected keeps a lagging projection. The
+/// gateway refuses the room's own projections (on demand, at unload), which is
+/// no failure: an info line, no projection error, no report, no unload
+/// warning. The 5 s catch-up leaves the note while it is in Trash and projects
+/// it once restored. Fails if a refusal for a note in Trash is recorded or
+/// reported, or if the catch-up tries the trashed note (a third refusal).
+#[tokio::test]
+async fn the_projection_catch_up_leaves_a_note_in_trash_until_it_is_restored() {
+    let Some(env) = env() else { return };
+    if env.api.is_none() {
+        return;
+    }
+    let (server, logs) = start_logged(&env).await;
+    let (_, room, mut writer) = writer(&env, server.port, "base").await;
+    let material = material_of(&room).to_owned();
+    writer.type_text(" lagging").await;
+    let stored = writer.stored_past(1).await;
+    trash_keeping_rooms(&env, &material).await;
+    let client = db(&env).await;
+    let refused = ["projection refused", "in Trash", material.as_str()];
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{material}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 503, "{body}");
+    assert!(
+        logs.has(&refused).await,
+        "the room's projection was refused"
+    );
+    drop(writer);
+    wait_unloaded(server.port).await;
+    for _ in 0..100 {
+        if logs.count(&refused) == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(logs.count(&refused), 2, "the unload projection was refused");
+    // Idle since before any other lagging row: the catch-up would take it
+    // first at its next tick.
+    client
+        .execute(
+            "UPDATE material_yjs_documents SET updated_at='2000-01-01' WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("idle");
+    tokio::time::sleep(Duration::from_secs(7)).await;
+    assert_eq!(
+        logs.count(&refused),
+        2,
+        "the catch-up left the note in Trash"
+    );
+    let row = client
+        .query_one(
+            "SELECT projected_version, projection_error FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("row");
+    assert!(row.get::<_, i64>(0) < stored, "still lagging");
+    assert_eq!(row.get::<_, Option<String>>(1), None, "no projection error");
+    assert_eq!(logs.count(&["captured error", &material]), 0, "no report");
+    assert_eq!(logs.count(&["unload projection failed", &material]), 0);
+    client
+        .execute(
+            "UPDATE materials SET trashed_at=NULL WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("restored");
+    let projected = || async {
+        client
+            .query_one(
+                "SELECT d.projected_version, m.content::text FROM material_yjs_documents d
+                 JOIN materials m ON m.id=d.material_id WHERE d.material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("row")
+    };
+    for _ in 0..150 {
+        if projected().await.get::<_, i64>(0) == stored {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let row = projected().await;
+    assert_eq!(row.get::<_, i64>(0), stored, "projected once restored");
+    assert!(row.get::<_, String>(1).contains("base lagging"));
+}
+
+/// Moves a material to Trash in a transaction that also takes back the
+/// discard the trash queues, so a room loaded here stays to project, as when
+/// a projection races the move.
+async fn trash_keeping_rooms(env: &Env, material: &str) {
+    let mut client = db(env).await;
+    let tx = client.transaction().await.expect("transaction");
+    tx.execute(
+        "UPDATE materials SET trashed_at=now() WHERE id=$1",
+        &[&material],
+    )
+    .await
+    .expect("trashed");
+    tx.execute(
+        "DELETE FROM collaboration_eviction_outbox WHERE payload->>'materialId'=$1",
+        &[&material],
+    )
+    .await
+    .expect("outbox");
+    tx.commit().await.expect("commit");
+}
+
+/// Waits up to 3 s for a material's stored version to pass `before`, its
+/// Yjs row perhaps not there yet (a server edit bootstraps it).
+async fn committed_past(env: &Env, material: &str, before: i64) -> i64 {
+    let client = db(env).await;
+    for _ in 0..30 {
+        let version = client
+            .query_opt(
+                "SELECT stored_version FROM material_yjs_documents WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("document")
+            .map(|row| row.get::<_, i64>(0));
+        if let Some(version) = version.filter(|version| *version > before) {
+            return version;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("nothing stored past {before}");
+}
+
+/// Q778 A: a server edit's own projection refused because its note went to
+/// Trash after the rows committed (in the 3 s `SERVICE_LATER` gap) is no
+/// failure either: the agent edit answers its receipt with no warning, and
+/// the replace-block command answers 503 with the reason and reports
+/// nothing. Fails if the agent edit logs its warning or the command
+/// reports the refusal.
+#[tokio::test]
+async fn a_server_edits_projection_refused_in_trash_is_not_reported() {
+    let Some(env) = env() else { return };
+    if env.api.is_none() {
+        return;
+    }
+    let (server, logs) = start_logged(&env).await;
+    let (owner, material) = note_with_second(&env, SERVICE_LATER).await;
+    let room = format!("material:{material}:schema:1");
+    let edit = note_edit(
+        &owner,
+        &material,
+        &format!("op_{material}"),
+        serde_json::json!([{ "type": "replace_text", "blockId": "b1", "expectedText": "base", "text": "BASE" }]),
+    );
+    let port = server.port;
+    let edited =
+        tokio::spawn(async move { internal(port, "/internal/documents/edit", &edit).await });
+    let stored = committed_past(&env, &material, 1).await;
+    trash_keeping_rooms(&env, &material).await;
+    let (status, receipt) = edited.await.expect("edit");
+    assert_eq!(status, 200, "{receipt}");
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET trashed_at=NULL WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("restored");
+    let replaced = replace_second(server.port, &owner, &material, &room);
+    committed_past(&env, &material, stored).await;
+    trash_keeping_rooms(&env, &material).await;
+    let (status, answer) = replaced.await.expect("command");
+    assert_eq!(status, 503, "{answer}");
+    assert_eq!(answer["message"], "the material is in Trash");
+    let refused = ["projection refused", "in Trash", material.as_str()];
+    for _ in 0..100 {
+        if logs.count(&refused) == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(logs.count(&refused), 2, "both projections were refused");
+    assert_eq!(
+        logs.count(&["service edit projection failed", &material]),
+        0
+    );
+    assert_eq!(logs.count(&["captured error", "in Trash"]), 0, "no report");
+    let error: Option<String> = client
+        .query_one(
+            "SELECT projection_error FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("row")
+        .get(0);
+    assert_eq!(error, None);
+}
+
 /// Security regressions: a token opens only the room it names; the server
 /// asks for a fresh one before it expires and closes the channel at expiry
 /// unless a valid one for the same room came back; the upgrade refuses an

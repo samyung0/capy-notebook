@@ -1,7 +1,8 @@
 //! Note projection to `materials.content` (decision 3, DESIGN.md 5): on idle,
 //! on unload, on demand, and a pending scan for rooms no instance projected.
 //! The Go API writes the content; a failure is recorded on the row and
-//! reported once per run of failures (2026-09-13).
+//! reported once per run of failures (2026-09-13), but not its refusal of a
+//! material in Trash (Q778 A).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -59,6 +60,11 @@ impl Refused {
 
 /// Why a quiz's projection is refused.
 const UNREADABLE_QUIZ: &str = "the quiz holds a block this version cannot read";
+
+/// Why the gateway refused a projection: the material is in Trash, whose
+/// writes it refuses (2026-11-12). A room's projection racing the move to
+/// Trash is no failure (Q778 A).
+pub const IN_TRASH: &str = "the material is in Trash";
 
 /// The Plate envelope of a document, off the room's thread.
 pub async fn content_of(doc: Doc, model: Model) -> Result<Value, String> {
@@ -125,16 +131,32 @@ pub async fn project(
             );
             let body = response.text().await.unwrap_or_default();
             let body: String = body.chars().take(500).collect();
-            Err((format!("projection failed ({status}): {body}"), event))
+            Err((
+                format!("projection failed ({status}): {body}"),
+                event,
+                Some(status),
+            ))
         }
-        Err(error) => Err((format!("projection failed: {error}"), None)),
+        Err(error) => Err((format!("projection failed: {error}"), None, None)),
     };
     match outcome {
         Ok(()) => {
             app.projection_failures.clear(material_id);
             Ok(())
         }
-        Err((message, event)) => {
+        Err((message, event, status)) => {
+            // A 404 for a material the database has in Trash is neither
+            // recorded nor reported; any other 404 stays a failure.
+            if status == Some(404)
+                && matches!(note_store::in_trash(&app.db, material_id).await, Ok(true))
+            {
+                observe::log(
+                    observe::Level::Info,
+                    "projection refused",
+                    json!({ "materialId": material_id, "reason": IN_TRASH, "version": version }),
+                );
+                return Err(IN_TRASH.into());
+            }
             if let Err(error) =
                 note_store::record_projection_error(&app.db, material_id, version, &message).await
             {
@@ -246,7 +268,7 @@ fn projected(durable: &note_store::Durable) -> Result<Option<Projected>, String>
 
 /// The safety net for projections no room made (a crash before its idle or
 /// unload projection): rows idle past the threshold whose room is not loaded
-/// here. Every 5 s.
+/// here and whose material is not in Trash. Every 5 s.
 pub async fn run_pending(app: Shared) {
     let mut tick = tokio::time::interval(Duration::from_secs(5));
     loop {

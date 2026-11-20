@@ -5281,6 +5281,8 @@ impl Room {
                     } else {
                         projection::project_doc(&app, &material_id, stored, doc, model).await
                     }
+                    // Logged at info already: no failure.
+                    && error != projection::IN_TRASH
                 {
                     log(
                         Level::Warn,
