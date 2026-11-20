@@ -170,3 +170,40 @@ for (const mode of ['view', 'edit'] as const) {
     });
   });
 }
+
+// Q781 A: the error of an Edit open that failed before the editor reported
+// ready (a CJK face failing as the file opens) stays when the room reports
+// Saved later: here the room drains after the failure and its tab rejoins,
+// the save receipt held until the status has left Saved. Fails with every
+// editing error cleared on Saved.
+test('a DOCX CJK face failing as the file opens in edit keeps the error after the room saves again', async ({
+  context,
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await context.route(face, (route) => route.abort());
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  // The strip is drawn in the frame once its ribbon is up, by Capy before.
+  const shown = async () =>
+    (await page.getByText(m.error_file_body()).isVisible()) ||
+    (await page
+      .frameLocator('iframe[src*="office-runtime"]')
+      .getByText(m.error_file_body())
+      .isVisible());
+  await expect.poll(shown, { timeout: 120_000 }).toBe(true);
+  const room = (held: boolean) =>
+    page.evaluate(async (hold) => {
+      const path = '/src/mocks/collaboration.ts';
+      const { drainSourceRooms, holdSourceSaveReceipts } = await import(path);
+      holdSourceSaveReceipts(hold);
+      if (hold) drainSourceRooms('bio-office-docx');
+    }, held);
+  const saved = page.locator('[data-save-state="saved"]');
+  await room(true);
+  await expect(saved).toHaveCount(0);
+  await room(false);
+  await expect(saved).toBeVisible({ timeout: 30_000 });
+  // The strip goes after a render (in the frame, a message): give it a moment.
+  await page.waitForTimeout(2000);
+  expect(await shown()).toBe(true);
+});

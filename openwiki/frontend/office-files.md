@@ -2256,7 +2256,9 @@ after the View); within Edit the page hands its decoded files to the engine
 worker (the fork's `SliceLocation.files`, checked against the index by
 length and SHA-256), and the fork registers its own faces in whichever
 thread paints. A slice that fails while the DOCX opens fails the open naming the
-file. One that fails while the document is edited (offline, say) keeps the
+file; in Edit that error stays when the room reports Saved later, since the
+runtime clears on Saved only the errors of an editor that reported ready
+(`frameOpen` in `useOfficeRuntime`, Q781 A). One that fails while the document is edited (offline, say) keeps the
 editor running with its characters drawn blank (Q752 B):
 `DocxEditorHost`'s `onError` takes the fork's `FontSliceUnavailableError`
 (`fontSliceErrors`), sends the `font-slice-unavailable` notice once until
