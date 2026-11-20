@@ -16,12 +16,25 @@ import '../../../e2e/i18n/compile';
  *
  * Environment knobs:
  * - PERF_OFFICE_PORT  app port (default 4518); the runtime is on the next one.
+ * - PERF_OFFICE_TLS_KEY, PERF_OFFICE_TLS_CERT  a key and a self-signed
+ *   certificate for localhost (PEM): both origins answer over HTTPS, as in
+ *   production, for local runs on a PC whose antivirus holds plain-HTTP
+ *   answers (Q788 A: Epo's ESET holds the packed fonts 0.15-0.5 s). CI runs
+ *   plain HTTP. Make the pair with
+ *   openssl req -x509 -newkey rsa:2048 -nodes -days 7 -subj /CN=localhost
+ *   -addext subjectAltName=DNS:localhost,IP:127.0.0.1 -keyout key.pem
+ *   -out cert.pem
  */
 
 const perfDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(perfDir, '..', '..', '..');
 const port = Number(process.env.PERF_OFFICE_PORT ?? 4518);
 const runtimePort = port + 1;
+const { PERF_OFFICE_TLS_CERT, PERF_OFFICE_TLS_KEY } = process.env;
+if (Boolean(PERF_OFFICE_TLS_CERT) !== Boolean(PERF_OFFICE_TLS_KEY))
+  throw new Error('Set PERF_OFFICE_TLS_KEY and PERF_OFFICE_TLS_CERT together');
+const tls = Boolean(PERF_OFFICE_TLS_CERT);
+const scheme = tls ? 'https' : 'http';
 const outDir = path.join(perfDir, '..', '.results', 'office-dist');
 // The Office Worker's copy, for the stored `.br` sizes (runtime.office.ts).
 const stageDir = path.join(perfDir, '..', '.results', 'office-stage');
@@ -35,7 +48,10 @@ export default defineConfig({
   testMatch: '**/*.office.ts',
   timeout: 600_000,
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: `${scheme}://localhost:${port}`,
+    // MSW's service worker registers on a self-signed origin only with the
+    // browser-wide switch (the context's ignoreHTTPSErrors is not enough).
+    launchOptions: { args: tls ? ['--ignore-certificate-errors'] : [] },
     screenshot: 'off',
     trace: 'off',
     video: 'off',
@@ -52,12 +68,13 @@ export default defineConfig({
       VITE_CLERK_PUBLISHABLE_KEY: '',
       // Seeds the 62-page document next to the rich-content fixtures.
       VITE_LOAD_TEST_SEED: 'true',
-      VITE_OFFICE_RUNTIME_ORIGIN: `http://localhost:${runtimePort}`,
+      VITE_OFFICE_RUNTIME_ORIGIN: `${scheme}://localhost:${runtimePort}`,
       VITE_USE_MSW: 'true',
     },
+    ignoreHTTPSErrors: tls,
     reuseExistingServer: false,
     timeout: 1_200_000,
-    url: `http://127.0.0.1:${port}`,
+    url: `${scheme}://127.0.0.1:${port}`,
   },
   workers: 1,
 });

@@ -80,8 +80,15 @@ with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
 minutes. Its web server, [`office-server.mjs`](../bench/editor/scripts/office-server.mjs),
-is a Node script so the bench starts on Windows as on Linux. It covers one small
-and one large file per format:
+is a Node script so the bench starts on Windows as on Linux. With
+`PERF_OFFICE_TLS_KEY` and `PERF_OFFICE_TLS_CERT` (a self-signed localhost pair,
+the openssl line in the config) both origins answer over HTTPS and Chromium
+starts with `--ignore-certificate-errors`, which MSW's service worker needs
+there. Local runs on the Windows developer PC use it (Q788 A): its antivirus
+(ESET) holds the last 100 KiB of every plain-HTTP answer until the answer ends
+and scans the packed `.zst` faces 0.15-0.5 s more, a different amount each run,
+and leaves HTTPS alone (harness `2026-11-11-q691/ja-link/repro/results.txt`).
+CI runs plain HTTP. It covers one small and one large file per format:
 
 | Format | Small | Large |
 | --- | --- | --- |
@@ -190,9 +197,9 @@ Per file it reports:
   body at the brotli-11 `.br` the Office Worker stores and serves; packed
   `.zst` faces go as stored either way, and the gzipped text stays as vite
   preview sent it, where production's edge compresses with brotli). A filter
-  that decodes plain-HTTP answers before the browser sees them (found on the
-  Windows developer PC, 2026-11-20) makes `encodedKiB` equal `decodedKiB`
-  for text there. A fetch the HTTP cache or MSW's service worker answered (the app's origin only: its API, the source
+  that decodes plain-HTTP answers before the browser sees them (the Windows
+  developer PC's antivirus, 2026-11-20) makes `encodedKiB` equal `decodedKiB`
+  for text there over plain HTTP. A fetch the HTTP cache or MSW's service worker answered (the app's origin only: its API, the source
   file and most app chunks, bench only) transfers nothing in its realm's
   timing, and a revalidation (vite preview sends ETags) only its headers. The
   test's context starts cold and keeps no disk cache, so `docx_edit` downloads
