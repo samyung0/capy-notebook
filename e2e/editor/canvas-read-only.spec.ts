@@ -294,12 +294,16 @@ test("an editor's board that stops taking edits selects and copies, with no tool
   await joinBen(page, edited);
   await benSquares(page);
   await expect.poll(() => drawn(page)).toEqual(['shape', 'shape']);
+  // Lowered to a viewer: the canvas still reads, its board takes no edits.
+  // (Its access taken back, the canvas goes instead: canvas-room-states.)
   await page.evaluate(async (canvasId) => {
     const modulePath = '/src/mocks/collaboration.ts';
-    const { mockRevokeBoard } = (await import(modulePath)) as Collaboration;
-    mockRevokeBoard(canvasId);
+    const { mockDemoteBoard } = (await import(modulePath)) as Collaboration;
+    mockDemoteBoard(canvasId);
   }, edited);
-  await expect(page.getByText('You no longer have access')).toBeVisible();
+  await expect(page.locator('[data-canvas-strip]')).toContainText(
+    'This file is read-only now.'
+  );
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
   const locked = await documentOf(page);
   await page.mouse.click(...(await onPage(page, 400, 50)));

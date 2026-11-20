@@ -39,6 +39,17 @@ const SEED = 'A note for trying application errors.';
 const editor = (page: Page) =>
   page.locator('[data-slate-editor="true"]').first();
 
+/** The seed text in the note's live editor, once it shows: the paint it took
+ * over from stays in the DOM, hidden, until the browser is idle (NoteBody's
+ * PaintedFrame), and the first Slate root may be that paint's. */
+async function seedText(page: Page) {
+  const text = page
+    .locator('[data-slate-editor="true"][contenteditable="true"]')
+    .getByText(SEED);
+  await expect(text).toBeVisible();
+  return text;
+}
+
 /** The SPA goes to `url`, the page and its modules staying. */
 const navigate = (page: Page, url: string) =>
   page.evaluate((to) => {
@@ -143,8 +154,9 @@ async function typeOffline(
     'data-save-state',
     'saved'
   );
+  const seed = await seedText(page);
   await setReachable(page, false);
-  await clickTextEnd(editor(page).getByText(SEED));
+  await clickTextEnd(seed);
   await page.keyboard.type(text);
   await expect.poll(() => storedRows(page, NOTE)).toBeGreaterThan(0);
 }
@@ -327,7 +339,7 @@ test('a note deleted while its editor is online keeps its unacknowledged typing 
     const { holdNoteReceipts } = (await import(path)) as Collaboration;
     holdNoteReceipts(id, true);
   }, NOTE);
-  await clickTextEnd(editor(page).getByText(SEED));
+  await clickTextEnd(await seedText(page));
   await page.keyboard.type(' Typed online.');
   await expect.poll(() => storedKinds(page, NOTE)).toContain('update');
   expect(await storedKinds(page, NOTE)).not.toContain('state');
