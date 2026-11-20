@@ -52,9 +52,10 @@ test('a quiz paints its questions until its rooms sync, then shows its page and 
     timeout: 30_000,
   });
   await expect(opening.locator('[data-keys-pending]')).toHaveCount(0);
-  await expect(
-    opening.getByRole('button', { name: m.quiz_add_question() })
-  ).toBeDisabled();
+  // The rail's, and the Add bar's once its lazy cards load: nothing adds yet.
+  const adds = opening.getByRole('button', { name: m.quiz_add_question() });
+  await expect(adds.first()).toBeDisabled();
+  for (const add of await adds.all()) await expect(add).toBeDisabled();
   await expect(status(page)).toHaveAttribute('data-save-state', 'opening');
   await expect
     .poll(() => copies(page, QUIZ))
@@ -133,6 +134,87 @@ test('someone gone from editing to viewing loses the answer keys copy', async ({
   await expect(
     page.getByRole('button', { name: m.quiz_add_question() })
   ).toHaveCount(0);
+  await expect.poll(() => copies(page, QUIZ)).not.toContain('keys');
+});
+
+// A demotion with the quiz open (`demoteMockMember`: the role-change notice,
+// then its rooms closed for the access change and rejoined on a read token):
+// the quiz's view under the read-only strip, and the keys copy goes with it.
+test('an editor demoted with the quiz open reads it under the read-only strip and loses the answer keys copy', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(open(QUIZ));
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+  await page.reload();
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+  await expect.poll(() => copies(page, QUIZ)).toContain('keys');
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { demoteMockMember } = await import(path);
+    demoteMockMember('ws_scenarios');
+  });
+  await expect(page.getByText(m.editor_read_only_strip())).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByRole('button', { name: m.quiz_add_question() })
+  ).toHaveCount(0);
+  await expect(page.locator('[data-question-id]').first()).toBeVisible();
+  await expect.poll(() => copies(page, QUIZ)).not.toContain('keys');
+});
+
+// Demoted between the page's read (an editor's) and its rooms' first token (a
+// reader's), with no notice: that token asks for the read again, so the quiz
+// turns to its view under the read-only strip, and the keys copy goes.
+test("an editor demoted before the quiz's first token reads it under the read-only strip and loses the answer keys copy", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(open(QUIZ));
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+  await page.reload();
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved', {
+    timeout: 30_000,
+  });
+  await expect.poll(() => copies(page, QUIZ)).toContain('keys');
+  await holdTokens(page, QUIZ);
+  await page.reload();
+  await expect(
+    page.locator('[data-quiz-opening] [data-question-row]').first()
+  ).toBeVisible({ timeout: 30_000 });
+  // The item's read answered on this page, an editor's.
+  await expect
+    .poll(() =>
+      page.evaluate(async (id) => {
+        const path = '/src/api/queryClient.ts';
+        const { answeredAt, queryClient } = await import(path);
+        const read = queryClient
+          .getQueryCache()
+          .find({ exact: true, queryKey: ['material', id] });
+        return answeredAt(read) > 0 && read.state.data.capabilities.canEdit;
+      }, QUIZ)
+    )
+    .toBe(true);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { demoteMockMember } = await import(path);
+    demoteMockMember('ws_scenarios', false);
+  });
+  await holdTokens(page, null);
+  await expect(page.getByText(m.editor_read_only_strip())).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByRole('button', { name: m.quiz_add_question() })
+  ).toHaveCount(0);
+  await expect(page.locator('[data-question-id]').first()).toBeVisible();
   await expect.poll(() => copies(page, QUIZ)).not.toContain('keys');
 });
 

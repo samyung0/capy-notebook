@@ -202,7 +202,8 @@ export function SourceBanners({
       {banner && (
         <SaveBanner onReload={onReload} reloading={reloading} state={banner} />
       )}
-      {/* Recovery content is only copied: no download. */}
+      {/* Recovery content is only copied: no draft download here (a deleted
+          item's strip has its own Download, DeletedDownload). */}
       {error && (
         <FileBanner
           actions={isRecoveryBanner(banner) ? [] : actions}

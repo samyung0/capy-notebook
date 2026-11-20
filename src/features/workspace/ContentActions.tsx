@@ -86,6 +86,7 @@ export function ContentActions({
   color,
   confirmInMenu = false,
   content,
+  deletedDownloads,
   display,
   hoverClassName,
   leadingItems = [],
@@ -120,6 +121,10 @@ export function ContentActions({
    * of opening the confirmation dialog. */
   confirmInMenu?: boolean;
   content?: ContentActionTarget;
+  /** Deleted while open (Q39, Epo 2026-11-20): the item's own entries go but
+   * Properties, from its last read, and these downloads, made from what the
+   * page shows; nothing asks the server it is gone from. */
+  deletedDownloads?: MenuItem[];
   display: 'hover' | 'menu';
   hoverClassName?: string;
   leadingItems?: MenuItem[];
@@ -170,16 +175,22 @@ export function ContentActions({
   const [moveToOpen, setMoveToOpen] = useState(false);
   const moveTo = canMoveTo && content?.type === 'file';
   const queryClient = useQueryClient();
-  const downloads = content
-    ? downloadMenuItems(content, workspaceId || null, queryClient)
-    : [];
+  // Deleted, it keeps only what needs no server: Properties and the page's
+  // own downloads.
+  const deleted = !!deletedDownloads;
+  const changes = !(readOnly || deleted);
+  const downloads =
+    deletedDownloads ??
+    (content
+      ? downloadMenuItems(content, workspaceId || null, queryClient)
+      : []);
 
   // One order on every item menu (cards, rows, the open item's header):
   // open or view, Rename, Share, Move, Shared with members, Clone, Download,
   // Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
-    ...(!readOnly && canRename && content
+    ...(changes && canRename && content
       ? [
           {
             icon: 'pencil' as const,
@@ -191,7 +202,7 @@ export function ContentActions({
     ...(onShare
       ? [{ icon: 'link' as const, label: m.action_share(), onClick: onShare }]
       : []),
-    ...(!readOnly && content && (moveTo || showMove)
+    ...(changes && content && (moveTo || showMove)
       ? [
           moveTo
             ? {
@@ -210,7 +221,7 @@ export function ContentActions({
     // 2026-11-18): a workspace item's owners and editors only; a standalone
     // item has no members. Off hides the item at once, the menu left open on
     // the switch; on closes the menu and asks first.
-    ...(!readOnly && content && workspaceId
+    ...(changes && content && workspaceId
       ? [
           {
             checked: !hidden,
@@ -222,7 +233,7 @@ export function ContentActions({
           },
         ]
       : []),
-    ...(canClone && content
+    ...(canClone && content && !deleted
       ? [
           {
             icon: 'clone' as const,
@@ -232,14 +243,18 @@ export function ContentActions({
         ]
       : []),
     ...downloads,
-    ...(!readOnly && content
+    ...(content && (changes || deleted)
       ? [
           {
             icon: 'help' as const,
             label: m.content_properties(),
             onClick: () => setPropertiesOpen(true),
           },
-          ...beforeDeleteItems,
+        ]
+      : []),
+    ...beforeDeleteItems,
+    ...(changes && content
+      ? [
           {
             danger: true,
             icon: 'trash' as const,
@@ -265,7 +280,7 @@ export function ContentActions({
               : {}),
           },
         ]
-      : beforeDeleteItems),
+      : []),
   ];
 
   const saveName = async (nextName: string) => {

@@ -16,7 +16,6 @@ import {
   apiNote,
   contentText,
   lineAfter,
-  lineMatch,
   notesWorkspace,
   openNote,
 } from './note';
@@ -44,9 +43,10 @@ import { type Actor, expect, test, type UatRun } from './runtime';
 //
 // A bystander, a second editor with the note and the DOCX open, stays connected
 // and editable through all of it: a server closing the rooms would fail here. An
-// editor who opened the note before is removed while typing, and stays on it,
-// read-only under the strip; a demoted quiz editor ends read-only too. Those two
-// strips need the client's reconnect work (Epo 2026-11-05, Q634).
+// editor who opened the note before is removed while typing, and its page says
+// the note is unavailable, with one "You no longer have access" toast (Epo
+// 2026-11-20); a demoted quiz editor ends read-only under the strip, which needs
+// the client's reconnect work (Epo 2026-11-05, Q634).
 
 /** editOffice's DOCX sentence for a collaborator. */
 const SENTENCE = 'Collaborator confirmed the survey starts in July.';
@@ -255,7 +255,7 @@ function keepTyping(page: Page) {
   };
 }
 
-test('membership: an editor demoted to viewer has open note, Office and quiz editors turn read-only and keeps reading; an editor removed while typing stays on its note read-only; removed, loses the workspace, its tokens and its open room, deletes what it uploaded and comes back only through the signed link; a second editor stays connected and editable throughout', async ({
+test('membership: an editor demoted to viewer has open note, Office and quiz editors turn read-only and keeps reading; an editor removed while typing sees its note unavailable with one lost-access toast; removed, loses the workspace, its tokens and its open room, deletes what it uploaded and comes back only through the signed link; a second editor stays connected and editable throughout', async ({
   run,
 }) => {
   test.setTimeout(1_200_000);
@@ -440,16 +440,27 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
     timeout: 60_000,
   });
 
-  // 3. Removed while typing: the room closes on them and their rejoin is refused
-  // at the token, and they stay on the note, read-only under the strip.
+  // 3. Removed while typing (Epo 2026-11-20): the room closes on them, their
+  // rejoin is refused at the token and the page's read too, so the page says
+  // the note is unavailable, or its workspace private once the removal notice
+  // reads it again (whichever lands first), with one "You no longer have
+  // access" toast and nothing left to edit.
   const stopTyping = keepTyping(typist.page);
   expect(await changeMember(run, workspaceId, typist, 'remove')).toBe(204);
-  await expect(typist.page.getByText(m.editor_access_lost())).toBeVisible({
-    timeout: 120_000,
-  });
+  const kicked = typist.page
+    .getByRole('alert')
+    .filter({ hasText: m.editor_access_lost() });
+  await expect(kicked).toBeVisible({ timeout: 120_000 });
   await stopTyping();
+  await expect(
+    typist.page
+      .getByText(m.error_not_found_title())
+      .or(typist.page.getByText(m.error_private_title()))
+      .first()
+  ).toBeVisible();
+  await expect(kicked).toHaveCount(1);
+  await expect(typist.page.locator('.tst-count')).toHaveCount(0);
   await expect(typist.page.locator('[contenteditable="true"]')).toHaveCount(0);
-  await expect(typist.page.getByText(lineMatch(typistLine))).toBeVisible();
   expect(await membership(run, workspaceId, typist.id)).toEqual([]);
   await api(typist, noteToken, 'POST', undefined, 404);
   await api(typist, `/api/materials/${noteId}`, 'GET', undefined, 404);
@@ -505,8 +516,9 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   assert((await contentText(run, noteId)).includes(memberLine));
   await savedFacts(run, fileId, [SENTENCE]);
 
-  // The bystander heard no close through it all, with no strip, and still edits
-  // both, with its write tokens.
+  // The bystander heard no close through it all, with no strip and no
+  // lost-access toast (one copy for both), and still edits both, with its
+  // write tokens.
   await bystanderTypes(`Demoted ${marker}`, `Removed ${marker}`);
   const input = bystanderFrame.getByRole('textbox', { name: 'Document input' });
   await input.focus();

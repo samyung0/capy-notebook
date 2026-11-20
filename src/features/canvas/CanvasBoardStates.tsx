@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { DeletedDownload, SaveBanner } from '@/components/banners/SaveBanner';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import {
@@ -97,9 +97,9 @@ function CanvasBoardStatus({
 }
 
 /** The strip over the board, under the picker's row: the room's save strips
- * (offline, an outdated build, edits open for copying, access lost, the
- * service unreachable, saving delayed), why the board is read-only, or the
- * Trash's Restore. The board under it is read-only whenever the strip says it
+ * (offline, an outdated build, edits open for copying, a deleted canvas's
+ * with Download, access lost, the service unreachable, saving delayed), why
+ * the board is read-only, or the Trash's Restore. The board under it is read-only whenever the strip says it
  * takes no edits. A strip the person closed draws nothing, and its outline
  * goes with it (`empty:hidden`). Reload in recovery asks before it drops the
  * edits, as a note's Discard does. */
@@ -123,17 +123,19 @@ export function CanvasBoardStrip({ strip }: { strip: CanvasStrip | null }) {
         ) : strip.kind === 'read-only' ? (
           <FileBanner message={m.editor_read_only_strip()} />
         ) : (
-          <SaveBanner
-            onReload={
-              strip.onReload &&
-              (() => {
-                const reload = strip.onReload;
-                if (reload) setAsking(() => reload);
-              })
-            }
-            onRetry={strip.onRetry}
-            state={strip.state}
-          />
+          <DeletedDownload.Provider value={strip.onDownload ?? null}>
+            <SaveBanner
+              onReload={
+                strip.onReload &&
+                (() => {
+                  const reload = strip.onReload;
+                  if (reload) setAsking(() => reload);
+                })
+              }
+              onRetry={strip.onRetry}
+              state={strip.state}
+            />
+          </DeletedDownload.Provider>
         )}
       </div>
       <ConfirmDialog

@@ -8,7 +8,7 @@ import (
 )
 
 // ListenWorkspaceTree receives the "<workspaceId>:<files|materials>" payloads
-// raised by the files/materials triggers (migration 0004) until the context
+// raised by the files/materials triggers (migrations 0004, 0189) until the context
 // ends or the connection fails, calling listening once attached and fn for
 // each payload. It holds a connection of its own: a LISTEN issued on a pooled
 // connection would follow it to the next borrower.

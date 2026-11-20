@@ -17,7 +17,8 @@ import (
 // kind, so their unsent edits are offered rather than dropped (Epo 2026-11-20,
 // Q41), and so does an embedded quiz trashed alone, its block removed from a
 // note still live. A non-member, a member it is hidden from and a purged item
-// keep the non-disclosing 404.
+// keep the non-disclosing 404. A shared canvas's read answers its members
+// the same, and one never shared stays a 404 to them.
 func TestTrashedItemsAnswerDeleted(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
@@ -61,7 +62,23 @@ func TestTrashedItemsAnswerDeleted(t *testing.T) {
 		 now(),'ep_deleted',now() + interval '30 days')`, file); err != nil {
 		t.Fatal(err)
 	}
+	// A member's canvas its maker shared with the workspace and trashed, and
+	// one the maker never shared (review 2026-11-20).
+	const sharedCanvas, ownCanvas = "canvas_deleted_shared", "canvas_deleted_own"
+	for _, row := range []struct {
+		id     string
+		shared bool
+	}{{sharedCanvas, true}, {ownCanvas, false}} {
+		if _, err := st.Pool().Exec(ctx, `INSERT INTO materials
+			(id, created_by, owner_user_id, kind, title, canvas_workspace_id, canvas_shared,
+			 trashed_at, trash_episode_id, purge_after)
+			VALUES ($1,'u_owner','u_owner','canvas','Lab diagrams','ws_e2e_private',$2,
+			 now(),'ep_deleted_canvas',now() + interval '30 days')`, row.id, row.shared); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id IN ($1,$2)`, sharedCanvas, ownCanvas)
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id IN ($1,$2,$3)`, note, hidden, embedded)
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, liveNote)
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM files WHERE id=$1`, file)
@@ -104,6 +121,8 @@ func TestTrashedItemsAnswerDeleted(t *testing.T) {
 	// first (review 2026-11-20).
 	deleted(http.MethodGet, "/api/files/"+file+"/source-session", "u_editor", "plan.docx", "doc")
 	deleted(http.MethodGet, "/api/files/"+file, "u_viewer", "plan.docx", "doc")
+	// A shared canvas's read, the canvas page's (review 2026-11-20).
+	deleted(http.MethodGet, "/api/canvases/"+sharedCanvas, "u_viewer", "Lab diagrams", "canvas")
 	// The quiz trashed alone answers as its live note is read.
 	deleted(http.MethodPost, "/api/materials/"+embedded+"/collaboration-token", "u_editor", "Mitosis check", "quiz")
 	deleted(http.MethodGet, "/api/materials/"+embedded, "u_viewer", "Mitosis check", "quiz")
@@ -117,6 +136,8 @@ func TestTrashedItemsAnswerDeleted(t *testing.T) {
 	notFound(http.MethodGet, "/api/files/"+file, "u_other")
 	notFound(http.MethodPost, "/api/materials/"+hidden+"/collaboration-token", "u_viewer")
 	notFound(http.MethodGet, "/api/materials/"+hidden, "u_viewer")
+	notFound(http.MethodGet, "/api/canvases/"+sharedCanvas, "u_other")
+	notFound(http.MethodGet, "/api/canvases/"+ownCanvas, "u_viewer")
 
 	// Purged: the row is gone.
 	if _, err := st.Pool().Exec(ctx, `DELETE FROM materials WHERE id=$1`, note); err != nil {

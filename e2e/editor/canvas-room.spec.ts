@@ -172,7 +172,7 @@ test("the picker's switch asks before it shares a canvas with the members, and t
   await expect(mark).toHaveCount(0);
 });
 
-test("a viewer opens another member's shared canvas read-only, and keeps the page when it is taken back", async ({
+test("a viewer opens another member's shared canvas read-only, and is told once when it is taken back", async ({
   page,
 }) => {
   test.slow();
@@ -227,24 +227,31 @@ test("a viewer opens another member's shared canvas read-only, and keeps the pag
   await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
   await page.keyboard.press('Escape');
 
-  // What Ben draws shows.
+  // What Ben draws shows, on the board the drag opened on.
   await joinPeer(page, theirs);
   await peerDraws(page, stroke);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
-
-  // Ben takes it back: the board stays as it was, under the strip.
-  await page.evaluate(async (canvasId) => {
-    const modulePath = '/src/mocks/collaboration.ts';
-    const { mockRevokeBoard } = (await import(modulePath)) as Collaboration;
-    mockRevokeBoard(canvasId);
-  }, theirs);
-  await expect(page.getByText('You no longer have access')).toBeVisible();
-  await expect.poll(() => drawn(page)).toEqual(['brush']);
-  await expect(page.locator('edgeless-toolbar-widget')).toHaveCount(0);
   expect(
     await page.evaluate(
       () => ((window as Shown).__board as { first?: boolean }).first
     )
   ).toBe(true);
+
+  // Ben takes it back (Epo 2026-11-20): the canvas goes, a toast says they
+  // lost access, once, and the picker shows their own.
+  await page.evaluate(async (canvasId) => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { mockRevokeBoard } = (await import(modulePath)) as Collaboration;
+    mockRevokeBoard(canvasId);
+  }, theirs);
+  const toast = page
+    .getByRole('alert')
+    .filter({ hasText: 'You no longer have access' });
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  await expect(page).not.toHaveURL(new RegExp(`c=${theirs}`));
+  await expect(picker(page, 'Biology 101')).toBeVisible();
+  await page.waitForTimeout(2500);
+  await expect(toast).toHaveCount(1);
+  await expect(page.locator('.tst-count')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

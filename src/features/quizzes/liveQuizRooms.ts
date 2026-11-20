@@ -129,8 +129,13 @@ export function useQuizRooms(
     seed: copy ? keysSeed : undefined,
     wake,
   });
+  // The keys refused this person as read-only (asked as they were demoted,
+  // ahead of the content room's read token): the quiz reads, on the content
+  // room alone.
+  const keysRead = wantKeys && keys.snapshot.access === 'read';
+  const withKeys = wantKeys && !keysRead;
   const contentUndo = content.room?.undo;
-  const keysUndo = keys.room?.undo;
+  const keysUndo = withKeys ? keys.room?.undo : undefined;
   const undo = useMemo(
     () => (contentUndo && keysUndo ? pairedUndo(contentUndo, keysUndo) : null),
     [contentUndo, keysUndo]
@@ -138,12 +143,12 @@ export function useQuizRooms(
   const ready =
     !!content.room &&
     content.snapshot.synced &&
-    (!wantKeys || (!!keys.room && keys.snapshot.synced));
+    (!withKeys || (!!keys.room && keys.snapshot.synced));
   const contentRecovery = content.snapshot.recovery;
-  const keysRecovery = wantKeys ? keys.snapshot.recovery : null;
+  const keysRecovery = withKeys ? keys.snapshot.recovery : null;
   const contentRoom = content.room;
   const keysRoom = keys.room;
-  const keysDeleted = wantKeys && keys.snapshot.deleted;
+  const keysDeleted = withKeys && keys.snapshot.deleted;
   const recovery = useMemo(
     () =>
       contentRecovery || keysRecovery
@@ -167,22 +172,22 @@ export function useQuizRooms(
   const offline = OFFLINE.find(
     (state) =>
       state === content.snapshot.offline ||
-      (wantKeys && state === keys.snapshot.offline)
+      (withKeys && state === keys.snapshot.offline)
   );
   return {
-    access: content.snapshot.access,
+    access: keysRead ? 'read' : content.snapshot.access,
     content: content.room,
     deleted: deleted || keysDeleted,
-    keys: wantKeys ? keys.room : null,
+    keys: withKeys ? keys.room : null,
     keysSeed,
     offline: offline ?? null,
     presence: content.snapshot.presence,
     readOnlyCode: content.snapshot.readOnlyCode,
     ready,
     recovery,
-    sending: content.snapshot.sending || (wantKeys && keys.snapshot.sending),
-    slowed: content.snapshot.slowed || (wantKeys && keys.snapshot.slowed),
-    status: wantKeys
+    sending: content.snapshot.sending || (withKeys && keys.snapshot.sending),
+    slowed: content.snapshot.slowed || (withKeys && keys.snapshot.slowed),
+    status: withKeys
       ? combined(content.snapshot.status, keys.snapshot.status)
       : content.snapshot.status,
     undo,

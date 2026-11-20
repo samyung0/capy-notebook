@@ -66,16 +66,22 @@ vi.mock('./QuizPage', () => ({ QuizQuestionList: () => null }));
 const { createRoot } = await import('react-dom/client');
 const { QuizEditor } = await import('./QuizEditor');
 
-const editor = () => (
-  <QuizEditor copy={{ seed: null }} quizId="qz1" stored={[]} title="Cells" />
+const editor = (onReadOnly?: () => void) => (
+  <QuizEditor
+    copy={{ seed: null }}
+    onReadOnly={onReadOnly}
+    quizId="qz1"
+    stored={[]}
+    title="Cells"
+  />
 );
 let host: HTMLElement;
 let root: ReturnType<typeof createRoot>;
-const show = () => {
+const show = (onReadOnly?: () => void) => {
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  return act(async () => root.render(editor()));
+  return act(async () => root.render(editor(onReadOnly)));
 };
 const addQuestion = () =>
   act(async () =>
@@ -120,6 +126,44 @@ it('leaves the documents alone when the room went read-only', async () => {
   expect(host.textContent).toContain(m.editor_read_only_strip());
   leave();
   expect(list()).toHaveLength(2);
+});
+
+// As a set's or a diagram's editor does, so the page's view keeps the strip.
+it('tells the page when its rooms turn read-only', async () => {
+  const onReadOnly = vi.fn();
+  await show(onReadOnly);
+  docs.rooms = { access: 'read' };
+  await act(async () => root.render(editor(onReadOnly)));
+  expect(onReadOnly).toHaveBeenCalledWith(undefined);
+  leave();
+});
+
+// Lowered while away, its copy still an editor's: opening shows no cue (D1).
+it('opens read-only with no strip and tells the page nothing', async () => {
+  const onReadOnly = vi.fn();
+  docs.rooms = { access: 'read' };
+  await show(onReadOnly);
+  expect(host.textContent).not.toContain(m.editor_read_only_strip());
+  expect(onReadOnly).not.toHaveBeenCalled();
+  leave();
+});
+
+// Lowered between the page's read and the first token: the page learns it
+// from a new read.
+it('asks for its read again when its first token reads while the read says it may edit', async () => {
+  const { queryClient } = await import('@/api/queryClient');
+  queryClient.setQueryData(['material', 'qz1'], {
+    capabilities: { canEditContent: true },
+  });
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+  const onReadOnly = vi.fn();
+  docs.rooms = { access: 'read' };
+  await show(onReadOnly);
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['material', 'qz1'] });
+  expect(onReadOnly).not.toHaveBeenCalled();
+  leave();
+  invalidate.mockRestore();
+  queryClient.clear();
 });
 
 it('stays mounted under a strip when its room refuses this person', async () => {

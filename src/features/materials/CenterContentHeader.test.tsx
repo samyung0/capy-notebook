@@ -48,6 +48,7 @@ vi.mock('@/api/hooks', () => ({
       name: 'Deck.pptx',
     },
   }),
+  useFiles: () => ({ data: [{ id: 'f1' }] }),
   useMaterials: () => ({ data: [], isPending: false }),
   useSetHidden: () => ({ mutate: header.setHidden }),
   useWorkspace: () => ({ data: undefined }),

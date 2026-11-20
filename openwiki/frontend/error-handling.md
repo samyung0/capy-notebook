@@ -161,7 +161,9 @@ stay in the page as the non-disclosing private-or-unavailable state, and every
 other failure without data goes to the boundary with its normal copy and Retry.
 A deleted item's 410 `item_deleted` (Q41, `deletedItemOf` in `api/client.ts`)
 counts as missing (`isMissing`) and is never retried; an item's page tells it
-apart only to keep unsent edits on screen (plate-editor, the draft sweep). A
+apart only to keep unsent edits on screen (plate-editor, the draft sweep),
+with Download on its strip and Properties and downloads of what it shows in
+its ⋮ (Epo 2026-11-20). A
 stored (persisted) read that fails with it keeps its data, unlike a 401 or
 404's: its reader could still open the item, and the page showing it keeps its
 header and its unsent edits on that read.
@@ -542,7 +544,18 @@ note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
-stays. A canvas does the same: its board shows what was saved before (a
+stays. A demotion's notice usually comes first: it reads the workspace and its
+open items again (view-only) before the rooms close, and an open note, quiz,
+set or diagram editor drops to view on that read under the same strip, once a
+live answer on the page had said this person may edit (a trashed read, every
+right off, is none: restored, the item edits again); someone demoted while
+away opens with no strip (D1). Without the notice, a quiz's keys refused as
+read-only at a token, as the demotion lands, read the same way, never as lost
+access or offline, and a first token that reads while the item's read said
+they may edit asks for that read again, which lowers the page. A quiz or set edits again, its strip gone, once a read says
+this person may (raised again, or its payer's storage freed; Q642 C), while a
+note or diagram stays read-only until a reload. A canvas does the
+same: its board shows what was saved before (a
 fresh room, since its document still holds the discarded edits) under the
 same strip, or under the storage strip naming whose storage is full, picked
 from the canvas's read as a note's are (plate-editor.md, the canvas room).
@@ -669,7 +682,11 @@ conversation's running mark in every cached conversation list,
 the file caches) and `tree` (`{kind: files | materials}`, which invalidates
 that workspace list plus the topics list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only
-marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
+marks them stale and reads them on focus). The server raises it for every
+list-visible write, hiding an item from members or showing it again included,
+and for a canvas's (made, renamed, shared or taken back, trashed, deleted) as
+`materials` (migration 0189), so `materials` also invalidates the workspace's
+canvas list (`[...qk.canvases, wsId]`). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
 notification list, the unread count, the file, material and topic lists,
 and the conversation lists. A connection that succeeds after a failed attempt (a redeploy, a
@@ -679,6 +696,27 @@ states above recover without Retry. There is no polling while disconnected; the 
 for rows still ingesting, and one that finds a ready or failed file
 invalidates its cached detail if that detail still says pending or
 processing, which repairs an open viewer after a missed terminal event.
+
+A member's access to the open workspace changing reads it again (Epo
+2026-11-20, `recheckWorkspace` in `useEventStream`), on a
+`workspace_member_removed` or `workspace_role_changed` notification naming it
+and on a workspace stream refused at connect (404 or 403). Still readable
+(another role, or removed from a public or redeemed link workspace): every
+list under the workspace and its canvas list read again, so items hidden from
+a viewer go. Refused (`isMissing`): `WorkspaceOpen` shows its unavailable
+state (`WorkspaceError`), as it does for a missing read with the workspace
+still cached, and a page the workspace worked on gets an error toast "You no
+longer have access" (`editor_access_lost`, no body, id `access-lost` as the
+item's, skipped while that one shows or waits its turn behind another error),
+once per open. Worked means a read of the workspace answered a fetch (not a
+cache write) since the page opened it, or in the 10 s before (a hover's
+preload, `freshAnswer`, whatever the read's stale time), or the stream
+connected with it; a row cached from the persisted store or an earlier visit
+does not count, so opening a workspace the person was removed from while away says only
+that it is unavailable, whichever read lands first. A refused
+workspace stream is no fault: no Reconnecting card, and the stream
+reconnects without `?workspace=`, so notifications keep arriving until the
+person leaves the page.
 
 ## Chat tool results
 
@@ -881,9 +919,21 @@ under the read-only strip. A refused read (any 4xx but 408 and 429) replaces the
 page with "This item is unavailable", which never says blocked rather than gone.
 A room's refusal alone keeps the page (Epo 2026-11-05): a reader's as it was, an
 editor's mounted and read-only under the grey "You no longer have access" strip
-with no save status; with no 4403 close before it, the page also asks for its
-read, which may refuse (Q644; see
-[authorization](../authorization-permissions-lifecycles.md)). Drafts are written as
+with no save status, and the page asks for its read, which may refuse, after a
+4403 close too (Epo 2026-11-20, narrowing Q644; see
+[authorization](../authorization-permissions-lifecycles.md)). A read refusing
+access (403 or 404, `isAccessRefused`) after the item worked on the page, a
+room of it synced or the page's read answered a fetch showing it live there or
+in the 10 s before (kicked: removed, the item hidden from members, a canvas unshared;
+the room's refusal, or a list dropping the item, may ask for that read first,
+an open file's header reading it again once its workspace's files list drops
+it), adds an error toast "You no longer have
+access" with no body, once per item (toast id `access-lost`, shared with the
+workspace's), and reads the lists showing the item again (Epo 2026-11-20,
+`useAccessLostNotice` in `accessLostNotice.ts`); a hidden item's or a canvas's
+tree event refetches only the open workspace's lists, and a member removed
+from the workspace sees it unavailable instead (events stream above; see
+[plate-editor.md](plate-editor.md)). Drafts are written as
 each local edit happens, by a dedicated drafts worker, with the whole document
 once per offline episode and at unmount (see
 [plate-editor.md](plate-editor.md#offline-editing-and-drafts)). Draft storage

@@ -152,6 +152,13 @@ function subscribe(listener: () => void) {
 /** The toasts on screen. */
 export const shownToasts = () => snapshot;
 
+/** Whether a toast with this id shows or waits its turn. */
+export const hasToast = (id: ToastId) =>
+  Object.values(lanes).some(
+    ({ queue, shown }) =>
+      shown?.id === id || queue.some((toast) => toast.id === id)
+  );
+
 const NONE: ShownToasts = { error: null, other: null };
 
 export const useShownToasts = () =>

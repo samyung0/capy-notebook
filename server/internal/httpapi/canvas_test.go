@@ -514,8 +514,14 @@ func TestATrashedCanvasOpensReadOnlyFromItsCreatorsTrash(t *testing.T) {
 		string(stored.Updates[0]) != "\x01\x02" || string(stored.Updates[1]) != "\x03\x04" || string(stored.Updates[2]) != "\x05" {
 		t.Fatalf("the trashed canvas's board → %d %s", rec.Code, rec.Body)
 	}
+	// The members it was shared with are told it was deleted (Q41, review
+	// 2026-11-20); anyone else is not found. Only its creator reads it.
 	for _, user := range []string{"u_owner", "u_viewer", "u_other"} {
-		expectStatus(t, doReq(t, h, http.MethodGet, "/api/canvases/"+canvas.ID, user, nil), http.StatusNotFound, user+" reading the trashed canvas")
+		want := http.StatusGone
+		if user == "u_other" {
+			want = http.StatusNotFound
+		}
+		expectStatus(t, doReq(t, h, http.MethodGet, "/api/canvases/"+canvas.ID, user, nil), want, user+" reading the trashed canvas")
 		expectStatus(t, doReq(t, h, http.MethodGet, board, user, nil), http.StatusNotFound, user+" reading its board")
 	}
 	// Its creator could read it live, so its room says it was deleted.

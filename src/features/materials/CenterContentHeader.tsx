@@ -1,11 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { createContext, type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
-import { deletedItemOf } from '@/api/client';
+import { deletedItemOf, qk } from '@/api/client';
 import {
   materialQuery,
   useFile,
+  useFiles,
   useMaterials,
   useWorkspace,
 } from '@/api/hooks';
@@ -271,6 +272,25 @@ function useHeader(
     item.kind === 'file' ? item.id : null,
     { errorBoundary: false }
   );
+  // A file its workspace's list no longer carries (hidden from this person,
+  // their access gone) is read again, as a material the list drops is read
+  // (`readBody`): a file with no room open hears of it from nothing else, and
+  // a refused read shows it unavailable.
+  const listsFile =
+    item.kind === 'file' && !standalone && !trashed && workspaceId !== '';
+  const { data: files } = useFiles(listsFile ? workspaceId : '', {
+    errorBoundary: false,
+  });
+  const unlistedFile =
+    listsFile && !!files && !files.some((row) => row.id === item.id);
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (unlistedFile)
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: qk.file(item.id),
+      });
+  }, [unlistedFile, item.id, queryClient]);
   // Inside a workspace the list entry and the workspace's capabilities cover
   // what the header shows until the body opens. Reading the material itself
   // here would pull the whole document past the heavy-document gate, so the
@@ -357,6 +377,7 @@ export function Header({
   imageZoom,
   onImageZoomChange,
   isFullscreen,
+  deletedDownloads = [],
   onDeleted,
   onToggleFullscreen,
   editorStatus,
@@ -376,6 +397,9 @@ export function Header({
   oneColumn?: OneColumnChrome;
   /** Opened from the Trash: its trashed read is what shows. */
   trashed?: boolean;
+  /** Deleted while its page shows its unsent edits (Q39): ⋮'s downloads,
+   * made from what the page shows (Epo 2026-11-20). */
+  deletedDownloads?: MenuItem[];
   /** The open file's buttons a phone has no room for, first in ⋮ there
    * (Preview, Epo 2026-11-16; `usePhoneMenuItem`). */
   phoneItems?: MenuItem[];
@@ -527,17 +551,18 @@ export function Header({
         canClone={canClone}
         canMoveTo={canMoveTo}
         color={color}
-        // Deleted (Q39): nothing of the item's own (rename, move, share,
-        // download, delete) works against the server it is gone from.
         content={
-          deleted
-            ? undefined
-            : file
-              ? toFileActionTarget(file)
-              : material
-                ? toMaterialActionTarget(material)
-                : undefined
+          file
+            ? toFileActionTarget(file)
+            : material
+              ? toMaterialActionTarget(material)
+              : undefined
         }
+        // Deleted (Q39): nothing of the item's own that asks the server it is
+        // gone from (rename, move, share, clone, its download, delete);
+        // Properties from its last read and the page's own downloads stay
+        // (Epo 2026-11-20).
+        deletedDownloads={deleted ? deletedDownloads : undefined}
         display="menu"
         key={`${item.kind}:${item.id}`}
         leadingItems={[
