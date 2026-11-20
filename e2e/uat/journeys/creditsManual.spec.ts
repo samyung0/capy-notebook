@@ -1,12 +1,14 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: The helpers execute only inside the journey. */
-// Credit top-ups through Stripe's hosted payment Checkout, run by hand. Headless,
-// payment Checkout stops on Stripe's hCaptcha challenge, so this journey is in
-// no CI lane (project `manual`): run it headed before launch, as the journeys
-// README says, and answer the challenge if Stripe shows one; each top-up
-// waits up to ten minutes for the return. Everything a top-up proves that CI
-// cannot: Stripe took the top-up parameters, a paid top-up is credited once and
-// saves its card for auto-reload, a refund takes half back, and a top-up voids
-// a reload Stripe is retrying and re-arms auto-reload.
+// Credit top-ups through Stripe's hosted payment Checkout, and a card saved on
+// its hosted setup Checkout, run by hand. Headless, both pages stop on Stripe's
+// hCaptcha challenge (Q756 A), so this journey is in no CI lane (project
+// `manual`): run it headed before launch, as the journeys README says, and
+// answer the challenge if Stripe shows one; each page waits up to ten minutes
+// for the return. Everything the hosted pages prove that CI cannot: Stripe took
+// the top-up parameters, a paid top-up is credited once and saves its card for
+// auto-reload, a refund takes half back, a top-up voids a reload Stripe is
+// retrying and re-arms auto-reload, and the hosted setup page saves the card
+// (CI saves its cards through the API, credits.spec.ts).
 import type { Page } from '@playwright/test';
 import { m } from '../../i18n';
 import {
@@ -217,7 +219,7 @@ test('hosted top-ups: credited once with the card saved, half refunded, voiding 
       .getByRole('button', { exact: true, name: m.billing_payment_change() })
       .click()
   );
-  await completeCheckout(run, page, DECLINES);
+  await completeCheckout(run, page, DECLINES, BY_HAND);
   await expect(dialog.getByText(visa('0341'))).toBeVisible({ timeout: 60_000 });
   const declining = await creditsRow(run, owner);
   expect(await saveAutoReload(page, await thresholdNow(owner))).toBe(true);

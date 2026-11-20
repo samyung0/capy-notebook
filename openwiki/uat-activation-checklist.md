@@ -170,11 +170,12 @@ deployed `stripe-go/v82` SDK. Confirm a real subscription event receives HTTP
 200 and appears processed in `webhook_events`; an enabled endpoint alone does
 not establish delivery compatibility.
 
-The endpoint subscribes to exactly the ten events listed in
+The endpoint subscribes to exactly the eleven events listed in
 [deployment-runbook.md](deployment-runbook.md) ("The event selection in every
 lane"), including the five that came with credit top-ups (`invoice.paid`,
 `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
-`checkout.session.async_payment_succeeded`); after a sandbox top-up,
+`checkout.session.async_payment_succeeded`) and `setup_intent.succeeded`, which
+the credits journeys' API-saved cards need (Q760 A); after a sandbox top-up,
 `invoice.paid` answers 200 and is processed in `webhook_events`. The Free row of
 `plan_limits` holds the 300-credit monthly allowance.
 
@@ -390,6 +391,6 @@ Clerk development instance. Point a local gateway at the UAT database only with
 
 After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify that every lane job (`office`, `app` and `billing`) passed: every journey and each lane's cleanup and release checks. Review each lane's retained-resource report (artifact `uat-journeys-<run id>-<attempt>-<lane>`), including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).
 
-Before launch, also run the manual top-up journey headed (`pnpm e2e:uat:journeys --project=manual --headed`,
+Before launch, also run the manual top-up and card-saving journey headed (`pnpm e2e:uat:journeys --project=manual --headed`,
 [Hosted payment-form entry](../e2e/uat/journeys/README.md#hosted-payment-form-entry)): CI cannot fill
-Stripe's payment Checkout.
+Stripe's payment or setup Checkout.

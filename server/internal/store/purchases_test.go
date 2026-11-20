@@ -229,6 +229,41 @@ func TestReloadStripeGaveUpOnWaitsForATopUp(t *testing.T) {
 	}
 }
 
+// Setup Checkout and its SetupIntent both report one card (Q760 A): saving the
+// method already saved arms no further reload, while a new card arms one.
+func TestSavingTheSavedCardAgainArmsNothing(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	save := func(id string) bool {
+		t.Helper()
+		saved, err := s.SavePaymentMethod(ctx, userID, PaymentMethod{ID: id, Type: "card"}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	if !save("pm_a") {
+		t.Fatal("the first card was not saved")
+	}
+	// A reload started since the save disarmed it.
+	if _, err := s.pool.Exec(ctx, `UPDATE user_credits SET reload_armed = false WHERE user_id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if save("pm_a") {
+		t.Fatal("the saved card was reported saved again")
+	}
+	if _, armed := reloadState(t, s, userID); armed {
+		t.Fatal("saving the saved card again re-armed auto-reload")
+	}
+	if !save("pm_b") {
+		t.Fatal("a new card was not saved")
+	}
+	if _, armed := reloadState(t, s, userID); !armed {
+		t.Fatal("a new card arms one reload")
+	}
+}
+
 func TestReloadOverTheSpendingLimitIsSkippedAndEmailed(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -422,7 +457,7 @@ func TestStarterCreditsOncePerAccountAndCard(t *testing.T) {
 	cardUsed := func(userID, cardKey string) bool {
 		t.Helper()
 		pm := PaymentMethod{ID: "pm_" + cardKey, Type: "card", CardKey: cardKey}
-		if err := s.SavePaymentMethod(ctx, userID, pm, false); err != nil {
+		if _, err := s.SavePaymentMethod(ctx, userID, pm, false); err != nil {
 			t.Fatal(err)
 		}
 		settings, err := s.CreditSettings(ctx, userID)

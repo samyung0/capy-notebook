@@ -233,10 +233,11 @@ func (s *Store) SetSpendingLimit(ctx context.Context, userID string, limitCents 
 	return tx.Commit(ctx)
 }
 
-// SavePaymentMethod stores the auto-reload method. onlyIfNone keeps an
-// existing one: a top-up's card is saved only when none is. A new card arms
-// one reload.
-func (s *Store) SavePaymentMethod(ctx context.Context, userID string, pm PaymentMethod, onlyIfNone bool) error {
+// SavePaymentMethod stores the auto-reload method and reports whether it did.
+// onlyIfNone keeps an existing one: a top-up's card is saved only when none
+// is. A new card arms one reload; the method already saved is left as it is,
+// since setup Checkout and its SetupIntent both report the same card.
+func (s *Store) SavePaymentMethod(ctx context.Context, userID string, pm PaymentMethod, onlyIfNone bool) (bool, error) {
 	var expMonth, expYear *int
 	if pm.ExpMonth > 0 {
 		expMonth, expYear = &pm.ExpMonth, &pm.ExpYear
@@ -244,15 +245,15 @@ func (s *Store) SavePaymentMethod(ctx context.Context, userID string, pm Payment
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO user_credits (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING;`, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE user_credits
+	tag, err := s.pool.Exec(ctx, `UPDATE user_credits
 		SET reload_pm_id = $2, reload_pm_type = $3, reload_pm_brand = NULLIF($4, ''),
 		    reload_pm_last4 = NULLIF($5, ''), reload_pm_exp_month = $6, reload_pm_exp_year = $7,
 		    reload_pm_card_key = NULLIF($9, ''), reload_armed = true, updated_at = now()
-		WHERE user_id = $1 AND (NOT $8 OR reload_pm_id IS NULL)`,
+		WHERE user_id = $1 AND (NOT $8 OR reload_pm_id IS NULL) AND reload_pm_id IS DISTINCT FROM $2`,
 		userID, pm.ID, pm.Type, pm.Brand, pm.Last4, expMonth, expYear, onlyIfNone, pm.CardKey)
-	return err
+	return err == nil && tag.RowsAffected() == 1, err
 }
 
 // GrantStarterCredits adds the one-off starter credits for a saved card. Each

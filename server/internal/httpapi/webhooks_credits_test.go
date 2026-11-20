@@ -99,6 +99,80 @@ func TestStripeWebhook_SetupCheckoutReplacesTheReloadCard(t *testing.T) {
 	}
 }
 
+// reloadSetupIntent is a confirmed SetupIntent with the reload metadata setup
+// Checkout gives its own and CI journeys give theirs (Q760 A).
+func reloadSetupIntent(kind, userID string) map[string]any {
+	return map[string]any{
+		"id":             "seti_1",
+		"status":         "succeeded",
+		"customer":       "cus_1",
+		"payment_method": "pm_setup",
+		"metadata":       map[string]string{"kind": kind, "user_id": userID},
+	}
+}
+
+// A hosted setup sends setup_intent.succeeded and checkout.session.completed
+// for one card, in either order: the first saves it, grants the starter
+// credits, voids the old card's retries and publishes (the void and the publish
+// share voidReloadsAndPublish), and the second changes nothing more.
+func TestStripeWebhook_SetupIntentSavesTheReloadCardOnce(t *testing.T) {
+	setupCheckout := map[string]any{
+		"id":           "cs_setup",
+		"mode":         "setup",
+		"customer":     "cus_1",
+		"setup_intent": "seti_1",
+		"metadata":     map[string]string{"kind": "reload_method", "user_id": "user_1"},
+	}
+	type event struct {
+		id, kind string
+		object   map[string]any
+	}
+	intent := event{"evt_intent", "setup_intent.succeeded", reloadSetupIntent("reload_method", "user_1")}
+	checkout := event{"evt_checkout", "checkout.session.completed", setupCheckout}
+	for name, order := range map[string][]event{
+		"intent first":   {intent, checkout},
+		"checkout first": {checkout, intent},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeStore()
+			f.stripeCustomers["cus_1"] = "user_1"
+			f.retryingReloads = []string{"in_old_card"}
+			srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+			for _, e := range order {
+				sendStripe(t, srv, e.id, e.kind, e.object)
+				if f.associated[e.id] != "user_1" {
+					t.Fatalf("%s associated with %q", e.kind, f.associated[e.id])
+				}
+			}
+			want := []string{
+				"method user_1 pm_setup false", "starter user_1 card:fp_setup", "void in_old_card",
+				"method user_1 pm_setup false", "starter user_1 card:fp_setup",
+			}
+			if !slices.Equal(f.creditCalls, want) || !slices.Equal(*voided, []string{"in_old_card"}) {
+				t.Fatalf("calls = %q voided = %q, want %q and one void", f.creditCalls, *voided, want)
+			}
+		})
+	}
+}
+
+func TestStripeWebhook_SetupIntentOfAnotherUserOrKindIsNotOurs(t *testing.T) {
+	for name, object := range map[string]map[string]any{
+		"another user": reloadSetupIntent("reload_method", "user_2"),
+		"another kind": reloadSetupIntent("topup", "user_1"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeStore()
+			f.stripeCustomers["cus_1"] = "user_1"
+			srv, _ := newCreditTestServer(t, f, billing.ReloadResult{})
+			sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", object)
+			if len(f.creditCalls) != 0 || f.associated["evt_intent"] != "" || !f.redacted["evt_intent"] {
+				t.Fatalf("calls = %q associated = %q redacted = %t", f.creditCalls,
+					f.associated["evt_intent"], f.redacted["evt_intent"])
+			}
+		})
+	}
+}
+
 func TestStripeWebhook_ReloadInvoiceOutcomes(t *testing.T) {
 	reload := map[string]any{
 		"id":       "in_reload",

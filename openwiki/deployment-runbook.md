@@ -3552,10 +3552,16 @@ The event selection in every lane is exactly what the handler switches on:
 `checkout.session.completed`, `customer.subscription.created`,
 `customer.subscription.updated`, `customer.subscription.deleted`,
 `invoice.payment_failed`, `invoice.paid`, `charge.refunded`,
-`charge.dispute.created`, `charge.dispute.closed` and
-`checkout.session.async_payment_succeeded`. The last five came with credit
-top-ups and auto-reload; add them to an existing endpoint. Anything else
-is delivery the gateway discards.
+`charge.dispute.created`, `charge.dispute.closed`,
+`checkout.session.async_payment_succeeded` and `setup_intent.succeeded`. The
+five before the last came with credit top-ups and auto-reload; add them to an
+existing endpoint. `setup_intent.succeeded` saves the auto-reload card from a
+SetupIntent carrying setup Checkout's reload metadata, which the CI credits
+journeys create through Stripe's API since the hosted setup page answers them
+with an hCaptcha (Q760 A). Add it to UAT's endpoint before those journeys run,
+and to production's before the release with it deploys there; the hosted page
+keeps saving cards without it, through `checkout.session.completed`. Anything
+else is delivery the gateway discards.
 
 **Credit top-ups and auto-reload.** No product or price is needed: top-ups and
 reloads charge an ad-hoc USD amount. The dashboard settings they depend on, set
