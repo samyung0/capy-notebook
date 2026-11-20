@@ -19,7 +19,7 @@ import type {
 import { PERF_WORKSPACE_ID } from '../../../src/mocks/perfSeed';
 import { showPanelView } from '../../../e2e/helpers/panelView';
 import { m } from '../../../e2e/i18n';
-import { downloadKind } from './downloads';
+import { type Download, downloadsBetween } from './downloads';
 import { cdpSession, percentile, reportMetrics } from './metrics';
 
 /**
@@ -692,19 +692,6 @@ const growth = (to: Heap, from: Heap) => ({
   workersWasmMB: deltaOf(to.workersWasmMB, from.workersWasmMB),
 });
 
-/** One fetch in some realm, from its resource or navigation timing. */
-interface Download {
-  /** encodedBodySize: the body as encoded, also when none was sent. */
-  encoded: number;
-  initiator: string;
-  name: string;
-  /** Epoch ms the fetch started. */
-  start: number;
-  /** transferSize: on the wire, headers included; 0 from the HTTP cache or
-   * a service worker. */
-  transfer: number;
-}
-
 interface DownloadWatch {
   entries: Download[];
   unprobedWorkers: number;
@@ -726,6 +713,7 @@ function streamDownloads(mark: string) {
     new PerformanceObserver((list) => {
       const entries = (list.getEntries() as PerformanceResourceTiming[]).map(
         (entry) => ({
+          decoded: entry.decodedBodySize,
           encoded: entry.encodedBodySize,
           initiator: entry.initiatorType,
           name: entry.name,
@@ -778,82 +766,6 @@ function storedBrotliBytes(url: URL) {
   if (!storedBrotli.has(file))
     storedBrotli.set(file, existsSync(file) ? statSync(file).size : null);
   return storedBrotli.get(file) ?? null;
-}
-
-const kib = (bytes: number) => Math.round((bytes / 1024) * 10) / 10;
-/**
- * What the fetches that started in [from, to) downloaded, by kind, with the
- * engine WASM per module. `transferredKiB` is what this bench's server sent
- * (vite preview, which gzips text, JavaScript, CSS and JSON responses over
- * 1 KB and sends WASM, fonts and other binaries as built);
- * `withStoredBrotliKiB` is the same with each body the Office Worker stores
- * as a brotli-11 `.br` (WASM and TTF) at that size, as production serves
- * it. `bodiesSent` counts the fetches whose body crossed the wire: one
- * answered by the HTTP cache or by MSW's service worker (the app's origin,
- * bench only) transfers nothing, a revalidation (vite preview's ETags) only
- * its headers.
- */
-function downloadsBetween(
-  watch: DownloadWatch,
-  from: number,
-  to: number,
-  runtimeOrigin: string
-) {
-  const tally = () => ({
-    bodiesSent: 0,
-    encodedKiB: 0,
-    requests: 0,
-    transferredKiB: 0,
-    withStoredBrotliKiB: 0,
-  });
-  type Tally = ReturnType<typeof tally>;
-  const kinds: Record<string, Tally> = {};
-  const modules: Record<string, Tally> = {};
-  const total = tally();
-  const add = (
-    into: Tally,
-    entry: Download,
-    bodySent: boolean,
-    sent: number
-  ) => {
-    into.requests += 1;
-    if (bodySent) into.bodiesSent += 1;
-    into.encodedKiB += entry.encoded;
-    into.transferredKiB += entry.transfer;
-    into.withStoredBrotliKiB += sent;
-  };
-  for (const entry of watch.entries) {
-    // The host's entry for the runtime frame; the frame reports its own.
-    if (entry.start < from || entry.start >= to || entry.initiator === 'iframe')
-      continue;
-    const url = new URL(entry.name);
-    const { kind, module } = downloadKind(entry.initiator, url, runtimeOrigin);
-    // More than the headers came (a revalidation may report no body size).
-    const bodySent = entry.encoded > 0 && entry.transfer > entry.encoded;
-    const stored = bodySent ? storedBrotliBytes(url) : null;
-    const sent =
-      stored === null
-        ? entry.transfer
-        : entry.transfer - entry.encoded + stored;
-    add((kinds[kind] ??= tally()), entry, bodySent, sent);
-    add(total, entry, bodySent, sent);
-    if (module) add((modules[module] ??= tally()), entry, bodySent, sent);
-  }
-  const inKiB = (into: Tally) => ({
-    ...into,
-    encodedKiB: kib(into.encodedKiB),
-    transferredKiB: kib(into.transferredKiB),
-    withStoredBrotliKiB: kib(into.withStoredBrotliKiB),
-  });
-  return {
-    engineWasmModules: Object.fromEntries(
-      Object.entries(modules).map(([name, into]) => [name, inKiB(into)])
-    ),
-    kinds: Object.fromEntries(
-      Object.entries(kinds).map(([name, into]) => [name, inKiB(into)])
-    ),
-    total: inKiB(total),
-  };
 }
 
 async function openWorkspace(page: Page) {
@@ -1782,8 +1694,20 @@ for (const fixture of FIXTURES) {
           heap: 'report-only',
         },
         downloads: {
-          edit: downloadsBetween(fetches, editFrom, editTo, runtimeOrigin),
-          open: downloadsBetween(fetches, openFrom, editFrom, runtimeOrigin),
+          edit: downloadsBetween(
+            fetches.entries,
+            editFrom,
+            editTo,
+            runtimeOrigin,
+            storedBrotliBytes
+          ),
+          open: downloadsBetween(
+            fetches.entries,
+            openFrom,
+            editFrom,
+            runtimeOrigin,
+            storedBrotliBytes
+          ),
           unprobedWorkers: fetches.unprobedWorkers,
         },
         edit: {

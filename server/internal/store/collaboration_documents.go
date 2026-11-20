@@ -169,6 +169,15 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 	return authorityFailure(response, refusal.Code, response.Status)
 }
 
+// inTrashRefusal is the authority's projection refused because the material
+// is in Trash (collaboration-rs projection::IN_TRASH), on demand or after a
+// replace-block (Q784 A). It comes as the expected 503 unavailable_target
+// below, so the gateway never reports it.
+func inTrashRefusal(response *http.Response, code, message string) bool {
+	return response.StatusCode == http.StatusServiceUnavailable &&
+		code == string(agenttools.ErrUnavailableTarget) && message == "the material is in Trash"
+}
+
 // authorityFailure is an authority answer that is neither a success nor a
 // refusal the agent acts on. A room being reset (503 unavailable_target)
 // refused the edit before anything applied, so it is an expected outcome:

@@ -162,7 +162,9 @@ func SetupPaymentMethod(setupIntentID string) (store.PaymentMethod, error) {
 	if si.PaymentMethod == nil {
 		return store.PaymentMethod{}, errors.New("setup intent has no payment method")
 	}
-	return PaymentMethodInfo(si.PaymentMethod), nil
+	pm := PaymentMethodInfo(si.PaymentMethod)
+	pm.SetupCreated = time.Unix(si.Created, 0)
+	return pm, nil
 }
 
 // ReloadResult is what one reload charge left behind.

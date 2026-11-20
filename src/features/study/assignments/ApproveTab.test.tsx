@@ -164,6 +164,12 @@ it('offers Read papers again under manual marking while a paper waits to be read
     (button) => button.textContent === m.assignment_read_papers_again()
   );
   expect(again).toBeDefined();
+  // Manual grading grades, it has nothing to approve (Epo 2026-11-20).
+  expect(document.body.textContent).toContain(m.assignment_to_grade());
+  expect(document.body.textContent).toContain(m.assignment_next_to_grade());
+  expect(document.body.textContent).not.toContain(
+    m.assignment_section_to_approve()
+  );
   await act(async () => again?.click());
   expect(runAI).toHaveBeenCalledTimes(1);
   act(() => root.unmount());
@@ -330,6 +336,10 @@ it("lists a file quiz's members with no questions column", async () => {
   // The members are the phone's first screen, not a step in.
   expect(document.querySelector('[data-approve-drill]')).toBeNull();
   expect(document.body.textContent).not.toContain(m.assignment_overview());
-  expect(document.body.textContent).toContain(m.assignment_start_approving());
+  // Manual grading grades, it has nothing to approve (Epo 2026-11-20).
+  expect(document.body.textContent).toContain(m.assignment_start_grading());
+  expect(document.body.textContent).toContain(
+    m.assignment_to_grade_count({ count: 1 })
+  );
   act(() => root.unmount());
 });

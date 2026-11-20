@@ -1375,6 +1375,13 @@ class MockSourceProvider implements SourceProvider {
         workspaceId,
       }),
     });
+    this.drain(fileId);
+  }
+
+  /** The room drains and closes the channel on the open socket (a Move's, a
+   * deploy's), and the tab rejoins. */
+  drain(fileId: string) {
+    if (this.room.target.id !== fileId) return;
     this.drained = true;
     this.socketStatus = 'connected';
     this.config.onClose?.({ code: 0, reason: 'socket closed' });
@@ -1616,6 +1623,10 @@ export function announceSourceMoved(fileId: string, workspaceId: string) {
   }
   for (const provider of [...sourceProviders])
     provider.announceMoved(fileId, workspaceId);
+}
+/** Every open room of a source file drains, and its tabs rejoin. */
+export function drainSourceRooms(fileId: string) {
+  for (const provider of [...sourceProviders]) provider.drain(fileId);
 }
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])

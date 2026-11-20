@@ -105,7 +105,8 @@ func TestReloadGivenUpWhileChargingIsVoidedOnItsRetry(t *testing.T) {
 			return err
 		},
 		"new card": func(ctx context.Context, st *store.Store, userID string) error {
-			return st.SavePaymentMethod(ctx, userID, store.PaymentMethod{ID: "pm_new", Type: "card"}, false)
+			_, err := st.SavePaymentMethod(ctx, userID, store.PaymentMethod{ID: "pm_new", Type: "card"}, false)
+			return err
 		},
 	}
 	for name, giveUp := range cases {

@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
@@ -106,5 +109,83 @@ func TestADiagramViewAsksItsOpenRoomForAFreshProjection(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatalf("project calls = %d, want 2", calls.Load())
+	}
+}
+
+// Q784 A: a note in Trash opened from its owner's Trash asks its room for a
+// fresh projection too. The room's in-Trash refusal (503 unavailable_target,
+// the gateway refusing that projection's write) serves the stored projection
+// and is reported nowhere, while any other 503 of the room's still is. Fails
+// if the in-Trash refusal reaches Sentry.
+func TestATrashedNotesInTrashRefusalIsNotReported(t *testing.T) {
+	previous := sentry.CurrentHub().Client()
+	defer sentry.CurrentHub().BindClient(previous)
+	events := &sentryEvents{}
+	if err := sentry.Init(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: events}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	t.Cleanup(st.Close)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
+		AuthDisabled: true,
+		E2EAuth:      true,
+		E2ESecret:    "e2e-test-secret",
+		E2EUserIDs:   []string{"u_owner"},
+	})
+	note, err := st.CreateMaterial(ctx, store.Material{
+		CreatedBy: "u_owner",
+		Kind:      store.MaterialNote,
+		Title:     "Trashed note",
+		Content:   `{"schemaVersion":1,"value":[{"type":"p","id":"b1","children":[{"text":"Stored"}]}]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, st, note.ID)
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO material_yjs_documents
+		(material_id, room_schema, state, stored_version, projected_version)
+		VALUES ($1, 1, '\x0000'::bytea, 2, 1)`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, doReq(t, h, http.MethodDelete, "/api/materials/"+note.ID, "u_owner", nil),
+		http.StatusNoContent, "the owner deleting")
+	var answer atomic.Value
+	var calls atomic.Int32
+	room := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/materials/"+note.ID+"/project" {
+			http.NotFound(w, r)
+			return
+		}
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(answer.Load().(string)))
+	}))
+	t.Cleanup(room.Close)
+	st.ConfigureCollaboration(room.URL, "collab-test-secret")
+
+	for i, tc := range []struct {
+		answer string
+		events int
+	}{
+		{`{"code":"unavailable_target","message":"the material is in Trash"}`, 0},
+		{`{"message":"store failed"}`, 1},
+	} {
+		answer.Store(tc.answer)
+		events.take()
+		rec := doReq(t, h, http.MethodGet, "/api/materials/"+note.ID, "u_owner", nil)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Stored") {
+			t.Fatalf("%s: GET = %d body=%s", tc.answer, rec.Code, rec.Body.String())
+		}
+		if calls.Load() != int32(i+1) {
+			t.Fatalf("%s: project calls = %d", tc.answer, calls.Load())
+		}
+		if got := events.take(); got != tc.events {
+			t.Fatalf("%s: %d Sentry events, want %d", tc.answer, got, tc.events)
+		}
 	}
 }

@@ -1194,7 +1194,21 @@ pub async fn record_projection_error(
     Ok(())
 }
 
-/// Rows whose projection lags, idle for `idle_seconds`, oldest first.
+/// Whether a material is in Trash.
+pub async fn in_trash(pool: &Pool, material_id: &str) -> Result<bool, StoreError> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT trashed_at IS NOT NULL FROM materials WHERE id=$1",
+            &[&material_id],
+        )
+        .await?;
+    Ok(rows.first().is_some_and(|row| row.get(0)))
+}
+
+/// Rows whose projection lags, idle for `idle_seconds`, oldest first. A
+/// material in Trash is left out, as the gateway refuses its projection
+/// (Q778 A): restored, it lags again and is taken up.
 pub async fn pending_projections(
     pool: &Pool,
     idle_seconds: f64,
@@ -1203,9 +1217,11 @@ pub async fn pending_projections(
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT material_id, stored_version FROM material_yjs_documents
-             WHERE projected_version < stored_version AND updated_at < now() - make_interval(secs => $1)
-             ORDER BY updated_at LIMIT $2",
+            "SELECT d.material_id, d.stored_version FROM material_yjs_documents d
+             JOIN materials m ON m.id=d.material_id AND m.trashed_at IS NULL
+             WHERE d.projected_version < d.stored_version
+               AND d.updated_at < now() - make_interval(secs => $1)
+             ORDER BY d.updated_at LIMIT $2",
             &[&idle_seconds, &limit],
         )
         .await?;
