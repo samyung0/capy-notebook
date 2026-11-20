@@ -2677,9 +2677,15 @@ shown here to copy until you reload." while this device holds unsent edits to
 it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
 offers or deletes them meanwhile, and dismissing a toast already offering
 them), and says "This item is unavailable" when it holds none or cannot read
-its store. An item counts as shown once its read or its device copy painted
-it, on its workspace's page and on its own (`/materials/:id`, which keeps the
-page mounted instead of its error or Trash view). A note is drawn from its
+its store. A deleted quiz, set or diagram never reads as lost access: a room
+that hears of it first (its fresh room's token answering 410 while the page's
+read is still out) holds what it showed read-only, with no strip and no save
+status, and reports nothing to the page (`ItemRoomSnapshot.deleted`), so the
+page's read alone says what shows; once that read said deleted, the item
+restored and read again opens its editor anew on a fresh room. An item counts
+as shown once its read or its device copy painted it, on its workspace's page
+and on its own (`/materials/:id`, which keeps the page mounted instead of its
+error or Trash view). A note is drawn from its
 stored rows alone, as its Download draws it (`deletedNote`): the newer of the
 room document its Yjs rows draw (`deletedDocument`, the newest lineage and
 base group) and its newest saved copy (Q229), its merge view's pieces last,

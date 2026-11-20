@@ -113,9 +113,12 @@ export function LiveFlashcards({
   // strip. One opened read-only shows no cue (D1).
   useReportReadOnly(snapshot, setId, onReadOnly);
   const refused = snapshot.status === 'unavailable';
+  // A deleted set never reads as lost access (Q39): the page's read, which
+  // its room asked for, says what shows.
+  const lost = refused && !snapshot.deleted;
   useEffect(() => {
-    if (refused) onReadOnly?.('access_lost');
-  }, [refused, onReadOnly]);
+    if (lost) onReadOnly?.('access_lost');
+  }, [lost, onReadOnly]);
   if (refused && !onReadOnly)
     return (
       <p className="t-meta text-fg-muted">{m.material_ref_unavailable()}</p>
