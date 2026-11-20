@@ -1,7 +1,7 @@
 import type { DomRenderer } from '@blocksuite/affine-block-surface';
 import { isRTL } from '@blocksuite/affine-gfx-text';
 import type { ShapeElementModel } from '@blocksuite/affine-model';
-import { DefaultTheme } from '@blocksuite/affine-model';
+import { DefaultTheme, POLYGON_SHAPES } from '@blocksuite/affine-model';
 import { SVGShapeBuilder } from '@blocksuite/global/gfx';
 
 import { manageClassNames, setStyles } from './utils';
@@ -65,6 +65,14 @@ function applyShapeSpecificStyles(
     case 'triangle':
       element.style.clipPath = 'polygon(50% 0%, 100% 100%, 0% 100%)';
       break;
+    default: {
+      // Capy (local change 46): the board's polygons.
+      const corners = POLYGON_SHAPES[model.shapeType];
+      if (corners)
+        element.style.clipPath = `polygon(${corners
+          .map(([fx, fy]) => `${fx * 100}% ${fy * 100}%`)
+          .join(', ')})`;
+    }
   }
   // No 'else' needed to clear styles, as they are reset at the beginning of the function.
 }
@@ -194,7 +202,12 @@ export const shapeDomRenderer = (
   // Apply shape-specific clipping, border-radius, and potentially clear innerHTML
   applyShapeSpecificStyles(model, element, zoom);
 
-  if (model.shapeType === 'diamond' || model.shapeType === 'triangle') {
+  const corners = POLYGON_SHAPES[model.shapeType];
+  if (
+    model.shapeType === 'diamond' ||
+    model.shapeType === 'triangle' ||
+    corners
+  ) {
     // For diamond and triangle, fill and border are handled by inline SVG
     element.style.border = 'none'; // Ensure no standard CSS border interferes
     element.style.backgroundColor = 'transparent'; // Host element is transparent
@@ -203,7 +216,16 @@ export const shapeDomRenderer = (
     const strokeW = model.strokeWidth;
 
     let svgPoints = '';
-    if (model.shapeType === 'diamond') {
+    if (corners) {
+      // Capy (local change 46): inset by half the stroke, as the builders do.
+      const inset = strokeW / 2;
+      svgPoints = corners
+        .map(
+          ([fx, fy]) =>
+            `${inset + fx * (unscaledWidth - strokeW)},${inset + fy * (unscaledHeight - strokeW)}`
+        )
+        .join(' ');
+    } else if (model.shapeType === 'diamond') {
       // Generate diamond points using shared utility
       svgPoints = SVGShapeBuilder.diamond(
         unscaledWidth,

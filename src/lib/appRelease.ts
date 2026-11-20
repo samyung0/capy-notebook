@@ -6,6 +6,8 @@
  * tab (a stale edge cannot loop it), with nothing shown. A room join or draft
  * send refused for the client protocol marks the update too.
  */
+import { workspaceOfPath } from './workspacePath';
+
 const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
 /** The last `<own release>><served release>` this tab loaded for. */
 const LOADED_KEY = 'capy-update-load';
@@ -70,21 +72,35 @@ export function takeUpdateLoad(): boolean {
   return true;
 }
 
-/** Makes the next path change a full page load once an update is available
- * (`?file=` and other search changes stay in the page). The router has
- * already pushed the new URL, so a reload loads it (assigning it would only
- * scroll to a `#fragment`). Offline the page stays: a load would land on the
- * browser's offline page, so the first path change back online loads. */
+/** Makes the next page change a full page load once an update is available
+ * (`?file=` and other search changes stay in the page, as do moves between
+ * one workspace's pages, which keep its docked chat and drafts alive). The
+ * router has already pushed the new URL, so a reload loads it (assigning it
+ * would only scroll to a `#fragment`). Offline the page stays: a load would
+ * land on the browser's offline page, so the first path change back online
+ * loads. */
 export function loadUpdateOnPathChange(router: {
   subscribe: (
     event: 'onBeforeNavigate',
-    listener: (event: { pathChanged: boolean }) => void
+    listener: (event: {
+      fromLocation?: { pathname: string };
+      pathChanged: boolean;
+      toLocation: { pathname: string };
+    }) => void
   ) => () => void;
 }) {
-  return router.subscribe('onBeforeNavigate', ({ pathChanged }) => {
-    if (pathChanged && navigator.onLine && takeUpdateLoad())
-      window.location.reload();
-  });
+  return router.subscribe(
+    'onBeforeNavigate',
+    ({ fromLocation, pathChanged, toLocation }) => {
+      const workspace = workspaceOfPath(toLocation.pathname);
+      const samePage =
+        !pathChanged ||
+        (workspace !== '' &&
+          workspace === workspaceOfPath(fromLocation?.pathname ?? ''));
+      if (!samePage && navigator.onLine && takeUpdateLoad())
+        window.location.reload();
+    }
+  );
 }
 
 /**

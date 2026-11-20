@@ -1,3 +1,4 @@
+import { createIdentifier } from '@blocksuite/global/di';
 import { DisposableGroup } from '@blocksuite/global/disposable';
 import { assertType, type Constructor } from '@blocksuite/global/utils';
 import type { Boxed } from '@blocksuite/store';
@@ -20,6 +21,18 @@ import {
   syncElementFromY,
 } from './element-model.js';
 import type { GfxLocalElementModel } from './local-element-model.js';
+import {
+  hasPlace,
+  UNKNOWN_ELEMENT_TYPE,
+  UnknownElementModel,
+} from './unknown-element-model.js';
+
+/* Capy (vendor/blocksuite/README.md, local change 62): an editor's say on whether it
+ * can read a stored element of a type it has a model for (its fields, its limits).
+ * One it can't is built as an `UnknownElementModel`. Registered on the store. */
+export const ElementReadableIdentifier = createIdentifier<
+  (id: string, element: Y.Map<unknown>) => boolean
+>('GfxElementReadable');
 
 /**
  * Used for text field
@@ -50,6 +63,11 @@ export type MiddlewareCtx = {
 };
 
 export type SurfaceMiddleware = (ctx: MiddlewareCtx) => void;
+
+type ElementCtor = Constructor<
+  GfxPrimitiveElementModel,
+  ConstructorParameters<typeof GfxPrimitiveElementModel>
+>;
 
 export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
   private static readonly _groupBoundImpactKeys = new Set([
@@ -199,9 +217,15 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
       throw new Error('Cannot find id in props');
     }
 
+    const Ctor = this._elementCtorMap[type as string];
+
+    if (!Ctor) {
+      throw new Error(`Invalid element type: ${type}`);
+    }
+
     const yMap = new Y.Map();
     const elementModel = this._createElementFromYMap(
-      type as string,
+      Ctor,
       id as string,
       yMap,
       {
@@ -226,7 +250,7 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
   }
 
   private _createElementFromYMap(
-    type: string,
+    Ctor: ElementCtor,
     id: string,
     yMap: Y.Map<unknown>,
     options: {
@@ -241,11 +265,6 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
     }
   ) {
     const stashed = new Map<string | symbol, unknown>();
-    const Ctor = this._elementCtorMap[type];
-
-    if (!Ctor) {
-      throw new Error(`Invalid element type: ${yMap.get('type')}`);
-    }
     const state = this._decoratorState;
 
     state.creating = true;
@@ -294,6 +313,21 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
       mount,
       unmount,
     };
+  }
+
+  /* Capy (local change 62): the model a stored entry (the loaded board's, a
+   * peer's) is built with. Upstream threw on a type it had no model for. Such an
+   * entry, or one the editor can't read, is built as a placeholder that keeps
+   * its place; one with no place to draw at, or that is no map, gets no model
+   * and is drawn as nothing. Either way its data stays as it is. */
+  private _storedCtor(id: string, element: unknown): ElementCtor | null {
+    if (!(element instanceof Y.Map)) return null;
+    const type: unknown = element.get('type');
+    const known =
+      typeof type === 'string' ? this._elementCtorMap[type] : undefined;
+    const readable = this.store.provider.getOptional(ElementReadableIdentifier);
+    if (known && (readable?.(id, element) ?? true)) return known;
+    return hasPlace(element) ? UnknownElementModel : null;
   }
 
   private _emitElementUpdated(
@@ -403,13 +437,16 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
 
         switch (change?.action) {
           case 'add':
+            // Capy (local change 62): see `_storedCtor`; its key is its id.
             if (element) {
               const hasModel = this._elementModels.has(id);
+              const Ctor = hasModel ? null : this._storedCtor(id, element);
+              if (!hasModel && !Ctor) break;
               const model = hasModel
                 ? this._elementModels.get(id)!
                 : this._createElementFromYMap(
-                    element.get('type') as string,
-                    element.get('id') as string,
+                    Ctor!,
+                    id,
                     element,
                     {
                       onChange: payload => {
@@ -454,9 +491,12 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
     };
 
     elementsYMap.forEach((val, key) => {
+      // Capy (local change 62): see `_storedCtor`; its key is its id.
+      const Ctor = this._storedCtor(key, val);
+      if (!Ctor) return;
       const model = this._createElementFromYMap(
-        val.get('type') as string,
-        val.get('id') as string,
+        Ctor,
+        key,
         val,
         {
           onChange: payload => {
@@ -548,7 +588,11 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
   }
 
   private _propsToY(type: string, props: Record<string, unknown>) {
-    const ctor = this._elementCtorMap[type];
+    // Capy (local change 62): a placeholder's own fields (its place) update.
+    const ctor =
+      type === UNKNOWN_ELEMENT_TYPE
+        ? UnknownElementModel
+        : this._elementCtorMap[type];
 
     if (!ctor) {
       throw new Error(`Invalid element type: ${type}`);

@@ -78,7 +78,7 @@ const EXAMPLES: Record<
     text: m.create_preview_quiz_stem(),
   }),
   open: () => ({
-    answer: { accepted: [], hints: [], type: 'open' },
+    answer: { accepted: [], type: 'open' },
     marking: [
       m.practice_template_open_mark_1(),
       m.practice_template_open_mark_2(),

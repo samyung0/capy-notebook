@@ -7,5 +7,11 @@ export * from './image-service';
 export * from './image-spec';
 export * from './turbo/image-layout-handler';
 export * from './turbo/image-painter.worker';
-export { addImages, addSiblingImageBlocks, downloadImageBlob } from './utils';
+export {
+  addImages,
+  addSiblingImageBlocks,
+  downloadImageBlob,
+  type ImageUploadHandler,
+  setImageUploadHandler,
+} from './utils';
 export { ImageSelection } from '@blocksuite/affine-shared/selection';

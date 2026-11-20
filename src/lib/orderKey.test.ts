@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { keyBetween } from './orderKey';
+import { keyBetween, risingOrders } from './orderKey';
 
 // The same vectors as collaboration-rs/crates/items/src/order.rs: the server
 // writes and checks the keys this module writes.
@@ -16,4 +16,14 @@ it('writes the keys the collaboration server writes', () => {
   expect(keyBetween(null, 'a0')).toBe('Zz');
   expect(keyBetween(null, 'a0V')).toBe('a0');
   expect(() => keyBetween('a1', 'a1')).toThrow();
+});
+
+it('keeps every held key that still rises: new entries after them re-key none', () => {
+  expect(risingOrders(['a0', 'a5', ''])).toEqual(['a0', 'a5', 'a6']);
+  expect(risingOrders(['a0', '', 'a5'])).toEqual(['a0', 'a1', 'a5']);
+});
+
+it('gives a moved entry alone a key between its neighbours', () => {
+  expect(risingOrders(['a2', 'a0', 'a1'])).toEqual(['Zz', 'a0', 'a1']);
+  expect(risingOrders(['a1', 'a2', 'a0'])).toEqual(['a1', 'a2', 'a3']);
 });

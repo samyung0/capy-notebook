@@ -3,11 +3,14 @@ import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
-// Epo 2026-10-17: a chart's, plot's or graph's block is a live map in the
-// note's room. Two editors changing different fields of one chart at once
-// both end with the merged chart; a peer's graph edit makes the open editor
-// redraw the SVG, once, and both converge on it. The other editor is a
-// headless peer in the note's mock room (src/mocks/collaboration.ts).
+// A chart's, plot's or graph's block is the figure map a quiz room holds
+// (Epo 2026-11-16, D15): fields, chart cells and graph elements each their
+// own entry. The note's chart and graph dialog is live, as a quiz's is: each
+// change reaches the room as it is made, a peer's change reaches the open
+// dialog, Done only closes. A peer's graph edit is drawn here from its
+// elements, and nothing is written back (no stored picture). The other
+// editor is a headless peer in the note's mock room
+// (src/mocks/collaboration.ts).
 
 type Peer = ReturnType<
   typeof import('../../src/mocks/collaboration').mockNotePeer
@@ -26,18 +29,16 @@ const chart = {
   type: 'chart',
 };
 
-const STALE_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 190"><rect width="320" height="190" fill="#eeeeee"/></svg>';
 const graph = {
   block: {
     board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
+    description: 'A segment from A to B',
     elements: [
       { coords: [0, 0], id: 'p1', name: 'A', type: 'point' },
       { coords: [1, 1], id: 'p2', name: 'B', type: 'point' },
       { id: 's1', points: ['p1', 'p2'], type: 'segment' },
     ],
     height: 190,
-    image: { svg: STALE_SVG },
     type: 'graph',
     width: 320,
   },
@@ -62,9 +63,13 @@ async function joinPeer(page: Page, blocks: unknown[]) {
   );
 }
 
-/** The peer's figure `id` block map, read as JSON. */
+type Figures = typeof import('../../src/features/figures/figureMap');
+
+/** The peer's figure `id` as its plain block. */
 const peerBlock = (page: Page, id: string) =>
-  page.evaluate((id) => {
+  page.evaluate(async (id) => {
+    const modulePath = '/src/features/figures/figureMap.ts';
+    const { heldBlock } = (await import(modulePath)) as Figures;
     const { document } = (window as unknown as { peer: Peer }).peer;
     const root = document.get('content') as unknown as {
       toDelta: () => { insert: { getAttribute: (key: string) => unknown } }[];
@@ -73,31 +78,25 @@ const peerBlock = (page: Page, id: string) =>
       .toDelta()
       .map((op) => op.insert)
       .find((insert) => insert?.getAttribute?.('id') === id);
-    const block = node?.getAttribute('block') as { toJSON: () => unknown };
-    return block.toJSON();
+    return heldBlock(
+      node?.getAttribute('block') as Parameters<typeof heldBlock>[0],
+      node?.getAttribute('type') as Parameters<typeof heldBlock>[1]
+    );
   }, id);
 
-test.describe('live figures', () => {
-  test('two editors change different fields of one chart at once and both see the merged chart', async ({
-    page,
-  }) => {
-    const editor = await openEditorNote(
-      page,
-      EDITOR_NOTE.id,
-      EDITOR_NOTE.thirdParagraph
-    );
-    await joinPeer(page, [chart]);
-    const figure = editor.locator('[data-block-id="live-chart"]');
-    await expect(figure).toBeVisible();
-    await figure.hover();
-    await figure.getByRole('button', { name: m.action_edit() }).click();
-    const dialog = page.getByRole('dialog', { name: m.editor_chart() });
-    await dialog
-      .getByRole('textbox', { name: m.question_ui_title() })
-      .fill('Revenue');
-    // The peer rewrites the series while the dialog is open: the draft
-    // follows it, keeping the title typed here.
-    await page.evaluate(() => {
+/** The peer writes one entry of its figure `id` through the figure map's
+ * one-entry writers: a chart cell (by place) or a graph element. */
+const peerWrite = (
+  page: Page,
+  id: string,
+  write:
+    | { cell: [number, number, number] }
+    | { element: Record<string, unknown> }
+) =>
+  page.evaluate(
+    async ({ id, write }) => {
+      const modulePath = '/src/features/figures/figureMap.ts';
+      const figures = (await import(modulePath)) as Figures;
       const { document } = (window as unknown as { peer: Peer }).peer;
       const root = document.get('content') as unknown as {
         toDelta: () => { insert: { getAttribute: (key: string) => unknown } }[];
@@ -105,35 +104,113 @@ test.describe('live figures', () => {
       const node = root
         .toDelta()
         .map((op) => op.insert)
-        .find((insert) => insert?.getAttribute?.('id') === 'live-chart');
-      const block = node?.getAttribute('block') as {
-        get: (key: string) => {
-          get: (index: number) => {
-            set: (key: string, value: unknown) => void;
-          };
-        };
-      };
-      block.get('series').get(0).set('values', [10, 20]);
-    });
-    const cell = dialog.getByRole('spinbutton', {
-      name: m.question_ui_series_row({ name: 'Rain', number: 1 }),
-    });
-    await expect(cell).toHaveValue('10');
+        .find((insert) => insert?.getAttribute?.('id') === id);
+      const map = node?.getAttribute('block') as Parameters<
+        typeof figures.readFigure
+      >[0];
+      document.transact(() => {
+        if ('element' in write) {
+          figures.setElement(map, write.element as never);
+          return;
+        }
+        const held = figures.readFigure(map, 'chart');
+        if (!held) throw new Error('No chart');
+        const [series, label, value] = write.cell;
+        figures.setChartCell(
+          map,
+          held.series[series],
+          held.labels[label],
+          value
+        );
+      });
+    },
+    { id, write }
+  );
+
+async function openDialog(page: Page, id: string, name: string) {
+  const figure = page.locator(`[data-block-id="${id}"]`);
+  await expect(figure).toBeVisible();
+  await figure.hover();
+  await figure.getByRole('button', { name: m.action_edit() }).click();
+  const dialog = page.getByRole('dialog', { name });
+  await expect(
+    dialog.getByRole('button', { name: m.drawing_board_done() })
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole('button', { name: m.action_save() })
+  ).toHaveCount(0);
+  return { dialog, figure };
+}
+
+test.describe('live figures', () => {
+  test('two editors change different fields of one chart at once and both see the merged chart', async ({
+    page,
+  }) => {
+    await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.thirdParagraph);
+    await joinPeer(page, [chart]);
+    const { dialog, figure } = await openDialog(
+      page,
+      'live-chart',
+      m.question_ui_chart()
+    );
+    const title = dialog.getByRole('textbox', { name: m.question_ui_title() });
+    await title.fill('Revenue');
+    await title.press('Tab');
+    // The title reached the room as it was left, with no Save.
+    await expect
+      .poll(() => peerBlock(page, 'live-chart'))
+      .toMatchObject({ title: 'Revenue' });
+    // The peer changes a cell while the dialog is open: it shows here.
+    await peerWrite(page, 'live-chart', { cell: [0, 0, 10] });
     await expect(
-      dialog.getByRole('textbox', { name: m.question_ui_title() })
-    ).toHaveValue('Revenue');
-    await dialog.getByRole('button', { name: m.action_save() }).click();
+      dialog.getByRole('spinbutton', {
+        name: m.question_ui_series_row({ name: 'Rain', number: 1 }),
+      })
+    ).toHaveValue('10');
+    await expect(title).toHaveValue('Revenue');
+    await dialog.getByRole('button', { name: m.drawing_board_done() }).click();
     await expect(dialog).toBeHidden();
-    const merged = {
-      ...chart.block,
-      series: [{ name: 'Rain', values: [10, 20] }],
-      title: 'Revenue',
-    };
-    await expect.poll(() => peerBlock(page, 'live-chart')).toEqual(merged);
+    await expect
+      .poll(() => peerBlock(page, 'live-chart'))
+      .toEqual({
+        ...chart.block,
+        series: [{ name: 'Rain', values: [10, 2] }],
+        title: 'Revenue',
+      });
     await expect(figure).toContainText('Revenue');
   });
 
-  test("a peer's graph edit is redrawn here once, and both converge on the new SVG", async ({
+  test('a typed graph row reaches the peer as it is typed, and a peer edit reaches the open dialog', async ({
+    page,
+  }) => {
+    await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.thirdParagraph);
+    await joinPeer(page, [graph]);
+    const { dialog } = await openDialog(
+      page,
+      'live-graph',
+      m.question_ui_graph()
+    );
+    const rows = dialog.locator('math-field');
+    await rows.last().click();
+    // MathLive takes the keyboard a moment after the click.
+    await page.waitForTimeout(250);
+    await page.keyboard.type('C=(2,2)');
+    await expect
+      .poll(async () =>
+        (
+          (await peerBlock(page, 'live-graph')) as typeof graph.block
+        ).elements.find((element) => element.name === 'C')
+      )
+      .toMatchObject({ coords: [2, 2], type: 'point' });
+    await peerWrite(page, 'live-graph', {
+      element: { coords: [3, 2], id: 'p2', name: 'B', type: 'point' },
+    });
+    await expect(rows.nth(1)).toHaveJSProperty('value', 'B=\\left(3,2\\right)');
+    await dialog.getByRole('button', { name: m.drawing_board_done() }).click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("a peer's graph edit is drawn here and nothing is written back", async ({
     page,
   }) => {
     const editor = await openEditorNote(
@@ -142,49 +219,29 @@ test.describe('live figures', () => {
       EDITOR_NOTE.thirdParagraph
     );
     await joinPeer(page, [graph]);
-    await expect(editor.locator('[data-block-id="live-graph"]')).toBeVisible();
-    // The peer moves B without drawing the graph again: its SVG is stale.
+    const drawn = editor
+      .locator('[data-block-id="live-graph"]')
+      .getByRole('img', { name: graph.block.description });
+    await expect(drawn).toBeVisible();
+    // The peer moves B.
+    await peerWrite(page, 'live-graph', {
+      element: { coords: [3, 2], id: 'p2', name: 'B', type: 'point' },
+    });
     await page.evaluate(() => {
       const { document } = (window as unknown as { peer: Peer }).peer;
-      const root = document.get('content') as unknown as {
-        toDelta: () => { insert: { getAttribute: (key: string) => unknown } }[];
-      };
-      const node = root
-        .toDelta()
-        .map((op) => op.insert)
-        .find((insert) => insert?.getAttribute?.('id') === 'live-graph');
-      const block = node?.getAttribute('block') as {
-        get: (key: string) => {
-          get: (index: number) => {
-            set: (key: string, value: unknown) => void;
-          };
-        };
-      };
-      block.get('elements').get(1).set('coords', [3, 2]);
       Object.assign(window, { updates: 0 });
       document.on('update', () => {
         (window as unknown as { updates: number }).updates += 1;
       });
     });
-    await expect
-      .poll(
-        async () =>
-          ((await peerBlock(page, 'live-graph')) as typeof graph.block).image
-            .svg
-      )
-      .not.toBe(STALE_SVG);
-    const redrawn = (await peerBlock(page, 'live-graph')) as typeof graph.block;
-    expect(redrawn.image.svg).toMatch(/^<svg/);
-    expect(redrawn.elements[1].coords).toEqual([3, 2]);
-    // One write, no redraw of its own redraw.
+    await expect(drawn).toBeVisible();
     await page.waitForTimeout(1500);
     expect(
       await page.evaluate(
         () => (window as unknown as { updates: number }).updates
       )
-    ).toBe(1);
-    expect(
-      ((await peerBlock(page, 'live-graph')) as typeof graph.block).image.svg
-    ).toBe(redrawn.image.svg);
+    ).toBe(0);
+    const held = (await peerBlock(page, 'live-graph')) as typeof graph.block;
+    expect(held.elements[1].coords).toEqual([3, 2]);
   });
 });

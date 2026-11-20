@@ -751,7 +751,8 @@ export async function trashRestorePurge(run: UatRun, fileId: string) {
   await api(run.owner, path, 'DELETE', undefined, 204);
   const trashed = await fileRow(run, fileId);
   assert(trashed.trashed_at);
-  assert.equal((await run.owner.request(`${path}/links`)).status, 404);
+  // Whoever sees it in a Trash list still reads it there (Epo 2026-11-12).
+  assert.equal((await run.owner.request(`${path}/links`)).status, 200);
   assert.equal(
     (await run.blob(string(before.blob_path))).sha256,
     before.source_sha256

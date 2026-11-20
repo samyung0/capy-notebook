@@ -15,4 +15,9 @@ limit?: number;
  * Opaque cursor from the previous page
  */
 cursor?: string;
+/**
+ * This workspace's canvases, latest saved first: the caller's and the other members' shared ones
+ * @maxLength 64
+ */
+workspaceId?: string;
 };

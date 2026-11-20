@@ -10,6 +10,7 @@ import type {
   ItemRoomStatus,
 } from '@/features/collaboration/itemRoom';
 import { UndoButtons } from '@/features/collaboration/LiveItemControls';
+import { useLendUndo } from '@/features/collaboration/undo';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
@@ -95,6 +96,7 @@ export function FlashcardsEditor({
   compact?: boolean;
 }) {
   const { doc, history: undo } = room;
+  useLendUndo(undo);
   const cards = useCards(doc);
   // On a set's own page Undo and Redo sit in the header beside View, where
   // the mock places them; inside a note the card dialog carries them.

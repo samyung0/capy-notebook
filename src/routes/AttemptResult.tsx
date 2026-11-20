@@ -9,15 +9,15 @@ import { ErrorState } from '@/components/app/ErrorState';
 import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
-import { ErrorAction } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { FlashcardResult } from '@/features/flashcards/FlashcardResult';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
 import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { attemptMeta, attemptMinutes } from '@/features/study/attempts';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { features } from '@/lib/features';
@@ -98,11 +98,7 @@ export default function AttemptResult() {
   // Learning is hidden: a result goes back to its workspace's Practice, or Home
   // once it has no workspace.
   const home = attempt.workspaceId
-    ? linkOptions({
-        params: { workspaceId: attempt.workspaceId },
-        search: { study: 'practice' as const },
-        to: '/workspaces/$workspaceId',
-      })
+    ? linkOptions(studyLink(attempt.workspaceId, 'practice'))
     : linkOptions({ to: '/' });
 
   return (
@@ -114,7 +110,7 @@ export default function AttemptResult() {
           metaClassName="text-fg-secondary text-sm"
           onBack={() =>
             features.learning
-              ? void navigate({ search: { tab: 'results' }, to: '/learning' })
+              ? void navigate({ search: { tab: 'history' }, to: '/learning' })
               : void navigate(home)
           }
           title={attempt.quizName}
@@ -122,13 +118,13 @@ export default function AttemptResult() {
             features.learning
               ? [
                   {
-                    label: m.nav_learning(),
+                    label: m.nav_study(),
                     link: linkOptions({ to: '/learning' }),
                   },
                   {
-                    label: m.learning_tab_results(),
+                    label: m.learning_tab_history(),
                     link: linkOptions({
-                      search: { tab: 'results' },
+                      search: { tab: 'history' },
                       to: '/learning',
                     }),
                   },
@@ -146,10 +142,11 @@ export default function AttemptResult() {
       }
     >
       <TabContent>
-        {/* In the gap under the header, flush with the content's right edge. */}
+        {/* In the gap under the header, flush with the content's right edge: a
+            dark button, no arrow (Epo 2026-11-13). */}
         {attempt.materialId && (
           <div className="-mt-2 mb-6 flex justify-end sm:-mt-5 sm:mb-3">
-            <UnderlineLink accent asChild>
+            <Button asChild variant="dark">
               {cards ? (
                 <Link
                   params={{ flashcardSetId: attempt.materialId }}
@@ -167,7 +164,7 @@ export default function AttemptResult() {
                   {m.quiz_redo()}
                 </Link>
               )}
-            </UnderlineLink>
+            </Button>
           </div>
         )}
         {cards ? (

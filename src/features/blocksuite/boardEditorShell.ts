@@ -1,57 +1,58 @@
 import { ThemeProvider } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { HistoryExtension } from '@blocksuite/affine/store';
-import { Redo03Icon, Undo03Icon } from '@hugeicons/core-free-icons';
+import {
+  Delete02Icon,
+  Redo03Icon,
+  Undo03Icon,
+} from '@hugeicons/core-free-icons';
 import { html, render } from 'lit';
 import { m } from '@/i18n';
 import { BoardMenu, type MenuZoom } from './boardMenu';
 
 const closing = new WeakMap<GfxController, () => void>();
+const watchers = new WeakMap<GfxController, (cardId: string | null) => void>();
+
+/** Tells the page which card's editor is open, null once none is: the canvas
+ * keeps it in its URL (Epo 2026-11-13). */
+export function watchBoardEditor(
+  gfx: GfxController,
+  watch: (cardId: string | null) => void
+) {
+  watchers.set(gfx, watch);
+  return () => {
+    watchers.delete(gfx);
+  };
+}
 
 /** Leaves the open plane or chart, as saving or making the image does. */
 export function closeBoardEditor(gfx: GfxController) {
   closing.get(gfx)?.();
 }
 
-/** A full-board editor for one card. While it's open undo reaches only what was done in
- * it, as what's on the canvas is out of sight. */
-export function openBoardEditor(
+/** The board's side of editing one card, whatever draws the editor: the board's
+ * slot keys and menu step aside, and undo reaches only what was done in it, as
+ * what's on the canvas is out of sight. `close` runs `onClose`, then gives the
+ * board its history back; it runs once, from the editor or the page
+ * (`closeBoardEditor`, through `fromPage` when given). */
+export function boardEditorSession(
   gfx: GfxController,
   cardId: string,
-  hooks: {
-    /** The menu's Fit and zoom row, where the card has them. */
-    fit?: () => void;
-    zoom?: MenuZoom;
-    /** Before it goes: whatever it has to write. */
-    onLeave: () => void;
-    /** Escape's own use, if it has one right now. */
-    onEscape: () => boolean;
-    /** Delete or Backspace: removes what's selected, true when something was. */
-    onDelete?: () => boolean;
-    /** A tool's letter key (`P`), true when it was one. */
-    onShortcut?: (key: string) => boolean;
-    onUpdate: () => void;
-  }
+  onClose: () => void,
+  /** How the page's close reaches it, when the editor has to hand over first. */
+  fromPage?: () => void
 ) {
   const board = gfx.std.host.closest('.capy-board');
   // A teacher's board opens nothing for editing.
-  if (gfx.doc.readonly || !board || board.querySelector('.capy-plane-editor'))
+  if (gfx.doc.readonly || !board || board.hasAttribute('data-editor-open'))
     return null;
   gfx.selection.clear();
-
-  const root = document.createElement('div');
-  root.className = 'capy-plane-editor';
-  const canvas = document.createElement('canvas');
-  canvas.setAttribute('aria-label', m.drawing_board_maths());
-  const controls = document.createElement('div');
-  // Top right: a menu (Fit, Undo, Redo) and Done (Epo 2026-11-08).
-  const top = document.createElement('div');
-  top.className = 'capy-editor-top';
-  root.append(canvas, controls, top);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  board.append(root);
   board.setAttribute('data-editor-open', '');
+  // The double click that opened it is used up. The editor covers the board, so
+  // the board sees no press until it closes, and within 500 ms the first press
+  // of a double click on the card was that one's third: a triple click, which
+  // opens nothing (vendor local change 64).
+  gfx.std.event.endClickRun();
 
   const undo = gfx.doc.get(HistoryExtension).undoManager;
   gfx.doc.captureSync();
@@ -65,6 +66,108 @@ export function openBoardEditor(
   undo.undoStack = [];
   undo.redoStack = [];
   stacksSwapped();
+
+  let open = true;
+  let stepping = false;
+  const close = () => {
+    if (!open) return;
+    open = false;
+    onClose();
+    gfx.doc.captureSync();
+    undo.undoStack = [...earlier.undo, ...undo.undoStack];
+    undo.redoStack = changed
+      ? undo.redoStack
+      : [...earlier.redo, ...undo.redoStack];
+    stacksSwapped();
+    board.removeAttribute('data-editor-open');
+    closing.delete(gfx);
+    gfx.selection.set({ editing: false, elements: [cardId] });
+    watchers.get(gfx)?.(null);
+  };
+  closing.set(gfx, fromPage ?? close);
+  watchers.get(gfx)?.(cardId);
+
+  return {
+    board,
+    close,
+    /** What the editor's Undo and Redo act on: this session's steps. */
+    history: {
+      canRedo: () => gfx.doc.canRedo,
+      canUndo: () => gfx.doc.canUndo,
+      redo: () => gfx.doc.redo(),
+      subscribe: (notify: () => void) => {
+        const updates = gfx.doc
+          .get(HistoryExtension)
+          .onUpdated.subscribe(notify);
+        return () => updates.unsubscribe();
+      },
+      undo: () => gfx.doc.undo(),
+    },
+    /** One undo step: what's written in the same task joins it, and with
+     * `join` it joins the step before (a row typed into, however slowly). */
+    write: (change: () => void, join = false) => {
+      changed = true;
+      // Yjs adds a change to the last step while its last change is recent.
+      if (join && undo.undoStack.length) undo.lastChange = Date.now();
+      else if (!stepping) {
+        stepping = true;
+        gfx.doc.captureSync();
+        queueMicrotask(() => {
+          stepping = false;
+          gfx.doc.captureSync();
+        });
+      }
+      change();
+    },
+  };
+}
+
+/** A full-board editor for one card, drawn by the board itself (the chart's). */
+export function openBoardEditor(
+  gfx: GfxController,
+  cardId: string,
+  hooks: {
+    /** The menu's Fit and zoom row, where the card has them. */
+    fit?: () => void;
+    /** The menu's Clear all: everything in the card goes in one undo step. */
+    clear?: { empty: () => boolean; run: () => void };
+    zoom?: MenuZoom;
+    /** Before it goes: whatever it has to write. */
+    onLeave: () => void;
+    /** Escape's own use, if it has one right now. */
+    onEscape: () => boolean;
+    /** Delete or Backspace: removes what's selected, true when something was. */
+    onDelete?: () => boolean;
+    /** A tool's letter key (`P`), true when it was one. */
+    onShortcut?: (key: string) => boolean;
+    onUpdate: () => void;
+  }
+) {
+  const root = document.createElement('div');
+  root.className = 'capy-plane-editor';
+  const canvas = document.createElement('canvas');
+  canvas.setAttribute('aria-label', m.drawing_board_maths());
+  const controls = document.createElement('div');
+  // Top right: a menu (Fit, Undo, Redo) and Done (Epo 2026-11-08).
+  const top = document.createElement('div');
+  top.className = 'capy-editor-top';
+  root.append(canvas, controls, top);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const session = boardEditorSession(gfx, cardId, () => {
+    hooks.onLeave();
+    window.removeEventListener('keydown', onKey, true);
+    updates?.unsubscribe();
+    unwatchTheme();
+    history.unsubscribe();
+    menu.dispose();
+    render(null, controls);
+    root.remove();
+  });
+  if (!session) return null;
+  const { close, write } = session;
+  session.board.append(root);
 
   const box = () => root.getBoundingClientRect();
 
@@ -87,6 +190,17 @@ export function openBoardEditor(
         label: m.drawing_board_redo(),
         run: () => gfx.doc.redo(),
       },
+      // Clear all, the last entry, on every board and card (Epo 2026-11-13).
+      ...(hooks.clear
+        ? [
+            {
+              disabled: hooks.clear.empty(),
+              icon: Delete02Icon,
+              label: m.drawing_board_clear_all(),
+              run: hooks.clear.run,
+            },
+          ]
+        : []),
     ],
     zoom: hooks.zoom,
   }));
@@ -100,27 +214,6 @@ export function openBoardEditor(
     .get(HistoryExtension)
     .onUpdated.subscribe(() => menu.open && menu.draw());
 
-  const close = () => {
-    hooks.onLeave();
-    gfx.doc.captureSync();
-    undo.undoStack = [...earlier.undo, ...undo.undoStack];
-    undo.redoStack = changed
-      ? undo.redoStack
-      : [...earlier.redo, ...undo.redoStack];
-    stacksSwapped();
-    window.removeEventListener('keydown', onKey, true);
-    updates?.unsubscribe();
-    unwatchTheme();
-    history.unsubscribe();
-    menu.dispose();
-    render(null, controls);
-    root.remove();
-    board.removeAttribute('data-editor-open');
-    closing.delete(gfx);
-    gfx.selection.set({ editing: false, elements: [cardId] });
-  };
-  closing.set(gfx, close);
-
   // The board listens on the document, so its shortcuts stop here. Typing elsewhere on
   // the page isn't this editor's, and a field in it keeps its own undo.
   const onKey = (event: KeyboardEvent) => {
@@ -132,8 +225,12 @@ export function openBoardEditor(
     )
       return;
     const key = event.key.toLowerCase();
-    // A field gets its keys; root stops them on their way out to the board.
-    if (target instanceof HTMLInputElement && key !== 'escape') return;
+    // A field gets its keys (a MathLive one too: its keys arrive from the math-field);
+    // root stops them on their way out to the board.
+    const field =
+      target instanceof HTMLInputElement ||
+      (target instanceof Element && target.closest('math-field'));
+    if (field && key !== 'escape') return;
     event.stopPropagation();
     const command = event.metaKey || event.ctrlKey;
     if (key === 'escape') {
@@ -189,34 +286,8 @@ export function openBoardEditor(
       ctx.clearRect(0, 0, width, height);
       return { height, width };
     },
-    /** One undo step. */
-    write: (change: () => void) => {
-      changed = true;
-      gfx.doc.captureSync();
-      change();
-      gfx.doc.captureSync();
-    },
+    write,
   };
-}
-
-/** The dark value chip beside the pointer. */
-export function drawChip(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  width: number
-) {
-  ctx.font = '13px Arial, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  const textWidth = ctx.measureText(text).width + 14;
-  const chipX = Math.min(width - textWidth - 4, x + 10);
-  const chipY = Math.max(4, y - 30);
-  ctx.fillStyle = '#111';
-  ctx.fillRect(chipX, chipY, textWidth, 22);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, chipX + 7, chipY + 11);
 }
 
 /** AFFiNE's tooltip with its shortcut, as the board's toolbar shows them, for a button

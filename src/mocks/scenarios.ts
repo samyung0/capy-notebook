@@ -219,11 +219,11 @@ export const permanentScenarios: readonly string[] = [
 
 /** Every list a new account sees, empty, so each page shows its empty state. */
 const NEW_ACCOUNT_LISTS = {
-  '/api/attempts': { items: [], more: false },
   '/api/bank/progress': { topics: [] },
   '/api/events': [],
   '/api/files': { items: [] },
   '/api/items': { items: [] },
+  '/api/learning/history': { items: [], more: false },
   '/api/materials': { items: [] },
   '/api/notifications': { items: [] },
   '/api/notifications/unread-count': { count: 0 },
@@ -232,7 +232,6 @@ const NEW_ACCOUNT_LISTS = {
     unfinished: [],
     workspaces: [],
   },
-  '/api/review/sessions': { items: [], more: false },
   '/api/search': [],
   '/api/tags': [],
   '/api/tasks': [],
@@ -574,7 +573,7 @@ export function getMockScenarioHandlers(
           HttpResponse.json(workspaceMaterialRefs(String(params.id), 'member'))
         ),
         http.get('/api/recent', async ({ request }) =>
-          HttpResponse.json(recentFor(request.url, 'member'))
+          HttpResponse.json(recentFor(request.url))
         ),
         ...assignmentHandlers('member'),
       ];

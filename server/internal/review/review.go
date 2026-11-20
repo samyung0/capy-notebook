@@ -95,7 +95,7 @@ func CardHash(front, back string) string {
 
 // QuestionHash identifies what a quiz question asks: the text of its stem, of
 // its groups (as the stem's, in reading order, those with text) and of each
-// part's prompt. Answers, options, marking schemes, hints, images and styling
+// part's prompt. Answers, options, marking schemes, images and styling
 // are left out, so editing them keeps the learner's progress. A question whose
 // groups hold no text hashes as the same question ungrouped.
 func QuestionHash(q map[string]any) string {

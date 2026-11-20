@@ -3,13 +3,27 @@ import {
   ThemeProvider,
 } from '@blocksuite/affine/shared/services';
 import type { GfxController } from '@blocksuite/affine/std/gfx';
+import {
+  Delete02Icon,
+  LeftToRightListBulletIcon,
+  MoreVerticalIcon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons';
 import { html, nothing, render } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
+import {
+  CORNER_CURSOR,
+  draggedSize,
+  drawChip,
+  drawTextFrame,
+  frameCornerAt,
+} from '@/features/graph/overlay';
+import { alongDrag, ERASER_SIZE } from '@/features/graph/tools';
 import { m } from '@/i18n';
 import {
   type ChartElementModel,
   drawChart,
-  LABEL_REACH,
   setChartEditor,
 } from './boardChart';
 import {
@@ -17,6 +31,7 @@ import {
   BAR_SHARE,
   BARS_MAX,
   barPlot,
+  CHART_TEXT,
   type ChartBar,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
@@ -25,11 +40,13 @@ import {
   type PieLabel,
   pieCircle,
   SPOKES_MAX,
+  TEXT_SIZE_MAX,
+  TEXT_SIZE_MIN,
 } from './boardData';
-import { drawChip, openBoardEditor, toolTip } from './boardEditorShell';
-import { alongDrag, ERASER_SIZE, EraserTrail } from './boardEraser';
+import { openBoardEditor, toolTip } from './boardEditorShell';
+import { EraserTrail } from './boardEraser';
 import { clockAngle, snapTo, tidy, type Vec } from './boardGeometry';
-import { fillRow, mathsIcon } from './boardTools';
+import { boardKindOf, fillRow, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
 /** What Select picked (Epo 2026-11-09): a bar, a pie's line or a pie's label. */
@@ -50,6 +67,28 @@ const AXIS_MIN = 1e-3;
 /** A zoom is written, one undo step, once it has rested this long. */
 const ZOOM_SETTLE_MS = 300;
 const NICE_STEPS = [1, 2, 2.5, 5, 10];
+/** The data pane open or closed, as last chosen this session; until then open on a
+ * wide screen (Epo 2026-11-13, B1 and P1, as the plane's list). */
+let listChoice: boolean | null = null;
+/** Under this width the pane is a sheet over the chart's lower half. */
+const SHEET_BELOW = 640;
+/** Where a pie label inside the pie is put when a slice is named. */
+const NAME_REACH = 0.62;
+
+/** A pie's slices clockwise from its lines: each from a line to the next. */
+type Slice = { from: number; size: number };
+const slicesOf = (spokes: number[]): Slice[] => {
+  const sorted = [...spokes].sort((a, b) => a - b);
+  return sorted.map((from, i) => ({
+    from,
+    size: (i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 360) - from,
+  }));
+};
+/** Whether a clockwise angle falls in a slice. */
+const inSlice = ({ from, size }: Slice, angle: number) =>
+  (((angle - from) % 360) + 360) % 360 < size;
+/** A slice's size as a share, to a tenth of a percent. */
+const shareOf = ({ size }: Slice) => Math.round((size / 3.6) * 10) / 10;
 
 /** An axis to a top, about five numbered lines in 1, 2, 2.5 or 5 steps. */
 function niceAxis(top: number) {
@@ -73,8 +112,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** The label being typed: under a bar, or in a pie at an angle. */
   let typing: {
     angle?: number;
+    reach?: number;
     barId?: string;
     id?: string;
+    size?: number;
     text: string;
     x: number;
     y: number;
@@ -92,8 +133,13 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     (a.kind === 'spoke'
       ? a.angle === (b as typeof a).angle
       : a.id === (b as typeof a).id);
-  /** How far a pie's line or label being dragged has turned; written when it lifts. */
+  /** How far a pie's line being dragged has turned; written when it lifts. */
   let turning: { by: number } | null = null;
+  /** How far a pie's label being dragged has moved, in pixels: it goes anywhere, in
+   * the pie or out of it (Epo 2026-11-13). */
+  let shifting: Vec | null = null;
+  /** The size the framed label's corner has been pulled to; written when it lifts. */
+  let resizing: { corner: number; id: string; size: number } | null = null;
   /** What a Select drag moves: every chosen item of the held one's kind when it's one
    * of them, so several move together (Epo 2026-11-09), else just it. */
   const groupOf = (held: Picked) =>
@@ -114,8 +160,36 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let zoom: { axisMax: number; axisStep: number; top: number } | null = null;
   let zoomTimer: ReturnType<typeof setTimeout> | undefined;
   let pointer: Vec | null = null;
+  const workspace = boardKindOf(gfx.std) === 'workspace';
+  /** The row under the mouse, its bar, slice (`s` and its line) or label lit. */
+  let hot: string | null = null;
+  /** The row whose ⋮ menu is open, and how far down the pane it sits. */
+  let menuFor: { key: string; top: number } | null = null;
+  /** A row's swatch picked: the next fill picked goes to that bar or slice. */
+  let recolour: { bar: string } | { from: number } | null = null;
+  /** The row whose first field takes the caret once drawn (one just added). */
+  let focusRow: string | null = null;
 
   const shell = openBoardEditor(gfx, model.id, {
+    // A pie keeps its first line at 12 o'clock, as a new one starts.
+    clear: {
+      empty: () =>
+        !(model.bars.length || model.labels.length) &&
+        model.spokes.length <= (model.kind === 'pie' ? 1 : 0),
+      run: () => {
+        typing = null;
+        chosen = [];
+        picked = null;
+        update({
+          bars: [],
+          fills: [],
+          labels: [],
+          spokes: model.kind === 'pie' ? [0] : [],
+        });
+        drawControls();
+        redraw();
+      },
+    },
     fit: model.kind === 'bar' ? () => fitAxis() : undefined,
     onDelete: () => {
       if (!chosen.length) return false;
@@ -126,6 +200,21 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return true;
     },
     onEscape: () => {
+      if (menuFor) {
+        menuFor = null;
+        drawControls();
+        return true;
+      }
+      // A row being typed in goes back as it was.
+      const field = document.activeElement;
+      if (
+        field instanceof HTMLInputElement &&
+        field.closest('.capy-plane-list')
+      ) {
+        field.value = field.dataset.value ?? field.value;
+        field.blur();
+        return true;
+      }
       if (typing) {
         typing = null;
         drawControls();
@@ -165,7 +254,20 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const update = (props: Partial<ChartElementModel>) =>
     shell.write(() => gfx.surface?.updateElement(model.id, props));
 
+  const listOpen = () =>
+    workspace && (listChoice ?? box().width >= SHEET_BELOW);
+  const listLayout = () =>
+    listOpen() ? (box().width < SHEET_BELOW ? 'sheet' : 'floating') : '';
+  /** The chart's room: beside the floating pane, or above the phone's sheet. */
   const pads = (): Pads => {
+    const room = ownPads();
+    const layout = listLayout();
+    if (layout === 'floating') return { ...room, left: room.left + 308 };
+    if (layout === 'sheet')
+      return { ...room, bottom: room.bottom + box().height * 0.48 };
+    return room;
+  };
+  const ownPads = (): Pads => {
     const phone = box().width < 768;
     return isBar
       ? {
@@ -213,18 +315,64 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       .at(-1) ?? Math.max(...model.spokes, 0);
   /** The sector a new line closes: from the line before it, clockwise. */
   const sectorTo = (angle: number) => (angle - lineBefore(angle) + 360) % 360;
-  /** The pie label under a point, if any. */
-  const labelAt = ([x, y]: Vec) => {
+  /** Where a pie label sits on screen. */
+  const labelPoint = ({
+    angle,
+    reach,
+  }: Pick<PieLabel, 'angle' | 'reach'>): Vec => {
     const { cx, cy, r } = pieCircle(screen(), pads());
-    return model.labels.find(({ angle }) => {
-      const turn = (angle * Math.PI) / 180;
+    const turn = (angle * Math.PI) / 180;
+    return [cx + r * reach * Math.sin(turn), cy - r * reach * Math.cos(turn)];
+  };
+  /** A pie label's place for a point on screen, kept on the card. */
+  const labelPlace = ([px, py]: Vec) => {
+    const { h, w } = screen();
+    const { cx, cy, r } = pieCircle(screen(), pads());
+    const x = Math.min(w - 8, Math.max(8, px));
+    const y = Math.min(h - 8, Math.max(8, py));
+    // Unrounded, unlike a line's whole degree, so a far label doesn't jump.
+    const degrees = (Math.atan2(x - cx, cy - y) * 180) / Math.PI;
+    return {
+      angle: (degrees + 360) % 360,
+      reach: Math.hypot(x - cx, y - cy) / r,
+    };
+  };
+  /** Where a pie label's text sits on screen: its width by a line, round its point. */
+  const labelBox = (label: PieLabel) => {
+    const [x, y] = labelPoint(label);
+    const size = label.size ?? CHART_TEXT;
+    ctx.save();
+    ctx.font = `${size}px Arial, sans-serif`;
+    const w = ctx.measureText(label.text).width;
+    ctx.restore();
+    const h = size * 1.2;
+    return { h, w, x: x - w / 2, y: y - h / 2 };
+  };
+  /** The pie label under a point, if any: on its text, or near its point. */
+  const labelAt = ([x, y]: Vec) =>
+    model.labels.find((label) => {
+      const [lx, ly] = labelPoint(label);
+      const box = labelBox(label);
       return (
-        Math.hypot(
-          x - (cx + r * LABEL_REACH * Math.sin(turn)),
-          y - (cy - r * LABEL_REACH * Math.cos(turn))
-        ) < PIXELS_TO_LABEL
+        Math.hypot(x - lx, y - ly) < PIXELS_TO_LABEL ||
+        (x >= box.x - 4 &&
+          x <= box.x + box.w + 4 &&
+          y >= box.y - 4 &&
+          y <= box.y + box.h + 4)
       );
     });
+  /** The one label Select has picked, which wears the board's frame (Epo 2026-11-13). */
+  const framed = (labels = model.labels) => {
+    const [one] = chosen;
+    if (tool !== 'select' || chosen.length !== 1 || one.kind !== 'label')
+      return null;
+    if (typing?.id === one.id) return null;
+    return labels.find(({ id }) => id === one.id) ?? null;
+  };
+  const cornerAt = (px: Vec) => {
+    const label = framed();
+    const corner = label ? frameCornerAt(labelBox(label), px) : null;
+    return label && corner !== null ? { corner, id: label.id } : null;
   };
 
   /** A bar's box on screen, its label under it included. */
@@ -314,7 +462,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       )
       .map((angle) => ({ angle, kind: 'spoke' }));
     const labels: Picked[] = model.labels
-      .filter(({ angle }) => inside(at(angle, r * LABEL_REACH)))
+      .filter((label) => inside(labelPoint(label)))
       .map(({ id }) => ({ id, kind: 'label' }));
     return [...spokes, ...labels];
   };
@@ -385,14 +533,12 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       const { id } = one;
       const label = labels.find((each) => each.id === id);
       if (!label) return;
-      const [x, y] = at(label.angle, r * LABEL_REACH);
-      ctx.font = '12px Arial, sans-serif';
-      const w = ctx.measureText(label.text).width + 12;
+      const box = labelBox(label);
       ctx.fillStyle = HALO;
-      ctx.fillRect(x - w / 2, y - 11, w, 22);
+      ctx.fillRect(box.x - 6, box.y - 4, box.w + 12, box.h + 8);
       ctx.strokeStyle = BLUE;
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(x - w / 2, y - 11, w, 22);
+      ctx.strokeRect(box.x - 6, box.y - 4, box.w + 12, box.h + 8);
     }
   };
 
@@ -426,9 +572,6 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       const angles = new Set(
         group.flatMap((one) => (one.kind === 'spoke' ? one.angle : []))
       );
-      const ids = new Set(
-        group.flatMap((one) => (one.kind === 'label' ? one.id : []))
-      );
       spokes = spokes.map((spoke) =>
         angles.has(spoke) ? spin(spoke, by) : spoke
       );
@@ -437,8 +580,22 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           ? { ...slice, from: spin(slice.from, by) }
           : slice
       );
+    }
+    if (shifting && picked) {
+      const [dx, dy] = shifting;
+      const ids = new Set(
+        groupOf(picked).flatMap((one) => (one.kind === 'label' ? one.id : []))
+      );
+      labels = labels.map((label) => {
+        if (!ids.has(label.id)) return label;
+        const [x, y] = labelPoint(label);
+        return { ...label, ...labelPlace([x + dx, y + dy]) };
+      });
+    }
+    if (resizing) {
+      const { id, size } = resizing;
       labels = labels.map((label) =>
-        ids.has(label.id) ? { ...label, angle: spin(label.angle, by) } : label
+        label.id === id ? { ...label, size } : label
       );
     }
     return { bars, fills, labels, spokes };
@@ -481,8 +638,47 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         width
       );
     }
-    for (const one of chosen) drawPicked(one, area, bars, labels, spokes);
-    if (picked && turning && !chosen.some((one) => picked && same(one, picked)))
+    const inFrame = framed(labels);
+    for (const one of chosen)
+      if (one.kind !== 'label' || one.id !== inFrame?.id)
+        drawPicked(one, area, bars, labels, spokes);
+    if (inFrame)
+      drawTextFrame(
+        ctx,
+        labelBox(inFrame),
+        getComputedStyle(canvas).getPropertyValue('--affine-primary-color'),
+        PAPER[resolve.theme].paper
+      );
+    // A hovered row lights its bar, slice or label.
+    if (hot?.startsWith('s:')) {
+      const from = Number(hot.slice(2));
+      const slice = slicesOf(spokes).find((one) => one.from === from);
+      if (slice) {
+        const { cx, cy, r } = pieCircle(area, pads());
+        const turn = (deg: number) => ((deg - 90) * Math.PI) / 180;
+        for (const [colour, width] of [
+          [HALO, 10],
+          [BLUE, 2],
+        ] as const) {
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = width;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, turn(slice.from), turn(slice.from + slice.size));
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+    } else if (hot && bars.some(({ id }) => id === hot))
+      drawPicked({ id: hot, kind: 'bar' }, area, bars, labels, spokes);
+    else if (hot && labels.some(({ id }) => id === hot))
+      drawPicked({ id: hot, kind: 'label' }, area, bars, labels, spokes);
+    if (
+      picked &&
+      (turning || shifting) &&
+      !chosen.some((one) => picked && same(one, picked))
+    )
       drawPicked(picked, area, bars, labels, spokes);
     if (
       live &&
@@ -569,17 +765,19 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         y: base + 14,
       };
     } else {
+      // A new label goes where it's clicked.
       const label = labelAt(at);
       if (!label && model.labels.length >= LABELS_MAX) return;
-      const angle = label?.angle ?? angleAt(at);
-      const { cx, cy, r } = pieCircle(screen(), pads());
-      const turn = (angle * Math.PI) / 180;
+      const place = label ?? labelPlace(at);
+      const [x, y] = labelPoint(place);
       typing = {
-        angle,
+        angle: place.angle,
         id: label?.id,
+        reach: place.reach,
+        size: label?.size,
         text: label?.text ?? '',
-        x: cx + r * LABEL_REACH * Math.sin(turn),
-        y: cy - r * LABEL_REACH * Math.cos(turn),
+        x,
+        y,
       };
     }
     drawControls();
@@ -608,6 +806,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
             {
               angle: open.angle ?? 0,
               id: open.id ?? crypto.randomUUID(),
+              reach: open.reach ?? 0,
+              ...(open.size && { size: open.size }),
               text,
             },
           ],
@@ -696,6 +896,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let dragging = false;
   canvas.addEventListener('pointerdown', (event) => {
     touches.set(event.pointerId, local(event));
+    // A second finger while a label's corner is pulled leaves the pull alone.
+    if (resizing) return;
     if (isBar && touches.size === 2) {
       const [a, b] = [...touches.values()];
       pinch = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -718,7 +920,12 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       trail.start(at);
       eraseNear(at);
     }
-    if (tool === 'select') {
+    const pulled = tool === 'select' && cornerAt(at);
+    if (pulled) {
+      const label = model.labels.find(({ id }) => id === pulled.id);
+      picked = { id: pulled.id, kind: 'label' };
+      resizing = { ...pulled, size: label?.size ?? CHART_TEXT };
+    } else if (tool === 'select') {
       picked = hitAt(at, 6);
       if (!picked) boxing = { adding: event.shiftKey, from: at, to: at };
     }
@@ -752,20 +959,29 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return;
     }
     const held = picked;
-    if (tool === 'select' && pressed && held) {
+    const label =
+      resizing && model.labels.find(({ id }) => id === resizing?.id);
+    if (resizing && label && pressed) {
+      resizing.size = draggedSize(
+        label.size ?? CHART_TEXT,
+        labelPoint(label),
+        pressedAt,
+        at,
+        [TEXT_SIZE_MIN, TEXT_SIZE_MAX]
+      );
+      canvas.style.cursor = CORNER_CURSOR[resizing.corner];
+    } else if (tool === 'select' && pressed && held) {
       dragging ||=
         Math.hypot(at[0] - pressedAt[0], at[1] - pressedAt[1]) >=
         PIXELS_TO_DRAG;
       if (dragging && held.kind === 'bar') {
         const slot = model.bars.findIndex(({ id }) => id === held.id);
         if (slot >= 0) live = { slot, value: valueAt(at) };
-      } else if (dragging) {
-        const from =
-          held.kind === 'spoke'
-            ? held.angle
-            : model.labels.find(({ id }) => id === held.id)?.angle;
-        const by = from === undefined ? 0 : angleAt(at) - from;
-        // Lines stay off the others; labels go anywhere round.
+      } else if (dragging && held.kind === 'label')
+        shifting = [at[0] - pressedAt[0], at[1] - pressedAt[1]];
+      else if (dragging && held.kind === 'spoke') {
+        const by = angleAt(at) - held.angle;
+        // Lines stay off the others.
         const group = groupOf(held).flatMap((one) =>
           one.kind === 'spoke' ? one.angle : []
         );
@@ -777,8 +993,14 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       }
       canvas.style.cursor = dragging ? 'grabbing' : '';
     } else if (live && pressed) live = { ...live, value: valueAt(at) };
-    if (tool === 'select' && !pressed && event.pointerType === 'mouse')
-      canvas.style.cursor = hitAt(at, 6) ? 'grab' : '';
+    if (tool === 'select' && !pressed && event.pointerType === 'mouse') {
+      const corner = cornerAt(at);
+      canvas.style.cursor = corner
+        ? CORNER_CURSOR[corner.corner]
+        : hitAt(at, 6)
+          ? 'grab'
+          : '';
+    }
     redraw();
   });
   canvas.addEventListener('pointerup', (event) => {
@@ -792,6 +1014,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     const next = moving();
     const turned = turning;
     turning = null;
+    const shifted = shifting;
+    shifting = null;
+    const sized = resizing;
+    resizing = null;
     const box = boxing;
     boxing = null;
     const held = picked;
@@ -841,8 +1067,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           ? { angle: spin(one.angle, by), kind: 'spoke' }
           : one
       );
-    } else if (turned && held?.kind === 'label') {
-      if (turned.by) update({ labels: next.labels });
+    } else if (shifted && held?.kind === 'label') {
+      update({ labels: next.labels });
+    } else if (sized) {
+      const was = model.labels.find(({ id }) => id === sized.id)?.size;
+      if (sized.size !== (was ?? CHART_TEXT)) update({ labels: next.labels });
     } else if (live) {
       const { slot, value } = live;
       live = null;
@@ -874,6 +1103,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     pressed = false;
     live = null;
     turning = null;
+    shifting = null;
+    resizing = null;
     erasing = null;
     boxing = null;
     trail.end();
@@ -932,6 +1163,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     ];
   const pick = (id: Tool) => {
     commitLabel();
+    recolour = null;
     picked = null;
     chosen = [];
     tool = id;
@@ -940,12 +1172,397 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     redraw();
   };
 
+  // The data pane (Epo 2026-11-13, B1 and P1): a bar's label and value, a slice's
+  // name and share, typed in rows as the plane's list. Workspace canvases only.
+  const toggleList = () => {
+    listChoice = !listOpen();
+    menuFor = null;
+    drawControls();
+    redraw();
+  };
+  const lightRow = (key: string | null) => {
+    if (hot === key) return;
+    hot = key;
+    redraw();
+  };
+  /** A slice's name: the first label inside the pie within it. */
+  const nameOf = (slice: Slice) =>
+    model.labels.find(
+      ({ angle, reach }) => reach <= 1 && inSlice(slice, angle)
+    );
+  const colourOf = (fill: ChartBar['fill'] | undefined) =>
+    fill ? resolve.getColorValue(fill, 'transparent', true) : 'transparent';
+  const setBar = (id: string, change: Partial<ChartBar>) =>
+    update({
+      bars: model.bars.map((bar) =>
+        bar.id === id ? { ...bar, ...change } : bar
+      ),
+    });
+  /** A typed value; past the axis's top it raises the top to the next line. */
+  const setValue = (bar: ChartBar, field: HTMLInputElement) => {
+    const value = Number(field.value.replace(/[−–]/g, '-'));
+    if (!(Number.isFinite(value) && value >= 0 && value <= AXIS_MAX)) {
+      field.value = String(bar.value);
+      return;
+    }
+    let { axisMax, axisStep } = model;
+    if (value > axisMax) {
+      const lifted = Number(
+        (Math.ceil(value / axisStep - 1e-9) * axisStep).toPrecision(12)
+      );
+      if (lifted / axisStep <= AXIS_LINES_MAX) axisMax = lifted;
+      else ({ axisMax, axisStep } = niceAxis(value));
+    }
+    update({
+      axisMax,
+      axisStep,
+      bars: model.bars.map((one) =>
+        one.id === bar.id ? { ...one, value } : one
+      ),
+    });
+  };
+  const addBar = () => {
+    if (model.bars.length >= BARS_MAX) return;
+    const id = crypto.randomUUID();
+    focusRow = id;
+    update({
+      bars: [
+        ...model.bars,
+        { fill: newFill(), id, label: '', value: model.axisStep },
+      ],
+    });
+  };
+  /** A slice's share typed: its closing line moves, the slices after it keep their
+   * sizes and the last takes up the rest (the last one's own share moves its opening
+   * line). Labels inside a slice keep their place in it; fills follow their line. */
+  const setShare = (index: number, field: HTMLInputElement) => {
+    const slices = slicesOf(model.spokes);
+    const size = Math.round(Number(field.value.replace('%', '')) * 3.6);
+    const last = slices.length - 1;
+    const delta = size - slices[index]?.size;
+    const giver = index < last ? last : last - 1;
+    if (
+      !(last > 0 && Number.isFinite(delta) && size >= 1) ||
+      slices[giver].size - delta < 1
+    ) {
+      field.value = String(shareOf(slices[index]));
+      return;
+    }
+    if (!delta) return;
+    const moved = slices.map(({ from, size: was }, i) => {
+      const start =
+        index < last
+          ? i > index
+            ? from + delta
+            : from
+          : i === last
+            ? from - delta
+            : from;
+      const grow = i === index ? delta : i === giver ? -delta : 0;
+      return { from: start, size: was + grow };
+    });
+    const spin = (angle: number) => ((angle % 360) + 360) % 360;
+    update({
+      fills: (model.fills ?? []).map((fill) => {
+        const i = slices.findIndex(({ from }) => from === fill.from);
+        return i < 0 ? fill : { ...fill, from: spin(moved[i].from) };
+      }),
+      labels: model.labels.map((label) => {
+        const i =
+          label.reach <= 1
+            ? slices.findIndex((slice) => inSlice(slice, label.angle))
+            : -1;
+        if (i < 0) return label;
+        const into = spin(label.angle - slices[i].from) / slices[i].size;
+        return { ...label, angle: spin(moved[i].from + into * moved[i].size) };
+      }),
+      spokes: moved.map(({ from }) => spin(from)),
+    });
+  };
+  const nameSlice = (slice: Slice, field: HTMLInputElement) => {
+    const text = field.value.trim().slice(0, LABEL_LENGTH_MAX);
+    const named = nameOf(slice);
+    if (named)
+      update({
+        labels: text
+          ? model.labels.map((label) =>
+              label.id === named.id ? { ...label, text } : label
+            )
+          : model.labels.filter(({ id }) => id !== named.id),
+      });
+    else if (text && model.labels.length < LABELS_MAX)
+      update({
+        labels: [
+          ...model.labels,
+          {
+            angle: (slice.from + slice.size / 2) % 360,
+            id: crypto.randomUUID(),
+            reach: NAME_REACH,
+            text,
+          },
+        ],
+      });
+  };
+  /** "+ Slice": the last slice halved, or a first line at 12 o'clock. */
+  const addSlice = () => {
+    const slices = slicesOf(model.spokes);
+    const last = slices.at(-1);
+    if (!last) {
+      focusRow = 's:0';
+      update({ spokes: [0] });
+      return;
+    }
+    if (last.size < 2 || model.spokes.length >= SPOKES_MAX) return;
+    const from = (last.from + Math.floor(last.size / 2)) % 360;
+    focusRow = `s:${from}`;
+    update({ spokes: [...model.spokes, from] });
+  };
+  const textOf = (field: HTMLInputElement) =>
+    field.value.trim().slice(0, LABEL_LENGTH_MAX);
+  const setLabel = (id: string, field: HTMLInputElement) => {
+    const text = textOf(field);
+    update({
+      labels: text
+        ? model.labels.map((label) =>
+            label.id === id ? { ...label, text } : label
+          )
+        : model.labels.filter((label) => label.id !== id),
+    });
+  };
+  /** ⋮ Delete: a bar, a label, or a slice's opening line (it joins the one before). */
+  const removeRow = (key: string) => {
+    hot = null;
+    if (key.startsWith('s:')) {
+      const from = Number(key.slice(2));
+      update({
+        fills: (model.fills ?? []).filter((fill) => fill.from !== from),
+        spokes: model.spokes.filter((spoke) => spoke !== from),
+      });
+    } else if (model.bars.some(({ id }) => id === key))
+      update({ bars: model.bars.filter(({ id }) => id !== key) });
+    else update({ labels: model.labels.filter(({ id }) => id !== key) });
+    redraw();
+  };
+  /** A swatch picked: the fill row opens for it, and its next pick goes there. */
+  const pickSwatch = (target: { bar: string } | { from: number }) => {
+    commitLabel();
+    recolour = target;
+    tool = isBar ? 'draw' : 'fill';
+    drawControls();
+    redraw();
+  };
+  const recolourPicked = () => {
+    const target = recolour;
+    recolour = null;
+    if (!target) return;
+    const fill = newFill();
+    if ('bar' in target) setBar(target.bar, { fill });
+    else {
+      const others = (model.fills ?? []).filter(
+        (slice) => slice.from !== target.from
+      );
+      update({
+        fills:
+          fill === 'transparent'
+            ? others
+            : [...others, { fill, from: target.from }],
+      });
+    }
+  };
+  const field = (
+    label: string,
+    value: string,
+    commit: (field: HTMLInputElement) => void,
+    numeric = false
+  ) =>
+    html`<input
+      aria-label=${label}
+      class=${numeric ? 'num' : ''}
+      data-value=${value}
+      inputmode=${numeric ? 'decimal' : 'text'}
+      maxlength=${numeric ? 12 : LABEL_LENGTH_MAX}
+      type="text"
+      .value=${value}
+      @change=${(event: Event) => commit(event.target as HTMLInputElement)}
+      @keydown=${(event: KeyboardEvent) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+      }}
+    />`;
+  const more = (key: string) =>
+    html`<button
+      aria-label=${m.a11y_more_actions()}
+      class="more"
+      type="button"
+      @click=${(event: MouseEvent) => {
+        const list = controls.querySelector('.capy-plane-list');
+        const button = event.currentTarget as HTMLElement;
+        menuFor =
+          menuFor?.key === key || !list
+            ? null
+            : {
+                key,
+                top:
+                  button.getBoundingClientRect().bottom -
+                  list.getBoundingClientRect().top +
+                  4,
+              };
+        drawControls();
+      }}
+    >
+      ${hugeIcon(MoreVerticalIcon)}
+    </button>`;
+  const swatch = (colour: string, target: { bar: string } | { from: number }) =>
+    html`<button
+      aria-label=${m.drawing_board_fill()}
+      class="swatch"
+      style="background:${colour}"
+      type="button"
+      @click=${() => pickSwatch(target)}
+    ></button>`;
+  const row = (key: string, cells: unknown, wide = true) =>
+    html`<li
+      class=${[wide ? 'capy-chart-row' : '', hot === key ? 'on' : ''].join(' ')}
+      data-row=${key}
+      @focusin=${() => lightRow(key)}
+      @pointerenter=${() => lightRow(key)}
+    >
+      ${cells} ${more(key)}
+    </li>`;
+  const barRows = () =>
+    repeat(
+      model.bars,
+      ({ id }) => id,
+      (bar) =>
+        row(
+          bar.id,
+          html`${swatch(colourOf(bar.fill), { bar: bar.id })}
+          ${field(m.drawing_board_chart_label(), bar.label, (input) =>
+            setBar(bar.id, { label: textOf(input) })
+          )}
+          ${field(
+            m.drawing_board_chart_value(),
+            String(bar.value),
+            (input) => setValue(bar, input),
+            true
+          )}`
+        )
+    );
+  const sliceRows = () => {
+    const slices = slicesOf(model.spokes);
+    const names = new Set(slices.map((slice) => nameOf(slice)?.id));
+    const free = model.labels.filter(({ id }) => !names.has(id));
+    return html`${repeat(
+      slices,
+      ({ from }) => from,
+      (slice, index) =>
+        row(
+          `s:${slice.from}`,
+          html`${swatch(
+            colourOf(
+              (model.fills ?? []).find(({ from }) => from === slice.from)?.fill
+            ),
+            { from: slice.from }
+          )}
+          ${field(
+            m.drawing_board_chart_label(),
+            nameOf(slice)?.text ?? '',
+            (input) => nameSlice(slice, input)
+          )}
+          <span class="share">
+            ${field(
+              m.drawing_board_chart_share(),
+              String(shareOf(slice)),
+              (input) => setShare(index, input),
+              true
+            )}<small>%</small><small>${slice.size}°</small>
+          </span>`
+        )
+    )}
+    ${repeat(
+      free,
+      ({ id }) => id,
+      (label) =>
+        row(
+          label.id,
+          html`<span class="kind">${unsafeSVG(mathsIcon('label'))}</span>
+            ${field(m.drawing_board_chart_label(), label.text, (input) =>
+              setLabel(label.id, input)
+            )}`,
+          false
+        )
+    )}`;
+  };
+  const dataPane = (layout: string) =>
+    html`<div
+      class="capy-plane-list"
+      data-layout=${layout}
+      @pointerleave=${() => {
+        if (!controls.querySelector('.capy-plane-list :focus')) lightRow(null);
+      }}
+    >
+      <ol
+        @scroll=${() => {
+          if (!menuFor) return;
+          menuFor = null;
+          drawControls();
+        }}
+      >
+        ${isBar ? barRows() : sliceRows()}
+      </ol>
+      <button
+        class="add"
+        type="button"
+        @click=${isBar ? addBar : addSlice}
+      >
+        ${hugeIcon(PlusSignIcon)}
+        ${isBar ? m.drawing_board_chart_bar() : m.drawing_board_chart_slice()}
+      </button>
+      ${
+        menuFor
+          ? html`<div
+              class="capy-menu-list"
+              role="menu"
+              style="top:${menuFor.top}px"
+            >
+              <button
+                role="menuitem"
+                type="button"
+                @click=${() => {
+                  const key = menuFor?.key;
+                  menuFor = null;
+                  if (key) removeRow(key);
+                  drawControls();
+                }}
+              >
+                ${hugeIcon(Delete02Icon)} ${m.action_delete()}
+              </button>
+            </div>`
+          : nothing
+      }
+    </div>`;
+
   const drawControls = () => {
     root.dataset.tool = tool;
+    const layout = listLayout();
+    root.dataset.list = layout;
     render(
       html`${
-        isBar
-          ? html`<div class="capy-chart-axis">
+        workspace
+          ? html`<button
+              aria-label=${m.drawing_board_chart_data()}
+              aria-pressed=${layout !== ''}
+              class="capy-plane-list-toggle"
+              type="button"
+              @click=${toggleList}
+            >
+              ${hugeIcon(LeftToRightListBulletIcon)}
+            </button>`
+          : nothing
+      }
+        ${layout ? dataPane(layout) : nothing}
+        ${
+          isBar
+            ? html`<div class="capy-chart-axis">
               <label>
                 ${m.drawing_board_axis_to()}
                 <input
@@ -965,15 +1582,15 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
                 />
               </label>
             </div>`
-          : nothing
-      }
+            : nothing
+        }
         ${
           typing
             ? html`<input
                 aria-label=${m.drawing_board_chart_label()}
                 class="capy-chart-label"
                 maxlength=${LABEL_LENGTH_MAX}
-                style="left:${typing.x}px;top:${typing.y}px"
+                style="left:${typing.x}px;top:${typing.y}px;font-size:${typing.size ?? CHART_TEXT}px"
                 type="text"
                 .value=${typing.text}
                 @blur=${commitLabel}
@@ -1002,7 +1619,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         <div class="capy-plane-tools">
           ${
             (isBar && tool === 'draw') || tool === 'fill'
-              ? fillRow(gfx, drawControls)
+              ? fillRow(gfx, () => {
+                  recolourPicked();
+                  drawControls();
+                })
               : nothing
           }
           <div class="capy-plane-row">
@@ -1021,9 +1641,19 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         </div>`,
       controls
     );
+    if (focusRow) {
+      controls
+        .querySelector<HTMLInputElement>(`[data-row="${focusRow}"] input`)
+        ?.focus();
+      focusRow = null;
+    }
   };
   drawControls();
-  new ResizeObserver(redraw).observe(root);
+  // Past 640 px either way the pane turns card or sheet, and the chart moves over.
+  new ResizeObserver(() => {
+    if (root.dataset.list !== listLayout()) drawControls();
+    redraw();
+  }).observe(root);
   draw();
 }
 

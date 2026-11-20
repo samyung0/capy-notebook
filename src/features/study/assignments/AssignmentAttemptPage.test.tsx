@@ -70,5 +70,5 @@ it('asks to retry when this opening read nothing of a cached running attempt', a
   });
   expect(host.querySelector('[data-take]')).toBeNull();
   expect(host.textContent).toContain(m.assignment_load_failed());
-  expect(host.textContent).toContain(m.action_retry());
+  expect(host.textContent).toContain(m.error_action_retry());
 });

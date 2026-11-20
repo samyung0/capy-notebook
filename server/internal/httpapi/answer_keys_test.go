@@ -105,9 +105,9 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions/"+sessionID+"/result", "u_other", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("another user's result → %d", rec.Code)
 	}
-	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions", "u_viewer", nil); rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), `"quiz":{"correct":1,"total":1}`) {
-		t.Fatalf("past reviews → %d %s", rec.Code, rec.Body.String())
+	if rec := doReq(t, h, http.MethodGet, "/api/learning/history?kind=revision", "u_viewer", nil); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"correct":1,"total":1`) {
+		t.Fatalf("study history → %d %s", rec.Code, rec.Body.String())
 	}
 	var ratings int
 	if err := st.Pool().QueryRow(context.Background(), `SELECT count(*) FROM review_log

@@ -98,8 +98,11 @@ function sameQuantity(a: Quantity, b: Quantity): boolean {
     left.coefficient === right.coefficient && left.exponent === right.exponent
   );
 }
-export const formatPoints = (value: number) =>
-  Number.isInteger(value) ? String(value) : value.toFixed(1);
+/** Marks hold one decimal place; sums of them drift in floats (0.1 + 0.2). */
+export const formatPoints = (value: number) => {
+  const tenths = Math.round(value * 10) / 10;
+  return Number.isInteger(tenths) ? String(tenths) : tenths.toFixed(1);
+};
 function shortCorrect(
   accepted: string[],
   value: string,
@@ -175,7 +178,7 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
 }
 /** Closed parts earn each right item's share of the marks, rounded down to a
  * half mark; a single-item answer is all or nothing. `items` says whether
- * each scored item is right; open parts have none (Jev grades them). */
+ * each scored item is right; open parts have none (a model grades them). */
 export function scorePart(
   part: QuestionPart,
   answer: Answer | undefined

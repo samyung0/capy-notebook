@@ -78,6 +78,9 @@ export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
       user-select: none;
       width: 100%;
       pointer-events: none;
+      /* Capy (local change 15): the phone rule below follows the board's width,
+         as the paging (containerWidth) does, not the window's. */
+      container-type: inline-size;
     }
     .edgeless-toolbar-wrapper {
       width: 100%;
@@ -197,9 +200,9 @@ export class EdgelessToolbarWidget extends WidgetComponent<RootBlockModel> {
       align-items: center;
       flex-shrink: 0;
     }
-    /* Capy (local change 15): a phone's toolbar takes the full width, with two
-       illustrated tools showing between the arrows. */
-    @media (max-width: ${unsafeCSS(FULL_WIDTH_BELOW - 1)}px) {
+    /* Capy (local change 15): a narrow board's toolbar takes the full width,
+       with two illustrated tools showing between the arrows on a phone. */
+    @container (max-width: ${unsafeCSS(FULL_WIDTH_BELOW - 1)}px) {
       .edgeless-toolbar-toggle-control {
         width: 100%;
         max-width: calc(100% - ${unsafeCSS(FULL_WIDTH_GUTTER)}px * 2);

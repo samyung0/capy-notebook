@@ -1,5 +1,6 @@
 import type { MathfieldElement } from 'mathlive';
 import { useEffect, useLayoutEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { getLocale } from '@/i18n';
 import { COMMAND_SHORTCUTS } from './graphSyntax';
 import mathFieldStyles from './mathField.css?inline';
@@ -8,13 +9,15 @@ export interface GraphRowFieldProps {
   autoFocus?: boolean;
   label: string;
   latex: string;
-  /** LaTeX for the field and ASCII-math for the row parser. */
-  onChange: (latex: string, ascii: string) => void;
+  /** The row's LaTeX, which the row parser reads. */
+  onChange: (latex: string) => void;
   onEnter: () => void;
   /** Arrow keys past the first or last line of the formula. */
   onMoveOut: (direction: 'up' | 'down') => void;
   /** Backspace in an empty row. */
   onRemoveEmpty?: () => void;
+  /** What the empty new row shows, as the plane's list: "Type a formula". */
+  placeholder?: string;
   /** Registers the field so neighbouring rows can focus it. */
   register: (field: MathfieldElement | null) => void;
 }
@@ -27,6 +30,7 @@ export function GraphRowField({
   onEnter,
   onRemoveEmpty,
   onMoveOut,
+  placeholder,
   register,
   autoFocus,
 }: GraphRowFieldProps) {
@@ -41,10 +45,13 @@ export function GraphRowField({
   });
   callbacks.current = { onChange, onEnter, onMoveOut, onRemoveEmpty, register };
   const initial = useRef(latex);
+  // What the row last heard or was set to: MathLive reports typing a task
+  // later, so a key that acts on the row sends what is typed first.
+  const sent = useRef(latex);
   useLayoutEffect(() => {
     let cancelled = false;
     let cleanup = () => {};
-    const mount = (Element: typeof MathfieldElement) => {
+    const mount = (Element: typeof MathfieldElement, focus = autoFocus) => {
       if (cancelled || !host.current) return;
       Element.fontsDirectory = '/mathlive/fonts';
       Element.soundsDirectory = null;
@@ -54,24 +61,35 @@ export function GraphRowField({
       element.smartFence = true;
       element.mathVirtualKeyboardPolicy = 'auto';
       element.style.cssText =
-        'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:1.21em;line-height:1.2;';
-      const input = () =>
-        callbacks.current.onChange(
-          element.value,
-          element.getValue('ascii-math')
-        );
+        'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:15px;line-height:1.2;';
+      const input = () => {
+        if (element.value === sent.current) return;
+        sent.current = element.value;
+        callbacks.current.onChange(element.value);
+      };
       // Row keys stop here, before MathLive's handler inside the shadow root.
       const key = (event: KeyboardEvent) => {
-        const action =
-          event.key === 'Enter'
-            ? callbacks.current.onEnter
-            : event.key === 'Backspace' && !element.value
-              ? callbacks.current.onRemoveEmpty
-              : undefined;
-        if (!action) return;
+        // Escape leaves the row first, as the plane's list did (the editor
+        // closes on the next one), not MathLive's LaTeX mode.
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          element.blur();
+          return;
+        }
+        const enter = event.key === 'Enter';
+        const removes =
+          event.key === 'Backspace' &&
+          !element.value &&
+          callbacks.current.onRemoveEmpty;
+        if (!(enter || removes)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        action();
+        // The typing still on its way lands and renders first: Enter typed
+        // fast in the new row moves to the row that typing made after it.
+        flushSync(input);
+        const { onEnter, onRemoveEmpty } = callbacks.current;
+        (enter ? onEnter : onRemoveEmpty)?.();
       };
       const moveOut = (event: Event) => {
         const { direction } = (event as CustomEvent<{ direction: string }>)
@@ -95,23 +113,24 @@ export function GraphRowField({
         ...element.inlineShortcuts,
         ...COMMAND_SHORTCUTS,
       };
+      if (placeholder) element.placeholder = `\\text{${placeholder}}`;
       element.setValue(initial.current, { silenceNotifications: true });
       field.current = element;
       callbacks.current.register(element);
-      if (autoFocus) element.focus();
+      if (focus) element.focus();
       // Keep the phone keyboard inside the dialog's focus boundary.
       const dialog = host.current.closest<HTMLElement>(
         '[data-slot="dialog-content"]'
       );
-      const focus = () => {
+      const keyboardIn = () => {
         window.mathVirtualKeyboard.container = dialog ?? document.body;
       };
-      element.addEventListener('focus', focus);
+      element.addEventListener('focus', keyboardIn);
       cleanup = () => {
         element.removeEventListener('input', input);
         element.removeEventListener('keydown', key, true);
         element.removeEventListener('move-out', moveOut);
-        element.removeEventListener('focus', focus);
+        element.removeEventListener('focus', keyboardIn);
         callbacks.current.register(null);
         element.remove();
         field.current = null;
@@ -120,13 +139,29 @@ export function GraphRowField({
     const registered = customElements.get('math-field') as
       | typeof MathfieldElement
       | undefined;
+    // MathLive's first field on the page loads it first: one that is to take
+    // focus takes it then only if the person did nothing meanwhile, so a
+    // menu they opened (the plane editor's More) stays open.
+    let focusLater = !!autoFocus;
+    const acted = () => {
+      focusLater = false;
+    };
+    const stopWatching = () => {
+      document.removeEventListener('pointerdown', acted, true);
+      document.removeEventListener('keydown', acted, true);
+    };
     if (registered) mount(registered);
-    else
-      import('mathlive').then(({ MathfieldElement }) =>
-        mount(MathfieldElement)
-      );
+    else {
+      document.addEventListener('pointerdown', acted, true);
+      document.addEventListener('keydown', acted, true);
+      import('mathlive').then(({ MathfieldElement }) => {
+        stopWatching();
+        mount(MathfieldElement, focusLater);
+      });
+    }
     return () => {
       cancelled = true;
+      stopWatching();
       cleanup();
     };
   }, []);
@@ -135,12 +170,14 @@ export function GraphRowField({
   });
   // A point dragged on the board rewrites its row.
   useEffect(() => {
-    if (field.current && field.current.value !== latex)
+    if (field.current && field.current.value !== latex) {
       field.current.setValue(latex, { silenceNotifications: true });
+      sent.current = latex;
+    }
   }, [latex]);
   return (
     <span
-      className="block min-w-0 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden"
+      className="block min-w-0 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(placeholder)]:text-placeholder [&_math-field::part(virtual-keyboard-toggle)]:hidden"
       ref={host}
     />
   );

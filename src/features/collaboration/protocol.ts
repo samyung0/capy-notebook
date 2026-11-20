@@ -179,7 +179,7 @@ export function readSync(payload: Uint8Array) {
  * in protocol.rs is the same number (a test keeps them equal). When to bump:
  * openwiki/frontend/plate-editor.md "Client protocol".
  */
-export const CLIENT_PROTOCOL = 30;
+export const CLIENT_PROTOCOL = 31;
 
 /** A JOIN's payload: the room, the token, the client protocol, the Y.Doc's
  * client id (Q213), the stored version it holds (in-place collection, 0 when
@@ -219,21 +219,29 @@ export function tokenClientIds(token: string): {
   clientId: number;
   workerClientId?: number;
 } {
-  const payload = token.split('.')[1] ?? '';
-  let claims: { clientId?: unknown; workerClientId?: unknown } = {};
-  try {
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    claims = JSON.parse(atob(base64)) as typeof claims;
-  } catch {
-    // Not a token the API minted; refused below.
-  }
-  const { clientId, workerClientId } = claims;
+  const { clientId, workerClientId } = tokenClaims(token);
   if (
     !isClientId(clientId) ||
     !(workerClientId === undefined || isClientId(workerClientId))
   )
     throw new Error('The collaboration token offers no client id');
   return { clientId, workerClientId };
+}
+
+/** A room token's claims, unchecked (its signature is the server's to
+ * check); none for what is not a token the API minted. */
+export function tokenClaims(token: string): Record<string, unknown> {
+  try {
+    const payload = (token.split('.')[1] ?? '')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const claims: unknown = JSON.parse(atob(payload));
+    return claims && typeof claims === 'object'
+      ? (claims as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 export const closedPayload = (code: number, reason: string) =>

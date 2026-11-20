@@ -3,6 +3,7 @@ import type {
   AssignmentFormReq,
   AssignmentGradedQuestion,
 } from '@/api/types';
+import { fullPartLabel } from '@/features/questions/groups';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
 
@@ -71,24 +72,25 @@ export function dueText(
   dueAt: string | undefined,
   ticked: boolean,
   now = new Date()
-): { text: string; tone?: 'overdue' | 'soon' } {
-  if (!dueAt) return { text: m.todo_no_due() };
+): string {
+  if (!dueAt) return m.todo_no_due();
   const due = new Date(dueAt);
   if (!ticked && due.getTime() <= now.getTime())
-    return {
-      text: m.todo_overdue({ date: dateLabel(dueAt) }),
-      tone: 'overdue',
-    };
+    return m.todo_overdue({ date: dateLabel(dueAt) });
   const days = Math.round((dayStart(due) - dayStart(now)) / 86_400_000);
-  if (days === 0)
-    return { text: m.todo_due_today({ time: timeLabel(dueAt) }), tone: 'soon' };
-  if (days === 1)
-    return { text: m.todo_due_tomorrow({ time: timeLabel(dueAt) }) };
-  return { text: dateLabel(dueAt) };
+  if (days === 0) return m.todo_due_today({ time: timeLabel(dueAt) });
+  if (days === 1) return m.todo_due_tomorrow({ time: timeLabel(dueAt) });
+  return dateLabel(dueAt);
 }
 
-export const kindLabel = (kind: Assignment['kind']) =>
-  kind === 'marked' ? m.assignment_kind_marked() : m.assignment_kind_unmarked();
+/** A graded quiz, else an Assignment in a class and a Task one set oneself
+ * (Epo 2026-11-14). */
+export const kindLabel = ({ kind, own }: Pick<Assignment, 'kind' | 'own'>) =>
+  kind === 'marked'
+    ? m.assignment_kind_marked()
+    : own
+      ? m.assignment_kind_task()
+      : m.assignment_kind_assignment();
 
 export const minutesText = (count: number) =>
   count === 1 ? m.assignment_minutes_one() : m.assignment_minutes({ count });
@@ -103,19 +105,36 @@ export const lateLabel = (penaltyPct: number) =>
     ? m.assignment_late_penalty({ percent: penaltyPct })
     : m.assignment_late();
 
-/** The due date's policy as sent: it goes with a marked assignment's due date,
- * and No late submissions takes no penalty. */
+/** The due date's policy as sent: it goes with a due date, and No late
+ * submissions takes no penalty. */
 export function latePolicy({
   dueAt,
   kind,
   latePenaltyPct,
   noLate,
-}: Pick<AssignmentFormReq, 'dueAt' | 'kind' | 'latePenaltyPct' | 'noLate'>) {
+  points,
+}: Pick<
+  AssignmentFormReq,
+  'dueAt' | 'kind' | 'latePenaltyPct' | 'noLate' | 'points'
+>) {
   if (!dueAt) return { latePenaltyPct: 0, noLate: false };
   if (noLate) return { latePenaltyPct: 0, noLate: true };
-  // Only marks take a penalty.
-  return { latePenaltyPct: kind === 'marked' ? latePenaltyPct : 0, noLate };
+  // Only marks or a grade take a penalty.
+  return {
+    latePenaltyPct: isGraded({ kind, points }) ? latePenaltyPct : 0,
+    noLate,
+  };
 }
+
+/** A graded quiz, or an Assignment graded on points (Epo 2026-11-14): what
+ * has marks, Show grades and a late penalty. */
+export const isGraded = ({
+  kind,
+  points,
+}: {
+  kind: Assignment['kind'];
+  points?: number;
+}) => kind === 'marked' || points !== undefined;
 
 /** Advanced starts closed, unless a saved assignment holds something other than
  * its defaults there, so nothing is hidden by surprise. */
@@ -133,18 +152,6 @@ export const closedItself = (
   { dueAt, noLate }: Pick<Assignment, 'dueAt' | 'noLate'>,
   now = Date.now()
 ) => noLate && pastDue(dueAt, now);
-
-/** A class's assignment under Show answers Do not show that staff have not
- * turned to practice: its quiz stays held from members past the close. */
-export const holdsQuizPastClose = ({
-  kind,
-  manage,
-  own,
-}: Pick<Assignment, 'kind' | 'manage' | 'own'>) =>
-  !own &&
-  kind === 'marked' &&
-  manage?.showAnswers === 'never' &&
-  !manage.practiceAt;
 
 /** Past its due date with late work open until an owner or TA closes it. */
 export const takesLateWork = (
@@ -183,11 +190,6 @@ export const OUTCOME_SQUARE: Record<Outcome, string> = {
   wrong: 'bg-solid-error',
 };
 
-/** Half marks from 0 to the marks, for a mark dropdown. */
-export function markSteps(marks: number) {
-  return Array.from({ length: marks * 2 + 1 }, (_, i) => i / 2);
-}
-
 /** The local date input's value for an ISO time. */
 export function localInputValue(iso: string, dateOnly: boolean) {
   const d = new Date(iso);
@@ -197,3 +199,73 @@ export function localInputValue(iso: string, dateOnly: boolean) {
     ? date
     : `${date}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+/** What closing a marked assignment does, one line each, for its confirm:
+ * the due date it cuts short (`early`, drawn as a warning), who can no longer
+ * submit, answers it releases and grades held. A graded quiz's quiz stays
+ * held either way (Epo 2026-11-14). */
+export function closeOutcomes(
+  assignment: Pick<Assignment, 'dueAt' | 'manage'>,
+  now = Date.now()
+): { early?: true; text: string }[] {
+  const { dueAt, manage } = assignment;
+  const gradesHeld =
+    manage?.showGrades === 'manual' && !manage.gradesReleasedAt;
+  const left = (manage?.assigned ?? 0) - (manage?.done ?? 0);
+  const answers =
+    manage &&
+    {
+      closed: gradesHeld
+        ? m.assignment_close_answers_after_release()
+        : m.assignment_close_answers_shown(),
+      never: m.assignment_close_answers_hidden(),
+      // Shown at submit already: closing changes nothing there.
+      submitted: null,
+    }[manage.showAnswers];
+  const early = !!dueAt && !pastDue(dueAt, now);
+  return [
+    dueAt &&
+      (early
+        ? m.assignment_close_early({ date: dayTimeLabel(dueAt) })
+        : m.assignment_close_late_ends()),
+    left > 0 &&
+      m.assignment_close_unsubmitted({ count: left, total: manage?.assigned }),
+    answers,
+    gradesHeld && m.assignment_close_grades_held(),
+  ]
+    .filter((text): text is string => !!text)
+    .map((text, index) =>
+      index === 0 && early ? { early: true, text } : { text }
+    );
+}
+
+const MARK_TEXT = /^\d*(\.\d?)?$/;
+
+/** A mark field's next text, or undefined to refuse the key: digits with at
+ * most one decimal place (a decimal comma reads as a point), from 0 to
+ * `max`. "1." stays as typed, on its way to 1.5. */
+export function typedMark(text: string, max: number): string | undefined {
+  const next = text.trim().replace(',', '.');
+  if (!MARK_TEXT.test(next)) return;
+  return next === '' || next === '.' || Number(next) <= max
+    ? next === '.'
+      ? '0.'
+      : next
+    : undefined;
+}
+
+/** A question's row name, or one of its parts' when a question of several
+ * parts lays each out as its own row (the report's Questions tab, a
+ * member's result): "Q18", "Q18 (a)(i)", "Q19.2" with number labels. */
+export function questionRowName(
+  number: number,
+  question?: Parameters<typeof fullPartLabel>[0],
+  partId?: string
+) {
+  const label = question && partId ? fullPartLabel(question, partId) : '';
+  if (!label) return `Q${number}`;
+  return label.startsWith('(')
+    ? `Q${number} ${label}`
+    : `Q${number}.${label.replace(TRAILING_DOT, '')}`;
+}
+const TRAILING_DOT = /\.$/;

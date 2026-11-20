@@ -77,12 +77,14 @@ it('lists a member twice by attempt and opens the one picked', async () => {
       />
     )
   );
-  const rows = [...document.querySelectorAll('li button')] as HTMLElement[];
+  const rows = [
+    ...document.querySelectorAll('[data-answer-row]'),
+  ] as HTMLElement[];
   // Waiting first.
   expect(rows[0].textContent).toContain(
     `Ada · ${m.assignment_attempt_number({ number: 1 })}`
   );
-  expect(rows[0].textContent).toContain(m.assignment_not_marked());
+  expect(rows[0].textContent).toContain(m.assignment_not_graded_badge());
   expect(rows[1].textContent).toContain(
     `Ada · ${m.assignment_attempt_number({ number: 3 })}`
   );
@@ -93,7 +95,7 @@ it('lists a member twice by attempt and opens the one picked', async () => {
 });
 
 // Finding 2: a paper still to read waits on every question, a closed-only one
-// too: Approve lists it with Mark with AI to read the paper again.
+// too: Approve lists it with Grade with AI to read the paper again.
 it('lists a paper waiting to be read on a question with no open part', async () => {
   const closed = {
     id: 'q2',
@@ -121,17 +123,18 @@ it('lists a paper waiting to be read on a question with no open part', async () 
     )
   );
   expect(document.body.textContent).not.toContain(m.assignment_no_open());
-  expect(document.querySelectorAll('li button')).toHaveLength(1);
+  expect(document.querySelectorAll('[data-answer-row]')).toHaveLength(1);
   expect(
     [...document.querySelectorAll('button')].some(
-      (button) => button.textContent === m.assignment_mark_with_ai()
+      (button) =>
+        button.textContent === m.assignment_grade_count_with_ai({ count: 1 })
     )
   ).toBe(true);
   act(() => root.unmount());
 });
 
 // Q725: under manual marking a paper whose read failed or never ran offers Read
-// papers again where Mark with AI would sit; it runs the same call, which
+// papers again where Grade with AI would sit; it runs the same call, which
 // reads without grading.
 it('offers Read papers again under manual marking while a paper waits to be read', async () => {
   const root = createRoot(document.getElementById('root') as never);
@@ -160,9 +163,9 @@ it('offers Read papers again under manual marking while a paper waits to be read
   act(() => root.unmount());
 });
 
-// Q730: a paper whose file can't be read says so on its rows, beside No
-// credits and Grade Error.
-it("badges a row whose paper file can't be read", async () => {
+// Q730, Epo 2026-11-14: whatever stopped the AI (no credits, a file it can't
+// read, an error), the row reads Not graded; the pane says why.
+it("badges a row whose paper file can't be read Not graded", async () => {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
     root.render(
@@ -180,8 +183,8 @@ it("badges a row whose paper file can't be read", async () => {
       />
     )
   );
-  expect(document.querySelector('li button')?.textContent).toContain(
-    m.assignment_cant_read_file()
+  expect(document.querySelector('[data-answer-row]')?.textContent).toContain(
+    m.assignment_not_graded_badge()
   );
   act(() => root.unmount());
 });
@@ -209,11 +212,43 @@ it('shows Marking… on the rows being marked only', async () => {
       />
     )
   );
-  const rows = [...document.querySelectorAll('li button')];
+  const rows = [...document.querySelectorAll('[data-answer-row]')];
   expect(rows.map((row) => !!row.querySelector('[data-marking]'))).toEqual([
     true,
     false,
   ]);
-  expect(rows[1]?.textContent).toContain(m.assignment_not_marked());
+  expect(rows[1]?.textContent).toContain(m.assignment_not_graded_badge());
+  act(() => root.unmount());
+});
+
+// P1 (Epo 2026-11-14): a phone goes questions → members → answer; past the
+// question list the tab marks itself, so CSS hides the workspace header and
+// the report's head.
+it('steps from a question to its members and on to an answer', async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <ApproveTab
+        assignment={
+          { attempts: 3, id: 'as1', workspaceId: 'ws1' } as Assignment
+        }
+        report={report}
+        search={{}}
+      />
+    )
+  );
+  const drill = () =>
+    document
+      .querySelector('[data-approve-drill]')
+      ?.getAttribute('data-approve-drill');
+  expect(drill()).toBeUndefined();
+  await act(async () =>
+    (document.querySelector('[data-question-row]') as HTMLElement).click()
+  );
+  expect(drill()).toBe('members');
+  await act(async () =>
+    (document.querySelector('[data-answer-row]') as HTMLElement).click()
+  );
+  expect(drill()).toBe('answer');
   act(() => root.unmount());
 });

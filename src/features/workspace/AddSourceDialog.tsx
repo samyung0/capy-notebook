@@ -34,6 +34,7 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { InputTitle } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -474,12 +475,7 @@ function VisibilitySelect({
 }) {
   return (
     <div className="flex shrink-0 flex-col gap-1.5">
-      <p
-        className="t-meta font-semibold text-fg-secondary"
-        id="source-visibility"
-      >
-        {m.source_visibility()}
-      </p>
+      <InputTitle id="source-visibility">{m.source_visibility()}</InputTitle>
       <Select
         onValueChange={(value) => onChange(value === 'hidden')}
         value={hidden ? 'hidden' : 'everyone'}
@@ -585,9 +581,7 @@ function UploadList({
 }) {
   return (
     <div className="flex min-h-0 flex-col gap-1.5">
-      <p className="t-meta font-semibold text-fg-secondary">
-        {m.source_upload_files()}
-      </p>
+      <InputTitle>{m.source_upload_files()}</InputTitle>
       <ul className="flex min-h-0 flex-col overflow-y-auto">
         {batch.sources.map((source) => {
           const parseMode = uploadParseMode(source, uploadPolicy, noCredits);
@@ -673,9 +667,7 @@ function UploadTopicField({
   const { data: topics } = useTopics(workspaceId, { errorBoundary: false });
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="t-meta font-semibold text-fg-secondary">
-        {m.source_upload_topic()}
-      </p>
+      <InputTitle>{m.source_upload_topic()}</InputTitle>
       <TopicSelect
         field="full"
         onChange={onChange}

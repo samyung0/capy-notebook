@@ -29,7 +29,6 @@ import {
 } from '@blocksuite/affine-model';
 import { ToolbarRegistryIdentifier } from '@blocksuite/affine-shared/services';
 import type { SelectedRect } from '@blocksuite/affine-shared/types';
-import { handleNativeRangeAtPoint } from '@blocksuite/affine-shared/utils';
 import { DisposableGroup } from '@blocksuite/global/disposable';
 import type { Bound, IVec } from '@blocksuite/global/gfx';
 import { Vec } from '@blocksuite/global/gfx';
@@ -44,6 +43,7 @@ import {
   type BlockComponent,
   type BlockStdScope,
   stdContext,
+  TextSelection,
 } from '@blocksuite/std';
 import { GfxControllerIdentifier } from '@blocksuite/std/gfx';
 import { consume } from '@lit/context';
@@ -393,16 +393,22 @@ export class EdgelessAutoComplete extends WithDisposable(LitElement) {
         this.edgeless
       );
     } else {
-      const model = store.getModelById(id);
-      if (!model) {
+      // Capy (local change 60): the new note's text takes the caret, as the Note
+      // tool's does. AFFiNE aimed at the middle of a default-height note, below an
+      // inline note's one line, so nothing could be typed and the empty note went.
+      const paragraph = store.getModelById(id)?.children[0];
+      if (!paragraph) {
         return;
       }
-      const [x, y] = this.gfx.viewport.toViewCoord(
-        bound.center[0],
-        bound.y + DEFAULT_NOTE_HEIGHT / 2
-      );
+      const { std } = this;
       requestAnimationFrame(() => {
-        handleNativeRangeAtPoint(x, y);
+        std.event.active = true;
+        std.selection.setGroup('note', [
+          std.selection.create(TextSelection, {
+            from: { blockId: paragraph.id, index: 0, length: 0 },
+            to: null,
+          }),
+        ]);
       });
     }
 

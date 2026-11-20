@@ -15,7 +15,7 @@ import (
 const answerEventQuestions = `[
  {"id":"q1","stem":[],"parts":[
   {"id":"q1:a","blocks":[{"type":"text","text":"Cells have membranes?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]},
-  {"id":"q1:b","blocks":[{"type":"text","text":"What does a membrane do?"}],"answer":{"type":"open","accepted":["It separates the cell"],"hints":[]},"marks":2,
+  {"id":"q1:b","blocks":[{"type":"text","text":"What does a membrane do?"}],"answer":{"type":"open","accepted":["It separates the cell"]},"marks":2,
    "markscheme":[{"text":"Separates the cell","marks":2}],"solution":[]}],"layout":"paper","labels":"letters"},
  {"id":"q2","stem":[],"parts":[{"id":"q2:a","blocks":[{"type":"text","text":"Ribosomes have membranes?"}],"answer":{"type":"boolean","correct":false},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}
 ]`

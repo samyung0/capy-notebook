@@ -167,7 +167,7 @@ export function AttemptBody({
   const split = inApp && !embedded;
   const { onQuestion, open, picked, setOnQuestion, setPicked } = useQuizPick();
   const Body = embedded ? EmbeddedBody : WideBody;
-  const { run, check, redo } = control;
+  const { run, check, redo, reset } = control;
   // Answers typed into questions not yet checked; a checked question shows
   // the answers it was checked with.
   const [drafts, setDrafts] = useState<Answers>({});
@@ -218,6 +218,32 @@ export function AttemptBody({
     track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
   }, [finished, awarded, max]);
 
+  /** An embedded quiz's checked question, answered again from blank (Epo
+   * 2026-11-13): Reset stands where its Check was. */
+  const resetButton = (question: Question | LearnerQuestion) =>
+    embedded &&
+    reset &&
+    checkedById.has(question.id) && (
+      <Button
+        className="h-9 px-3.5"
+        disabled={checking !== null}
+        onClick={() => {
+          const own = new Set(question.parts.map(({ id }) => id));
+          setDrafts((current) =>
+            Object.fromEntries(
+              Object.entries(current).filter(([id]) => !own.has(id))
+            )
+          );
+          reset(question.id);
+        }}
+        rounded="normal"
+        size="sm"
+        variant="outline"
+      >
+        {m.action_reset()}
+      </Button>
+    );
+
   function restart() {
     setDrafts({});
     setCelebrate(false);
@@ -227,7 +253,7 @@ export function AttemptBody({
 
   // Public pages keep their ⋮ on every state; the app page shows Clone only
   // while taking the quiz. While taking it, Reset sits at the far right once
-  // a question is checked; the result has Redo quiz instead.
+  // a question is checked; the result has Study again instead.
   const header = (
     headerActions = inApp ? undefined : actions,
     taking = false
@@ -537,7 +563,15 @@ export function AttemptBody({
             disabled={(question) => noAnswers.has(question.id)}
             questions={shown}
             renderAfter={(question) =>
-              noAnswers.has(question.id) && <NoAnswersLine />
+              noAnswers.has(question.id) ? (
+                <NoAnswersLine />
+              ) : (
+                resetButton(question) && (
+                  <div className="flex justify-end">
+                    {resetButton(question)}
+                  </div>
+                )
+              )
             }
             review={(question) => !noAnswers.has(question.id)}
           />
@@ -579,40 +613,44 @@ export function AttemptBody({
           renderAfter={(question) =>
             noAnswers.has(question.id) ? (
               <NoAnswersLine />
-            ) : (
+            ) : !checkedById.has(question.id) ||
               // Not marked (no credits, a failure) can be checked again.
-              (!checkedById.has(question.id) ||
-                (!neverMarks &&
-                  checkedById
-                    .get(question.id)
-                    ?.parts.some((p) => p.pending))) && (
-                <div className="flex justify-end">
-                  {/* Sized like the review session's Check. */}
-                  <Button
-                    className="h-9 px-3.5"
-                    disabled={checking !== null}
-                    onClick={() => void checkQuestion(question)}
-                    rounded="normal"
-                    size="sm"
-                  >
-                    {checking === question.id
-                      ? m.quiz_grading()
-                      : checkedById.has(question.id)
-                        ? m.question_ui_check_again()
-                        : m.question_ui_check()}
-                  </Button>
-                </div>
+              (!neverMarks &&
+                checkedById.get(question.id)?.parts.some((p) => p.pending)) ? (
+              <div className="flex justify-end gap-2">
+                {resetButton(question)}
+                {/* Sized like the review session's Check. */}
+                <Button
+                  className="h-9 px-3.5"
+                  disabled={checking !== null}
+                  onClick={() => void checkQuestion(question)}
+                  rounded="normal"
+                  size="sm"
+                >
+                  {checking === question.id
+                    ? m.quiz_grading()
+                    : checkedById.has(question.id)
+                      ? m.question_ui_check_again()
+                      : m.question_ui_check()}
+                </Button>
+              </div>
+            ) : (
+              resetButton(question) && (
+                <div className="flex justify-end">{resetButton(question)}</div>
               )
             )
           }
           review={(question) => checkedById.has(question.id)}
         />
-        <p className="t-meta mt-12 text-fg-muted">
-          {m.quiz_checked_count({
-            checked: checkedCount,
-            total: answerable.length,
-          })}
-        </p>
+        {/* An embedded quiz has no count under it (Epo 2026-11-13). */}
+        {!embedded && (
+          <p className="t-meta mt-12 text-fg-muted">
+            {m.quiz_checked_count({
+              checked: checkedCount,
+              total: answerable.length,
+            })}
+          </p>
+        )}
         {footer}
         <SourcesLine
           className={embedded ? 'mt-3' : 'mt-16 pb-4'}

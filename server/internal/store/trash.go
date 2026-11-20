@@ -199,17 +199,18 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 
 func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materialID, expectedKind string, op AgentOperation) (AgentOperation, error) {
 	var ownerID, kind, title string
-	var workspaceID, parentID *string
+	var workspaceID, parentID, assignmentID *string
 	var trashedAt *time.Time
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind, title, trashed_at, parent_material_id
-		FROM materials WHERE id=$1`, materialID).Scan(&ownerID, &workspaceID, &kind, &title, &trashedAt, &parentID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind, title, trashed_at, parent_material_id, assignment_id
+		FROM materials WHERE id=$1`, materialID).Scan(&ownerID, &workspaceID, &kind, &title, &trashedAt, &parentID, &assignmentID); err != nil {
 		if isNoRows(err) {
 			return AgentOperation{}, ErrNotFound
 		}
 		return AgentOperation{}, err
 	}
-	// An embedded row leaves with its reference block, never on its own.
-	if (expectedKind != "" && kind != expectedKind) || parentID != nil {
+	// An embedded row leaves with its reference block, never on its own, and
+	// a graded quiz's quiz with its assignment.
+	if (expectedKind != "" && kind != expectedKind) || parentID != nil || assignmentID != nil {
 		return AgentOperation{}, ErrNotFound
 	}
 	// ownerID is the material's payer (owner_user_id), its creator.
@@ -491,10 +492,6 @@ func (s *Store) restoreTrashedTx(ctx context.Context, tx pgx.Tx, ownerID string,
 				RETURNING title, kind`
 		}
 		if err := tx.QueryRow(ctx, query, id, episodeID).Scan(&title, &subKind); err != nil {
-			// A canvas restored beside the live one its owner made since.
-			if uniqueConstraintName(err) == "materials_canvas_per_member" {
-				return nil, ErrCanvasExists
-			}
 			if !isNoRows(err) {
 				return nil, err
 			}

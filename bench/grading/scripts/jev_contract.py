@@ -214,8 +214,8 @@ def validate_question(q):
     for part in q["parts"]:
         assert set(part) == {"id", "blocks", "answer", "markscheme", "solution"}
         answer = part["answer"]
-        assert answer["type"] == "open" and set(answer) == {"type", "accepted", "hints"}
-        assert all(isinstance(x, str) for x in answer["accepted"] + answer["hints"])
+        assert answer["type"] == "open" and set(answer) == {"type", "accepted"}
+        assert all(isinstance(x, str) for x in answer["accepted"])
         assert part["markscheme"] and all(
             isinstance(x, str) and x.strip() for x in part["markscheme"]
         )

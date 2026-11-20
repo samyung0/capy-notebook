@@ -235,6 +235,7 @@ export class RangeService<TextAttributes extends BaseTextAttributes> {
     editor.disposables.add(
       effect(() => {
         const newInlineRange = editor.inlineRange$.value;
+        if (newInlineRange) this._mayHoldSelection = true;
         if (!editor.mounted) return;
 
         const eq = isMaybeInlineRangeEqual(lastInlineRange, newInlineRange);
@@ -275,6 +276,9 @@ export class RangeService<TextAttributes extends BaseTextAttributes> {
     });
   };
 
+  /** Capy (local change 66): the DOM selection may be inside this editor. */
+  private _mayHoldSelection = false;
+
   private _syncInlineRangeLock = false;
   lockSyncInlineRange = () => {
     this._syncInlineRangeLock = true;
@@ -290,18 +294,32 @@ export class RangeService<TextAttributes extends BaseTextAttributes> {
     inlineRange = inlineRange ?? this.editor.getInlineRange();
 
     const handler = () => {
+      const rootElement = this.editor.rootElement;
+      if (!rootElement) return;
+      // Capy (vendor/blocksuite/README.md, local change 66): with no range,
+      // this only clears a DOM selection inside the editor. Reading the
+      // selection forces a style recalc, which every editor's render paid:
+      // an editor that has held no range since it last cleared, and has no
+      // focus, holds no selection.
+      if (
+        inlineRange === null &&
+        !this._mayHoldSelection &&
+        !rootElement.contains(document.activeElement)
+      )
+        return;
       const selection = document.getSelection();
       if (!selection) return;
-      if (!this.editor.rootElement) return;
 
       if (inlineRange === null) {
         if (selection.rangeCount > 0) {
           const range = selection.getRangeAt(0);
-          if (range.intersectsNode(this.editor.rootElement)) {
+          if (range.intersectsNode(rootElement)) {
             selection.removeAllRanges();
           }
         }
+        this._mayHoldSelection = false;
       } else {
+        this._mayHoldSelection = true;
         try {
           const newRange = this.toDomRange(inlineRange);
           if (newRange) {

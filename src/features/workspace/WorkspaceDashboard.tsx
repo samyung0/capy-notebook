@@ -1,15 +1,12 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { Fragment, type ReactNode } from 'react';
-import {
-  usePractice,
-  useWorkspaceDashboard,
-  useWorkspaceRecent,
-} from '@/api/hooks';
+import { useWorkspaceDashboard, useWorkspaceRecent } from '@/api/hooks';
 import type { Workspace, WorkspaceActivity } from '@/api/types';
 import { PreviewCard } from '@/components/app/PreviewCard';
 import { AccountStatusBanner } from '@/components/banners/AccountStatusBanner';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import {
   recentIcon,
@@ -18,10 +15,12 @@ import {
 } from '@/features/home/RecentItemsCard';
 import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
-import { SuggestedList } from '@/features/study/practice/SuggestedList';
+import { ContinueCards } from '@/features/study/ContinueCards';
 import { studyView } from '@/features/study/practice/studyView';
+import { assignmentsLink } from '@/features/study/studyRoutes';
 import { getLocale, m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { isWorkspaceReadOnly } from './access';
 import { HiddenMark } from './HiddenChip';
 import { addSourceIntent } from './LazyAddSourceDialog';
@@ -32,8 +31,8 @@ const RECENT = 4;
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
  * its icon, name, owner and member count, Upload and Make a quiz from a
- * file for those who may add, To do, What to practise next for whoever
- * practises here (board U3), then Recent files and Activity. To do stays with
+ * file for those who may add, Continue for whoever practises here, To do,
+ * then Recent files and Activity. To do stays with
  * nothing in it and says Nothing to do, and with no files the workspace's empty
  * state (its art and Add file) stands where Recent files would (Epo
  * 2026-11-10). The other sections are not shown empty (Epo 2026-11-02). */
@@ -49,15 +48,17 @@ export function WorkspaceDashboard({
     'capabilities' | 'iconId' | 'id' | 'kind' | 'name' | 'role'
   >;
 }) {
-  const { data } = useWorkspaceDashboard(workspace.id);
-  const { data: recent } = useWorkspaceRecent(workspace.id);
+  const { data, isPending: dashboardPending } = useWorkspaceDashboard(
+    workspace.id
+  );
+  const { data: recent, isPending: recentPending } = useWorkspaceRecent(
+    workspace.id
+  );
+  // The sections fade in once their skeleton (or nothing) gives way.
+  const recentRef = useLoadingReveal(recentPending);
+  const activityRef = useLoadingReveal<HTMLUListElement>(dashboardPending);
   const { manages } = studyView(workspace);
   const practises = !manages;
-  const { data: practice } = usePractice(workspace.id, {
-    enabled: practises,
-    errorBoundary: false,
-  });
-  const navigate = useNavigate();
   const items = mergeRecentItems(
     recent?.files ?? [],
     recent?.materials ?? [],
@@ -98,58 +99,50 @@ export function WorkspaceDashboard({
         </div>
         {canAdd && !empty && (
           <div className="-mt-2.5 -mb-1 flex flex-wrap items-center gap-2">
-            <Button
+            <PageButton
               {...addSourceIntent}
               iconLeft="upload"
               onClick={onUpload}
               variant="outline"
             >
               {m.action_upload()}
-            </Button>
-            <Button onClick={onMakeQuiz}>{m.dashboard_make_quiz()}</Button>
+            </PageButton>
+            <PageButton onClick={onMakeQuiz}>
+              {m.dashboard_make_quiz()}
+            </PageButton>
           </div>
         )}
       </header>
       <AccountStatusBanner />
+      {practises && <ContinueCards workspaceId={workspace.id} />}
       {/* A class's, and anywhere the tasks its viewer set themself. */}
       <TodoSection manages={manages} workspace={workspace} />
-      {practises &&
-        (!!practice?.suggestions.length || !!practice?.quizzes.length) && (
-          <section className="flex flex-col">
-            <h2 className="t-subtitle">{m.dashboard_practise_next()}</h2>
-            <SuggestedList
-              list={practice.suggestions}
-              onReviewAll={
-                practice.quizzes.length
-                  ? () =>
-                      navigate({
-                        search: {
-                          group: 'workspace' as const,
-                          study: 'practice' as const,
-                        },
-                        to: '.',
-                      })
-                  : undefined
-              }
-              onStart={(s) =>
-                navigate({
-                  search: {
-                    group: s.group,
-                    reviewMode: s.mode,
-                    study: 'practice' as const,
-                    topicId: s.topicId,
-                  },
-                  to: '.',
-                })
-              }
-            />
-          </section>
-        )}
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
+      {/* Recent files load as their cards' shapes (Epo 2026-11-12). */}
+      {!recent && (
+        <section className="flex flex-col gap-3">
+          <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
+          <div
+            aria-label={m.a11y_loading()}
+            className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4"
+            role="status"
+          >
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton
+                className="aspect-4/3 rounded-(--radius-tile)"
+                key={i}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
-          <div className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4">
+          <div
+            className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4"
+            ref={recentRef}
+          >
             {items.map((item) => (
               <RecentCard
                 item={item}
@@ -163,7 +156,7 @@ export function WorkspaceDashboard({
       {!!data?.activity.length && (
         <section className="flex flex-col">
           <h2 className="t-subtitle mb-2">{m.dashboard_activity()}</h2>
-          <ul>
+          <ul ref={activityRef}>
             {data.activity.map((row) => (
               <ActivityRow
                 key={`${row.fileId ?? row.materialId ?? row.assignmentId}-${row.at}`}
@@ -179,7 +172,7 @@ export function WorkspaceDashboard({
 }
 
 /** A Recent files card: the bordered preview with the name under it. */
-function RecentCard({
+export function RecentCard({
   item,
   workspaceId,
 }: {
@@ -229,16 +222,16 @@ function ActivityRow({
     <li className="-mx-1.5 border-divider border-t first:border-t-0">
       <Link
         className="flex min-h-12 items-center gap-3 px-1.5 py-1.5 hover:bg-surface-hover-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-        params={{ workspaceId }}
         preload="intent"
-        search={
-          row.assignmentId
-            ? { assignment: row.assignmentId, study: 'assignments' as const }
-            : row.materialId
-              ? { material: row.materialId }
-              : { file: row.fileId }
-        }
-        to="/workspaces/$workspaceId"
+        {...(row.assignmentId
+          ? assignmentsLink(workspaceId, { assignment: row.assignmentId })
+          : {
+              params: { workspaceId },
+              search: row.materialId
+                ? { material: row.materialId }
+                : { file: row.fileId },
+              to: '/workspaces/$workspaceId' as const,
+            })}
       >
         {row.kind === 'agent' ? (
           <span className="grid size-7.5 shrink-0 place-items-center rounded-full bg-tint-accent-1 text-tint-accent-1-fg">

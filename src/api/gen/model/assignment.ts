@@ -29,9 +29,9 @@ export interface Assignment {
   mine?: AssignmentMine;
   noLate: boolean;
   own: boolean;
+  points?: number;
   postedAt: string;
   postedBy: string;
-  practiceQuizId?: string;
   questions: number;
   timeLimitMin?: number;
   title: string;

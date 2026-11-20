@@ -64,14 +64,18 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   ).toBeDisabled();
 
   await dialog(page)
-    .getByRole('button', { name: m.make_quiz_choose_file() })
+    .getByRole('button', { name: m.file_choose() })
+    .first()
     .click();
   await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
+  // The menu stays open for more files (Epo 2026-11-12).
+  await page.keyboard.press('Escape');
   await dialog(page)
-    .getByRole('button', { name: m.make_quiz_add_file() })
+    .getByRole('button', { name: m.file_choose() })
     .last()
     .click();
   await page.getByRole('option', { name: /mark scheme/ }).click();
+  await page.keyboard.press('Escape');
   await dialog(page).getByRole('button', { name: m.action_continue() }).click();
 
   await expect(
@@ -130,9 +134,11 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await expect(
     page.getByRole('button', { name: m.quiz_editor_choose_image() })
   ).toBeVisible();
+  // Its part (a) holds the mark scheme's answer, on the part's closed line
+  // (a question of parts opens with none open from the rail, Epo 2026-11-15).
   await expect(
-    page.getByRole('textbox', { name: m.question_ui_correct_answer() })
-  ).toHaveValue('Metaphase');
+    page.locator('[data-question-open]').getByText('Metaphase', { exact: true })
+  ).toBeVisible();
 });
 
 test("the browser's Back walks the dialog's steps", async ({ page }) => {
@@ -141,16 +147,20 @@ test("the browser's Back walks the dialog's steps", async ({ page }) => {
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
   await dialog(page)
-    .getByRole('button', { name: m.make_quiz_choose_file() })
+    .getByRole('button', { name: m.file_choose() })
+    .first()
     .click();
   await page.getByRole('option', { name: /Past paper 2025 P1\.pdf/ }).click();
+  await page.keyboard.press('Escape');
   await dialog(page).getByRole('button', { name: m.action_continue() }).click();
   await pageSheet(page, 2).click({ timeout: 30_000 });
   await expect(page).toHaveURL(/make=pages/);
   await page.goBack();
   await expect(page).toHaveURL(/make=files/);
   await expect(
-    dialog(page).getByRole('button', { name: m.make_quiz_change() })
+    dialog(page).getByRole('button', {
+      name: m.make_quiz_remove_file({ name: 'Past paper 2025 P1.pdf' }),
+    })
   ).toBeVisible();
   await page.goForward();
   await expect(pageSheet(page, 2)).toHaveAttribute('aria-pressed', 'true');
@@ -245,9 +255,12 @@ test('an edit on the page reaches the question list', async ({ page }) => {
     .getByRole('button', { name: /State the function/ })
     .click();
   await page.keyboard.type(' Name it.');
-  await expect(page.locator('[data-question-row]').nth(1)).toContainText(
-    'Name it.'
-  );
+  // The rail holds numbers; its outline lists each question's text (Canvas's
+  // rail, Epo 2026-11-15).
+  await page.getByRole('button', { name: m.quiz_editor_navigator() }).click();
+  await expect(
+    page.getByRole('dialog').getByRole('button').nth(1)
+  ).toContainText('Name it.');
 });
 
 test('a failed run says so in the panel and goes back to the pages', async ({
@@ -280,7 +293,8 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
   await dialog(page)
-    .getByRole('button', { name: m.make_quiz_choose_file() })
+    .getByRole('button', { name: m.file_choose() })
+    .first()
     .click();
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: m.make_quiz_upload_file() }).click();
@@ -484,15 +498,18 @@ for (const [name, width, height] of [
       content: '[data-testid=mock-scenario-panel] { display: none }',
     });
     await dialog(page)
-      .getByRole('button', { name: m.make_quiz_choose_file() })
+      .getByRole('button', { name: m.file_choose() })
+      .first()
       .click({ timeout: 30_000 });
     await page.getByRole('option').last().click();
+    await page.keyboard.press('Escape');
     await expect(page.getByRole('option')).toHaveCount(0);
     await dialog(page)
-      .getByRole('button', { name: m.make_quiz_add_file() })
+      .getByRole('button', { name: m.file_choose() })
       .last()
       .click();
     await page.getByRole('option').last().click();
+    await page.keyboard.press('Escape');
     await expect(page.getByRole('option')).toHaveCount(0);
   });
 }
@@ -517,7 +534,7 @@ test('several question files share the 40 pages, and the list divides them from 
 });
 
 // A popover is portaled out of its dialog, whose scroll lock would cancel the wheel.
-test('the file menu scrolls with the wheel and names only the file', async ({
+test('the file menu scrolls with the wheel, names only a read file and greys out one still being read', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
@@ -525,12 +542,21 @@ test('the file menu scrolls with the wheel and names only the file', async ({
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .first()
     .click({ timeout: 60_000 });
-  await dialog(page).getByText(m.make_quiz_choose_file()).first().click();
+  await dialog(page).getByText(m.file_choose()).first().click();
   const list = page.locator(
     '[data-radix-popper-content-wrapper] .overflow-y-auto'
   );
   await expect(list.getByRole('option').first()).toBeVisible();
-  await expect(list.getByText(m.make_quiz_reading_pages())).toHaveCount(0);
+  // A file read names only itself; one still being read is greyed out and
+  // says so (Epo 2026-11-12), so picking it can't close the dialog.
+  await expect(
+    list
+      .getByRole('option', { disabled: false })
+      .getByText(m.make_quiz_reading_pages())
+  ).toHaveCount(0);
+  await expect(
+    list.getByRole('option', { name: /Biology notes - pending/ })
+  ).toBeDisabled();
 
   await list.hover();
   await page.mouse.wheel(0, 240);

@@ -10,7 +10,8 @@ import { fileKindLabel } from './fileKindLabel';
 import { formatFileSize } from './fileUtils';
 
 /** An image or audio clip the caller pays for (M16) in the Files page's list,
- * named by its block (note, quiz or set) and drawn as the image's thumbnail,
+ * named by its block (note, quiz or set), or by the item bank its question sits
+ * in (Epo 2026-11-14, nothing to open), and drawn as the image's thumbnail,
  * else the image or audio icon. One in a block the caller can open opens it.
  * Any can be deleted for good (Q273), since nothing restores it, and its note
  * then shows it as removed. */
@@ -56,7 +57,7 @@ export const EmbedItem = memo(function EmbedItem({
             ? item.workspaceId
               ? linkOptions({
                   params: { workspaceId: item.workspaceId },
-                  search: { panel: 'canvas' },
+                  search: { view: 'canvas' },
                   to: '/workspaces/$workspaceId',
                 })
               : linkOptions({ search: { c: open }, to: '/canvas' })
@@ -70,7 +71,15 @@ export const EmbedItem = memo(function EmbedItem({
       pickKey={pickKey}
       selected={selected}
       thumbnail={{ fileKind: kind, thumbnailUrl: item.thumbnailUrl }}
-      title={item.materialTitle || m.files_note_unavailable()}
+      title={
+        item.bank
+          ? item.workspaceName
+            ? m.bank_workspace_bank({ name: item.workspaceName })
+            : item.lostAccess
+              ? m.files_note_unavailable()
+              : m.bank_my_bank()
+          : item.materialTitle || m.files_note_unavailable()
+      }
       view={view}
       workspace={item.workspaceName}
       workspaceIconId={workspaceIconId}

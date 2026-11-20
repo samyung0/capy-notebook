@@ -16,16 +16,13 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { FileListItem } from '@/features/files/FileListItem';
-import {
-  fileCanMoveTo,
-  fileIsIngesting,
-  materialCanClone,
-} from '@/features/files/fileUtils';
+import { fileCanMoveTo, fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
 import { addSourceIntent } from './LazyAddSourceDialog';
@@ -95,6 +92,7 @@ export function FilesPanel({
   uploadTopic?: string | null;
 }) {
   const { data: topics } = useTopics(workspaceId);
+  const revealRef = useLoadingReveal(!topics);
   const { data: files } = useFiles(workspaceId);
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
@@ -342,7 +340,7 @@ export function FilesPanel({
           openItem?.kind === 'material' &&
           openItem.id === mt.id
         }
-        canClone={materialCanClone(workspace, mt.assigned)}
+        canClone={!!workspace?.canClone}
         color="purple"
         data={mt}
         indent={grouped}
@@ -492,11 +490,11 @@ export function FilesPanel({
         )}
         {searching && !shownTopics?.length && !shownUnfiled.length && (
           <p className="px-2 py-1.5 text-fg-muted text-sm">
-            {m.workspace_no_files_match()}
+            {m.common_no_matches()}
           </p>
         )}
         {topics && shownTopics && (
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-px" ref={revealRef}>
             <div className="flex flex-col gap-px empty:hidden">
               {shownTopics.map((ch) => {
                 const idx = topics.indexOf(ch);
@@ -547,6 +545,8 @@ export function FilesPanel({
                       {!readOnly && (
                         <HoverActions
                           className="absolute top-1/2 right-1 -translate-y-1/2"
+                          // 28px as a file row's ⋮, so both centre on the count.
+                          iconContainerClassName="p-1"
                           items={[
                             {
                               icon: 'write',
@@ -663,7 +663,9 @@ function GroupToggle({
         size={16}
       />
       <span className="line-clamp-1 translate-y-px truncate">{name}</span>
-      <span className="ml-auto translate-y-px font-semibold text-fg-muted text-xs">
+      {/* In the ⋮'s 28px column, 4px from the row's end, centred as the
+          files' eyes are (Epo 2026-11-16). */}
+      <span className="-mr-0.5 ml-auto w-7 shrink-0 translate-y-px text-center font-semibold text-fg-muted text-xs">
         {count}
       </span>
     </button>

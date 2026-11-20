@@ -264,7 +264,9 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		// Make a quiz runs it started, in any workspace.
 		"question_extractions",
 		// Assignments given to it and its ticks; its attempts went above.
-		"assignment_assignees", "assignment_done", "assignment_todo_checks", "assignment_todo_hidden"} {
+		"assignment_assignees", "assignment_done", "assignment_todo_checks", "assignment_todo_hidden", "assignment_grades",
+		// Its own item bank, with that bank's images.
+		"item_bank_questions"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}
@@ -332,6 +334,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		`UPDATE files SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE materials SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE editor_assets SET created_by=NULL WHERE created_by=$1`,
+		`UPDATE item_bank_questions SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE assignments SET created_by=NULL WHERE created_by=$1`,
 		// The class keeps the paper and its members' work, charged to nobody.
 		`UPDATE assignments SET frozen_by=NULL, frozen_bytes=0 WHERE frozen_by=$1`,

@@ -526,7 +526,6 @@ export const EMBED_CATALOG = {
       "topLevel": true,
       "required": [
         "id",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -534,7 +533,6 @@ export const EMBED_CATALOG = {
         "type",
         "id",
         "children",
-        "boardAssetId",
         "version",
         "images"
       ],
@@ -545,7 +543,6 @@ export const EMBED_CATALOG = {
         "fontFamily"
       ],
       "assets": [
-        "boardAssetId",
         "images[].assetId"
       ],
       "materials": [
@@ -595,9 +592,6 @@ export const EMBED_CATALOG = {
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -632,9 +626,6 @@ export const EMBED_CATALOG = {
       "sharedMap": [
         "block"
       ],
-      "sharedLists": [
-        "series"
-      ],
       "resizable": true,
       "materials": [
         "note",
@@ -668,9 +659,6 @@ export const EMBED_CATALOG = {
       ],
       "sharedMap": [
         "block"
-      ],
-      "sharedLists": [
-        "elements"
       ],
       "resizable": true,
       "materials": [
@@ -1396,6 +1384,7 @@ export const EMBED_CATALOG = {
   ],
   "limits": {
     "BLOCK_CAPTION_MAX": 300,
+    "CANVAS_BOARD_MAX": 4194304,
     "CARD_BACK_MAX": 1000,
     "CARD_FRONT_MAX": 200,
     "DRAWING_BOARD_MAX": 256000,
@@ -1420,11 +1409,15 @@ export const EMBED_CATALOG = {
     "QUESTION_DESCRIPTION_MAX": 500,
     "QUESTION_GRAPH_DIMENSION_MAX": 1200,
     "QUESTION_GRAPH_DIMENSION_MIN": 120,
-    "QUESTION_GRAPH_ELEMENTS_MAX": 60,
+    "QUESTION_GRAPH_ELEMENTS_MAX": 100,
+    "QUESTION_GRAPH_EXPRESSION_MAX": 1000,
     "QUESTION_GRAPH_LABEL_MAX": 60,
+    "QUESTION_GRAPH_LATEX_MAX": 2000,
     "QUESTION_GRAPH_NAME_MAX": 20,
+    "QUESTION_GRAPH_PATH_MAX": 100,
     "QUESTION_GRAPH_POLYGON_MAX": 12,
-    "QUESTION_GRAPH_TERM_MAX": 200,
+    "QUESTION_GRAPH_TEXT_SIZE_MAX": 96,
+    "QUESTION_GRAPH_TEXT_SIZE_MIN": 8,
     "QUESTION_ID_MAX": 128,
     "QUESTION_IMAGE_DIMENSION_MAX": 10000,
     "QUESTION_MARKSCHEME_MAX": 20,
@@ -1437,10 +1430,10 @@ export const EMBED_CATALOG = {
     "QUESTION_PLOT_POINTS_MAX": 60,
     "QUESTION_PLOT_SERIES_MAX": 4,
     "QUESTION_PLOT_TITLE_MAX": 100,
-    "QUESTION_SVG_BYTES_MAX": 262144,
     "QUESTION_TABLE_COLUMNS_MAX": 10,
     "QUESTION_TABLE_ROWS_MAX": 30,
     "QUESTION_TEXT_MAX": 12000,
+    "QUESTION_TOPICS_MAX": 5,
     "QUESTION_UNIT_MAX": 100,
     "QUIZ_MARKSCHEME_MAX": 5,
     "QUIZ_OPEN_ANSWER_MAX": 5000,

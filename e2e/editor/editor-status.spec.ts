@@ -222,6 +222,14 @@ test("co-editors' carets, pointers and block selections show until the show-othe
   };
   await openWithPeers();
   for (const mark of marks) await expect(mark).toHaveCount(1);
+  // The pointer's tip (2.4 px into its icon) is at its share of its block.
+  const block = await page
+    .locator('[data-block-id="mat_e2e_editor:third"]')
+    .boundingBox();
+  const pointer = await marks[1].boundingBox();
+  if (!(block && pointer)) throw new Error('the pointer or its block is gone');
+  expect(pointer.x + 2.4).toBeCloseTo(block.x + 0.4 * block.width, 0);
+  expect(pointer.y + 2.4).toBeCloseTo(block.y + 0.5 * block.height, 0);
   await page.goto('/settings?tab=customizations');
   const shown = page.getByRole('switch', { name: m.settings_show_others() });
   await expect(shown).toBeChecked();

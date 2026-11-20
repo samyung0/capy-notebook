@@ -413,6 +413,9 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
 		Questions: req.Questions, Cards: cards, Content: content, Blank: blank, Embedded: embedded, Assets: assets,
 		TopicID: topicID, ScopeFileNames: sourceNames, Provenance: req.Provenance,
+		// A quiz starts hidden from members until shown (Epo 2026-11-16,
+		// every quiz an editor makes).
+		Hidden: req.Kind == string(store.MaterialQuiz) && req.WorkspaceID != "",
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, ConversationID: convID,

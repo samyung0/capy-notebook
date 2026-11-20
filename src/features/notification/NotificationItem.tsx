@@ -4,6 +4,7 @@ import { ContentSwap } from '@/components/ui/ContentSwap';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { LogoMark } from '@/components/ui/Logo';
+import { PendingDot } from '@/components/ui/PendingDot';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -302,9 +303,7 @@ export function NotificationItem({
     <span className={cn('t-body flex w-full gap-3 text-left', className)}>
       <span className="relative mt-0.5 shrink-0">
         <ContextIcon notification={notification} self={self} />
-        {!notification.readAt && (
-          <span className="absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-solid-error ring-2 ring-surface" />
-        )}
+        {!notification.readAt && <PendingDot className="-top-1 -right-1" />}
       </span>
       <ContentSwap
         className="min-w-0 flex-1"

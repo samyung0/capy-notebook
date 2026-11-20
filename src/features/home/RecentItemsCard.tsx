@@ -23,7 +23,7 @@ export function recentHint(item: OpenedRecentItem): string {
 export function recentIcon(item: RecentItem) {
   return item.kind === 'file'
     ? fileIconName({ kind: item.fileKind, name: item.title })
-    : materialIconName(item.type, item.material.assigned);
+    : materialIconName(item.type);
 }
 
 export function recentThumbnail(item: RecentItem): Thumbnail {
@@ -62,13 +62,9 @@ export function recentLink(item: RecentItem) {
   });
 }
 
-/** What a recent row opens in its workspace: an assignee's quiz, its assignment. */
+/** What a recent row opens in its workspace. */
 export function recentSearch(item: RecentItem) {
-  if (item.kind === 'file') return { file: item.id };
-  const assignment = item.material.assignmentId;
-  return assignment
-    ? { assignment, study: 'assignments' as const }
-    : { material: item.id };
+  return item.kind === 'file' ? { file: item.id } : { material: item.id };
 }
 
 /** The caller's newest opened (or created) files and materials, in open

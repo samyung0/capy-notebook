@@ -1,32 +1,42 @@
 import { Collapsible } from 'radix-ui';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Button } from '@/components/ui/Button';
+import { DropdownMenuSeparator } from '@/components/ui/DropdownMenu';
 import { Icon } from '@/components/ui/Icon';
 import { Input, type InputProps } from '@/components/ui/Input';
+import { ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { BlockMenuItem, TableHandle } from '@/features/notes/blockMenu';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
-import { Field, FieldInput, SelectField, StringList } from './editorFields';
-import { GraphEditor } from './GraphEditor';
+import {
+  CommitField,
+  Field,
+  FieldInput,
+  SelectField,
+  StringList,
+} from './editorFields';
+import { type FigureBinding, useBoundFigure } from './figureBinding';
 import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
 import { repairFigureBlock } from './repair';
-import { IdleFormulaTools, TextEditor } from './TextEditor';
+import { clickPoint, IdleFormulaTools, TextEditor } from './TextEditor';
 import {
   CHART_KINDS,
-  type ChartBlock,
   type ChartKind,
   gapNumbers,
   type PlotBlock,
   type QuestionBlock,
 } from './types';
+import { useCommitted } from './useCommitted';
 
 /** Bank uploads return a public URL; quiz uploads return a workspace editor asset. */
 /** `signal` cancels an upload the editor no longer wants (it closed). */
@@ -44,24 +54,25 @@ const chartLabels = {
   stacked: m.question_ui_stacked_chart,
 } satisfies Record<ChartKind, () => string>;
 
-function ChartEditor({
-  block,
-  onChange,
+/** A chart's editor (Epo 2026-11-16, live figures): it edits the chart where
+ * `binding` holds it, each change written as it is made: a choice at once, a
+ * typed title, name or value once left, a row or column added or removed with
+ * its values. Rows and columns are keyed by their ids, so a co-editor's
+ * change lands in place and a cell being typed in keeps its text. */
+const ChartEditor = memo(function ChartEditor({
+  binding,
   descriptionMax,
 }: {
-  block: ChartBlock;
-  onChange: (block: ChartBlock) => void;
+  binding: FigureBinding;
   /** The description's bound: the bank's longer one or everyone else's. */
   descriptionMax: number;
 }) {
+  const { block, labels: rowIds, series: seriesIds } = useBoundFigure(binding);
+  if (block.type !== 'chart') throw new Error('The chart editor needs a chart');
   const single = block.kind === 'pie' || block.kind === 'stacked';
   // A merge of two editors' changes (Epo 2026-10-17) can leave values past
-  // the labels or series past the cap: the table shows them with their
-  // issue, readers the repaired chart.
-  const rows = Math.max(
-    block.labels.length,
-    ...block.series.map((series) => series.values.length)
-  );
+  // the labels (a draft's) or series past the cap: the table shows them with
+  // their issue, readers the repaired chart.
   // A pie or stacked chart a merge left with another series, a negative or
   // no positive value (Epo 2026-10-18): its first column says which.
   const first = block.series[0]?.values ?? [];
@@ -72,10 +83,6 @@ function ChartEditor({
         ? undefined
         : m.question_issue_pie()
     : undefined;
-  const setCell = <T,>(list: T[], at: number, value: T, empty: T) =>
-    Array.from({ length: Math.max(list.length, at + 1) }, (_, i) =>
-      i === at ? value : (list[i] ?? empty)
-    );
   return (
     // Two columns only once the editor itself is wide enough for the table.
     <div className="@container min-w-0">
@@ -84,64 +91,47 @@ function ChartEditor({
           <SelectField
             className="w-44"
             label={m.question_ui_chart_type()}
-            onChange={(kind) =>
-              onChange(
-                kind === 'pie' || kind === 'stacked'
-                  ? // Parts of one whole: one series and no axes.
-                    {
-                      ...block,
-                      kind,
-                      series: block.series.slice(0, 1),
-                      xTitle: undefined,
-                      yTitle: undefined,
-                    }
-                  : { ...block, kind: kind as ChartKind }
-              )
-            }
+            onChange={(next) => {
+              const kind = next as ChartKind;
+              if (kind !== 'pie' && kind !== 'stacked')
+                return binding.setFields({ kind });
+              // Parts of one whole: one series and no axes.
+              binding.setFields({ kind, xTitle: undefined, yTitle: undefined });
+              for (const id of seriesIds.slice(1))
+                binding.removeChartItem('series', id);
+            }}
             options={CHART_KINDS.map((kind) => ({
               label: chartLabels[kind](),
               value: kind,
             }))}
             value={block.kind}
           />
-          <Field
-            count={{
-              max: limits.QUESTION_CHART_TITLE_MAX,
-              value: textLength(block.title),
-            }}
+          <CommitField
+            count={limits.QUESTION_CHART_TITLE_MAX}
             label={m.question_ui_title()}
-          >
-            <FieldInput
-              maxLength={limits.QUESTION_CHART_TITLE_MAX}
-              onChange={(event) =>
-                onChange({ ...block, title: event.target.value })
-              }
-              value={block.title}
-            />
-          </Field>
+            maxLength={limits.QUESTION_CHART_TITLE_MAX}
+            onCommit={(title) => binding.setFields({ title })}
+            value={block.title}
+          />
           {!single && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(['xTitle', 'yTitle'] as const).map((key) => (
-                <Field
-                  count={{
-                    max: limits.QUESTION_CHART_TITLE_MAX,
-                    value: textLength(block[key]),
-                  }}
+                <CommitField
+                  count={limits.QUESTION_CHART_TITLE_MAX}
                   key={key}
                   label={
                     key === 'xTitle'
                       ? m.question_ui_x_axis()
                       : m.question_ui_y_axis()
                   }
-                >
-                  <FieldInput
-                    maxLength={limits.QUESTION_CHART_TITLE_MAX}
-                    onChange={(event) =>
-                      onChange({ ...block, [key]: event.target.value })
-                    }
-                    value={block[key] ?? ''}
-                  />
-                </Field>
+                  maxLength={limits.QUESTION_CHART_TITLE_MAX}
+                  onCommit={(text) =>
+                    binding.setFields(
+                      key === 'xTitle' ? { xTitle: text } : { yTitle: text }
+                    )
+                  }
+                  value={block[key] ?? ''}
+                />
               ))}
             </div>
           )}
@@ -156,7 +146,7 @@ function ChartEditor({
                   {block.series.map((series, i) => (
                     <th
                       className="min-w-20 border border-divider bg-surface-hover-bg"
-                      key={i}
+                      key={seriesIds[i]}
                     >
                       {i >= limits.QUESTION_CHART_SERIES_MAX && (
                         <IssueIcon
@@ -173,20 +163,13 @@ function ChartEditor({
                       {i === 0 && pieIssue && (
                         <IssueIcon messages={[pieIssue]} />
                       )}
-                      <CellInput
+                      <CommitCell
                         aria-label={m.question_ui_series_name({
                           number: i + 1,
                         })}
                         maxLength={limits.QUESTION_CHART_SERIES_NAME_MAX}
-                        onChange={(event) =>
-                          onChange({
-                            ...block,
-                            series: block.series.map((item, j) =>
-                              i === j
-                                ? { ...item, name: event.target.value }
-                                : item
-                            ),
-                          })
+                        onCommit={(name) =>
+                          binding.setChartName(seriesIds[i], name)
                         }
                         placeholder={m.question_ui_chart_series_placeholder()}
                         value={series.name}
@@ -196,8 +179,8 @@ function ChartEditor({
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: rows }, (_, row) => (
-                  <tr key={row}>
+                {rowIds.map((label, row) => (
+                  <tr key={label}>
                     <td className="w-0 whitespace-nowrap pr-1">
                       {row >= block.labels.length && (
                         <IssueIcon
@@ -208,37 +191,18 @@ function ChartEditor({
                         label={m.question_ui_remove_row_number({
                           number: row + 1,
                         })}
-                        onClick={() =>
-                          onChange({
-                            ...block,
-                            labels: block.labels.filter((_, i) => row !== i),
-                            series: block.series.map((item) => ({
-                              ...item,
-                              values: item.values.filter((_, i) => row !== i),
-                            })),
-                          })
-                        }
+                        onClick={() => binding.removeChartItem('labels', label)}
                       >
                         <Icon name="trash" />
                       </ToolbarButton>
                     </td>
                     <td className="min-w-20 border border-divider">
-                      <CellInput
+                      <CommitCell
                         aria-label={m.question_ui_label_number({
                           number: row + 1,
                         })}
                         maxLength={limits.QUESTION_CHART_LABEL_MAX}
-                        onChange={(event) =>
-                          onChange({
-                            ...block,
-                            labels: setCell(
-                              block.labels,
-                              row,
-                              event.target.value,
-                              ''
-                            ),
-                          })
-                        }
+                        onCommit={(name) => binding.setChartName(label, name)}
                         placeholder={m.question_ui_chart_label_placeholder()}
                         value={block.labels[row] ?? ''}
                       />
@@ -246,9 +210,9 @@ function ChartEditor({
                     {block.series.map((series, column) => (
                       <td
                         className="min-w-20 border border-divider"
-                        key={column}
+                        key={seriesIds[column]}
                       >
-                        <CellInput
+                        <CommitCell
                           aria-label={m.question_ui_series_row({
                             name: series.name,
                             number: row + 1,
@@ -256,41 +220,29 @@ function ChartEditor({
                           max={limits.QUESTION_CHART_VALUE_MAX}
                           // Parts of a whole are never negative (Epo 2026-10-14).
                           min={single ? 0 : -limits.QUESTION_CHART_VALUE_MAX}
-                          onChange={(event) => {
+                          onCommit={(text) => {
                             // An empty cell is null and draws nothing; a value
                             // stops at the bounds as text stops at its length.
-                            const typed = event.target.valueAsNumber;
-                            const value = Number.isNaN(typed)
-                              ? null
-                              : Math.min(
-                                  limits.QUESTION_CHART_VALUE_MAX,
-                                  Math.max(
-                                    single
-                                      ? 0
-                                      : -limits.QUESTION_CHART_VALUE_MAX,
-                                    typed
+                            const typed = Number(text);
+                            binding.setChartCell(
+                              seriesIds[column],
+                              label,
+                              !text.trim() || Number.isNaN(typed)
+                                ? null
+                                : Math.min(
+                                    limits.QUESTION_CHART_VALUE_MAX,
+                                    Math.max(
+                                      single
+                                        ? 0
+                                        : -limits.QUESTION_CHART_VALUE_MAX,
+                                      typed
+                                    )
                                   )
-                                );
-                            onChange({
-                              ...block,
-                              series: block.series.map((item, i) =>
-                                column === i
-                                  ? {
-                                      ...item,
-                                      values: setCell<number | null>(
-                                        item.values,
-                                        row,
-                                        value,
-                                        null
-                                      ),
-                                    }
-                                  : item
-                              ),
-                            });
+                            );
                           }}
                           placeholder={m.question_ui_chart_value_placeholder()}
                           type="number"
-                          value={series.values[row] ?? ''}
+                          value={String(series.values[row] ?? '')}
                         />
                       </td>
                     ))}
@@ -307,14 +259,7 @@ function ChartEditor({
                 }
                 iconLeft="plus"
                 onClick={() =>
-                  onChange({
-                    ...block,
-                    labels: [...block.labels, ''],
-                    series: block.series.map((item) => ({
-                      ...item,
-                      values: [...item.values, null],
-                    })),
-                  })
+                  binding.addChartItem('labels', rowIds.length, '')
                 }
                 size="sm"
                 type="button"
@@ -331,13 +276,7 @@ function ChartEditor({
                   }
                   iconLeft="plus"
                   onClick={() =>
-                    onChange({
-                      ...block,
-                      series: [
-                        ...block.series,
-                        { name: '', values: block.labels.map(() => null) },
-                      ],
-                    })
+                    binding.addChartItem('series', seriesIds.length, '')
                   }
                   size="sm"
                   type="button"
@@ -349,9 +288,10 @@ function ChartEditor({
               {(!single || block.series.length > 1) && (
                 <Button
                   disabled={block.series.length <= 1}
-                  onClick={() =>
-                    onChange({ ...block, series: block.series.slice(0, -1) })
-                  }
+                  onClick={() => {
+                    const last = seriesIds.at(-1);
+                    if (last) binding.removeChartItem('series', last);
+                  }}
                   size="sm"
                   type="button"
                   variant="danger-light"
@@ -381,8 +321,7 @@ function ChartEditor({
                     className="w-44"
                     label={m.question_ui_gridlines()}
                     onChange={(value) =>
-                      onChange({
-                        ...block,
+                      binding.setFields({
                         gridlines: value as 'normal' | 'fine',
                       })
                     }
@@ -393,24 +332,15 @@ function ChartEditor({
                     value={block.gridlines ?? 'normal'}
                   />
                 )}
-                <Field
-                  count={{
-                    max: descriptionMax,
-                    value: textLength(block.description ?? ''),
-                  }}
+                <CommitField
+                  count={descriptionMax}
                   label={m.question_ui_description()}
-                >
-                  <FieldInput
-                    maxLength={descriptionMax}
-                    onChange={(event) =>
-                      onChange({
-                        ...block,
-                        description: event.target.value || undefined,
-                      })
-                    }
-                    value={block.description ?? ''}
-                  />
-                </Field>
+                  maxLength={descriptionMax}
+                  onCommit={(text) =>
+                    binding.setFields({ description: text || undefined })
+                  }
+                  value={block.description ?? ''}
+                />
               </Collapsible.Content>
             </Collapsible.Root>
           </div>
@@ -425,7 +355,7 @@ function ChartEditor({
       </div>
     </div>
   );
-}
+});
 
 type PlotKind = NonNullable<PlotBlock['kind']>;
 
@@ -444,6 +374,20 @@ function CellInput(props: InputProps) {
       {...props}
     />
   );
+}
+
+/** A chart's typed cell: its own text while typed in, written once left
+ * (`useCommitted`). */
+function CommitCell({
+  onCommit,
+  value,
+  ...props
+}: Omit<InputProps, 'value' | 'onChange' | 'onBlur' | 'onKeyDown'> & {
+  onCommit: (text: string) => void;
+  value: string;
+}) {
+  const { input } = useCommitted(value, onCommit);
+  return <CellInput {...props} {...input} />;
 }
 
 /** A number cell: an empty cell is NaN, which the plot's issues name, until
@@ -984,30 +928,30 @@ export function PlotEditor({
 
 export function BlockEditor({
   bank,
+  binding,
   block,
   editPlot,
   onChange,
   uploadAsset,
   onBusyChange,
-  onInvalidChange,
   textPlaceholder,
   toolbarTarget,
   gaps,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
+  /** Where a chart or graph lives, edited a change at a time (every chart
+   * and graph editor has one). */
+  binding?: FigureBinding;
   block: QuestionBlock;
   /** Notes edit a plot; quizzes show it (the catalog's plot `edit.user`). */
   editPlot?: boolean;
   onChange: (block: QuestionBlock) => void;
   uploadAsset?: UploadQuestionAsset;
   onBusyChange?: (busy: boolean) => void;
-  /** Graph rows that cannot be drawn; the dialog holds Save meanwhile. */
-  onInvalidChange?: (invalid: boolean) => void;
   /** What an empty text block shows, by where it sits. */
   textPlaceholder?: string;
-  /** The block's heading row: a graph's zoom tools and a table cell's
-   * formula tools go there. */
+  /** The block's heading row: a table cell's formula tools go there. */
   toolbarTarget?: HTMLElement | null;
   /** A gaps part's text block: the number of its first blank, its blanks'
    * accepted answers in order, and a change of either. */
@@ -1017,20 +961,21 @@ export function BlockEditor({
     onChange: (text: string, lists: string[][]) => void;
   };
 }) {
-  const [cell, setCell] = useState<string | null>(null);
   // The text's blanks by id, in order, as the editor read them in; each
   // change carries every list along with its blank.
   const blankIds = useRef<string[] | null>(null);
   if (gaps && block.type === 'text')
     blankIds.current ??= gapNumbers([block]).map((_, i) => `g${i}`);
-  // Where the click that opened the cell landed (none from the keyboard).
-  const cellClick = useRef<{ x: number; y: number } | null>(null);
-  const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   // Closing the editor cancels a picked image still waiting to upload.
   const uploadAbort = useRef<AbortController | null>(null);
   useEffect(() => () => uploadAbort.current?.abort(), []);
+  /** The chart or graph being edited, where it lives. */
+  const figure = () => {
+    if (!binding) throw new Error('A chart or graph editor without its figure');
+    return binding;
+  };
   const descriptionMax = bank
     ? limits.QUESTION_TEXT_MAX
     : limits.QUESTION_DESCRIPTION_MAX;
@@ -1078,46 +1023,10 @@ export function BlockEditor({
           </p>
           <QuestionBlockView block={block} />
         </div>
-        <Collapsible.Root>
-          <Collapsible.Trigger asChild>
-            <Button
-              className="-ml-4"
-              iconLeft="chevronDown"
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {m.question_ui_advanced()}
-            </Button>
-          </Collapsible.Trigger>
-          <Collapsible.Content className="max-w-sm pt-3">
-            <Field
-              count={{
-                max: limits.QUESTION_METADATA_MAX,
-                value: textLength(block.label),
-              }}
-              label={m.question_ui_paragraph_label()}
-            >
-              <FieldInput
-                maxLength={limits.QUESTION_METADATA_MAX}
-                onChange={(event) =>
-                  onChange({ ...block, label: event.target.value || undefined })
-                }
-                value={block.label ?? ''}
-              />
-            </Field>
-          </Collapsible.Content>
-        </Collapsible.Root>
       </div>
     );
   if (block.type === 'chart')
-    return (
-      <ChartEditor
-        block={block}
-        descriptionMax={descriptionMax}
-        onChange={onChange}
-      />
-    );
+    return <ChartEditor binding={figure()} descriptionMax={descriptionMax} />;
   if (block.type === 'plot')
     return editPlot ? (
       <PlotEditor
@@ -1128,16 +1037,9 @@ export function BlockEditor({
     ) : (
       <QuestionBlockView block={block} />
     );
+  // A graph fills its own dialog (BlockDialog).
   if (block.type === 'graph')
-    return (
-      <GraphEditor
-        descriptionMax={descriptionMax}
-        onChange={onChange}
-        onInvalidChange={onInvalidChange}
-        toolbarTarget={toolbarTarget}
-        value={block}
-      />
-    );
+    throw new Error('A graph is edited in its own dialog');
   if (block.type === 'image')
     return (
       <div className="space-y-4">
@@ -1222,7 +1124,52 @@ export function BlockEditor({
         </Field>
       </div>
     );
+  return (
+    <TableBlockEditor
+      block={block}
+      onChange={onChange}
+      toolbarTarget={toolbarTarget}
+    />
+  );
+}
+
+/**
+ * A question's table block drawn as a note's table (Epo 2026-11-15, the Plate
+ * table, mock T2): a row's pill at its left drags the row and opens Insert
+ * above, Insert below and Delete; a column's pill over its first cell opens
+ * Insert left, Insert right and Delete; + bars along the right edge and under
+ * the last row add one at the end. Header row sits with the cell's formula
+ * tools in the block's heading row (else a row of their own), as in the note's
+ * table bar; the tools show disabled until a cell opens, so opening one shifts
+ * nothing.
+ */
+function TableBlockEditor({
+  block,
+  onChange,
+  toolbarTarget,
+}: {
+  block: Extract<QuestionBlock, { type: 'table' }>;
+  onChange: (block: QuestionBlock) => void;
+  toolbarTarget?: HTMLElement | null;
+}) {
+  const [cell, setCell] = useState<string | null>(null);
+  // Where the click that opened the cell landed (none from the keyboard).
+  const cellClick = useRef<(() => { x: number; y: number }) | null>(null);
+  const [ownTools, setOwnTools] = useState<HTMLDivElement | null>(null);
+  const [formulaTools, setFormulaTools] = useState<HTMLSpanElement | null>(
+    null
+  );
+  // The column under the pointer, whose pill shows over its first cell.
+  const [hoveredColumn, setHoveredColumn] = useState<number | null>(null);
+  // A row being dragged by its pill, and where it would go.
+  const [drag, setDrag] = useState<{
+    from: number;
+    over: number;
+    side: 'bottom' | 'top';
+  } | null>(null);
   const columns = block.rows[0]?.length ?? 1;
+  const rowsFull = block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX;
+  const columnsFull = columns >= limits.QUESTION_TABLE_COLUMNS_MAX;
   const updateCell = (row: number, column: number, text: string) =>
     onChange({
       ...block,
@@ -1232,173 +1179,269 @@ export function BlockEditor({
           : cells
       ),
     });
-  // The chart's data table: a trash per row, Add row and column below, the
-  // header row under Advanced. A cell's formula tools go to the block's
-  // heading row, else a row of their own; they show disabled until a cell
-  // opens, so opening one shifts nothing.
-  const tools = toolbarTarget ?? cellTools;
+  // Rows and columns move under an open cell: it closes first.
+  const change = (rows: string[][]) => {
+    setCell(null);
+    onChange({ ...block, rows });
+  };
+  const insertRow = (at: number) =>
+    change([
+      ...block.rows.slice(0, at),
+      Array.from({ length: columns }, () => ''),
+      ...block.rows.slice(at),
+    ]);
+  const insertColumn = (at: number) =>
+    change(
+      block.rows.map((row) => [...row.slice(0, at), '', ...row.slice(at)])
+    );
+  const moveRow = (from: number, to: number) => {
+    const rows = [...block.rows];
+    const [row] = rows.splice(from, 1);
+    rows.splice(to > from ? to - 1 : to, 0, row);
+    change(rows);
+  };
+  const tools = toolbarTarget ?? ownTools;
+  const plusBar =
+    'absolute flex items-center justify-center rounded-(--radius-toolbar-button) bg-surface-hover-bg text-fg-muted opacity-0 outline-none transition-opacity hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action disabled:hidden group-focus-within/table:opacity-100 group-hover/table:opacity-100';
   return (
-    <div className="space-y-3">
+    <div>
       {!toolbarTarget && (
-        <div className="flex items-center" ref={setCellTools} />
+        <div className="flex items-center" ref={setOwnTools} />
       )}
-      {cell === null && tools && createPortal(<IdleFormulaTools />, tools)}
-      <div className="overflow-x-auto">
-        <table className="border-collapse text-sm">
-          <tbody>
-            {block.rows.map((row, i) => (
-              <tr key={i}>
-                <td className="w-0 whitespace-nowrap pr-1">
-                  <ToolbarButton
-                    disabled={block.rows.length <= 1}
-                    label={m.question_ui_remove_row_number({ number: i + 1 })}
-                    onClick={() => {
-                      setCell(null);
-                      onChange({
-                        ...block,
-                        rows: block.rows.filter((_, j) => i !== j),
-                      });
-                    }}
-                  >
-                    <Icon name="trash" />
-                  </ToolbarButton>
-                </td>
-                {row.map((text, j) => {
-                  const id = `${i}:${j}`;
-                  // What an empty cell is for, until it holds text.
-                  const placeholder =
-                    block.header && i === 0
+      {tools &&
+        createPortal(
+          <>
+            <span className="contents" ref={setFormulaTools} />
+            {cell === null &&
+              formulaTools &&
+              createPortal(<IdleFormulaTools />, formulaTools)}
+            <ToolbarGroup>
+              <ToolbarButton
+                active={!!block.header}
+                className="w-auto gap-1.5 px-1.5"
+                label={m.question_ui_header_row()}
+                onClick={() => onChange({ ...block, header: !block.header })}
+              >
+                <EditorIcon name="table" />
+                {m.question_ui_header_row()}
+              </ToolbarButton>
+            </ToolbarGroup>
+          </>,
+          tools
+        )}
+      {/* Room for the column pills above, the + bars right and below. */}
+      <div className="overflow-x-auto pt-2 pr-5 pb-5">
+        <div
+          className="group/table relative w-fit"
+          onMouseLeave={() => setHoveredColumn(null)}
+          onMouseOver={(event) => {
+            const column = (event.target as Element)
+              .closest?.('[data-table-column]')
+              ?.getAttribute('data-table-column');
+            if (column != null) setHoveredColumn(Number(column));
+          }}
+        >
+          <table className="border-collapse text-sm">
+            <tbody>
+              {block.rows.map((row, i) => (
+                <tr
+                  className={cn(
+                    'group/row',
+                    drag?.from === i && 'opacity-45',
+                    drag?.over === i &&
+                      drag.from !== i &&
+                      (drag.side === 'top'
+                        ? '[&>td]:border-t-2! [&>td]:border-t-action-accent!'
+                        : '[&>td]:border-b-2! [&>td]:border-b-action-accent!')
+                  )}
+                  key={i}
+                  onDragOver={(event) => {
+                    if (!drag) return;
+                    event.preventDefault();
+                    const box = event.currentTarget.getBoundingClientRect();
+                    const side =
+                      event.clientY < box.top + box.height / 2
+                        ? 'top'
+                        : 'bottom';
+                    if (drag.over !== i || drag.side !== side)
+                      setDrag({ ...drag, over: i, side });
+                  }}
+                  onDrop={(event) => {
+                    if (!drag) return;
+                    event.preventDefault();
+                    const to = drag.side === 'top' ? i : i + 1;
+                    if (to !== drag.from && to !== drag.from + 1)
+                      moveRow(drag.from, to);
+                    setDrag(null);
+                  }}
+                >
+                  <td className="relative w-2 min-w-2 max-w-2 select-none p-0">
+                    {/* The row's pill: a drag moves the row, a press opens
+                        its menu. */}
+                    <TableHandle
+                      className="top-1/2 left-0 h-7 w-4 -translate-y-1/2 cursor-grab active:cursor-grabbing group-focus-within/row:opacity-100 group-hover/row:opacity-100"
+                      handleProps={{
+                        draggable: true,
+                        onDragEnd: () => setDrag(null),
+                        onDragStart: (event) => {
+                          event.dataTransfer.effectAllowed = 'move';
+                          setDrag({ from: i, over: i, side: 'top' });
+                        },
+                      }}
+                      icon="moreVertical"
+                      label={m.editor_row()}
+                      side="right"
+                    >
+                      <BlockMenuItem
+                        disabled={rowsFull}
+                        icon="arrowUp"
+                        label={m.editor_insert_row_before()}
+                        onSelect={() => insertRow(i)}
+                      />
+                      <BlockMenuItem
+                        disabled={rowsFull}
+                        icon="arrowDown"
+                        label={m.editor_insert_row_after()}
+                        onSelect={() => insertRow(i + 1)}
+                      />
+                      <DropdownMenuSeparator />
+                      <BlockMenuItem
+                        disabled={block.rows.length <= 1}
+                        icon="trash"
+                        label={m.editor_delete_row()}
+                        onSelect={() =>
+                          change(block.rows.filter((_, j) => j !== i))
+                        }
+                      />
+                    </TableHandle>
+                  </td>
+                  {row.map((text, j) => {
+                    const id = `${i}:${j}`;
+                    const header = block.header && i === 0;
+                    // What an empty cell is for, until it holds text.
+                    const placeholder = header
                       ? m.question_ui_table_heading_placeholder()
                       : m.question_ui_table_cell_placeholder();
-                  return (
-                    <td
-                      className={cn(
-                        'border border-divider p-0 align-top',
-                        block.header &&
-                          i === 0 &&
-                          'bg-surface-hover-bg font-semibold'
-                      )}
-                      key={j}
-                    >
-                      {/* Columns grow with their text between these widths,
-                          then wrap. */}
-                      <div className="min-w-28 max-w-80 px-2 py-1.5">
-                        {cell === id ? (
-                          <TextEditor
-                            caretAt={cellClick.current}
-                            compact
-                            maxLength={limits.QUESTION_TEXT_MAX}
-                            onChange={(value) => updateCell(i, j, value)}
-                            placeholder={placeholder}
-                            toolbarTarget={tools}
-                            value={text}
-                          />
-                        ) : (
-                          <button
-                            aria-label={m.question_ui_edit_cell({
-                              column: j + 1,
-                              row: i + 1,
-                            })}
-                            className="min-h-8 w-full cursor-text text-left"
-                            onClick={(event) => {
-                              cellClick.current = event.detail
-                                ? { x: event.clientX, y: event.clientY }
-                                : null;
-                              setCell(id);
-                            }}
-                            type="button"
-                          >
-                            {text.trim() ? (
-                              <QuestionBlockView
-                                block={{ text, type: 'text' }}
-                              />
-                            ) : (
-                              <p className="font-normal text-placeholder leading-relaxed">
-                                {placeholder}
-                              </p>
-                            )}
-                          </button>
+                    return (
+                      <td
+                        className={cn(
+                          'relative border border-line p-0 align-top',
+                          header && 'bg-surface-hover-bg font-semibold'
                         )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="-ml-4 flex flex-wrap gap-2">
-        <Button
-          disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
-          iconLeft="plus"
-          onClick={() =>
-            onChange({
-              ...block,
-              rows: [...block.rows, Array.from({ length: columns }, () => '')],
-            })
-          }
-          size="sm"
-          type="button"
-          variant="ghost-hover"
-        >
-          {m.question_ui_add_row()}
-        </Button>
-        <Button
-          disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
-          iconLeft="plus"
-          onClick={() =>
-            onChange({ ...block, rows: block.rows.map((row) => [...row, '']) })
-          }
-          size="sm"
-          type="button"
-          variant="ghost-hover"
-        >
-          {m.question_ui_add_column()}
-        </Button>
-        <Button
-          disabled={columns <= 1}
-          onClick={() => {
-            setCell(null);
-            onChange({
-              ...block,
-              rows: block.rows.map((row) => row.slice(0, -1)),
-            });
-          }}
-          size="sm"
-          type="button"
-          variant="danger-light"
-        >
-          {m.question_ui_remove_last_column()}
-        </Button>
-      </div>
-      <Collapsible.Root>
-        <Collapsible.Trigger asChild>
-          <Button
-            className="-ml-4"
-            iconLeft="chevronDown"
-            size="sm"
+                        data-table-column={j}
+                        key={j}
+                      >
+                        {/* Columns grow with their text between these
+                            widths, then wrap. */}
+                        <div className="min-h-12 min-w-28 max-w-80 px-2 py-1.5 sm:px-3 sm:py-2">
+                          {cell === id ? (
+                            <TextEditor
+                              caretAt={cellClick.current}
+                              compact
+                              maxLength={limits.QUESTION_TEXT_MAX}
+                              onChange={(value) => updateCell(i, j, value)}
+                              placeholder={placeholder}
+                              toolbarTarget={formulaTools}
+                              value={text}
+                            />
+                          ) : (
+                            <button
+                              aria-label={m.question_ui_edit_cell({
+                                column: j + 1,
+                                row: i + 1,
+                              })}
+                              className="min-h-8 w-full cursor-text text-left"
+                              onClick={(event) => {
+                                cellClick.current =
+                                  event.detail &&
+                                  event.currentTarget.parentElement
+                                    ? clickPoint(
+                                        event,
+                                        event.currentTarget.parentElement
+                                      )
+                                    : null;
+                                setCell(id);
+                              }}
+                              type="button"
+                            >
+                              {text.trim() ? (
+                                <QuestionBlockView
+                                  block={{ text, type: 'text' }}
+                                />
+                              ) : (
+                                <p className="font-normal text-placeholder leading-relaxed">
+                                  {placeholder}
+                                </p>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {i === 0 && (
+                          <TableHandle
+                            className={cn(
+                              '-top-2 left-1/2 h-4 w-7 -translate-x-1/2 group-focus-within/table:opacity-100',
+                              hoveredColumn === j && 'opacity-100'
+                            )}
+                            icon="moreHorizontal"
+                            label={m.editor_column()}
+                            side="bottom"
+                          >
+                            <BlockMenuItem
+                              disabled={columnsFull}
+                              icon="arrowLeft"
+                              label={m.editor_insert_col_before()}
+                              onSelect={() => insertColumn(j)}
+                            />
+                            <BlockMenuItem
+                              disabled={columnsFull}
+                              icon="arrowRight"
+                              label={m.editor_insert_col_after()}
+                              onSelect={() => insertColumn(j + 1)}
+                            />
+                            <DropdownMenuSeparator />
+                            <BlockMenuItem
+                              disabled={columns <= 1}
+                              icon="trash"
+                              label={m.editor_delete_col()}
+                              onSelect={() =>
+                                change(
+                                  block.rows.map((cells) =>
+                                    cells.filter((_, k) => k !== j)
+                                  )
+                                )
+                              }
+                            />
+                          </TableHandle>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            aria-label={m.editor_insert_col_after()}
+            className={cn(plusBar, 'top-0 bottom-0 left-full ml-1 w-4')}
+            disabled={columnsFull}
+            onClick={() => insertColumn(columns)}
+            title={m.editor_insert_col_after()}
             type="button"
-            variant="ghost"
           >
-            {m.question_ui_advanced()}
-          </Button>
-        </Collapsible.Trigger>
-        <Collapsible.Content className="translate-x-0.5 pt-3">
-          <SelectField
-            className="w-44"
-            label={m.question_ui_header_row()}
-            onChange={(value) =>
-              onChange({ ...block, header: value === 'shown' })
-            }
-            options={[
-              { label: m.question_ui_graph_shown(), value: 'shown' },
-              { label: m.question_ui_graph_hidden(), value: 'hidden' },
-            ]}
-            value={block.header ? 'shown' : 'hidden'}
-          />
-        </Collapsible.Content>
-      </Collapsible.Root>
+            <EditorIcon className="size-3.5" name="plus" />
+          </button>
+          <button
+            aria-label={m.editor_insert_row_after()}
+            className={cn(plusBar, 'top-full right-0 left-2 mt-0.5 h-4')}
+            disabled={rowsFull}
+            onClick={() => insertRow(block.rows.length)}
+            title={m.editor_insert_row_after()}
+            type="button"
+          >
+            <EditorIcon className="size-3.5" name="plus" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

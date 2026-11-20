@@ -44,9 +44,6 @@
             "ticks": 4
           }
         ],
-        "image": {
-          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
-        },
         "width": 320,
         "height": 190,
         "description": "Too many equal-length marks"

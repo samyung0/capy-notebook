@@ -68,8 +68,7 @@
           "type": "open",
           "accepted": [
             "The patch behind is refractory: its sodium channels are inactivated."
-          ],
-          "hints": ["What state are the channels behind in?"]
+          ]
         },
         "marks": 2,
         "markscheme": [

@@ -127,6 +127,20 @@ export class EdgelessClipboardController extends PageClipboard {
       return;
     }
 
+    await this._copyElements(elements);
+  };
+
+  /** Capy (local change 71): what a copy of the selected elements puts on the
+   * clipboard, with no copy event (a read-only board's Copy button). */
+  copySelection() {
+    return this._copyElements(
+      getSortedCloneElements(this.selectionManager.selectedElements)
+    );
+  }
+
+  private readonly _copyElements = async (
+    elements: ReturnType<typeof getSortedCloneElements>
+  ) => {
     // Only when an image is selected, it can be pasted normally to page mode.
     if (elements.length === 1 && isImageBlock(elements[0])) {
       const element = elements[0];
@@ -188,6 +202,8 @@ export class EdgelessClipboardController extends PageClipboard {
     event.preventDefault();
 
     await this._onCopy(_context, surfaceSelections);
+    // Capy (local change 71): a store that takes no edits copies only.
+    if (this.std.store.readonly) return;
 
     if (surfaceSelections[0]?.editing) {
       // use build-in cut handler in rich-text when cut in surface text element
@@ -212,7 +228,9 @@ export class EdgelessClipboardController extends PageClipboard {
   private readonly _onPaste = async (_context: UIEventStateContext) => {
     if (
       document.activeElement instanceof HTMLInputElement ||
-      document.activeElement instanceof HTMLTextAreaElement
+      document.activeElement instanceof HTMLTextAreaElement ||
+      // Capy (local change 71): nothing lands on a store that takes no edits.
+      this.std.store.readonly
     ) {
       return;
     }
@@ -442,7 +460,9 @@ export class EdgelessClipboardController extends PageClipboard {
     const rootModel = this.doc.root;
     if (!rootModel) return;
 
-    const html2canvas = (await import('html2canvas')).default;
+    // Capy (local change 72): html2canvas-pro, which reads the color() values
+    // Chrome computes for color-mix() (a note's fill), where html2canvas threw.
+    const html2canvas = (await import('html2canvas-pro')).default;
     if (!(html2canvas instanceof Function)) return;
     if (!this.surface) return;
 

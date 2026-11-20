@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { MathfieldElement } from 'mathlive';
-import { openQuestionDialog } from '../helpers/quizEditor';
+import { openQuestionCard } from '../helpers/quizEditor';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
@@ -85,13 +85,9 @@ test('question formula accepts physical digits and retains them after commit', a
     .getByRole('button', { exact: true, name: m.question_ui_edit_question() })
     .press('Enter');
   const dialog = page.getByRole('dialog');
-  // The outline row brings the block into view and focuses it; Enter edits.
-  await dialog
-    .getByRole('button', { name: /^A rectangle has area/ })
-    .and(dialog.locator('button:not([aria-haspopup])'))
-    .click();
-  await expect(dialog.locator('[data-row-key]:focus')).toHaveCount(1);
-  await page.keyboard.press('Enter');
+  // The dialog is the question card (Epo 2026-11-15): a click on the text
+  // opens it in place.
+  await dialog.getByRole('button', { name: /^A rectangle has area/ }).click();
   const editor = dialog.getByRole('textbox', {
     name: m.question_ui_text_and_formulas(),
   });
@@ -225,19 +221,15 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
 test('a question formula selects on click for Delete and edits on double click', async ({
   page,
 }) => {
-  await page.goto('/materials/qz_1');
-  await openQuestionDialog(page);
-  const dialog = page.getByRole('dialog');
-  // The stem's second block is the reaction's display formula.
-  await dialog
-    .getByRole('button', {
-      exact: true,
-      name: m.question_ui_select_block({ type: m.question_ui_text() }),
-    })
-    .nth(1)
+  const card = await openQuestionCard(page, '/materials/qz_1');
+  // The stem's second block is the reaction's display formula, opened in
+  // place on the card (Epo 2026-11-15).
+  await card
+    .getByRole('button')
+    .filter({ has: page.getByRole('math') })
+    .first()
     .click();
-  await page.keyboard.press('Enter');
-  const editor = dialog.getByRole('textbox', {
+  const editor = card.getByRole('textbox', {
     name: m.question_ui_text_and_formulas(),
   });
   const formulas = editor.getByRole('button', {

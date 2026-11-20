@@ -46,6 +46,10 @@ export class BrushTool extends BaseTool {
     if (!this._draggingPathPressures) {
       return [];
     }
+    // Capy (local change 50): a mouse has no pressure. The event a release sends
+    // reads 0 against the press's 0.5, which made a mouse stroke a pressure one at
+    // its end, redrawn at another width, and every stroke after it.
+    if (e.raw.pointerType === 'mouse') return this._draggingPathPoints ?? [];
     const pressures = [...this._draggingPathPressures, e.pressure];
     this._draggingPathPressures = pressures;
 
@@ -178,9 +182,11 @@ export class BrushTool extends BaseTool {
       e.point.y
     );
 
+    // Capy (local change 50): a click without pressure (a mouse's) is a dot at
+    // pressure 0; at the line's 0.5 it read as a blot.
     const points = this._pressureSupportedPointerIds.has(e.raw.pointerId)
       ? [[modelX, modelY, e.pressure]]
-      : [[modelX, modelY]];
+      : [[modelX, modelY, 0]];
 
     const crud = this.std.get(EdgelessCRUDIdentifier);
     crud.addElement(CanvasElementType.BRUSH, {

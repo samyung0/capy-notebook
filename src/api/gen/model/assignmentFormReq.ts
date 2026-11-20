@@ -34,6 +34,11 @@ export interface AssignmentFormReq {
   latePenaltyPct: number;
   marking: AssignmentFormReqMarking;
   noLate: boolean;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  points?: number;
   quizId?: string;
   showAnswers: AssignmentFormReqShowAnswers;
   showGrades: AssignmentFormReqShowGrades;

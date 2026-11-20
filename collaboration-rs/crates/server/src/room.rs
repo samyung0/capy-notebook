@@ -90,6 +90,9 @@ const ROW_RETRIES: [Duration; 4] = [
 
 pub type MemberKey = (u64, u64);
 
+/// A canvas's board room's answer to [RoomCmd::LiveNote].
+pub struct IsBoard;
+
 /// Messages to a room task.
 pub enum RoomCmd {
     Join {
@@ -168,7 +171,8 @@ pub enum RoomCmd {
     /// A note's whole state when it holds edits its projected content lacks
     /// (unsaved, being stored, or stored and not projected yet), else none:
     /// a detailed read's live note content (Q417).
-    LiveNote(oneshot::Sender<Option<Vec<u8>>>),
+    /// A board holds no note content and says so.
+    LiveNote(oneshot::Sender<Result<Option<Vec<u8>>, IsBoard>>),
     /// A server edit committed beside the room's stores.
     ServiceEdit(Box<ServiceEdit>),
     /// A children pass for an update this room holds (`children.rs`).
@@ -537,6 +541,9 @@ struct Note {
     /// When the room last projected (or loaded): edits that never pause
     /// still project every `projection_cadence`.
     projected_at: Instant,
+    /// A board took an update naming an asset (`model::names_asset`): it
+    /// projects after its next store, whatever the cadence.
+    project_soon: bool,
     project_waiters: Vec<oneshot::Sender<Result<i64, String>>>,
     log_bytes: i64,
     log_rows: i64,
@@ -965,6 +972,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 projected_version,
                 projecting: false,
                 projected_at: Instant::now(),
+                project_soon: false,
                 project_waiters: Vec::new(),
                 log_bytes,
                 log_rows,
@@ -1579,10 +1587,14 @@ impl Room {
             RoomCmd::LiveNote(reply) => {
                 let unprojected = matches!(&self.kind,
                     Kindly::Note(note) if note.stored_version > note.projected_version);
-                let state = if self.store.dirty || self.store.running || unprojected {
-                    Some(self.encoded(StateVector::default()).await)
+                let board = matches!(&self.kind,
+                    Kindly::Note(note) if note.model == crate::model::Model::Board);
+                let state = if board {
+                    Err(IsBoard)
+                } else if self.store.dirty || self.store.running || unprojected {
+                    Ok(Some(self.encoded(StateVector::default()).await))
                 } else {
-                    None
+                    Ok(None)
                 };
                 let _ = reply.send(state);
             }
@@ -3337,6 +3349,14 @@ impl Room {
             Kindly::Note(note) if note.model == crate::model::Model::Note => {
                 notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
             }
+            // A board bounds its work, and at its cap is measured exactly.
+            Kindly::Note(note) if note.model == crate::model::Model::Board => {
+                !ydoc::applies_inline_bounded(
+                    &self.doc.transact(),
+                    &ydoc::Incoming::new(&update),
+                    bytes.len(),
+                ) || note.validator.near_cap(&update, bytes.len())
+            }
             Kindly::Note(_) => !ydoc::applies_inline(
                 &self.doc.transact(),
                 &ydoc::Incoming::new(&update),
@@ -3353,7 +3373,10 @@ impl Room {
         };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => {
-                match note.validator.admit(&self.doc, &update, writer.is_none()) {
+                match note
+                    .validator
+                    .admit(&self.doc, &update, bytes, changes, writer.is_none())
+                {
                     crate::model::Admitted::Accepted => Verdict::Accept,
                     crate::model::Admitted::Unheld => Verdict::Unheld,
                     crate::model::Admitted::Hidden => Verdict::Hidden,
@@ -3474,8 +3497,13 @@ impl Room {
         self.applying = true;
         if let Some(marker) = self.markers.write(&self.doc, context) {
             applied += marker.len();
+            if let Kindly::Note(note) = &mut self.kind {
+                note.validator.wrote(marker.len() as u64);
+            }
             self.broadcast_update(None, marker);
         }
+        let names_asset = matches!(&self.kind, Kindly::Note(note)
+            if note.model == crate::model::Model::Board && crate::model::names_asset(&update));
         // A source room's estimate also takes off what the update's deletes
         // freed (Epo 2026-10-19); a note's sessions hold what it deleted.
         let seed = match &self.kind {
@@ -3500,6 +3528,10 @@ impl Room {
         let (content, freed, deleted, lost) = match content {
             Ok(content) => content,
             Err(error) => {
+                // Admission counted on an apply that did not happen.
+                if let Kindly::Note(note) = &mut self.kind {
+                    note.validator.invalidate();
+                }
                 return Outcome::refused(
                     Class::Malformed,
                     format!("update cannot be applied: {error}"),
@@ -3546,6 +3578,9 @@ impl Room {
         self.ack(writer);
         if !content.is_empty() {
             self.content_changed();
+            if names_asset && let Kindly::Note(note) = &mut self.kind {
+                note.project_soon = true;
+            }
             // What the room's collection took out still reaches an editor
             // whose Undo can bring it back (Q549); stored state and joiners
             // never hold it. A resync's step 2 names its whole delete set,
@@ -3797,10 +3832,17 @@ impl Room {
         metrics: notes::limits::Metrics,
         eviction: Option<&str>,
     ) -> String {
+        // A board's size limit is its live state's bytes.
+        let max_content_bytes = match &self.kind {
+            Kindly::Note(note) if note.model == crate::model::Model::Board => {
+                notes::catalog::CANVAS_BOARD_MAX as u64
+            }
+            _ => notes::limits::MAX_CONTENT_BYTES,
+        };
         let mut payload = json!({
             "code": code.as_str(),
             "limits": {
-                "maxContentBytes": notes::limits::MAX_CONTENT_BYTES,
+                "maxContentBytes": max_content_bytes,
                 "maxDepth": notes::limits::MAX_DEPTH,
                 "maxNodes": notes::limits::MAX_NODES,
             },
@@ -3838,6 +3880,9 @@ impl Room {
                     uploads: !member.read_only,
                 }
             }
+            Kindly::Note(note) if note.model == crate::model::Model::Board => Fields::Board {
+                uploads: !member.read_only,
+            },
             Kindly::Note(_) => Fields::Nothing,
             Kindly::Source(_) => Fields::Source,
         };
@@ -5071,8 +5116,11 @@ impl Room {
 
     /// After a store: a note whose edits have not paused long enough for the
     /// idle projection projects anyway once `projection_cadence` passed since
-    /// its last projection. The live document may already hold newer edits,
-    /// so this projects the durable state from the store.
+    /// its last projection, and a board that took an asset's name at once
+    /// (Go trashes an asset no projection names, so an image deleted and
+    /// brought back by Undo is not served until one names it again). The
+    /// live document may already hold newer edits, so this projects the
+    /// durable state from the store.
     fn project_on_cadence(&mut self) {
         let handle = self.own_handle();
         let cadence = self.app.config.projection_cadence;
@@ -5081,7 +5129,7 @@ impl Room {
         };
         if note.projecting
             || note.stored_version <= note.projected_version
-            || note.projected_at.elapsed() < cadence
+            || (note.projected_at.elapsed() < cadence && !note.project_soon)
         {
             return;
         }
@@ -5089,6 +5137,7 @@ impl Room {
             return;
         };
         note.projecting = true;
+        note.project_soon = false;
         let (app, material_id, version) = (
             self.app.clone(),
             note.material_id.clone(),
@@ -5150,7 +5199,7 @@ impl Room {
         }
         // Read here, so the content is exactly the durable state at `version`;
         // the room waits for it as for a store's validation.
-        let content = projection::content_of(self.doc.clone(), note.model).await;
+        let content = projection::content_of(self.doc.clone(), note.model, version).await;
         let Some(handle) = self
             .app
             .rooms
@@ -5483,6 +5532,11 @@ fn validate(
 ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
     let txn = doc.transact();
     model.assert_roots(&txn).map_err(StoreError::Invalid)?;
+    // Admission bounds a board's bytes: a store never refuses one for size,
+    // and the server reads no shape in it.
+    if model == crate::model::Model::Board {
+        return Ok((model.measure(&txn).map_err(StoreError::Invalid)?, None));
+    }
     if let crate::model::Model::Item(item) = model {
         item.check_caps(&txn).map_err(StoreError::Invalid)?;
     }

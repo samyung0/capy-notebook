@@ -160,6 +160,21 @@ included, which then read as removed. For a workspace material, `owner_user_id` 
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
+An item bank question's images and drawn samples (question-bank.md, Item banks)
+are `editor_assets` rows with a `bank_question_id` and no workspace or material,
+charged to whoever added or copied them in and checked by `gateStorageTx` as a
+clone's are; deleting the question, the class workspace or the owner's account
+releases them, and the payer deletes one from their Files page (Epo 2026-11-14,
+listed with the bank's name even after they leave the class). The question
+JSON itself is not charged: a bank holds at most 2,000 questions, each within
+the quiz bounds.
+
+A graded quiz's own quiz (study-progress.md, The owned quiz) is charged to
+whoever made it, as any material is, and goes with their account purge (Epo
+2026-11-14). It is made with its graded quiz (Epo 2026-11-16), so none is
+left waiting; an Existing quiz copy charges its images to the caller as From the
+bank's copies do.
+
 An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
 not whoever drafted it. Its images are new `editor_assets` rows of the workspace
 with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's
@@ -336,24 +351,86 @@ A canvas of a person's own (Epo 2026-11-10, migration 0167: the account's
 Canvas page) is the same kind of material with no `canvas_workspace_id`; a
 person may have several, each paid for and capped as below.
 
-A member's personal workspace canvas (Epo 2026-11-09, migration 0164) is a
-standalone material of kind `canvas` (`canvas_workspace_id` names its workspace,
-one live canvas per member and workspace) paid for by the member, as any
-standalone material is. Its drawing is the material's own `board` editor asset,
-gzipped, replaced on every save and trashed by the pruner as the material's
-`canvas_board` block stops naming it; the block also names the canvas's image
-assets, each an `image` editor asset of the canvas uploaded at once as a note's
-is (the plan's image cap after compression, listed on the Files page) and
-trashed the same way once a save no longer names it; the canvas route lists the
-ones a save may name (`ownImageAssetIds`, `CanvasImageAssets`), a trashed one
-included, so an undone delete is named again and restored. A canvas's board asset is capped at `CANVAS_BOARD_MAX` (2 MiB before
-gzip, `fieldlimits.CanvasBoardBytes`), checked in the browser before the upload
-and by `validateEditorAssetMetadataFor` with the material's kind; a drawn sample
-answer's board keeps the drawing's 250 KiB. The `editor_assets_size_check` row
-constraint is the backstop at 2 MiB for every `board` asset. A full storage
-refuses the upload as it refuses any editor asset. The canvas goes with the
-membership (`dropLeaverCanvasTx`) and with the workspace (cascade), its assets
-with it.
+A canvas drawn in a workspace (Epo 2026-11-09, migration 0164) is a
+standalone material of kind `canvas` (`canvas_workspace_id` names its workspace;
+any number per member and workspace since migration 0171, Epo 2026-11-12) paid
+for by the member who made it, as any standalone material is, shared with the
+workspace or not (who holds it:
+[authorization](authorization-permissions-lifecycles.md#workspace-canvases)).
+
+- **The board (Epo 2026-11-18).** The drawing is the Yjs state of the canvas's
+  collaboration room (`material_yjs_documents` and `material_yjs_updates`, as
+  a note's), no longer a `board` editor asset. A canvas is the one material
+  kind charged for its stored Yjs bytes: `prepare_material_storage_fields`
+  (migration 0183) sets its `size_bytes` to the length of its content JSON
+  plus `octet_length(state) + log_bytes` of its `material_yjs_documents` row,
+  charged to its creator through `account_material_storage` like any
+  material's size and shown under Canvas on Billing. The trigger runs on
+  content writes, so the charge is the board's stored bytes as of its last
+  projection (each projection changes the content, since the block carries the
+  stored version); a fold between projections is not charged again, and a
+  rename, a share or a trash charges nothing. The seeded board is charged
+  once its room first seeds it, at its first open (migration 0184, Epo
+  2026-11-20): a canvas is made with no Yjs row, and its room seeds the
+  `material_yjs_documents` row on the first open (`load` → `bootstrap` in
+  `note_store.rs`) and projects nothing for it (stored and projected version
+  1), so an AFTER INSERT trigger on that table rewrites the canvas's content
+  unchanged, which reruns `prepare_material_storage_fields` with the row in
+  place. A canvas opened and left untouched pays for its content and its
+  seeded state; one never opened pays for its content alone. Lock order: that
+  first open charges the payer after the seed's `FOR UPDATE` on the material,
+  its storage delta row taking a key-share lock on the payer's `users` row,
+  while the other charging writes lock the user first and the material after
+  (`lock_boundary` in `access.rs`, `ProjectMaterialContent`). This is safe
+  because those account locks are `FOR NO KEY UPDATE` or `FOR SHARE`, which
+  a key-share lock never waits on, and the paths that lock a user `FOR UPDATE`
+  refuse a canvas first; a future path must not lock a user `FOR UPDATE` and
+  then a canvas row. The creator pays for every
+  editor's strokes. Deleting from the board lowers the charge only as far as
+  the room's state shrinks. The charge is released with the row.
+- **The cap.** A canvas room's live state is held to `CANVAS_BOARD_MAX`, 4 MiB
+  (`fieldlimits.CanvasBoardBytes`; Epo 2026-11-18, "for cap 4MiB sure", after
+  the growth bench: about 10.4 hours of its mixed hour, 5,920 pen strokes of
+  40 points or 150,000 typed characters,
+  [report](../bench/collaboration/reports/2026-11-18-board-live-growth.md);
+  2 MiB while it was provisional). It bounds the Yjs state, history included,
+  not a saved copy, and the collaboration server enforces it at admission
+  ([plate-editor](frontend/plate-editor.md#the-boards-tools), The canvas's
+  room). It equals the largest sync message the collaboration server takes
+  (`NOTE_MAX_SYNC_BYTES`, 4 MiB; a compile-time assert keeps the cap from
+  passing it). The embed catalog carries the number to the Rust catalog and
+  the board catalog to the browser. A store never refuses a board for size.
+  What a board at the cap costs to open was measured after the number was
+  picked: on the Mac, through the mock room, a board of 3.98 MiB (4,578 pen
+  strokes, 262 notes, 262 shapes) added 1.1 s to a blank canvas's first
+  paint, 1.3 s until its last long frame, and 125 MB to the tab's JS heap;
+  the service and a network were not in the measure
+  ([report](../bench/editor/reports/2026-11-18-board-open-at-cap.md)).
+- **A full payer.** A creator at its storage limit, or frozen, makes the room
+  read-only for everyone (the token carries `read`), as for any material.
+- **Images.** Each is an `image` editor asset of the canvas uploaded at once
+  as a note's is (the uploader's plan image cap after compression, listed on
+  the uploader's Files page) and charged to whoever uploaded it: the creator,
+  or an owner or editor of the workspace on a shared canvas (Epo 2026-11-18,
+  `lockEditorAssetScopeTx`). The room's projection names the assets the board
+  holds in the material's `canvas_board` block, and the pruner trashes an
+  image asset no projection names (60 s grace, purged a day later) and
+  restores one named again. A board update that writes an asset id makes the
+  room project after its next store instead of at the idle cadence, so an
+  image deleted and brought back by Undo is served to the others again within
+  seconds. The canvas routes list every ready image asset of the canvas, a
+  trashed one included (`ownImageAssetIds`, `CanvasImageAssets`). A full
+  storage refuses the upload as it refuses any editor asset. An editor keeps
+  paying for its images on a canvas it can no longer open until it deletes
+  them from Files
+  ([authorization](authorization-permissions-lifecycles.md#workspace-canvases)).
+- **Board assets.** A canvas takes none (`checkEditorAsset` answers 400).
+  Migration 0181 put `editor_assets_size_check` back to 256,000 bytes for a
+  `board` asset, which is a quiz's drawn sample answer alone again
+  (`fieldlimits.DrawingBoardBytes`, 250 KiB).
+- The canvas goes with the membership (`dropLeaverCanvasTx`; provisional for
+  a shared canvas, see authorization) and with the workspace (cascade), its
+  assets and Yjs rows with it.
 
 ## Counter model
 
@@ -382,6 +459,13 @@ and deletes the folded delta rows. Two known gaps, fix deferred: it locks no
 save committing between its delta read and the recount is counted twice until
 the next run; and its `storage_counter_drift` report compares the counter
 without the pending deltas, so it reports drift whenever deltas are pending.
+
+Billing's storage bar (`storageBreakdown`, Epo 2026-11-13) recounts the same
+rows on every read, in three parts adding up to the used bytes: Files
+(uploads with their saved documents, notes, quizzes, sets, assignment copies
+and the PDF and file attachments inside them), Images and audio (the image and
+audio assets of anything but a canvas) and Canvas (drawn answers, every
+`board` asset, canvases with their assets).
 
 Accounting helpers no-op when the owner user row is already gone, because
 foreign-key cascades can fire resource delete triggers after the user is

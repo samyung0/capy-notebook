@@ -1400,7 +1400,7 @@ _MATERIAL_SCOPE_SQL = """
             FROM rag_material_contents mc
             JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
             JOIN materials m ON m.id = mc.material_id
-            WHERE mc.workspace_id {in_ws} AND m.trashed_at IS NULL
+            WHERE mc.workspace_id {in_ws} AND m.trashed_at IS NULL AND m.assignment_id IS NULL
                 AND (NOT m.hidden OR m.workspace_id = ANY(%(hidden_readers)s))
                 AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))"""
 
@@ -1693,13 +1693,13 @@ WITH scoped AS (
     SELECT m.id, 'material', m.title, m.workspace_id, m.topic_id, mc.content_id
     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
     WHERE m.workspace_id = ANY(%(ws)s) AND m.trashed_at IS NULL
-      AND m.parent_material_id IS NULL
+      AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
       AND (NOT m.hidden OR m.workspace_id = ANY(%(hidden_readers)s))
     UNION ALL
     SELECT m.id, 'material', m.title, NULL, NULL, mc.content_id
     FROM materials m LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
     WHERE m.workspace_id IS NULL AND m.owner_user_id = %(me)s
-      AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+      AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 ),
 q AS MATERIALIZED (
     SELECT m.lang, websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS q
@@ -1960,7 +1960,7 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
                  LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
                  LEFT JOIN rag_content_summaries cs ON cs.content_id = mc.content_id
             WHERE m.workspace_id = %s AND m.trashed_at IS NULL
-              AND m.parent_material_id IS NULL AND {visible}
+              AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND {visible}
             ORDER BY m.position, m.created_at
             """.format(visible=_visible("m")),
             (workspace_id, hidden_readers()),

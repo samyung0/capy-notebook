@@ -19,6 +19,7 @@ use yrs::{
     TransactionMut, Xml, XmlTextRef,
 };
 
+use crate::figure_map;
 use crate::json::value_to_any;
 use crate::plate::{self, DeltaOp, Insert, ProjectionError, utf16_len};
 use crate::slate::{self, Operation, Root, SlateError, len16};
@@ -257,7 +258,16 @@ impl Prelim for ElementPrelim {
                     Any::String(source) if plate::holds_text(&kind, &key) => {
                         text.insert_attribute(txn, key, TextPrelim::new(source.as_ref()));
                     }
-                    // A figure's block is a map (Epo 2026-10-17), likewise.
+                    // A figure's block is the figure map quiz rooms hold
+                    // (Epo 2026-11-16), as the patched slate-yjs inserts it.
+                    Any::Map(block)
+                        if plate::holds_map(&kind, &key) && figure_map::is_figure(&kind) =>
+                    {
+                        let map = text.insert_attribute(txn, key, MapPrelim::default());
+                        map.insert(txn, "type", kind.as_str());
+                        figure_map::sync(txn, &map, &kind, &figure_map::any_json(&Any::Map(block)));
+                    }
+                    // A table view's block is a map (Epo 2026-10-17), likewise.
                     Any::Map(block) if plate::holds_map(&kind, &key) => {
                         let map = text.insert_attribute(txn, key, MapPrelim::default());
                         edit_map(txn, &map, &block, plate::lists_of(&kind));
@@ -410,11 +420,12 @@ fn nothing_follows(parent: BranchPtr, at: u32, last: Option<ItemPtr>) -> bool {
     true
 }
 
-/// Changes a figure's block map to `next` with the fewest writes, as the
+/// Changes a table view's block map to `next` with the fewest writes, as the
 /// slate-yjs patch's `editSharedMap` does (Epo 2026-10-17): a changed entry
 /// is set whole and a gone one removed, so another writer's change to a
-/// different entry stays; a list key's (`lists`: series, graph elements)
-/// entries of maps are edited the same way, in key order.
+/// different entry stays; a list key's (`lists`: columns, rows, views)
+/// entries of maps are edited the same way, in key order. A figure's map
+/// is written by `figure_map::sync`.
 pub fn edit_map(
     txn: &mut TransactionMut,
     map: &MapRef,
@@ -457,8 +468,7 @@ pub fn edit_map(
 }
 
 /// A list of maps edited towards `items` (each an `Any::Map`): matched by
-/// their `id` when every entry has one (a graph's elements), else by index
-/// (series). A matched entry is edited ([edit_map]); one out of place is
+/// their `id` when every entry has one (a table view's rows), else by index. A matched entry is edited ([edit_map]); one out of place is
 /// removed and inserted anew where it now sits.
 fn edit_list(txn: &mut TransactionMut, list: &ArrayRef, items: &[Any]) {
     fn id_of(entry: &Any) -> Option<String> {
@@ -657,10 +667,22 @@ pub fn apply_op(
                         _ if value.is_null() => {
                             element.remove_attribute(txn, key);
                         }
-                        // A figure's block map takes it entry by entry, so a
-                        // peer's change to another entry stays (Epo 2026-10-17).
+                        // A figure's map writes only what differs (Epo
+                        // 2026-11-16), a table view's entry by entry (Epo
+                        // 2026-10-17), so a peer's change to another entry stays.
+                        (Some(Out::YMap(held)), Any::Map(_)) if figure_map::is_figure(&kind) => {
+                            figure_map::sync(txn, &held, &kind, value);
+                        }
                         (Some(Out::YMap(held)), Any::Map(next)) => {
                             edit_map(txn, &held, &next, plate::lists_of(&kind));
+                        }
+                        (_, Any::Map(_))
+                            if plate::holds_map(&kind, key) && figure_map::is_figure(&kind) =>
+                        {
+                            let map =
+                                element.insert_attribute(txn, key.as_str(), MapPrelim::default());
+                            map.insert(txn, "type", kind.as_str());
+                            figure_map::sync(txn, &map, &kind, value);
                         }
                         (_, Any::Map(next)) if plate::holds_map(&kind, key) => {
                             let map =

@@ -80,7 +80,7 @@ export function ArchivedChatsDialog({
       >
         {!archived && <SkeletonList count={3} rowHeight={56} />}
         {archived?.length === 0 && (
-          <p className="pb-2 text-fg-muted text-sm">{m.chat_no_archived()}</p>
+          <p className="pb-2 text-fg-muted text-sm">{m.common_nothing_yet()}</p>
         )}
         {!!archived?.length && (
           // The list scrolls by itself, so the footer's actions stay in reach

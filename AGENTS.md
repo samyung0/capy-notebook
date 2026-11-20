@@ -96,7 +96,7 @@ changing any of them.
 
 | Family          | Measures                                                                         | Runs in CI |
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
-| `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`); update rates one user's editing sends (`pnpm bench:rates`) | Yes, manual (stress) |
+| `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`); update rates one user's editing sends (`pnpm bench:rates`); a board's live Yjs state against its saved size, per kind of work (`pnpm bench:growth`) | Yes, manual (stress) |
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`); the drawing board's open, pan, zoom, pen and typing (`pnpm bench:canvas`) | Yes        |
 | `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |
 | `bench/clone`   | A single file clone's row and saved-edit copy against its index copy (`bench/clone/scripts/run.sh`) | No, Docker |

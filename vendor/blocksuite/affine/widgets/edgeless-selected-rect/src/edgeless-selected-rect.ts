@@ -49,6 +49,12 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
       z-index: 1;
     }
 
+    /* Capy (local change 56; Epo 2026-11-13, F1): Excalidraw's frame in the
+       app's accent (--affine-primary-color). A 1px line 6px off the selection,
+       dashed round several; 9px square corners; a rotate knob above the middle in
+       place of the hidden ring past each corner; a faint bar outside each side
+       that resizes. AFFiNE drew a 2px blue line on the selection's edge with round
+       corners. */
     .affine-edgeless-selected-rect {
       position: absolute;
       top: 0;
@@ -58,13 +64,24 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
       pointer-events: none;
       box-sizing: border-box;
       z-index: 1;
-      border-color: var(--affine-blue);
-      border-width: 2px;
-      border-style: solid;
+      border: 0;
       transform: translate(0, 0) rotate(0);
     }
 
-    .affine-edgeless-selected-rect[data-locked='true'] {
+    .affine-edgeless-selected-rect::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border: 1px solid var(--affine-primary-color);
+      pointer-events: none;
+    }
+    .affine-edgeless-selected-rect[data-multi='true']::before {
+      border-style: dashed;
+    }
+    .affine-edgeless-selected-rect[data-connector='true']::before {
+      display: none;
+    }
+    .affine-edgeless-selected-rect[data-locked='true']::before {
       border-color: ${unsafeCSSVarV2('edgeless/lock/locked', '#00000085')};
     }
 
@@ -83,8 +100,10 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
       touch-action: none;
     }
 
+    /* Corners and the knob: an 18px target round a 9px square or 10px circle. */
     .affine-edgeless-selected-rect .handle[aria-label^='top-'],
-    .affine-edgeless-selected-rect .handle[aria-label^='bottom-'] {
+    .affine-edgeless-selected-rect .handle[aria-label^='bottom-'],
+    .affine-edgeless-selected-rect .handle[aria-label='rotate'] {
       width: 18px;
       height: 18px;
       box-sizing: border-box;
@@ -94,119 +113,95 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
     .affine-edgeless-selected-rect .handle[aria-label^='top-'] .resize,
     .affine-edgeless-selected-rect .handle[aria-label^='bottom-'] .resize {
       position: absolute;
-      width: 12px;
-      height: 12px;
+      left: 4.5px;
+      top: 4.5px;
+      width: 9px;
+      height: 9px;
+      box-sizing: border-box;
+      border-radius: 2.5px;
+      border: 1px solid var(--affine-primary-color);
+      background: var(--capy-handle-fill, white);
+    }
+
+    /* Centred on the frame's line, 5.5px out from the selection. */
+    .affine-edgeless-selected-rect .handle[aria-label='top-left'] {
+      left: -14.5px;
+      top: -14.5px;
+    }
+    .affine-edgeless-selected-rect .handle[aria-label='top-right'] {
+      right: -14.5px;
+      top: -14.5px;
+    }
+    .affine-edgeless-selected-rect .handle[aria-label='bottom-right'] {
+      right: -14.5px;
+      bottom: -14.5px;
+    }
+    .affine-edgeless-selected-rect .handle[aria-label='bottom-left'] {
+      left: -14.5px;
+      bottom: -14.5px;
+    }
+
+    .affine-edgeless-selected-rect .handle[aria-label='rotate'] {
+      left: calc(50% - 9px);
+      top: -32px;
+    }
+    /* The whole target turns (the pointer's target must be .rotate). */
+    .affine-edgeless-selected-rect .handle[aria-label='rotate'] .rotate {
+      position: absolute;
+      inset: 0;
+    }
+    .affine-edgeless-selected-rect .handle[aria-label='rotate'] .rotate::before {
+      content: '';
+      position: absolute;
+      left: 4px;
+      top: 4px;
+      width: 10px;
+      height: 10px;
       box-sizing: border-box;
       border-radius: 50%;
-      border: 2px var(--affine-blue) solid;
-      background: white;
+      border: 1px solid var(--affine-primary-color);
+      background: var(--capy-handle-fill, white);
     }
 
-    .affine-edgeless-selected-rect .handle[aria-label^='top-'] .rotate,
-    .affine-edgeless-selected-rect .handle[aria-label^='bottom-'] .rotate {
-      position: absolute;
-      width: 12px;
-      height: 12px;
-      box-sizing: border-box;
-      background: transparent;
-    }
-
-    /* -18 + 6.5 */
-    .affine-edgeless-selected-rect .handle[aria-label='top-left'] {
-      left: -12px;
-      top: -12px;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='top-left'] .resize {
-      right: 0;
-      bottom: 0;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='top-left'] .rotate {
-      right: 6px;
-      bottom: 6px;
-    }
-
-    .affine-edgeless-selected-rect .handle[aria-label='top-right'] {
-      top: -12px;
-      right: -12px;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='top-right'] .resize {
-      left: 0;
-      bottom: 0;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='top-right'] .rotate {
-      left: 6px;
-      bottom: 6px;
-    }
-
-    .affine-edgeless-selected-rect .handle[aria-label='bottom-right'] {
-      right: -12px;
-      bottom: -12px;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='bottom-right'] .resize {
-      left: 0;
-      top: 0;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='bottom-right'] .rotate {
-      left: 6px;
-      top: 6px;
-    }
-
-    .affine-edgeless-selected-rect .handle[aria-label='bottom-left'] {
-      bottom: -12px;
-      left: -12px;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='bottom-left'] .resize {
-      right: 0;
-      top: 0;
-    }
-    .affine-edgeless-selected-rect .handle[aria-label='bottom-left'] .rotate {
-      right: 6px;
-      top: 6px;
-    }
-
+    /* Sides: a 13px target over the frame's line and the bar outside it. */
     .affine-edgeless-selected-rect .handle[aria-label='top'],
     .affine-edgeless-selected-rect .handle[aria-label='bottom'],
     .affine-edgeless-selected-rect .handle[aria-label='left'],
     .affine-edgeless-selected-rect .handle[aria-label='right'] {
       border: 0;
       background: transparent;
-      border-color: var('--affine-blue');
     }
 
     .affine-edgeless-selected-rect .handle[aria-label='left'],
     .affine-edgeless-selected-rect .handle[aria-label='right'] {
       top: 0;
-      bottom: 0;
       height: 100%;
-      width: 6px;
+      width: 13px;
     }
-
     .affine-edgeless-selected-rect .handle[aria-label='top'],
     .affine-edgeless-selected-rect .handle[aria-label='bottom'] {
       left: 0;
-      right: 0;
       width: 100%;
-      height: 6px;
+      height: 13px;
     }
-
-    /* calc(-1px - (6px - 1px) / 2) = -3.5px */
     .affine-edgeless-selected-rect .handle[aria-label='left'] {
-      left: -3.5px;
+      left: -16px;
     }
     .affine-edgeless-selected-rect .handle[aria-label='right'] {
-      right: -3.5px;
+      right: -16px;
     }
     .affine-edgeless-selected-rect .handle[aria-label='top'] {
-      top: -3.5px;
+      top: -16px;
     }
     .affine-edgeless-selected-rect .handle[aria-label='bottom'] {
-      bottom: -3.5px;
+      bottom: -16px;
     }
 
     .affine-edgeless-selected-rect .handle[aria-label='top'] .resize,
     .affine-edgeless-selected-rect .handle[aria-label='bottom'] .resize,
     .affine-edgeless-selected-rect .handle[aria-label='left'] .resize,
     .affine-edgeless-selected-rect .handle[aria-label='right'] .resize {
+      position: absolute;
       width: 100%;
       height: 100%;
     }
@@ -216,51 +211,47 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
     .affine-edgeless-selected-rect .handle[aria-label='left'] .resize:after,
     .affine-edgeless-selected-rect .handle[aria-label='right'] .resize:after {
       position: absolute;
-      width: 7px;
-      height: 7px;
-      box-sizing: border-box;
-      border-radius: 6px;
-      z-index: 10;
       content: '';
-      background: white;
+      border-radius: 2px;
+      background: var(--affine-primary-color);
+      opacity: 0.55;
     }
-
-    .affine-edgeless-selected-rect
-      .handle[aria-label='top']
-      .transparent-handle:after,
-    .affine-edgeless-selected-rect
-      .handle[aria-label='bottom']
-      .transparent-handle:after,
-    .affine-edgeless-selected-rect
-      .handle[aria-label='left']
-      .transparent-handle:after,
-    .affine-edgeless-selected-rect
-      .handle[aria-label='right']
-      .transparent-handle:after {
-      opacity: 0;
-    }
-
     .affine-edgeless-selected-rect .handle[aria-label='left'] .resize:after,
     .affine-edgeless-selected-rect .handle[aria-label='right'] .resize:after {
-      top: calc(50% - 6px);
+      top: calc(50% - 8px);
+      width: 3px;
+      height: 16px;
     }
-
     .affine-edgeless-selected-rect .handle[aria-label='top'] .resize:after,
     .affine-edgeless-selected-rect .handle[aria-label='bottom'] .resize:after {
-      left: calc(50% - 6px);
+      left: calc(50% - 8px);
+      width: 16px;
+      height: 3px;
     }
-
     .affine-edgeless-selected-rect .handle[aria-label='left'] .resize:after {
-      left: -0.5px;
+      left: 3px;
     }
     .affine-edgeless-selected-rect .handle[aria-label='right'] .resize:after {
-      right: -0.5px;
+      right: 3px;
     }
     .affine-edgeless-selected-rect .handle[aria-label='top'] .resize:after {
-      top: -0.5px;
+      top: 3px;
     }
     .affine-edgeless-selected-rect .handle[aria-label='bottom'] .resize:after {
-      bottom: -0.5px;
+      bottom: 3px;
+    }
+
+    .capy-rotate-angle {
+      position: absolute;
+      z-index: 10;
+      padding: 1px 5px;
+      border-radius: 6px;
+      border: 1px solid var(--affine-border-color);
+      background: var(--affine-background-overlay-panel-color);
+      color: var(--affine-primary-color);
+      font: 500 11px/16px var(--affine-font-family);
+      white-space: nowrap;
+      pointer-events: none;
     }
 
     .affine-edgeless-selected-rect .handle .resize::before {
@@ -495,7 +486,8 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
       top,
       rotate,
       borderStyle: 'solid',
-      borderWidth: 2,
+      // Capy (local change 56): the line is drawn 6px out (::before).
+      borderWidth: 0,
     };
   }, this);
 
@@ -629,6 +621,7 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
                   this._mode = 'rotate';
                 },
                 onRotateUpdate: payload => {
+                  this._rotateAngle = payload.currentAngle;
                   this._updateCursor({
                     type: 'rotate',
                     angle: payload.currentAngle,
@@ -636,6 +629,7 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
                   });
                 },
                 onRotateEnd: () => {
+                  this._rotateAngle = undefined;
                   this._mode = 'resize';
                   this._dragEndCleanup();
                 },
@@ -814,10 +808,39 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
         data-scale-percent=${ifDefined(this._scalePercent)}
         data-scale-direction=${ifDefined(this._scaleDirection)}
         data-locked=${hasElementLocked}
+        data-multi=${elements.length > 1}
+        data-connector=${isConnector}
       >
         ${handlers}
       </div>
+      ${this._renderAngle()}
     `;
+  }
+
+  /** Capy (local change 56): the angle while turning, under the circle the
+   * selection turns in, so it stays put and neither the item nor the knob covers
+   * it; above that circle when the board's bottom toolbar would hide it. One item
+   * shows its own turn (snapped), several the pointer's. */
+  private _renderAngle() {
+    if (this._rotateAngle === undefined) return nothing;
+    const { left, top, width, height, rotate } = this._selectedRect;
+    const reach = Math.hypot(width, height) / 2;
+    const single = this.selection.selectedElements.length === 1;
+    let angle = Math.round(single ? rotate : this._rotateAngle) % 360;
+    if (angle > 180) angle -= 360;
+    if (angle <= -180) angle += 360;
+    const below = top + height / 2 + reach + 44;
+    const room = this.gfx.viewport.height - 110;
+    return html`<div
+      class="capy-rotate-angle"
+      style=${styleMap({
+        left: `${left + width / 2}px`,
+        top: `${below < room ? below : top + height / 2 - reach - 62}px`,
+        transform: 'translateX(-50%)',
+      })}
+    >
+      ${angle}°
+    </div>`;
   }
 
   @state()
@@ -837,6 +860,9 @@ export class EdgelessSelectedRectWidget extends WidgetComponent<RootBlockModel> 
 
   @state()
   private accessor _mode: 'resize' | 'scale' | 'rotate' = 'resize';
+
+  @state()
+  private accessor _rotateAngle: number | undefined = undefined;
 
   @state()
   private accessor _scaleDirection: ResizeHandle | undefined = undefined;

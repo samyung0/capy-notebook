@@ -28,7 +28,13 @@ export class EdgelessNoteMenu extends EdgelessToolbarToolMixin(LitElement) {
     :host {
       position: absolute;
       display: flex;
+      /* Capy (local change 57): what the lead button opens sits above the row. */
+      flex-direction: column;
+      gap: 8px;
       z-index: -1;
+    }
+    .above {
+      align-self: flex-start;
     }
     .menu-content {
       display: flex;
@@ -112,6 +118,9 @@ export class EdgelessNoteMenu extends EdgelessToolbarToolMixin(LitElement) {
     const { childType } = this;
 
     return html`
+      ${this.above === nothing
+        ? nothing
+        : html`<div class="above">${this.above}</div>`}
       <edgeless-slide-menu>
         <div class="menu-content">
           <!-- Capy (local change 12) -->
@@ -165,6 +174,11 @@ export class EdgelessNoteMenu extends EdgelessToolbarToolMixin(LitElement) {
           <div class="divider"></div>
           ` : nothing}
 
+          ${this.lead === nothing
+            ? nothing
+            : html`<div class="button-group-container">${this.lead}</div>
+                <div class="divider"></div>`}
+
           <!-- add to note -->
           <div class="button-group-container">
             ${repeat(
@@ -194,6 +208,14 @@ export class EdgelessNoteMenu extends EdgelessToolbarToolMixin(LitElement) {
 
   @state()
   private accessor _imageLoading = false;
+
+  /** Capy (local change 57; Epo 2026-11-13, P1): a button before the note kinds
+   * (the board's Link), and what it opens above the row (the address field). */
+  @property({ attribute: false })
+  accessor lead: unknown = nothing;
+
+  @property({ attribute: false })
+  accessor above: unknown = nothing;
 
   @property({ attribute: false })
   accessor childFlavour!: NoteChildrenFlavour;

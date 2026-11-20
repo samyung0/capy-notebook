@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/review"
 )
 
@@ -17,7 +23,7 @@ import (
 const assignmentQuestions = `[
  {"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p1","blocks":[{"type":"text","text":"Pick"}],"answer":{"type":"mcq","options":["a","b"],"correct":[1]},"marks":1,"solution":[]}]},
  {"id":"q2","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p2","blocks":[{"type":"text","text":"Name it"}],"answer":{"type":"short","accepted":["osmosis"]},"marks":2,"solution":[]}]},
- {"id":"q3","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p3","blocks":[{"type":"text","text":"Explain"}],"answer":{"type":"open","accepted":[],"hints":[]},"marks":3,"markscheme":[{"text":"Names the membrane","marks":2},{"text":"Says dilute","marks":1}],"solution":[]}]}
+ {"id":"q3","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p3","blocks":[{"type":"text","text":"Explain"}],"answer":{"type":"open","accepted":[]},"marks":3,"markscheme":[{"text":"Names the membrane","marks":2},{"text":"Says dilute","marks":1}],"solution":[]}]}
 ]`
 
 func frozenFixture(t *testing.T) []map[string]any {
@@ -53,17 +59,17 @@ func TestGradeAttemptMarksClosedPartsAndHoldsOpenOnes(t *testing.T) {
 	}
 }
 
-// TestApplyPartMarks: the owner's marks clear the wait, in half marks up to the
+// TestApplyPartMarks: the owner's marks clear the wait, in tenths up to the
 // marks, and a closed part's mark changes too.
 func TestApplyPartMarks(t *testing.T) {
 	graded, _ := gradeAttempt(frozenFixture(t), map[string]any{"p1": []any{float64(0)}, "p3": "Water moves in"})
 	now := time.Now()
 	open := graded[2]
-	changed, err := applyPartMarks(open, []AssignmentPartMark{{PartID: "p3", Items: []float64{1.5, 1}}}, "owner", now)
+	changed, err := applyPartMarks(open, []AssignmentPartMark{{PartID: "p3", Items: []float64{1.2, 0.3}}}, "owner", now)
 	if err != nil || !changed["p3"] || questionWaiting(open) {
 		t.Fatalf("changed %v, waiting %v, err %v", changed, questionWaiting(open), err)
 	}
-	if awarded, _ := questionMarks(open); awarded != 2.5 {
+	if awarded, _ := questionMarks(open); awarded != 1.5 {
 		t.Fatalf("open part awarded %v", awarded)
 	}
 	mark := 1.0
@@ -76,7 +82,7 @@ func TestApplyPartMarks(t *testing.T) {
 	}
 	for _, bad := range []AssignmentPartMark{
 		{PartID: "p3", Items: []float64{3, 0}},
-		{PartID: "p3", Items: []float64{0.25, 0}},
+		{PartID: "p3", Items: []float64{0.25, 0}}, // two decimal places
 		{PartID: "p3", Items: []float64{1}},
 		{PartID: "missing", Items: []float64{1, 1}},
 	} {
@@ -92,7 +98,7 @@ func TestApplyPartMarks(t *testing.T) {
 func TestGradedWithoutKeys(t *testing.T) {
 	graded, _ := gradeAttempt(frozenFixture(t), map[string]any{"p1": []any{float64(1)}, "p3": "x"})
 	graded[0]["comment"] = "Well done"
-	raw, err := json.Marshal(gradedWithoutKeys(graded, false))
+	raw, err := json.Marshal(gradedWithoutKeys(graded, false, "at_1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +124,7 @@ func TestShuffledQuestionsKeepAnAttemptsOrder(t *testing.T) {
 }
 
 // TestQuestionReports: answer frequencies, common wrong answers and marking
-// points; shared numbers wait for five results.
+// points; percent and average from the marked answers alone.
 func TestQuestionReports(t *testing.T) {
 	var attempts []reportAttempt
 	for i, answers := range []map[string]any{
@@ -160,8 +166,20 @@ func TestQuestionReports(t *testing.T) {
 	if items[0].Awarded != 1 || items[1].Awarded != 0 {
 		t.Fatalf("marking points = %+v", items)
 	}
-	if reports[0].Percent != nil {
-		t.Fatal("a percentage showed under five results")
+	if reports[0].Percent == nil || *reports[0].Percent != 0.75 {
+		t.Fatalf("percent = %v", reports[0].Percent)
+	}
+	// The waiting open answer is left out of the average; the two blanks are
+	// marked zeros: (2 + 0 + 0) / 3.
+	if reports[2].Average == nil || *reports[2].Average != 2.0/3 {
+		t.Fatalf("average = %v", reports[2].Average)
+	}
+	// Each part carries its own numbers, the report's row for it (Epo 2026-11-14).
+	if p := reports[0].Parts[0].Percent; p == nil || *p != 0.75 {
+		t.Fatalf("part percent = %v", p)
+	}
+	if a := reports[2].Parts[0].Average; a == nil || *a != 2.0/3 {
+		t.Fatalf("part average = %v", a)
 	}
 	waiting := 0
 	for _, row := range rows {
@@ -173,21 +191,18 @@ func TestQuestionReports(t *testing.T) {
 		t.Fatalf("answer rows = %+v", rows)
 	}
 
-	attempts = append(attempts, attempts[3])
-	attempts[4].userID = "ue"
-	reports, _ = questionReports(frozenFixture(t), attempts, nil)
-	if reports[0].Percent == nil || *reports[0].Percent != 0.8 {
-		t.Fatalf("percent = %v", reports[0].Percent)
-	}
 }
 
 // TestCheckLatePolicy: the form takes what the dialog offers.
 func TestCheckLatePolicy(t *testing.T) {
 	due := time.Now()
+	points := 20
 	marked := AssignmentForm{Kind: AssignmentMarked, DueAt: &due}
 	for _, form := range []func(f *AssignmentForm){
 		func(f *AssignmentForm) {},
 		func(f *AssignmentForm) { f.NoLate = true },
+		// A graded Assignment's grade takes the penalty too (Epo 2026-11-14).
+		func(f *AssignmentForm) { f.LatePenaltyPct, f.Kind, f.Points = 20, AssignmentUnmarked, &points },
 		func(f *AssignmentForm) { f.LatePenaltyPct = 20 },
 		func(f *AssignmentForm) { f.LatePenaltyPct = 50 },
 		func(f *AssignmentForm) { f.NoLate, f.Kind = true, AssignmentUnmarked },
@@ -282,9 +297,113 @@ func newAssignmentFixture(t *testing.T, label string) assignmentFixture {
 	return assignmentFixture{f, editor, viewer, other, quiz}
 }
 
+// everyAssignment is one page holding every assignment a test makes.
+var everyAssignment = AssignmentListParams{Closed: true, Done: true, Limit: 100}
+
+// The list pages in SQL (Epo 2026-11-13): open ones by due date, then closed
+// ones; Closed and Done keep those out until asked for; a topic keeps only its
+// own; the cursor goes on where the page stopped.
+func TestAssignmentListPages(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-pages")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	add := func(title string, due time.Duration) string {
+		form := f.form(t, now.Add(due))
+		form.Title = title
+		a, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a.ID
+	}
+	add("Later", 48*time.Hour)
+	soon := add("Soon", 24*time.Hour)
+	shut := add("Shut", 72*time.Hour)
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, shut, true, now); err != nil {
+		t.Fatal(err)
+	}
+	titles := func(l AssignmentList) []string {
+		var out []string
+		for _, a := range l.Items {
+			out = append(out, a.Title)
+		}
+		return out
+	}
+	open, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Done: true, Limit: 10})
+	if err != nil || !slices.Equal(titles(open), []string{"Soon", "Later"}) || open.NextCursor != "" {
+		t.Fatalf("open = %v (%q), err %v", titles(open), open.NextCursor, err)
+	}
+	first, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, Limit: 2})
+	if err != nil || !slices.Equal(titles(first), []string{"Soon", "Later"}) || first.NextCursor != "2" {
+		t.Fatalf("first page = %v (%q), err %v", titles(first), first.NextCursor, err)
+	}
+	rest, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, Offset: 2, Limit: 2})
+	if err != nil || !slices.Equal(titles(rest), []string{"Shut"}) || rest.NextCursor != "" {
+		t.Fatalf("second page = %v (%q), err %v", titles(rest), rest.NextCursor, err)
+	}
+	// A member's done one waits for Done.
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO assignment_done (assignment_id, user_id, done_at) VALUES ($1,$2,$3)`, soon, f.viewer, now); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, now, AssignmentListParams{Closed: true, Limit: 10})
+	if err != nil || !slices.Equal(titles(mine), []string{"Later", "Shut"}) {
+		t.Fatalf("a member's not done = %v, err %v", titles(mine), err)
+	}
+	if none, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, TopicIDs: []string{"tp_none"}, Limit: 10}); err != nil || len(none.Items) != 0 {
+		t.Fatalf("another topic = %v, err %v", titles(none), err)
+	}
+	// A column sort keeps open ones first.
+	byTitle, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, Sort: "title", Ascending: true, Limit: 10})
+	if err != nil || !slices.Equal(titles(byTitle), []string{"Later", "Soon", "Shut"}) {
+		t.Fatalf("by title = %v, err %v", titles(byTitle), err)
+	}
+}
+
+// makeAssignment is CreateAssignment for any form: a marked one takes
+// form.QuizID, an existing quiz, with form.Questions to freeze, as a question
+// maker's graded quiz takes the quiz it writes (makeGradedQuizTx).
+func (s *Store) makeAssignment(ctx context.Context, actorID, wsID string, form AssignmentForm, now time.Time) (Assignment, error) {
+	if form.Kind != AssignmentMarked {
+		return s.CreateAssignment(ctx, actorID, wsID, form, now)
+	}
+	var id string
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		var err error
+		id, err = s.createAssignmentTx(ctx, tx, actorID, wsID, form, now)
+		return err
+	})
+	if err != nil {
+		return Assignment{}, err
+	}
+	return s.GetAssignment(ctx, actorID, id, now)
+}
+
+// form is a graded quiz's form on the fixture's quiz, or, once an assignment
+// owns that one (migration 0174), on a new quiz of the class's.
 func (f assignmentFixture) form(t *testing.T, due time.Time) AssignmentForm {
 	t.Helper()
-	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: f.quiz.ID, Questions: frozenFixture(t),
+	return f.formBy(t, f.user, due)
+}
+
+// formBy is form for a graded quiz maker makes: on a new quiz of theirs unless
+// they made the fixture's.
+func (f assignmentFixture) formBy(t *testing.T, maker string, due time.Time) AssignmentForm {
+	t.Helper()
+	quizID := f.quiz.ID
+	var owned bool
+	if err := f.s.pool.QueryRow(context.Background(), `SELECT NOT EXISTS (SELECT 1 FROM materials WHERE id=$1 AND assignment_id IS NULL)`,
+		quizID).Scan(&owned); err != nil {
+		t.Fatal(err)
+	}
+	if owned || maker != f.user {
+		quiz, err := f.s.CreateQuiz(context.Background(), Quiz{UserID: maker, Name: "Paper " + uid("q"), WorkspaceID: f.ws.ID,
+			WorkspaceName: f.ws.Name, Questions: json.RawMessage(assignmentQuestions), Privacy: PrivacyPrivate})
+		if err != nil {
+			t.Fatal(err)
+		}
+		quizID = quiz.ID
+	}
+	return AssignmentForm{Kind: AssignmentMarked, Title: "Paper", QuizID: quizID, Questions: frozenFixture(t),
 		DueAt: &due, Attempts: 1, AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
 }
 
@@ -298,7 +417,7 @@ func TestAssignmentRun(t *testing.T) {
 	limit := 30
 	form := f.form(t, now.Add(24*time.Hour))
 	form.TimeLimitMin = &limit
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +428,7 @@ func TestAssignmentRun(t *testing.T) {
 	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("the assignee reached the quiz: %v", err)
 	}
-	mine, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, now)
+	mine, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, now, everyAssignment)
 	if err != nil || len(mine.Items) != 1 || mine.Items[0].Manage != nil || mine.Items[0].Mine == nil || mine.Members != nil {
 		t.Fatalf("a member's list = %+v, err %v", mine, err)
 	}
@@ -385,7 +504,7 @@ func TestAssignmentRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range practice.Quizzes {
+	for _, q := range practice.Items {
 		if q.ID == f.quiz.ID {
 			t.Fatal("an assigned quiz listed as its assignee's practice")
 		}
@@ -393,9 +512,9 @@ func TestAssignmentRun(t *testing.T) {
 	if _, err := f.s.GetAttempt(ctx, run.ID, f.viewer); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("the plain attempt route read an assignment attempt: %v", err)
 	}
-	list, _, err := f.s.ListAttempts(ctx, f.viewer, AttemptParams{Limit: 10})
+	list, _, err := f.s.StudyHistory(ctx, f.viewer, HistoryParams{Limit: 10})
 	if err != nil || len(list) != 0 {
-		t.Fatalf("attempts list = %+v, err %v", list, err)
+		t.Fatalf("study history = %+v, err %v", list, err)
 	}
 }
 
@@ -406,9 +525,9 @@ func TestAssignmentAuthorization(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	due := now.Add(time.Hour)
-	form := f.form(t, due)
+	form := f.formBy(t, f.editor, due)
 	form.AssignAll, form.Assignees = false, []string{f.viewer}
-	created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +537,7 @@ func TestAssignmentAuthorization(t *testing.T) {
 			t.Fatalf("%s: err = %v", name, err)
 		}
 	}
-	_, err = f.s.CreateAssignment(ctx, f.viewer, f.ws.ID, f.form(t, due), now)
+	_, err = f.s.makeAssignment(ctx, f.viewer, f.ws.ID, f.form(t, due), now)
 	if err == nil {
 		t.Fatal("a viewer created an assignment")
 	}
@@ -471,20 +590,20 @@ func TestAssignmentAuthorization(t *testing.T) {
 	}
 	_, err = f.s.GetAssignmentReport(ctx, sharer, created.ID, now)
 	notFound("share-role editor's report", err)
-	_, err = f.s.CreateAssignment(ctx, sharer, f.ws.ID, f.form(t, due), now)
+	_, err = f.s.makeAssignment(ctx, sharer, f.ws.ID, f.form(t, due), now)
 	notFound("share-role editor creates", err)
 
 	// A personal workspace hides them, deleting nothing.
 	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='personal' WHERE id=$1`, f.ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	if hidden, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now); err != nil || len(hidden.Items) != 0 {
+	if hidden, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, everyAssignment); err != nil || len(hidden.Items) != 0 {
 		t.Fatalf("personal list: %+v, err %v", hidden, err)
 	}
 	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id=$1`, f.ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	list, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now)
+	list, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, everyAssignment)
 	if err != nil || len(list.Items) != 1 {
 		t.Fatalf("back to a class: %+v, err %v", list, err)
 	}
@@ -496,7 +615,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-to")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	all, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	all, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +633,7 @@ func TestAssignmentAssignTo(t *testing.T) {
 	}
 
 	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1, AssignAll: false, Assignees: []string{f.viewer, f.user}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}
-	named, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	named, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +666,7 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	limit := 10
 	form := f.form(t, now.Add(time.Hour))
 	form.TimeLimitMin = &limit
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,99 +741,6 @@ func TestAssignmentLateMissingAndTimeOut(t *testing.T) {
 	}
 }
 
-// TestAssignmentBecomesPractice: its due date alone releases nothing; closing by
-// hand shows its quiz in Practice with a note and joins marked answers to reviews,
-// the owner can hide it again, and another open assignment on the same quiz holds
-// it back (Epo 2026-11-04).
-func TestAssignmentBecomesPractice(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-practice")
-	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	due := now.Add(time.Hour)
-	first, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, due), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(3*time.Hour)), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	run, err := f.s.StartAssignment(ctx, f.viewer, first.ID, false, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p1": []any{float64(1)}, "p3": "x"}, now); err != nil {
-		t.Fatal(err)
-	}
-	listed := func(at time.Time) (bool, *time.Time) {
-		t.Helper()
-		practice, err := f.s.WorkspacePractice(ctx, f.viewer, f.ws.ID, false, at)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, q := range practice.Quizzes {
-			if q.ID == f.quiz.ID {
-				return true, q.AssignmentClosedAt
-			}
-		}
-		return false, nil
-	}
-	// Both past their due dates, with late work still open: nothing is practice.
-	later := now.Add(4 * time.Hour)
-	if _, released, err := f.s.SweepAssignments(ctx, 50, later); err != nil || released != 0 {
-		t.Fatalf("a due date released %d, err %v", released, err)
-	}
-	if shown, _ := listed(later); shown {
-		t.Fatal("the quiz showed at its due date")
-	}
-	got, err := f.s.GetAssignment(ctx, f.user, first.ID, later)
-	if err != nil || got.Closed || got.ClosedAt != nil {
-		t.Fatalf("past due = closed %v at %v, err %v", got.Closed, got.ClosedAt, err)
-	}
-
-	// Closing the first releases it, but the second still uses the quiz.
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, first.ID, true, later); err != nil {
-		t.Fatal(err)
-	}
-	if _, released, err := f.s.SweepAssignments(ctx, 50, later); err != nil || released != 1 {
-		t.Fatalf("sweep: released %d, err %v", released, err)
-	}
-	if shown, _ := listed(later); shown {
-		t.Fatal("the quiz showed while another open assignment uses it")
-	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.editor, second.ID, true, later); err != nil {
-		t.Fatal(err)
-	}
-	if _, released, err := f.s.SweepAssignments(ctx, 50, later); err != nil || released != 1 {
-		t.Fatalf("second sweep: released %d, err %v", released, err)
-	}
-	shown, closedAt := listed(later)
-	if !shown || closedAt == nil || !closedAt.Equal(later) {
-		t.Fatalf("after closing: shown %v, note %v", shown, closedAt)
-	}
-	var rated int
-	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM review_states WHERE user_id=$1 AND material_id=$2`, f.viewer, f.quiz.ID).Scan(&rated); err != nil {
-		t.Fatal(err)
-	}
-	if rated != 1 {
-		t.Fatalf("rated %d questions, want the marked answered one (q1)", rated)
-	}
-	got, err = f.s.GetAssignment(ctx, f.viewer, first.ID, later)
-	if err != nil || got.PracticeQuizID == nil {
-		t.Fatalf("Practise again = %+v, err %v", got.PracticeQuizID, err)
-	}
-	// Hidden again by the owner, the sweep leaves it hidden.
-	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET hidden=true WHERE id=$1`, f.quiz.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := f.s.SweepAssignments(ctx, 50, later.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	if shown, _ := listed(later); shown {
-		t.Fatal("the sweep showed a quiz the owner hid again")
-	}
-}
-
 // TestAssignmentNoLateClosesAtDue: with No late submissions it closes itself at
 // the due date: a running attempt is submitted as saved, unpenalised and not
 // late, nothing more is taken, and its quiz becomes practice.
@@ -726,7 +752,7 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.NoLate = true
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,19 +803,6 @@ func TestAssignmentNoLateClosesAtDue(t *testing.T) {
 	if _, released, err := f.s.SweepAssignments(ctx, 50, past); err != nil || released != 1 {
 		t.Fatalf("sweep: released %d, err %v", released, err)
 	}
-	practice, err := f.s.WorkspacePractice(ctx, f.viewer, f.ws.ID, false, past)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var note *time.Time
-	for _, q := range practice.Quizzes {
-		if q.ID == f.quiz.ID {
-			note = q.AssignmentClosedAt
-		}
-	}
-	if note == nil || !note.Equal(due) {
-		t.Fatalf("the Practice note = %v, want the due date", note)
-	}
 }
 
 // TestAssignmentNoLateSweepSubmitsRunningAttempts: the server submits for a closed
@@ -801,7 +814,7 @@ func TestAssignmentNoLateSweepSubmitsRunningAttempts(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.NoLate = true
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -838,7 +851,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.LatePenaltyPct = 20
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -898,7 +911,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 		}
 	}
 
-	// The average reads the marks after the penalty, once five have submitted.
+	// The average reads the marks after the penalty.
 	for i := 0; i < 3; i++ {
 		user := newBlobTestUser(t, f.s, "assignment-penalty-"+uid("m"))
 		if _, err := f.s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'viewer')`, f.ws.ID, user); err != nil {
@@ -944,7 +957,7 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 	due := now.Add(time.Hour)
 	form := f.form(t, due)
 	form.Attempts, form.LatePenaltyPct = 5, 20
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1055,7 +1068,7 @@ func TestAverageReadsTheCountedAttempts(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Attempts = 2
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1113,7 @@ func TestReviewsRateTheLatestSubmission(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Attempts = 2
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1153,7 +1166,7 @@ func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Draft, form.Questions = true, nil
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	draft, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1180,15 +1193,205 @@ func TestAssignmentFrozenCopyAndDelete(t *testing.T) {
 	if err := f.s.DeleteAssignment(ctx, f.user, draft.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second delete err=%v, want not found", err)
 	}
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); err != nil {
-		t.Fatalf("deleting left the quiz refused: %v", err)
-	}
 	var left int
-	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM attempts WHERE id=$1`, run.ID).Scan(&left); err != nil {
+	if err := f.s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM attempts WHERE id=$1) + (SELECT count(*) FROM materials WHERE id=$2)`,
+		run.ID, f.quiz.ID).Scan(&left); err != nil {
 		t.Fatal(err)
 	}
 	if left != 0 {
-		t.Fatal("deleting left its attempts")
+		t.Fatal("deleting left its attempts or its own quiz")
+	}
+}
+
+// gradedForm is a graded quiz's settings as the New graded quiz dialog sends
+// them with its questions (Epo 2026-11-16): no quiz named.
+func gradedForm(due time.Time) *AssignmentForm {
+	return &AssignmentForm{Kind: AssignmentMarked, Title: "Paper", DueAt: &due, Attempts: 1, AssignAll: true,
+		Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterSubmit, ShowGrades: GradesAutomatic,
+		Files: []AssignmentFileRef{}}
+}
+
+// TestGradedQuizMadeWithItsQuiz (Epo 2026-11-16): a graded quiz is made with
+// its questions in one write: the new quiz is the assignment's own, hidden,
+// and a published one froze the questions as stored; a draft freezes none.
+// createAssignment makes no graded quiz from an existing quiz, and a form
+// refused up front writes nothing.
+func TestGradedQuizMadeWithItsQuiz(t *testing.T) {
+	f := newAssignmentFixture(t, "graded-quiz-made")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	content, err := materialdoc.QuizDocument(json.RawMessage(assignmentQuestions), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.editor, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Made with it", Content: content, Hidden: true, GradedQuiz: gradedForm(now.Add(time.Hour))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.AssignmentID == "" || !mt.Hidden {
+		t.Fatalf("the quiz = owner %q hidden %v", mt.AssignmentID, mt.Hidden)
+	}
+	made, err := f.s.GetAssignment(ctx, f.editor, mt.AssignmentID, now)
+	if err != nil || made.Kind != AssignmentMarked || made.Draft || made.Questions != 3 || made.Marks != 6 {
+		t.Fatalf("its graded quiz = %+v, err %v", made, err)
+	}
+	draft := gradedForm(now.Add(time.Hour))
+	draft.Draft = true
+	drafted, err := f.s.CreateMaterialDraft(ctx, MaterialDraft{ActorUserID: f.editor, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Generated", Questions: json.RawMessage(assignmentQuestions), Hidden: true, GradedQuiz: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := f.s.GetAssignment(ctx, f.editor, drafted.AssignmentID, now)
+	if err != nil || !held.Draft || held.Questions != 0 {
+		t.Fatalf("a draft graded quiz = %+v, err %v", held, err)
+	}
+
+	var refused *AssignmentInputError
+	named := f.form(t, now.Add(time.Hour))
+	if _, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, named, now); !errors.As(err, &refused) {
+		t.Fatalf("createAssignment took a quiz: %v", err)
+	}
+	if err := f.s.CheckGradedQuiz(ctx, f.user, f.ws.ID, named, now); !errors.As(err, &refused) {
+		t.Fatalf("a form naming a quiz passed: %v", err)
+	}
+	if err := f.s.CheckGradedQuiz(ctx, f.user, f.ws.ID, *gradedForm(now.Add(time.Hour)), now); err != nil {
+		t.Fatal(err)
+	}
+	undated := gradedForm(now)
+	undated.DueAt = nil
+	if _, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Kind: MaterialQuiz, Title: "Refused", Content: content, GradedQuiz: undated}); !errors.As(err, &refused) {
+		t.Fatalf("an undated graded quiz: %v", err)
+	}
+	if taken, err := f.s.MaterialTitleTaken(ctx, f.ws.ID, "Refused"); err != nil || taken {
+		t.Fatalf("a refused graded quiz left its quiz: %v, err %v", taken, err)
+	}
+}
+
+// TestCopyQuizToGradedQuiz (Epo 2026-11-16): a graded quiz is made from a copy
+// of a practice quiz or of another graded quiz's own, with fresh ids and the
+// images copied as the new quiz's own rows.
+func TestCopyQuizToGradedQuiz(t *testing.T) {
+	f := newAssignmentFixture(t, "graded-quiz-copy")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	assetID := uid("asset")
+	qs := frozenFixture(t)
+	qs[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": assetID}, "width": 10, "height": 10, "description": "Figure"}}
+	if _, err := f.s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at)
+		VALUES ($1,$2,$3,$4,$4,'figure.png','image',$5,'image/png',10,'ready',now())`,
+		assetID, f.ws.ID, f.quiz.ID, f.user, "editor-assets/graded-copy/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	copyOf := func(source string, questions []map[string]any, title string) (Assignment, Material) {
+		t.Helper()
+		form := gradedForm(now.Add(time.Hour))
+		form.Title = title
+		made, err := f.s.CopyQuizToGradedQuiz(ctx, QuizCopy{ActorID: f.editor, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+			SourceID: source, Questions: questions, Title: title, Form: *form}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var quizID string
+		if err := f.s.pool.QueryRow(ctx, `SELECT id FROM materials WHERE assignment_id=$1`, made.ID).Scan(&quizID); err != nil {
+			t.Fatal(err)
+		}
+		quiz, err := f.s.GetMaterial(ctx, quizID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return made, quiz
+	}
+	imageOf := func(quizID string) EditorAsset {
+		t.Helper()
+		quiz, err := f.s.GetQuiz(ctx, quizID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []map[string]any
+		if err := json.Unmarshal(quiz.Questions, &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 3 || got[0]["id"] == "q1" {
+			t.Fatalf("copied questions = %v", got)
+		}
+		id := got[0]["stem"].([]any)[0].(map[string]any)["image"].(map[string]any)["assetId"].(string)
+		asset, err := f.s.GetEditorAsset(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return asset
+	}
+
+	// From the practice quiz.
+	first, firstQuiz := copyOf(f.quiz.ID, qs, "Term 1")
+	if first.Questions != 3 || firstQuiz.Title != "Term 1" || !firstQuiz.Hidden {
+		t.Fatalf("copied = %+v, quiz %+v", first, firstQuiz)
+	}
+	image := imageOf(firstQuiz.ID)
+	if image.ID == assetID || image.MaterialID != firstQuiz.ID || image.UserID != f.editor {
+		t.Fatalf("the copy's image = %+v", image)
+	}
+}
+
+// TestGradedQuizOwnsItsQuiz (Epo 2026-11-14, migration 0174): creating a graded
+// quiz makes the quiz its own: it lists nowhere, for staff either, only staff
+// open it, and it can't be shown, trashed or cloned on its own. Closing keeps it held.
+func TestGradedQuizOwnsItsQuiz(t *testing.T) {
+	f := newAssignmentFixture(t, "graded-quiz-owner")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiz, err := f.s.GetMaterial(ctx, f.quiz.ID)
+	if err != nil || quiz.AssignmentID != created.ID || !quiz.Hidden {
+		t.Fatalf("the quiz = owner %q hidden %v, err %v", quiz.AssignmentID, quiz.Hidden, err)
+	}
+	for _, user := range []string{f.user, f.editor, f.viewer} {
+		refs, err := f.s.ListMaterialRefs(ctx, user, f.ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ref := range refs {
+			if ref.ID == f.quiz.ID {
+				t.Fatalf("%s lists the graded quiz's quiz", user)
+			}
+		}
+		practice, err := f.s.WorkspacePractice(ctx, user, f.ws.ID, user != f.viewer, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range practice.Items {
+			if item.ID == f.quiz.ID {
+				t.Fatalf("%s has the graded quiz's quiz in Practice", user)
+			}
+		}
+	}
+	if !f.keepsQuiz(t, f.editor) || f.keepsQuiz(t, f.viewer) || f.keepsQuiz(t, f.other) {
+		t.Fatal("only staff open the graded quiz's quiz")
+	}
+	if err := f.s.SetItemHidden(ctx, f.user, agenttools.KindMaterial, f.quiz.ID, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("showing the quiz to members: %v", err)
+	}
+	if _, err := f.s.TrashMaterial(ctx, f.user, f.quiz.ID, "", AgentOperation{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("trashing the quiz alone: %v", err)
+	}
+	if _, err := f.s.CloneMaterial(ctx, f.user, f.quiz.ID, CloneTarget{Name: "Copy"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cloning the quiz alone: %v", err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.s.SweepAssignments(ctx, 50, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if f.keepsQuiz(t, f.viewer) {
+		t.Fatal("released, the graded quiz's quiz reached a member")
 	}
 }
 
@@ -1217,7 +1420,7 @@ func TestAssignmentFrozenImages(t *testing.T) {
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.QuizID, form.Questions = quiz.ID, qs
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1247,8 +1450,9 @@ func TestAssignmentFrozenImages(t *testing.T) {
 	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE workspace_id=$1`, clone.ID).Scan(&cloned); err != nil {
 		t.Fatal(err)
 	}
-	if cloned != 1 {
-		t.Fatalf("a clone holds %d images, want the quiz's one", cloned)
+	// The graded quiz's quiz stays behind, and its image with it.
+	if cloned != 0 {
+		t.Fatalf("a clone holds %d images, want none", cloned)
 	}
 
 	if err := f.s.DeleteAssignment(ctx, f.user, created.ID); err != nil {
@@ -1284,188 +1488,12 @@ func (f assignmentFixture) inPractice(t *testing.T, userID string, now time.Time
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range practice.Quizzes {
+	for _, q := range practice.Items {
 		if q.ID == f.quiz.ID {
 			return true
 		}
 	}
 	return false
-}
-
-// TestAssignedVisibleQuizIsOneRow: a draft changes nothing; published from a
-// visible quiz it stays one row for its assignee, whose row opens the assignment,
-// whose quiz is refused and off Practice; the member it did not go to has no row
-// and no quiz while it is open (Epo 2026-11-11); staff keep it; at close it is a
-// normal quiz for both members again.
-func TestAssignedVisibleQuizIsOneRow(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-one-row")
-	ctx := context.Background()
-	now := time.Now().UTC()
-	form := f.form(t, now.Add(time.Hour))
-	form.AssignAll, form.Assignees = false, []string{f.viewer}
-	form.Draft, form.Questions = true, nil
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, ok := f.assignedRow(t, f.viewer); !ok || row.Assigned || row.AssignmentID != "" || row.Hidden {
-		t.Fatalf("under a draft the viewer's row = %+v, listed %v", row, ok)
-	}
-	if !f.inPractice(t, f.viewer, now) {
-		t.Fatal("a draft took the quiz off Practice")
-	}
-	if _, err := f.s.PublishAssignment(ctx, f.user, draft.ID, frozenFixture(t), now); err != nil {
-		t.Fatal(err)
-	}
-
-	if row, ok := f.assignedRow(t, f.viewer); !ok || !row.Assigned || row.AssignmentID != draft.ID || row.Hidden {
-		t.Fatalf("the assignee's row = %+v, listed %v", row, ok)
-	}
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("the assignee read the quiz: %v", err)
-	}
-	if f.inPractice(t, f.viewer, now) {
-		t.Fatal("an assigned quiz on its assignee's Practice")
-	}
-	if row, ok := f.assignedRow(t, f.other); ok {
-		t.Fatalf("the unassigned member lists the row %+v", row)
-	}
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.other, f.quiz.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("the unassigned member read the quiz: %v", err)
-	}
-	if f.inPractice(t, f.other, now) {
-		t.Fatal("an assigned quiz on an unassigned member's Practice")
-	}
-	// Held, it gives them no review question and none to count as unattempted.
-	held, err := f.s.WorkspaceReview(ctx, f.other, f.ws.ID, ReviewSessionInfo{Group: GroupWorkspace}, true, ReviewOptions{}, now)
-	if err != nil || len(held.Items) != 0 {
-		t.Fatalf("the unassigned member's review = %+v, err %v", held.Items, err)
-	}
-	standings, err := f.s.topicStandings(ctx, f.other, f.ws.ID, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, topic := range standings {
-		if topic.Unattempted != 0 {
-			t.Fatalf("the unassigned member's standings count the held quiz: %+v", topic)
-		}
-	}
-	for _, staff := range []string{f.user, f.editor} {
-		if row, ok := f.assignedRow(t, staff); !ok || !row.Assigned || row.AssignmentID != "" {
-			t.Fatalf("staff's row = %+v, listed %v", row, ok)
-		}
-		if _, err := f.s.MaterialEffectiveRole(ctx, staff, f.quiz.ID); err != nil {
-			t.Fatalf("staff lost the quiz: %v", err)
-		}
-	}
-
-	// The earliest due of two opens first.
-	sooner := f.form(t, now.Add(30*time.Minute))
-	first, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, sooner, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, _ := f.assignedRow(t, f.viewer); row.AssignmentID != first.ID {
-		t.Fatalf("with two open the row opens %s, want %s", row.AssignmentID, first.ID)
-	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, first.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	if row, _ := f.assignedRow(t, f.viewer); row.AssignmentID != draft.ID {
-		t.Fatalf("with one left the row opens %s, want %s", row.AssignmentID, draft.ID)
-	}
-
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, draft.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	if row, ok := f.assignedRow(t, f.viewer); !ok || row.Assigned || row.AssignmentID != "" {
-		t.Fatalf("after closing the row = %+v, listed %v", row, ok)
-	}
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); err != nil {
-		t.Fatalf("after closing the quiz is refused: %v", err)
-	}
-	if !f.inPractice(t, f.viewer, now) {
-		t.Fatal("after closing the quiz is not on Practice")
-	}
-	if row, ok := f.assignedRow(t, f.other); !ok || row.Assigned || row.AssignmentID != "" {
-		t.Fatalf("after closing the unassigned member's row = %+v, listed %v", row, ok)
-	}
-	if !f.inPractice(t, f.other, now) {
-		t.Fatal("after closing the quiz is off the unassigned member's Practice")
-	}
-}
-
-// TestAssignedHiddenQuizOpensToItsAssignees: published from a hidden quiz it lists
-// for the assignee alone among members, across workspaces too; deleting leaves it
-// hidden; closing makes it a normal visible quiz.
-func TestAssignedHiddenQuizOpensToItsAssignees(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-hidden")
-	ctx := context.Background()
-	now := time.Now().UTC()
-	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET hidden=true WHERE id=$1`, f.quiz.ID); err != nil {
-		t.Fatal(err)
-	}
-	form := f.form(t, now.Add(time.Hour))
-	form.AssignAll, form.Assignees = false, []string{f.viewer}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, ok := f.assignedRow(t, f.viewer); !ok || row.AssignmentID != created.ID || row.Hidden {
-		t.Fatalf("the assignee's row = %+v, listed %v", row, ok)
-	}
-	if row, ok := f.assignedRow(t, f.editor); !ok || !row.Assigned || !row.Hidden {
-		t.Fatalf("staff's row = %+v, listed %v", row, ok)
-	}
-	page, err := f.s.ListOwnedMaterials(ctx, f.viewer, MaterialListFilter{Member: true, IDs: []string{f.quiz.ID}})
-	if err != nil || len(page.Items) != 1 || page.Items[0].AssignmentID != created.ID || page.Items[0].Hidden || page.Items[0].Preview != nil {
-		t.Fatalf("across workspaces = %+v, err %v", page.Items, err)
-	}
-	if _, ok := f.assignedRow(t, f.other); ok {
-		t.Fatal("the hidden quiz lists for a member it did not go to")
-	}
-	// The Files page's All files lists it the same way (Epo 2026-11-09).
-	allFiles := func(user string) *MaterialListItem {
-		t.Helper()
-		page, err := f.s.ListItems(ctx, user, ItemListFilter{All: true, Kinds: []string{"quiz"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, item := range page.Items {
-			if item.Material != nil && item.Material.ID == f.quiz.ID {
-				return item.Material
-			}
-		}
-		return nil
-	}
-	if row := allFiles(f.viewer); row == nil || row.AssignmentID != created.ID || row.Hidden {
-		t.Fatalf("the assignee's All files row = %+v", row)
-	}
-	if row := allFiles(f.other); row != nil {
-		t.Fatalf("All files lists the hidden quiz for a member it did not go to: %+v", row)
-	}
-
-	// Undo: as it was.
-	if err := f.s.DeleteAssignment(ctx, f.user, created.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := f.assignedRow(t, f.viewer); ok {
-		t.Fatal("deleting showed a quiz that was hidden before")
-	}
-
-	created, err = f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	if _, released, err := f.s.SweepAssignments(ctx, 50, now); err != nil || released != 1 {
-		t.Fatalf("sweep: released %d, err %v", released, err)
-	}
-	if row, ok := f.assignedRow(t, f.other); !ok || row.Hidden {
-		t.Fatalf("after closing another member's row = %+v, listed %v", row, ok)
-	}
 }
 
 // TestClassViewersCloneNothing: a viewer member of a class copies neither it nor
@@ -1524,77 +1552,6 @@ func fileCloneRight(t *testing.T, s *Store, userID, fileID string) bool {
 	return false
 }
 
-// TestAssignedQuizClonesForStaffAlone: while an assignment is open only the owner
-// and teaching assistants copy its quiz; a link editor's item clone is refused and
-// their workspace clone leaves it out, counted; after closing the normal rules are
-// back.
-func TestAssignedQuizClonesForStaffAlone(t *testing.T) {
-	f := newAssignmentFixture(t, "assigned-clone")
-	ctx := context.Background()
-	now := time.Now().UTC()
-	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
-		Kind: "note", Title: "Kept note", Content: materialTestContent(t, "body")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.CloneMaterial(ctx, f.editor, f.quiz.ID, CloneTarget{Name: "Staff copy"}); err != nil {
-		t.Fatalf("a teaching assistant's clone: %v", err)
-	}
-	staffCopy, err := f.s.CloneWorkspace(ctx, f.user, f.ws.ID, WorkspaceCreate{Name: "Owner copy"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	titles := func(wsID string) map[string]bool {
-		t.Helper()
-		refs, err := f.s.ListMaterialRefs(ctx, f.user, wsID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]bool{}
-		for _, ref := range refs {
-			out[ref.Title] = true
-		}
-		return out
-	}
-	if !titles(staffCopy.ID)[f.quiz.Name] {
-		t.Fatal("the owner's clone left the assigned quiz out")
-	}
-
-	linkEditor := newBlobTestUser(t, f.s, "assigned-clone-link")
-	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link', share_role='editor' WHERE id=$1`, f.ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	redeemLink(t, f.s, linkEditor, f.ws.ID)
-	if _, err := f.s.CloneMaterial(ctx, linkEditor, f.quiz.ID, CloneTarget{Name: "Copy"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("a link editor's quiz clone = %v, want ErrForbidden", err)
-	}
-	if _, err := f.s.CloneMaterial(ctx, linkEditor, note.ID, CloneTarget{Name: "Note copy"}); err != nil {
-		t.Fatalf("a link editor's note clone: %v", err)
-	}
-	copied, _, skipped, err := f.s.CloneWorkspaceThumbnails(ctx, linkEditor, f.ws.ID, WorkspaceCreate{Name: "Link copy"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	inCopy, err := f.s.ListMaterialRefs(ctx, linkEditor, copied.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(inCopy) != 1 || inCopy[0].Title != "Kept note" || skipped != 1 || copied.Kind != WorkspacePersonal {
-		t.Fatalf("the link editor's clone holds %+v, skipped %d, kind %s", inCopy, skipped, copied.Kind)
-	}
-
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.CloneMaterial(ctx, linkEditor, f.quiz.ID, CloneTarget{Name: "After closing"}); err != nil {
-		t.Fatalf("after closing a link editor's clone: %v", err)
-	}
-}
-
 // TestSharingNoticeIsToldOnce: a class's viewer member is told once, with its
 // owner; staff, a stranger and a personal workspace's member never.
 func TestSharingNoticeIsToldOnce(t *testing.T) {
@@ -1645,7 +1602,7 @@ func TestAssignmentSweepReachesARowBehindABadOne(t *testing.T) {
 	now := time.Now().UTC()
 	open := func() (Assignment, AssignmentAttempt) {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1687,7 +1644,7 @@ func TestAssignmentLockedPublisherLeavesStaffWritesOpen(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	publish := func() Assignment {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, f.formBy(t, f.editor, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1718,7 +1675,7 @@ func TestFrozenStaffDeleteAnAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-frozen-staff")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, f.formBy(t, f.editor, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1736,7 +1693,7 @@ func TestAssignmentSweepPassesOverABadRow(t *testing.T) {
 	now := time.Now().UTC()
 	open := func() (Assignment, AssignmentAttempt) {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1802,7 +1759,7 @@ func TestDepartedAssigneeLeavesTheForm(t *testing.T) {
 	now := time.Now().UTC()
 	form := f.form(t, now.Add(time.Hour))
 	form.AssignAll, form.Assignees = false, []string{f.viewer, f.other}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1829,11 +1786,11 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-personal-start")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	marked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	marked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	unmarked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -1867,168 +1824,6 @@ func TestPersonalWorkspaceStartsNoAssignment(t *testing.T) {
 	}
 }
 
-// TestPublishingRefusesKeptCopies (security regression): once a draft is published
-// no viewer member's device may keep a copy of the quiz, assigned it or not, while
-// staff keep it, and after closing the members have it back. Nothing closes a
-// connection (Epo 2026-11-05); rooms.rs holds the room's own refusal of a join.
-// Fails without the assigned rule in ReadableMaterialIDs.
-func TestPublishingRefusesKeptCopies(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-publish-room")
-	ctx := context.Background()
-	now := time.Now().UTC()
-	form := f.form(t, now.Add(time.Hour))
-	form.AssignAll, form.Assignees = false, []string{f.viewer}
-	form.Draft, form.Questions = true, nil
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !f.keepsQuiz(t, f.viewer) {
-		t.Fatal("under a draft: the viewer's quiz is refused")
-	}
-	if _, err := f.s.PublishAssignment(ctx, f.user, draft.ID, frozenFixture(t), now); err != nil {
-		t.Fatal(err)
-	}
-	if f.keepsQuiz(t, f.viewer) {
-		t.Fatal("the assignee's device keeps the published quiz")
-	}
-	if f.keepsQuiz(t, f.other) {
-		t.Fatal("an unassigned member's device keeps the published quiz")
-	}
-	for _, user := range []string{f.editor, f.user} {
-		if !f.keepsQuiz(t, user) {
-			t.Fatalf("%s lost the quiz", user)
-		}
-	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, draft.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	if !f.keepsQuiz(t, f.viewer) {
-		t.Fatal("after closing the assignee's copy is refused")
-	}
-	if !f.keepsQuiz(t, f.other) {
-		t.Fatal("after closing the unassigned member's copy is refused")
-	}
-}
-
-// TestDoNotShowHoldsUntilTurnedToPractice (Epo 2026-11-11): closed under Show
-// answers Do not show, the quiz stays held from every viewer member as if the
-// assignment were open and the sweep releases nothing; staff, not a member,
-// turn it to practice, and both members then have the quiz and its practice.
-// One set to Do not show after the sweep released it is held the same way.
-// Fails with the hold ending at the close.
-func TestDoNotShowHoldsUntilTurnedToPractice(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-never-practice")
-	ctx := context.Background()
-	now := time.Now().UTC()
-	form := f.form(t, now.Add(time.Hour))
-	form.AssignAll, form.Assignees, form.ShowAnswers = false, []string{f.viewer}, AnswersNever
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if created.Manage.ToPractice {
-		t.Fatal("an open assignment offers the turn")
-	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
-		t.Fatal(err)
-	}
-	later := now.Add(time.Hour)
-	if _, _, err := f.s.SweepAssignments(ctx, 50, later); err != nil {
-		t.Fatal(err)
-	}
-	held, err := f.s.GetAssignment(ctx, f.user, created.ID, later)
-	if err != nil || !held.Manage.ToPractice || held.PracticeQuizID != nil {
-		t.Fatalf("closed = to practice %v, practice %v, err %v", held.Manage.ToPractice, held.PracticeQuizID, err)
-	}
-	if row, _ := f.assignedRow(t, f.viewer); row.AssignmentID != created.ID {
-		t.Fatalf("closed, the assignee's row = %+v", row)
-	}
-	if _, listed := f.assignedRow(t, f.other); listed {
-		t.Fatal("closed, the unassigned member lists the quiz")
-	}
-	for _, member := range []string{f.viewer, f.other} {
-		if f.keepsQuiz(t, member) || f.inPractice(t, member, later) {
-			t.Fatalf("closed, %s has the quiz", member)
-		}
-	}
-	if !f.keepsQuiz(t, f.editor) {
-		t.Fatal("closed, staff lost the quiz")
-	}
-
-	if _, err := f.s.TurnAssignmentToPractice(ctx, f.viewer, created.ID, later); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("a member turned it to practice: %v", err)
-	}
-	turned, err := f.s.TurnAssignmentToPractice(ctx, f.editor, created.ID, later)
-	if err != nil || turned.Manage.ToPractice || turned.PracticeQuizID == nil {
-		t.Fatalf("turned = %+v, err %v", turned.Manage, err)
-	}
-	for _, member := range []string{f.viewer, f.other} {
-		if row, listed := f.assignedRow(t, member); !listed || row.AssignmentID != "" || !f.keepsQuiz(t, member) || !f.inPractice(t, member, later) {
-			t.Fatalf("turned to practice, %s's row = %+v, listed %v", member, row, listed)
-		}
-	}
-	if mine, err := f.s.GetAssignment(ctx, f.viewer, created.ID, later); err != nil || mine.PracticeQuizID == nil {
-		t.Fatalf("the assignee's Practise this quiz = %v, err %v", mine.PracticeQuizID, err)
-	}
-	var again *AssignmentInputError
-	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, created.ID, later); !errors.As(err, &again) {
-		t.Fatalf("a second turn: %v", err)
-	}
-
-	shown := f.form(t, later.Add(time.Hour))
-	second, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, shown, later)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, second.ID, true, later); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := f.s.SweepAssignments(ctx, 50, later); err != nil {
-		t.Fatal(err)
-	}
-	if !f.keepsQuiz(t, f.other) {
-		t.Fatal("released by the sweep, the quiz is refused")
-	}
-	shown.ShowAnswers = AnswersNever
-	edited, err := f.s.UpdateAssignment(ctx, f.user, second.ID, shown, later)
-	if err != nil || !edited.Manage.ToPractice || f.keepsQuiz(t, f.other) || f.keepsQuiz(t, f.viewer) {
-		t.Fatalf("set to Do not show after its release: to practice %v, err %v", edited.Manage != nil && edited.Manage.ToPractice, err)
-	}
-	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, second.ID, later); err != nil || !f.keepsQuiz(t, f.other) {
-		t.Fatalf("turned after its release: %v", err)
-	}
-}
-
-// TestTurnToPracticeWaitsForGrades: under Show grades Manual with answers Do not
-// show, the turn is neither offered nor taken until the grades are released.
-func TestTurnToPracticeWaitsForGrades(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-practice-grades")
-	ctx := context.Background()
-	now := time.Now().UTC()
-	form := f.form(t, now.Add(time.Hour))
-	form.ShowAnswers, form.ShowGrades = AnswersNever, GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	closed, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now)
-	if err != nil || closed.Manage.ToPractice {
-		t.Fatalf("closed with grades waiting: to practice %v, err %v", closed.Manage != nil && closed.Manage.ToPractice, err)
-	}
-	var waiting *AssignmentInputError
-	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, created.ID, now); !errors.As(err, &waiting) {
-		t.Fatalf("turned before the grades were released: %v", err)
-	}
-	released, _, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, now)
-	if err != nil || !released.Manage.ToPractice {
-		t.Fatalf("grades released: to practice %v, err %v", released.Manage != nil && released.Manage.ToPractice, err)
-	}
-	if _, err := f.s.TurnAssignmentToPractice(ctx, f.user, created.ID, now); err != nil || !f.keepsQuiz(t, f.viewer) {
-		t.Fatalf("turned after the release: %v", err)
-	}
-}
-
 // keepsQuiz: whether the user's device may keep a copy of the quiz, the refusal
 // the room's own rule (rooms.rs) holds too.
 func (f assignmentFixture) keepsQuiz(t *testing.T, user string) bool {
@@ -2040,85 +1835,6 @@ func (f assignmentFixture) keepsQuiz(t *testing.T, user string) bool {
 	return slices.Contains(ids, f.quiz.ID)
 }
 
-// TestTheRefusalComesBack (security regression): each way an assignment takes the
-// quiz from a member again refuses it for them: reopening, moving a No late
-// submissions due date forward, the workspace going back to class; a member added
-// to the list, refused already, gets the row that opens it.
-func TestTheRefusalComesBack(t *testing.T) {
-	ctx := context.Background()
-	now := time.Now().UTC()
-	assign := func(t *testing.T, f assignmentFixture, form AssignmentForm) Assignment {
-		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return created
-	}
-	t.Run("reopening", func(t *testing.T) {
-		f := newAssignmentFixture(t, "assignment-refusal-reopen")
-		created := assign(t, f, f.form(t, now.Add(time.Hour)))
-		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
-			t.Fatal(err)
-		}
-		if !f.keepsQuiz(t, f.viewer) {
-			t.Fatal("closed: the assignee's quiz is refused")
-		}
-		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, false, now); err != nil {
-			t.Fatal(err)
-		}
-		if f.keepsQuiz(t, f.viewer) {
-			t.Fatal("reopened: the assignee keeps the quiz")
-		}
-	})
-	t.Run("adding a viewer", func(t *testing.T) {
-		f := newAssignmentFixture(t, "assignment-refusal-add")
-		form := f.form(t, now.Add(time.Hour))
-		form.AssignAll, form.Assignees = false, []string{f.viewer}
-		created := assign(t, f, form)
-		// Off the list the quiz is held from them with no row (Epo 2026-11-11).
-		if _, ok := f.assignedRow(t, f.other); ok || f.keepsQuiz(t, f.other) {
-			t.Fatal("off the list: the member has the quiz")
-		}
-		form.Assignees = []string{f.viewer, f.other}
-		if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
-			t.Fatal(err)
-		}
-		if row, _ := f.assignedRow(t, f.other); row.AssignmentID != created.ID || f.keepsQuiz(t, f.other) {
-			t.Fatalf("added: the member's row = %+v", row)
-		}
-	})
-	t.Run("moving a no-late due date forward", func(t *testing.T) {
-		f := newAssignmentFixture(t, "assignment-refusal-due")
-		form := f.form(t, now.Add(-time.Hour))
-		form.NoLate = true
-		created := assign(t, f, form)
-		if !f.keepsQuiz(t, f.viewer) {
-			t.Fatal("past its due date: the assignee's quiz is refused")
-		}
-		later := now.Add(time.Hour)
-		form.DueAt = &later
-		if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
-			t.Fatal(err)
-		}
-		if f.keepsQuiz(t, f.viewer) {
-			t.Fatal("due date moved forward: the assignee keeps the quiz")
-		}
-	})
-	t.Run("switching back to class", func(t *testing.T) {
-		f := newAssignmentFixture(t, "assignment-refusal-kind")
-		assign(t, f, f.form(t, now.Add(time.Hour)))
-		for _, kind := range []WorkspaceKind{WorkspacePersonal, WorkspaceClass} {
-			if _, err := f.s.UpdateWorkspace(ctx, f.user, f.ws.ID, WorkspacePatch{Kind: &kind}); err != nil {
-				t.Fatal(err)
-			}
-			if got := f.keepsQuiz(t, f.viewer); got != (kind == WorkspacePersonal) {
-				t.Fatalf("%s: the assignee keeps the quiz = %v", kind, got)
-			}
-		}
-	})
-}
-
 // TestClosingGivesTheOpenPageTheGrace (Epo 2026-11-05): after staff close it, the
 // page taking it has the grace to send what it holds; past that the server submits
 // what was saved. Neither reads as the time running out.
@@ -2126,7 +1842,7 @@ func TestClosingGivesTheOpenPageTheGrace(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-close-grace")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2211,13 +1927,19 @@ func TestPastedImagesFollowTheReadRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hiddenAsset, shownAsset := asset(hiddenQuiz.ID), asset(f.quiz.ID)
+	// A graded quiz's own quiz is held always, so the visible one is another.
+	shownQuiz, err := f.s.CreateQuiz(ctx, Quiz{UserID: f.user, Name: "Shown", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+		Questions: json.RawMessage(assignmentQuestions), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hiddenAsset, shownAsset := asset(hiddenQuiz.ID), asset(shownQuiz.ID)
 
 	questions := frozenFixture(t)
 	questions[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": shownAsset}, "width": 10, "height": 10, "description": "Figure"}}
 	form := f.form(t, now.Add(time.Hour))
 	form.AssignAll, form.Assignees, form.Questions = false, []string{f.viewer}, questions
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2258,7 +1980,7 @@ func TestChangedMarkCountsOnce(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-changed-mark")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2316,7 +2038,7 @@ func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
 
 	form := f.form(t, now.Add(time.Hour))
 	form.Draft, form.Questions = true, nil
-	draft, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	draft, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2343,19 +2065,22 @@ func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
 		t.Fatal("deleting it left its charge")
 	}
 
+	// The editor makes the graded quiz's quiz before their storage fills.
+	full := f.formBy(t, f.editor, now.Add(time.Hour))
+	withQuiz := used(f.editor)
 	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`,
 		f.editor, mustPlanLimits(t, f.s, PlanFree).StorageBytes-size+1); err != nil {
 		t.Fatal(err)
 	}
 	var quota *QuotaExceededError
-	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now); !errors.As(err, &quota) {
+	if _, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, full, now); !errors.As(err, &quota) {
 		t.Fatalf("publishing past the limit = %v", err)
 	}
-	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, f.editor, editor); err != nil {
+	if _, err := f.s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, f.editor, withQuiz); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := f.s.CreateAssignment(ctx, f.editor, f.ws.ID, f.form(t, now.Add(time.Hour)), now); err != nil {
+	if _, err := f.s.makeAssignment(ctx, f.editor, f.ws.ID, full, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.DeleteWorkspace(ctx, f.user, f.ws.ID); err != nil {
@@ -2367,7 +2092,7 @@ func TestAssignmentChargesItsFrozenQuestions(t *testing.T) {
 
 	// A purge of the publisher: the paper stays, charged to nobody.
 	g := newAssignmentFixture(t, "assignment-charge-purge")
-	kept, err := g.s.CreateAssignment(ctx, g.editor, g.ws.ID, g.form(t, now.Add(time.Hour)), now)
+	kept, err := g.s.makeAssignment(ctx, g.editor, g.ws.ID, g.formBy(t, g.editor, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2395,11 +2120,11 @@ func TestLockedOwnerStartsNoAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-locked-owner")
 	ctx := context.Background()
 	now := time.Now().UTC()
-	marked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	marked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unmarked, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	unmarked, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -2442,7 +2167,7 @@ func TestFrozenImagesPasteForNobody(t *testing.T) {
 	questions[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": source}, "width": 10, "height": 10, "description": "Figure"}}
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = questions
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2495,7 +2220,7 @@ func TestMovingAFileLeavesItsAssignments(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	file := uploadWorkspaceFile(t, f.s, f.user, f.ws.ID)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it", Attempts: 1,
 		AssignAll: true, Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{{FileID: file.ID}}}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -2530,7 +2255,7 @@ func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-republish")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2649,7 +2374,7 @@ func TestRepublishPaysOnlyForWhatItAdds(t *testing.T) {
 	}
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = decoded()
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2726,9 +2451,10 @@ func TestRepublishPaysOnlyForWhatItAdds(t *testing.T) {
 	if used(f.editor) != editor {
 		t.Fatalf("deleted: editor %d, want %d", used(f.editor), editor)
 	}
-	// Less the questions and its image; plus the quiz's new image, which is theirs.
-	if got := used(f.user); got != owner-size-10+20 {
-		t.Fatalf("deleted: owner %d, want %d", got, owner-size-10+20)
+	// Less the questions and its image, and the graded quiz's own quiz goes with
+	// it, its images too (migration 0174); the meter still matches its recount.
+	if got := used(f.user); got > owner-size-10 {
+		t.Fatalf("deleted: owner %d, want at most %d", got, owner-size-10)
 	}
 }
 
@@ -2740,7 +2466,7 @@ func TestCountedAttemptComparesShares(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.Attempts = 2
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2778,7 +2504,7 @@ func TestRepublishDropsAnswersThatNoLongerFit(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-republish-answers")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2888,26 +2614,31 @@ func TestReportKeepsWhatLeftTheCopy(t *testing.T) {
 	}
 }
 
-func TestAssignmentSaysItsQuizIsTrashed(t *testing.T) {
-	f := newAssignmentFixture(t, "assignment-quiz-trashed")
+// Its quiz saved after the last publish reads as changed (Epo 2026-11-14).
+func TestAssignmentSaysItsQuizChanged(t *testing.T) {
+	f := newAssignmentFixture(t, "assignment-quiz-changed")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Manage.QuizTrashed {
-		t.Fatal("a quiz in place reads as trashed")
+	if created.Manage.QuizChanged {
+		t.Fatal("a quiz untouched since publishing reads as changed")
 	}
-	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id=$2, purge_after=now()+interval '30 days' WHERE id=$1`, f.quiz.ID, uid("ep")); err != nil {
+	if _, err := f.s.pool.Exec(ctx, `UPDATE materials SET updated_at=$2 WHERE id=$1`, f.quiz.ID, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	got, err := f.s.GetAssignment(ctx, f.user, created.ID, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Manage.QuizTrashed {
-		t.Fatal("a trashed quiz doesn't read as trashed")
+	if !got.Manage.QuizChanged {
+		t.Fatal("a quiz saved after publishing doesn't read as changed")
+	}
+	// Its Settings' Last edited: the quiz's last save.
+	if got.Manage.QuizUpdatedAt == nil || !got.Manage.QuizUpdatedAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("quizUpdatedAt = %v, want %v", got.Manage.QuizUpdatedAt, now.Add(time.Minute))
 	}
 }
 
@@ -2920,7 +2651,7 @@ func TestAnswersShownAfterClose(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowAnswers = AnswersAfterClose
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2960,7 +2691,7 @@ func TestManualGradesWaitForRelease(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2996,7 +2727,7 @@ func TestManualGradesWaitForRelease(t *testing.T) {
 	if !hidden.GradesHidden || hidden.Correct != 0 || hidden.Total != 0 || strings.Contains(string(raw), `"awarded"`) || strings.Contains(string(raw), "markscheme") {
 		t.Fatalf("grades before release: %s", raw)
 	}
-	list, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, at)
+	list, err := f.s.ListAssignments(ctx, f.viewer, f.ws.ID, at, everyAssignment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3036,5 +2767,25 @@ func TestManualGradesWaitForRelease(t *testing.T) {
 	}
 	if _, practice, err := f.s.SweepAssignments(ctx, 50, at.Add(time.Minute)); err != nil || practice != 1 {
 		t.Fatalf("sweep after release made practice %d, %v", practice, err)
+	}
+}
+
+// TestReviewShowsTheMembersOrder: a shuffled mcq reads in the order its member
+// was shown (the attempt's seeded view), with the answers or without.
+func TestReviewShowsTheMembersOrder(t *testing.T) {
+	graded := []map[string]any{{"id": "q1", "parts": []any{map[string]any{
+		"id": "p1", "marks": 1.0, "blocks": []any{},
+		"answer": map[string]any{"type": "mcq", "options": []any{"A", "B", "C", "D", "E"}, "correct": []any{1.0}, "shuffle": true},
+	}}}}
+	order := func(qs []map[string]any) any {
+		return qs[0]["parts"].([]any)[0].(map[string]any)["answer"].(map[string]any)["order"]
+	}
+	want := order(questions.LearnerViewsSeeded(graded, "at_1"))
+	if got := order(gradedWithoutKeys(graded, false, "at_1")); !reflect.DeepEqual(got, want) {
+		t.Fatalf("without answers: order %v, want %v", got, want)
+	}
+	withShownOrders(graded, "at_1")
+	if got := order(graded); !reflect.DeepEqual(got, want) {
+		t.Fatalf("with answers: order %v, want %v", got, want)
 	}
 }

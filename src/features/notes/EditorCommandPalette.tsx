@@ -158,7 +158,7 @@ export function EditorCommandPalette() {
               ))
             ) : (
               <p className="px-2 py-5 text-center text-fg-muted text-sm">
-                {m.editor_commands_none()}
+                {m.common_no_matches()}
               </p>
             )}
           </div>

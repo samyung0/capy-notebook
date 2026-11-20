@@ -55,7 +55,11 @@ afterEach(() => {
 describe('the release nudge', () => {
   it('reads the release file when the tab regains focus, and loads the page at the next path change, once per release', async () => {
     const { checkReleaseOnFocus, loadUpdateOnPathChange } = await page();
-    let navigate!: (event: { pathChanged: boolean }) => void;
+    let navigate!: (event: {
+      fromLocation?: { pathname: string };
+      pathChanged: boolean;
+      toLocation: { pathname: string };
+    }) => void;
     loadUpdateOnPathChange({
       subscribe: (_event, listener) => {
         navigate = listener;
@@ -76,16 +80,22 @@ describe('the release nudge', () => {
     listeners.get('focus')?.();
     await settle();
     expect(fetch).toHaveBeenCalledWith('/release.txt', { cache: 'no-store' });
-    // A search change (`?file=`) stays in the page.
-    navigate({ pathChanged: false });
+    // A search change (`?file=`) stays in the page, as does a move between
+    // one workspace's pages.
+    navigate({ pathChanged: false, toLocation: { pathname: '/' } });
+    navigate({
+      fromLocation: { pathname: '/workspaces/ws1' },
+      pathChanged: true,
+      toLocation: { pathname: '/workspaces/ws1/study/practice' },
+    });
     expect(location.reload).not.toHaveBeenCalled();
     // Offline the page stays (a load would land on the browser's offline
     // page); the first path change back online loads.
     browser.onLine = false;
-    navigate({ pathChanged: true });
+    navigate({ pathChanged: true, toLocation: { pathname: '/todo' } });
     expect(location.reload).not.toHaveBeenCalled();
     browser.onLine = true;
-    navigate({ pathChanged: true });
+    navigate({ pathChanged: true, toLocation: { pathname: '/todo' } });
     expect(location.reload).toHaveBeenCalledOnce();
 
     // A stale edge served r1 again: this tab does not load for r2 twice.

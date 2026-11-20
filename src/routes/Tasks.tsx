@@ -5,9 +5,11 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { waitsForConnection } from '@/lib/online';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Tasks() {
   const { data, fetchStatus, isLoading } = useTasks();
+  const revealRef = useLoadingReveal(isLoading);
   const { mutate: toggle } = useToggleTask();
 
   const groups = (data ?? []).reduce<Record<string, typeof data>>((acc, t) => {
@@ -35,7 +37,10 @@ export default function Tasks() {
             <SkeletonList count={6} rowHeight={56} />
           </div>
         ) : data?.length ? (
-          <div className="mx-auto flex max-w-2xl flex-col gap-6">
+          <div
+            className="mx-auto flex max-w-2xl flex-col gap-6"
+            ref={revealRef}
+          >
             {Object.entries(groups).map(([day, list]) => (
               <section key={day}>
                 <p className="t-label mb-2 block text-fg-muted">{day}</p>

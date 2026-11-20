@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type {
-  Assignment,
-  AssignmentAttempt,
-  MaterialRef,
-} from '../../src/api/types';
+import type { Assignment, AssignmentAttempt } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { m } from '../i18n';
 
@@ -37,7 +33,7 @@ function quizValue(prompt: string) {
           marks: 1,
         }),
         question('q_2', {
-          answer: { accepted: [], hints: [], type: 'open' },
+          answer: { accepted: [], type: 'open' },
           blocks: [{ text: 'Explain how water enters a cell.', type: 'text' }],
           marks: 2,
           markscheme: [{ marks: 2, text: 'Names osmosis' }],
@@ -88,56 +84,50 @@ test.describe('assignments', () => {
       (await viewerApi.post(`/api/workspace-invites/${reference}/accept`)).ok()
     ).toBe(true);
 
+    // A graded quiz is made with its own quiz (Epo 2026-11-16), which comes
+    // back owned by it.
     const quizRes = await ownerApi.post(
       `/api/workspaces/${workspaceId}/materials`,
       {
         data: {
           content: { schemaVersion: 1, value: quizValue('Which makes ATP?') },
+          gradedQuiz: {
+            assignAll: true,
+            assignees: [],
+            attempts: 1,
+            draft: false,
+            dueAt: inAWeek(),
+            files: [],
+            kind: 'marked',
+            latePenaltyPct: 0,
+            marking: 'ai_approve',
+            noLate: false,
+            showAnswers: 'submitted',
+            showGrades: 'automatic',
+            shuffle: false,
+            title: 'Cells check',
+          },
           kind: 'quiz',
           title: 'Cells check',
         },
       }
     );
     expect(quizRes.status()).toBe(201);
-    const quiz = (await quizRes.json()) as { id: string };
-
-    const res = await ownerApi.post(
-      `/api/workspaces/${workspaceId}/assignments`,
-      {
-        data: {
-          assignAll: true,
-          assignees: [],
-          attempts: 1,
-          draft: false,
-          dueAt: inAWeek(),
-          files: [],
-          kind: 'marked',
-          latePenaltyPct: 0,
-          marking: 'ai_approve',
-          noLate: false,
-          quizId: quiz.id,
-          showAnswers: 'submitted',
-          showGrades: 'automatic',
-          shuffle: false,
-          title: 'Cells check',
-        },
-      }
-    );
-    expect(res.status()).toBe(201);
-    const assignment = (await res.json()) as Assignment;
+    const quiz = (await quizRes.json()) as { assignmentId: string; id: string };
+    const assignment = (await (
+      await ownerApi.get(`/api/assignments/${quiz.assignmentId}`)
+    ).json()) as Assignment;
     expect(assignment.manage?.assigned).toBe(1);
 
-    // While it is open the assignee reaches only the assignment, through one row.
+    // The assignee reaches its quiz only through the assignment.
     expect((await viewerApi.get(`/api/quizzes/${quiz.id}`)).status()).toBe(404);
-    const refs = (await (
-      await viewerApi.get(`/api/workspaces/${workspaceId}/materials`)
-    ).json()) as MaterialRef[];
-    expect(refs.find((ref) => ref.id === quiz.id)?.assignmentId).toBe(
-      assignment.id
-    );
+    const listed = (await (
+      await viewerApi.get(`/api/workspaces/${workspaceId}/assignments`)
+    ).json()) as { items: { id: string }[] };
+    expect(listed.items.map((item) => item.id)).toEqual([assignment.id]);
 
     // The member answers on their page.
-    await viewerPage.goto(`/workspaces/${workspaceId}?study=assignments`);
+    await viewerPage.goto(`/workspaces/${workspaceId}/assignments`);
     // Told once what a class member shares (Epo 2026-11-04).
     await viewerPage
       .getByRole('button', { exact: true, name: m.sharing_notice_ok() })
@@ -180,11 +170,11 @@ test.describe('assignments', () => {
 
     // The owner marks it on Approve AI marks, and no model marked it first.
     await ownerPage.goto(
-      `/workspaces/${workspaceId}?study=assignments&assignment=${assignment.id}&tab=approve`
+      `/workspaces/${workspaceId}/assignments?assignment=${assignment.id}&tab=approve`
     );
     await expect(ownerPage.getByText('By osmosis.')).toBeVisible();
-    await ownerPage.getByRole('combobox', { name: 'Names osmosis' }).click();
-    await ownerPage.getByRole('option', { name: '2 / 2' }).click();
+    // Marks are typed (Epo 2026-11-18).
+    await ownerPage.getByRole('textbox', { name: 'Names osmosis' }).fill('2');
     await ownerPage
       .getByRole('button', { exact: true, name: m.assignment_approve() })
       .click();
@@ -196,16 +186,6 @@ test.describe('assignments', () => {
         return [after.correct, after.waitingAnswers];
       })
       .toEqual([3, 0]);
-
-    // Closing gives the member the quiz.
-    expect(
-      (
-        await ownerApi.put(`/api/assignments/${assignment.id}/closed`, {
-          data: { closed: true },
-        })
-      ).status()
-    ).toBe(200);
-    expect((await viewerApi.get(`/api/quizzes/${quiz.id}`)).status()).toBe(200);
   });
 
   test('a personal workspace holds the task its owner sets themself', async ({

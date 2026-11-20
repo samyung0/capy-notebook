@@ -4,8 +4,7 @@ import { fromBase64, toBase64 } from './base64';
 import type { BoardImages } from './boardImages';
 
 /** A board kept as a material's `board` editor asset: its saved document gzipped
- * (a drawn sample answer, Q3; the workspace canvas, Epo 2026-11-09). Fetched and
- * inflated in the browser. */
+ * (a drawn sample answer, Q3). Fetched and inflated in the browser. */
 
 export const gzipBoard = (doc: string) =>
   new Response(
@@ -50,28 +49,29 @@ export function boardFromAsset(assetId: string): Promise<string> {
 /** A board whose images are its material's `image` editor assets, uploaded at
  * once as a note's are (the workspace canvas, Epo 2026-11-09): the uploader pays,
  * the plan's image cap and a full storage refuse, and the Files page lists them.
- * `own` are the material's image assets as the server lists them, a trashed one
- * included: only those are named in a save. An image of another material
- * (pasted from another canvas) is stored again as this one's. */
+ * `listed` are the material's image assets as the server lists them, a trashed one
+ * included: those, and the ones stored here since, are never stored again. An image
+ * of another material (pasted from another canvas) is stored again as this one's.
+ * The canvas's room says which images the board holds (its projection), so one
+ * taken off the board is trashed and one put back is restored with no word from
+ * here. */
 export function assetImages(
   materialId: string,
   listed: readonly string[],
   onRefused: (error: unknown) => void
-) {
+): BoardImages {
   const own = new Set(listed);
-  /** Own images the server gave no file for: trashed until a save names them. */
-  const missing = new Set<string>();
   const signal = () => new AbortController().signal;
-  const images: BoardImages = {
+  return {
     load: async (id) => {
       let link: Awaited<ReturnType<typeof assetLink>>;
       try {
         link = await assetLink(id, signal(), false);
       } catch (error) {
-        // No such asset for this reader: a hash never uploaded, a deleted
-        // image, or one of this canvas's the pruner trashed.
+        // No such asset for this reader: a hash never uploaded (a peer's image
+        // still going up), a deleted image, or one of this canvas's the pruner
+        // trashed. Asked again by the next view of it.
         if (!(isApiError(error) && error.status === 404)) throw error;
-        if (own.has(id)) missing.add(id);
         return null;
       }
       if (link.purpose !== 'image') return null;
@@ -87,32 +87,14 @@ export function assetImages(
       };
     },
     onRefused,
-    store: async (file) => {
+    store: async (file, onProgress) => {
       const { uploadEditorAsset } = await import('@/api/editorAssets');
-      const asset = await uploadEditorAsset(materialId, file, 'image');
+      const asset = await uploadEditorAsset(materialId, file, 'image', {
+        onProgress,
+      });
       own.add(asset.assetId);
       return { bytes: asset.sizeBytes, id: asset.assetId };
     },
     stored: (id) => own.has(id),
-  };
-  return {
-    images,
-    /** Of the ids on the board, this material's image assets: what its save
-     * names, so the pruner keeps them. One still a hash (its upload didn't
-     * finish) or another material's is left out. */
-    named: (ids: readonly string[]) => ids.filter((id) => own.has(id)),
-    /** The server's list again, after it refused a save's images (one was
-     * deleted for good elsewhere). */
-    relist: (ids: readonly string[]) => {
-      own.clear();
-      for (const id of ids) own.add(id);
-    },
-    /** After a save landed: whether it named an image that had shown none, so
-     * the board asks for it again. */
-    restored: () => {
-      const any = missing.size > 0;
-      missing.clear();
-      return any;
-    },
   };
 }

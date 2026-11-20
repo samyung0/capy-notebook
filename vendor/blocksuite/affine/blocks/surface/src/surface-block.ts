@@ -231,7 +231,11 @@ export class SurfaceBlockComponent extends BlockComponent<SurfaceBlockModel> {
     this._renderer.attach(this._surfaceContainer);
 
     if ('stackingCanvas' in this._renderer) {
-      this._renderer['_render']();
+      // Capy (vendor/blocksuite/README.md, local change 69): no draw here.
+      // `attach` asked for one in the next frame, when an editor that fits its
+      // view in a frame (the drawing board's `mountLayer`) has fitted it: this
+      // one drew the whole board at the view before (0.56 s at 4x CPU on a
+      // full canvas), and the frame after drew it again.
       this._surfaceContainer.append(...this._renderer.stackingCanvas);
     }
   }

@@ -18,7 +18,7 @@ overrides:
 patchedDependencies:
   "@atlaskit/pragmatic-drag-and-drop@1.4.0": 15512c3fac63145e91316deda955de129fb16c06aa27d64bf81300d7d3d31c45
   "@hocuspocus/provider@3.4.4": 81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5
-  "@slate-yjs/core@1.0.2": 14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5
+  "@slate-yjs/core@1.0.2": b26505a22822809161d7e4e727dcaf885efe7009b5dd77e479c0c8790e8a6156
   yjs@13.6.31: 4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497
 
 importers:
@@ -52,6 +52,9 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       "@fontsource-variable/jetbrains-mono":
+        specifier: ^5.3.0
+        version: 5.3.0
+      "@fontsource-variable/lora":
         specifier: ^5.3.0
         version: 5.3.0
       "@fontsource/comic-neue":
@@ -173,7 +176,7 @@ importers:
         version: 10.70.0(react@19.2.8)
       "@slate-yjs/core":
         specifier: ^1.0.2
-        version: 1.0.2(patch_hash=14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
+        version: 1.0.2(patch_hash=b26505a22822809161d7e4e727dcaf885efe7009b5dd77e479c0c8790e8a6156)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
       "@tanstack/react-query":
         specifier: ^5.59.0
         version: 5.101.4(react@19.2.8)
@@ -219,9 +222,6 @@ importers:
       idb-keyval:
         specifier: 6.3.0
         version: 6.3.0
-      jsxgraph:
-        specifier: 1.13.3
-        version: 1.13.3
       katex:
         specifier: ^0.19.0
         version: 0.19.0
@@ -243,6 +243,9 @@ importers:
       mermaid:
         specifier: ^11.16.0
         version: 11.16.1
+      opentype.js:
+        specifier: 1.3.4
+        version: 1.3.4
       pdfjs-dist:
         specifier: 4.8.69
         version: 4.8.69
@@ -373,6 +376,9 @@ importers:
       "@types/node":
         specifier: ^26.1.1
         version: 26.2.0
+      "@types/opentype.js":
+        specifier: 1.3.10
+        version: 1.3.10
       "@types/react":
         specifier: ^19.0.0
         version: 19.2.18
@@ -1754,9 +1760,9 @@ importers:
       dompurify:
         specifier: 3.4.17
         version: 3.4.17
-      html2canvas:
-        specifier: 1.4.1
-        version: 1.4.1
+      html2canvas-pro:
+        specifier: 2.3.3
+        version: 2.3.3
       lit:
         specifier: 3.3.0
         version: 3.3.0
@@ -1796,9 +1802,9 @@ importers:
       fractional-indexing:
         specifier: 3.2.0
         version: 3.2.0
-      html2canvas:
-        specifier: 1.4.1
-        version: 1.4.1
+      html2canvas-pro:
+        specifier: 2.3.3
+        version: 2.3.3
       lit:
         specifier: 3.3.0
         version: 3.3.0
@@ -5584,6 +5590,12 @@ packages:
     resolution:
       {
         integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==,
+      }
+
+  "@fontsource-variable/lora@5.3.0":
+    resolution:
+      {
+        integrity: sha512-2ph8KiZ8Bn141hWuC3ErtpJ+Ui8p2MJQn8TJNRSRmLmnCIOCtHfiBM9R7WLRPeUG/q6hXyHOxWQ8DvRSX+ixvQ==,
       }
 
   "@fontsource/comic-neue@5.3.0":
@@ -9734,6 +9746,12 @@ packages:
         integrity: sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==,
       }
 
+  "@types/opentype.js@1.3.10":
+    resolution:
+      {
+        integrity: sha512-F67EFyk6j02okHz5JCgata3ZRAcZi9GLnzmkHw/rzJq3OCc8/ZVdoKrxMTYjcQP6IYHGBz2cav1cpzkOkPiPCQ==,
+      }
+
   "@types/parse-json@4.0.2":
     resolution:
       {
@@ -12753,13 +12771,6 @@ packages:
       }
     engines: { node: ">=16.0.0" }
 
-  html2canvas@1.4.1:
-    resolution:
-      {
-        integrity: sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==,
-      }
-    engines: { node: ">=8.0.0" }
-
   htmlparser2@10.1.0:
     resolution:
       {
@@ -13335,13 +13346,6 @@ packages:
       {
         integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==,
       }
-
-  jsxgraph@1.13.3:
-    resolution:
-      {
-        integrity: sha512-sUVTxB5mDPL5WIEeuo9nprymRymU1ojU2YDtpcK6JzcIe3DkxpQ/2uolGuJ3R0lH6tb3wCGY+1PgVhCVic6yjg==,
-      }
-    engines: { node: ">=20.19.0" }
 
   jszip@3.10.1:
     resolution:
@@ -14560,6 +14564,14 @@ packages:
         integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==,
       }
     engines: { node: ">=12" }
+
+  opentype.js@1.3.4:
+    resolution:
+      {
+        integrity: sha512-d2JE9RP/6uagpQAVtJoF0pJJA/fgai89Cc50Yp0EJHk+eLp6QQ7gBoblsnubRULNY132I0J1QKMJ+JTbMqz4sw==,
+      }
+    engines: { node: ">= 8.0.0" }
+    hasBin: true
 
   optics-ts@2.4.1:
     resolution:
@@ -16092,6 +16104,12 @@ packages:
         integrity: sha512-ZbmZM0JCihQN91dWnxoipT2KOEyHqEyfRXUyjuRhW8b/xnqPDoq4gWEVApTVa9db2wN8mmoikgFBbjh71+cGeQ==,
       }
     engines: { node: ">=20" }
+
+  string.prototype.codepointat@0.2.1:
+    resolution:
+      {
+        integrity: sha512-2cBVCj6I4IOvEnjgO/hWqXjqBGsY+zwPmHl12Srk9IXSZ56Jwwmy+66XO5Iut/oQVR7t5ihYdLB0GMa4alEUcg==,
+      }
 
   string_decoder@1.1.1:
     resolution:
@@ -18432,6 +18450,8 @@ snapshots:
 
   "@fontsource-variable/jetbrains-mono@5.3.0": {}
 
+  "@fontsource-variable/lora@5.3.0": {}
+
   "@fontsource/comic-neue@5.3.0": {}
 
   "@formatjs/ecma402-abstract@2.3.6":
@@ -19417,7 +19437,7 @@ snapshots:
   "@platejs/yjs@53.2.0(@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.2)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))":
     dependencies:
       "@hocuspocus/provider": 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497)))(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
-      "@slate-yjs/core": 1.0.2(patch_hash=14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
+      "@slate-yjs/core": 1.0.2(patch_hash=b26505a22822809161d7e4e727dcaf885efe7009b5dd77e479c0c8790e8a6156)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
       platejs: 53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
       react: 19.2.8
       react-compiler-runtime: 1.0.0(react@19.2.8)
@@ -21027,7 +21047,7 @@ snapshots:
 
   "@sindresorhus/merge-streams@4.0.0": {}
 
-  "@slate-yjs/core@1.0.2(patch_hash=14ba2ad032d52fad5fea426d97614a69b36e578580cf55018905e4fbe1ba51f5)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))":
+  "@slate-yjs/core@1.0.2(patch_hash=b26505a22822809161d7e4e727dcaf885efe7009b5dd77e479c0c8790e8a6156)(slate@0.126.2)(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))":
     dependencies:
       slate: 0.126.2
       y-protocols: 1.0.7(yjs@13.6.31(patch_hash=4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497))
@@ -21467,6 +21487,8 @@ snapshots:
   "@types/node@26.2.0":
     dependencies:
       undici-types: 8.3.0
+
+  "@types/opentype.js@1.3.10": {}
 
   "@types/parse-json@4.0.2": {}
 
@@ -23372,11 +23394,6 @@ snapshots:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3
 
-  html2canvas@1.4.1:
-    dependencies:
-      css-line-break: 2.1.0
-      text-segmentation: 1.0.3
-
   htmlparser2@10.1.0:
     dependencies:
       domelementtype: 2.3.0
@@ -23638,8 +23655,6 @@ snapshots:
   json5@2.2.3: {}
 
   jsonc-parser@3.3.1: {}
-
-  jsxgraph@1.13.3: {}
 
   jszip@3.10.1:
     dependencies:
@@ -24646,6 +24661,11 @@ snapshots:
       define-lazy-prop: 2.0.0
       is-docker: 2.2.1
       is-wsl: 2.2.0
+
+  opentype.js@1.3.4:
+    dependencies:
+      string.prototype.codepointat: 0.2.1
+      tiny-inflate: 1.0.3
 
   optics-ts@2.4.1: {}
 
@@ -25835,6 +25855,8 @@ snapshots:
     dependencies:
       get-east-asian-width: 1.7.0
       strip-ansi: 7.2.0
+
+  string.prototype.codepointat@0.2.1: {}
 
   string_decoder@1.1.1:
     dependencies:

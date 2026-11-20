@@ -803,7 +803,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const)
       wide[tab] = await reachable(page);
     }
     await page.setViewportSize({ height: 800, width: 1280 });
-    await page.goto(`${url}&panel=files`);
+    await page.goto(url);
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
     await expect(frameOf(page).locator('canvas').first()).toBeVisible({
       timeout: 120_000,

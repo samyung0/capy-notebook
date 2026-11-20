@@ -19,6 +19,7 @@ import {
 } from 'platejs/react';
 import {
   type ComponentProps,
+  type CSSProperties,
   memo,
   useCallback,
   useContext,
@@ -82,6 +83,7 @@ import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { parsedDocument, seedValue } from '@/features/materials/NoteBody';
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
 import { NoteDisplayToggles } from '@/features/notes/NoteDisplayToggles';
+import '@/features/notes/figureBinding';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
@@ -136,6 +138,7 @@ import {
 import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorStatus } from './editorMode';
 import { EditorScrollAreaContext } from './editorScrollArea';
+import { EmbedUndoHost } from './embedUndo';
 import { FloatingToolbar } from './FloatingToolbar';
 import { type BoundCopy, mergeAtBind } from './merge/applyBlocks';
 import {
@@ -190,6 +193,7 @@ import {
 } from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 import { toastDraftsLost } from './saveFailure';
+import { openEnd } from './trailingHint';
 import { editorAwareness } from './uploadPresence';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
@@ -481,6 +485,17 @@ const NoteEditorContent = memo(function NoteEditorContent({
       current.api.isElementStateEmpty(firstNode)
     );
   }, []);
+  // "Type / for commands" after a last block that is no empty paragraph
+  // (trailingHint).
+  const endsOpen = useEditorSelector((current) => !!openEnd(current), []);
+  // Its text, drawn by tailwind.css.
+  const hintStyle = useMemo(
+    () =>
+      ({
+        '--trailing-hint': JSON.stringify(m.editor_placeholder()),
+      }) as CSSProperties,
+    []
+  );
   const remotePeers = useRemotePeers(editor, presence);
   // Read through refs so `decorate` keeps one identity: Plate treats a new
   // decorate function as new editable props and re-renders the whole document.
@@ -553,6 +568,9 @@ const NoteEditorContent = memo(function NoteEditorContent({
           'note-editor min-h-75 w-full pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100!',
           shouldShowStats && 'pb-16'
         )}
+        data-trailing-hint={
+          readOnly || endsOpen || showEditorPlaceholder ? undefined : ''
+        }
         decorate={decorate}
         onClick={onClick}
         onKeyDown={onKeyDown}
@@ -560,6 +578,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
         readOnly={readOnly}
         scrollSelectionIntoView={scrollSelectionIntoView}
         spellCheck={false}
+        style={hintStyle}
       />
       {/* Share the editor's containing block so scrolling moves both natively. */}
       {!readOnly && <FloatingToolbar />}
@@ -2500,91 +2519,93 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
-                {/* Held back: until sent. Hidden, not unmounted, until the
-                 * Tools toggle asks. */}
-                <div
-                  className={cn('contents', !toolbarShown && 'hidden')}
-                  data-note-toolbar=""
-                  inert={locked}
-                >
-                  <CollaborationHold className="contents">
-                    <NoteToolbar />
-                  </CollaborationHold>
-                </div>
-                <div
-                  className="relative min-h-0 flex-1 overflow-auto"
-                  data-note-scroll=""
-                  ref={setScrollArea}
-                >
-                  <NoteDisplayToggles toolbar={toolbarToggle} />
-                  <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
-                    {/* The static paint in front (NoteBody) shows the note while
-                     * this builds: painting the projection here too would render
-                     * the whole document twice, seconds of it on a near-limit
-                     * note. Anything other than a healthy handshake still
-                     * paints: past the join's 30 s the saved copy, editable
-                     * (Q229). */}
-                    {lateCopy &&
-                    lateMerging &&
-                    (phase === 'live' || lateUnloaded) ? (
-                      // The own copy, where no paused note shows it (Q295).
-                      <div data-testid="late-copy">
-                        <LateCopyHeading
-                          material={material}
-                          value={lateCopy.value}
-                        />
-                        <MaterialPreview
-                          content={lateCopy}
-                          isStandalone={!material.workspaceId}
-                          kind={material.kind}
-                          title={material.title}
-                        />
-                      </div>
-                    ) : handshaking || lateMerging ? null : (
-                      <>
-                        <EditorNoteHeading
-                          locked={
-                            offlineLimit || copyFull || outdated || accessLost
-                          }
-                          material={material}
-                        />
-                        <EditorScrollAreaContext.Provider value={scrollArea}>
-                          <CollaborationHold>
-                            <NoteEditorContent
-                              discussions={discussions}
-                              presence={presence}
-                              readOnly={
-                                offlineLimit ||
-                                copyFull ||
-                                outdated ||
-                                accessLost ||
-                                draftsSending
-                              }
-                              shouldShowStats={shouldShowDocumentStats(
-                                documentStats
-                              )}
-                            />
-                          </CollaborationHold>
-                        </EditorScrollAreaContext.Provider>
-                        <NoteAttribution
-                          beforeStats={shouldShowDocumentStats(documentStats)}
-                          embedCredits={material.embedCredits}
-                          embeds={embeds}
-                          provenance={material.provenance}
-                        />
-                        <DocumentStatsFooter
-                          limitError={documentLimitError}
-                          stats={documentStats}
-                        />
-                      </>
-                    )}
+                <EmbedUndoHost>
+                  {/* Held back: until sent. Hidden, not unmounted, until the
+                   * Tools toggle asks. */}
+                  <div
+                    className={cn('contents', !toolbarShown && 'hidden')}
+                    data-note-toolbar=""
+                    inert={locked}
+                  >
+                    <CollaborationHold className="contents">
+                      <NoteToolbar />
+                    </CollaborationHold>
                   </div>
-                </div>
-                {/* Window-wide listeners: only the editor on screen. */}
-                {!locked && phase === 'live' && <EditorCommandPalette />}
-                {!locked && phase === 'live' && allowExternalAssets && (
-                  <GhostTextSync title={material.title} />
-                )}
+                  <div
+                    className="relative min-h-0 flex-1 overflow-auto"
+                    data-note-scroll=""
+                    ref={setScrollArea}
+                  >
+                    <NoteDisplayToggles toolbar={toolbarToggle} />
+                    <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
+                      {/* The static paint in front (NoteBody) shows the note while
+                       * this builds: painting the projection here too would render
+                       * the whole document twice, seconds of it on a near-limit
+                       * note. Anything other than a healthy handshake still
+                       * paints: past the join's 30 s the saved copy, editable
+                       * (Q229). */}
+                      {lateCopy &&
+                      lateMerging &&
+                      (phase === 'live' || lateUnloaded) ? (
+                        // The own copy, where no paused note shows it (Q295).
+                        <div data-testid="late-copy">
+                          <LateCopyHeading
+                            material={material}
+                            value={lateCopy.value}
+                          />
+                          <MaterialPreview
+                            content={lateCopy}
+                            isStandalone={!material.workspaceId}
+                            kind={material.kind}
+                            title={material.title}
+                          />
+                        </div>
+                      ) : handshaking || lateMerging ? null : (
+                        <>
+                          <EditorNoteHeading
+                            locked={
+                              offlineLimit || copyFull || outdated || accessLost
+                            }
+                            material={material}
+                          />
+                          <EditorScrollAreaContext.Provider value={scrollArea}>
+                            <CollaborationHold>
+                              <NoteEditorContent
+                                discussions={discussions}
+                                presence={presence}
+                                readOnly={
+                                  offlineLimit ||
+                                  copyFull ||
+                                  outdated ||
+                                  accessLost ||
+                                  draftsSending
+                                }
+                                shouldShowStats={shouldShowDocumentStats(
+                                  documentStats
+                                )}
+                              />
+                            </CollaborationHold>
+                          </EditorScrollAreaContext.Provider>
+                          <NoteAttribution
+                            beforeStats={shouldShowDocumentStats(documentStats)}
+                            embedCredits={material.embedCredits}
+                            embeds={embeds}
+                            provenance={material.provenance}
+                          />
+                          <DocumentStatsFooter
+                            limitError={documentLimitError}
+                            stats={documentStats}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {/* Window-wide listeners: only the editor on screen. */}
+                  {!locked && phase === 'live' && <EditorCommandPalette />}
+                  {!locked && phase === 'live' && allowExternalAssets && (
+                    <GhostTextSync title={material.title} />
+                  )}
+                </EmbedUndoHost>
               </CollaborationProvider>
             </Plate>
           </div>

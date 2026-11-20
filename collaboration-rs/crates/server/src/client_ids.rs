@@ -17,8 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use deadpool_postgres::Pool;
-use yrs::block::ClientID;
-use yrs::{StateVector, Update, UpdateBlock};
+use yrs::{StateVector, Update};
 
 use crate::auth::{Context, RoomName};
 
@@ -348,7 +347,7 @@ pub fn written(state: &StateVector, update: &Update) -> Vec<u64> {
     let mut ids: Vec<u64> = update
         .blocks()
         .filter_map(|block| {
-            let (client, end) = block_end(&block);
+            let (client, end) = ydoc::struct_end(&block);
             (end > state.get(&client)).then(|| client.get())
         })
         .collect();
@@ -357,22 +356,13 @@ pub fn written(state: &StateVector, update: &Update) -> Vec<u64> {
     ids
 }
 
-fn block_end(block: &UpdateBlock) -> (ClientID, u32) {
-    match block {
-        UpdateBlock::Item(item) => (item.id().client, item.id().clock + item.len()),
-        UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
-            (range.client, range.clock + range.len)
-        }
-    }
-}
-
 /// The first client id of `update` with a struct past `state` (what the
 /// room holds: an item, a GC range or a skip) for which `owned` says no.
 /// Structs at clocks the room holds are duplicates yrs skips; the delete set
 /// is not bound (anyone editing deletes others' text).
 pub fn foreign(state: &StateVector, update: &Update, owned: impl Fn(u64) -> bool) -> Option<u64> {
     update.blocks().find_map(|block| {
-        let (client, end) = block_end(&block);
+        let (client, end) = ydoc::struct_end(&block);
         (end > state.get(&client) && !owned(client.get())).then(|| client.get())
     })
 }

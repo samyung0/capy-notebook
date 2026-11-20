@@ -92,6 +92,7 @@
   --color-tint-accent-2: var(--tint-accent-2-bg);
   --color-tint-accent-2-fg: var(--tint-accent-2-fg);
   --color-solid-success: var(--solid-success);
+  --color-solid-mastered: var(--solid-mastered);
   --color-solid-info: var(--solid-info);
   --color-solid-warning: var(--solid-warning);
   --color-solid-error: var(--solid-error);
@@ -333,6 +334,14 @@
   letter-spacing: var(--page-title-letter-spacing);
 }
 
+/* A result's big score ("23 / 34"): 28px on the smallest phones up to 36px
+   from 768px, scaling with the width as the page title does. */
+@utility t-result-score {
+  font-size: clamp(1.75rem, calc(1.75rem + 8 * (100vw - 360px) / 408), 2.25rem);
+  font-weight: 800;
+  line-height: 1;
+}
+
 @utility t-large-card-title {
   font-size: var(--large-card-title-font-size);
   font-weight: var(--large-card-title-font-weight);
@@ -382,27 +391,32 @@
 }
 
 /* A note's reading column (Epo 2026-11-10, mock N2), shared by the editor, its
-   painted copy, the preview and their footers: from a box wider than 640px the
-   margins are 96px, which `max-w-[912px]` caps at 720px of text. Padding
-   percentages read the parent's width, so the step needs no container query.
-   A narrower box keeps the Plate note's gutters: 20px on a phone and 40px
-   from `sm` (a narrow pane on a wide window), and always the editor's 40px on
-   the right for its thread buttons (`note-column-threads`). */
+   painted copy, the preview and their footers: from a box 880px wide the
+   margins are 96px, which `max-w-[912px]` caps at 720px of text; from 640px (a
+   tablet's pane) they are 48px (Epo 2026-11-19). Padding percentages read the
+   parent's width, so the steps need no container query. A narrower box keeps
+   the Plate note's gutters: 20px on a phone and 40px from `sm` (a narrow pane
+   on a wide window), and always the editor's 40px on the right for its thread
+   buttons (`note-column-threads`). */
 @utility note-column {
   --note-gutter: 20px;
   margin-inline: auto;
   width: 100%;
-  padding-inline: clamp(
+  padding-inline: max(
     var(--note-gutter),
-    calc((100% - 640px) * 1000),
-    96px
+    min(calc((100% - 640px) * 1000), 48px),
+    min(calc((100% - 880px) * 1000), 96px)
   );
   @media (width >= 40rem) {
     --note-gutter: 40px;
   }
 }
 @utility note-column-threads {
-  padding-right: clamp(40px, calc((100% - 640px) * 1000), 96px);
+  padding-right: max(
+    40px,
+    min(calc((100% - 640px) * 1000), 48px),
+    min(calc((100% - 880px) * 1000), 96px)
+  );
 }
 /* The space over the Plate note's title: 40px, and 64px from the same box
    width, by the same step. Not a container query: with a query container in
@@ -626,6 +640,16 @@ math-field {
     }
   }
 
+  /* Approve AI grades on a phone (P1, Epo 2026-11-14): past the question list
+     its own back link leads out, so the workspace header and the report's
+     head (back link, title, tabs) step aside. */
+  @media (width < 768px) {
+    [data-viewer]:has([data-approve-drill]) [data-center-header],
+    [data-viewer]:has([data-approve-drill]) [data-report-head] {
+      display: none !important;
+    }
+  }
+
   /* Paint-contained chunks must include the drag-handle gutter on the left
      (from `sm` the + button beside the grip too) and the comment trigger in
      the editor's right padding (note-column's gutters). */
@@ -638,7 +662,28 @@ math-field {
     }
   }
 
-  .note-editor .slate-selectable:has(> [data-slot="block-selection"]) {
+  /* "Type / for commands" after a note's last block when that is no empty
+     paragraph (trailingHint.ts): drawn, never written; a click below the
+     last block adds the paragraph. Set as the empty paragraph's placeholder. */
+  .note-editor[data-trailing-hint] > .note-column::after {
+    content: var(--trailing-hint);
+    display: block;
+    padding-block: var(--note-p-py);
+    color: var(--color-placeholder);
+    font-size: var(--text-sm);
+    font-weight: 400;
+    line-height: 2;
+    cursor: text;
+    user-select: none;
+  }
+
+  /* A void block (figure, table view) draws Slate's children, the overlay
+     among them, in its spacer span. */
+  .note-editor
+    .slate-selectable:has(
+      > [data-slot="block-selection"],
+      > span > [data-slot="block-selection"]
+    ) {
     box-shadow: inset 0 0 0 9999px var(--selection-bg);
   }
 

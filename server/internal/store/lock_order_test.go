@@ -211,7 +211,7 @@ func TestStudyWritesTakeTheWorkspaceFirst(t *testing.T) {
 	assigned := func(t *testing.T, label string) (assignmentFixture, Assignment) {
 		t.Helper()
 		f := newAssignmentFixture(t, label)
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, f.form(t, now.Add(time.Hour)), now)
 		if err != nil {
 			t.Fatal(err)
 		}

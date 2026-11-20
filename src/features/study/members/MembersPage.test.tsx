@@ -53,7 +53,7 @@ vi.mock('./MembersRoster', () => ({
   ),
 }));
 vi.mock('../assignments/LazyNewAssignmentDialog', () => ({
-  NewAssignmentDialog: (props: object) => {
+  GradedQuizDialog: (props: object) => {
     dialog(props);
     return <div data-new-assignment />;
   },
@@ -80,7 +80,7 @@ vi.mock('@/components/ui/Tooltip', () => ({
 }));
 
 const { createRoot } = await import('react-dom/client');
-const { MembersPage } = await import('./MembersPage');
+const { MembersMarks, MembersPage } = await import('./MembersPage');
 
 const topic = (
   label: SummaryTopic['label'],
@@ -117,10 +117,24 @@ const member = (
 
 const host = document.createElement('div');
 document.body.append(host);
-const show = async (search: { manage?: true; member?: string } = {}) => {
+const workspace = {
+  id: 'ws',
+  kind: 'class',
+  name: 'Biology 101',
+  role: 'owner',
+} as never;
+/** Study's marks for a class's staff (Epo 2026-11-13). */
+const show = async ({ member }: { member?: string } = {}) => {
   const root = createRoot(host);
   await act(async () =>
-    root.render(<MembersPage search={search} workspaceId="ws" />)
+    root.render(
+      <MembersMarks
+        header={<h1>Study</h1>}
+        member={member}
+        tab="overview"
+        workspace={workspace}
+      />
+    )
   );
   return root;
 };
@@ -164,46 +178,14 @@ it('lays out a table where it fits and a plain list on phones', async () => {
   await act(async () => root.unmount());
 });
 
-// Epo 2026-11-11: the marks are Overview; sharing, invitations and roles are
-// Manage, under the same heading.
-it("gives a class's staff Overview and Manage", async () => {
-  const root = await show();
-  const tabs = [...host.querySelectorAll('[role="tab"]')];
-  expect(tabs.map((tab) => tab.textContent)).toEqual([
-    m.members_tab_overview(),
-    m.members_tab_manage(),
-  ]);
-  expect(tabs[0].getAttribute('aria-selected')).toBe('true');
-  await press(tabs[1]);
-  expect(navigate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      search: { manage: true, show: undefined, study: 'members' },
-    })
-  );
-  act(() => root.unmount());
-
-  const managing = await show({ manage: true });
+// Epo 2026-11-13: the marks moved to Study; Members is the people alone.
+it("gives a class's staff the people alone on Members", async () => {
+  const root = createRoot(host);
+  await act(async () => root.render(<MembersPage workspaceId="ws" />));
   const roster = host.querySelector('[data-roster]');
-  expect(roster?.textContent).toContain(m.study_panel_members());
-  expect(roster?.querySelector('[aria-selected="true"]')?.textContent).toBe(
-    m.members_tab_manage()
-  );
-  act(() => managing.unmount());
-});
-
-it('marks a member whose storage is full, with its hint', async () => {
-  const root = await show();
-  const [table, phones] = [...host.querySelectorAll('ul')];
-  for (const list of [table, phones]) {
-    const [ann, ben] = [...list.querySelectorAll('li')];
-    expect(ann.textContent).not.toContain(m.members_storage_full());
-    expect(ben.textContent).toContain(m.members_storage_full());
-    expect(ben.textContent).toContain(m.members_storage_full_hint());
-  }
-  // A tap on the chip leaves the row where it is.
-  await press(button(m.members_storage_full()));
-  expect(navigate).not.toHaveBeenCalled();
-  await act(async () => root.unmount());
+  expect(roster?.textContent).toBe(m.study_panel_members());
+  expect(host.querySelector('[role="tab"]')).toBeNull();
+  act(() => root.unmount());
 });
 
 it("opens a member's profile from their row", async () => {
@@ -211,8 +193,9 @@ it("opens a member's profile from their row", async () => {
   const ann = host.querySelector('ul li');
   await press(ann);
   expect(navigate).toHaveBeenLastCalledWith({
-    search: { member: 'ann', show: undefined, study: 'members' },
-    to: '.',
+    params: { tab: 'summary', workspaceId: 'ws' },
+    search: { member: 'ann' },
+    to: '/workspaces/$workspaceId/study/$tab',
   });
   await act(async () => root.unmount());
 });
@@ -237,10 +220,7 @@ const profile = (): MemberProfile => ({
 it('assigns practice to the member alone, on their weakest topic', async () => {
   state.profile = profile();
   const root = await show({ member: 'ann' });
-  expect(host.textContent).toContain(
-    m.member_needs_practice_on({ topic: 'Osmosis' })
-  );
-  await press(button(m.member_assign_practice()));
+  await press(button(m.member_assign_quiz()));
   expect(host.querySelector('[data-new-assignment]')).not.toBeNull();
   expect(dialog).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -256,6 +236,6 @@ it('says a removed member is not found, with nothing to retry', async () => {
   state.profileError = new ApiError(404, 'Not Found');
   const root = await show({ member: 'gone' });
   expect(host.textContent).toContain(m.member_profile_not_found());
-  expect(button(m.action_retry())).toBeUndefined();
+  expect(button(m.error_action_retry())).toBeUndefined();
   await act(async () => root.unmount());
 });

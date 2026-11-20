@@ -1,15 +1,8 @@
-import type { BlobSource, BlobState } from '@blocksuite/affine/sync';
+import type { BlobSource } from '@blocksuite/affine/sync';
 import type { BoardImages } from './boardImages';
 
-const IDLE: BlobState = {
-  downloading: false,
-  needDownload: false,
-  needUpload: false,
-  overSize: false,
-  uploading: false,
-};
-
-type Watch = (state: BlobState) => void;
+/** Where a stored image is kept: the id its block holds, and its size. */
+export type StoredImage = { bytes: number; id: string };
 
 const EXTENSION = /\.\w+$/;
 
@@ -26,25 +19,37 @@ function asFile(blob: Blob) {
 }
 
 /** The board's file store, in place of BlockSuite's in-memory one: files by the
- * id a block keeps, asked from the page when missing, and stored through the
- * page when it stores images at once. */
+ * id a block keeps, asked from the page when missing.
+ *
+ * A board that stores its images at once (`BoardImages.store`, a canvas) stores
+ * a new one here, before BlockSuite adds its block: BlockSuite waits for `set`
+ * (a file pasted, picked or dropped, or carried by a pasted copy) and for
+ * `pasted` (a copied block, drawingBoard.ts `BoardImageClipboard`) before it
+ * adds anything. The one way in where BlockSuite adds the block first, a file
+ * pasted into a note's text, waits for `set` on a canvas too (drawingBoard.ts
+ * `storedImagePaste`). So a block is never in the document under an id no one
+ * can load, whatever becomes of the board meanwhile, and a refused image
+ * never lands. A board that has gone (`close`) or stopped taking edits
+ * (`readonly`) while an image was stored adds nothing for it: BlockSuite's
+ * add would be refused by a store that takes no edits. */
 export class BoardBlobSource implements BlobSource {
   readonly name = 'board';
-  readonly readonly = false;
+  /** Set while the board takes no edits: BlockSuite then stores nothing. */
+  readonly = false;
+  /** How much of a file handed to `set` has gone up, 0 to 100 (its box,
+   * boardUploads.ts). */
+  onProgress: ((file: Blob, percent: number) => void) | null = null;
 
   private readonly files = new Map<string, Blob>();
   private readonly asked = new Map<string, Promise<Blob | null>>();
-  /** Held under an id nothing has stored yet: a new image's hash, or another
-   * board's id. */
-  private readonly fresh = new Set<string>();
-  private readonly storing = new Map<string, Promise<void>>();
-  /** Where a stored image's block moved: its first id to the stored one. */
-  private readonly moved = new Map<string, { bytes: number; id: string }>();
-  private readonly watchers = new Map<string, Set<Watch>>();
-
-  /** A stored image's blocks take its id (`to`), or go when it was refused. */
-  onSettled: (from: string, to?: { bytes: number; id: string }) => void = () =>
-    undefined;
+  /** Held under an id this board's images are not stored under: another
+   * board's. */
+  private readonly foreign = new Set<string>();
+  private readonly storing = new Map<string, Promise<StoredImage>>();
+  /** Where an image went: the id it came under (BlockSuite's hash of a new
+   * file, another board's id) to the stored one. */
+  private readonly moved = new Map<string, StoredImage>();
+  private closed = false;
 
   private readonly images: BoardImages;
 
@@ -70,7 +75,7 @@ export class BoardBlobSource implements BlobSource {
         if (!found) this.asked.delete(key);
         if (!found) return null;
         this.files.set(key, found.file);
-        if (found.foreign) this.fresh.add(key);
+        if (found.foreign) this.foreign.add(key);
         return found.file;
       });
       // A failure is asked again by the next view, not retried here.
@@ -81,10 +86,14 @@ export class BoardBlobSource implements BlobSource {
   }
 
   async set(key: string, value: Blob) {
-    const { shrink, onRefused, stored } = this.images;
+    const { shrink, onRefused, stored, store } = this.images;
     // A paste of a copy hands back the file of an image already stored under
-    // this id: nothing new to keep or store.
-    if (stored?.(key) || (this.files.has(key) && !this.fresh.has(key)))
+    // this id, and a file pasted again is stored already: nothing new to keep.
+    if (
+      stored?.(key) ||
+      this.moved.has(key) ||
+      (this.files.has(key) && !this.foreign.has(key))
+    )
       return key;
     let file = value;
     if (shrink)
@@ -94,10 +103,62 @@ export class BoardBlobSource implements BlobSource {
         onRefused?.(error);
         throw error;
       }
-    this.files.set(key, file);
-    // Only a board that stores images at once has anything to store.
-    if (this.images.store) this.fresh.add(key);
+    // Without a store the file stays on the board until the page sends it.
+    if (store) await this.keep(key, file, value);
+    else this.files.set(key, file);
     return key;
+  }
+
+  /** Stores `file`, which came under `key` (handed in as `given`), once; a
+   * refusal is said and thrown, so nothing lands. */
+  private async keep(key: string, file: Blob, given: Blob = file) {
+    const { store, onRefused } = this.images;
+    if (!store) throw new Error('board images are not stored at once');
+    let storing = this.storing.get(key);
+    if (!storing) {
+      storing = Promise.resolve()
+        .then(() =>
+          store(asFile(file), (percent) => this.onProgress?.(given, percent))
+        )
+        .then((to) => {
+          this.moved.set(key, to);
+          this.foreign.delete(key);
+          // Shown from the file in hand, under either id.
+          this.files.set(key, file);
+          this.files.set(to.id, file);
+          return to;
+        })
+        .catch((error: unknown) => {
+          onRefused?.(error);
+          throw error;
+        })
+        .finally(() => this.storing.delete(key));
+      this.storing.set(key, storing);
+    }
+    const to = await storing;
+    if (this.closed) throw new Error('the board closed while its image stored');
+    if (this.readonly)
+      throw new Error('the board locked while its image stored');
+    return to;
+  }
+
+  /** Where the image a block is about to keep under `key` is stored, on a
+   * board that stores at once: a new file's stored id, as its block lands
+   * under BlockSuite's hash. */
+  storedAs(key: string) {
+    return this.moved.get(key);
+  }
+
+  /** The id a pasted copy of an image block keeps: its own when this board's
+   * images are stored under it (or the board stores none), the stored id of
+   * another board's image, stored here now; null when no file can be had. */
+  async pasted(key: string): Promise<{ bytes?: number; id: string } | null> {
+    const moved = this.moved.get(key);
+    if (moved) return moved;
+    const file = await this.get(key);
+    if (!file) return null;
+    if (!(this.images.store && this.foreign.has(key))) return { id: key };
+    return this.keep(key, file);
   }
 
   delete(key: string) {
@@ -109,70 +170,8 @@ export class BoardBlobSource implements BlobSource {
     return Promise.resolve([...this.files.keys()]);
   }
 
-  /** The upload's mark on the image while it is stored. */
-  blobState$(key: string) {
-    const watchers = this.watchers;
-    return {
-      subscribe: (next: Watch) => {
-        const set = watchers.get(key) ?? new Set<Watch>();
-        watchers.set(key, set);
-        set.add(next);
-        // Said again a moment later: the image block clears its state right
-        // after it subscribes, when it first reads its file.
-        const tell = () =>
-          set.has(next) && next({ ...IDLE, uploading: this.storing.has(key) });
-        tell();
-        queueMicrotask(tell);
-        return {
-          unsubscribe: () => {
-            set.delete(next);
-            if (!set.size) watchers.delete(key);
-          },
-        };
-      },
-    } as unknown as ReturnType<NonNullable<BlobSource['blobState$']>>;
-  }
-
-  /** A block landed with this id: one whose image is already stored moves to
-   * the stored id, and one nothing has stored yet is stored now. `opened`: the
-   * block was on the board as it opened (another board's image left unstored),
-   * so a refusal leaves it and says nothing. */
-  async landed(key: string, opened = false) {
-    const moved = this.moved.get(key);
-    if (moved) return this.onSettled(key, moved);
-    const { store, onRefused, stored } = this.images;
-    if (!store || stored?.(key)) return;
-    const file = await this.get(key).catch(() => null);
-    if (!(file && this.fresh.has(key)) || this.storing.has(key)) return;
-    const tell = (uploading: boolean) => {
-      for (const next of this.watchers.get(key) ?? [])
-        next({ ...IDLE, uploading });
-    };
-    const storing = Promise.resolve()
-      .then(() => store(asFile(file)))
-      .then((to) => {
-        this.fresh.delete(key);
-        this.moved.set(key, to);
-        // Shown from the file in hand under its new id too.
-        this.files.set(to.id, file);
-        this.onSettled(key, to);
-      })
-      .catch((error: unknown) => {
-        if (opened) return;
-        onRefused?.(error);
-        this.onSettled(key);
-      })
-      .finally(() => {
-        this.storing.delete(key);
-        tell(false);
-      });
-    this.storing.set(key, storing);
-    tell(true);
-    await storing;
-  }
-
-  /** Once no image is being stored. */
-  async settled() {
-    while (this.storing.size) await Promise.all(this.storing.values());
+  /** The board is gone: an image still being stored lands nowhere. */
+  close() {
+    this.closed = true;
   }
 }

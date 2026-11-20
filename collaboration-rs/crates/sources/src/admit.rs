@@ -59,8 +59,9 @@ impl Estimate {
 
     /// An applied update of `bytes` whose deletes freed `freed` payload bytes
     /// (`ydoc::apply_freeing`, Epo 2026-10-19): overwrites, deletes and
-    /// replaced pictures do not drift the estimate toward refusals, and it
-    /// stays an upper bound of the state.
+    /// replaced pictures do not drift the estimate toward refusals. It is no
+    /// upper bound of the state: an item an update splits gains a header the
+    /// estimate does not count.
     pub fn applied(&mut self, bytes: u64, freed: u64) {
         self.bytes = (self.bytes + bytes).saturating_sub(freed);
     }
@@ -119,6 +120,10 @@ pub fn admit_update(
             return Admission::Refuse(Refusal::Malformed(format!("malformed yjs update: {error}")));
         }
     };
+    // Before the measure applies it to a copy.
+    if let Err(error) = ydoc::within_clocks(&decoded) {
+        return Admission::Refuse(Refusal::Malformed(error.to_string()));
+    }
     match fits_room(doc, update, estimate, crate::admission_cap(cap)) {
         Ok(true) => {}
         Ok(false) => return Admission::Refuse(Refusal::StateBytes),
@@ -270,7 +275,7 @@ fn notes_violation<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<(), Strin
         }
         let state = state.get_or_insert_with(|| txn.state_vector());
         let ID { client, clock } = *item.id();
-        let end = clock + item.len();
+        let end = clock.saturating_add(item.len());
         if end <= state.get(&client) || incoming.deletes(&client, clock, end) {
             continue;
         }
@@ -492,6 +497,33 @@ mod tests {
             MAX_SOURCE_STATE_BYTES as u64,
             IMAGE_CAP,
         )
+    }
+
+    /// Board review 2.1: a GC struct claims any number of clocks in eleven
+    /// bytes, and two of them wrapped a client's clock in a release build
+    /// (`ydoc::MAX_CLOCK`). A text room and an Office room admitted the
+    /// first before the ceiling; neither takes it now.
+    #[test]
+    fn no_source_room_takes_a_clock_past_the_ceiling() {
+        use yrs::encoding::write::Write;
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write_var(1u32);
+        bytes.write_var(1u32);
+        bytes.write_var(2u64);
+        bytes.write_var(0u32);
+        bytes.write_u8(0);
+        bytes.write_var(ydoc::MAX_CLOCK + 1);
+        bytes.write_var(0u32);
+        let verdicts = [SourceFormat::Text, SourceFormat::Docx].map(|format| {
+            let room = Doc::with_client_id(1);
+            room.get_or_insert_text("stories")
+                .insert(&mut room.transact_mut(), 0, "hello");
+            matches!(
+                verdict(&room, format, &bytes),
+                Admission::Refuse(Refusal::Malformed(_))
+            )
+        });
+        assert_eq!(verdicts, [true, true]);
     }
 
     // officeRoots.test.ts: an update the room cannot integrate in order is unheld.

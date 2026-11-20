@@ -21,7 +21,8 @@ vi.mock('@/api/editorAssets', () => ({ uploadEditorAsset }));
 describe('shared question editing', () => {
   it('round-trips every answer through both document and markdown boundaries', () => {
     expect(exampleQuestions.every(isCompleteQuestion)).toBe(true);
-    expect(isCompleteQuestion(createBlankQuestion())).toBe(false);
+    // A new question starts filled in (Epo 2026-11-15, Google Forms).
+    expect(isCompleteQuestion(createBlankQuestion())).toBe(true);
     const node = quizNode({ questions: exampleQuestions }, 'quiz');
     createMaterialDocument([node]);
     expect(quizElementToBlock(node).questions).toEqual(exampleQuestions);

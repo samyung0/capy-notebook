@@ -412,7 +412,7 @@ export const failureScenarios = [
     id: 'attempt-load',
     label: 'Quiz results GET 500',
     method: 'get',
-    paths: ['/api/attempts', '/api/attempts/:id'],
+    paths: ['/api/learning/history', '/api/attempts/:id'],
     status: 500,
   },
   {

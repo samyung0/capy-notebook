@@ -14,11 +14,15 @@ const PER_PAGE = 24;
 
 export type KlipyGif = {
   id: string;
+  /** KLIPY's name for it, which its share event takes. */
+  slug: string;
   title: string;
   /** Shown in the picker. */
   preview: Rendition;
   /** Placed on the canvas, at its size when KLIPY gives one. */
   media: Rendition;
+  /** KLIPY's blurred preview, a small inline JPEG shown while it loads. */
+  blur?: string;
 };
 
 type Rendition = { height?: number; url: string; width?: number };
@@ -26,6 +30,7 @@ type Item = {
   id: number | string;
   slug: string;
   title?: string;
+  blur_preview?: unknown;
   file?: Record<string, Record<string, Rendition | undefined> | undefined>;
 };
 
@@ -49,18 +54,23 @@ const fits = (rendition: Rendition | undefined) =>
 
 const webp = (item: Item, size: string) => fits(item.file?.[size]?.webp);
 
-/** Trending when `query` is empty, else the search's first page, of GIFs or stickers. */
+/** One page of KLIPY's results and whether it has another. */
+export type KlipyPage = { items: KlipyGif[]; more: boolean };
+
+/** Trending when `query` is empty, else the search, of GIFs or stickers: page `page`
+ * (from 1), which the picker loads one after another as it scrolls. */
 export async function klipyMedia(
   kind: KlipyKind,
   query: string,
+  page: number,
   signal: AbortSignal
-): Promise<KlipyGif[]> {
-  if (!KEY) return [];
+): Promise<KlipyPage> {
+  if (!KEY) return { items: [], more: false };
   const params = new URLSearchParams({
     content_filter: 'high',
     customer_id: customerId(),
     format_filter: 'webp',
-    page: '1',
+    page: String(page),
     per_page: String(PER_PAGE),
   });
   const trimmed = query.trim();
@@ -71,17 +81,25 @@ export async function klipyMedia(
     { signal }
   );
   if (!response.ok) throw new Error(`KLIPY ${response.status}`);
-  const body = (await response.json()) as { data?: { data?: Item[] } };
+  const body = (await response.json()) as {
+    data?: { data?: Item[]; has_next?: boolean };
+  };
   // One from another host is left out; the rest keep KLIPY's order (its terms).
-  return (body.data?.data ?? []).flatMap((item) => {
+  const items = (body.data?.data ?? []).flatMap((item) => {
     const preview = webp(item, 'sm') ?? webp(item, 'md');
     const media = webp(item, 'md') ?? preview;
     return preview && media
       ? [
           {
+            blur:
+              typeof item.blur_preview === 'string' &&
+              item.blur_preview.startsWith('data:image/')
+                ? item.blur_preview
+                : undefined,
             id: String(item.id),
             media,
             preview,
+            slug: typeof item.slug === 'string' ? item.slug : '',
             title:
               typeof item.title === 'string'
                 ? item.title
@@ -92,4 +110,20 @@ export async function klipyMedia(
         ]
       : [];
   });
+  return { items, more: body.data?.has_next === true };
+}
+
+/** Tells KLIPY one was placed (its share event, for its ranking), with the search
+ * that found it or none from trending. Nothing waits on it and a failure is
+ * dropped: the board already has the picture. */
+export function klipyShared(kind: KlipyKind, gif: KlipyGif, query: string) {
+  if (!(KEY && gif.slug)) return;
+  fetch(
+    `${API}/${encodeURIComponent(KEY)}/${kind}/share/${encodeURIComponent(gif.slug)}`,
+    {
+      body: JSON.stringify({ customer_id: customerId(), q: query.trim() }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    }
+  ).catch(() => {});
 }

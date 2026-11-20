@@ -92,15 +92,26 @@ export function useKeptFlashcardRun(
     : undefined;
   return {
     forget: () => writePref(key, null),
-    keep: (run: FlashcardRun) =>
-      writePref(key, {
-        id: run.id,
-        ratings: run.cards.map((card) => [card.id, card.ratings]),
-        startedAt: run.startedAt,
-        takenAt: run.takenAt,
-      } satisfies StoredRun),
+    keep: (run: FlashcardRun) => keepFlashcardRun(owner, setId, run),
     /** False until a share page has read the kept run. */
     ready,
     resume,
   };
+}
+
+/** Keeps `run` as the set's run for `owner`, for the page to resume: the
+ * study page as it rates, and History continuing a recorded attempt. */
+export function keepFlashcardRun(
+  owner: string,
+  setId: string,
+  run: Pick<FlashcardRun, 'id' | 'startedAt' | 'takenAt'> & {
+    cards: Pick<FlashcardRun['cards'][number], 'id' | 'ratings'>[];
+  }
+) {
+  writePref(PREF_KEYS.flashcardRun(owner, setId), {
+    id: run.id,
+    ratings: run.cards.map((card) => [card.id, card.ratings]),
+    startedAt: run.startedAt,
+    takenAt: run.takenAt,
+  } satisfies StoredRun);
 }

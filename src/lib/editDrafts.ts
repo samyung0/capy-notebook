@@ -53,6 +53,10 @@ export interface EditDraft {
   accepted?: true;
   /** A source's base (`bases` store), which recovery opens the edits over. */
   base?: string;
+  /** Written under a client id no room assigned (`unassigned`, a canvas
+   * painted from its copy before its join): that id, which the join renames
+   * to the room's (Q38). */
+  client?: number;
   data: Uint8Array;
   /** The signed room tokens of the sessions whose edits it holds, each the
    * session's last when the row was written (Q288): a send from any page
@@ -81,6 +85,12 @@ export interface EditDraft {
    * them (the late path). */
   late?: true;
   lineage: string;
+  /** A late row's session (`client`): what its document held as it painted,
+   * before its first edit, so the join can tell which early sessions came
+   * one after another and which edited beside something they never saw
+   * (Q38, review M1 and M2). `earlier`: the temporary ids it painted, oldest
+   * first; `state`: the document's state vector then. */
+  painted?: { earlier: number[]; state: Uint8Array };
   /** A save refused for good: shown for copying, never merged back. */
   refused?: true;
   /** Its group entered recovery and was reported (edit_incidents): a later
@@ -340,6 +350,13 @@ export function markDraftsReported(key: string, ids: string[]): Promise<void> {
   return markDrafts(key, ids, 'reported');
 }
 
+/** Marks these rows of a document refused: shown for copying, never applied
+ * again (a canvas's early edits about to be written anew under another id,
+ * Q38). */
+export function markDraftsRefused(key: string, ids: string[]): Promise<void> {
+  return markDrafts(key, ids, 'refused');
+}
+
 /** A row of Yjs updates: every other kind (a note's `copy` and `piece`
  * rows) is JSON that only its own reader takes. */
 export const yjsRow = (row: { kind: EditDraft['kind'] }) =>
@@ -540,6 +557,45 @@ function holdLock(name: string, mode: LockMode): () => void {
   return release;
 }
 
+/** Takes `name` when no one holds it, until the returned release; null when
+ * another holds it. Taken at once where the browser has no Web Locks. */
+function takeLock(name: string): Promise<(() => void) | null> {
+  const locks = webLocks();
+  if (!locks) return Promise.resolve(() => undefined);
+  return new Promise((resolve) => {
+    void locks
+      .request(name, { ifAvailable: true, mode: 'exclusive' }, (lock) => {
+        if (!lock) {
+          resolve(null);
+          return;
+        }
+        return new Promise<void>((release) => resolve(() => release()));
+      })
+      .catch(() => resolve(null));
+  });
+}
+
+/** The late rows of sessions no open tab records, their sessions' locks
+ * taken until `release`: a canvas that paints an earlier session's late rows
+ * renames them at its join, so no other tab may paint them meanwhile (Q38,
+ * review m1). Late rows whose lock another holds are left out. Without Web
+ * Locks every row is taken, as Q420 accepts for notes. */
+export async function claimLateRows(rows: EditDraft[]) {
+  const sessions = [
+    ...new Set(rows.filter((row) => row.late).map((row) => row.session)),
+  ];
+  const taken = await Promise.all(
+    sessions.map((session) => takeLock(SESSION_LOCK + session))
+  );
+  const held = new Set(sessions.filter((_, at) => taken[at]));
+  return {
+    release: () => {
+      for (const release of taken) release?.();
+    },
+    rows: rows.filter((row) => !row.late || held.has(row.session)),
+  };
+}
+
 /** The sessions an open tab records now (their locks held): a late merge
  * leaves their rows alone (Q406, Q420). None where the browser has no Web
  * Locks, which may then merge another open tab's rows (Q420). */
@@ -573,6 +629,9 @@ export interface DraftRecorderOptions {
    * downloading (the room opens meanwhile), and a whole-document write then
    * waits for them. */
   base?: { sha: string; bytes: Uint8Array | Promise<Uint8Array> };
+  /** Releases the locks of the sessions whose late rows it adopted
+   * (`claimLateRows`), as its own go. */
+  claimed?: () => void;
   doc: Y.Doc;
   /** Updates not to record: the room's own and restores. */
   ignore: (origin: unknown) => boolean;
@@ -591,11 +650,19 @@ export interface DraftRecorderOptions {
   /** Whether the last write reached storage (false: private mode, a full
    * disk). Editing goes on either way. */
   onStorage?: (ok: boolean) => void;
+  /** What the document held as this session painted (`EditDraft.painted`),
+   * kept on its late rows. */
+  painted?: EditDraft['painted'];
   /** Reports a failing draft store and each offline episode, after the
    * reconnect (edit_incidents). */
   report?: EditIncidentReporter;
   /** The session's last signed room token, which its rows keep (Q288). */
   token?: () => string | undefined;
+  /** While true the document writes under a client id no room assigned (a
+   * canvas painted from its device copy before its join, Q31): its rows are
+   * marked `late` and name that id (`client`), so no open applies them raw
+   * and no sweep sends them; the join renames it to its assigned id (Q38). */
+  unassigned?: () => boolean;
   /** The stored version the tab reports now (`RoomProvider`), which each
    * row keeps (in-place collection). */
   version?: () => number | undefined;
@@ -614,6 +681,7 @@ export interface DraftRecorderOptions {
 export function recordDrafts({
   adopted = [],
   base,
+  claimed,
   doc,
   ignore,
   key,
@@ -623,8 +691,10 @@ export function recordDrafts({
   onLimit,
   onLost,
   onStorage,
+  painted,
   report,
   token,
+  unassigned,
   version,
 }: DraftRecorderOptions) {
   const session = crypto.randomUUID();
@@ -662,6 +732,12 @@ export function recordDrafts({
   let over = false;
   let stopped = false;
   let storageOk = true;
+  // Whether the last whole write (`stored`, or the one row `keepAs` keeps)
+  // landed.
+  let landing: Promise<boolean> | null = null;
+  // The rows are flagged refused for a rename under way (`flagCopyOnly`):
+  // rows written from now on are too.
+  let copyOnly = false;
   // While this session records, a sweep leaves the document alone and another
   // tab's late merge its rows (Q420).
   const releaseDocument = keep
@@ -684,12 +760,20 @@ export function recordDrafts({
     kind: EditDraft['kind'],
     seq: number,
     data: Uint8Array,
-    flag?: 'late' | 'refused',
+    flag: 'late' | 'refused' | undefined = copyOnly
+      ? 'refused'
+      : unassigned?.()
+        ? 'late'
+        : undefined,
     savedAt = Date.now()
   ): EditDraft => ({
     ...grantsOf(token?.()),
     ...(accepted && { accepted }),
     ...versionOf(version?.()),
+    ...(unassigned?.() && {
+      client: doc.clientID,
+      ...(painted && { painted }),
+    }),
     data,
     id: kind === 'state' ? `${session}:state` : `${session}:${seq}`,
     key,
@@ -755,8 +839,8 @@ export function recordDrafts({
     }, failed);
   if (keep) appendFailures.set(session, failed);
 
-  const writeState = () => {
-    const data = Y.encodeStateAsUpdate(doc);
+  // `data`: the document's state as encoded already.
+  const writeState = (data = Y.encodeStateAsUpdate(doc)) => {
     state = { bytes: data.length, seq: sequence };
     sinceState = 0;
     snapshotDue = false;
@@ -815,15 +899,20 @@ export function recordDrafts({
   if (typeof window !== 'undefined')
     window.addEventListener('pagehide', onPageHide);
 
-  const stop = () => {
+  // No more recording; the locks stay until `stop`.
+  const quit = () => {
     stopped = true;
-    releaseDocument();
-    releaseSession();
     clearTimeout(retry);
-    appendFailures.delete(session);
     doc.off('update', onUpdate);
     if (typeof window !== 'undefined')
       window.removeEventListener('pagehide', onPageHide);
+  };
+  const stop = () => {
+    quit();
+    releaseDocument();
+    releaseSession();
+    claimed?.();
+    appendFailures.delete(session);
   };
   const updateRow = (seq: number): DraftRef => ({
     id: `${session}:${seq}`,
@@ -841,6 +930,23 @@ export function recordDrafts({
     ...(state ? [stateRow(state.seq)] : []),
     ...pendingAdopted,
   ];
+  /** `data` (what a merge would hide) as one refused row flagged hidden,
+   * kept for copying (Q237, Q410); resolves its row, or null when it could
+   * not be stored. */
+  const keepHidden = async (data: Uint8Array): Promise<DraftRef | null> => {
+    const kept = {
+      ...row('state', sequence, data, 'refused', dated(adoptedAt())),
+      hidden: true as const,
+      id: `${session}:hidden`,
+    };
+    try {
+      await putWithBase([kept]);
+    } catch (error) {
+      failed(error);
+      return null;
+    }
+    return { id: kept.id, key: kept.key, seq: kept.seq };
+  };
   // The whole document (or `data`) as one row flagged `flag` in place of
   // every row this session wrote or adopted, dated as the newest of them
   // (or `savedAt`), with `beside`, and no more recording.
@@ -853,9 +959,15 @@ export function recordDrafts({
     const previous = ownRows();
     stop();
     const kept = row('state', sequence, data, flag, savedAt);
-    void write(
-      Promise.all([deleteDrafts(previous), putWithBase([kept, ...beside])])
+    // The delete goes first: `kept` may take the id and seq of a row it
+    // deletes.
+    const deleted = deleteDrafts(previous);
+    const put = putWithBase([kept, ...beside]);
+    landing = put.then(
+      () => true,
+      () => false
     );
+    void write(Promise.all([deleted, put]));
     return kept;
   };
 
@@ -958,6 +1070,34 @@ export function recordDrafts({
       stop();
       return done;
     },
+    /** A canvas's early edits are renamed to the room's id next (Q38), and
+     * the same edits under two ids would go in twice: every row this session
+     * wrote or adopted, and any it writes from now on, is flagged refused
+     * first, so no later open applies them again; they open only for
+     * copying until a stored renamed edit stands for them (`discard`).
+     * Resolves whether the flags landed; when they did not, the rows stay as
+     * they were. */
+    async flagCopyOnly(): Promise<boolean> {
+      copyOnly = true;
+      try {
+        await markDrafts(
+          key,
+          ownRows().map((row) => row.id),
+          'refused'
+        );
+        return true;
+      } catch (error) {
+        copyOnly = false;
+        failed(error);
+        return false;
+      }
+    },
+    /** Another session records the document from now on (a canvas's early
+     * edits renamed in place, Q38): this one stops recording and keeps its
+     * rows, and its locks, until `discard` (or `dispose`, which writes
+     * nothing more). */
+    handOver: quit,
+    keepHidden,
     /** The room answered late (in-place GC): keep the whole document (or
      * `data`, the old document a re-author merges anew) as one late row,
      * which the next editor merges, and stop recording. Returns
@@ -993,6 +1133,16 @@ export function recordDrafts({
     refuse(data?: Uint8Array): DraftRef {
       return keepAs('refused', data);
     },
+    /** The document's early edits were renamed in place to this session's
+     * id (a canvas, Q38), which no update told: they count as this
+     * session's next edit, and `data`, the document's whole state, is
+     * written now. Resolves whether it landed. */
+    renamed(data: Uint8Array): Promise<boolean> {
+      sequence++;
+      lastEdit = Date.now();
+      landing = writeState(data).then(() => !gap);
+      return landing;
+    },
     /** Local edits so far (1 for adopted rows): a checkpoint request
      * records it. */
     get sequence() {
@@ -1002,6 +1152,15 @@ export function recordDrafts({
     /** Write the whole document now if unsaved work outgrew the last one:
      * edits about to open in recovery. */
     snapshot,
+    /** Writes the whole document now and resolves whether it landed (a
+     * canvas's renamed edits then stand for the rows they came from, Q38);
+     * once recording stopped, whether the last whole write did (the row
+     * `refuse` or `late` keeps, or the last `stored` or `renamed`). */
+    async stored(): Promise<boolean> {
+      if (stopped) return (await landing) ?? false;
+      landing = writeState().then(() => !gap);
+      return landing;
+    },
     /** A late merge's update is applied (recorded as this session's edit):
      * the adopted rows it stands for go now rather than at a receipt, so a
      * reload never merges them again, and `hidden` (a document of the text
@@ -1014,20 +1173,7 @@ export function recordDrafts({
      * the whole document did not land the adopted rows stay for the receipt
      * that covers them. */
     async supersede(hidden?: Uint8Array, merged = true): Promise<boolean> {
-      if (hidden) {
-        // Hidden typing: its pieces say so (Q237, Q410).
-        const kept = {
-          ...row('state', sequence, hidden, 'refused', dated(adoptedAt())),
-          hidden: true as const,
-          id: `${session}:hidden`,
-        };
-        try {
-          await putWithBase([kept]);
-        } catch (error) {
-          failed(error);
-          return false;
-        }
-      }
+      if (hidden && !(await keepHidden(hidden))) return false;
       if (merged) await writeState();
       if (gap) return true;
       const previous = pendingAdopted;

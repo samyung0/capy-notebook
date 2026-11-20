@@ -46,7 +46,7 @@ export function SummaryFailure({
       action={
         <ErrorAction asChild back={!retry}>
           <a href={retry ? '' : '/'}>
-            {retry ? m.summary_retry() : m.error_action_go_back()}
+            {retry ? m.error_action_retry() : m.error_action_go_back()}
           </a>
         </ErrorAction>
       }

@@ -236,17 +236,33 @@ export function placeItem(
   return withLevel(question, source, rest);
 }
 
-/** A new group at the end of the question, with its first part. */
-export function appendGroup(
+/** A top-level part split into sub-parts (Epo 2026-11-16, a part's ⋮ Add
+ * sub-part): it stays (i) with its text and answer, as every part needs text
+ * of its own, `next` follows as (ii), and the shared text above starts empty. */
+export function splitPart(
   question: Question,
-  group: QuestionGroup,
-  part: QuestionPart
+  partId: string,
+  groupId: string,
+  next: QuestionPart
 ): Question {
-  return {
+  const index = question.parts.findIndex((part) => part.id === partId);
+  const part = question.parts[index];
+  if (!part || part.group !== undefined) return question;
+  const parts = [...question.parts];
+  parts.splice(
+    index,
+    1,
+    { ...part, group: groupId },
+    { ...next, group: groupId }
+  );
+  return repairGroups({
     ...question,
-    groups: [...(question.groups ?? []), group],
-    parts: [...question.parts, { ...part, group: group.id }],
-  };
+    groups: [
+      ...(question.groups ?? []),
+      { blocks: [{ text: '', type: 'text' }], id: groupId },
+    ],
+    parts,
+  });
 }
 
 /** A new part after the group's last. */
@@ -311,6 +327,20 @@ export function removeGroup(question: Question, groupId: string): Question {
 
 export const canRemoveGroup = (question: Question, groupId: string) =>
   question.parts.some((part) => part.group !== groupId);
+
+/** Takes a part away. A group left with one sub-part turns back into a plain
+ * part, as Add sub-part made it, when its text fits there. */
+export function removePart(question: Question, partId: string): Question {
+  const group = question.parts.find((part) => part.id === partId)?.group;
+  const next = {
+    ...question,
+    parts: question.parts.filter((part) => part.id !== partId),
+  };
+  const left = next.parts.filter((part) => part.group === group).length;
+  return group && left === 1 && canUngroup(next, group)
+    ? ungroup(next, group)
+    : next;
+}
 
 /** A question keeps a part, and a group too: its Ungroup or Remove takes it. */
 export function canRemovePart(question: Question, partId: string): boolean {

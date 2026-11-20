@@ -12,7 +12,7 @@ import (
 
 // A closed tab cannot submit, so the server does it: attempts past their time
 // submit what they saved, a paper so submitted starts its read
-// (store.OnPaperHandedIn), and a closed assignment's quiz shows as practice.
+// (store.OnPaperHandedIn), and a closed assignment's answers are rated.
 const (
 	assignmentSweepBatch    = 200
 	assignmentSweepInterval = time.Minute
@@ -25,7 +25,7 @@ func runAssignmentSweep(ctx context.Context, st *store.Store, rdb *redis.Client)
 			log.Printf("sweep assignments: %v", err)
 		}
 		if len(finished) > 0 || released > 0 {
-			log.Printf("assignments: submitted %d attempt(s), released %d quiz(zes) as practice", len(finished), released)
+			log.Printf("assignments: submitted %d attempt(s), released %d assignment(s)", len(finished), released)
 		}
 		publishSweptTodo(ctx, st, rdb, finished)
 	}

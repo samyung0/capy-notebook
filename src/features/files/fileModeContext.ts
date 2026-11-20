@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useRef } from 'react';
+import type { MenuItem } from '@/components/ui/Menu';
 import type { PresenceConnection } from '@/features/collaboration/presence';
 import type {
   NoteEditorSaveState,
@@ -48,4 +49,27 @@ export function useReportEditorStatus(
     );
   }, [report, saveState, slowed]);
   useEffect(() => () => report?.(null), [report]);
+}
+
+/** Items the open file adds to its header's ⋮ on phones, keyed by who adds
+ * them: the buttons a phone's header has no room for (Preview, Epo
+ * 2026-11-16). */
+export const PhoneMenuItems = createContext<
+  ((key: string, item: MenuItem | null) => void) | null
+>(null);
+
+/** Puts `item` in the header's ⋮ on phones while it is given; its button
+ * hides there (`max-sm:hidden`). The latest onClick runs. */
+export function usePhoneMenuItem(key: string, item: MenuItem | null) {
+  const set = useContext(PhoneMenuItems);
+  const click = useRef(item?.onClick);
+  click.current = item?.onClick;
+  const label = item?.label;
+  const icon = item?.icon;
+  const disabled = item?.disabled;
+  useEffect(() => {
+    if (!set || label === undefined) return;
+    set(key, { disabled, icon, label, onClick: () => click.current?.() });
+    return () => set(key, null);
+  }, [set, key, label, icon, disabled]);
 }

@@ -78,8 +78,6 @@ function render(menuShown: boolean, standalone = false) {
         onDeleted={() => undefined}
         oneColumn={{
           addItems: [],
-          filesOpen: false,
-          onOpenFiles: () => undefined,
           settingsItems: [],
           workspaceIconId: 'flask',
           workspaceName: 'Biology',
@@ -146,9 +144,10 @@ it('offers the payer Move to… and opens the moved file in its new workspace', 
   expect(header.actions[0]?.canMoveTo).toBe(true);
 });
 
-/** An item hidden from members says so after its name (X2, Epo 2026-11-03). */
+/** An item hidden from members says so after its name (X2, Epo 2026-11-03),
+ * as its state alone (Epo 2026-11-16). */
 it('marks an item hidden from members beside its name', () => {
-  const label = m.content_hidden_from_members();
+  const label = m.content_hidden();
   header.hidden = true;
   const html = render(true);
   header.hidden = false;
@@ -156,28 +155,18 @@ it('marks an item hidden from members beside its name', () => {
   expect(html.indexOf('Deck.pptx')).toBeLessThan(html.indexOf(label));
 });
 
-/** A visible item has a Hide file button where the chip goes (Epo 2026-11-06). */
-it('hides a visible item from the button after its name', () => {
-  const html = render(true);
-  expect(html.indexOf('Deck.pptx')).toBeLessThan(
-    html.indexOf(m.content_hide_file())
-  );
-  expect(html).toContain('sm:inline-flex');
-});
-
-/** Its owners and editors show it to members from the chip, as from the ⋮
- * menu's Unhide file (Epo 2026-11-03): a button, so the keyboard reaches
- * it, that says what it does. */
-it('shows a hidden item to members from its chip', () => {
+/** Its owners and editors share it with members from the chip, as from the ⋮
+ * menu's "Shared with members" switch (Epo 2026-11-03): a button, so the
+ * keyboard reaches it, that says what it does, and that asks before everyone
+ * sees the file (Epo 2026-11-16). */
+it('asks before sharing a hidden item with members from its chip', () => {
   header.hidden = true;
   chips.length = 0;
   const html = render(true);
   header.hidden = false;
   expect(html).toMatch(CHIP_BUTTON);
-  expect(html).toContain(m.content_unhide_file());
+  expect(html).toContain(m.content_share_with_members());
+  header.setHidden.mockClear();
   chips[0]?.onShow?.();
-  expect(header.setHidden).toHaveBeenCalledWith(
-    { hidden: false, id: 'f1', type: 'file' },
-    { onError: expect.any(Function) }
-  );
+  expect(header.setHidden).not.toHaveBeenCalled();
 });

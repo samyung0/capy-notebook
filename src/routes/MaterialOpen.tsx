@@ -8,6 +8,7 @@ import { FileError, FileLoading } from '@/features/files/FileStates';
 import { CenterContent } from '@/features/materials/CenterContent';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
 
 /** Library items retain their ownership; this route only changes their frame. */
@@ -19,7 +20,7 @@ export default function MaterialOpen() {
     errorBoundary: false,
   });
   const fileQuery = useFile(fileId ?? null, { errorBoundary: false });
-  const { data, fetchStatus, isError, isPending } = fileId
+  const { data, error, fetchStatus, isError, isPending, refetch } = fileId
     ? fileQuery
     : materialQuery;
   const workspaceId = data?.workspaceId ?? '';
@@ -53,7 +54,10 @@ export default function MaterialOpen() {
         ) : isPending ? (
           <FileLoading />
         ) : isError || !data ? (
-          <FileError />
+          <FileError
+            errorId={unexpectedErrorId(error)}
+            onRetry={() => void refetch()}
+          />
         ) : (
           <CenterContent
             item={item}

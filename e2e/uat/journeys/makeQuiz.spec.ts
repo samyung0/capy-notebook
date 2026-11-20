@@ -215,6 +215,8 @@ for (const { format, name } of QUIZ_PAPERS) {
     assert.deepEqual(await sentRuns(page), [
       {
         answers: [],
+        // The dialog's switch keeps the quiz hidden from members.
+        hidden: true,
         paper: [{ fileId, images: [first[0].base64], pages: [1] }],
         title: 'paper',
       },
@@ -308,9 +310,12 @@ for (const { format, name } of QUIZ_PAPERS) {
       .getByRole('button', { name: m.dashboard_make_quiz() })
       .click({ timeout: 30_000 });
     await quizDialog(page)
-      .getByRole('button', { name: m.make_quiz_choose_file() })
+      .getByRole('button', { name: m.file_choose() })
+      .first()
       .click();
     await page.getByRole('option', { name }).click();
+    // The menu stays open for more files (Epo 2026-11-12).
+    await page.keyboard.press('Escape');
     await quizDialog(page)
       .getByRole('button', { name: m.action_continue() })
       .click();
@@ -322,6 +327,7 @@ for (const { format, name } of QUIZ_PAPERS) {
     assert.deepEqual(await sentRuns(page), [
       {
         answers: [],
+        hidden: true,
         paper: [{ fileId, images: [second[1].base64], pages: [2] }],
         title: 'paper 2',
       },

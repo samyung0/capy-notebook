@@ -15,6 +15,7 @@ import { sampleChats } from '@/features/guide/tourSamples';
 import { useRunningTour } from '@/features/guide/tourStore';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { PanelNewRow } from '../PanelNewRow';
 import { matchesSearch, PanelSearch } from '../PanelSearch';
 import { preloadProse } from './blocks/text';
@@ -63,6 +64,7 @@ export function ConversationList({
   const sample =
     tour?.workspaceId === workspaceId && conversations?.length === 0;
 
+  const revealRef = useLoadingReveal(!conversations);
   const shown = conversations?.filter((c) =>
     matchesSearch(c.title || m.chat_untitled(), query)
   );
@@ -178,11 +180,11 @@ export function ConversationList({
           ) : (
             <p className="px-2 py-1.5 text-fg-muted text-sm">
               {conversations?.length
-                ? m.chat_no_matches()
+                ? m.common_no_matches()
                 : m.chat_no_conversations()}
             </p>
           ))}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3" ref={revealRef}>
           {groups.map(
             (group) =>
               !!group.rows?.length && (

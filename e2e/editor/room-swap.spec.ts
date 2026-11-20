@@ -340,7 +340,9 @@ test("a refused update's edits come back as pieces after the swap", async ({
     const path = '/src/mocks/collaboration.ts';
     await import(path);
   });
-  await editor.click();
+  // On its text: a click below the block would add a paragraph
+  // (trailingHint.ts).
+  await clickTextEnd(editor.getByText(SCENARIO_SEED));
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(' Refused text.');
   await page.evaluate(async () => {

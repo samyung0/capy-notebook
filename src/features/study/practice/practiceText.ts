@@ -30,6 +30,14 @@ export const REASON: Record<
 export const questionsLabel = (count: number) =>
   count === 1 ? m.practice_questions_one() : m.practice_questions({ count });
 
+/** A Practice item's size: a quiz's questions, a set's cards. */
+export const sizeLabel = (kind: 'quiz' | 'flashcards', count: number) =>
+  kind === 'quiz'
+    ? questionsLabel(count)
+    : count === 1
+      ? m.learning_cards_one()
+      : m.learning_cards({ count });
+
 /** A session's time estimate (no time limit, Epo 2026-11-03): about 1.2
  * minutes a question, so 10 questions read "about 12 minutes" (board F1). */
 export function minutesLabel(questions: number) {
@@ -68,7 +76,8 @@ export function timeLeft(ms: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-const blockText = (blocks: QuestionBlock[] = []) =>
+/** The first text in some blocks. */
+export const blockText = (blocks: QuestionBlock[] = []) =>
   blocks.find((b): b is TextBlock => b.type === 'text' && b.text.trim() !== '')
     ?.text;
 

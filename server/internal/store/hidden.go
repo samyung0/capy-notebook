@@ -25,7 +25,8 @@ func (s *Store) SetItemHidden(ctx context.Context, actorID string, kind agenttoo
 	embedded := false
 	query := `SELECT workspace_id, false FROM files WHERE id=$1 AND trashed_at IS NULL`
 	if table == "materials" {
-		query = `SELECT workspace_id, parent_material_id IS NOT NULL FROM materials WHERE id=$1 AND trashed_at IS NULL`
+		// A graded quiz's quiz is held always: there is nothing to switch.
+		query = `SELECT workspace_id, parent_material_id IS NOT NULL OR assignment_id IS NOT NULL FROM materials WHERE id=$1 AND trashed_at IS NULL`
 	}
 	if err := tx.QueryRow(ctx, query, id).Scan(&wsID, &embedded); err != nil {
 		if isNoRows(err) {

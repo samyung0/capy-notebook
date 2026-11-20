@@ -1,3 +1,4 @@
+import { DefaultTool } from '@blocksuite/affine/blocks/surface';
 import { StoreExtensionProvider } from '@blocksuite/affine/ext-loader';
 import { Bound } from '@blocksuite/affine/global/gfx';
 import {
@@ -19,6 +20,7 @@ import {
   type ExtensionType,
 } from '@blocksuite/affine/store';
 import { css, html, nothing } from 'lit';
+import { styleMap } from 'lit/directives/style-map.js';
 import { literal } from 'lit/static-html.js';
 import type { MaterialPreview } from '@/api/types';
 import {
@@ -95,14 +97,20 @@ const MaterialBlockSchema = defineBlockSchema({
 /** What the workspace page lends the canvas: its quizzes and sets (with their stored
  * previews, for the panel's thumbnails; `undefined` until the whole list has loaded),
  * opening one, and making a new one (Epo 2026-11-09: the New tile creates it unfiled,
- * places it and opens its editor). */
+ * places it and opens its editor). The account's Canvas page lends the same for
+ * every quiz and set the person can open (Epo 2026-11-13). */
 export type WorkspaceLinks = {
+  /** The account's Canvas page: each tile says its workspace, and New makes one
+   * in no workspace. */
+  account?: boolean;
   materials: () =>
     | {
         id: string;
         kind: CardMaterialKind;
         title: string;
         preview?: MaterialPreview;
+        /** On the account's page, the workspace it sits in; none when in none. */
+        workspace?: { iconId?: string; name: string };
       }[]
     | undefined;
   open: (materialId: string) => void;
@@ -222,6 +230,12 @@ const CARD_STYLES = css`
   }
 `;
 
+/** A card turned by the selection frame's knob, about its middle (Epo 2026-11-13,
+ * F1): the host's transform is BlockSuite's place on the canvas, so the card
+ * inside it turns, as a picture does. */
+const turned = ({ props }: { props: { rotate: number } }) =>
+  styleMap({ transform: props.rotate ? `rotate(${props.rotate}deg)` : '' });
+
 /** Checked again here: a peer's change reaches the board after its load check. */
 const opensNewTab = (url: string) => {
   if (isWebAddress(url)) window.open(url, '_blank', 'noopener,noreferrer');
@@ -241,7 +255,7 @@ class LinkBlockComponent extends GfxBlockComponent<LinkBlockModel> {
   override renderGfxBlock() {
     const { url, videoId } = this.model.props;
     if (videoId)
-      return html`<div class="capy-video">
+      return html`<div class="capy-video" style=${turned(this.model)}>
         <img
           alt=""
           referrerpolicy="no-referrer"
@@ -260,7 +274,7 @@ class LinkBlockComponent extends GfxBlockComponent<LinkBlockModel> {
     } catch {
       // Shown as typed.
     }
-    return html`<div class="capy-card">
+    return html`<div class="capy-card" style=${turned(this.model)}>
       <div class="row"><span class="title">${host}</span></div>
       <span class="meta">${url}</span>
     </div>`;
@@ -333,7 +347,10 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
         : html`<svg width="18" height="18" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" transform="rotate(8 19 10)" /><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f" /></svg>`;
     // The header moves and selects the card, and opens the material for editing on a
     // double click; the body below is the runner (Epo 2026-11-09).
-    return html`<div class=${runs ? 'capy-card capy-run' : 'capy-card gone'}>
+    return html`<div
+      class=${runs ? 'capy-card capy-run' : 'capy-card gone'}
+      style=${turned(this.model)}
+    >
       <div
         class="row head"
         @dblclick=${() => {
@@ -413,6 +430,8 @@ export function addCard(
     { ...props, xywh: box.serialize() },
     surface.id
   );
+  // Whatever tool was on (the pen, say), Select takes over (Epo 2026-11-13).
+  gfx.tool.setTool(DefaultTool);
   gfx.selection.set({ editing: false, elements: [id] });
   return id;
 }

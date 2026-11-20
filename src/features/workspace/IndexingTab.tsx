@@ -370,7 +370,7 @@ export function IndexingTab({
             </div>
           </>
         ) : (
-          <p className="mt-2 text-fg-muted">{m.workspace_no_sources()}</p>
+          <p className="mt-2 text-fg-muted">{m.common_nothing_yet()}</p>
         )}
       </div>
       <FileChanges

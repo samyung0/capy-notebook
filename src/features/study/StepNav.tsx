@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -10,15 +11,19 @@ export function StepNav({
   className,
   onNext,
   onPrevious,
+  start,
 }: {
   canNext: boolean;
   canPrevious: boolean;
   className?: string;
   onNext: () => void;
   onPrevious: () => void;
+  /** At the row's far left, e.g. an embedded set's Reset. */
+  start?: ReactNode;
 }) {
   return (
-    <div className={cn('flex justify-end', className)}>
+    <div className={cn('flex items-center justify-end', className)}>
+      {start && <div className="mr-auto">{start}</div>}
       <Button
         disabled={!canPrevious}
         onClick={onPrevious}

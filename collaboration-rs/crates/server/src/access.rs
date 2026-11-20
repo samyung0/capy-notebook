@@ -155,8 +155,8 @@ pub struct LiveAccess {
     pub editor: bool,
     pub frozen: bool,
     pub full: bool,
-    /// Hidden from this actor unless they edit: the material itself, or a quiz
-    /// assigned to this viewer.
+    /// Hidden from this actor unless they edit: the owner's flag, or a graded
+    /// quiz's own quiz.
     pub hidden: bool,
 }
 
@@ -167,6 +167,21 @@ impl LiveAccess {
         } else {
             Access::Write
         }
+    }
+}
+
+/// A person's role on a canvas (Go's `materialAccessRow.role`). One with no
+/// workspace is its creator's alone. One drawn in a workspace follows
+/// `workspace_role`, the person's role there (empty: none, also when the
+/// workspace's owner account is not live): the creator owns it while they
+/// hold any, and the others take their workspace role once it is shared.
+fn canvas_role(creator: bool, workspace_role: Option<&str>, shared: bool) -> &str {
+    match workspace_role {
+        None if creator => "owner",
+        Some("") => "",
+        Some(_) if creator => "owner",
+        Some(role) if shared => role,
+        _ => "",
     }
 }
 
@@ -187,9 +202,9 @@ pub async fn live_access<C: GenericClient>(
     actor: &str,
 ) -> Result<LiveAccess, AccessError> {
     let live = live_role(client, material_id, actor).await?;
-    // A material hidden from members, or a quiz assigned to this viewer, is
-    // the owners' and editors' alone (Go's materialEffectiveAccess, Epo
-    // 2026-11-03, 2026-11-04).
+    // A material hidden from members, or a graded quiz's own quiz, is the
+    // owners' and editors' alone (Go's materialEffectiveAccess, Epo 2026-11-03,
+    // 2026-11-14).
     if live.hidden && !live.editor {
         return Err(AccessError::Revoked("material access was revoked".into()));
     }
@@ -218,31 +233,16 @@ pub async fn live_role<C: GenericClient>(
     // `owner` is the lifecycle owner (the workspace owner, or a standalone
     // material's owner); `payer` is owner_user_id, the account the material is
     // charged to (uploader pays): its frozen, locked or full state makes the
-    // material read-only (Go's canEditMaterial). `hidden` also holds a quiz under
-    // an assignment that went to this viewer, who takes its frozen copy instead:
-    // an open one, or a closed marked one still holding its keys, its grades
-    // Manual and unreleased or its answers Do not show and not yet turned to
-    // practice (Go's quizAssignedToSQL and assignmentKeysHeldSQL, finding 5). A
-    // task its maker set themself (`own`) hides nothing. While a class's
-    // assignment on the quiz is open, or closed with its answers still held, it
-    // is also kept from everyone who does not edit the workspace, whether it
-    // went to them or not (Go's materialHiddenSQL and quizAssignmentHoldsSQL).
+    // material read-only (Go's canEditMaterial). `hidden` is the owner's flag,
+    // or a graded quiz's own quiz (`assignment_id`), held for good from everyone
+    // who does not edit the workspace (Go's materialHiddenSQL).
     let sql = format!(
         "SELECT m.owner_user_id, m.privacy, m.workspace_id,
-           m.hidden OR (m.kind='quiz' AND EXISTS (SELECT 1 FROM assignments a
-             JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
-             JOIN workspace_members am ON am.workspace_id=a.workspace_id AND am.user_id=$2 AND am.role='viewer'
-             WHERE a.source_quiz_id=m.id AND NOT a.draft AND NOT a.own
-               AND ((a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now()))
-                 OR (a.kind='marked' AND ((a.grades_shown='manual' AND a.grades_released_at IS NULL)
-                   OR (a.answers_shown='never' AND a.practice_at IS NULL))))
-               AND (a.assign_all OR EXISTS (SELECT 1 FROM assignment_assignees x
-                 WHERE x.assignment_id=a.id AND x.user_id=$2))))
-             OR (m.kind='quiz' AND EXISTS (SELECT 1 FROM assignments a
-               JOIN workspaces aw ON aw.id=a.workspace_id AND aw.kind='class'
-               WHERE a.source_quiz_id=m.id AND NOT a.own AND NOT a.draft
-                 AND ((a.closed_at IS NULL AND NOT (a.no_late AND a.due_at <= now()))
-                   OR (a.kind='marked' AND a.answers_shown='never' AND a.practice_at IS NULL)))) AS hidden,
+           m.kind, m.canvas_shared, m.canvas_workspace_id,
+           CASE WHEN canvas_owner.id IS NULL THEN ''
+             WHEN canvas_owner.id=$2 THEN 'owner'
+             ELSE COALESCE(canvas_member.role, '') END AS canvas_workspace_role,
+           m.hidden OR m.assignment_id IS NOT NULL AS hidden,
            owner.id AS owner_id,
            (owner.deleted_at IS NOT NULL OR owner.deletion_requested_at IS NOT NULL) AS owner_gone,
            (owner.suspended_at IS NOT NULL) AS owner_suspended,
@@ -264,6 +264,12 @@ pub async fn live_role<C: GenericClient>(
          LEFT JOIN workspaces w ON w.id=m.workspace_id
          JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
          LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
+         LEFT JOIN workspaces cw ON cw.id=m.canvas_workspace_id
+         LEFT JOIN users canvas_owner ON canvas_owner.id=cw.user_id
+           AND canvas_owner.deleted_at IS NULL AND canvas_owner.deletion_requested_at IS NULL
+           AND canvas_owner.suspended_at IS NULL
+         LEFT JOIN workspace_members canvas_member
+           ON canvas_member.workspace_id=cw.id AND canvas_member.user_id=$2
          LEFT JOIN user_storage payer_storage ON payer_storage.user_id=payer.id
          LEFT JOIN user_storage actor_storage ON actor_storage.user_id=actor.id
          WHERE m.id=$1 AND m.trashed_at IS NULL",
@@ -289,7 +295,21 @@ pub async fn live_role<C: GenericClient>(
     if row.get::<_, bool>("actor_locked") {
         return Err(AccessError::Forbidden("actor account is locked".into()));
     }
-    let role = if actor == owner_id {
+    // A canvas sits in no workspace: `owner_id` is its creator, and the
+    // workspace it was drawn in decides who else holds it.
+    let canvas = row.get::<_, String>("kind") == "canvas";
+    let role = if canvas {
+        let workspace_role: String = row.get("canvas_workspace_role");
+        let in_workspace = row
+            .get::<_, Option<String>>("canvas_workspace_id")
+            .is_some();
+        canvas_role(
+            actor == owner_id,
+            in_workspace.then_some(workspace_role.as_str()),
+            row.get("canvas_shared"),
+        )
+        .to_owned()
+    } else if actor == owner_id {
         "owner".to_owned()
     } else {
         let workspace_privacy: Option<String> = row.get("workspace_privacy");
@@ -322,7 +342,7 @@ pub async fn live_role<C: GenericClient>(
     }
     Ok(LiveAccess {
         editor: rank(&role) >= rank("editor"),
-        hidden: row.get("hidden"),
+        hidden: !canvas && row.get::<_, bool>("hidden"),
         frozen: row.get::<_, bool>("payer_frozen")
             || row.get::<_, bool>("payer_locked")
             || row.get::<_, bool>("actor_frozen"),
@@ -485,6 +505,24 @@ mod tests {
         ] {
             assert_eq!(narrowed.access(), Access::Read);
         }
+    }
+
+    /// The canvas role rule: an account-page canvas is its creator's alone;
+    /// in a workspace the creator owns it while they hold a role there, the
+    /// others take their workspace role once it is shared, and nobody
+    /// without a workspace role holds it.
+    #[test]
+    fn canvas_roles() {
+        assert_eq!(canvas_role(true, None, false), "owner");
+        assert_eq!(canvas_role(false, None, false), "");
+        for role in ["owner", "editor", "viewer"] {
+            assert_eq!(canvas_role(true, Some(role), false), "owner");
+            assert_eq!(canvas_role(false, Some(role), true), role);
+            assert_eq!(canvas_role(false, Some(role), false), "");
+        }
+        // A leaver, their own canvas included, and a visitor.
+        assert_eq!(canvas_role(true, Some(""), true), "");
+        assert_eq!(canvas_role(false, Some(""), true), "");
     }
 
     #[test]

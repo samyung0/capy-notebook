@@ -120,6 +120,7 @@ vi.mock('@/lib/editDrafts', () => ({
     };
   }),
   dropExpiredGroup: vi.fn(),
+  heldDraftSessions: async () => new Set<string>(),
   readDrafts: vi.fn(async () => drafts.rows),
   recordDrafts: (options: {
     onLost?: () => void;
@@ -962,4 +963,218 @@ it('goes offline when its join has not finished 30 s after its token request', a
   vi.advanceTimersByTime(1);
   expect(room.getSnapshot().status).toBe('offline');
   vi.unstubAllGlobals();
+});
+
+// A canvas's room (Epo 2026-11-18): its pointers and selections go through an
+// awareness the room keeps on its own document, silent until a state is set.
+it('keeps an awareness on its document and hands it to its provider', async () => {
+  const room = new ItemRoom('q', { awareness: true, onReplace: vi.fn() });
+  await room.start();
+  const [provider] = providers;
+  expect(room.awareness?.doc).toBe(room.doc);
+  expect(provider.config.awareness).toBe(room.awareness);
+  expect(room.awareness?.getLocalState()).toBe(null);
+  room.destroy();
+});
+
+// A canvas's open plane or chart writes as it closes: the page hears the room
+// is going before the room's document does.
+it('tells its page it is going while its document still stands', async () => {
+  const stood: boolean[] = [];
+  const room = new ItemRoom('q', {
+    onLeave: () => stood.push(!room.doc.isDestroyed),
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  room.destroy();
+  expect(stood).toEqual([true]);
+  expect(room.doc.isDestroyed).toBe(true);
+
+  // A page whose callback throws still loses the room.
+  const failing = new ItemRoom('q', {
+    awareness: true,
+    onLeave: () => {
+      throw new Error('the page failed');
+    },
+    onReplace: vi.fn(),
+  });
+  await failing.start();
+  failing.awareness?.setLocalState({});
+  expect(() => failing.destroy()).toThrow('the page failed');
+  expect(failing.doc.isDestroyed).toBe(true);
+  expect(failing.awareness?.getLocalState()).toBeNull();
+});
+
+// Developer 2026-09-30 (a permanent refusal keeps the unsaved edits to copy)
+// and Epo 2026-11-18 ("dont just delete stuff without user acknowledgement"):
+// a canvas refused for its size keeps this tab's edits as any item does.
+it("keeps a full canvas's refused edits to copy, and opens afresh", async () => {
+  vi.mocked(userToast).mockClear();
+  const onReplace = vi.fn();
+  const room = new ItemRoom('q', {
+    board: { max: 4096 },
+    drafts: { actorId: 'u' },
+    onReplace,
+  });
+  await room.start();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    }),
+  });
+  // The close that follows the refusal ends nothing a second time.
+  provider.config.onClose?.({ code: 4400, reason: 'document rejected' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.refused).toBe(1);
+  expect(drafts.discarded).toBe(0);
+  expect(onReplace).toHaveBeenCalledOnce();
+  expect(userToast).toHaveBeenCalledOnce();
+  room.destroy();
+});
+
+// Epo 2026-11-18 (2B, client-limits A): a board's size is the room's measure
+// at each receipt plus what arrived since; offline, its work stops at the
+// space the cap leaves.
+it("keeps a board's size from its receipts and stops offline work at the space left", async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const room = new ItemRoom('q', {
+    board: { max: 100_000 },
+    drafts: { actorId: 'u' },
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  const [provider] = providers;
+  const sizes: (number | undefined)[] = [];
+  room.subscribeSize(() => sizes.push(room.size()?.bytes));
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      metrics: { contentBytes: 20_000 },
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(room.size()).toEqual({ bytes: 20_000, max: 100_000 });
+  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  expect(room.getSnapshot().offline).toBe('offline');
+  room.doc.getText('t').insert(0, 'x'.repeat(10_000));
+  expect(room.size()?.bytes).toBeGreaterThan(30_000);
+  expect(room.getSnapshot().offline).toBe('offline');
+  // Within the margin of the cap: the board stops taking edits.
+  room.doc.getText('t').insert(0, 'x'.repeat(20_000));
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  expect(sizes[0]).toBe(20_000);
+  room.destroy();
+});
+
+// Epo 2026-09-29: a board turned read-only drops its unsaved edits and shows
+// what was saved, which its document no longer holds alone: a fresh room.
+it('opens a fresh room when a board turns read-only with unsaved edits', async () => {
+  const onReplace = vi.fn();
+  const room = new ItemRoom('q', {
+    board: { max: 4096 },
+    drafts: { actorId: 'u' },
+    onReplace,
+  });
+  await room.start();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  await expect(provider.config.token()).rejects.toThrow(
+    'collaboration room moved'
+  );
+  expect(room.getSnapshot().access).toBe('read');
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.discarded).toBe(1);
+  expect(onReplace).toHaveBeenCalledOnce();
+  room.destroy();
+});
+
+// Epo 2026-11-04 (D5, C9): a join with no answer 30 s after it began, the
+// browser online, says the service is unavailable, and Retry asks again.
+it('says it is unreachable 30 s into a failing open, and Retry starts again', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  tokens.push(new ApiError(503, 'Service Unavailable'));
+  const { room } = await started();
+  expect(room.getSnapshot()).toMatchObject({
+    status: 'offline',
+    unreachable: false,
+  });
+  vi.advanceTimersByTime(30_000);
+  expect(room.getSnapshot().unreachable).toBe(true);
+  room.retry();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(room.getSnapshot().unreachable).toBe(false);
+  expect(providers).toHaveLength(1);
+  providers[0].config.onSynced?.({ state: true });
+  expect(room.getSnapshot().status).not.toBe('offline');
+  room.destroy();
+});
+
+// Epo 2026-10-04: a receipt waiting 25 s of connected time, or a store the
+// room says failed with edits unsaved, shows "Saving is delayed" until a
+// receipt answers.
+it('says saving is delayed past 25 s without a receipt, or on a failed store', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  vi.advanceTimersByTime(24_999);
+  expect(room.getSnapshot().delayed).toBe(false);
+  vi.advanceTimersByTime(1);
+  expect(room.getSnapshot().delayed).toBe(true);
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(room.getSnapshot().delayed).toBe(false);
+  drafts.unsaved = true;
+  provider.config.onStateless?.({
+    payload: JSON.stringify({ materialId: 'q', type: 'checkpoint-failed' }),
+  });
+  expect(room.getSnapshot().delayed).toBe(true);
+  room.destroy();
+});
+
+it('keeps a refused update to copy when the room is not a canvas', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    }),
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(drafts.refused).toBe(1);
+  expect(drafts.discarded).toBe(0);
+  expect(onReplace).toHaveBeenCalledOnce();
+  room.destroy();
+});
+
+it('takes nothing between a close for this person and the next sync', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().stopped).toBe(false);
+  provider.config.onClose?.({
+    code: 4403,
+    reason: 'collaboration access changed',
+  });
+  expect(room.getSnapshot().stopped).toBe(true);
+  // Still theirs: the next sync takes edits again.
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().stopped).toBe(false);
+  room.destroy();
 });

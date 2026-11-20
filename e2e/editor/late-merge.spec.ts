@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
+import { clickTextEnd } from './helpers';
 
 // The late path (in-place GC): a tab away past the room's collection window
 // is answered late when it comes back. Its editor stays on screen paused, a
@@ -555,7 +556,9 @@ test('text typed into a block another tab deleted waits as hidden typing in the 
   // adds a block, deletes that one and leaves (the room stores it).
   await joinPeer(page);
   await setReachable(page, false);
-  await live.locator('[contenteditable="true"]').click();
+  // On its text: a click below the block would add a paragraph
+  // (trailingHint.ts).
+  await clickTextEnd(live.getByText(seed));
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(OFFLINE);
   await peerAppends(page, PEER);

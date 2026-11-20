@@ -43,6 +43,8 @@ export class HighlighterTool extends BaseTool {
     if (!this._draggingPathPressures) {
       return [];
     }
+    // Capy (local change 50): a mouse has no pressure (see BrushTool).
+    if (e.raw.pointerType === 'mouse') return this._draggingPathPoints ?? [];
     const pressures = [...this._draggingPathPressures, e.pressure];
     this._draggingPathPressures = pressures;
 

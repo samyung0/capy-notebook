@@ -1,4 +1,4 @@
-import { Fragment, lazy, type ReactNode, Suspense } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
@@ -8,31 +8,27 @@ import {
 } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { GraphView } from './GraphView';
 import { isLonePart, questionItems } from './groups';
+import { MatchingGrid } from './MatchingGrid';
+import { hasSample, SampleView } from './SampleBlock';
 import { TextView } from './TextView';
 
 export { TextView } from './TextView';
 
 import {
-  type GraphBlock,
   type ImageBlock,
   isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
+  modelMarked,
   multipleAnswers,
   type Question,
   type QuestionBlock,
   type QuestionPart,
   questionMarks,
+  shownOptions,
 } from './types';
-
-// A drawn sample answer's preview loads only where one shows: shared pages
-// render without it (Q3).
-const DrawnSampleView = lazy(() =>
-  import('@/features/quizzes/drawing/DrawnSample').then((module) => ({
-    default: module.DrawnSampleView,
-  }))
-);
 
 export type BlockSection = {
   groupId?: string;
@@ -48,8 +44,7 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
     case 'text':
       return (
         <div className="leading-relaxed">
-          {block.label && <strong className="mr-3">{block.label}</strong>}
-          <TextView text={block.text} />
+          <TextView marks text={block.text} />
         </div>
       );
     case 'chart':
@@ -68,7 +63,7 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
                       className="border border-line bg-surface-hover-bg px-3 py-2 text-left"
                       key={i}
                     >
-                      <TextView text={cell} />
+                      <TextView marks text={cell} />
                     </th>
                   ))}
                 </tr>
@@ -79,7 +74,7 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
                 <tr key={i}>
                   {row.map((cell, j) => (
                     <td className="border border-line px-3 py-2" key={j}>
-                      <TextView text={cell} />
+                      <TextView marks text={cell} />
                     </td>
                   ))}
                 </tr>
@@ -89,19 +84,16 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
         </div>
       );
     case 'graph':
+      // At most as wide as an image figure.
+      return (
+        <figure className="mx-auto w-fit max-w-[min(100%,36rem)]">
+          <GraphView block={block} />
+        </figure>
+      );
     case 'image':
       if ('assetId' in block.image)
         return <AssetFigure assetId={block.image.assetId} block={block} />;
-      return (
-        <Figure
-          block={block}
-          src={
-            'url' in block.image
-              ? block.image.url
-              : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`
-          }
-        />
-      );
+      return <Figure block={block} src={block.image.url} />;
   }
 }
 
@@ -112,7 +104,7 @@ function AssetFigure({
   block,
 }: {
   assetId: string;
-  block: ImageBlock | GraphBlock;
+  block: ImageBlock;
 }) {
   const [asset, , onImageError] = useResolvedAsset(assetId);
   if (asset.status === 'error' && asset.kind === 'removed')
@@ -131,7 +123,7 @@ function Figure({
   onError,
   src,
 }: {
-  block: ImageBlock | GraphBlock;
+  block: ImageBlock;
   onError?: () => void;
   src: string | undefined;
 }) {
@@ -142,16 +134,13 @@ function Figure({
     <figure className="mx-auto w-fit max-w-[min(100%,36rem)]">
       <img
         alt={block.description ?? ''}
-        className={cn(
-          'h-auto max-w-full',
-          block.type === 'graph' && 'bg-white'
-        )}
+        className="h-auto max-w-full"
         height={block.height}
         onError={onError}
         src={src}
         width={block.width}
       />
-      {block.type === 'image' && block.attribution && (
+      {block.attribution && (
         <figcaption className="mt-1 text-fg-muted text-xs">
           {block.attribution}
         </figcaption>
@@ -246,8 +235,7 @@ export const optionLetter = (index: number) => String.fromCharCode(65 + index);
 export const optionColumns = (question: Question | LearnerQuestion) =>
   question.layout === 'paper';
 
-/** The label column of matching items and answer keys: a letter or number
- * in a small square. */
+/** The label column of answer keys: a letter or number in a small square. */
 export function OptionKey({
   className,
   children,
@@ -301,34 +289,6 @@ export function answerLetterClass(state?: RowState) {
 export const answerBoxesClass = (twoColumns = false) =>
   cn('grid gap-2', twoColumns && '@xl:grid-cols-2');
 
-/** Lettered options above the matching items, side by side once the answer
- * area is 50rem wide. */
-export function MatchingLayout({
-  className,
-  items,
-  options,
-}: {
-  className?: string;
-  items: ReactNode;
-  options: string[];
-}) {
-  return (
-    <div className={cn('@container', className)}>
-      <div className="grid @min-[50rem]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] @min-[50rem]:gap-6 gap-4.5">
-        {items}
-        <ol className="@min-[50rem]:order-none order-first grid content-start gap-2 @min-[50rem]:pt-2.5">
-          {options.map((text, i) => (
-            <li className="flex items-baseline gap-3" key={i}>
-              <OptionKey className="h-auto">{optionLetter(i)}</OptionKey>
-              <TextView className="min-w-0" text={text} />
-            </li>
-          ))}
-        </ol>
-      </div>
-    </div>
-  );
-}
-
 // Answer areas span the text and marks columns of a part row.
 function Choices({
   part,
@@ -347,8 +307,8 @@ function Choices({
           </p>
         )}
         <ol className={answerBoxesClass(twoColumns)}>
-          {answer.options.map((text, i) => (
-            <li className={answerBoxClass()} key={i}>
+          {shownOptions(answer).map(({ index, text }, i) => (
+            <li className={answerBoxClass()} key={index}>
               <span className={answerLetterClass()}>{optionLetter(i)}</span>
               <TextView className="min-w-0 flex-1" text={text} />
             </li>
@@ -358,22 +318,13 @@ function Choices({
     );
   if (answer.type === 'matching')
     return (
-      <MatchingLayout
+      <MatchingGrid
         className="col-[2/-1] min-w-0"
-        items={
-          <ol className="grid content-start gap-2">
-            {('left' in answer
-              ? answer.left
-              : answer.pairs.map((pair) => pair.left)
-            ).map((text, i) => (
-              <li className="flex min-h-11 items-center gap-3" key={i}>
-                <OptionKey>{i + 1}</OptionKey>
-                <TextView className="min-w-0" text={text} />
-              </li>
-            ))}
-          </ol>
+        columns={answer.options}
+        label={m.question_ui_matching()}
+        rows={
+          'left' in answer ? answer.left : answer.pairs.map((pair) => pair.left)
         }
-        options={answer.options}
       />
     );
   if (answer.type === 'ordering')
@@ -554,8 +505,9 @@ export function QuestionView({
       )}
       {review && isAuthoredPart(part) && (
         <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
-          {/* An open part's sample answer is optional. */}
-          {(part.answer.type !== 'open' || part.answer.accepted.length > 0) && (
+          {/* A long or drawing part's key is its marking scheme; its sample
+              answer opens the Solution. */}
+          {!modelMarked(part.answer.type) && (
             <>
               <h4 className="font-semibold text-fg-muted text-xs">
                 {m.question_ui_answer()}
@@ -573,13 +525,27 @@ export function QuestionView({
               <ul className="space-y-1">
                 {part.markscheme.map((item, i) => (
                   <li className="flex items-baseline gap-4" key={i}>
-                    <TextView className="min-w-0 flex-1" text={item.text} />
+                    <TextView
+                      className="min-w-0 flex-1"
+                      marks
+                      text={item.text}
+                    />
                     <span className="shrink-0 text-fg-muted text-sm">
                       [{item.marks}]
                     </span>
                   </li>
                 ))}
               </ul>
+            </>
+          )}
+          {hasSample(part) && (
+            <>
+              <h4 className="pt-2 font-semibold text-fg-muted text-xs">
+                {m.question_ui_sample_answer_heading()}
+              </h4>
+              <div>
+                <SampleView part={part} />
+              </div>
             </>
           )}
           {part.solution.length > 0 && (
@@ -714,26 +680,34 @@ export function QuestionReview({
         if (!isAuthoredPart(part)) return null;
         // Closed parts have no scheme: their answer key and solution explain them.
         const items = part.markscheme ?? [];
-        if (items.length === 0 && part.solution.length === 0)
+        // The sample answer has its own section after the scheme
+        // (Epo 2026-11-15).
+        const sample = hasSample(part) && (
+          <div className="col-start-2 grid min-w-0 gap-1.5 text-sm">
+            <p className="t-meta font-bold text-fg-muted">
+              {m.question_ui_sample_answer_heading()}
+            </p>
+            <SampleView part={part} />
+          </div>
+        );
+        if (items.length === 0 && !sample && part.solution.length === 0)
           return renderAnswer?.(part);
-        const sample =
-          part.answer.type === 'open' ? (part.answer.accepted[0] ?? '') : '';
+        // Open under its heading, as the Sample answer is (Epo 2026-11-18).
         const solution = part.solution.length > 0 && (
-          <details className="col-start-2 min-w-0 text-sm">
-            <summary className="cursor-pointer font-semibold text-fg-secondary">
+          <div className="col-start-2 grid min-w-0 gap-1.5">
+            <p className="t-meta text-fg-secondary">
               {m.question_ui_worked_solution()}
-            </summary>
-            <div className="grid gap-3 pt-3 text-fg-secondary">
-              {part.solution.map((block, i) => (
-                <QuestionBlockView block={block} key={i} />
-              ))}
-            </div>
-          </details>
+            </p>
+            {part.solution.map((block, i) => (
+              <QuestionBlockView block={block} key={i} />
+            ))}
+          </div>
         );
         if (items.length === 0)
           return (
             <>
               {renderAnswer?.(part)}
+              {sample}
               {solution}
             </>
           );
@@ -786,25 +760,8 @@ export function QuestionReview({
                   );
                 })}
               </ul>
-              {sample && (
-                <>
-                  <p className="t-meta mt-2 font-bold text-tint-success-fg">
-                    {m.question_ui_sample_answer_heading()}
-                  </p>
-                  <TextView className="text-fg-secondary" text={sample} />
-                </>
-              )}
-              {part.answer.type === 'drawing' && part.answer.sample && (
-                <>
-                  <p className="t-meta mt-2 font-bold text-tint-success-fg">
-                    {m.question_ui_sample_answer_heading()}
-                  </p>
-                  <Suspense fallback={null}>
-                    <DrawnSampleView sample={part.answer.sample} />
-                  </Suspense>
-                </>
-              )}
             </div>
+            {sample}
             {solution}
           </>
         );

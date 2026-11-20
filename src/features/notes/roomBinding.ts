@@ -10,7 +10,9 @@ import {
   type TRange,
 } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
+import './figureBinding';
 import { blockPoint, pointIn } from './roomSwap';
+import { openEnd } from './trailingHint';
 
 const synced = new WeakSet<object>();
 const waiting = new WeakSet<object>();
@@ -19,8 +21,6 @@ const bound = new WeakMap<object, (unbound: unknown[]) => void>();
 const edited = new WeakSet<object>();
 /** A real edit since the last `takeLocalEdit`. */
 const editing = new WeakSet<object>();
-/** Running `writeNoEdit`: what it writes is no person's edit. */
-const noEdit = new WeakSet<object>();
 /** Writes the trailing paragraph outside Undo. */
 const TRAILING_ORIGIN = Symbol('trailing');
 
@@ -113,7 +113,6 @@ export const roomBindingPlugin = createSlatePlugin({
           return;
       } else if (
         op.type !== 'set_selection' &&
-        !noEdit.has(editor) &&
         (local || YjsEditor.origin(editor) === (editor as Undoable).undoManager)
       ) {
         if (local && YjsEditor.connected(editor) && !edited.has(editor)) {
@@ -192,9 +191,9 @@ interface CopyHistory {
  * share the first edit's Undo step, and that Undo would bring it back as a new
  * edit, emptying Redo. Later ones stay the plugin's.
  */
-function addTrailingParagraph(editor: YjsEditor) {
+function addTrailingParagraph(editor: YjsEditor, always = false) {
   const last = editor.children.at(-1) as { type?: string } | undefined;
-  if (last?.type === KEYS.p) return;
+  if (!always && last?.type === KEYS.p) return;
   const root = editor.sharedRoot;
   const paragraph = { children: [{ text: '' }], id: nanoid(), type: KEYS.p };
   root.doc?.transact(
@@ -210,29 +209,18 @@ function addTrailingParagraph(editor: YjsEditor) {
   );
 }
 
-/** A click below the note's last block: its first real edit when the note
- * holds no paragraph there to click on, and the caret goes in it. */
+/** A click below the note's last block, where "Type / for commands" shows
+ * (trailingHint): the caret goes in the empty paragraph ending the note, else
+ * one is added, a real edit. */
 export function openTrailingParagraph(plate: PlateEditor) {
   const editor = plate as unknown as YjsEditor;
   if (!YjsEditor.connected(editor)) return;
-  const last = plate.children.at(-1) as { type?: string } | undefined;
-  if (last?.type === KEYS.p) return;
-  edited.add(editor);
-  addTrailingParagraph(editor);
+  if (!openEnd(plate)) {
+    edited.add(editor);
+    addTrailingParagraph(editor, true);
+  }
   plate.tf.select(plate.api.end([]));
   plate.tf.focus();
-}
-
-/** A write of the editor's own, as a graph's redraw after a co-editor's change:
- * it reaches the room, and the person has still edited nothing, so everyone with
- * the note open adds no paragraph of their own behind it. */
-export function writeNoEdit(editor: object, write: () => void) {
-  noEdit.add(editor);
-  try {
-    write();
-  } finally {
-    noEdit.delete(editor);
-  }
 }
 
 /** Whether a real edit (this person's, an Undo's) happened since the last

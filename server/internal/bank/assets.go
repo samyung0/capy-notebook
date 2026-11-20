@@ -5,13 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
@@ -20,11 +18,7 @@ import (
 // AssetMaxBytes is flat: the platform pays for bank figures, not a plan
 // (human/question-bank.md 2026-10-09). The browser shrinks larger images.
 const AssetMaxBytes = 4 << 20
-const SVGMaxBytes = 256 << 10
 const ImmutableCache = "public, max-age=31536000, immutable"
-
-var svgResource = regexp.MustCompile(`(?i)url\s*\([^)]*\)`)
-var svgLocalResource = regexp.MustCompile(`(?i)^url\s*\(\s*["']?#[A-Za-z0-9_-]+["']?\s*\)$`)
 
 type AssetWriter interface {
 	PutObject(context.Context, string, io.Reader, string, string) error
@@ -56,90 +50,15 @@ func ValidateAsset(data []byte) (string, string, error) {
 	}
 	mime := http.DetectContentType(data)
 	ext := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}[mime]
-	if ext != "" {
-		// The editors' pixel limit too (Q332, Q348): the browser compresses
-		// a figure to it first.
-		if err := imagecheck.CheckEditorImage(bytes.NewReader(data)); err != nil {
-			return "", "", err
-		}
-		return mime, ext, nil
+	// Raster figures only: the browser draws an SVG as a PNG before upload,
+	// and graphs keep no file (Epo 2026-11-16).
+	if ext == "" {
+		return "", "", errors.New("asset must be a PNG, JPEG, GIF or WebP image")
 	}
-	if len(data) > SVGMaxBytes {
-		return "", "", errors.New("SVG exceeds 256 KiB")
-	}
-	if err := validateSVG(data); err != nil {
+	// The editors' pixel limit too (Q332, Q348): the browser compresses a
+	// figure to it first.
+	if err := imagecheck.CheckEditorImage(bytes.NewReader(data)); err != nil {
 		return "", "", err
 	}
-	return "image/svg+xml", ".svg", nil
-}
-
-// Public SVGs can be navigated to directly. Restrict them to static drawing primitives.
-func validateSVG(data []byte) error {
-	allowed := map[string]bool{"svg": true, "g": true, "path": true, "rect": true, "circle": true, "ellipse": true, "line": true, "polyline": true, "polygon": true, "text": true, "tspan": true, "defs": true, "clipPath": true, "use": true, "marker": true, "title": true, "desc": true, "linearGradient": true, "radialGradient": true, "stop": true}
-	decoder := xml.NewDecoder(bytes.NewReader(data))
-	depth := 0
-	root := false
-	ended := false
-	for {
-		token, err := decoder.Token()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return errors.New("invalid SVG XML")
-		}
-		switch v := token.(type) {
-		case xml.StartElement:
-			if ended || !allowed[v.Name.Local] || (v.Name.Space != "" && v.Name.Space != "http://www.w3.org/2000/svg") {
-				return errors.New("unsupported SVG element")
-			}
-			if !root {
-				if v.Name.Local != "svg" {
-					return errors.New("asset must be a supported image or SVG")
-				}
-				root = true
-			}
-			depth++
-			for _, a := range v.Attr {
-				key := strings.ToLower(a.Name.Local)
-				value := strings.ToLower(strings.TrimSpace(a.Value))
-				if strings.ContainsAny(value, "\\@") {
-					return errors.New("escaped SVG attributes are forbidden")
-				}
-				if strings.HasPrefix(key, "on") || key == "src" || key == "base" {
-					return errors.New("active SVG attributes are forbidden")
-				}
-				if key == "href" && !strings.HasPrefix(value, "#") {
-					return errors.New("external SVG references are forbidden")
-				}
-				for _, resource := range svgResource.FindAllString(value, -1) {
-					if !svgLocalResource.MatchString(resource) {
-						return errors.New("external SVG resources are forbidden")
-					}
-				}
-				if key == "style" && strings.Contains(value, "expression") {
-					return errors.New("active SVG styles are forbidden")
-				}
-			}
-		case xml.EndElement:
-			depth--
-			if depth == 0 {
-				ended = true
-			}
-		case xml.Directive:
-			return errors.New("SVG directives are forbidden")
-		case xml.ProcInst:
-			if v.Target != "xml" {
-				return errors.New("SVG processing instructions are forbidden")
-			}
-		case xml.CharData:
-			if depth == 0 && strings.TrimSpace(string(v)) != "" {
-				return errors.New("text outside SVG")
-			}
-		}
-	}
-	if !root || !ended {
-		return errors.New("invalid SVG")
-	}
-	return nil
+	return mime, ext, nil
 }

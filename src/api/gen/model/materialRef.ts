@@ -8,8 +8,6 @@ import type { MaterialRefType } from './materialRefType.ts';
 import type { Provenance } from './provenance.ts';
 
 export interface MaterialRef {
-  assigned?: boolean;
-  assignmentId?: string;
   createdAt: string;
   hidden?: boolean;
   id: string;

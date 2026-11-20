@@ -17,7 +17,7 @@ test.describe('formatting', () => {
     await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
     await page.keyboard.press('End');
     await page.keyboard.type(' history probe');
-    // An open file shows Files; the chat box is in Agent.
+    // An open file is the Files page: its chat button opens the chat's window.
     await showPanelView(page, m.workspace_tab_chat());
     const outside = page.getByRole('textbox', {
       name: m.chat_placeholder(),

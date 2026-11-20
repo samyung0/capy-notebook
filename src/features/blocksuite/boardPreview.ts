@@ -1,4 +1,9 @@
-import { tickStep } from '@/features/questions/graphTicks';
+import { drawGraph } from '@/features/graph/draw';
+import { type ElementEntry, readElements } from '@/features/graph/keyed';
+import type { GraphElement } from '@/features/graph/model';
+import { EXPORT_PAPER } from '@/features/graph/paper';
+import { canvasMeasure, SvgRecorder } from '@/features/graph/svg';
+import { bboxOf, type View } from '@/features/graph/view';
 import { m } from '@/i18n';
 import { fromBase64 } from './base64';
 import {
@@ -8,16 +13,13 @@ import {
   type ChartData,
   filledSlices,
   INK,
-  type Mark,
   onScreen,
-  pathOf,
   pieCircle,
 } from './boardData';
 import {
   type Box,
   closeUp,
   IMAGE_SIDE_MAX,
-  ticks,
   unite,
   type Vec,
 } from './boardGeometry';
@@ -30,15 +32,20 @@ import {
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
- * the marking image is: everything on the board, far groups drawn nearer, on white.
+ * the marking image is: everything on the board, on white, a quiz drawing's far groups
+ * drawn nearer.
  * Strokes are plain lines, connectors straight, formulas their LaTeX, notes a line per
- * paragraph, a placed quiz or set its title and kind, pasted images a grey box, and no
- * numbers or labels on cards. Throws a
- * BoardLoadError for a board that doesn't check out. */
+ * paragraph, a placed quiz or set its title and kind, pasted images a grey box, plane
+ * cards as the graph engine draws them (numbers included) without their labels and
+ * formulas, and no labels on charts. Throws a BoardLoadError for a board that doesn't
+ * check out. */
 export function drawBoardPreview(
   saved: string,
   size: { height: number; width: number },
-  board: BoardKind
+  board: BoardKind,
+  /** Cropped to the drawing, at most `size`, instead of centred in it: an
+   * inline preview then starts at its column's edge. */
+  fit = false
 ) {
   let update: Uint8Array;
   try {
@@ -101,14 +108,16 @@ export function drawBoardPreview(
         : 1
   );
 
-  const { height, width } = size;
-  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/>`;
-  if (!items.length) return `${head}</svg>`;
+  const head = (width: number, height: number) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/>`;
+  if (!items.length) return `${head(size.width, size.height)}</svg>`;
 
   const boxes = items.map((item) => item.box);
   const whole = unite(boxes);
+  // Only a quiz's drawing draws far groups nearer: its answer has an area to
+  // stay near. A workspace canvas is shown where it is (Epo 2026-11-18).
   const shifts =
-    Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX
+    board === 'question' && Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX
       ? closeUp(boxes)
       : boxes.map(() => ({ dx: 0, dy: 0 }));
   const all = unite(
@@ -119,16 +128,20 @@ export function drawBoardPreview(
     }))
   );
   const frame = { h: all.h + 16, w: all.w + 16, x: all.x - 8, y: all.y - 8 };
-  const scale = Math.min(width / frame.w, height / frame.h);
+  const scale = Math.min(size.width / frame.w, size.height / frame.h);
+  const width = fit ? Math.round(frame.w * scale) : size.width;
+  const height = fit ? Math.round(frame.h * scale) : size.height;
   const tx = (width - frame.w * scale) / 2 - frame.x * scale;
   const ty = (height - frame.h * scale) / 2 - frame.y * scale;
   const pen: Pen = { pixel: 1 / scale };
   let body = '';
   for (const [i, item] of items.entries()) {
-    const drawn = drawItem(item, pen, blocks);
+    const drawn = drawItem(item, pen, blocks, i);
     if (!drawn) continue;
     const { dx, dy } = shifts[i];
-    const rotate = Number(item.fields.rotate) || 0;
+    // A block keeps its turn as `prop:rotate` (a note, local change 56; an image).
+    const rotate =
+      Number(item.fields.rotate ?? item.fields['prop:rotate']) || 0;
     const { h, w, x, y } = item.box;
     const moves = [
       dx || dy ? `translate(${num(-dx)} ${num(-dy)})` : '',
@@ -140,7 +153,7 @@ export function drawBoardPreview(
       .join(' ');
     body += moves ? `<g transform="${moves}">${drawn}</g>` : drawn;
   }
-  return `${head}<g transform="matrix(${num(scale)} 0 0 ${num(scale)} ${num(tx)} ${num(ty)})" fill="none" stroke-linecap="round" stroke-linejoin="round" font-family="Inter, Arial, sans-serif">${body}</g></svg>`;
+  return `${head(width, height)}<g transform="matrix(${num(scale)} 0 0 ${num(scale)} ${num(tx)} ${num(ty)})" fill="none" stroke-linecap="round" stroke-linejoin="round" font-family="Inter, Arial, sans-serif">${body}</g></svg>`;
 }
 
 type Item = {
@@ -165,7 +178,9 @@ const LINE_HEIGHT = 1.3;
 function drawItem(
   { box, ends, fields, kind }: Item,
   pen: Pen,
-  blocks: Record<string, Fields>
+  blocks: Record<string, Fields>,
+  /** The item's place in the preview, so its own ids stay its own. */
+  n: number
 ) {
   switch (kind) {
     case 'brush':
@@ -185,7 +200,7 @@ function drawItem(
     case 'connector':
       return ends ? drawConnector(ends, fields, pen) : '';
     case 'plane':
-      return drawPlane(box, fields, pen);
+      return drawPlane(box, fields, pen, n);
     case 'chart':
       return drawChart(box, fields as unknown as ChartData, pen);
     case 'formula':
@@ -226,6 +241,44 @@ function drawBrush({ x, y }: Box, fields: Fields, pen: Pen, ink: string) {
   return `<path d="${d}" stroke="${stroke}" stroke-width="${num(width)}"/>`;
 }
 
+/** The polygon shape types' corners as fractions of their box: BlockSuite's
+ * `POLYGON_SHAPES` (vendored local change 46), copied so a preview loads no editor;
+ * boardPreview.test.ts checks they match. */
+export const POLYGON_CORNERS: Record<string, Vec[]> = {
+  hexagon: [
+    [0.25, 0],
+    [0.75, 0],
+    [1, 0.5],
+    [0.75, 1],
+    [0.25, 1],
+    [0, 0.5],
+  ],
+  parallelogram: [
+    [0.25, 0],
+    [1, 0],
+    [0.75, 1],
+    [0, 1],
+  ],
+  pentagon: [
+    [0.5, 0],
+    [1, 0.38],
+    [0.81, 1],
+    [0.19, 1],
+    [0, 0.38],
+  ],
+  rightTriangle: [
+    [0, 0],
+    [1, 1],
+    [0, 1],
+  ],
+  trapezium: [
+    [0.25, 0],
+    [0.75, 0],
+    [1, 1],
+    [0, 1],
+  ],
+};
+
 function drawShape(box: Box, fields: Fields, pen: Pen) {
   const { h, w, x, y } = box;
   const fill = fields.filled ? colour(fields.fillColor, 'none') : 'none';
@@ -250,6 +303,16 @@ function drawShape(box: Box, fields: Fields, pen: Pen) {
       outline = `<path d="M${num(x + w / 2)} ${num(y)}L${num(x + w)} ${num(y + h)}L${num(x)} ${num(y + h)}Z" ${paint}/>`;
       break;
     default: {
+      const corners = POLYGON_CORNERS[String(fields.shapeType)];
+      if (corners) {
+        outline = `<path d="${corners
+          .map(
+            ([fx, fy], i) =>
+              `${i ? 'L' : 'M'}${num(x + fx * w)} ${num(y + fy * h)}`
+          )
+          .join('')}Z" ${paint}/>`;
+        break;
+      }
       const radius = Number(fields.radius) || 0;
       const r = radius < 1 ? Math.min(w, h) * radius : radius;
       outline = `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${num(r)}" ${paint}/>`;
@@ -303,73 +366,41 @@ function endPoint(end: unknown, boxById: Map<string, Box>): Vec | null {
   return position ? [position[0], position[1]] : null;
 }
 
-/** The card, its numbered grid lines while they're apart, the axes and the marks. */
-function drawPlane(box: Box, fields: Fields, pen: Pen) {
+/** The card as the graph engine draws it on the light export paper (one renderer for
+ * every graph, Epo 2026-11-16), at no less than half the card's own size so its marks
+ * keep a pixel. No labels or formulas: the preview can't lay a formula out, and better
+ * none than a broken one (Epo 2026-11-08). */
+function drawPlane(box: Box, fields: Fields, pen: Pen, n: number) {
   const { h, w, x, y } = box;
-  const ppu = Number(fields.ppu);
-  const x0 = Number(fields.x0);
-  const y0 = Number(fields.y0);
-  const marks = (fields.marks as Mark[] | undefined) ?? [];
-  const X = (u: number) => x + (u - x0) * ppu;
-  const Y = (v: number) => y + (y0 - v) * ppu;
-  const step = tickStep(ppu);
-  let grid = '';
-  if (step * ppu > pen.pixel * 6 && fields.polar === true) {
-    // Rings round the origin and a spoke every 30°, out to the farthest corner.
-    const [ox, oy] = [X(0), Y(0)];
-    const far = Math.max(
-      ...[
-        [x, y],
-        [x + w, y],
-        [x, y + h],
-        [x + w, y + h],
-      ].map(([cx, cy]) => Math.hypot(cx - ox, cy - oy))
-    );
-    for (let r = step * ppu; r <= far; r += step * ppu)
-      grid += `M${num(ox + r)} ${num(oy)}a${num(r)} ${num(r)} 0 1 0 ${num(-2 * r)} 0a${num(r)} ${num(r)} 0 1 0 ${num(2 * r)} 0`;
-    for (let a = 30; a < 360; a += 30) {
-      if (a % 90 === 0) continue;
-      const t = (a * Math.PI) / 180;
-      grid += `M${num(ox)} ${num(oy)}L${num(ox + far * Math.cos(t))} ${num(oy - far * Math.sin(t))}`;
-    }
-  } else if (step * ppu > pen.pixel * 6) {
-    for (const u of ticks(x0, x0 + w / ppu, step))
-      grid += `M${num(X(u))} ${num(y)}V${num(y + h)}`;
-    for (const v of ticks(y0 - h / ppu, y0, step))
-      grid += `M${num(x)} ${num(Y(v))}H${num(x + w)}`;
-  }
-  const axes = `M${num(X(0))} ${num(y)}V${num(y + h)}M${num(x)} ${num(Y(0))}H${num(x + w)}`;
-  const ink = Math.max(2, pen.pixel);
-  let traces = '';
-  let heads = '';
-  let dots = '';
-  const dot = ([u, v]: Vec) => {
-    dots += `M${num(X(u))} ${num(Y(v))}h0`;
+  const k = Math.max(1 / pen.pixel, 0.5);
+  const elements = readElements(
+    Object.entries(
+      fields.elements as Record<string, ElementEntry<GraphElement>>
+    )
+  ).filter(({ type }) => type !== 'text' && type !== 'formula');
+  const recorder = new SvgRecorder(w * k, h * k, canvasMeasure, `p${n}`);
+  const view: View = {
+    left: Number(fields.x0),
+    ppuX: Number(fields.ppu) * k,
+    ppuY: Number(fields.ppu) * k,
+    top: Number(fields.y0),
   };
-  for (const mark of marks) {
-    // No labels on previews, as no numbers, and no formulas: the preview can't lay
-    // them out, and better none than a broken one (Epo 2026-11-08).
-    if (mark.kind === 'label' || mark.kind === 'formula') continue;
-    if (mark.kind === 'dot') {
-      dot(mark.at);
-      continue;
-    }
-    traces += pathOf(mark, 6)
-      .map(([u, v], i) => `${i ? 'L' : 'M'}${num(X(u))} ${num(Y(v))}`)
-      .join('');
-    // A line's points show only in the editor, a single point always.
-    const [from, to] = mark.points.slice(-2);
-    if (mark.kind === 'vector' && from && to) {
-      // Its arrowhead, as the card draws it, never under four preview pixels.
-      const [tx, ty] = [X(to[0]), Y(to[1])];
-      const turn = Math.atan2(ty - Y(from[1]), tx - X(from[0]));
-      const size = Math.max(12, pen.pixel * 4);
-      const side = (sign: number) =>
-        `${num(tx - size * Math.cos(turn + (sign * Math.PI) / 7))} ${num(ty - size * Math.sin(turn + (sign * Math.PI) / 7))}`;
-      heads += `M${num(tx)} ${num(ty)}L${side(-1)}L${side(1)}Z`;
-    }
-  }
-  return `<svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${rect(box, '#fff', 'none', 0)}${grid ? `<path d="${grid}" stroke="#dededb" stroke-width="${num(Math.max(1, pen.pixel))}"/>` : ''}<path d="${axes}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>${traces ? `<path d="${traces}" stroke="${INK}" stroke-width="${num(ink)}"/>` : ''}${heads ? `<path d="${heads}" fill="${INK}" stroke="none"/>` : ''}${dots ? `<path d="${dots}" stroke="${INK}" stroke-width="${num(Math.max(9, pen.pixel * 2))}"/>` : ''}</svg>${rect(box, 'none', '#d9d9d6', Math.max(1, pen.pixel))}`;
+  drawGraph(
+    recorder,
+    { h: h * k, w: w * k, x: 0, y: 0 },
+    view,
+    {
+      board: {
+        axis: true,
+        bbox: bboxOf(view, w * k, h * k),
+        grid: true,
+        polar: fields.polar === true,
+      },
+      elements,
+    },
+    EXPORT_PAPER
+  );
+  return recorder.nested(x, y, w, h);
 }
 
 /** Bars and the axes, or the circle and its spokes. */
@@ -442,9 +473,23 @@ function drawNote(box: Box, note: Fields, blocks: Record<string, Fields>) {
   };
   walk(note['sys:children']);
   const { h, w, x, y } = box;
-  // The board's tight card (N2): 8 by 10 px padding, a hairline, a 6 px corner.
+  const text = texts.join('\n');
+  const style = ((note['prop:edgeless'] as Fields | undefined)?.style ??
+    {}) as Fields;
+  const background = note['prop:background'];
+  const bordered = style.borderStyle !== 'none';
+  // An inline note (P1/I1, Epo 2026-11-13) is its text alone, with no padding.
+  if (background === 'transparent' && !style.shadowType && !bordered)
+    return lines(box, text, FONT_SIZE_NOTE, '#1d1d1f', 'left');
+  // A card as the board draws it: 8 by 10 px padding, its corner, the fill half
+  // see-through, its border, or the hairline every shadow is drawn as here.
   const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
-  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="${colour(note['prop:background'], '#fff')}" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, texts.join('\n'), FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
+  const edge = bordered
+    ? `stroke="#1d1d1f" stroke-opacity="0.1" stroke-width="${num(Number(style.borderSize) || 4)}"${style.borderStyle === 'dash' ? ' stroke-dasharray="6 4"' : ''}`
+    : style.shadowType
+      ? 'stroke="#e6e6e6" stroke-width="1"'
+      : '';
+  return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="${num(Number(style.borderRadius ?? 8))}" fill="${colour(background, '#fff')}" fill-opacity="0.5" ${edge}/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, text, FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;
 }
 
 /** A placed quiz or flashcard set: its box with the title and what it is, as the

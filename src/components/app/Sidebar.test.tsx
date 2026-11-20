@@ -52,7 +52,7 @@ const row = (html: string, href: string) =>
 
 it('opens the account chat at /chat from its Chat row, active there', () => {
   const chat = row(renderToStaticMarkup(<Sidebar account />), '/chat');
-  expect(chat).toContain(m.nav_chat());
+  expect(chat).toContain(m.nav_agent());
   expect(chat).not.toContain('bg-action');
 
   route.pathname = '/chat/conv_1';
@@ -63,7 +63,7 @@ it('opens the account chat at /chat from its Chat row, active there', () => {
 
 it('puts a dot on the To do row while anything is open', () => {
   expect(row(renderToStaticMarkup(<Sidebar />), '/todo')).not.toContain(
-    'animate-pulse'
+    'bg-solid-error'
   );
   todo.workspaces = [
     {
@@ -73,6 +73,6 @@ it('puts a dot on the To do row while anything is open', () => {
     },
   ];
   const todoRow = row(renderToStaticMarkup(<Sidebar />), '/todo');
-  expect(todoRow).toContain('animate-pulse');
+  expect(todoRow).toContain('bg-solid-error');
   expect(todoRow).toContain(m.todo_nav_count({ count: '1' }));
 });

@@ -116,7 +116,7 @@ export function scenarioDriver(signal: AbortSignal, root: Document = document) {
       return input;
     },
     /** Shows a section of the workspace rail, as e2e/helpers/panelView.ts does:
-     * pressing the section that already shows would close its panel. */
+     * pressing the page that already shows would fold its side panel. */
     async railSection(name: string) {
       const section = await button(name, 'nav button');
       if (section.getAttribute('aria-current') !== 'page') activate(section);

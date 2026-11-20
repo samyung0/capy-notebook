@@ -1974,8 +1974,10 @@ centred by Arrange.
 
 Both modes hide the speaker notes until View › Show speaker notes (the
 `view.speakerNotes` id, a checkbox item) or the Notes button at the bottom
-right of the slide area (bottom left, over the first thumbnail, when the strip
-is under the slide) shows them; the two flip one state. In edit mode that
+right of the slide area, 72px in from the edge so the Files page's floating
+chat button leaves it clear (`--pptx-notes-toggle-right`; bottom left, over
+the first thumbnail, when the strip is under the slide) shows them; the two
+flip one state. In edit mode that
 is pptx-react's (`pptx-notes-toggle`, labelled Notes in both layouts); the
 viewer draws the same button in `pptx-runtime.css`. The choice is one per
 person for every PPTX file and both modes, kept in the runtime origin's

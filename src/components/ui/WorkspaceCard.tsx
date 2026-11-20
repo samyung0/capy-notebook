@@ -172,7 +172,7 @@ export function WorkspaceCardSkeleton({ className }: { className?: string }) {
     <Skeleton
       className={cn('rounded-card border border-transparent', className)}
     >
-      <div aria-hidden className="invisible h-23 sm:h-auto">
+      <div aria-hidden className="invisible h-25.5 sm:h-auto">
         <div className="hidden sm:block">
           <div className="h-19" />
           <div className="-mt-5 ml-3 size-9" />
@@ -213,7 +213,7 @@ export function WorkspaceCardFace({
     <Card
       border="solid"
       // Phones: as tall as a card with badges, so a list of them reads even.
-      className="group h-full min-h-23 flex-row gap-0 overflow-hidden border-divider p-0 sm:min-h-0 sm:flex-col"
+      className="group h-full min-h-26 flex-row gap-0 overflow-hidden border-divider p-0 sm:min-h-0 sm:flex-col"
       interactive={interactive}
     >
       <div className="relative w-10 shrink-0 bg-page-hover sm:h-19 sm:w-auto">
@@ -227,7 +227,7 @@ export function WorkspaceCardFace({
       </div>
       {/* Phones: the cover at the side and the icon before the name (canvas
           board P1). From `sm` these wrappers dissolve into the card's column. */}
-      <div className="min-w-0 flex-1 py-2.5 pr-9 pl-3 sm:contents">
+      <div className="min-w-0 flex-1 py-3.5 pr-9 pl-3 sm:contents">
         <div className="flex min-w-0 items-center gap-1.5 sm:contents">
           <img
             alt=""
@@ -240,7 +240,7 @@ export function WorkspaceCardFace({
             {workspace.name}
           </h3>
         </div>
-        <p className="t-meta pt-1 text-fg-muted sm:px-3 sm:pt-0.5 sm:pb-3">
+        <p className="t-meta pt-1.5 text-fg-muted sm:px-3 sm:pt-0.5 sm:pb-3">
           {topics === 1
             ? m.workspace_card_one_topic()
             : m.workspace_card_topics({ count: String(topics) })}
@@ -249,7 +249,7 @@ export function WorkspaceCardFace({
           Access comes first so it is never the one hidden. With no badges the
           card ends under its topics; a taller neighbour still evens a row. */}
         {(workspace.privacy !== 'private' || workspace.tags.length > 0) && (
-          <div className="mt-1.5 flex h-5.5 flex-wrap gap-1 overflow-hidden sm:mx-3 sm:-mt-0.5 sm:mb-3">
+          <div className="mt-2 flex h-5.5 flex-wrap gap-1 overflow-hidden sm:mx-3 sm:-mt-0.5 sm:mb-3">
             {workspace.privacy !== 'private' && (
               <Badge
                 className={CARD_BADGE}

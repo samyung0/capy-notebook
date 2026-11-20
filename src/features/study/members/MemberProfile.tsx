@@ -10,7 +10,7 @@ import type {
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -25,8 +25,9 @@ import {
   percentText,
   weekdayLabel,
 } from '../assignments/assignmentText';
-import { NewAssignmentDialog } from '../assignments/LazyNewAssignmentDialog';
+import { GradedQuizDialog } from '../assignments/LazyNewAssignmentDialog';
 import { PracticeFrame } from '../practice/studyPage';
+import { assignmentsLink, studyLink } from '../studyRoutes';
 import { LabelChip, TopicSquares } from '../topicLabels';
 import { topicName } from './membersRows';
 import { StorageFullChip } from './StorageFullChip';
@@ -83,12 +84,14 @@ export function MemberProfilePage({
     <button
       className="inline-flex items-center gap-1.5 font-semibold underline decoration-1 underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
       onClick={() =>
-        void navigate({ search: { show, study: 'members' as const }, to: '.' })
+        void navigate(
+          studyLink(workspaceId, show === 'topics' ? 'topics' : 'summary')
+        )
       }
       type="button"
     >
       <Icon name="navigationBack" size={16} />
-      {m.study_panel_members()}
+      {m.workspace_tab_study()}
     </button>
   );
   if (isPending)
@@ -104,7 +107,7 @@ export function MemberProfilePage({
       <PracticeFrame className="lg:pt-6">
         {back}
         <ErrorState
-          className="mt-10"
+          className="h-auto py-20"
           kind="notFound"
           title={m.member_profile_not_found()}
           variant="panel"
@@ -116,13 +119,9 @@ export function MemberProfilePage({
       <PracticeFrame className="lg:pt-6">
         {back}
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
-          className="mt-10"
+          className="h-auto py-20"
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.member_profile_load_failed()}
           variant="panel"
         />
@@ -136,40 +135,56 @@ export function MemberProfilePage({
     data.activity.length === 0 &&
     data.topics.every((t) => t.asked === 0);
   const openAssignment = (a: MemberAssignment) =>
-    navigate({
-      search: a.attemptId
-        ? {
-            assignment: a.id,
-            attempt: a.attemptId,
-            study: 'assignments' as const,
-          }
-        : { assignment: a.id, study: 'assignments' as const, tab: 'members' },
-      to: '.',
-    });
+    navigate(
+      assignmentsLink(
+        workspaceId,
+        a.attemptId
+          ? {
+              assignment: a.id,
+              attempt: a.attemptId,
+              // Its back link returns to this profile (Epo 2026-11-16).
+              member: memberId,
+              show,
+            }
+          : { assignment: a.id, tab: 'members' }
+      )
+    );
   return (
     <PracticeFrame className="lg:pt-6">
       <div>{back}</div>
-      <div className="mt-4 flex min-w-0 items-center gap-3.5">
-        <Avatar
-          aria-hidden
-          className="size-12 shrink-0 text-base"
-          name={data.name}
-          src={data.avatarUrl || undefined}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="t-page-title truncate">{data.name}</h1>
-            {data.storageFull && <StorageFullChip />}
+      {/* Phones: the button goes under the name, which keeps the width. */}
+      <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-3.5">
+        <div className="flex min-w-0 flex-1 items-center gap-3.5">
+          <Avatar
+            aria-hidden
+            className="size-12 shrink-0 text-base"
+            name={data.name}
+            src={data.avatarUrl || undefined}
+          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="t-page-title truncate">{data.name}</h1>
+              {data.storageFull && <StorageFullChip />}
+            </div>
+            <span className="t-meta text-fg-muted">
+              {[
+                m.member_joined({ date: dayMonth(data.joinedAt) }),
+                data.lastActiveAt ? activeText(data.lastActiveAt) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
           </div>
-          <span className="t-meta text-fg-muted">
-            {[
-              m.member_joined({ date: dayMonth(data.joinedAt) }),
-              data.lastActiveAt ? activeText(data.lastActiveAt) : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
         </div>
+        {/* Every member, needing practice or not; the weakest topic needing it
+            comes preset (Epo 2026-11-16). */}
+        <PageButton
+          className="shrink-0 self-start sm:self-auto"
+          onClick={() => setAssigning(true)}
+          variant="outline"
+        >
+          {m.member_assign_quiz()}
+        </PageButton>
       </div>
 
       {notStarted ? (
@@ -180,12 +195,15 @@ export function MemberProfilePage({
           <p className="text-fg-muted">{m.member_not_started_body()}</p>
         </div>
       ) : (
-        <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-12 xl:gap-16">
-          <div className="flex min-w-0 flex-col gap-8.5 lg:w-158 lg:shrink">
+        // The left side takes the room the right's 380px leaves, up to
+        // 1000px, so its names get the width (Epo 2026-11-16); the gap
+        // between them grows with the screen.
+        <div className="mt-7.5 flex flex-col gap-8.5 lg:flex-row lg:gap-12 xl:gap-16 2xl:gap-24">
+          <div className="flex min-w-0 flex-col gap-8.5 lg:max-w-250 lg:flex-1">
             <section>
               <h2 className="t-subtitle">{m.study_panel_assignments()}</h2>
               {data.assignments.length === 0 ? (
-                <Empty>{m.member_no_assignments({ name: data.name })}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-1">
                   {data.assignments.map((a) => (
@@ -216,7 +234,7 @@ export function MemberProfilePage({
             <section>
               <h2 className="t-subtitle">{m.summary_topics()}</h2>
               {data.topics.length === 0 ? (
-                <Empty>{m.member_no_topic_answers()}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-1">
                   {data.topics.map((t) => (
@@ -228,39 +246,10 @@ export function MemberProfilePage({
           </div>
 
           <div className="flex min-w-0 flex-col gap-7.5 lg:w-95 lg:shrink-0">
-            {focus && (
-              <section className="flex flex-col gap-1.5 rounded-xl border border-divider px-4.5 py-4">
-                <div className="flex items-center gap-2">
-                  <Icon
-                    className="shrink-0 text-tint-accent-fg"
-                    name="ai"
-                    size={18}
-                  />
-                  <h2 className="t-subtitle">
-                    {m.member_needs_practice_on({ topic: topicName(focus) })}
-                  </h2>
-                </div>
-                <p className="pl-6.5 text-fg-secondary">
-                  {m.member_missed_of({
-                    asked: focus.asked,
-                    wrong: focus.asked - focus.right,
-                  })}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2 pl-6.5">
-                  <Button
-                    onClick={() => setAssigning(true)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {m.member_assign_practice()}
-                  </Button>
-                </div>
-              </section>
-            )}
             <section>
               <h2 className="t-subtitle">{m.member_frequently_wrong()}</h2>
               {data.missed.length === 0 ? (
-                <Empty>{m.member_none_wrong()}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-0.5">
                   {data.missed.map((q) => (
@@ -272,7 +261,7 @@ export function MemberProfilePage({
             <section>
               <h2 className="t-subtitle">{m.member_recent_activity()}</h2>
               {data.activity.length === 0 ? (
-                <Empty>{m.member_no_activity()}</Empty>
+                <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
                 <ul className="mt-0.5">
                   {data.activity.map((a, i) => (
@@ -285,7 +274,7 @@ export function MemberProfilePage({
         </div>
       )}
       {assigning && (
-        <NewAssignmentDialog
+        <GradedQuizDialog
           onClose={() => setAssigning(false)}
           onDone={() => setAssigning(false)}
           presetAssignee={memberId}
@@ -304,9 +293,10 @@ const Empty = ({ children }: { children: ReactNode }) => (
 
 const ROW =
   'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-divider border-b py-2 md:min-h-9 md:py-1';
-/** Board G2's columns; a topic's squares take up to ten (topicSquares). */
-const ASSIGNMENT_COLS = 'md:grid-cols-[minmax(0,1fr)_140px_120px_64px]';
-const TOPIC_COLS = 'md:grid-cols-[minmax(0,1fr)_140px_120px_110px]';
+/** Board G2's columns, one grid for both lists so they line up (Epo
+ * 2026-11-16): an assignment's title spans the first two, its status and date
+ * sit over a topic's count and squares (up to ten, topicSquares). */
+const COLS = 'md:grid-cols-[minmax(0,1fr)_140px_120px_130px]';
 
 const CHIP =
   't-meta inline-flex h-5.5 items-center whitespace-nowrap rounded-md px-1.75 font-semibold';
@@ -322,7 +312,9 @@ function AssignmentRow({
     <span className="font-semibold text-fg-muted">–</span>
   );
   let meta = a.dueAt ? m.assignment_due({ date: dayLabel(a.dueAt) }) : '';
-  if (a.mark !== undefined && a.doneAt) {
+  // A graded quiz's counted mark, or a graded Assignment's grade, which staff
+  // may give without a tick (Epo 2026-11-14).
+  if (a.mark !== undefined && (a.doneAt || a.kind === 'unmarked')) {
     status = (
       <span>
         <span className="font-bold">{formatPoints(a.mark)}</span>
@@ -332,7 +324,11 @@ function AssignmentRow({
         </span>
       </span>
     );
-    meta = m.assignment_submitted_on({ date: dayMonth(a.doneAt) });
+    if (a.doneAt)
+      meta =
+        a.kind === 'marked'
+          ? m.assignment_submitted_on({ date: dayMonth(a.doneAt) })
+          : m.assignment_done_on({ date: dayMonth(a.doneAt) });
     if (a.waitingMarks > 0)
       meta += ` · ${m.member_marks_waiting({ marks: a.waitingMarks })}`;
   } else if (a.doneAt) {
@@ -360,15 +356,17 @@ function AssignmentRow({
       <button
         className={cn(
           ROW,
-          ASSIGNMENT_COLS,
+          COLS,
           'w-full text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset'
         )}
         onClick={onOpen}
         type="button"
       >
-        <span className="line-clamp-2 font-semibold">{a.title}</span>
+        <span className="line-clamp-2 font-semibold md:col-span-2">
+          {a.title}
+        </span>
         <span className="justify-self-end md:justify-self-start">{status}</span>
-        <span className="t-meta col-span-2 text-fg-muted md:font-semibold md:text-sm">
+        <span className="t-meta col-span-2 text-fg-muted md:col-span-1 md:font-semibold md:text-sm">
           {meta}
         </span>
       </button>
@@ -378,7 +376,7 @@ function AssignmentRow({
 
 function TopicRow({ topic }: { topic: SummaryTopic }) {
   return (
-    <li className={cn(ROW, TOPIC_COLS)}>
+    <li className={cn(ROW, COLS)}>
       <span className="line-clamp-2 font-semibold">{topicName(topic)}</span>
       <span className="justify-self-end md:justify-self-start">
         <LabelChip label={topic.label} />

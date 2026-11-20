@@ -1,31 +1,32 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useContext, useMemo, useState } from 'react';
 import type * as Y from 'yjs';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import type { Question } from '@/api/types';
 import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
-import { Button } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/Dialog';
+import { Skeleton } from '@/components/ui/feedback';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
-import type { UndoTarget } from '@/features/collaboration/undo';
+import {
+  LiveStatus,
+  UndoButtons,
+} from '@/features/collaboration/LiveItemControls';
+import { UndoSink, type UndoTarget } from '@/features/collaboration/undo';
 import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
-import { IssueSummary } from '@/features/questions/IssueViews';
-import { issueMessages, questionIssues } from '@/features/questions/issues';
+import { duplicateQuestion } from '@/features/questions/questionEdits';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
-import { m } from '@/i18n';
 import { quizSampleUpload } from './drawing/DrawnSample';
 import {
-  questionState,
+  figureRoom,
+  moveQuestion,
   removeQuestion,
-  removeUnchangedQuestion,
   writeQuestion,
 } from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
 
-const QuestionDialog = lazy(() =>
-  import('@/features/questions/QuestionDialog').then((module) => ({
-    default: module.QuestionDialog,
+const QuestionPane = lazy(() =>
+  import('./QuestionPane').then((module) => ({
+    default: module.QuestionPane,
   }))
 );
 
@@ -52,145 +53,82 @@ export function quizImageUpload(quizId: string): UploadQuestionAsset {
   };
 }
 
-/** The live quiz editor's question list (Epo 2026-10-10): each question as
- * learners see it, with a line under an incomplete one saying what it lacks,
- * Edit and Remove, then Add question. Every change writes to the quiz's
- * documents at once; there is no Save. A question added and closed blank
- * goes. */
+/** A note's quiz in Edit (Epo 2026-11-15, in place of the question dialog):
+ * the quiz page's cards in the note, the open one editing in place. Every
+ * change writes to the quiz's documents at once; removing the last question
+ * removes the block. A host without its own Undo shows Undo, Redo and the
+ * live state above them. */
 export function QuizForm({
-  quizId,
-  name,
-  questions,
   content,
   keys,
+  onEmpty,
+  questions,
+  quizId,
   status,
   undo,
-  onEmpty,
 }: {
-  quizId: string;
-  name: string;
-  questions: Question[];
   content: Y.Doc;
   keys: Y.Doc;
+  /** Removing the last question removes the embed block. */
+  onEmpty?: () => void;
+  questions: Question[];
+  quizId: string;
   status: ItemRoomStatus;
   undo: UndoTarget | null;
-  /** Inside a note: removing the last question removes the embed block. */
-  onEmpty?: () => void;
 }) {
-  const [editing, setEditing] = useState<{
-    /** Added by this Add question and not written to since: what it held then. */
-    blank: string | null;
-    id: string;
-  } | null>(null);
-  const question = editing && questions.find((q) => q.id === editing.id);
-  // The question waiting on the remove confirmation (main 621c3dd0).
-  const [removing, setRemoving] = useState<string | null>(null);
-  const remove = (id: string) => {
-    if (questions.length <= 1 && onEmpty) return onEmpty();
-    removeQuestion(content, keys, id);
+  const [picked, setPicked] = useState<string>();
+  const figures = useMemo(() => figureRoom({ content, keys }), [content, keys]);
+  const hosted = useContext(UndoSink) !== null;
+  // A question just added, whose text opens in its editor.
+  const [fresh, setFresh] = useState<string>();
+  // A new question goes right after `index`, as Google Forms adds one.
+  const place = (question: Question, index: number) => {
+    writeQuestion(content, keys, question);
+    moveQuestion(content, question.id, index + 1);
+    setPicked(question.id);
   };
-  // Edit (ghost-hover) and Remove (danger-light) on a row under each
-  // question, at the right.
-  const actions = (item: Question) => (
-    <div className="flex justify-end">
-      <Button
-        className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
-        // The tour opens the first question's dialog through it.
-        data-question-edit
-        iconLeft="pencil"
-        onClick={() => setEditing({ blank: null, id: item.id })}
-        rounded="large"
-        size="sm"
-        type="button"
-        variant="ghost-hover"
-      >
-        {m.action_edit()}
-      </Button>
-      <Button
-        className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
-        iconLeft="trash"
-        onClick={() => setRemoving(item.id)}
-        rounded="large"
-        size="sm"
-        type="button"
-        variant="danger-light"
-      >
-        {m.action_remove()}
-      </Button>
-    </div>
-  );
-  const close = () => {
-    if (editing?.blank)
-      removeUnchangedQuestion(content, keys, {
-        id: editing.id,
-        state: editing.blank,
-      });
-    setEditing(null);
+  const add = (index: number) => {
+    const added = blankQuestion();
+    setFresh(added.id);
+    place(added, index);
   };
   return (
-    <div className="grid gap-10">
-      <QuizQuestionList
-        disabled
-        questions={questions}
-        renderAfter={(item) => (
-          <>
-            {/* Learners see every question as typed; only complete ones are
-                projected and marked (D4, Epo 2026-10-10). */}
-            <IssueSummary messages={issueMessages(questionIssues(item))} />
-            {actions(item)}
-          </>
-        )}
-      />
-      <Button
-        className="w-full max-w-xs justify-self-center"
-        iconLeft="plus"
-        onClick={() => {
-          const added = blankQuestion();
-          writeQuestion(content, keys, added);
-          setEditing({
-            blank: questionState(content, keys, added.id),
-            id: added.id,
-          });
-        }}
-        rounded="large"
-        type="button"
-        variant="outline"
-      >
-        {m.quiz_add_question()}
-      </Button>
-      <ConfirmDialog
-        body={m.quiz_remove_question_confirm_body()}
-        confirmLabel={m.action_remove()}
-        onClose={() => setRemoving(null)}
-        onConfirm={() => {
-          if (removing) remove(removing);
-        }}
-        open={removing !== null}
-        title={m.quiz_remove_question_confirm_title()}
-      />
-      {question && (
-        <Suspense fallback={null}>
-          <QuestionDialog
-            context={name}
-            live={{
-              status,
-              undo,
-              write: (next) => {
-                setEditing((current) => current && { ...current, blank: null });
-                writeQuestion(content, keys, next);
-              },
-            }}
-            onClose={close}
-            open
-            question={question}
-            questionNumber={
-              questions.findIndex((q) => q.id === question.id) + 1
-            }
-            uploadAsset={quizImageUpload(quizId)}
-            uploadSample={quizSampleUpload(quizId)}
-          />
-        </Suspense>
+    // The tour opens its first question.
+    <div className="grid gap-3" data-note-quiz="">
+      {/* A note (its toolbar and header, embedUndo and embedStatus) and a
+          canvas card's toolbar hold its Undo, Redo and state instead
+          (`useLendUndo`). */}
+      {!hosted && (
+        <div className="flex items-center justify-end gap-2">
+          {undo && <UndoButtons manager={undo} />}
+          <LiveStatus status={status} />
+        </div>
       )}
+      <Suspense fallback={<Skeleton className="h-64" />}>
+        <QuestionPane
+          embedded
+          figures={figures}
+          fresh={fresh}
+          onAdd={add}
+          onDuplicate={(question, index) =>
+            place(duplicateQuestion(question), index)
+          }
+          onMove={(id, index) => moveQuestion(content, id, index)}
+          onOpen={setPicked}
+          onRemove={(id) => {
+            if (questions.length <= 1 && onEmpty) return onEmpty();
+            const index = questions.findIndex((q) => q.id === id);
+            const next = questions[index + 1] ?? questions[index - 1];
+            removeQuestion(content, keys, id);
+            if (id === picked) setPicked(next?.id);
+          }}
+          picked={picked}
+          questions={questions}
+          uploadAsset={quizImageUpload(quizId)}
+          uploadSample={quizSampleUpload(quizId)}
+          write={(next) => writeQuestion(content, keys, next)}
+        />
+      </Suspense>
     </div>
   );
 }

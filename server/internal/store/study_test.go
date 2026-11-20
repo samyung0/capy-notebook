@@ -305,7 +305,7 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 	ctx := context.Background()
 	question := func(id string, awarded any) map[string]any {
 		part := map[string]any{"id": id + ":part:1", "blocks": []any{map[string]any{"type": "text", "text": "Explain " + id}},
-			"answer": map[string]any{"type": "open", "accepted": []any{"A model answer"}, "hints": []any{}}, "marks": 2,
+			"answer": map[string]any{"type": "open", "accepted": []any{"A model answer"}}, "marks": 2,
 			"markscheme": []any{map[string]any{"text": "Point", "marks": 2}}, "solution": []any{}}
 		if awarded != nil {
 			part["awarded"] = awarded
@@ -576,7 +576,7 @@ func TestFlashcardAttemptRecordsRatings(t *testing.T) {
 		t.Fatalf("flashcard attempt not in its workspace")
 	}
 	checkQuiz(t, f.s, f.user, f.quiz(t).ID, []byte(studySnapshot), studyAnswers)
-	only, _, err := f.s.ListAttempts(ctx, f.user, AttemptParams{Kinds: []string{"flashcards"}, Limit: 30})
+	only, _, err := f.s.StudyHistory(ctx, f.user, HistoryParams{Kinds: []string{"flashcards"}, Limit: 30})
 	if err != nil || len(only) != 1 || only[0].ID != ref.ID {
 		t.Fatalf("flashcard attempts = %+v, %v", only, err)
 	}

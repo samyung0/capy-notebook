@@ -8,9 +8,9 @@ import {
 } from '@tanstack/react-router';
 import {
   attemptQuery,
-  attemptsQuery,
   billingQuery,
   cardsQuery,
+  continueQuery,
   conversationsQuery,
   eventsQuery,
   exploreFlashcardSetsQuery,
@@ -19,6 +19,7 @@ import {
   fileQuery,
   filesQuery,
   flashcardSetQuery,
+  historyQuery,
   itemsQuery,
   labelsQuery,
   learningOverviewQuery,
@@ -46,18 +47,20 @@ import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
   parseMaterialPageSearch,
-  parseTaskSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import {
-  PAST_REVIEW_SORT_DEFAULT,
-  PAST_REVIEW_SORTS,
-  parsePastReviewsSearch,
-  parseResultsSearch,
+  HISTORY_SORT_DEFAULT,
+  HISTORY_SORTS,
+  parseHistorySearch,
   parseReviewSearch,
-  RESULT_SORT_DEFAULT,
-  RESULT_SORTS,
 } from '@/features/study/reviewSearch';
+import {
+  isStudyTab,
+  parseAssignmentsSearch,
+  parseStudySearch,
+  studyLink,
+} from '@/features/study/studyRoutes';
 import { checkReleaseOnFocus, loadUpdateOnPathChange } from '@/lib/appRelease';
 import { OfflineError } from '@/lib/errors';
 import { features } from '@/lib/features';
@@ -229,6 +232,87 @@ const blocksRedirect = <const T extends string>(path: T) =>
     path,
   });
 
+// biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
+const workspaceRoute = createRoute({
+  component: lazyPage(() => import('@/routes/WorkspaceOpen')),
+  getParentRoute: () => authShellRoute,
+  loaderDeps: ({ search }) => ({ file: search.file }),
+  loader: ({
+    abortController,
+    context: { queryClient: qc },
+    deps,
+    location,
+    params,
+    preload,
+  }) => {
+    const id = params.workspaceId;
+    qc.prefetchQuery(workspaceQuery(id));
+    qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
+    qc.prefetchQuery(topicsQuery(id));
+    qc.prefetchQuery(filesQuery(id));
+    qc.prefetchQuery(materialsQuery(id));
+    qc.prefetchInfiniteQuery(conversationsQuery(id));
+    // The Dashboard's Continue, beside its other sections.
+    qc.prefetchQuery(continueQuery(id));
+    // The open file rides the first wave instead of waiting for the page to
+    // render. An open material is left out on purpose: its body is the
+    // document itself, and the heavy-document gate must see the list first.
+    if (deps.file) {
+      qc.prefetchQuery(fileQuery(deps.file));
+      // An Office file's open starts once its row arrives.
+      prefetchOfficeFile(qc, deps.file, {
+        abortController,
+        location,
+        preload,
+      });
+    }
+  },
+  path: '/workspaces/$workspaceId',
+  staticData: { hideSidebar: true },
+  validateSearch: parseWorkspaceOpenSearch,
+});
+
+// The workspace's pages beside its rail and panels (Epo 2026-11-18): the
+// workspace's route stays mounted and draws them in its centre, and the router
+// keeps the page before on screen until a page's code is in. Declared apart
+// from `addChildren`, whose argument would type them against their parent.
+const workspacePages = [
+  createRoute({
+    component: lazyPage(() => import('@/routes/WorkspaceAssignments')),
+    getParentRoute: () => workspaceRoute,
+    path: 'assignments',
+    validateSearch: parseAssignmentsSearch,
+  }),
+  createRoute({
+    component: lazyPage(() => import('@/routes/WorkspaceMembers')),
+    getParentRoute: () => workspaceRoute,
+    path: 'members',
+  }),
+  // One route for Study's tabs, so a tab switch keeps the page mounted.
+  createRoute({
+    component: lazyPage(() => import('@/routes/WorkspaceStudy')),
+    getParentRoute: () => workspaceRoute,
+    params: {
+      // An unknown tab is a page no one has: Practice, as for a page this
+      // person doesn't have (WorkspaceOpen). The parser is handed the
+      // parent's params too.
+      parse: (params) => {
+        if (isStudyTab(params.tab)) return { tab: params.tab };
+        const { workspaceId } = params as typeof params & {
+          workspaceId: string;
+        };
+        throw redirect({
+          ...studyLink(workspaceId, 'practice'),
+          replace: true,
+        });
+      },
+      stringify: ({ tab }) => ({ tab }),
+    },
+    path: 'study/$tab',
+    validateSearch: parseStudySearch,
+  }),
+];
+
 const appRoutes = [
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
@@ -284,70 +368,20 @@ const appRoutes = [
     component: lazyPage(() => import('@/routes/TodoTask')),
     getParentRoute: () => authShellRoute,
     path: '/todo/task',
-    validateSearch: parseTaskSearch,
+    validateSearch: parseAssignmentsSearch,
   }),
-  // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
-  createRoute({
-    component: lazyPage(() => import('@/routes/WorkspaceOpen')),
-    getParentRoute: () => authShellRoute,
-    loaderDeps: ({ search }) => ({ file: search.file }),
-    loader: ({
-      abortController,
-      context: { queryClient: qc },
-      deps,
-      location,
-      params,
-      preload,
-    }) => {
-      const id = params.workspaceId;
-      qc.prefetchQuery(workspaceQuery(id));
-      qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(topicsQuery(id));
-      qc.prefetchQuery(filesQuery(id));
-      qc.prefetchQuery(materialsQuery(id));
-      qc.prefetchInfiniteQuery(conversationsQuery(id));
-      // The open file rides the first wave instead of waiting for the page to
-      // render. An open material is left out on purpose: its body is the
-      // document itself, and the heavy-document gate must see the list first.
-      if (deps.file) {
-        qc.prefetchQuery(fileQuery(deps.file));
-        // An Office file's open starts once its row arrives.
-        prefetchOfficeFile(qc, deps.file, {
-          abortController,
-          location,
-          preload,
-        });
-      }
-    },
-    path: '/workspaces/$workspaceId',
-    staticData: { hideSidebar: true },
-    validateSearch: parseWorkspaceOpenSearch,
-  }),
-  // The report's links (todo-study-tracking.md §9): the page itself lives in
-  // the workspace's own URL, whose rail and panels stay mounted.
-  createRoute({
-    beforeLoad: ({ params, search }) => {
-      throw redirect({
-        params: { workspaceId: params.workspaceId },
-        replace: true,
-        search: {
-          ...(search as Record<string, unknown>),
-          assignment: params.assignmentId,
-          study: 'assignments',
-        },
-        to: '/workspaces/$workspaceId',
-      });
-    },
-    getParentRoute: () => authShellRoute,
-    path: '/workspaces/$workspaceId/study/assignments/$assignmentId',
-  }),
-  // The account's Canvas page: `c` names the canvas of the person's own shown.
+  workspaceRoute.addChildren(workspacePages),
+  // The account's Canvas page: `c` names the canvas of the person's own shown,
+  // `open` what fills its screen (a plane's or chart's editor, a drawing answer).
   createRoute({
     component: lazyPage(() => import('@/routes/Canvas')),
     getParentRoute: () => authShellRoute,
     path: '/canvas',
-    validateSearch: (search: Record<string, unknown>): { c?: string } => ({
+    validateSearch: (
+      search: Record<string, unknown>
+    ): { c?: string; open?: string } => ({
       c: typeof search.c === 'string' ? search.c : undefined,
+      open: typeof search.open === 'string' ? search.open : undefined,
     }),
   }),
   // Chat across all the user's files; the optional id keeps the page mounted
@@ -374,16 +408,9 @@ const appRoutes = [
     beforeLoad: ({ search }) => {
       if (!features.learning) throw redirect({ replace: true, to: '/' });
       const saved =
-        search.tab === 'results'
-          ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'past'
-            ? savedSort(
-                'pastReviews',
-                PAST_REVIEW_SORTS,
-                PAST_REVIEW_SORT_DEFAULT,
-                search
-              )
-            : null;
+        search.tab === 'history'
+          ? savedSort('history', HISTORY_SORTS, HISTORY_SORT_DEFAULT, search)
+          : null;
       if (saved)
         throw redirect({
           replace: true,
@@ -394,19 +421,17 @@ const appRoutes = [
     component: lazyPage(() => import('@/routes/Learning')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      void qc.prefetchInfiniteQuery(attemptsQuery());
+      void qc.prefetchInfiniteQuery(historyQuery());
       void qc.prefetchQuery(learningOverviewQuery());
+      // Continue tops the Overview: fetched beside it, not once it draws.
+      void qc.prefetchQuery(continueQuery());
     },
     path: '/learning',
     validateSearch: (search: Record<string, unknown>) => {
       const tab = parseLearningSearch(search);
       return {
         ...tab,
-        ...(tab.tab === 'results'
-          ? parseResultsSearch(search)
-          : tab.tab === 'past'
-            ? parsePastReviewsSearch(search)
-            : {}),
+        ...(tab.tab === 'history' ? parseHistorySearch(search) : {}),
       };
     },
   }),

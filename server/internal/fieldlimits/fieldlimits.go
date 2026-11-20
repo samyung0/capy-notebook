@@ -26,6 +26,9 @@ const (
 	FileName         = 120
 	MaterialTitle    = FileName
 	AssignmentTitle  = 120
+	// AssignmentPoints is the most a graded Assignment is out of (Epo
+	// 2026-11-14), a number rather than characters; a grade is 0 to its points.
+	AssignmentPoints = 1_000
 	// An agent-made material's or file's made-from line: at most
 	// MaterialSources entries of at most MaterialSource characters.
 	MaterialSources   = 20
@@ -37,12 +40,15 @@ const (
 	// under ChatMessage.
 	VoiceInputSeconds = 120
 	// Comment bounds the plain text of one note comment.
-	Comment           = 3_000
-	EventTitle        = 60
-	EventLocation     = 100
-	TaskTitle         = 80
-	LabelName         = 35
-	TagValue          = 35
+	Comment       = 3_000
+	EventTitle    = 60
+	EventLocation = 100
+	TaskTitle     = 80
+	LabelName     = 35
+	TagValue      = 35
+	// BankQuestionTags is an item bank question's tag count (its request's
+	// maxItems), a count rather than characters.
+	BankQuestionTags  = 10
 	Email             = 254
 	UserName          = 60
 	PDFAnnotationText = 2_000
@@ -70,13 +76,24 @@ const (
 	QuestionChartSeriesName = 60
 	QuestionChartLabel      = 60
 	QuestionChartValue      = 1_000_000_000_000
-	QuestionGraphElements   = 60
-	QuestionGraphTerm       = 200
+	// A graph's elements on every surface: quiz and note graphs and the
+	// canvas plane (Epo 2026-11-16, D7). Every graph limit lives here; the
+	// board catalog reads the ones its cards share.
+	QuestionGraphElements = 100
+	// A formula row's LaTeX as typed (Epo 2026-11-18, "1000 seems enough").
+	QuestionGraphExpression = 1_000
 	QuestionGraphPolygon    = 12
 	// A graph's label text (wrapped on the board) and its point names and
 	// angle labels (Epo 2026-10-17).
 	QuestionGraphLabel = 60
 	QuestionGraphName  = 20
+	// Points in a stroke (polyline) or a curve, a formula's LaTeX (a formula
+	// card's too), and a label's or formula's text size in pixels as a frame's
+	// corners set it (the canvas plane's, Epo 2026-11-13).
+	QuestionGraphPath        = 100
+	QuestionGraphLatex       = 2_000
+	QuestionGraphTextSizeMin = 8
+	QuestionGraphTextSizeMax = 96
 	// A graph's width and height in pixels: its text is drawn at 12px, so a
 	// larger board shrinks it past reading in a note column; 120 keeps short
 	// box plots (Epo 2026-10-17).
@@ -91,7 +108,6 @@ const (
 	// mark label, bounded as a chart's (Epo 2026-10-17).
 	QuestionPlotTitle      = QuestionChartTitle
 	QuestionPlotLabel      = QuestionChartSeriesName
-	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
 	// User quizzes (not the question bank) are bounded tighter: 150 parts,
@@ -103,6 +119,9 @@ const (
 	QuizOpenParts     = 100
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
+	// QuestionTopics is how many topics of its own a question carries, a
+	// count (Epo 2026-11-15, todo-question-topics.md).
+	QuestionTopics = 5
 	// A Make a quiz run reads at most ExtractionPaperFiles question files and
 	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
 	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
@@ -110,6 +129,10 @@ const (
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
+	// A generated quiz reads at most GenerateFiles picked files, as many as a
+	// Make a quiz question paper (Epo 2026-11-14). apimodel.GenerateReq's
+	// maxItems repeats it.
+	GenerateFiles = 5
 	// A drawing answer's saved board (undo history stripped) and its marking
 	// image, each at most this many bytes (Epo 2026-11-06: 250 KB and 300 KB),
 	// the image at most DrawingImageSide px on its longer side, as the browser
@@ -121,10 +144,11 @@ const (
 	// compression, and how many a board holds (Epo 2026-11-09).
 	BoardPictureBytes = 1 << 20
 	BoardPictures     = 10
-	// A workspace canvas's saved board, before gzip (Epo 2026-11-09): the
-	// material's own board asset, a whole personal canvas rather than one
-	// answer.
-	CanvasBoardBytes = 2 << 20
+	// A canvas room's live Yjs state in bytes, history included (Epo
+	// 2026-11-18, "for cap 4MiB sure", after the growth bench: about 10 hours
+	// of mixed drawing or 5,900 pen strokes of 40 points). It equals the
+	// largest sync message the collaboration server takes.
+	CanvasBoardBytes = 4 << 20
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
 	CardFront = 200
@@ -158,10 +182,14 @@ var QuestionBounds = map[string]int{
 	"QUESTION_CHART_LABEL_MAX":       QuestionChartLabel,
 	"QUESTION_CHART_VALUE_MAX":       QuestionChartValue,
 	"QUESTION_GRAPH_ELEMENTS_MAX":    QuestionGraphElements,
-	"QUESTION_GRAPH_TERM_MAX":        QuestionGraphTerm,
+	"QUESTION_GRAPH_EXPRESSION_MAX":  QuestionGraphExpression,
 	"QUESTION_GRAPH_POLYGON_MAX":     QuestionGraphPolygon,
 	"QUESTION_GRAPH_LABEL_MAX":       QuestionGraphLabel,
 	"QUESTION_GRAPH_NAME_MAX":        QuestionGraphName,
+	"QUESTION_GRAPH_PATH_MAX":        QuestionGraphPath,
+	"QUESTION_GRAPH_LATEX_MAX":       QuestionGraphLatex,
+	"QUESTION_GRAPH_TEXT_SIZE_MIN":   QuestionGraphTextSizeMin,
+	"QUESTION_GRAPH_TEXT_SIZE_MAX":   QuestionGraphTextSizeMax,
 	"QUESTION_GRAPH_DIMENSION_MIN":   QuestionGraphDimensionMin,
 	"QUESTION_GRAPH_DIMENSION_MAX":   QuestionGraphDimensionMax,
 	"QUESTION_PLOT_SERIES_MAX":       QuestionPlotSeries,
@@ -169,7 +197,6 @@ var QuestionBounds = map[string]int{
 	"QUESTION_PLOT_MARKS_MAX":        QuestionPlotMarks,
 	"QUESTION_PLOT_TITLE_MAX":        QuestionPlotTitle,
 	"QUESTION_PLOT_LABEL_MAX":        QuestionPlotLabel,
-	"QUESTION_SVG_BYTES_MAX":         QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX":   QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":         QuestionAssetURL,
 	"QUIZ_PARTS_MAX":                 QuizParts,
@@ -177,6 +204,7 @@ var QuestionBounds = map[string]int{
 	"QUIZ_OPEN_PARTS_MAX":            QuizOpenParts,
 	"QUIZ_MARKSCHEME_MAX":            QuizMarkscheme,
 	"QUIZ_OPEN_ANSWER_MAX":           QuizOpenAnswer,
+	"QUESTION_TOPICS_MAX":            QuestionTopics,
 }
 
 // QuestionBoundNames lists QuestionBounds' names in order, for generated files.

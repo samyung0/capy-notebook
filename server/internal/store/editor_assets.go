@@ -22,18 +22,20 @@ type EditorAsset struct {
 	WorkspaceID string `json:"workspaceId"`
 	MaterialID  string `json:"materialId,omitempty"`
 	// AssignmentID names the assignment a frozen copy's image belongs to.
-	AssignmentID string     `json:"-"`
-	UserID       string     `json:"-"`
-	CreatedBy    *string    `json:"-"`
-	Name         string     `json:"name"`
-	Purpose      string     `json:"purpose"`
-	ObjectPath   string     `json:"-"`
-	ContentType  string     `json:"contentType"`
-	SizeBytes    int64      `json:"sizeBytes"`
-	Status       string     `json:"status"`
-	ETag         string     `json:"-"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	AssignmentID string `json:"-"`
+	// BankQuestionID names the item bank question an image belongs to.
+	BankQuestionID string     `json:"-"`
+	UserID         string     `json:"-"`
+	CreatedBy      *string    `json:"-"`
+	Name           string     `json:"name"`
+	Purpose        string     `json:"purpose"`
+	ObjectPath     string     `json:"-"`
+	ContentType    string     `json:"contentType"`
+	SizeBytes      int64      `json:"sizeBytes"`
+	Status         string     `json:"status"`
+	ETag           string     `json:"-"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	CompletedAt    *time.Time `json:"completedAt,omitempty"`
 	// Trashed: its material's save stopped using it; it is restored when the
 	// material uses it again and purged a day after (PurgeTrashedEditorAssets).
 	Trashed bool `json:"-"`
@@ -159,12 +161,12 @@ func (s *Store) assertMaterialNotFullTx(ctx context.Context, tx pgx.Tx, material
 	return s.storageFullErr(ctx, tx, payerID)
 }
 
-const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), COALESCE(assignment_id,''), user_id, created_by, name, purpose, object_path,
+const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), COALESCE(assignment_id,''), COALESCE(bank_question_id,''), user_id, created_by, name, purpose, object_path,
 	content_type, size_bytes, status, COALESCE(etag,''), created_at, completed_at, trashed_at IS NOT NULL`
 
 func scanEditorAsset(row interface{ Scan(...any) error }) (EditorAsset, error) {
 	var asset EditorAsset
-	err := row.Scan(&asset.ID, &asset.WorkspaceID, &asset.MaterialID, &asset.AssignmentID, &asset.UserID, &asset.CreatedBy, &asset.Name,
+	err := row.Scan(&asset.ID, &asset.WorkspaceID, &asset.MaterialID, &asset.AssignmentID, &asset.BankQuestionID, &asset.UserID, &asset.CreatedBy, &asset.Name,
 		&asset.Purpose, &asset.ObjectPath, &asset.ContentType, &asset.SizeBytes, &asset.Status,
 		&asset.ETag, &asset.CreatedAt, &asset.CompletedAt, &asset.Trashed)
 	return asset, err
@@ -555,7 +557,8 @@ func (s *Store) EditorAssetReadable(ctx context.Context, actorID string, asset E
 
 // editorAssetReadable admits the readers of what the asset belongs to: its
 // material, so a hidden item's and an assigned quiz's rules hold for its images;
-// a frozen copy's assignment; or for a row with neither, its workspace.
+// a frozen copy's assignment; an item bank question's bank; or for a row with
+// none of them, its workspace.
 func (s *Store) editorAssetReadable(ctx context.Context, q rowQueryer, actorID string, asset EditorAsset) (bool, error) {
 	var err error
 	readable := true
@@ -564,6 +567,8 @@ func (s *Store) editorAssetReadable(ctx context.Context, q rowQueryer, actorID s
 		_, err = materialEffectiveAccess(ctx, q, actorID, asset.MaterialID)
 	case asset.AssignmentID != "":
 		readable, err = s.frozenAssetReadable(ctx, q, actorID, asset)
+	case asset.BankQuestionID != "":
+		readable, err = s.bankAssetReadable(ctx, q, actorID, asset)
 	case asset.WorkspaceID != "":
 		var effective WorkspaceRole
 		_, effective, err = workspaceRoles(ctx, q, actorID, asset.WorkspaceID)
@@ -601,7 +606,9 @@ func (s *Store) frozenAssetReadable(ctx context.Context, q rowQueryer, actorID s
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
 // the payer: the actor, who pays for the images and audio it adds, as for a
 // file (Epo 2026-10-24, M16). A workspace asset needs workspace edit access; a
-// standalone material is edited only by its owner. Nobody adds to a material
+// standalone material is edited only by its owner, but for a canvas shared
+// with its workspace, which also takes the images of the members who edit it
+// (materialAccessRow.canvasRole, Epo 2026-11-18). Nobody adds to a material
 // whose own payer is frozen: its view-only state follows that payer alone.
 // Accounts lock before the material row, matching material saves.
 func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
@@ -639,16 +646,17 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		return actorID, nil
 	}
 	var ownerID string
-	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
-		WHERE id=$1 AND workspace_id IS NULL AND trashed_at IS NULL`, materialID).Scan(&ownerID)
-	if isNoRows(err) || (err == nil && ownerID != actorID) {
+	var kind MaterialKind
+	err := tx.QueryRow(ctx, `SELECT owner_user_id, kind FROM materials
+		WHERE id=$1 AND workspace_id IS NULL AND trashed_at IS NULL`, materialID).Scan(&ownerID, &kind)
+	if isNoRows(err) || (err == nil && ownerID != actorID && kind != MaterialCanvas) {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", err
 	}
-	if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
-		return "", err
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
+		return "", HideOtherAccountLock(err, actorID)
 	}
 	var lockedOwnerID string
 	err = tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
@@ -659,10 +667,21 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 	if err != nil {
 		return "", err
 	}
-	if err := s.assertEditableTx(ctx, tx, ownerID); err != nil {
-		return "", err
+	// Someone else's canvas: read under its row lock, so an unshare has
+	// landed or waits.
+	if ownerID != actorID {
+		role, err := materialEffectiveAccess(ctx, tx, actorID, materialID)
+		if err != nil {
+			return "", err
+		}
+		if !RoleCanEdit(role) {
+			return "", ErrForbidden
+		}
 	}
-	return ownerID, nil
+	if err := s.assertEditableTx(ctx, tx, ownerID, actorID); err != nil {
+		return "", HideOtherAccountLock(err, actorID)
+	}
+	return actorID, nil
 }
 
 // EditorAssetItem is an image or audio clip the caller pays for, wherever it
@@ -686,8 +705,12 @@ type EditorAssetItem struct {
 	// WorkspaceID is that note's workspace, for its icon; empty for a
 	// standalone note and when LostAccess.
 	WorkspaceID string `json:"workspaceId,omitempty"`
-	// LostAccess: the caller can no longer open its note (lostAccessSQL).
+	// LostAccess: the caller can no longer open its note (lostAccessSQL), or
+	// no longer reads its item bank (no longer the class's staff).
 	LostAccess bool `json:"lostAccess"`
+	// Bank: it sits in an item bank question (Epo 2026-11-14), the caller's
+	// own bank or WorkspaceID's, with no material to open.
+	Bank bool `json:"bank,omitempty"`
 	// ThumbnailKey is the image's card thumbnail, signed by the handler into
 	// ThumbnailURL (openwiki/thumbnails.md).
 	ThumbnailKey string  `json:"-"`
@@ -716,8 +739,9 @@ type EditorAssetFilter struct {
 var editorAssetSort = listSort{column: "a.created_at", kind: "time"}
 
 // ListEditorAssets pages, newest first, through the images and audio the user
-// pays for (editor_assets_payer_idx). Media in a trashed note or set it can
-// still open are left out: they go with that material's trash and purge.
+// pays for (editor_assets_payer_idx), in materials and in item bank questions.
+// Media in a trashed note or set it can still open are left out: they go with
+// that material's trash and purge.
 func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAssetFilter) (EditorAssetPage, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > listPageMax {
@@ -739,18 +763,23 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 	args = append(args, cursorArgs...)
 	args = append(args, limit+1)
 	rows, err := s.pool.Query(ctx, `SELECT a.id, a.name, a.purpose, a.size_bytes, a.created_at,
-			CASE WHEN l.lost THEN '' ELSE top.id END, top.kind,
-			`+workspaceNameSQL("top.workspace_id", "top.title")+`,
-			COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id),
-				`+workspaceNameSQL("top.workspace_id", "COALESCE(top.workspace_name,'')")+`),
+			CASE WHEN l.lost THEN '' ELSE COALESCE(top.id, '') END, COALESCE(top.kind, 'quiz'),
+			COALESCE(`+embedHomeTitleSQL("top", "$1")+`, ''),
 			-- A canvas's image is filed under the workspace it is the Canvas tab of.
-			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id, top.canvas_workspace_id, '') END, l.lost,
-			COALESCE(a.thumbnail_key,'')
+			`+workspaceNameSQL("COALESCE(top.workspace_id, top.canvas_workspace_id, q.workspace_id)",
+		"COALESCE((SELECT cw.name FROM workspaces cw WHERE cw.id=top.canvas_workspace_id), top.workspace_name, bw.name, '')")+`,
+			CASE WHEN l.lost THEN '' ELSE COALESCE(top.workspace_id, top.canvas_workspace_id, q.workspace_id, '') END, l.lost,
+			COALESCE(a.thumbnail_key,''), q.id IS NOT NULL
 		FROM editor_assets a
-		JOIN materials m ON m.id=a.material_id
-		JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
-		CROSS JOIN LATERAL (SELECT `+lostAccessSQL("top.workspace_id", "$1")+` AS lost) l
-		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL
+		LEFT JOIN materials m ON m.id=a.material_id
+		LEFT JOIN materials top ON top.id=COALESCE(m.parent_material_id, m.id)
+		LEFT JOIN item_bank_questions q ON q.id=a.bank_question_id
+		LEFT JOIN workspaces bw ON bw.id=q.workspace_id
+		CROSS JOIN LATERAL (SELECT CASE WHEN q.id IS NULL THEN `+embedHomeLostSQL("top", "$1")+`
+			ELSE q.workspace_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workspaces sw WHERE sw.id=q.workspace_id
+				AND `+liveWorkspaceSQL("sw.id")+` AND (sw.user_id=$1 OR EXISTS (SELECT 1 FROM workspace_members sm
+					WHERE sm.workspace_id=sw.id AND sm.user_id=$1 AND sm.role IN ('owner','editor')))) END AS lost) l
+		WHERE a.user_id=$1 AND a.status='ready' AND a.trashed_at IS NULL AND (m.id IS NOT NULL OR q.id IS NOT NULL)
 			-- A drawn sample answer's board goes with its quiz, never alone.
 			AND a.purpose IN ('image','audio') AND `+filter+clause+
 		orderClause(editorAssetSort, "a.id", false)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
@@ -762,7 +791,7 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 		var kind MaterialKind
 		err := row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
 			&item.MaterialID, &kind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess,
-			&item.ThumbnailKey)
+			&item.ThumbnailKey, &item.Bank)
 		item.MaterialType = kind.RefType()
 		return item, err
 	})

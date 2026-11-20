@@ -119,6 +119,7 @@ import {
   InlineEquationPlugin,
   inlineEquationRule,
 } from './equationPlugins';
+import { FormulaCaretPlugin } from './formulaCaret';
 import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
@@ -144,6 +145,7 @@ import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
 import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
 import { queryHeadings } from './tocHeadings';
+import { PLACEHOLDER_CLASS, trailingHintPlugin } from './trailingHint';
 import { VoidBlockBreakPlugin } from './voidBlockBreak';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
@@ -601,6 +603,7 @@ export const MaterialKit: AnyPlugin[] = [
   ColumnItemPlugin,
   InlineEquationPlugin.configure({ inputRules: [inlineEquationRule] }),
   EquationPlugin.configure({ inputRules: [equationRule] }),
+  FormulaCaretPlugin,
   MentionPlugin.configure({
     options: { triggerPreviousCharPattern: /^$|^[\s"']$/ },
   }),
@@ -673,10 +676,10 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
       },
     }),
     trailingBlockPlugin,
+    trailingHintPlugin,
     BlockPlaceholderPlugin.configure({
       options: {
-        className:
-          'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
+        className: PLACEHOLDER_CLASS,
         placeholders: { [KEYS.p]: m.editor_placeholder() },
         query: ({ path }) => path.length === 1,
       },

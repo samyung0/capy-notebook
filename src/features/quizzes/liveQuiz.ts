@@ -1,98 +1,73 @@
 import * as Y from 'yjs';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import { repairGroups } from '@/features/questions/groups';
+import type { FigureAt, FigureRoom } from '@/features/questions/questionEdits';
 import {
   gapNumbers,
   type LearnerAnswer,
   type LearnerQuestion,
   type MarkItem,
+  multipleAnswers,
   type Question,
   type QuestionAnswer,
   type QuestionBlock,
   type QuestionGroup,
   type QuestionPart,
+  shuffledOrder,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
-import { keyBetween } from '@/lib/orderKey';
+import { keyBetween, keysBetween } from '@/lib/orderKey';
+import { Rng } from '@/lib/rng';
+import {
+  blockKey,
+  keyBlock,
+  type QuizDocs,
+  readFigure,
+  sectionMap,
+  writeFigure,
+} from './liveFigures';
+import {
+  alignAxis,
+  child,
+  type Entry,
+  KEYS_ROOT,
+  mapAt,
+  ordered,
+  orderedKeys,
+  plain,
+  QUESTIONS_ROOT,
+  reorder,
+  setPlain,
+  setText,
+  text,
+  type YMap,
+} from './liveMaps';
+import { roomFigureBinding } from './roomFigureBinding';
 
 /* A quiz's two live documents (live-items DESIGN.md 1.2, 1.3; Epo
  * 2026-10-10). The content document, which readers join too, holds
- * `questions`: question id -> {order, layout, labels, level?, stem, groups?,
- * parts}, group id -> {blocks}, part id -> {order, marks, blocks, answer,
- * group?}. A group has no order of its own: it sits where its first part sits,
+ * `questions`: question id -> {order, layout, labels, level?, topicIds?, stem,
+ * groups?, parts} (topicIds a plain list, never empty), group id ->
+ * {blocks}, part id -> {order, marks, blocks, answer, group?}. A group has no order of its own: it sits where its first part sits,
  * and what a merge leaves reads repaired (`repairGroups`, Epo 2026-11-04). The
- * answer map holds the type and what a learner may see: mcq options and
- * `multiple` (true while several are correct), a short answer's unit and
- * matching left items. The keys document, which only editors with write
- * access join, holds `keys`: part id -> {type, solution, correct | accepted |
- * hints | markscheme | gaps | options | pairs | items}. Editors type ordering
+ * answer map holds the type and what a learner may see: mcq options,
+ * `multiple` (true while several are correct or the author's flag is set),
+ * `shuffle` and `locked` (option id -> true; Shuffle options, Epo
+ * 2026-11-15), a short answer's unit and matching left items. The keys document, which only
+ * editors with write access join, holds `keys`: part id -> {type, solution,
+ * correct | accepted | markscheme | gaps | options | pairs | items},
+ * and an mcq's author `multiple` flag (Multiple answer, Epo 2026-11-15). Editors type ordering
  * items and matching options there; readers get them outside Yjs, as the
  * shuffled lists the content room pushes (`quiz-items`, D3 as revised
  * 2026-10-10), so neither their typing order nor their ids reach a reader.
  * The server checks both shapes (collaboration-rs/crates/items/src/quiz.rs)
  * and projects the complete questions to today's quiz JSON. */
 
-export const QUESTIONS_ROOT = 'questions';
-export const KEYS_ROOT = 'keys';
-
-type YMap = Y.Map<unknown>;
-type Entry = { entry: YMap; id: string; order: string };
+export { KEYS_ROOT, QUESTIONS_ROOT } from './liveMaps';
 
 export const questionsScope = (doc: Y.Doc) => doc.getMap<YMap>(QUESTIONS_ROOT);
 export const keysScope = (doc: Y.Doc) => doc.getMap<YMap>(KEYS_ROOT);
-
-const byOrder = (a: Entry, b: Entry) =>
-  a.order < b.order
-    ? -1
-    : a.order > b.order
-      ? 1
-      : a.id < b.id
-        ? -1
-        : a.id > b.id
-          ? 1
-          : 0;
-
-function mapAt(parent: YMap | undefined, key: string): YMap | undefined {
-  const value = parent?.get(key);
-  return value instanceof Y.Map ? (value as YMap) : undefined;
-}
-
-/** A map's entries that are maps, in `(order, id)` order. */
-function ordered(map: YMap | undefined): Entry[] {
-  const out: Entry[] = [];
-  map?.forEach((value, id) => {
-    if (!(value instanceof Y.Map)) return;
-    const order = value.get('order');
-    out.push({
-      entry: value as YMap,
-      id,
-      order: typeof order === 'string' ? order : '',
-    });
-  });
-  return out.sort(byOrder);
-}
-
-/** A table's row or column ids (id -> order key), in order. */
-function orderedKeys(map: YMap | undefined): string[] {
-  const out: { id: string; order: string }[] = [];
-  map?.forEach((value, id) => {
-    out.push({ id, order: typeof value === 'string' ? value : '' });
-  });
-  return out
-    .sort((a, b) =>
-      a.order < b.order ? -1 : a.order > b.order ? 1 : a.id < b.id ? -1 : 1
-    )
-    .map((row) => row.id);
-}
-
-function text(map: YMap | undefined, key: string): string {
-  const value = map?.get(key);
-  return value instanceof Y.Text ? value.toString() : '';
-}
-
-const plain = <T>(map: YMap | undefined, key: string) =>
-  map?.get(key) as T | undefined;
 
 /* --------------------------------------------------------------- reading */
 
@@ -106,18 +81,13 @@ const unreadable = (
 ): read is typeof UNREADABLE => read === UNREADABLE;
 
 /** A block entry as its question block; none while it is incomplete (no
- * type yet, a chart without its value). */
+ * type yet, a figure without its maps). A chart, plot or graph is read by
+ * liveFigures.ts, once per change of its own. */
 function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
   const type = plain<string>(entry, 'type');
   switch (type) {
-    case 'text': {
-      const label = plain<string>(entry, 'label');
-      return {
-        text: text(entry, 'text'),
-        type,
-        ...(typeof label === 'string' ? { label } : {}),
-      };
-    }
+    case 'text':
+      return { text: text(entry, 'text'), type };
     case 'table': {
       const rows = orderedKeys(mapAt(entry, 'rows'));
       const columns = orderedKeys(mapAt(entry, 'columns'));
@@ -147,10 +117,8 @@ function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
     }
     case 'chart':
     case 'plot':
-    case 'graph': {
-      const value = plain<Record<string, unknown>>(entry, 'value');
-      return value ? ({ ...value, type } as QuestionBlock) : null;
-    }
+    case 'graph':
+      return readFigure(entry, type)?.block ?? null;
     case undefined:
       return null;
     default:
@@ -158,12 +126,16 @@ function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
   }
 }
 
+/** A section's blocks, each keyed by its entry (`FigureRoom.key`). */
 function readBlocks(map: YMap | undefined): QuestionBlock[] {
-  return ordered(map).flatMap(({ entry }): QuestionBlock[] => {
-    const block = readBlock(entry);
-    if (unreadable(block))
-      return [{ text: m.material_unsupported_block(), type: 'text' }];
-    return block ? [block] : [];
+  return ordered(map).flatMap(({ entry, id }): QuestionBlock[] => {
+    const read = readBlock(entry);
+    const block: QuestionBlock | null = unreadable(read)
+      ? { text: m.material_unsupported_block(), type: 'text' }
+      : read;
+    if (!block) return [];
+    keyBlock(block, id);
+    return [block];
   });
 }
 
@@ -182,6 +154,40 @@ const readMarkscheme = (key: YMap | undefined): MarkItem[] =>
     text: text(entry, 'text'),
   }));
 
+/** An mcq's locked option indices, only while Shuffle options is on. */
+function lockedIndexes(answer: YMap | undefined, options: Entry[]): number[] {
+  const locked = mapAt(answer, 'locked');
+  if (plain<boolean>(answer, 'shuffle') !== true || !locked) return [];
+  return options.flatMap((option, i) =>
+    locked.get(option.id) === true ? [i] : []
+  );
+}
+
+/** The order a reader already sees each shuffled mcq part's options in, by
+ * part id: the stored view's, which the server seeds per viewer and quiz. */
+export type ShownOrders = ReadonlyMap<string, readonly number[]>;
+
+/** A learner's shown order of a part's options (Shuffle options, Epo
+ * 2026-11-15): the order already shown while it still fits (as many options,
+ * locked ones in place), so a sync or an edit elsewhere moves nothing; else
+ * one seeded by the quiz and part, the same on every read. */
+function readerOrder(
+  shown: readonly number[] | undefined,
+  count: number,
+  locked: number[],
+  seed: string
+): number[] {
+  if (
+    shown?.length === count &&
+    new Set(shown).size === count &&
+    shown.every((index) => index >= 0 && index < count) &&
+    locked.every((index) => shown[index] === index)
+  )
+    return [...shown];
+  const rng = new Rng(seed);
+  return shuffledOrder(count, locked, () => rng.next());
+}
+
 function readAnswer(
   answer: YMap | undefined,
   key: YMap | undefined
@@ -194,11 +200,16 @@ function readAnswer(
       const indexes = options.flatMap((option, i) =>
         correct instanceof Y.Map && correct.get(option.id) === true ? [i] : []
       );
+      const locked = lockedIndexes(answer, options);
       return {
         answer: {
           correct: indexes,
           options: options.map(({ entry }) => text(entry, 'text')),
           type,
+          ...(key?.get('multiple') === true ? { multiple: true as const } : {}),
+          ...(plain<boolean>(answer, 'shuffle') === true
+            ? { shuffle: true as const, ...(locked.length ? { locked } : {}) }
+            : {}),
         },
       };
     }
@@ -218,7 +229,6 @@ function readAnswer(
       return {
         answer: {
           accepted: texts(mapAt(key, 'accepted')),
-          hints: texts(mapAt(key, 'hints')),
           type,
         },
         markscheme: readMarkscheme(key),
@@ -288,6 +298,7 @@ function groupOf(part: YMap) {
 export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
   return ordered(questionsScope(content) as YMap).map(({ entry, id }) => {
     const level = plain<Question['level']>(entry, 'level');
+    const topicIds = plain<string[]>(entry, 'topicIds');
     return repairGroups({
       ...readGroups(entry),
       id,
@@ -312,6 +323,7 @@ export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
       ),
       stem: readBlocks(mapAt(entry, 'stem')),
       ...(level ? { level } : {}),
+      ...(topicIds?.length ? { topicIds } : {}),
     });
   });
 }
@@ -342,7 +354,8 @@ export function applyReaderMessage(
  * options and ordering items from the room's lists. */
 export function readLearnerQuestions(
   content: Y.Doc,
-  lists: ReaderLists = NO_LISTS
+  lists: ReaderLists = NO_LISTS,
+  { quizId = '', shown }: { quizId?: string; shown?: ShownOrders } = {}
 ): LearnerQuestion[] {
   const items = (partId: string, kind: ReaderList['kind']) => {
     const list = lists.get(partId);
@@ -362,15 +375,27 @@ export function readLearnerQuestions(
           const type = plain<string>(answer, 'type');
           let learner: LearnerAnswer;
           switch (type) {
-            case 'mcq':
+            case 'mcq': {
+              const options = ordered(mapAt(answer, 'options'));
               learner = {
-                options: texts(mapAt(answer, 'options')),
+                options: options.map(({ entry }) => text(entry, 'text')),
                 type,
                 ...(plain<boolean>(answer, 'multiple') === true
                   ? { multiple: true as const }
                   : {}),
+                ...(plain<boolean>(answer, 'shuffle') === true
+                  ? {
+                      order: readerOrder(
+                        shown?.get(partId),
+                        options.length,
+                        lockedIndexes(answer, options),
+                        `${quizId}/${partId}`
+                      ),
+                    }
+                  : {}),
               };
               break;
+            }
             case 'short': {
               const unit = plain<string>(answer, 'unit');
               learner = { type, ...(typeof unit === 'string' ? { unit } : {}) };
@@ -411,63 +436,6 @@ export function readLearnerQuestions(
 }
 
 /* --------------------------------------------------------------- writing */
-
-function setPlain(map: YMap, key: string, value: unknown) {
-  if (value === undefined) {
-    if (map.has(key)) map.delete(key);
-    return;
-  }
-  const current = map.get(key);
-  if (JSON.stringify(current) !== JSON.stringify(value)) map.set(key, value);
-}
-
-/** The map at `key`, created when missing. */
-function child(map: YMap, key: string): YMap {
-  const found = mapAt(map, key);
-  if (found) return found;
-  const created = new Y.Map<unknown>();
-  map.set(key, created);
-  return created;
-}
-
-function setText(map: YMap, key: string, value: string) {
-  const current = map.get(key);
-  if (current instanceof Y.Text) applyTextChange(current, value, null);
-  else map.set(key, new Y.Text(value));
-}
-
-/** Order keys for `count` new entries between two existing ones. */
-function keysBetween(
-  after: string | null,
-  before: string | null,
-  count: number
-) {
-  const out: string[] = [];
-  let last = after;
-  for (let i = 0; i < count; i++) {
-    // Past the last key a key after `last` suffices; otherwise squeeze in.
-    last = before === null ? keyBetween(last, null) : keyBetween(last, before);
-    out.push(last);
-  }
-  return out;
-}
-
-/** Reorders `entries` (current order) so they read as `ids`: keys of entries
- * already in a rising run stay, the others get new keys between neighbours. */
-function reorder(entries: Map<string, YMap>, ids: string[]) {
-  const orders = ids.map((id) => plain<string>(entries.get(id), 'order') ?? '');
-  for (let i = 0; i < ids.length; i++) {
-    const previous = i > 0 ? orders[i - 1] : null;
-    if (previous === null ? orders[i] !== '' : orders[i] > previous) {
-      // Keep it if it also stays below the next kept key.
-      const next = orders.slice(i + 1).find((order) => order > orders[i]);
-      if (next !== undefined || i === ids.length - 1) continue;
-    }
-    const upper = orders.slice(i + 1).find((order) => order > (previous ?? ''));
-    orders[i] = keyBetween(previous, upper ?? null);
-    entries.get(ids[i])?.set('order', orders[i]);
-  }
-}
 
 type ListItem = { text: string; set?: (entry: YMap) => void };
 
@@ -556,13 +524,15 @@ function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
 }
 
 /** A new block under a fresh id: put in place first, so the table writer
- * reads back the rows and columns it adds. */
+ * reads back the rows and columns it adds. Its key. */
 function insertBlock(map: YMap, block: QuestionBlock, order: string) {
+  const key = uid('block');
   const entry = new Y.Map<unknown>();
-  map.set(uid('block'), entry);
+  map.set(key, entry);
   entry.set('order', order);
   entry.set('type', block.type);
   writeBlockFields(entry, block);
+  return key;
 }
 
 function writeTable(entry: YMap, rows: string[][]) {
@@ -570,92 +540,39 @@ function writeTable(entry: YMap, rows: string[][]) {
   const columnMap = child(entry, 'columns');
   const cells = child(entry, 'cells');
   const width = Math.max(0, ...rows.map((row) => row.length));
-  // Columns first: a column added or removed shifts every row alike.
-  let columns = orderedKeys(columnMap);
-  const rowIds = orderedKeys(rowMap);
   const cell = (row: string, column: string) => text(cells, `${row}/${column}`);
-  if (columns.length !== width) {
-    const current = columns.map((column) =>
-      rowIds.map((row) => cell(row, column))
-    );
-    const wanted = Array.from({ length: width }, (_, c) =>
-      rows.slice(0, rowIds.length).map((row) => row[c] ?? '')
-    );
-    const same = (a: string[], b: string[]) =>
-      a.join('\u0000') === b.join('\u0000');
-    let head = 0;
-    while (
-      head < current.length &&
-      head < width &&
-      same(current[head], wanted[head])
-    )
-      head++;
-    let tail = 0;
-    while (
-      tail < current.length - head &&
-      tail < width - head &&
-      same(current.at(-1 - tail) ?? [], wanted[width - 1 - tail])
-    )
-      tail++;
-    const removed = columns.slice(head, columns.length - tail);
-    const keep = Math.min(removed.length, width - head - tail);
-    for (const column of removed.slice(keep)) {
-      columnMap.delete(column);
-      for (const row of rowIds) cells.delete(`${row}/${column}`);
+  const same = (a: string[], b: string[]) =>
+    a.join('\u0000') === b.join('\u0000');
+  // Columns first: a column added or removed shifts every row alike.
+  const heldRows = orderedKeys(rowMap);
+  const heldColumns = orderedKeys(columnMap);
+  const columns = alignAxis(
+    columnMap,
+    width,
+    (h, w) =>
+      same(
+        heldRows.map((row) => cell(row, heldColumns[h])),
+        rows.slice(0, heldRows.length).map((row) => row[w] ?? '')
+      ),
+    'col',
+    (column) => {
+      for (const row of heldRows) cells.delete(`${row}/${column}`);
     }
-    const count = width - head - tail - keep;
-    const after = columnMap.get(columns[head + keep - 1] ?? '') as
-      | string
-      | undefined;
-    const before =
-      tail > 0 ? (columnMap.get(columns.at(-tail) ?? '') as string) : null;
-    for (const order of keysBetween(
-      after ?? (head > 0 ? (columnMap.get(columns[head - 1]) as string) : null),
-      before,
-      count
-    ))
-      columnMap.set(uid('col'), order);
-    columns = orderedKeys(columnMap);
-  }
+  );
   // Then rows, by the same head and tail rule.
-  let ids = orderedKeys(rowMap);
-  if (ids.length !== rows.length) {
-    const current = ids.map((row) =>
-      columns.map((column) => cell(row, column)).join('\u0000')
-    );
-    const wanted = rows.map((row) =>
-      columns.map((_, c) => row[c] ?? '').join('\u0000')
-    );
-    let head = 0;
-    while (
-      head < current.length &&
-      head < wanted.length &&
-      current[head] === wanted[head]
-    )
-      head++;
-    let tail = 0;
-    while (
-      tail < current.length - head &&
-      tail < wanted.length - head &&
-      current.at(-1 - tail) === wanted.at(-1 - tail)
-    )
-      tail++;
-    const removed = ids.slice(head, ids.length - tail);
-    const keep = Math.min(removed.length, wanted.length - head - tail);
-    for (const row of removed.slice(keep)) {
-      rowMap.delete(row);
+  const ids = alignAxis(
+    rowMap,
+    rows.length,
+    (h, w) =>
+      same(
+        columns.map((column) => cell(heldRows[h], column)),
+        columns.map((_, c) => rows[w][c] ?? '')
+      ),
+    'row',
+    (row) => {
       for (const column of columns) cells.delete(`${row}/${column}`);
     }
-    const count = wanted.length - head - tail - keep;
-    const afterId = ids[head + keep - 1];
-    const after =
-      afterId === undefined ? null : (rowMap.get(afterId) as string);
-    const before =
-      tail > 0 ? (rowMap.get(ids.at(-tail) ?? '') as string) : null;
-    for (const order of keysBetween(after, before, count))
-      rowMap.set(uid('row'), order);
-    ids = orderedKeys(rowMap);
-  }
+  );
   ids.forEach((row, r) => {
     columns.forEach((column, c) => {
       const value = rows[r]?.[c] ?? '';
@@ -668,12 +585,12 @@ function writeTable(entry: YMap, rows: string[][]) {
 }
 
 /** A block's fields written in place: texts as the fewest changes, small
- * values only when they differ, a chart, plot or graph as one value (D8). */
+ * values only when they differ, a chart, plot or graph as its fields and
+ * maps (liveFigures.ts). */
 function writeBlockFields(entry: YMap, block: QuestionBlock) {
   switch (block.type) {
     case 'text':
       setText(entry, 'text', block.text);
-      setPlain(entry, 'label', block.label);
       return;
     case 'table':
       setPlain(entry, 'header', block.header);
@@ -688,11 +605,9 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
       return;
     case 'chart':
     case 'plot':
-    case 'graph': {
-      const { type: _type, ...value } = block;
-      setPlain(entry, 'value', value);
+    case 'graph':
+      writeFigure(entry, block);
       return;
-    }
     default: {
       const unknown: never = block;
       const { type } = unknown as { type: string };
@@ -701,7 +616,16 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
   }
 }
 
-const blockJson = (block: QuestionBlock) => JSON.stringify(block);
+/** A block as JSON with its keys sorted: a figure read from the room holds
+ * its fields in the room's order. */
+const blockJson = (block: QuestionBlock) =>
+  JSON.stringify(block, (_, value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([a], [b]) => (a < b ? -1 : 1))
+        )
+      : value
+  );
 
 /** Writes a block list with the fewest changes (same rule as `writeList`). */
 function writeBlocks(map: YMap, next: QuestionBlock[]) {
@@ -778,6 +702,14 @@ function writeBlocks(map: YMap, next: QuestionBlock[]) {
   });
 }
 
+/** A map of ticks by option id holding exactly `ids`' (undefined: none). */
+function setTicks(ticks: YMap, ids: (string | undefined)[]) {
+  const wanted = new Set(ids);
+  for (const id of [...ticks.keys()]) if (!wanted.has(id)) ticks.delete(id);
+  for (const id of wanted)
+    if (id && ticks.get(id) !== true) ticks.set(id, true);
+}
+
 /** What the keys write needs from the content write: entry ids by position. */
 type PartIds = { left: string[]; options: string[] };
 
@@ -797,7 +729,14 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
         answer.options.map((value) => ({ text: value })),
         'opt'
       );
-      setPlain(map, 'multiple', answer.correct.length > 1 ? true : undefined);
+      setPlain(map, 'multiple', multipleAnswers(answer) ? true : undefined);
+      setPlain(map, 'shuffle', answer.shuffle);
+      if (answer.shuffle && answer.locked?.length)
+        setTicks(
+          child(map, 'locked'),
+          answer.locked.map((i) => ids.options[i])
+        );
+      else if (map.has('locked')) map.delete('locked');
       break;
     case 'short':
       setPlain(map, 'unit', answer.unit);
@@ -824,12 +763,11 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
     );
   switch (answer.type) {
     case 'mcq': {
-      const correct = child(key, 'correct');
-      const wanted = new Set(answer.correct.map((i) => ids.options[i]));
-      for (const id of [...correct.keys()])
-        if (!wanted.has(id)) correct.delete(id);
-      for (const id of wanted)
-        if (id && correct.get(id) !== true) correct.set(id, true);
+      setPlain(key, 'multiple', answer.multiple);
+      setTicks(
+        child(key, 'correct'),
+        answer.correct.map((i) => ids.options[i])
+      );
       break;
     }
     case 'boolean':
@@ -842,7 +780,6 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
     case 'drawing':
       if (answer.type === 'open') {
         list('accepted', answer.accepted, 'acc');
-        list('hints', answer.hints, 'hint');
       } else {
         setPlain(key, 'sampleBoard', answer.sample?.board);
         setPlain(key, 'sampleImage', answer.sample?.image);
@@ -930,6 +867,11 @@ export function writeQuestion(
     setPlain(entry, 'layout', next.layout);
     setPlain(entry, 'labels', next.labels);
     setPlain(entry, 'level', next.level);
+    setPlain(
+      entry,
+      'topicIds',
+      next.topicIds?.length ? next.topicIds : undefined
+    );
     writeBlocks(child(entry, 'stem'), next.stem);
     writeGroups(entry, next.groups ?? []);
     const parts = child(entry, 'parts');
@@ -988,22 +930,6 @@ export function removeQuestion(
   }, origin);
 }
 
-/** A question as its documents hold it, to tell later if anyone wrote in it. */
-export function questionState(content: Y.Doc, keys: Y.Doc, id: string) {
-  return JSON.stringify(readQuestions(content, keys).find((q) => q.id === id));
-}
-
-/** Removes a question added and left blank, only while it holds what it did
- * then (`questionState`): what a co-editor has written in it since stays. */
-export function removeUnchangedQuestion(
-  content: Y.Doc,
-  keys: Y.Doc,
-  { id, state }: { id: string; state: string }
-) {
-  if (questionState(content, keys, id) === state)
-    removeQuestion(content, keys, id);
-}
-
 /** Moves a question to `index` in the quiz's order. */
 export function moveQuestion(
   content: Y.Doc,
@@ -1019,6 +945,72 @@ export function moveQuestion(
     current[target]?.order ?? null
   );
   content.transact(() => mapAt(questions, id)?.set('order', order), origin);
+}
+
+/** Writes new questions in after the one at `index` (-1: first), in the order
+ * given: the editor's From the bank. One undo step takes them all, as Yjs
+ * merges a burst of edits. */
+export function insertQuestions(
+  content: Y.Doc,
+  keys: Y.Doc,
+  questions: Question[],
+  index: number
+) {
+  questions.forEach((question, i) => {
+    writeQuestion(content, keys, question);
+    moveQuestion(content, question.id, index + 1 + i);
+  });
+}
+
+/** A quiz's blocks written by their room entries (Epo 2026-11-16): the
+ * question card's figure dialogs write the entry the block was read from (a
+ * chart or graph a change at a time through `bind`, a table at its Save,
+ * writing only what differs) and remove it, so a figure a co-editor changed
+ * meanwhile stays one figure. Each call is one undoable step. */
+export function figureRoom(docs: QuizDocs): FigureRoom & { docs: QuizDocs } {
+  const remove = (at: FigureAt) => {
+    const { doc, map } = sectionMap(docs, at.question, at.section);
+    if (!map?.has(at.entry)) return false;
+    doc.transact(() => map.delete(at.entry), LOCAL_EDIT);
+    return true;
+  };
+  return {
+    bind: (at) => roomFigureBinding(docs, at, () => remove(at)),
+    docs,
+    insert: (place, block) => {
+      const { doc, map } = sectionMap(docs, place.question, place.section);
+      if (!map) return null;
+      const held = ordered(map);
+      const found = held.findIndex((item) => item.id === place.after);
+      const at = found >= 0 ? found + 1 : Math.min(place.index, held.length);
+      const lower = held[at - 1]?.order ?? null;
+      const upper =
+        held.slice(at).find((item) => lower === null || item.order > lower)
+          ?.order ?? null;
+      let key: string | null = null;
+      doc.transact(() => {
+        key = insertBlock(map, block, keyBetween(lower, upper));
+      }, LOCAL_EDIT);
+      return key;
+    },
+    key: blockKey,
+    remove,
+    replace: (at, block) => {
+      const { doc, map } = sectionMap(docs, at.question, at.section);
+      const entry = mapAt(map, at.entry);
+      if (!entry) return false;
+      doc.transact(() => {
+        // Another type starts its entry over under the same key.
+        if (plain<string>(entry, 'type') !== block.type) {
+          for (const key of [...entry.keys()])
+            if (key !== 'order') entry.delete(key);
+          entry.set('type', block.type);
+        }
+        writeBlockFields(entry, block);
+      }, LOCAL_EDIT);
+      return true;
+    },
+  };
 }
 
 /* ------------------------------------------- what the server follows */
@@ -1080,7 +1072,7 @@ export function withEmptyKeys(question: LearnerQuestion): Question {
         case 'ordering':
           return full(answer);
         case 'open':
-          return full({ accepted: [], hints: [], type: answer.type });
+          return full({ accepted: [], type: answer.type });
         case 'drawing':
           return full(answer);
         case 'gaps':

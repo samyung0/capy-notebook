@@ -763,7 +763,7 @@ async def test_a_copied_question_counts_as_recorded_after_its_batch(monkeypatch)
     events = await _run(monkeypatch, script, [_page(5)])
     assert [e["type"] for e in events] == ["questions", "done"]
     [copied] = events[0]["questions"]
-    assert copied["parts"][0]["answer"] == {"type": "open", "accepted": [], "hints": []}
+    assert copied["parts"][0]["answer"] == {"type": "open", "accepted": []}
     assert (
         copied["parts"][0]["markscheme"] == [] and copied["parts"][0]["solution"] == []
     )

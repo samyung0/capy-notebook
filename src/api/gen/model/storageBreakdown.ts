@@ -8,5 +8,5 @@
 export interface StorageBreakdown {
   canvasBytes: number;
   filesBytes: number;
-  otherBytes: number;
+  imagesBytes: number;
 }

@@ -32,8 +32,10 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); a
 /// void element holding anything but one empty text leaf (Epo 2026-10-18);
 /// a column width the editor never writes (2026-10-25); an indent that is
-/// not a number (2026-10-26); and a style value holding `;` or a control
-/// character (Epo Q380).
+/// not a number (2026-10-26); a style value holding `;` or a control
+/// character (Epo Q380); a text block's `label` and an open answer's
+/// `hints`, removed (Epo 2026-11-15); and a graph's stored picture, removed
+/// (Epo 2026-11-16).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -71,6 +73,9 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.starts_with("column width must be")
         || message == "indent must be a number"
         || message.ends_with("may hold no semicolon or control character")
+        || message.ends_with("block: unrecognized key label")
+        || message.ends_with("answer: unrecognized key hints")
+        || message.ends_with("block: unrecognized key image")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -194,6 +199,19 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
                 Some((node.clone(), case["kind"].as_str()?.to_owned()))
             })
             .unwrap_or_else(|| panic!("no accepted {kind} in the corpus"));
+        // The frozen corpus's graphs still carry the picture removed since
+        // (Epo 2026-11-16) and `functiongraph` rows, stored as `expression`
+        // LaTeX since (Epo 2026-11-18).
+        let mut base = base;
+        if let Some(block) = base["block"].as_object_mut() {
+            block.remove("image");
+        }
+        if let Some(elements) = base
+            .pointer_mut("/block/elements")
+            .and_then(Value::as_array_mut)
+        {
+            elements.retain(|element| element["type"] != "functiongraph");
+        }
         let with_width = |width: Value| {
             let mut node = base.clone();
             node["width"] = width;
@@ -695,10 +713,9 @@ fn plot_text_stops_at_the_charts_bounds() {
     );
 }
 
-/// Grouped parts (Epo 2026-11-04): the shared group fixtures validate as Go
-/// and the browser validate them, under each fixture's policy.
-#[test]
-fn group_fixtures_validate_as_go_and_the_browser() {
+/// The shared fixtures named `prefix`*, validated as Go and the browser
+/// validate them under each fixture's policy; how many there were.
+fn shared_fixtures(prefix: &str) -> usize {
     let dir = format!(
         "{}/../../../server/internal/questions/testdata",
         env!("CARGO_MANIFEST_DIR")
@@ -707,7 +724,7 @@ fn group_fixtures_validate_as_go_and_the_browser() {
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        if !name.starts_with("group-") {
+        if !name.starts_with(prefix) {
             continue;
         }
         seen += 1;
@@ -724,7 +741,22 @@ fn group_fixtures_validate_as_go_and_the_browser() {
             "{name}: {ours:?}"
         );
     }
+    seen
+}
+
+/// Grouped parts (Epo 2026-11-04).
+#[test]
+fn group_fixtures_validate_as_go_and_the_browser() {
+    let seen = shared_fixtures("group-");
     assert!(seen >= 16, "{seen} group fixtures");
+}
+
+/// Graphs, the canvas plane's free marks and styles included (Epo
+/// 2026-11-16, D1/D6/D7).
+#[test]
+fn graph_fixtures_validate_as_go_and_the_browser() {
+    let seen = shared_fixtures("graph-");
+    assert!(seen >= 20, "{seen} graph fixtures");
 }
 
 /// What a merge leaves reads repaired, on the fixtures the browser reads too.
@@ -788,7 +820,6 @@ fn a_figure_description_holds_500_outside_the_bank() {
                     "description": description,
                     "elements": [],
                     "height": 190,
-                    "image": { "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>" },
                     "type": "graph",
                     "width": 320,
                 },

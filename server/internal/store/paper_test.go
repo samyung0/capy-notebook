@@ -29,7 +29,7 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 	}
 	form.Questions = append(frozenFixture(t), ordering)
 	form.AllowUploads = true
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 	f := newAssignmentFixture(t, "handin")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
 		Attempts: 1, AssignAll: true, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
 		Files: []AssignmentFileRef{}, AllowUploads: true}, now)
 	if err != nil {
@@ -200,7 +200,7 @@ func TestUnmarkedFollowsTheLateRules(t *testing.T) {
 	after := now.Add(2 * time.Hour)
 	create := func(noLate bool) Assignment {
 		t.Helper()
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it",
+		created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Read it",
 			Attempts: 1, AssignAll: true, DueAt: &due, NoLate: noLate, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose,
 			ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}}, now)
 		if err != nil {
@@ -236,4 +236,20 @@ func submissionsOf(t *testing.T, s *Store, user string) []SubmittedPaper {
 		}
 	}
 	return out
+}
+
+// TestPaperLettersNameShuffledOptions: a paper's letters name an mcq's options
+// as the member's view shows them (Shuffle options), and the answer stored is
+// each option's authored index, which the key grades.
+func TestPaperLettersNameShuffledOptions(t *testing.T) {
+	a := map[string]any{"type": "mcq", "options": []any{"Osmosis", "Diffusion", "None"}, "correct": []any{1.0}}
+	shown := map[string]any{"type": "mcq", "options": a["options"], "order": []any{1, 0, 2}}
+	value, ok := paperAnswer("mcq", a, shown, []any{"A"})
+	if !ok || value.([]any)[0] != 1.0 {
+		t.Fatalf("A read as %v, want authored option 1", value)
+	}
+	part := map[string]any{"answer": a, "marks": 1.0}
+	if marks, _ := questions.ScorePart(part, value); marks != 1 {
+		t.Fatalf("scored %v", marks)
+	}
 }

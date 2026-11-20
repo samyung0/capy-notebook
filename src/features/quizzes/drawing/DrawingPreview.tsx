@@ -41,18 +41,21 @@ export function useDrawingBoard(value: Answer) {
 
 /** A board drawn as an SVG data URL, or null when it can't be read. With
  * `inset`, the drawing sits that far inside a transparent box of the full size,
- * so a card's own panel frames it (Files › Canvas, mock S3). */
+ * so a card's own panel frames it (Files › Canvas, mock S3); with `fit` the
+ * picture is cropped to the drawing. */
 export function drawingPreviewUrl(
   board: string,
   width: number,
   height: number,
-  inset = 0
+  inset = 0,
+  fit = false
 ) {
   try {
     let svg = drawBoardPreview(
       board,
       { height: height - inset * 2, width: width - inset * 2 },
-      'question'
+      'question',
+      fit
     );
     if (inset)
       svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${svg.replace('<svg ', `<svg x="${inset}" y="${inset}" `)}</svg>`;
@@ -78,8 +81,10 @@ export function DrawingPreview({
   height?: number;
   width?: number;
 }) {
+  // Cropped to the drawing, so it starts at its column's edge (Epo
+  // 2026-11-13) rather than centred in a box of another shape.
   const src = useMemo(
-    () => drawingPreviewUrl(board, width, height),
+    () => drawingPreviewUrl(board, width, height, 0, true),
     [board, height, width]
   );
   if (!src)
@@ -89,12 +94,11 @@ export function DrawingPreview({
       </p>
     );
   return (
+    // Its own size is the cropped picture's, at most width × height.
     <img
       alt={m.drawing_answer_image()}
       className={cn('h-auto max-w-full', className)}
-      height={height}
       src={src}
-      width={width}
     />
   );
 }

@@ -99,6 +99,10 @@ export class GridManager extends GfxExtension {
     return this._grids.size === 0;
   }
 
+  /** Capy (vendor/blocksuite/README.md, local change 68): counts adds and
+   * removes, so a search's result can be kept while the grid is unchanged. */
+  version = 0;
+
   private _addToExternalGrids(element: GfxModel) {
     const range = rangeFromElementExternal(element);
 
@@ -200,6 +204,7 @@ export class GridManager extends GfxExtension {
   }
 
   add(element: GfxModel | GfxLocalElementModel) {
+    this.version += 1;
     if (!(element instanceof GfxLocalElementModel)) {
       this._addToExternalGrids(element);
     }
@@ -270,6 +275,7 @@ export class GridManager extends GfxExtension {
   }
 
   remove(element: GfxModel | GfxLocalElementModel) {
+    this.version += 1;
     const grids = this._elementToGrids.get(element);
     if (grids) {
       for (const grid of grids) {

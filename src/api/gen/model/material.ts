@@ -18,6 +18,7 @@ import type { WorkspaceRole } from './workspaceRole.ts';
 export interface Material {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  assignmentId?: string;
   audioMaxBytes: number;
   capabilities: AccessCapabilities;
   color?: UserColor;

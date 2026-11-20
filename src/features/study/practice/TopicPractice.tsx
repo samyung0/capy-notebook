@@ -18,13 +18,9 @@ import type {
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-} from '@/components/ui/Dialog';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
+import { InputTitle } from '@/components/ui/Input';
 import {
   Select,
   SelectContent,
@@ -83,6 +79,11 @@ export function ReasonChip({ reason }: { reason?: ReviewReason }) {
   );
 }
 
+/** "Topic practice · Limits", or just "Topic practice" while the topic's name
+ * loads or once the topic is gone. */
+const sessionTitle = (topic: string) =>
+  topic ? m.practice_session_title({ topic }) : m.practice_session_title_bare();
+
 /** What a checked question recorded. */
 type Checked = { answers: Answers; question: Question };
 
@@ -109,7 +110,7 @@ function Choice({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="t-meta font-semibold text-fg-secondary">{label}</span>
+      <InputTitle>{label}</InputTitle>
       <Select onValueChange={onChange} value={value}>
         <SelectTrigger aria-label={label}>
           <SelectValue />
@@ -200,7 +201,7 @@ export function TopicPractice({
   const title =
     start.group === 'workspace'
       ? m.dashboard_workspace_review()
-      : m.practice_session_title({ topic: name });
+      : sessionTitle(name);
 
   if (running)
     return (
@@ -217,118 +218,108 @@ export function TopicPractice({
     );
   const count = data?.items.length ?? size;
   const startButton = (
-    <Button disabled={!data?.items.length || isFetching} onClick={begin}>
+    <Button
+      disabled={!data?.items.length || isFetching}
+      onClick={begin}
+      size="lg"
+    >
       {m.review_start()}
     </Button>
   );
   return (
     <>
       {behind}
-      <Dialog onOpenChange={(open) => !open && onClose()} open>
-        {/* The title stays the content's first child: phones make it the
-            sticky header row and drop the content's top padding for it. */}
-        <DialogContent
-          aria-describedby={undefined}
-          cardScrollContainerClassName="sm:px-7 sm:pb-0"
-          className="sm:max-w-[790px]"
-        >
-          <DialogTitle action={startButton} className="pb-0">
-            {title}
-          </DialogTitle>
-          {total > 0 && (
-            <p className="t-meta mt-0.5 font-semibold text-fg-muted">
-              {`${questionsLabel(count)} · ${minutesLabel(count)}`}
-            </p>
-          )}
-          {!counting && total === 0 ? (
-            <p className="t-meta my-8 text-fg-muted">{m.practice_nothing()}</p>
-          ) : (
-            <>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <Choice
-                  label={m.practice_choose_questions()}
-                  onChange={(v) => setPicked(Number(v))}
-                  options={countChoices(total).map((n) => ({
-                    label:
-                      n === total
-                        ? m.practice_all_questions({ count: n })
-                        : String(n),
+      <SimpleDialog
+        action={startButton}
+        onClose={onClose}
+        open
+        title={title}
+        width={790}
+      >
+        {total > 0 && (
+          <p className="t-meta -mt-1 font-semibold text-fg-muted">
+            {`${questionsLabel(count)} · ${minutesLabel(count)}`}
+          </p>
+        )}
+        {!counting && total === 0 ? (
+          <p className="t-meta my-8 text-fg-muted">{m.practice_nothing()}</p>
+        ) : (
+          <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Choice
+                label={m.practice_choose_questions()}
+                onChange={(v) => setPicked(Number(v))}
+                options={countChoices(total).map((n) => ({
+                  label:
+                    n === total
+                      ? m.practice_all_questions({ count: n })
+                      : String(n),
+                  value: String(n),
+                }))}
+                value={String(size)}
+              />
+              <Choice
+                label={m.practice_choose_mode()}
+                onChange={(v) => setOrder(v as Order)}
+                options={ORDERS.map((o) => ({
+                  label: o.label(),
+                  value: o.value,
+                }))}
+                value={order}
+              />
+              <Choice
+                label={m.practice_choose_timer()}
+                onChange={(v) => setMinutes(Number(v))}
+                options={[
+                  { label: m.practice_timer_off(), value: '0' },
+                  ...TIMER_MINUTES.map((n) => ({
+                    label: m.practice_timer_minutes({ count: n }),
                     value: String(n),
-                  }))}
-                  value={String(size)}
-                />
-                <Choice
-                  label={m.practice_choose_mode()}
-                  onChange={(v) => setOrder(v as Order)}
-                  options={ORDERS.map((o) => ({
-                    label: o.label(),
-                    value: o.value,
-                  }))}
-                  value={order}
-                />
-                <Choice
-                  label={m.practice_choose_timer()}
-                  onChange={(v) => setMinutes(Number(v))}
-                  options={[
-                    { label: m.practice_timer_off(), value: '0' },
-                    ...TIMER_MINUTES.map((n) => ({
-                      label: m.practice_timer_minutes({ count: n }),
-                      value: String(n),
-                    })),
-                  ]}
-                  value={String(minutes)}
-                />
-              </div>
-              {isError ? (
-                <ErrorState
-                  action={
-                    <Button onClick={() => void refetch()} variant="outline">
-                      {m.action_retry()}
-                    </Button>
-                  }
-                  className="my-8"
-                  errorId={unexpectedErrorId(error)}
-                  title={m.practice_session_failed()}
-                  variant="panel"
-                />
-              ) : data ? (
-                <ol
-                  className={cn(
-                    'mt-4 max-h-[40vh] overflow-auto border-divider border-t',
-                    isPlaceholderData && 'opacity-60'
-                  )}
-                >
-                  {data.items.map((item, i) => (
-                    <li
-                      className="flex h-9.5 items-center gap-3 border-divider border-b last:border-b-0"
-                      key={keyOf(item)}
-                    >
-                      <span className="t-meta w-5 shrink-0 font-bold text-fg-muted">
-                        {i + 1}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">
-                        <TextView
-                          className="whitespace-nowrap"
-                          text={questionLine(item.question)}
-                        />
-                      </span>
-                      <ReasonChip reason={item.reason} />
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <SkeletonList className="mt-4" count={5} rowHeight={38} />
-              )}
-            </>
-          )}
-          <DialogFooter className="mt-2.5 max-sm:hidden sm:-mx-7 sm:px-7 sm:pb-5">
-            <Button onClick={onClose} variant="ghost">
-              {m.action_cancel()}
-            </Button>
-            {startButton}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  })),
+                ]}
+                value={String(minutes)}
+              />
+            </div>
+            {isError ? (
+              <ErrorState
+                className="h-auto py-8"
+                errorId={unexpectedErrorId(error)}
+                onRetry={() => void refetch()}
+                title={m.practice_session_failed()}
+                variant="panel"
+              />
+            ) : data ? (
+              <ol
+                className={cn(
+                  'mt-4 max-h-[40vh] overflow-auto border-divider border-t',
+                  isPlaceholderData && 'opacity-60'
+                )}
+              >
+                {data.items.map((item, i) => (
+                  <li
+                    className="flex h-9.5 items-center gap-3 border-divider border-b last:border-b-0"
+                    key={keyOf(item)}
+                  >
+                    <span className="t-meta w-5 shrink-0 font-bold text-fg-muted">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      <TextView
+                        className="whitespace-nowrap"
+                        marks
+                        text={questionLine(item.question)}
+                      />
+                    </span>
+                    <ReasonChip reason={item.reason} />
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <SkeletonList className="mt-4" count={5} rowHeight={38} />
+            )}
+          </>
+        )}
+      </SimpleDialog>
     </>
   );
 }
@@ -512,12 +503,8 @@ export function PracticeResult({
     return (
       <PracticeFrame>
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.practice_load_failed()}
           variant="panel"
         />
@@ -530,16 +517,9 @@ export function PracticeResult({
   return (
     <PracticeFrame>
       <div className="flex w-full max-w-220 flex-col">
-        <div className="flex flex-wrap items-center gap-x-3">
-          <h1 className="t-page-title">
-            {m.practice_session_title({
-              topic: groupLabel(session.group, session.topicName),
-            })}
-          </h1>
-          <span className="t-meta mt-1.5 text-fg-muted">
-            {m.practice_done()}
-          </span>
-        </div>
+        <h1 className="t-page-title">
+          {sessionTitle(groupLabel(session.group, session.topicName))}
+        </h1>
         <p className="mt-4.5 font-extrabold text-[2.5rem] leading-[1.15] tracking-[-0.02rem]">
           {m.practice_right_of({ correct: right, total: questions.length })}
         </p>
@@ -570,6 +550,7 @@ export function PracticeResult({
                 <span className="truncate">
                   <TextView
                     className="whitespace-nowrap"
+                    marks
                     text={questionLine(a.question)}
                   />
                 </span>

@@ -165,7 +165,9 @@ import (
 // and create_topic takes an optional one-line description.
 // v48: read_study_progress goes until AI analysis of study progress is decided
 // (Epo 2026-11-04).
-const ContractVersion = 48
+// v49: an open question's hints are gone on every layer (Epo 2026-11-15):
+// add_questions items no longer take hints.
+const ContractVersion = 49
 
 // Scope is the kind of chat a tool is offered in: a workspace's, or the
 // account's across the user's own files (Epo 2026-10-27). A conversation keeps
@@ -840,7 +842,6 @@ func questionSchema() map[string]any {
 		"model_answer": map[string]any{
 			"type": "string", "maxLength": fieldlimits.QuizOpenAnswer, "description": "Open, optional: a full-marks answer.",
 		},
-		"hints":       textList("Open, optional: nudges the learner may open.", 0),
 		"explanation": textField("Optional: why the answer is right or the worked solution, shown after checking."),
 		"replaces":    replacesSchema(),
 	}, "question")

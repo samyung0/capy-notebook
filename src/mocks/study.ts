@@ -1,8 +1,11 @@
 import { HttpResponse, http } from 'msw';
 import type {
+  HistoryRow,
   ItemAttempts,
+  Material,
   PastReview,
   Practice,
+  PracticeItem,
   PracticeReview,
   ReviewAnswer,
   ReviewItem,
@@ -21,8 +24,8 @@ import {
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { gradeQuestions, learnerView } from './answerKeys';
-import { assignmentClosedAt, quizHeldFromMembers } from './assignments';
 import * as db from './db';
+import { mockWorkspaceMembers } from './workspaceMembers';
 
 /* Study progress and review, per signed-in user (the mock has one). A
  * rating is remembered with its lapses; there is no FSRS here, so "least
@@ -347,7 +350,8 @@ function reasonOf(it: { materialId: string; itemId: string }): ReviewReason {
 function groupQuizzes(
   wsId: string,
   group: ReviewSuggestion['group'],
-  topicId?: string
+  topicId?: string,
+  sets = false
 ) {
   const order = (id?: string | null) =>
     db.topics.find((t) => t.id === id)?.order ?? Number.MAX_SAFE_INTEGER;
@@ -355,7 +359,7 @@ function groupQuizzes(
     .filter(
       (mt) =>
         mt.workspaceId === wsId &&
-        mt.kind === 'quiz' &&
+        (mt.kind === 'quiz' || (sets && mt.kind === 'flashcards')) &&
         !mt.parentMaterialId &&
         (group === 'topic'
           ? mt.topicId === topicId
@@ -386,43 +390,53 @@ function newQuestions(
   );
 }
 
-/** A workspace's suggestion from its rated items: tricky when any was missed. */
-function suggestionsOf(wsId: string): ReviewSuggestion[] {
-  const all = pool(wsId);
-  if (all.length < 3) return [];
+/** A workspace's suggestions from its rated items, one per topic (only a
+ * real topic is suggested, as the server): tricky when any was missed. */
+function suggestionsOf(
+  wsId: string,
+  questionsOnly = false
+): ReviewSuggestion[] {
+  const groups = new Map<string, ReviewItem[]>();
+  for (const it of pool(wsId)) {
+    const topicId = topicOf(it.materialId);
+    if (topicId && (!questionsOnly || it.kind === 'question'))
+      groups.set(topicId, [...(groups.get(topicId) ?? []), it]);
+  }
   const ws = db.workspaces.find((w) => w.id === wsId);
-  const missed = all.filter(
-    (it) => (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
-  ).length;
-  return [
-    {
-      evidence: {
-        forgotten: Math.ceil(all.length / 2),
-        lastPractisedAt: new Date(
-          Math.max(
-            ...all.map(
-              (it) => rated.get(`${it.materialId}/${it.itemId}`)?.at ?? 0
-            )
-          )
-        ).toISOString(),
-        missed,
-        repeated: all.filter(
-          (it) => (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 1
-        ).length,
-        young: all.length,
-      },
-      group: 'workspace',
-      iconId: ws?.iconId ?? '',
-      items: all.length,
-      mode: missed ? 'tricky' : 'fading',
-      workspaceId: wsId,
-      workspaceName: ws?.name ?? wsId,
-    },
-  ];
+  return [...groups]
+    .filter(([, list]) => questionsOnly || list.length >= 3)
+    .map(([topicId, list]): ReviewSuggestion => {
+      const ranks = list.map(
+        (it) =>
+          rated.get(`${it.materialId}/${it.itemId}`) ?? { at: 0, lapses: 0 }
+      );
+      const missed = ranks.filter((r) => r.lapses > 0).length;
+      return {
+        evidence: {
+          forgotten: Math.ceil(list.length / 2),
+          lastPractisedAt: new Date(
+            Math.max(...ranks.map((r) => r.at))
+          ).toISOString(),
+          missed,
+          repeated: ranks.filter((r) => r.lapses > 1).length,
+          young: list.length,
+        },
+        group: 'topic',
+        iconId: ws?.iconId ?? '',
+        items: list.length,
+        mode: missed ? 'tricky' : 'fading',
+        topicId,
+        topicName: db.topics.find((t) => t.id === topicId)?.name,
+        workspaceId: wsId,
+        workspaceName: ws?.name ?? wsId,
+      };
+    })
+    .sort((a, b) => b.items - a.items)
+    .slice(0, 3);
 }
 
 /** Suggestions for workspaces the mock has no items for, so the list shows
- * every mode and group. */
+ * every mode. */
 const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
   {
     evidence: {
@@ -432,10 +446,12 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
       repeated: 0,
       young: 3,
     },
-    group: 'workspace',
+    group: 'topic',
     iconId: 'waves-07',
     items: 40,
     mode: 'fading',
+    topicId: 'tp_demo_preterite',
+    topicName: 'Preterite and imperfect',
     workspaceId: 'ws_demo_spanish2',
     workspaceName: 'Spanish A2',
   },
@@ -464,10 +480,12 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
       repeated: 2,
       young: 1,
     },
-    group: 'others',
+    group: 'topic',
     iconId: 'waves-04',
     items: 11,
     mode: 'tricky',
+    topicId: 'tp_demo_mechanisms',
+    topicName: 'Reaction mechanisms',
     workspaceId: 'ws_chem',
     workspaceName: 'Organic Chemistry',
   },
@@ -505,21 +523,19 @@ const isQuiz = (id: string) =>
 
 /** Learning's Overview: the same order as the server, from the mock's state
  * and the showcase rows. */
+/** A class the user owns or edits: as the server's learningScope, Overview
+ * lists it under Your classes only, never its progress or suggestions. */
+function teaching(wsId: string) {
+  const ws = db.workspaces.find((w) => w.id === wsId);
+  return ws?.kind === 'class' && (ws.role === 'owner' || ws.role === 'editor');
+}
+
 function learningOverview() {
-  const real = [...progress.keys()].filter((wsId) => items(wsId).size > 0);
-  const continued = unfinished().map((u) => ({
-    answered: u.answered,
-    at: u.lastAnswerAt,
-    group: u.group,
-    iconId: db.workspaces.find((ws) => ws.id === u.workspaceId)?.iconId ?? '',
-    kind: 'session' as const,
-    sessionId: u.id,
-    topicName: u.topicName,
-    total: u.total,
-    workspaceId: u.workspaceId,
-    workspaceName: u.workspaceName,
-  }));
+  const real = [...progress.keys()].filter(
+    (wsId) => items(wsId).size > 0 && !teaching(wsId)
+  );
   const started = db.workspaces.flatMap((ws) => {
+    if (teaching(ws.id)) return [];
     const quiz = db.materials.find(
       (mt) =>
         mt.workspaceId === ws.id &&
@@ -543,8 +559,8 @@ function learningOverview() {
       : [];
   });
   const suggested = [
-    ...real.flatMap(suggestionsOf),
-    ...SHOWCASE_SUGGESTIONS,
+    ...real.flatMap((id) => suggestionsOf(id)),
+    ...SHOWCASE_SUGGESTIONS.filter((s) => !teaching(s.workspaceId)),
   ].map((suggestion) => ({
     answered: 0,
     iconId: suggestion.iconId,
@@ -555,8 +571,17 @@ function learningOverview() {
     workspaceName: suggestion.workspaceName,
   }));
   return {
-    next: [...[...continued, ...started].slice(0, 3), ...suggested].slice(0, 4),
-    teaches: [],
+    next: [...started.slice(0, 3), ...suggested].slice(0, 4),
+    teaches: db.workspaces
+      .filter((ws) => teaching(ws.id))
+      .map((ws) => ({
+        iconId: ws.iconId,
+        members: mockWorkspaceMembers.filter(
+          (m) => m.workspaceId === ws.id && m.role === 'viewer'
+        ).length,
+        name: ws.name,
+        workspaceId: ws.id,
+      })),
     workspaces: [
       ...real.map((wsId) => {
         const ws = db.workspaces.find((w) => w.id === wsId);
@@ -581,7 +606,9 @@ function learningOverview() {
           workspaceId: wsId,
         };
       }),
-      ...SHOWCASE.filter((ws) => !real.includes(ws.workspaceId))
+      ...SHOWCASE.filter(
+        (ws) => !real.includes(ws.workspaceId) && !teaching(ws.workspaceId)
+      )
         .slice(0, 3)
         .map((ws, i) => ({
           iconId: ws.iconId,
@@ -728,27 +755,6 @@ const SHOWCASE_PAST: PastReview[] = [
 ];
 
 /** The server's past review orders (review_sessions.go). */
-function pastSortKey(r: PastReview, sort: string | null) {
-  const ratio = (s?: { correct: number; total: number }) =>
-    s?.total ? s.correct / s.total : null;
-  switch (sort) {
-    case 'quiz':
-      return ratio(r.quiz);
-    case 'cards':
-      return ratio(r.cards);
-    case 'time':
-      return +new Date(r.lastAnswerAt) - +new Date(r.startedAt);
-    case 'workspace':
-      return r.workspaceName.toLowerCase();
-    case 'topic':
-      return r.group === 'topic' ? (r.topicName ?? '').toLowerCase() : null;
-    case 'status':
-      return r.answered < r.total ? 1 : 0;
-    default:
-      return r.startedAt;
-  }
-}
-
 /** Answered items in answer order, with their records; `current` finds an
  * item as its material holds it now. */
 function answeredItems(
@@ -879,30 +885,139 @@ function pastRow(id: string, s: Session): PastReview {
   };
 }
 
-function pastReviews(params: URLSearchParams) {
-  const recorded = [...sessions]
-    .filter(([, s]) => s.finishedAt)
-    .map(([id, s]) => pastRow(id, s));
+/** Learning → History as the server lists it: every recorded session (an
+ * unfinished one open to go on) and every quiz and set attempt. */
+function studyHistory(params: URLSearchParams) {
+  const revisions = [
+    ...[...sessions].map(([id, s]) => pastRow(id, s)),
+    ...SHOWCASE_PAST,
+  ].map(
+    (r): HistoryRow => ({
+      answered: r.answered,
+      at: r.lastAnswerAt,
+      correct: (r.quiz?.correct ?? 0) + (r.cards?.correct ?? 0),
+      group: r.group,
+      iconId: r.iconId,
+      id: r.id,
+      items: r.total,
+      kind: 'revision',
+      materialId: null,
+      name: '',
+      status: r.finishedAt
+        ? r.answered < r.total
+          ? 'partial'
+          : 'done'
+        : 'open',
+      topics: r.group === 'topic' && r.topicName ? [r.topicName] : [],
+      total: (r.quiz?.total ?? 0) + (r.cards?.total ?? 0),
+      workspaceId: r.workspaceId,
+      workspaceName: r.workspaceName,
+    })
+  );
+  const attempts = db.attempts.map((raw): HistoryRow => {
+    const a = db.attemptSummary(raw);
+    return {
+      answered: 0,
+      at: a.takenAt,
+      correct: a.correct,
+      iconId: a.iconId ?? '',
+      id: a.id,
+      items: 0,
+      kind: a.kind,
+      materialId: a.materialId,
+      name: a.quizName,
+      status: 'done',
+      topics: a.topics,
+      total: a.total,
+      workspaceId: a.workspaceId,
+      workspaceName: a.workspaceName,
+    };
+  });
+  const calc = db.workspaces.find((ws) => ws.id === 'ws_calc');
+  // Two tries left partway this week, for Continue.
+  const openTries = [
+    ['at_open_quiz', 'quiz', 'qz_3', 'Integration techniques', 3, 9, 2],
+    ['at_open_cards', 'flashcards', 'dk_2', 'Integration rules', 4, 10, 72],
+    ['at_open_series', 'quiz', 'qz_3', 'Series tests', 2, 8, 96],
+    ['at_open_limits', 'quiz', 'qz_3', 'Limits drill', 5, 12, 120],
+  ].map(
+    ([id, kind, materialId, name, answered, items, hours]): HistoryRow => ({
+      answered: answered as number,
+      at: new Date(Date.now() - (hours as number) * 3_600_000).toISOString(),
+      correct: answered as number,
+      iconId: calc?.iconId ?? '',
+      id: id as string,
+      items: items as number,
+      kind: kind as 'quiz' | 'flashcards',
+      materialId: materialId as string,
+      name: name as string,
+      status: 'open',
+      topics: [],
+      total: answered as number,
+      workspaceId: 'ws_calc',
+      workspaceName: calc?.name ?? '',
+    })
+  );
+  attempts.push(...openTries);
   const workspaces = params.get('workspaceId')?.split(',') ?? [];
-  const has = params.get('has')?.split(',') ?? [];
-  const list = [...recorded, ...SHOWCASE_PAST]
-    .filter((r) => !workspaces.length || workspaces.includes(r.workspaceId))
+  const kinds = params.get('kind')?.split(',') ?? [];
+  const statuses = params.get('status')?.split(',') ?? [];
+  const sort = params.get('sort');
+  const key = (r: HistoryRow) =>
+    sort === 'score'
+      ? r.total
+        ? r.correct / r.total
+        : null
+      : sort === 'workspace'
+        ? r.workspaceName.toLowerCase()
+        : sort === 'name'
+          ? r.name.toLowerCase() || null
+          : sort === 'topic'
+            ? (r.topics[0]?.toLowerCase() ?? null)
+            : r.at;
+  const list = [...revisions, ...attempts]
     .filter(
       (r) =>
-        !has.length ||
-        (has.includes('quiz') && r.quiz) ||
-        (has.includes('flashcards') && r.cards)
+        (!workspaces.length ||
+          (r.workspaceId !== null && workspaces.includes(r.workspaceId))) &&
+        (!kinds.length || kinds.includes(r.kind)) &&
+        (!statuses.length || statuses.includes(r.status))
     )
     .sort((a, b) => {
-      const ka = pastSortKey(a, params.get('sort'));
-      const kb = pastSortKey(b, params.get('sort'));
-      // Rows without a value (no quiz, Others) stay last either way.
+      const ka = key(a);
+      const kb = key(b);
+      // Rows without a value stay last either way, as on the server.
       if (ka === null || kb === null)
         return ka === kb ? 0 : ka === null ? 1 : -1;
       const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
       return params.get('dir') === 'asc' ? cmp : -cmp;
     });
-  return { items: list, more: false };
+  const offset = Number(params.get('offset') ?? 0);
+  const limit = Number(params.get('limit') ?? 30);
+  return {
+    items: list.slice(offset, offset + limit),
+    more: list.length > offset + limit,
+  };
+}
+
+/** Removed from Continue, as `kind/id`. */
+const hiddenContinue = new Set<string>();
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+
+/** Study's Continue, as the server's ContinueRows: the newest six (three
+ * shown, three spares) that can go on, left within the week and not removed. */
+function continueRows(workspaceId: string | null) {
+  const params = new URLSearchParams({ limit: '1000' });
+  if (workspaceId) params.set('workspaceId', workspaceId);
+  return studyHistory(params)
+    .items.filter(
+      (r) =>
+        r.status === 'open' &&
+        !hiddenContinue.has(`${r.kind}/${r.id}`) &&
+        Date.now() - Date.parse(r.at) < WEEK &&
+        !(r.workspaceId && teaching(r.workspaceId))
+    )
+    .slice(0, 6);
 }
 
 // Biology 101's Membranes & transport was reviewed once (Practice's "Only
@@ -945,64 +1060,61 @@ function pastReviews(params: URLSearchParams) {
   });
 }
 
+/** What a quiz or set covers, as the server's `covers`: its topic, then the
+ * workspace's other topics its questions name as their own, in topic order. */
+function covers(mt: Material, kind: 'quiz' | 'flashcards'): string[] {
+  const named = new Set(
+    kind === 'quiz'
+      ? db.quizFromMaterial(mt).questions.flatMap((q) => q.topicIds ?? [])
+      : []
+  );
+  const others = db.topics
+    .filter(
+      (t) =>
+        t.workspaceId === mt.workspaceId &&
+        t.id !== mt.topicId &&
+        named.has(t.id)
+    )
+    .sort((a, b) => a.order - b.order)
+    .map((t) => t.id);
+  return mt.topicId ? [mt.topicId, ...others] : others;
+}
+
 /** Practice as the server reads it: this workspace's suggestions over its
- * questions, every quiz in reading order with the best attempt, the
+ * questions, every quiz and set in reading order with the best attempt (a
+ * set's runs through every card only), the
  * caller's topic reviews; staff also get member counts (the mock's are
  * fixed: six members, a group average once five tried). */
 export function practiceBody(wsId: string, staff: boolean): Practice {
-  // One suggestion per topic with rated questions: tricky when missed.
-  const groups = new Map<string, ReviewItem[]>();
-  for (const it of pool(wsId))
-    if (it.kind === 'question') {
-      const key = topicOf(it.materialId) ?? '';
-      groups.set(key, [...(groups.get(key) ?? []), it]);
-    }
-  const ws = db.workspaces.find((w) => w.id === wsId);
-  const suggestions: ReviewSuggestion[] = [...groups]
-    .map(([topicId, list]): ReviewSuggestion => {
-      const ranks = list.map(
-        (it) =>
-          rated.get(`${it.materialId}/${it.itemId}`) ?? { at: 0, lapses: 0 }
-      );
-      const missed = ranks.filter((r) => r.lapses > 0).length;
-      return {
-        evidence: {
-          forgotten: Math.ceil(list.length / 2),
-          lastPractisedAt: new Date(
-            Math.max(...ranks.map((r) => r.at))
-          ).toISOString(),
-          missed,
-          repeated: ranks.filter((r) => r.lapses > 1).length,
-          young: list.length,
-        },
-        group: topicId ? 'topic' : 'others',
-        iconId: ws?.iconId ?? '',
-        items: list.length,
-        mode: missed ? 'tricky' : 'fading',
-        topicId: topicId || undefined,
-        topicName: db.topics.find((t) => t.id === topicId)?.name,
-        workspaceId: wsId,
-        workspaceName: ws?.name ?? wsId,
-      };
-    })
-    .sort((a, b) => b.items - a.items)
-    .slice(0, 3);
+  const suggestions = suggestionsOf(wsId, true);
   const TRIED = [5, 2, 6, 0];
   const AVERAGE = [0.74, 0, 0.81, 0];
-  // A quiz under an open assignment is no member's practice until it closes.
-  const practised = groupQuizzes(wsId, 'workspace').filter(
-    (mt) => staff || !quizHeldFromMembers(mt.id)
+  // A graded quiz's own quiz is nobody's practice (migration 0174).
+  const practised = groupQuizzes(wsId, 'workspace', undefined, true).filter(
+    (mt) => !mt.assignmentId
   );
-  const quizzes = practised.map((mt, i) => {
+  const practiceItems = practised.map((mt, i): PracticeItem => {
+    const kind = mt.kind === 'flashcards' ? 'flashcards' : 'quiz';
+    const size =
+      kind === 'quiz'
+        ? db.quizFromMaterial(mt).questions.length
+        : cardsOf(mt.id).length;
     const best = db.attempts
-      .filter((a) => a.materialId === mt.id && a.kind === 'quiz' && a.total > 0)
+      .filter(
+        (a) =>
+          a.materialId === mt.id &&
+          a.kind === kind &&
+          a.total > 0 &&
+          (kind === 'quiz' || a.total >= size)
+      )
       .sort((a, b) => b.correct / b.total - a.correct / a.total)[0];
     const tried = TRIED[i % TRIED.length];
     return {
-      assignmentClosedAt: assignmentClosedAt(mt.id),
       best: best ? { correct: best.correct, total: best.total } : undefined,
+      covers: covers(mt, kind),
       id: mt.id,
-      questions: db.quizFromMaterial(mt).questions.length,
+      kind,
+      size,
       title: mt.title,
       topicId: mt.topicId ?? undefined,
       ...(staff
@@ -1041,7 +1153,7 @@ export function practiceBody(wsId: string, staff: boolean): Practice {
       seen.best = best;
   }
   return {
-    quizzes,
+    items: practiceItems,
     reviews: [...reviews.values()],
     suggestions: items(wsId).size > 0 ? suggestions : [],
     ...(staff ? { members: 6 } : {}),
@@ -1110,7 +1222,7 @@ export const studyHandlers = [
       answered: 0,
       done: [],
       evidence: mode
-        ? suggestionsOf(String(params.id)).find((sg) => sg.group === group)
+        ? suggestionsOf(String(params.id)).find((sg) => sg.topicId === topicId)
             ?.evidence
         : undefined,
       group,
@@ -1126,8 +1238,17 @@ export const studyHandlers = [
   http.get('/api/workspaces/:id/study/topics', ({ params }) =>
     HttpResponse.json({ topics: studyTopics(String(params.id)) })
   ),
-  http.get('/api/review/sessions', ({ request }) =>
-    HttpResponse.json(pastReviews(new URL(request.url).searchParams))
+  http.get('/api/learning/continue', ({ request }) =>
+    HttpResponse.json({
+      items: continueRows(new URL(request.url).searchParams.get('workspaceId')),
+    })
+  ),
+  http.delete('/api/learning/continue/:kind/:id', ({ params }) => {
+    hiddenContinue.add(`${params.kind}/${params.id}`);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/learning/history', ({ request }) =>
+    HttpResponse.json(studyHistory(new URL(request.url).searchParams))
   ),
   http.get('/api/review/sessions/:id', ({ params }) => {
     const session = sessions.get(String(params.id));

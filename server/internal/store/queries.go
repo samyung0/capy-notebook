@@ -94,98 +94,207 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	out := []SearchResult{}
 	like := containsPattern(q)
 
-	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id,
+	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, `+searchTypos("w.name")+`,
 			COALESCE((SELECT array_agg(t.name) FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id), '{}')
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		WHERE w.id IN (`+visibleWorkspacesSQL("$2")+`)
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND (lower(w.name) LIKE $1
+			AND (`+searchMatch("w.name")+`
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+		ORDER BY `+searchRank("w.name")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
+		var typos int
 		var id, name, iconID string
 		var tags []string
-		if err := rows.Scan(&id, &name, &iconID, &tags); err != nil {
+		if err := rows.Scan(&id, &name, &iconID, &typos, &tags); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "workspace", IconID: iconID, Title: name, Subtitle: strings.Join(tags, " · "), Href: "/workspaces/" + id})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "workspace", IconID: iconID, Title: name, Subtitle: strings.Join(tags, " · "), Href: "/workspaces/" + id})
 	}
 	rows.Close()
 
 	// Files in what the caller can open: the workspaces above (Sam
 	// 2026-10-19) and its own standalone files. Never rows it only pays for.
-	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
+	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, `+searchTypos("f.name")+`, COALESCE(f.workspace_id, ''), COALESCE(w.name, ''), f.kind FROM files f
 		LEFT JOIN workspaces w ON w.id=f.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, f.user_id)
 		WHERE (f.workspace_id IN (`+visibleWorkspacesSQL("$2")+`) OR (f.workspace_id IS NULL AND f.user_id=$2))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND f.trashed_at IS NULL AND f.submission_position IS NULL AND lower(f.name) LIKE $1
+			AND f.trashed_at IS NULL AND f.submission_position IS NULL AND `+searchMatch("f.name")+`
 			AND workspace_item_visible(f.hidden, f.workspace_id, $2)
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+		ORDER BY `+searchRank("f.name")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name, wsID, wsName, thumbKey string
+		var typos int
+		var id, name, wsID, wsName string
 		var fileKind FileKind
-		var preview MaterialPreview
-		if err := rows.Scan(&id, &name, &wsID, &wsName, &fileKind, &thumbKey, &preview); err != nil {
+		if err := rows.Scan(&id, &name, &typos, &wsID, &wsName, &fileKind); err != nil {
 			return nil, err
 		}
 		href := "/workspaces/" + wsID + "?file=" + id
 		if wsID == "" {
 			href = "/files/" + id
 		}
-		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href, ThumbnailKey: thumbKey, Preview: preview})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: href})
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT id, title, COALESCE(location,'') FROM events WHERE user_id=$2 AND lower(title) LIKE $1
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+	rows, err = s.pool.Query(ctx, `SELECT id, title, `+searchTypos("title")+`, COALESCE(location,'') FROM events WHERE user_id=$2 AND `+searchMatch("title")+`
+		ORDER BY `+searchRank("title")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
+		var typos int
 		var id, title, loc string
-		if err := rows.Scan(&id, &title, &loc); err != nil {
+		if err := rows.Scan(&id, &title, &typos, &loc); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "event", Title: title, Subtitle: loc, Href: "/schedule"})
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: "event", Title: title, Subtitle: loc, Href: "/schedule"})
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, m.preview
+	// Every material the caller can open by its title (Epo 2026-11-13), as
+	// the flashcard sets were: not an embedded one, which lives in its note.
+	// A canvas sits in no workspace and is held by its own rule, so it is
+	// read apart below.
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, `+searchTypos("m.title")+`, m.workspace_name
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR m.workspace_id IN (`+visibleWorkspacesSQL("$2")+`))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1
+			AND m.kind <> 'canvas' AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND `+searchMatch("m.title")+`
 			AND workspace_item_visible(m.hidden, m.workspace_id, $2)
-		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
+		ORDER BY `+searchRank("m.title")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name, wsName string
-		var preview MaterialPreview
-		if err := rows.Scan(&id, &name, &wsName, &preview); err != nil {
+		var typos int
+		var id, kind, name, wsName string
+		if err := rows.Scan(&id, &kind, &name, &typos, &wsName); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: "/flashcards/" + id, Preview: preview})
+		href := "/materials/" + id
+		if kind == string(MaterialFlashcards) {
+			href = "/flashcards/" + id
+		}
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(kind), Title: name, Subtitle: wsName, Href: href})
 	}
 	rows.Close()
 
-	if len(out) > 20 {
-		out = out[:20]
+	// Every canvas the caller holds a role on (materialAccessRow.canvasRole,
+	// as lostCanvasSQL reads it): their own, and the other members' shared
+	// ones in their workspaces (Epo 2026-11-18). Both arms of the first clause
+	// read an index: `= ANY(ARRAY(...))` gives the planner the workspace ids
+	// as one array, where `IN (subquery)` under an OR scanned every canvas.
+	// One of a workspace opens on its Canvas panel, one of their own on the
+	// Canvas page, each at that canvas.
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, `+searchTypos("m.title")+`, COALESCE(m.canvas_workspace_id, ''), COALESCE(w.name, '')
+		FROM materials m
+		LEFT JOIN workspaces w ON w.id=m.canvas_workspace_id
+		WHERE (m.owner_user_id=$2 OR m.canvas_workspace_id = ANY(ARRAY(`+memberWorkspacesSQL("$2")+`)))
+			AND NOT `+lostCanvasSQL("m", "$2")+`
+			AND m.kind='canvas' AND m.trashed_at IS NULL AND `+searchMatch("m.title")+`
+		ORDER BY `+searchRank("m.title")+`
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID, strings.ToLower(q))
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	for rows.Next() {
+		var typos int
+		var id, name, wsID, wsName string
+		if err := rows.Scan(&id, &name, &typos, &wsID, &wsName); err != nil {
+			return nil, err
+		}
+		href := "/canvas?c=" + id
+		if wsID != "" {
+			href = "/workspaces/" + wsID + "?view=canvas&c=" + id
+		}
+		out = append(out, SearchResult{Typos: typos, ID: id, Kind: SearchKind(MaterialCanvas), Title: name, Subtitle: wsName, Href: href})
+	}
+	rows.Close()
+
+	return firstOfEachKind(fewestTypos(out, searchFewHits), searchKindLimit), nil
+}
+
+// searchKindLimit is how many hits of each kind a search shows.
+const searchKindLimit = 5
+
+// searchMatch is whether a name matches the search: it holds the query ($1),
+// or every query word is within the edits its length allows of the name's
+// words (search_typos, migration 0172). $3 is the lowered query.
+func searchMatch(col string) string {
+	return `(lower(` + col + `) LIKE $1 OR search_typos(` + col + `, $3) IS NOT NULL)`
+}
+
+// searchTypos is a hit's typo count, 0 for one holding the query.
+func searchTypos(col string) string {
+	return `COALESCE(search_typos(` + col + `, $3), 0)`
+}
+
+// searchRank orders a section's hits: the whole name first, then names
+// starting with the query, then ones holding it, then fewer typos, then
+// shorter names.
+func searchRank(col string) string {
+	return `lower(` + col + `) = $3 DESC, starts_with(lower(` + col + `), $3) DESC, lower(` + col + `) LIKE $1 DESC, ` +
+		searchTypos(col) + `, length(` + col + `), ` + col
+}
+
+// searchFewHits is when a kind looks further: hits a typo away show only while
+// it has fewer closer ones than this, and two typos away likewise (Typesense's
+// typo_tokens_threshold), so a close match is not buried under loose ones.
+const searchFewHits = 3
+
+// fewestTypos keeps, per kind, each hit whose kind has fewer than few hits
+// with fewer typos than it.
+func fewestTypos(results []SearchResult, few int) []SearchResult {
+	closer := map[SearchKind]map[int]int{}
+	for _, r := range results {
+		if closer[r.Kind] == nil {
+			closer[r.Kind] = map[int]int{}
+		}
+		closer[r.Kind][r.Typos]++
+	}
+	out := make([]SearchResult, 0, len(results))
+	for _, r := range results {
+		under := 0
+		for typos, n := range closer[r.Kind] {
+			if typos < r.Typos {
+				under += n
+			}
+		}
+		if under < few {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// firstOfEachKind keeps the first n hits of every kind, in order.
+func firstOfEachKind(results []SearchResult, n int) []SearchResult {
+	seen := map[SearchKind]int{}
+	out := results[:0]
+	for _, r := range results {
+		if seen[r.Kind] < n {
+			seen[r.Kind]++
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 /* --------------------------------------------------------------- workspaces */
@@ -317,7 +426,7 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 	err := s.pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM topics WHERE workspace_id=$1),
 		(SELECT count(*) FROM files WHERE workspace_id=$1 AND trashed_at IS NULL),
-		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND trashed_at IS NULL),
+		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND assignment_id IS NULL AND trashed_at IS NULL),
 		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),
 		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),0)`,
 		id).Scan(&st.Topics, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
@@ -1098,7 +1207,7 @@ func (s *Store) SourceItems(ctx context.Context, wsID string) ([]SourceItem, err
 		SELECT m.id, m.title, m.topic_id, EXISTS(
 			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
 			WHERE mc.material_id=m.id), 1, m.position, m.created_at
-		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 	) items ORDER BY src, position, at`, wsID)
 	if err != nil {
 		return nil, err
@@ -1126,7 +1235,7 @@ func (s *Store) VisibleSourceItems(ctx context.Context, wsID, viewer string) ([]
 		SELECT m.id, m.title, m.topic_id, EXISTS(
 			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
 			WHERE mc.material_id=m.id), 1, m.position, m.created_at
-		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
 			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 	) items ORDER BY src, position, at`, wsID, viewer)
 	if err != nil {
@@ -1255,13 +1364,13 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id, COALESCE(canvas_workspace_id,'')`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id, COALESCE(m.canvas_workspace_id,'')`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, topic_id, position, scope_topics, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,''), hidden, COALESCE(practice_workspace_id,''), practice_topic_id, COALESCE(canvas_workspace_id,''), COALESCE(assignment_id,'')`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.topic_id, m.position, m.scope_topics, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,''), m.hidden, COALESCE(m.practice_workspace_id,''), m.practice_topic_id, COALESCE(m.canvas_workspace_id,''), COALESCE(m.assignment_id,'')`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
 	var provenance []byte
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID, &mt.CanvasWorkspaceID)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.TopicID, &mt.Position, &mt.ScopeTopics, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID, &mt.Hidden, &mt.PracticeWorkspaceID, &mt.PracticeTopicID, &mt.CanvasWorkspaceID, &mt.AssignmentID)
 	if mt.ScopeTopics == nil {
 		mt.ScopeTopics = []string{}
 	}
@@ -1282,6 +1391,10 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	defer tx.Rollback(ctx)
 	id, err := s.createMaterialTx(ctx, tx, mt)
 	if err != nil {
+		return Material{}, err
+	}
+	mt.ID = id
+	if _, err := s.makeGradedQuizTx(ctx, tx, mt, time.Now()); err != nil {
 		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1402,9 +1515,6 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
 		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt, preview, mt.Hidden, nullStr(mt.PracticeWorkspaceID), mt.PracticeTopicID, nullStr(mt.CanvasWorkspaceID))
 	if err != nil {
-		if uniqueConstraintName(err) == "materials_canvas_per_member" {
-			return "", ErrCanvasExists
-		}
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
 		}
@@ -1468,6 +1578,8 @@ type MaterialDraft struct {
 	// Hidden from the workspace's members from the start (a quiz made from
 	// files, Epo 2026-11-03).
 	Hidden bool
+	// GradedQuiz: a quiz made with its graded quiz (Material.GradedQuiz).
+	GradedQuiz *AssignmentForm
 	// A reader's generated quiz: standalone, linked to this workspace and topic
 	// for its maker's study reads (Material.PracticeWorkspaceID).
 	PracticeWorkspaceID string
@@ -1489,6 +1601,7 @@ func (d MaterialDraft) material() (Material, error) {
 		Kind: d.Kind, Title: d.Title, ScopeTopics: d.ScopeTopics, ScopeFileNames: d.ScopeFileNames,
 		Privacy: "private", Color: d.Color, Provenance: d.Provenance, TopicID: d.TopicID,
 		Hidden: d.Hidden, PracticeWorkspaceID: d.PracticeWorkspaceID, PracticeTopicID: d.PracticeTopicID,
+		GradedQuiz: d.GradedQuiz,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -1550,13 +1663,13 @@ func decodeQuestions(raw json.RawMessage) ([]json.RawMessage, error) {
 
 // CreateMaterialDraft persists a draft without a receipt (the Generate path,
 // the bank page's copy and the starter workspace's note, with its embedded
-// rows).
+// rows), and a quiz's graded quiz with it (makeGradedQuizTx).
 func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (Material, error) {
 	mt, err := draft.material()
 	if err != nil {
 		return Material{}, err
 	}
-	if draft.TopicName == "" && len(draft.Embedded) == 0 && len(draft.Assets) == 0 {
+	if draft.TopicName == "" && len(draft.Embedded) == 0 && len(draft.Assets) == 0 && draft.GradedQuiz == nil {
 		return s.CreateMaterial(ctx, mt)
 	}
 	if draft.TopicName != "" && mt.TopicID != nil {
@@ -1586,6 +1699,9 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, draft.ActorUserID, draft.ActorUserID, draft.Assets); err != nil {
 			return Material{}, err
 		}
+	}
+	if _, err := s.makeGradedQuizTx(ctx, tx, mt, time.Now()); err != nil {
+		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err
@@ -1780,6 +1896,12 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			}
 			return Material{}, err
 		}
+		// A canvas's document is its room's projection alone
+		// (ProjectMaterialContent): the board lives in the room, and no command
+		// writes it.
+		if MaterialKind(contentKind) == MaterialCanvas {
+			return Material{}, fmt.Errorf("%w: a canvas's document is written by its room", materialdoc.ErrInvalid)
+		}
 		// Admitted before either write path (the collaboration command or the
 		// SQL update below): a frozen account or an owner at its storage limit
 		// makes the content view-only.
@@ -1792,19 +1914,14 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if p.ExpectedRevision != nil && (*p.ExpectedRevision < 1 || contentBaseRevision != *p.ExpectedRevision) {
 			return Material{}, ErrConflict
 		}
-		// A canvas is never a room (its drawing is its board asset, and its one
-		// block is written whole by each save), so it has no authoritative
-		// Y.Doc to command: its document is written here.
-		if MaterialKind(contentKind) != MaterialCanvas {
-			handled, err := s.applyAuthoritativeContentCommand(
-				ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
-			)
-			if err != nil {
-				return Material{}, err
-			}
-			if handled {
-				p.Content = nil
-			}
+		handled, err := s.applyAuthoritativeContentCommand(
+			ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
+		)
+		if err != nil {
+			return Material{}, err
+		}
+		if handled {
+			p.Content = nil
 		}
 	}
 	if p.Content != nil {
@@ -1916,12 +2033,18 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	defer tx.Rollback(ctx)
 	var ownerID string
 	var workspaceID *string
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&ownerID, &workspaceID); err != nil {
+	var kind MaterialKind
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&ownerID, &workspaceID, &kind); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
 		return Material{}, err
+	}
+	// A shared canvas's editors pass the routes' AssertMaterialEditor, and its
+	// name stays its creator's to change (canvasAdmin).
+	if kind == MaterialCanvas && !canvasAdmin(ownerID, p.UpdatedBy) {
+		return Material{}, ErrForbidden
 	}
 	if workspaceID != nil {
 		// The payer (ownerID) is charged by size_bytes, so its row joins the
@@ -2019,13 +2142,13 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 // ListMaterialRefs returns the unified, workspace-scoped list of versioned
 // Plate materials, newest first.
 // ListMaterialRefs lists the workspace's top-level materials userID may see:
-// hidden ones only for its owners and editors, and a quiz assigned to them.
+// hidden ones only for its owners and editors.
 func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.topic_id, m.position, m.created_at, m.size_bytes, m.node_count, m.max_depth,
-			m.provenance, m.hidden, `+materialAssignedCols("$2")+`
-		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.trashed_at IS NULL
-			AND (workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2) OR `+quizAssignedToSQL("m.id", "$2")+` IS NOT NULL)
+			m.provenance, m.hidden
+		FROM materials m WHERE m.workspace_id=$1 AND m.parent_material_id IS NULL AND m.assignment_id IS NULL AND m.trashed_at IS NULL
+			AND workspace_item_visible(`+materialHiddenSQL+`, m.workspace_id, $2)
 		ORDER BY m.position, m.created_at DESC`, wsID, userID)
 	if err != nil {
 		return nil, err
@@ -2047,13 +2170,9 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 			&r.MaxDepth,
 			&provenance,
 			&r.Hidden,
-			&r.Assigned,
-			&r.AssignmentID,
 		); err != nil {
 			return nil, err
 		}
-		// An assignee isn't told it is hidden from others.
-		r.Hidden = r.Hidden && r.AssignmentID == ""
 		if r.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
@@ -2110,6 +2229,7 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	mt, err := s.CreateMaterial(ctx, Material{
 		ID: q.ID, CreatedBy: q.UserID, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName, Kind: "quiz",
 		Title: q.Name, Content: content, ScopeTopics: q.Topics, ScopeFileNames: q.ScopeFileNames, Privacy: q.Privacy,
+		Hidden: q.Hidden,
 	})
 	if err != nil {
 		return Quiz{}, err
@@ -2146,65 +2266,6 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 		return Quiz{}, err
 	}
 	return s.GetQuiz(ctx, id)
-}
-
-type AttemptParams struct {
-	Sort       string // date, score, quiz, workspace
-	Ascending  bool
-	Workspaces []string
-	Kinds      []string // quiz, flashcards; empty is both
-	Offset     int
-	Limit      int
-}
-
-// ListAttempts pages the user's quiz and flashcard attempts, sorted and
-// filtered by kind and by the item's current workspace. The second value is
-// whether more follow.
-func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams) ([]Attempt, bool, error) {
-	order := map[string]string{
-		"score":     "a.correct / NULLIF(a.total, 0)",
-		"quiz":      "lower(a.quiz_name)",
-		"workspace": "lower(a.workspace_name)",
-	}[p.Sort]
-	if order == "" {
-		order = "a.taken_at"
-	}
-	dir := "DESC"
-	if p.Ascending {
-		dir = "ASC"
-	}
-	var workspaces, kinds []string
-	if len(p.Workspaces) > 0 {
-		workspaces = p.Workspaces
-	}
-	if len(p.Kinds) > 0 {
-		kinds = p.Kinds
-	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT `+attemptCols+`
-		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND a.kind <> 'assignment' AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
-		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
-		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset, kinds)
-	if err != nil {
-		return nil, false, err
-	}
-	defer rows.Close()
-	out := []Attempt{}
-	for rows.Next() {
-		var a Attempt
-		if err := rows.Scan(attemptDest(&a)...); err != nil {
-			return nil, false, err
-		}
-		out = append(out, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false, err
-	}
-	more := len(out) > p.Limit
-	if more {
-		out = out[:p.Limit]
-	}
-	return out, more, nil
 }
 
 // attemptCols and attemptDest read one attempt row (a, m and w aliased).

@@ -128,46 +128,26 @@ func paperAssignment(t *testing.T, h http.Handler, marking string, timeLimit int
 		t.Fatalf("set kind: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	t.Cleanup(func() { doReq(t, h, http.MethodPatch, ws, "u_owner", map[string]any{"kind": "personal"}) })
-	quiz := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
-		"name": fmt.Sprintf("Paper %d", time.Now().UnixNano()), "workspaceId": "ws_e2e_private", "topics": []string{},
-		"questions": []map[string]any{{
-			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": []map[string]any{{
-				"id": "q1:part:1", "blocks": []map[string]any{{"type": "text", "text": "Pick"}},
-				"answer": map[string]any{"type": "mcq", "options": []string{"a", "b"}, "correct": []int{1}}, "marks": 1, "solution": []any{},
-			}},
-		}, {
-			"id": "q2", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": []map[string]any{{
-				"id": "q2:part:1", "blocks": []map[string]any{{"type": "text", "text": "Explain."}},
-				"answer": map[string]any{"type": "open", "accepted": []string{}, "hints": []string{}}, "marks": 2,
-				"markscheme": []map[string]any{{"text": "Point one", "marks": 2}}, "solution": []any{},
-			}},
-		}},
-	})
-	if quiz.Code != http.StatusCreated {
-		t.Fatalf("create quiz: status = %d body=%s", quiz.Code, quiz.Body.String())
-	}
-	var made struct{ ID string }
-	_ = json.Unmarshal(quiz.Body.Bytes(), &made)
-	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/quizzes/"+made.ID, "u_owner", nil) })
-	body := map[string]any{
-		"kind": "marked", "title": "On paper", "quizId": made.ID, "dueAt": time.Now().Add(time.Hour).Format(time.RFC3339),
-		"attempts": 1, "noLate": false, "latePenaltyPct": 0, "assignAll": true, "assignees": []string{}, "draft": false,
-		"marking": marking, "showAnswers": "submitted", "showGrades": "automatic", "shuffle": false, "files": []any{},
-		"allowUploads": true,
-	}
+	form := gradedQuizForm("On paper", marking)
+	form["allowUploads"] = true
 	if timeLimit > 0 {
-		body["timeLimitMin"] = timeLimit
+		form["timeLimitMin"] = timeLimit
 	}
-	rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", body)
-	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
-		t.Fatalf("create assignment: status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	var assignment struct{ ID string }
-	_ = json.Unmarshal(rec.Body.Bytes(), &assignment)
-	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/assignments/"+assignment.ID, "u_owner", nil) })
-	return assignment.ID
+	assignmentID, _ := makeGradedQuiz(t, h, "u_owner", []map[string]any{{
+		"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": []map[string]any{{
+			"id": "q1:part:1", "blocks": []map[string]any{{"type": "text", "text": "Pick"}},
+			"answer": map[string]any{"type": "mcq", "options": []string{"a", "b"}, "correct": []int{1}}, "marks": 1, "solution": []any{},
+		}},
+	}, {
+		"id": "q2", "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": []map[string]any{{
+			"id": "q2:part:1", "blocks": []map[string]any{{"type": "text", "text": "Explain."}},
+			"answer": map[string]any{"type": "open", "accepted": []string{}}, "marks": 2,
+			"markscheme": []map[string]any{{"text": "Point one", "marks": 2}}, "solution": []any{},
+		}},
+	}}, form)
+	return assignmentID
 }
 
 // startPaperWithFile starts u_viewer's paper and adds one page to it.

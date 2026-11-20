@@ -62,7 +62,8 @@ const inputVariants = cva(
       size: {
         lg: 'py-3.5',
         md: 'self-stretch py-0',
-        sm: 'pt-2 pb-0.5',
+        // Centred in the wrapper's height, as md is.
+        sm: 'self-stretch py-0',
       },
     },
   }
@@ -271,10 +272,7 @@ export function InputTitle({
 }) {
   return (
     <div
-      className={cn(
-        't-subtitle flex items-center gap-1 font-medium',
-        className
-      )}
+      className={cn('t-body flex items-center gap-1 font-medium', className)}
       {...props}
     >
       <div>{children}</div>

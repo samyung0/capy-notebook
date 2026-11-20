@@ -25,6 +25,9 @@ export interface MathFieldProps {
   onChange: (value: string) => void;
   onCommit?: (value: string) => void;
   onControlsReady?: (controls: MathFieldControls | null) => void;
+  /** An accent underline in place of the outline, for a formula on ruled
+   * lines (a learner's long answer, Epo 2026-11-16). */
+  underline?: boolean;
   value: string;
 }
 
@@ -37,6 +40,7 @@ export function MathField({
   onControlsReady,
   displayMode,
   minHeight,
+  underline = false,
   autoFocus = true,
 }: MathFieldProps) {
   const host = useRef<HTMLSpanElement>(null);
@@ -299,7 +303,11 @@ export function MathField({
   return (
     <span
       className={cn(
-        'relative inline-block max-w-full rounded-sm align-baseline outline-2 outline-action-accent outline-offset-2 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden',
+        'relative inline-block max-w-full align-baseline [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden',
+        underline
+          ? // At the field's foot, over the ruled line it sits on.
+            'min-w-4 after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-action-accent'
+          : 'rounded-sm outline-2 outline-action-accent outline-offset-2',
         !onControlsReady &&
           !displayMode &&
           'z-10 -my-2 -mr-10.5 -ml-2 py-2 pr-10.5 pl-2',

@@ -24,6 +24,7 @@ import {
   tokenClientIds,
   Writer,
 } from './protocol';
+import { adoptClientId } from './renameClient';
 import { type ChannelHandler, CollabSocket } from './socket';
 
 export interface RoomProviderConfig {
@@ -748,7 +749,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private adopt(clientId: number) {
     const { awareness, document } = this;
     this.adopted = true;
-    document.clientID = clientId;
+    // An open label editor's own Undo follows (renameClient.ts).
+    adoptClientId(document, clientId);
     if (awareness.clientID !== clientId) {
       const state = awareness.getLocalState();
       removeAwarenessStates(awareness, [awareness.clientID], this);

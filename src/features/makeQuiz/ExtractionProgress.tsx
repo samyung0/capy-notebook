@@ -10,7 +10,7 @@ import {
 import { EXTRACTION_QUESTION_CREDITS } from '@/api/limits.generated';
 import type { Extraction, ExtractionFound } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
@@ -138,7 +138,7 @@ export function useRunStep({
   /** Back to the pages, or out when they aren't known. */
   onBack: () => void;
   onConfirmed: (run: Extraction) => void;
-  onDone: (quizId: string) => void;
+  onDone: (quizId: string, assignmentId?: string) => void;
   onLeave: () => void;
   runId: string | undefined;
 }): DialogStep {
@@ -169,6 +169,8 @@ export function useRunStep({
     resetCancel();
   }, [id, resetCancel, resetConfirm]);
   const done = run?.status === 'done' ? run.quizId : undefined;
+  // A graded quiz's run: the graded quiz made with its quiz.
+  const assignmentId = run?.assignmentId;
   const opened = useRef<string>(undefined);
   const report = run?.report;
   const workspaceId = run?.workspaceId;
@@ -185,8 +187,8 @@ export function useRunStep({
       void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.practice(workspaceId) });
     }
-    onDone(done);
-  }, [done, onDone, qc, report, workspaceId]);
+    onDone(done, assignmentId);
+  }, [assignmentId, done, onDone, qc, report, workspaceId]);
   // Cancelled: back to the pages, picks and all.
   const cancelled = run?.status === 'cancelled';
   const leftCancelled = useRef<string>(undefined);
@@ -287,9 +289,9 @@ export function useRunStep({
       body: (
         <ErrorState
           action={
-            <Button onClick={onLeave} type="button" variant="outline">
+            <ErrorAction back onClick={onLeave} type="button">
               {m.make_quiz_back_dashboard()}
-            </Button>
+            </ErrorAction>
           }
           errorId={unexpectedErrorId(error)}
           title={m.make_quiz_run_missing()}
@@ -304,9 +306,9 @@ export function useRunStep({
       body: (
         <ErrorState
           action={
-            <Button onClick={onBack} type="button" variant="outline">
+            <ErrorAction back onClick={onBack} type="button">
               {m.make_quiz_back_to_pages()}
-            </Button>
+            </ErrorAction>
           }
           description={extractionFailure(run.errorCode)}
           kind={run.errorCode}

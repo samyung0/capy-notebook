@@ -1,11 +1,13 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useCheckQuizQuestion, useMaterial, useQuiz } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
+import { itemSaveState } from '@/features/collaboration/LiveItemControls';
 import { NoteSeatContext } from '@/features/collaboration/noteSeat';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
+import { useLendUndo } from '@/features/collaboration/undo';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
@@ -19,6 +21,7 @@ import {
   RemovedAssetsContext,
   useRemovedAssets,
 } from '@/features/materials/MediaAssetView';
+import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import {
@@ -29,7 +32,10 @@ import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { type QuizRunControl, useMemoryRun } from '@/features/quizzes/quizRun';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { OpenLinkContext } from '@/lib/openLink';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
+import { useReportEmbedState } from './embedStatus';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
    account. View studies it in place (a quick check: nothing is recorded) and
@@ -70,7 +76,12 @@ export function AppEmbedView({
   refKind,
   ownerId,
   live = true,
-}: OwnedProps & { live?: boolean }) {
+  fill,
+}: OwnedProps & {
+  live?: boolean;
+  /** A canvas card: a set's card face takes the room the card has. */
+  fill?: boolean;
+}) {
   switch (refKind) {
     case 'quiz':
       return <QuizView live={live} materialId={materialId} ownerId={ownerId} />;
@@ -78,7 +89,12 @@ export function AppEmbedView({
       return (
         <SetGate materialId={materialId} ownerId={ownerId}>
           {(material, refresh) => (
-            <LiveSetStudy live={live} material={material} refresh={refresh} />
+            <LiveSetStudy
+              fill={fill}
+              live={live}
+              material={material}
+              refresh={refresh}
+            />
           )}
         </SetGate>
       );
@@ -90,10 +106,12 @@ export function AppEmbedView({
 /** A set in a note's View: its room joins while the block is near the
  * screen, as in Edit (REVIEW5 S5). */
 function LiveSetStudy({
+  fill,
   material,
   live = true,
   refresh,
 }: {
+  fill?: boolean;
   material: Material;
   live?: boolean;
   refresh?: () => unknown;
@@ -107,10 +125,11 @@ function LiveSetStudy({
   });
   useRefreshOnEnter(live, entered, refresh);
   return (
-    <div ref={box}>
+    <div className={cn(fill && 'h-full')} ref={box}>
       <StudyBody
         cards={cards}
         embedded
+        fill={fill}
         name=""
         onRate={() => undefined}
         provenance={material.provenance}
@@ -130,6 +149,12 @@ function LiveSetEdit({
   const box = useRef<HTMLDivElement>(null);
   const { near, entered } = useNearScreen(box);
   const inside = useContext(NoteSeatContext);
+  // The note's header says whether its edits are saved (embedStatus).
+  const report = useReportEmbedState();
+  const onStatusChange = useCallback(
+    (status: NoteEditorStatus | null) => report(status?.saveState ?? null),
+    [report]
+  );
   return (
     <div ref={box}>
       <LiveFlashcards
@@ -137,6 +162,7 @@ function LiveSetEdit({
         enabled={near}
         inside={inside}
         onEmpty={onEmpty}
+        onStatusChange={onStatusChange}
         setId={materialId}
         showTitle={false}
         showUndo={false}
@@ -314,6 +340,17 @@ function LiveQuizStudy({
     { inside, wake: entered }
   );
   useRefreshOnEnter(live, entered, refresh);
+  // A canvas card's URL names a drawing answer this quiz no longer has.
+  const link = useContext(OpenLinkContext);
+  const opened = link?.opened;
+  const missing =
+    !!opened &&
+    !questions.some((question) =>
+      question.parts.some((part) => part.id === opened)
+    );
+  useEffect(() => {
+    if (missing) link?.gone();
+  }, [missing]);
   return (
     <div ref={box}>
       <AttemptBody
@@ -329,8 +366,8 @@ function LiveQuizStudy({
 }
 
 /** A note's quiz in Edit: its live rooms while the block is near the screen
- * (and while edits wait for the server); removing the last question removes
- * the block. Undo and Redo are in the question dialog. */
+ * (and while edits wait for the server), its questions editing in place as
+ * on the quiz page; removing the last question removes the block. */
 function EmbedQuizEditor({
   quizId,
   onEmpty,
@@ -352,6 +389,22 @@ function EmbedQuizEditor({
     setHeld(rooms.status === 'syncing' || rooms.status === 'offline');
   }, [rooms.status]);
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
+  // Only while QuizForm shows: a room stopped or read-only takes no Undo.
+  const editable =
+    rooms.status !== 'unavailable' &&
+    !rooms.recovery &&
+    rooms.ready &&
+    rooms.access !== 'read' &&
+    !!rooms.content &&
+    !!rooms.keys &&
+    !itemEditingStopped(rooms);
+  useLendUndo(editable ? rooms.undo : null);
+  // The note's header says whether its edits are saved (embedStatus).
+  const report = useReportEmbedState();
+  const saveState = rooms.recovery
+    ? 'error'
+    : itemSaveState(rooms.status, rooms.offline, rooms.sending);
+  useEffect(() => report(saveState), [report, saveState]);
   return (
     <div ref={box}>
       {rooms.status === 'unavailable' ? (
@@ -376,7 +429,6 @@ function EmbedQuizEditor({
             <QuizForm
               content={rooms.content.doc}
               keys={rooms.keys.doc}
-              name=""
               onEmpty={onEmpty}
               questions={questions}
               quizId={quizId}

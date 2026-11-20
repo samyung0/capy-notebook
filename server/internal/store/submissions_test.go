@@ -29,7 +29,7 @@ func startPaper(t *testing.T, f assignmentFixture, now time.Time, edit func(*Ass
 	if edit != nil {
 		edit(&form)
 	}
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestHandInFileOpensForItsMemberAndStaffOnly(t *testing.T) {
 
 func unmarkedHandIn(t *testing.T, f assignmentFixture, now time.Time, assignees ...string) Assignment {
 	t.Helper()
-	created, err := f.s.CreateAssignment(context.Background(), f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked,
+	created, err := f.s.makeAssignment(context.Background(), f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked,
 		Title: "Lab write-up", Attempts: 1, AssignAll: len(assignees) == 0, Assignees: assignees, Marking: MarkingAIApprove,
 		ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic, Files: []AssignmentFileRef{}, AllowUploads: true}, now)
 	if err != nil {
@@ -243,46 +243,27 @@ func TestSubmissionIsNoAccountDocumentAndReadOnly(t *testing.T) {
 	}
 }
 
-// TestClosedQuizKeepsItsKeysFromAssignees (security, finding 5): closing an
-// assignment hands its quiz to those it went to only once grades are out under
-// Show grades Manual, and never under Show answers Do not show.
+// TestClosedQuizKeepsItsKeysFromAssignees (security, finding 5): a graded
+// quiz's own quiz stays held from those it went to after closing, whatever
+// Show grades and Show answers say (migration 0174).
 func TestClosedQuizKeepsItsKeysFromAssignees(t *testing.T) {
 	f := newAssignmentFixture(t, "closed-keys")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	closeWith := func(edit func(*AssignmentForm)) Assignment {
-		t.Helper()
-		form := f.form(t, now.Add(time.Hour))
-		edit(&form)
-		created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
-			t.Fatal(err)
-		}
-		return created
-	}
-	manual := closeWith(func(form *AssignmentForm) { form.ShowGrades = GradesManual })
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("closed before release: %v", err)
-	}
-	if _, _, err := f.s.ReleaseAssignmentGrades(ctx, f.user, manual.ID, now); err != nil {
+	form := f.form(t, now.Add(time.Hour))
+	form.ShowGrades = GradesManual
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); err != nil {
-		t.Fatalf("released: %v", err)
-	}
-	never := closeWith(func(form *AssignmentForm) { form.ShowAnswers = AnswersNever })
-	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("closed with answers never shown: %v", err)
-	}
-	// The sweep leaves it held until staff turn it to practice: no Practise again.
-	if _, _, err := f.s.SweepAssignments(ctx, 50, now); err != nil {
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
 		t.Fatal(err)
 	}
-	if mine, err := f.s.GetAssignment(ctx, f.viewer, never.ID, now); err != nil || mine.PracticeQuizID != nil {
-		t.Fatalf("practice offered: %v, err %v", mine.PracticeQuizID, err)
+	if _, _, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.MaterialEffectiveRole(ctx, f.viewer, f.quiz.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("closed and released: %v", err)
 	}
 }
 
@@ -295,7 +276,7 @@ func TestManualGradesSubmitStillNeedsMarking(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	form := f.form(t, now.Add(time.Hour))
 	form.ShowGrades = GradesManual
-	created, err := f.s.CreateAssignment(ctx, f.user, f.ws.ID, form, now)
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}

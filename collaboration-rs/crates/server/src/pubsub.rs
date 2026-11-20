@@ -374,8 +374,9 @@ async fn revoke_local(app: &Shared, room: &str) -> Result<(), String> {
 /// Whether `user`'s role still covers what they hold in the room: `editor`
 /// when a channel of theirs needs an editing role. Being frozen or at the
 /// storage limit leaves the role alone (the writer's recheck answers those
-/// with room-read-only), as does a quiz assigned to a reader (who keeps it
-/// until they leave, Epo 2026-11-05).
+/// with room-read-only). Being hidden is the join's check: hiding drains the
+/// room (Go's SetItemHidden) and a graded quiz's quiz is hidden from its
+/// making (migration 0174).
 async fn keeps_access(
     app: &Shared,
     name: &RoomName,

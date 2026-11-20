@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { OFFICE_PROTOCOL_VERSION } from '../../src/features/files/officeProtocol';
 import { m } from '../i18n';
 
@@ -51,13 +51,16 @@ export function ribbonCommand(page: Page, id: string) {
   return officeFrame(page).locator(`.office-ribbon [data-command="${id}"]`);
 }
 
-/** Moves to `tab` and runs the ribbon's command `id`, through More if it moved there. */
+/** Moves to `tab` and runs the ribbon's command `id`, through More if it moved
+ * there. The row settles which groups fit after the tab draws, and a group
+ * that grew (Update beside Insert table of contents) can move to More. */
 export async function runRibbonCommand(page: Page, tab: string, id: string) {
   await officeTab(page, tab).click();
+  const command = ribbonCommand(page, id);
   const more = officeFrame(page).getByTestId('office-ribbon-more');
-  if (!(await ribbonCommand(page, id).count()) && (await more.count()))
-    await more.click();
-  await ribbonCommand(page, id).click();
+  await expect(command.or(more).first()).toBeVisible();
+  if (!(await command.isVisible())) await more.click();
+  await command.click();
 }
 
 /** The zoom control on the ribbon's View tab. */

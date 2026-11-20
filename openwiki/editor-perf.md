@@ -65,7 +65,7 @@ opened in 6.2 s after a restart and 4.1 s warm, both ways. `drawing-board.spec.t
 one worker takes 2.0 min from an empty cache and 1.8 min warm, against 8.6 min on the
 dev setup before both MSW's pass-through and this.
 
-`axisNumber` (`src/features/questions/graph.ts`) keeps one `Intl.NumberFormat` per
+`axisNumber` (`src/features/graph/view.ts`) keeps one `Intl.NumberFormat` per
 decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
 cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
 blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input
@@ -422,6 +422,31 @@ the link from 927 to 740 ms. The probe also times Draw with the module already
 evaluated (`/dev/drawing?unmounted`): the first mount on the page, a second one,
 and showing a board mounted ahead out of sight, with the JS heap and DOM nodes a
 board adds.
+
+A canvas at its size cap is measured apart, by hand, by
+[`board-open.cap.ts`](../bench/editor/scripts/board-open.cap.ts)
+(`node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts`,
+report only, in no workflow): a production build with MSW opens a blank canvas
+and boards of about 2 MiB and 4 MiB (`CANVAS_BOARD_MAX`) of the growth bench's
+mixed hour through the mock collaboration room, and the same states with no
+room on `/dev/drawing`. On the Mac at 28a77f5f0 (2026-11-18, medians of 3),
+first paint through the room was 2,210 ms blank, 2,726 ms at 2 MiB and 3,312 ms
+at 4 MiB; the last long frame ended at 2,210, 2,927 and 3,526 ms; the longest
+frame was 176, 678 and 1,186 ms; the JS heap after a GC 30, 94 and 155 MB (27,
+67 and 104 MB with no room). At 4x CPU the 4 MiB board painted at 9.4 s and
+settled at 12.5 s. MSW's latency is in every total, and the service, a network,
+phones and typing on the open board were not measured:
+[report](../bench/editor/reports/2026-11-18-board-open-at-cap.md).
+After the trace's fixes (the same day, at 75feaf8f6 plus the fixes): a build's
+`/assets/` chunks pass MSW by, the mock room encodes once per join and skips
+its probe for an empty tab, and vendored BlockSuite's local changes 66 to 69
+(no selection read after a rangeless editor's render, the surface found once
+per store, one grid search for the views added in one go, no draw before the
+fit). At 4x CPU the 4 MiB board then painted at 5.7 s and settled at 9.0 s
+(10.0 and 13.3 s at HEAD; 6.4 and 9.6 s with the mock fixes alone), its longest
+frame 2.95 s (5.0 s); the bench now opens three times at 4x and waits for the
+machine's load under `PERF_CAP_MAX_LOAD`:
+[report](../bench/editor/reports/2026-11-18-board-open-fixes.md).
 
 ## Formula parity audit (`pnpm bench:formula`)
 

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openAssignmentAsMember } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
@@ -12,11 +13,10 @@ test('a member hands in a paper: pages in order, one removed, submitted', async 
   await page.addInitScript(() =>
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
-  await page.goto('/workspaces/ws_bio?study=assignments&assignment=as_upload');
+  await openAssignmentAsMember(page, 'as_upload');
   await page
     .getByRole('button', { exact: true, name: m.assignment_upload_file() })
     .click({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.sharing_notice_ok() }).click();
   await expect(
     page.getByRole('button', { name: m.assignment_paper_add() })
   ).toBeEnabled({ timeout: 30_000 });
@@ -47,7 +47,7 @@ test('a member hands in a paper: pages in order, one removed, submitted', async 
 // T1: Approve shows the pages a part was found on, the whole paper a click away.
 test("staff read a part's pages of the paper in Approve", async ({ page }) => {
   await page.goto(
-    '/workspaces/ws_bio?study=assignments&assignment=as_upload&tab=approve'
+    '/workspaces/ws_bio/assignments?assignment=as_upload&tab=approve'
   );
   await expect(
     page.getByText(m.assignment_paper_page({ page: 1 }))

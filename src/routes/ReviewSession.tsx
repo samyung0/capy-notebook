@@ -25,7 +25,6 @@ import type {
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PagePanel } from '@/components/app/layout';
-import { ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
@@ -52,6 +51,7 @@ import {
   type Steps,
   useSteps,
 } from '@/features/study/steps';
+import { studyLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -254,16 +254,11 @@ function Session({
   }
 
   // A review started in a workspace returns to its Practice page.
-  const studySearch = { study: 'practice' as const };
+  const practice = studyLink(workspaceId, 'practice');
   function back() {
     if (features.learning && search.from === 'review')
       navigate({ search: { tab: 'overview' }, to: '/learning' });
-    else
-      navigate({
-        params: { workspaceId },
-        search: studySearch,
-        to: '/workspaces/$workspaceId',
-      });
+    else navigate(practice);
   }
   async function more() {
     // The next batch is chosen from every rating saved so far.
@@ -297,7 +292,7 @@ function Session({
             trail={[
               features.learning && search.from === 'review'
                 ? {
-                    label: m.nav_learning(),
+                    label: m.nav_study(),
                     link: linkOptions({
                       search: { tab: 'overview' },
                       to: '/learning',
@@ -305,11 +300,7 @@ function Session({
                   }
                 : {
                     label: ws?.name ?? '',
-                    link: linkOptions({
-                      params: { workspaceId },
-                      search: studySearch,
-                      to: '/workspaces/$workspaceId',
-                    }),
+                    link: linkOptions(practice),
                   },
             ]}
           />
@@ -319,12 +310,8 @@ function Session({
           {session === null || loadingMore ? (
             isError ? (
               <ErrorState
-                action={
-                  <ErrorAction onClick={() => void refetch()}>
-                    {m.action_retry()}
-                  </ErrorAction>
-                }
                 errorId={unexpectedErrorId(error)}
+                onRetry={() => void refetch()}
                 title={m.review_load_failed()}
                 variant="panel"
               />
@@ -410,7 +397,7 @@ function Session({
           ) : sample ? (
             <SampleReview />
           ) : session.order.length === 0 ? (
-            <p className="t-card-title m-auto">{m.review_nothing()}</p>
+            <p className="t-card-title m-auto">{m.common_nothing_yet()}</p>
           ) : (
             <SessionResult
               next={nextSuggestion}
@@ -481,7 +468,7 @@ function SessionResult({
   }, [saved]);
   const { data } = useReviewResult(sessionId, { enabled: ready });
   if (!saved)
-    return <p className="t-card-title m-auto">{m.review_nothing()}</p>;
+    return <p className="t-card-title m-auto">{m.common_nothing_yet()}</p>;
   if (!data) return <SkeletonList count={4} rowHeight={52} />;
   return (
     <div className="mx-auto w-full max-w-4xl">

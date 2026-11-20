@@ -1,7 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { QuestionView } from '../../src/features/questions/QuestionView';
-import { renderGraphSvg } from '../../src/features/questions/graph';
+// Loaded up front, so a graph's canvas paints as soon as it mounts.
+import '../../src/features/questions/graphPaint';
 import type { Question } from '../../src/features/questions/types';
 import { questionBlockSchema } from '../../src/features/questions/validation';
 import '../../src/styles/tailwind.css';
@@ -11,9 +12,7 @@ const root = createRoot(document.getElementById('root')!);
 declare global {
   interface Window {
     renderBankLearner: (question: Question) => Promise<void>;
-    renderBankQuestion: (
-      question: Question,
-    ) => Promise<{ question: Question; assets: Record<string, string> }>;
+    renderBankQuestion: (question: Question) => Promise<void>;
   }
 }
 
@@ -84,38 +83,14 @@ window.renderBankLearner = async (input) => {
   await display(question, false);
 };
 
-window.renderBankQuestion = async (input) => {
-  const question = structuredClone(input);
-  const assets: Record<string, string> = {};
+window.renderBankQuestion = async (question) => {
+  // Graphs are drawn from their elements on canvases, with no file of their
+  // own (Epo 2026-11-16); each is checked as the app checks it.
   for (const blocks of [
     question.stem,
     ...question.parts.flatMap((part) => [part.blocks, part.solution]),
-  ]) {
-    for (const block of blocks) {
-      if (block.type !== 'graph') continue;
-      const host = document.createElement('div');
-      host.style.width = `${block.width}px`;
-      host.style.height = `${block.height}px`;
-      document.body.append(host);
-      try {
-        const svg = await renderGraphSvg(host, block);
-        const hash = Array.from(
-          new Uint8Array(
-            await crypto.subtle.digest(
-              'SHA-256',
-              new TextEncoder().encode(svg),
-            ),
-          ),
-          (v) => v.toString(16).padStart(2, '0'),
-        ).join('');
-        assets[`${hash}.svg`] = svg;
-        block.image = { svg };
-        questionBlockSchema.parse(block);
-      } finally {
-        host.remove();
-      }
-    }
-  }
+  ])
+    for (const block of blocks)
+      if (block.type === 'graph') questionBlockSchema.parse(block);
   await display(question, true);
-  return { question, assets };
 };

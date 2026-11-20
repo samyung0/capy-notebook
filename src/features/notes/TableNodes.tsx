@@ -33,20 +33,14 @@ import {
 } from 'platejs/react';
 import { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
-import {
-  DropdownMenu,
-  DropdownMenuAnchor,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-} from '@/components/ui/DropdownMenu';
-import type { IconName } from '@/components/ui/Icon';
+import { DropdownMenuSeparator } from '@/components/ui/DropdownMenu';
 import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { isTableSize } from '@/features/materials/document';
 import { tableColumnWidths } from '@/features/materials/tableColumns';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { BLOCK_MENU_CONTENT, BlockMenuItem } from './BlockInteractions';
+import { BlockMenuItem, TableHandle } from './blockMenu';
 import { useEditorScrollArea } from './editorScrollArea';
 import { FloatingActionButton } from './nodeComponents';
 import {
@@ -86,63 +80,6 @@ function setRowKind(
 
 /** The column the pointer is over, whose pill shows above the first row. */
 const HoveredColumn = createContext<number | null>(null);
-
-/** A row's or column's hover pill (Epo 2026-11-10, mock T2): a press opens its
- * menu beside it. Stays shown while its menu is open. */
-function TableHandle({
-  children,
-  className,
-  handleRef,
-  icon,
-  label,
-  side,
-}: {
-  children: React.ReactNode;
-  className: string;
-  /** The row pill also drags its row. */
-  handleRef?: React.Ref<HTMLButtonElement>;
-  icon: IconName;
-  label: string;
-  side: 'bottom' | 'right';
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
-      <DropdownMenuAnchor asChild>
-        <button
-          aria-expanded={open}
-          aria-haspopup="menu"
-          aria-label={label}
-          className={cn(
-            'absolute z-40 flex items-center justify-center rounded-full border border-line bg-surface text-fg-muted opacity-0 outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action',
-            open && 'opacity-100',
-            className
-          )}
-          contentEditable={false}
-          data-plate-prevent-deselect
-          onClick={() => setOpen(true)}
-          ref={handleRef}
-          title={label}
-          type="button"
-        >
-          <EditorIcon className="size-3.5" name={icon} />
-        </button>
-      </DropdownMenuAnchor>
-      {open && (
-        <DropdownMenuContent
-          align="start"
-          className={BLOCK_MENU_CONTENT}
-          data-plate-prevent-deselect
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          side={side}
-          sideOffset={4}
-        >
-          {children}
-        </DropdownMenuContent>
-      )}
-    </DropdownMenu>
-  );
-}
 
 export function TableElement(props: PlateElementProps) {
   return (

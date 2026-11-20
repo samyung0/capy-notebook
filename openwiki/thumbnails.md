@@ -81,9 +81,8 @@ immutable`; the next hour's URL is a new cache entry.
   (`GET /api/files`), the workspace file list (`GET /api/workspaces/{id}/files`,
   members and link/public readers alike), the workspace recent grid
   (`GET /api/workspaces/{id}/recent`, the same readers), trash rows of kind `source_file`
-  (`GET /api/trash`) and file rows of global search (`GET /api/search`, the
-  caller's own workspaces only; search rows also carry a text file's or
-  flashcard set's `preview`). Single-file responses carry no link.
+  (`GET /api/trash`). Single-file responses and global search, whose rows
+  show a kind icon (Epo 2026-11-13), carry no link.
 - The rule is that the link follows the file's read access. Handlers sign only
   rows their access-scoped queries already returned for the caller, so a link
   is never minted for a file the caller cannot read

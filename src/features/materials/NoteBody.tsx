@@ -23,7 +23,7 @@ import { materialTokenQuery } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { SaveBanner } from '@/components/banners/SaveBanner';
-import { Button } from '@/components/ui/Button';
+import { PageButton } from '@/components/ui/Button';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import {
@@ -34,7 +34,14 @@ import {
 } from '@/features/collaboration/deviceCopy';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import type { PresenceConnection } from '@/features/collaboration/presence';
-import { FileActionsTarget } from '@/features/files/fileModeContext';
+import {
+  FileActionsTarget,
+  usePhoneMenuItem,
+} from '@/features/files/fileModeContext';
+import {
+  EmbedStatusProvider,
+  useEmbedStatusSink,
+} from '@/features/materials/embeds/embedStatus';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { NoteBlocks } from '@/features/notes/liveNoteBlocks';
@@ -75,8 +82,15 @@ import type { NoteCitationTarget } from './openItem';
 import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route: it loads behind a
- * painted note, never before one. */
-const loadEditor = () => import('@/features/notes/NoteEditor');
+ * painted note, never before one. Preview's code is here once the editor is
+ * (Q669: Preview opens offline): the static renderer comes with the editor,
+ * and an embedded quiz's long answers take the question text editor, which
+ * QuestionRunner otherwise loads with the first one. */
+const loadEditor = () =>
+  Promise.all([
+    import('@/features/notes/NoteEditor'),
+    import('@/features/questions/TextEditor'),
+  ]).then(([editor]) => editor);
 const NoteEditor = lazy(() =>
   loadEditor().then((module) => ({ default: module.NoteEditor }))
 );
@@ -543,6 +557,8 @@ function PaintedFrame({
   seed: RoomSeed | null | undefined;
 }) {
   const builds = editing && !!material;
+  // The header's Saved covers the note's embedded quizzes and sets too.
+  const embedStatus = useEmbedStatusSink(onEditorStatusChange);
   // Its token alongside the paint, not behind the editor's chunk: the open
   // (CenterContent) asked already, unless it didn't know this was a note.
   const queryClient = useQueryClient();
@@ -690,6 +706,22 @@ function PaintedFrame({
       }
     );
   };
+  // Phones have the header's Preview (or Edit, Close) in ⋮ (Epo 2026-11-16).
+  usePhoneMenuItem(
+    'preview',
+    builds
+      ? {
+          disabled: !plate || opening || closing,
+          icon: previewOpen ? (locked ? 'navigationBack' : 'pencil') : 'view',
+          label: previewOpen
+            ? locked
+              ? m.note_preview_close()
+              : m.action_edit()
+            : m.editor_embed_preview(),
+          onClick: previewOpen ? closePreview : openPreview,
+        }
+      : null
+  );
   // Something that needs the editor now: no waiting for the place.
   const exitPreview = useEffectEvent(() => {
     if (!previewOpen) return;
@@ -775,16 +807,18 @@ function PaintedFrame({
               <Suspense fallback={null}>
                 <EditorPreviewing.Provider value={previewing}>
                   <NotePreviewHost.Provider value={hostApi}>
-                    <NoteEditor
-                      allowExternalAssets={allowExternalAssets}
-                      materialId={materialId}
-                      onEditorStatusChange={onEditorStatusChange}
-                      onJoinFailed={onJoinFailed}
-                      onPresenceChange={onPresenceChange}
-                      onReadOnly={onReadOnly}
-                      onShown={onShown}
-                      seed={seed}
-                    />
+                    <EmbedStatusProvider value={embedStatus.sink}>
+                      <NoteEditor
+                        allowExternalAssets={allowExternalAssets}
+                        materialId={materialId}
+                        onEditorStatusChange={embedStatus.onNote}
+                        onJoinFailed={onJoinFailed}
+                        onPresenceChange={onPresenceChange}
+                        onReadOnly={onReadOnly}
+                        onShown={onShown}
+                        seed={seed}
+                      />
+                    </EmbedStatusProvider>
                   </NotePreviewHost.Provider>
                 </EditorPreviewing.Provider>
               </Suspense>
@@ -812,36 +846,26 @@ function PaintedFrame({
         {builds &&
           headerActions &&
           createPortal(
-            <Button
+            <PageButton
               aria-busy={opening || closing || undefined}
-              className="shrink-0"
+              // Its word alone, as a quiz's Preview (Epo 2026-11-16): the eye
+              // read as the Hidden chip's. Phones have it in ⋮.
+              className="shrink-0 max-sm:hidden sm:mr-1"
               disabled={!plate}
-              iconLeft={
-                opening || closing
-                  ? undefined
-                  : previewOpen
-                    ? locked
-                      ? 'navigationBack'
-                      : 'pencil'
-                    : 'view'
-              }
               onClick={previewOpen ? closePreview : openPreview}
               // Before the press takes the focus from the note.
               onPointerDown={() => {
                 focusAtPress.current = !!plate?.api.isFocused();
               }}
-              size="sm"
               variant="outline"
             >
               {(opening || closing) && <Spinner className="size-4.5" />}
-              <span className="sr-only sm:not-sr-only">
-                {previewOpen
-                  ? locked
-                    ? m.note_preview_close()
-                    : m.action_edit()
-                  : m.editor_embed_preview()}
-              </span>
-            </Button>,
+              {previewOpen
+                ? locked
+                  ? m.note_preview_close()
+                  : m.action_edit()
+                : m.editor_embed_preview()}
+            </PageButton>,
             headerActions
           )}
       </div>

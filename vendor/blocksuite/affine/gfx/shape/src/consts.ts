@@ -6,8 +6,6 @@ import {
 
 export const SHAPE_OVERLAY_WIDTH = 100;
 export const SHAPE_OVERLAY_HEIGHT = 100;
-export const SHAPE_OVERLAY_OFFSET_X = 6;
-export const SHAPE_OVERLAY_OFFSET_Y = 6;
 export const SHAPE_OVERLAY_OPTIONS = {
   seed: 666,
   roughness: DEFAULT_ROUGHNESS,

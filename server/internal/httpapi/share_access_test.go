@@ -594,19 +594,25 @@ func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
 	}
 	frozen[0]["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"assetId": assignedAsset}, "width": 10, "height": 10, "description": "Figure"}}
 	due := time.Now().Add(time.Hour)
-	made, err := st.CreateAssignment(ctx, "u_owner", ws.ID, store.AssignmentForm{
-		Kind: store.AssignmentMarked, Title: "Paper", QuizID: assigned.ID, Questions: frozen, DueAt: &due, Attempts: 1,
-		Assignees: []string{"u_viewer"}, Marking: store.MarkingAIApprove, ShowAnswers: store.AnswersAfterSubmit, ShowGrades: store.GradesAutomatic, Files: []store.AssignmentFileRef{},
+	// A graded quiz made from a copy of it owns the copy and its image.
+	made, err := st.CopyQuizToGradedQuiz(ctx, store.QuizCopy{
+		ActorID: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, SourceID: assigned.ID, Questions: frozen, Title: "Paper " + suffix,
+		Form: store.AssignmentForm{Kind: store.AssignmentMarked, Title: "Paper", DueAt: &due, Attempts: 1,
+			Assignees: []string{"u_viewer"}, Marking: store.MarkingAIApprove, ShowAnswers: store.AnswersAfterSubmit, ShowGrades: store.GradesAutomatic, Files: []store.AssignmentFileRef{}},
 	}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var frozenAsset string
+	var ownedAsset, frozenAsset string
+	if err := st.Pool().QueryRow(ctx, `SELECT e.id FROM editor_assets e JOIN materials m ON m.id=e.material_id
+		WHERE m.assignment_id=$1`, made.ID).Scan(&ownedAsset); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Pool().QueryRow(ctx, `SELECT id FROM editor_assets WHERE assignment_id=$1`, made.ID).Scan(&frozenAsset); err != nil {
 		t.Fatal(err)
 	}
-	// Open, the quiz is held from every viewer member, assigned it or not.
-	resolves("an assigned quiz's image", assignedAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 404, "u_other": 404})
+	// Open, its quiz is held from every viewer member, assigned it or not.
+	resolves("an assigned quiz's image", ownedAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 404, "u_other": 404})
 	resolves("a frozen copy's image", frozenAsset, map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 200, "u_other": 404})
 	if _, err := st.Pool().Exec(ctx, `UPDATE workspaces SET kind='personal' WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)

@@ -9,6 +9,18 @@ import type { RangeManager } from './range-manager.js';
 /**
  * Two-way binding between native range and text selection
  */
+/** Capy (local change 40): a text field holding focus, such as one in a
+ * widget's panel (the board's Misc link field), keeps it when the selection
+ * changes; the pointer's cursor selection, on every move, focused the host. */
+function fieldHasFocus() {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement)
+    active = active.shadowRoot.activeElement;
+  return (
+    active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+  );
+}
+
 export class RangeBinding {
   private _compositionStartCallback:
     | ((event: CompositionEvent) => Promise<void>)
@@ -296,7 +308,7 @@ export class RangeBinding {
           selection.constructor as typeof BaseSelection;
         return selectionConstructor.recoverable;
       });
-      if (!hasRecoverable) {
+      if (!hasRecoverable && !fieldHasFocus()) {
         // prevent focus to top-level content-editable element
         // if the browser focus to the top-level content-editable element,
         // when switching between tabs,

@@ -21,6 +21,16 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+Every boundary and inline page or pane error is `ErrorState`
+(`src/components/app/ErrorState.tsx`; `FileError` wraps it for file and
+canvas panes), and a small area's is `InlineErrorState` (one line and Retry).
+Their retry is always the shared Retry (`ErrorAction`: borderless, "Retry"
+with the refresh icon), passed as `ErrorState`'s `onRetry` (Epo 2026-11-12:
+no bordered or "Try again" buttons); `action` is only for another way out,
+such as `ErrorAction back`. An `ErrorState` under a page's header takes
+`h-auto py-20` rather than the pane's full height, so the page never scrolls
+for it. `describeError`'s `action` is a toast's and is never spread into it.
+
 ### Gateway upload codes
 
 The gateway's upload line answers two typed 4xx codes the browser gives their
@@ -172,8 +182,7 @@ workspace page's loaded files rather than adding an observer with a different
 policy. The Files preview dialog handles its detail-query failure inline with
 `FileError` and a manual Retry action.
 
-Paged page lists (Files, Blocks, Trash, Learning's Past reviews and All
-results) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
+Paged page lists (Files, Blocks, Trash, Learning's History) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
 loads once the end is within 800px of the page panel's bottom. A list that
 scrolls by itself passes its own scroller as `root`: the chat list in a side
 panel, and the archived chats dialog's and the Canvas page's menu's lists, each
@@ -389,7 +398,11 @@ preload that fails says nothing: only an open the user asked for shows a toast.
   answer to draw, or on focusing the composer or hovering a saved chat. An answer's words hold their
   place unseen for 2 s, so no raw Markdown flashes, then show as they are, marked
   `aria-busy`, and format when the code lands (`data-prose`: `loading`, `slow`,
-  `failed`). A thread stays at its end as that happens if the reader was there. If
+  `failed`). A thread stays at its end as that happens if the reader was there,
+  also as its maths (KaTeX) and code colours draw later still, until the reader
+  scrolls up (a `ResizeObserver` over the thread and its rows; only a move up over
+  a thread of unchanged height leaves the end, since the browser's scroll anchoring
+  moves a thread at its end, up or down, as its rows change height). If
   it won't load the words stay as they are, which is still the answer: offline with
   no toast of its own, trying once more when the connection is back, otherwise with
   the update toast. A browser that keeps the failed import stays on those words until
@@ -498,7 +511,11 @@ note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
-stays. Network and other failures keep the source recovery path. A note,
+stays. A canvas does the same: its board shows what was saved before (a
+fresh room, since its document still holds the discarded edits) under the
+same strip, or under the storage strip naming whose storage is full, picked
+from the canvas's read as a note's are (plate-editor.md, the canvas room).
+Network and other failures keep the source recovery path. A note,
 mindmap or diagram whose stored document the store would refuse (a block
 the embed catalog does not list, ...), or a quiz holding a block kind its
 rooms do not admit, joins its writers read-only with `code:
@@ -794,13 +811,17 @@ when the client's oldest checkpoint request stays unanswered past a threshold,
 without waiting for the server's 60 to 120 s timeouts: `SOURCE_SAVE_DELAY_MS`
 (45 s; a source room stores at most 30 s after a change) and
 `NOTE_SAVE_DELAY_MS` (25 s; a note room at most 10 s), counted in connected
-time only (`SaveDelayClock` in `src/features/notes/saveDelay.ts`). An edit is
+time only (`SaveDelayClock` in `src/features/notes/saveDelay.ts`); an item room
+(`ItemRoom`) keeps the note's clock and says `delayed` in its snapshot, which a
+canvas shows over its board. An edit is
 counted from the request that carries it, sent 1 s after typing stops. Any
 receipt clears the banner, since saving works again; it comes back only if
 the oldest request still unanswered crosses the threshold. Closing it hides it for that
 episode only; the next failure shows it again. A connection still lost after
 30 s puts an editor that synced once into offline mode; before the first sync
-it shows only the header's red status.
+it shows only the header's red status (a note shows the `unreachable` strip with
+Retry over what it painted, and so does a canvas, over its board or its loader;
+"Waiting for connection" is for a browser offline with nothing to show).
 
 A source save that fails slowly (an Office engine timeout or a dead worker, a
 checkpoint that moved again after the reload and merge, a network error or a

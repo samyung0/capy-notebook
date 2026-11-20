@@ -364,7 +364,7 @@ func sameQuantity(a, b quantity) bool {
 // Graded returns a copy of q as a checked answer shows it: the whole question
 // with its key, and each part's awarded marks. Closed parts are scored here;
 // matching and gaps parts also carry itemResults, one per pair or gap. Open
-// parts take Jev's per-item marks from open by part id, and a part missing
+// parts take the grading model's per-item marks from open by part id, and a part missing
 // from open (a blank answer) earns 0 on every item. It returns the awarded
 // marks and the question's marks too. q itself is not modified.
 func Graded(q map[string]any, answers map[string]any, open map[string][]float64) (map[string]any, float64, float64) {

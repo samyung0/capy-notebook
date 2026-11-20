@@ -12,7 +12,7 @@ import {
   EXTRACTION_PAGES_MAX,
   EXTRACTION_QUESTION_CREDITS,
 } from '@/api/limits.generated';
-import type { SourceFile } from '@/api/types';
+import type { AssignmentFormReq, SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { useIsPhone } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -446,6 +446,7 @@ export function usePageStep({
   active,
   answers,
   file,
+  graded,
   hidden,
   onCancel,
   onChangeFiles,
@@ -456,6 +457,8 @@ export function usePageStep({
 }: {
   active: boolean;
   answers: string[];
+  /** A graded quiz's settings: the run makes it with its quiz. */
+  graded?: AssignmentFormReq;
   /** The files step's switch: the quiz starts hidden from members. */
   hidden: boolean;
   /** The file on show, from the address; a phone's list when there is none. */
@@ -788,24 +791,38 @@ export function usePageStep({
                 disabled={!!unpicked || answersReading || drawing || isPending}
                 onClick={() => {
                   if (!first) return;
+                  const title = quizTitleFrom(
+                    first.name,
+                    (materials ?? []).map((row) => row.title)
+                  );
                   start(
-                    extractionRequest(
-                      quizTitleFrom(
-                        first.name,
-                        (materials ?? []).map((row) => row.title)
+                    {
+                      ...extractionRequest(
+                        title,
+                        paperFiles.map((row) => row.id),
+                        answerFiles.map((row) => row.id),
+                        selected,
+                        hidden,
+                        drawn
                       ),
-                      paperFiles.map((row) => row.id),
-                      answerFiles.map((row) => row.id),
-                      selected,
-                      hidden,
-                      drawn
-                    ),
+                      // An untitled graded quiz is named after its quiz.
+                      ...(graded && {
+                        gradedQuiz: { ...graded, title: graded.title || title },
+                      }),
+                    },
                     { onSuccess: (run) => onStarted(run.id) }
                   );
                 }}
                 type="button"
               >
-                {isPending ? <Spinner /> : m.make_quiz_extract()}
+                {isPending ? (
+                  <Spinner />
+                ) : graded ? (
+                  // Its questions are read before the graded quiz goes out.
+                  m.assignment_create_draft()
+                ) : (
+                  m.make_quiz_extract()
+                )}
               </Button>
             </div>
           </div>

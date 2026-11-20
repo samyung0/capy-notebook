@@ -1,0 +1,221 @@
+import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
+import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
+import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
+import type { SurfaceBlockModel } from '@blocksuite/affine/blocks/surface';
+import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
+import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
+import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
+import { Text } from '@blocksuite/affine/store';
+import { MemoryBlobSource } from '@blocksuite/affine/sync';
+import { expect, it } from 'vitest';
+import { Awareness } from 'y-protocols/awareness';
+import * as Y from 'yjs';
+import {
+  adoptClientId,
+  renameClients,
+} from '@/features/collaboration/renameClient';
+import { boardFirstState } from './boardFirstState';
+import { unknownStore } from './boardUnknown';
+import { BLOCKS_ROOT, followTextEditors, openRoomStore } from './roomStore';
+
+/* The canvas's store over its room's document, as `mountDrawingBoard` opens
+ * it: BlockSuite's store and canvas model, without the editor's view. */
+
+const stores = new StoreExtensionManager([
+  RootStoreExtension,
+  SurfaceStoreExtension,
+  NoteStoreExtension,
+  ParagraphStoreExtension,
+  BrushStoreExtension,
+]);
+
+/** A room's document as the server seeds it. */
+function room() {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, boardFirstState(), 'room');
+  return doc;
+}
+
+function open(doc: Y.Doc, readonly = false) {
+  return openRoomStore({
+    awareness: new Awareness(doc),
+    blobs: { main: new MemoryBlobSource() },
+    doc,
+    id: 'cv_1',
+    readonly,
+    storeExtensions: [...stores.get('store'), ...unknownStore('workspace')],
+  });
+}
+
+const surfaceOf = (store: ReturnType<typeof open>['store']) =>
+  store.getModelsByFlavour('affine:surface')[0] as SurfaceBlockModel;
+
+const stroke = {
+  color: '#000000',
+  lineWidth: 4,
+  points: [
+    [0, 0],
+    [10, 10],
+  ],
+  type: 'brush',
+  xywh: '[0,0,10,10]',
+};
+
+it("opens the room's first state and writes nothing", () => {
+  const doc = room();
+  const before = Y.encodeStateAsUpdate(doc);
+  const { dispose, store } = open(doc);
+  expect(store.root?.flavour).toBe('affine:page');
+  expect(surfaceOf(store).id).toBe('surface');
+  expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+  dispose();
+  expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+});
+
+it('writes block edits into the room document alone', () => {
+  const doc = room();
+  const { dispose, store } = open(doc);
+  const note = store.addBlock(
+    'affine:note',
+    { xywh: '[0,0,200,80]' },
+    store.root
+  );
+  store.addBlock('affine:paragraph', { text: new Text('Light') }, note);
+  surfaceOf(store).addElement(stroke);
+  expect([...doc.share.keys()]).toEqual([BLOCKS_ROOT]);
+  expect(doc.getMap(BLOCKS_ROOT).size).toBe(4);
+  dispose();
+});
+
+it("shows a peer's stroke and leaves it out of this tab's undo", () => {
+  const doc = room();
+  const { dispose, store } = open(doc);
+  const peerDoc = room();
+  const peer = open(peerDoc);
+  const id = surfaceOf(peer.store).addElement(stroke);
+  // The room hands a peer's update over under an origin of its own.
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(peerDoc), 'room');
+  expect(surfaceOf(store).getElementById(id)?.type).toBe('brush');
+  expect(store.canUndo).toBe(false);
+  peer.dispose();
+  dispose();
+});
+
+it('undoes its own edits after the client id changes', () => {
+  const doc = room();
+  const { dispose, store } = open(doc);
+  // The room's JOIN may hand out another id after the store was built (a
+  // refused id is replaced at once, Q475).
+  doc.clientID = 4242;
+  const surface = surfaceOf(store);
+  const id = surface.addElement(stroke);
+  expect(surface.hasElementById(id)).toBe(true);
+  expect(store.canUndo).toBe(true);
+  store.undo();
+  expect(surface.hasElementById(id)).toBe(false);
+  dispose();
+});
+
+/** What `renameClients` checks `doc` against, as an early board painted it. */
+const painted = (doc: Y.Doc) => ({
+  history: new Set(doc.store.clients.keys()),
+  painted: Y.decodeStateVector(Y.encodeStateVector(doc)),
+});
+
+it('undoes an early edit after the rename of its client id', () => {
+  const doc = room();
+  const base = painted(doc);
+  const { dispose, store } = open(doc);
+  const surface = surfaceOf(store);
+  const id = surface.addElement(stroke);
+  renameClients(doc, [doc.clientID], 4242, base);
+  store.undo();
+  expect(surface.hasElementById(id)).toBe(false);
+  dispose();
+});
+
+it("keeps an open label editor's Undo and caret through the rename of the early edits", () => {
+  const doc = room();
+  const base = painted(doc);
+  const { dispose, store } = open(doc);
+  const label = doc.getText('label');
+  // As BlockSuite's `rich-text` makes its own manager and its inline editor
+  // writes and keeps its caret.
+  const undoManager = new Y.UndoManager(label, {
+    trackedOrigins: new Set([doc.clientID]),
+  });
+  const type = (text: string) => {
+    doc.transact(() => label.insert(0, text), doc.clientID);
+    undoManager.stopCapturing();
+  };
+  type('Mitosis');
+  const inlineEditor = {
+    lastEndRelativePosition: Y.createRelativePositionFromTypeIndex(label, 7),
+    lastStartRelativePosition: Y.createRelativePositionFromTypeIndex(label, 3),
+  };
+  const editors = [
+    { inlineEditor, undoManager },
+    { inlineEditor: null, undoManager: store.history.undoManager },
+  ];
+  const stop = followTextEditors(
+    { querySelectorAll: () => editors } as unknown as ParentNode,
+    doc
+  );
+  renameClients(doc, [doc.clientID], 4242, base);
+  const index = (position: Y.RelativePosition) =>
+    Y.createAbsolutePositionFromRelativePosition(position, doc)?.index;
+  expect(index(inlineEditor.lastStartRelativePosition)).toBe(3);
+  expect(index(inlineEditor.lastEndRelativePosition)).toBe(7);
+  type('Early ');
+  undoManager.undo();
+  expect(label.toString()).toBe('Mitosis');
+  undoManager.undo();
+  expect(label.toString()).toBe('');
+  stop();
+  undoManager.destroy();
+  dispose();
+});
+
+it("keeps an open label editor's Undo when the document takes another id with nothing renamed", () => {
+  const doc = room();
+  const label = doc.getText('label');
+  const undoManager = new Y.UndoManager(label, {
+    trackedOrigins: new Set([doc.clientID]),
+  });
+  const stop = followTextEditors(
+    {
+      querySelectorAll: () => [{ inlineEditor: null, undoManager }],
+    } as unknown as ParentNode,
+    doc
+  );
+  adoptClientId(doc, 4242);
+  doc.transact(() => label.insert(0, 'Mitosis'), doc.clientID);
+  undoManager.undo();
+  expect(label.toString()).toBe('');
+  stop();
+  undoManager.destroy();
+});
+
+it('opens read-only for a viewer and writes nothing', () => {
+  const doc = room();
+  const before = Y.encodeStateAsUpdate(doc);
+  const { dispose, store } = open(doc, true);
+  expect(store.readonly).toBe(true);
+  expect(surfaceOf(store).id).toBe('surface');
+  expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+  dispose();
+});
+
+it("leaves no undo manager on the room's document when it closes", () => {
+  const doc = room();
+  const watching = () =>
+    (
+      doc as unknown as { _observers: Map<string, Set<unknown>> }
+    )._observers.get('afterTransaction')?.size ?? 0;
+  const before = watching();
+  const { dispose, store } = open(doc);
+  surfaceOf(store).addElement(stroke);
+  expect(watching()).toBeGreaterThan(before);
+  dispose();
+  expect(watching()).toBe(before);
+});

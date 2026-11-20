@@ -24,6 +24,7 @@ import {
   text,
   Writer,
 } from './protocol';
+import { onRenamed } from './renameClient';
 import {
   EMBED_CLOSED_REASON,
   OLDEST_CLOSED_REASON,
@@ -389,6 +390,9 @@ it('takes the token client ids until the document writes under them, then keeps 
   };
   expect(declared(join.payload)).toBe(clientIdOf('first'));
   expect(provider.awareness.clientID).toBe(clientIdOf('first'));
+  // What follows a rename hears each id taken (an open label editor's Undo).
+  const taken: number[] = [];
+  onRenamed(document, (_renamed, to) => taken.push(to));
   // A refused join binds nothing: the next token's id is taken.
   socket.deliver(
     message(join.channel, MessageKind.Refused, text('collaboration-client-id'))
@@ -399,6 +403,7 @@ it('takes the token client ids until the document writes under them, then keeps 
   const [second] = socket.take(MessageKind.Join);
   expect(declared(second.payload)).toBe(clientIdOf('second'));
   expect(document.clientID).toBe(clientIdOf('second'));
+  expect(taken).toEqual([clientIdOf('second')]);
   expect(provider.workerClientId).toBe(22);
   socket.deliver(message(second.channel, MessageKind.Joined, Uint8Array.of(1)));
   document.getText('content').insert(0, 'typed');

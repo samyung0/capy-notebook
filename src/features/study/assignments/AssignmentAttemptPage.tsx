@@ -2,7 +2,6 @@ import { Link, useParams } from '@tanstack/react-router';
 import { useCallback, useRef, useState } from 'react';
 import { useAssignment, useAssignmentAttempt, useWorkspace } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
@@ -10,6 +9,7 @@ import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { PracticeFrame } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
+import type { AssignmentsSearch, studyLink } from '../studyRoutes';
 import { AssignmentSubmitted } from './AssignmentSubmitted';
 import { AssignmentTake } from './AssignmentTake';
 import { AttemptResults } from './AttemptResults';
@@ -26,13 +26,14 @@ export function useTodoPageName() {
   return studyView(ws).manages ? m.study_panel_assignments() : m.nav_todo();
 }
 
-/** "← To do" or "← Assignments" over an assignment's pages. */
+/** "← To do" or "← Assignments" over an assignment's pages; `link` leads
+ * elsewhere: a report's tab on this page, or a member's profile on Study. */
 export function BackToAssignments({
   label,
-  search,
+  link = { search: {}, to: '.' },
 }: {
   label?: string;
-  search?: Record<string, unknown>;
+  link?: ReturnType<typeof studyLink> | { search: AssignmentsSearch; to: '.' };
 }) {
   const list = useTodoPageName();
   return (
@@ -42,21 +43,25 @@ export function BackToAssignments({
       iconLeft="navigationBack"
       noArrow
     >
-      <Link search={search ?? { study: 'assignments' as const }} to=".">
-        {label ?? list}
-      </Link>
+      <Link {...link}>{label ?? list}</Link>
     </UnderlineLink>
   );
 }
+
+/** The member's profile an attempt was opened from, and its tab. */
+export type ProfileOrigin = { member: string; show?: 'topics' };
 
 /** One try, by its id: a running one to answer (A2), then Submitted (A4), or
  * its results (A5), a member's for the class's staff. Staff closing it while it
  * runs here goes straight to its results (Epo 2026-11-05). */
 export function AssignmentAttemptPage({
   attemptId,
+  fromProfile,
   workspaceId,
 }: {
   attemptId: string;
+  /** Opened from a member's profile: back returns there, not to Responses. */
+  fromProfile?: ProfileOrigin;
   workspaceId: string;
 }) {
   const { data, error, isError, isFetchedAfterMount, isPending, refetch } =
@@ -86,12 +91,8 @@ export function AssignmentAttemptPage({
     return (
       <PracticeFrame>
         <ErrorState
-          action={
-            <Button onClick={() => void refetch()} variant="outline">
-              {m.action_retry()}
-            </Button>
-          }
           errorId={unexpectedErrorId(error)}
+          onRetry={() => void refetch()}
           title={m.assignment_load_failed()}
           variant="panel"
         />
@@ -110,7 +111,7 @@ export function AssignmentAttemptPage({
             size="sm"
             variant="ghost-hover"
           >
-            <Link search={{ study: 'assignments' as const }} to="." />
+            <Link search={{}} to="." />
           </IconButton>
         }
         onClosed={closedHere}
@@ -131,5 +132,11 @@ export function AssignmentAttemptPage({
         <SkeletonList count={8} rowHeight={36} />
       </PracticeFrame>
     );
-  return <AttemptResults assignment={assignment} attempt={data} />;
+  return (
+    <AttemptResults
+      assignment={assignment}
+      attempt={data}
+      fromProfile={fromProfile}
+    />
+  );
 }

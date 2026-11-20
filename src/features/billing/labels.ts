@@ -51,6 +51,11 @@ export const AREAS: Area[] = [
   OTHER,
 ];
 
+/** Surfaces shown under another's area: grading and paper marking (`quiz`)
+ * join quiz writing (`generate`) as Quizzes (Epo 2026-11-13). */
+const SURFACE_AREA: Record<string, string> = { quiz: 'generate' };
+
 export function areaOf(surface: string): Area {
-  return AREAS.find((a) => a.key === surface) ?? OTHER;
+  const key = SURFACE_AREA[surface] ?? surface;
+  return AREAS.find((a) => a.key === key) ?? OTHER;
 }

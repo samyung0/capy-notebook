@@ -49,10 +49,9 @@ var aiSuffixes = []string{
 	// Make a quiz: one start reads up to 40 pages with a vision model.
 	"/extractions",
 	// Server grading, which sends open answers to a model: a quiz, review or bank
-	// check, one question each, and the author's computation check. A shared
-	// page's check, under /api/public/, calls no model.
+	// check, one question each. A shared page's check, under /api/public/, calls
+	// no model.
 	"/check",
-	"/computation-check",
 }
 
 var editorSuffixes = []string{

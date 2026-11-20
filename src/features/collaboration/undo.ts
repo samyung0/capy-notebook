@@ -1,3 +1,4 @@
+import { createContext, useContext, useEffect } from 'react';
 import * as Y from 'yjs';
 import { LOCAL_EDIT } from './yText';
 
@@ -136,4 +137,19 @@ export function pairedUndo(
     },
     undo: () => step('undoStack', (manager) => manager.undo()),
   };
+}
+
+/** Where an item editor lends its Undo target, for a host whose own Undo and Redo
+ * act on it while it is edited (a canvas card, Epo 2026-11-13). Lending returns
+ * how to take it back. */
+export const UndoSink = createContext<
+  ((target: UndoTarget) => () => void) | null
+>(null);
+
+/** Lends `target` to the host's Undo and Redo, if there is one, while mounted. */
+export function useLendUndo(target: UndoTarget | null) {
+  const lend = useContext(UndoSink);
+  useEffect(() => {
+    if (lend && target) return lend(target);
+  }, [lend, target]);
 }

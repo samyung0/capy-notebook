@@ -26,6 +26,7 @@ import {
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import { waitsForConnection } from '@/lib/online';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {
@@ -91,11 +92,15 @@ function Workspaces({
     isFetchNextPageError,
     isLoading,
   } = useExploreWorkspaces();
+  const revealRef = useLoadingReveal(isLoading);
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <SkeletonCardGrid cardHeight={170} count={6} />;
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        ref={revealRef}
+      >
         {data?.pages
           .flatMap((page) => page.items)
           .map((w) => {
@@ -160,12 +165,16 @@ function Quizzes({ onClone }: { onClone: (item: CloneItem) => void }) {
     isFetchNextPageError,
     isLoading,
   } = useExploreQuizzes();
+  const revealRef = useLoadingReveal(isLoading);
   const frozen = useAccountFrozen();
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <SkeletonCardGrid cardHeight={190} count={6} />;
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        ref={revealRef}
+      >
         {data?.pages
           .flatMap((page) => page.items)
           .map((q) => (
@@ -226,12 +235,16 @@ function FlashcardSets({ onClone }: { onClone: (item: CloneItem) => void }) {
     isFetchNextPageError,
     isLoading,
   } = useExploreFlashcardSets();
+  const revealRef = useLoadingReveal(isLoading);
   const frozen = useAccountFrozen();
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <SkeletonCardGrid cardHeight={190} count={6} />;
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        ref={revealRef}
+      >
         {data?.pages
           .flatMap((page) => page.items)
           .map((flashcardSet) => (

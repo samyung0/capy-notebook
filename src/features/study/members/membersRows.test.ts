@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { MemberProgress, MembersTopic, SummaryTopic } from '@/api/types';
-import { focusOf, sortMembers, topicCount } from './membersRows';
+import {
+  focusOf,
+  needsAttention,
+  needsPractice,
+  sortMembers,
+  topicCount,
+} from './membersRows';
 
 const topic = (
   topicId: string,
@@ -32,26 +38,44 @@ const member = (
 });
 
 describe('sortMembers', () => {
-  it('puts missing work, then topics needing practice, then the lowest overall first', () => {
+  it('sorts by a column, members without its value last', () => {
     const list = [
       member('Ben', { overall: 0.88 }),
       member('Cara', {
         overall: 0.76,
         topics: [topic('a', 'needs_practice'), topic('b', 'needs_practice')],
       }),
-      member('Dan', { missing: 2, overall: 0.09 }),
       member('Eve'),
       member('Gus', { overall: 0.53, topics: [topic('a', 'needs_practice')] }),
-      member('Farah', { overall: 0.78 }),
     ];
-    expect(sortMembers(list, 'attention').map((m) => m.name)).toEqual([
-      'Dan',
-      'Cara',
+    const names = (sorted: typeof list) => sorted.map((m) => m.name);
+    expect(names(sortMembers(list, 'assignments', true))).toEqual([
       'Gus',
-      'Farah',
+      'Cara',
       'Ben',
       'Eve',
     ]);
+    expect(names(sortMembers(list, 'needs', false))).toEqual([
+      'Cara',
+      'Gus',
+      'Ben',
+      'Eve',
+    ]);
+    expect(names(sortMembers(list, 'name', false))).toEqual([
+      'Gus',
+      'Eve',
+      'Cara',
+      'Ben',
+    ]);
+  });
+});
+
+describe('needsAttention', () => {
+  it('holds a member with work missing or a topic needing practice', () => {
+    expect(needsAttention(member('Dan', { missing: 2 }))).toBe(true);
+    expect(
+      needsAttention(member('Gus', { topics: [topic('a', 'needs_practice')] }))
+    ).toBe(true);
   });
 });
 
@@ -64,11 +88,37 @@ describe('focusOf', () => {
     });
     expect(
       focusOf(member('a', { topics: [topic('x', 'attempted')] })).kind
-    ).toBe('attempted');
+    ).toBe('nothing');
     expect(
       focusOf(member('a', { topics: [topic('x', 'familiar')] })).kind
     ).toBe('nothing');
     expect(focusOf(member('a')).kind).toBe('not_started');
+  });
+});
+
+describe('needsPractice', () => {
+  it('puts the most missed first, more answers breaking a tie', () => {
+    const weak = (
+      topicId: string,
+      wrong: number,
+      partial: number,
+      asked: number
+    ) => ({
+      ...topic(topicId, 'needs_practice'),
+      asked,
+      partial,
+      right: asked - wrong - partial,
+      wrong,
+    });
+    const topics = [
+      weak('half', 2, 0, 4),
+      weak('most', 4, 1, 5),
+      weak('halfMore', 3, 0, 6),
+      topic('fine', 'familiar'),
+    ];
+    expect(
+      needsPractice(member('a', { topics })).map(({ topicId }) => topicId)
+    ).toEqual(['most', 'halfMore', 'half']);
   });
 });
 

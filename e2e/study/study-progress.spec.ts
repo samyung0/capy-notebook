@@ -49,7 +49,7 @@ async function createMaterial(
   return (await res.json()) as { id: string; title: string };
 }
 
-/** True/false questions: closed parts the server grades without Jev. */
+/** True/false questions: closed parts the server grades without a model. */
 function quizValue(questions: Array<{ prompt: string; correct: boolean }>) {
   return [
     {
@@ -374,9 +374,16 @@ test.describe('study progress', () => {
       session: { group: 'workspace', workspaceId: ws.id },
     });
     expect(checkBody.session.items).toHaveLength(2);
-    // A right choice reads Right; only a wrong one reads Your answer.
+    // The pick is tagged Correct, and so is the verdict under the boxes
+    // (Epo 2026-11-18).
     await expect(
-      ownerPage.getByText(m.question_ui_result_right(), { exact: true })
+      ownerPage.getByRole('button', {
+        exact: true,
+        name: `${m.question_ui_true()} ${m.question_ui_result_right()}`,
+      })
+    ).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.question_ui_result_right(), { exact: true }).last()
     ).toBeVisible();
     // Next after the last item opens the result: the question right with
     // its mark, the card rated Good.
@@ -412,18 +419,20 @@ test.describe('study progress', () => {
       .getByRole('button', { exact: true, name: m.action_back() })
       .click();
     await expect(ownerPage).toHaveURL(
-      new RegExp(`/workspaces/${ws.id}[?]study=practice$`)
+      new RegExp(`/workspaces/${ws.id}/study/practice$`)
     );
 
-    // The finished session is in Past reviews with one card and one question.
-    const past = await ownerApi.get('/api/review/sessions');
+    // The finished session is in History with one card and one question.
+    const past = await ownerApi.get('/api/learning/history?kind=revision');
     expect(past.status()).toBe(200);
     const [recorded] = (await past.json()).items;
     expect(recorded).toMatchObject({
       answered: 2,
-      cards: { correct: 1, total: 1 },
+      correct: 2,
       id: checkBody.session.id,
-      quiz: { correct: 1, total: 1 },
+      items: 2,
+      kind: 'revision',
+      status: 'done',
       total: 2,
       workspaceId: ws.id,
     });
@@ -449,7 +458,7 @@ test.describe('study progress', () => {
 
     // Every quiz members can see is practice. In a personal workspace, the
     // default, the owner practises too; in a class they see its use instead.
-    await ownerPage.goto(`/workspaces/${ws.id}?study=practice`);
+    await ownerPage.goto(`/workspaces/${ws.id}/study/practice`);
     await expect(ownerPage.getByText('Osmosis check').first()).toBeVisible();
     await expect(
       ownerPage.getByText(m.practice_col_best()).first()
@@ -469,7 +478,7 @@ test.describe('study progress', () => {
 
     // Practise on the topic: its question not seen yet, then marked.
     await ownerPage.goto(
-      `/workspaces/${ws.id}?study=practice&group=topic&topicId=${topic.id}`
+      `/workspaces/${ws.id}/study/practice?group=topic&topicId=${topic.id}`
     );
     const dialog = ownerPage.getByRole('dialog', {
       name: m.practice_session_title({ topic: 'Osmosis' }),

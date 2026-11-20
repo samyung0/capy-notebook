@@ -32,7 +32,8 @@ const hardness = (a: AttemptCard, b: AttemptCard) =>
   (a.ratings.at(-1) ?? 0) - (b.ratings.at(-1) ?? 0);
 
 /** A study run's result: the score with its change since the set's previous
- * attempt when it gained, time and card count beside a bar per rating, then every card's
+ * attempt when it gained, time and card count, a bar per rating beside them on
+ * the left, then every card's
  * back in a grid with its ratings, numbered in the order first rated. */
 export function FlashcardResult({
   cards,
@@ -64,10 +65,13 @@ export function FlashcardResult({
   ];
   return (
     <div>
-      <div className="grid gap-7 border-divider border-b pb-7 sm:grid-cols-[minmax(0,1fr)_minmax(0,420px)] sm:items-end">
-        <div>
+      {/* The score and its chart side by side on the left, well apart and in
+          from both ends (Epo 2026-11-13). */}
+      <div className="flex flex-col gap-7 border-divider border-b pb-7 sm:flex-row sm:items-end sm:gap-10 sm:px-4 lg:gap-20 lg:px-8">
+        {/* Keeps its width: the chart gives way first. */}
+        <div className="shrink-0">
           <p className="flex flex-wrap items-baseline gap-x-2.5">
-            <span className="font-extrabold text-4xl text-fg leading-none">
+            <span className="t-result-score whitespace-nowrap text-fg">
               {good} / {cards.length}
             </span>
             <span className="font-semibold text-fg-secondary">
@@ -92,7 +96,9 @@ export function FlashcardResult({
             </span>
           </p>
         </div>
-        <RatingChart counts={counts} />
+        <div className="sm:min-w-0 sm:max-w-[380px] sm:flex-1">
+          <RatingChart counts={counts} />
+        </div>
       </div>
       <div className="mt-7 mb-3.5 flex min-h-9 items-center justify-between gap-3">
         <h3 className="font-extrabold text-[15px]">

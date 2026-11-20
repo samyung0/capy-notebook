@@ -1,0 +1,55 @@
+{
+  "name": "graph-polar-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": true,
+          "polar": "yes"
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "A",
+            "name": "A",
+            "coords": [-3, -2]
+          },
+          {
+            "type": "point",
+            "id": "B",
+            "name": "B",
+            "coords": [2, -2]
+          }
+        ],
+        "width": 480,
+        "height": 360,
+        "description": "A polar flag that is no flag"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

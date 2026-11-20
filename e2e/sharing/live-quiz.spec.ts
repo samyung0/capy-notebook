@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
-import { openQuestionDialog } from '../helpers/quizEditor';
 import { m } from '../i18n';
 
 const question = (id: string, text: string, answer: object) => ({
@@ -50,13 +50,28 @@ test('editors edit a quiz together and a learner follows it live', async ({
   });
   expect(created.status()).toBe(201);
   const quizId = ((await created.json()) as { id: string }).id;
+  // A quiz an editor makes starts hidden from members (Epo 2026-11-16); the
+  // owner shows it before the learner opens it.
+  const shown = await ownerApi.put(`/api/materials/${quizId}/hidden`, {
+    data: { hidden: false },
+  });
+  expect(shown.status()).toBe(200);
 
   await Promise.all([
     ownerPage.goto(`/materials/${quizId}`),
     editorPage.goto(`/materials/${quizId}`),
     viewerPage.goto(`/quizzes/${quizId}/attempt`),
   ]);
-  // An editor's page holds the option in its field (board X2).
+  // Questions are cards (Epo 2026-11-15): a click opens one, whose fields
+  // hold its options.
+  const openFirst = (page: Page) =>
+    page
+      .getByRole('button', {
+        exact: true,
+        name: m.question_ui_edit_question_number({ number: 1 }),
+      })
+      .click({ timeout: 30_000 });
+  await openFirst(editorPage);
   const editorOption = editorPage.getByRole('textbox', {
     name: m.question_ui_option_number({ number: 2 }),
   });
@@ -65,16 +80,9 @@ test('editors edit a quiz together and a learner follows it live', async ({
     viewerPage.getByText('Mitochondria', { exact: true })
   ).toBeVisible();
 
-  await openQuestionDialog(ownerPage);
-  const dialog = ownerPage.getByRole('dialog');
-  // The outline row focuses its section; Enter edits it (main's dialog).
-  await dialog
-    .getByRole('button', { name: m.question_ui_answer_and_marks() })
-    .first()
-    .click();
-  await expect(dialog.locator('[data-row-key]:focus')).toHaveCount(1);
-  await ownerPage.keyboard.press('Enter');
-  await dialog
+  await openFirst(ownerPage);
+  const card = ownerPage.locator('[data-question-open]');
+  await card
     .getByRole('textbox', { name: m.question_ui_option_number({ number: 2 }) })
     .fill('Mitochondrion');
 
@@ -86,7 +94,7 @@ test('editors edit a quiz together and a learner follows it live', async ({
 
   // Removing the correct option leaves the question incomplete: a line under
   // it names its first issue, and the projection leaves it out.
-  await dialog
+  await card
     .getByRole('button', {
       name: m.question_ui_remove_option({ number: 2 }),
     })
@@ -114,6 +122,5 @@ test('editors edit a quiz together and a learner follows it live', async ({
   // The learner's reads never carried a key.
   const read = await viewerApi.get(`/api/quizzes/${quizId}`);
   expect(await read.text()).not.toContain('"correct"');
-  await ownerPage.keyboard.press('Escape');
   await ownerApi.delete(`/api/quizzes/${quizId}`);
 });

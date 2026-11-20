@@ -12,6 +12,7 @@ export interface Extraction {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answered: number;
+  assignmentId?: string;
   confirmed?: number;
   createdAt: string;
   error?: string;

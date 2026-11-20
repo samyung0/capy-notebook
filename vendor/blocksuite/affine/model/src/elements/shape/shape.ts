@@ -21,7 +21,6 @@ import {
   FontStyle,
   FontWeight,
   ShapeStyle,
-  ShapeTextFontSize,
   ShapeType,
   StrokeStyle,
   TextAlign,
@@ -107,7 +106,8 @@ export class ShapeElementModel extends GfxPrimitiveElementModel<ShapeProps> {
   @field(FontFamily.Inter as string)
   accessor fontFamily!: string;
 
-  @field(ShapeTextFontSize.MEDIUM)
+  // Capy (local change 45): 16, as the board's other text starts.
+  @field(16)
   accessor fontSize!: number;
 
   @field(FontStyle.Normal as FontStyle)

@@ -12,11 +12,15 @@ import {
 import { useCreateEmbeddedMaterial } from '@/api/hooks';
 import type { Material, Question } from '@/api/types';
 import { materialRefNode } from '@/features/materials/document';
+import type { PlotBlock } from '@/features/questions/types';
 import { holdInsertPlace, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
-import type { NoteVisualBlock } from './VisualBlockDialog';
 
-const VisualBlockDialog = lazy(() => import('./VisualBlockDialog'));
+const PlotDialog = lazy(() =>
+  import('./VisualBlockDialog').then((module) => ({
+    default: module.PlotDialog,
+  }))
+);
 
 type SaveYouTubeFn = (videoId: string) => void;
 
@@ -31,9 +35,11 @@ export interface NoteBlockDialogsApi {
   ) => Promise<void>;
   /** The note this editor is bound to; embedded materials are created under it. */
   noteId: string;
-  openVisual: (
-    block: NoteVisualBlock,
-    onSave: (block: NoteVisualBlock) => void | Promise<void>
+  /** A new plot's dialog, inserted on Save (charts and graphs go in at once
+   * and open their own live dialog). */
+  openPlot: (
+    block: PlotBlock,
+    onSave: (block: PlotBlock) => void | Promise<void>
   ) => void;
   openYouTube: (initialUrl: string | undefined, onSave: SaveYouTubeFn) => void;
 }
@@ -64,9 +70,9 @@ export function NoteBlockDialogsProvider({
   noteId: string;
 }) {
   const { mutateAsync: createEmbeddedMaterial } = useCreateEmbeddedMaterial();
-  const [visual, setVisual] = useState<{
-    block: NoteVisualBlock;
-    onSave: (block: NoteVisualBlock) => void | Promise<void>;
+  const [plot, setPlot] = useState<{
+    block: PlotBlock;
+    onSave: (block: PlotBlock) => void | Promise<void>;
   } | null>(null);
   const [youtube, setYouTube] = useState<{ url?: string } | null>(null);
   const youtubeSaveRef = useRef<SaveYouTubeFn>(() => {});
@@ -78,11 +84,9 @@ export function NoteBlockDialogsProvider({
     },
     []
   );
-  const openVisual = useCallback(
-    (
-      block: NoteVisualBlock,
-      onSave: (block: NoteVisualBlock) => void | Promise<void>
-    ) => setVisual({ block, onSave }),
+  const openPlot = useCallback(
+    (block: PlotBlock, onSave: (block: PlotBlock) => void | Promise<void>) =>
+      setPlot({ block, onSave }),
     []
   );
 
@@ -110,10 +114,10 @@ export function NoteBlockDialogsProvider({
       createEmbedded,
       insertEmbedded,
       noteId,
-      openVisual,
+      openPlot,
       openYouTube,
     }),
-    [createEmbedded, insertEmbedded, noteId, openVisual, openYouTube]
+    [createEmbedded, insertEmbedded, noteId, openPlot, openYouTube]
   );
 
   useEffect(() => {
@@ -126,12 +130,12 @@ export function NoteBlockDialogsProvider({
   return (
     <Ctx.Provider value={api}>
       {children}
-      {visual && (
+      {plot && (
         <Suspense fallback={null}>
-          <VisualBlockDialog
-            block={visual.block}
-            onClose={() => setVisual(null)}
-            onSave={visual.onSave}
+          <PlotDialog
+            block={plot.block}
+            onClose={() => setPlot(null)}
+            onSave={plot.onSave}
           />
         </Suspense>
       )}

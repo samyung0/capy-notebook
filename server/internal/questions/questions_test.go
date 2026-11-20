@@ -46,7 +46,7 @@ func TestSharedFixtures(t *testing.T) {
 						}
 					}
 					a := p["answer"].(map[string]any)
-					for _, key := range []string{"correct", "accepted", "hints", "pairs"} {
+					for _, key := range []string{"correct", "accepted", "pairs"} {
 						if _, ok := a[key]; ok {
 							t.Fatalf("leaked answer %s", key)
 						}
@@ -149,7 +149,7 @@ func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
 func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 	q := map[string]any{
 		"stem": []any{
-			map[string]any{"type": "text", "label": "Source A", "text": "Prices rose."},
+			map[string]any{"type": "text", "text": "Prices rose."},
 			map[string]any{"type": "image", "description": "A demand curve"},
 			map[string]any{"type": "graph"},
 			map[string]any{"type": "chart", "title": "Sales (kg)", "labels": []any{"Jan", "Feb", "Mar"},
@@ -160,7 +160,7 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 			map[string]any{"blocks": []any{map[string]any{"type": "text", "text": "Explain."}}},
 		},
 	}
-	want := "Source A\nPrices rose.\n\n[Figure: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
+	want := "Prices rose.\n\n[Figure: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
 	if got := GradingText(q, 1); got != want {
 		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
 	}
@@ -243,9 +243,10 @@ func TestLearnerViewKeepsGroups(t *testing.T) {
 	}
 }
 
-// An mcq's learner view says whether several options are correct, never which.
+// An mcq's learner view says whether to answer with checkboxes (several
+// correct options or Multiple answer), never which options are correct.
 func TestLearnerViewMarksMultipleChoice(t *testing.T) {
-	for file, want := range map[string]any{"mcq.json": nil, "mcq-several-correct.json": true} {
+	for file, want := range map[string]any{"mcq.json": nil, "mcq-several-correct.json": true, "mcq-multiple-answer.json": true} {
 		raw, err := os.ReadFile("testdata/" + file)
 		if err != nil {
 			t.Fatal(err)
@@ -261,6 +262,54 @@ func TestLearnerViewMarksMultipleChoice(t *testing.T) {
 		if _, ok := answer["correct"]; ok {
 			t.Errorf("%s: leaked correct", file)
 		}
+	}
+}
+
+// Shuffle options (Epo 2026-11-15): learners see the options in `order`, the
+// locked one in its place, the seeded view the same on every load, and a pick
+// stored as the authored index of the option shown grades right.
+func TestLearnerViewShufflesOptionsAroundLocked(t *testing.T) {
+	raw, err := os.ReadFile("testdata/mcq-shuffle-locked.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	part := f.Question["parts"].([]any)[0].(map[string]any)
+	answerOf := func(view map[string]any) map[string]any {
+		return view["parts"].([]any)[0].(map[string]any)["answer"].(map[string]any)
+	}
+	seen := map[string]bool{}
+	for range 40 {
+		answer := answerOf(LearnerView(f.Question))
+		order := answer["order"].([]any)
+		if order[3] != 3 {
+			t.Fatalf("locked option moved: %v", order)
+		}
+		if !reflect.DeepEqual(answer["options"], part["answer"].(map[string]any)["options"]) {
+			t.Fatalf("options = %v", answer["options"])
+		}
+		seen[fmt.Sprint(order)] = true
+		texts, authored := ShownChoices(answer)
+		for shown, i := range authored {
+			if texts[shown] != answer["options"].([]any)[i] {
+				t.Fatalf("shown %d = %v, authored %d", shown, texts[shown], i)
+			}
+			// The learner picks the option at `shown`; the answer stores its authored index.
+			if marks, _ := ScorePart(part, []any{float64(i)}); (marks == 1) != (i == 1) {
+				t.Fatalf("pick of authored %d scored %v", i, marks)
+			}
+		}
+	}
+	if len(seen) < 2 {
+		t.Fatalf("never shuffled: %v", seen)
+	}
+	first := answerOf(LearnerViewsSeeded([]map[string]any{f.Question}, "attempt")[0])
+	again := answerOf(LearnerViewsSeeded([]map[string]any{f.Question}, "attempt")[0])
+	if !reflect.DeepEqual(first["order"], again["order"]) {
+		t.Fatalf("seeded order changed: %v then %v", first["order"], again["order"])
 	}
 }
 

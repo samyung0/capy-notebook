@@ -303,6 +303,9 @@ type Quiz struct {
 	CreatedAt      time.Time       `json:"createdAt"`
 	Privacy        Privacy         `json:"privacy"`
 	TimeLimitMin   *int            `json:"timeLimitMin,omitempty"`
+	// Hidden: a new workspace quiz starts hidden from members (CreateQuiz;
+	// the request handler sets it, Epo 2026-11-16).
+	Hidden bool `json:"-"`
 	// SharePath is the signed share link of a standalone quiz.
 	SharePath string `json:"sharePath,omitempty"`
 	// ParentMaterialID is the note a quiz is embedded in (a quick check).
@@ -464,6 +467,13 @@ type Material struct {
 	// CanvasWorkspaceID is the workspace a member's personal canvas belongs
 	// to (kind canvas, standalone otherwise; Epo 2026-11-09).
 	CanvasWorkspaceID string `json:"canvasWorkspaceId,omitempty"`
+	// AssignmentID is the graded quiz that owns this quiz (migration 0174):
+	// it lists nowhere, only that assignment's staff open it, and it goes
+	// with the assignment.
+	AssignmentID string `json:"assignmentId,omitempty"`
+	// GradedQuiz, on a quiz being made, is the graded quiz made with it in
+	// the same transaction, which then owns it (makeGradedQuizTx). Not read back.
+	GradedQuiz *AssignmentForm `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -637,12 +647,6 @@ type MaterialRef struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// Hidden from members (Material.Hidden).
 	Hidden bool `json:"hidden,omitempty"`
-	// Assigned: a quiz under an open assignment, for whoever it went to and
-	// whoever edits it; it shows the assignment icon (Epo 2026-11-04).
-	Assigned bool `json:"assigned,omitempty"`
-	// AssignmentID is the assignment a viewer takes this quiz through; the row
-	// opens it, and the quiz itself is refused until it closes.
-	AssignmentID string `json:"assignmentId,omitempty"`
 }
 
 type ContentOrderItem struct {
@@ -707,12 +711,9 @@ type SearchResult struct {
 	Title    string     `json:"title"`
 	Subtitle string     `json:"subtitle,omitempty"`
 	Href     string     `json:"href"`
-	// ThumbnailKey is a file's page-1 WebP; the handler signs it into
-	// ThumbnailURL.
-	ThumbnailKey string  `json:"-"`
-	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a file's page-1 thumbnail"`
-	// Preview is a flashcard set's list-card preview, or {text} for a text file.
-	Preview MaterialPreview `json:"preview,omitempty" doc:"A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md"`
+	// Typos is how many edits the title needed (0 when it holds the query),
+	// for Search to look further only when closer hits are few.
+	Typos int `json:"-"`
 }
 
 type PublicWorkspace struct {

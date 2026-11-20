@@ -58,7 +58,8 @@ export const sentRuns = (page: Page) =>
 /** Upload a file, from the files step's first menu. */
 export async function uploadPaper(page: Page, name: string, buffer: Buffer) {
   await quizDialog(page)
-    .getByRole('button', { name: m.make_quiz_choose_file() })
+    .getByRole('button', { name: m.file_choose() })
+    .first()
     .click({ timeout: 30_000 });
   const chooser = page.waitForEvent('filechooser');
   // Upload a file waits for the workspace's upload policy.
