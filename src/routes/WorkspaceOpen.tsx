@@ -83,7 +83,10 @@ import {
   studyTabPage,
 } from '@/features/study/studyRoutes';
 import { VoiceFooterButton } from '@/features/voice/VoiceCard';
-import type { AddSourceMode } from '@/features/workspace/AddSourceDialog';
+import {
+  AddSourceDialog,
+  type AddSourceMode,
+} from '@/features/workspace/AddSourceDialog';
 import {
   canManageWorkspaceSettings,
   hasWorkspaceSettings,
@@ -97,7 +100,6 @@ import { ConversationList } from '@/features/workspace/chat/ConversationList';
 import { resumedConnect } from '@/features/workspace/connectResume';
 import { FilesHome } from '@/features/workspace/FilesHome';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
-import { AddSourceDialog } from '@/features/workspace/LazyAddSourceDialog';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
 import type { SettingsView } from '@/features/workspace/settingsTabs';
 import { WorkspaceDashboard } from '@/features/workspace/WorkspaceDashboard';

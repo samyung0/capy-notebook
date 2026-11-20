@@ -239,6 +239,18 @@ export function refusalHandler(
   };
 }
 
+/** The offline toast. Its id is the back-online toast's too, so either
+ * replaces the other instead of stacking (and a second one, as Add file's
+ * picker shows, replaces the first). */
+export function toastOffline() {
+  userToast({
+    description: m.connection_offline_body(),
+    id: 'workspace-offline',
+    title: m.connection_offline_title(),
+    variant: 'warning',
+  });
+}
+
 /**
  * Toasts going offline (and arriving offline), coming back online, and the
  * storage status once per workspace visit, and hosts the storage details dialog. A write refused for a
@@ -278,8 +290,7 @@ export function WorkspaceHealth({ workspace }: { workspace: Workspace }) {
     [qc, workspace.id]
   );
 
-  // Both toasts share an id, so coming back online replaces a visible
-  // offline toast instead of stacking under it.
+  // Back online replaces a visible offline toast (toastOffline).
   const wasOffline = useRef(false);
   useEffect(() => {
     if (online) {
@@ -294,12 +305,7 @@ export function WorkspaceHealth({ workspace }: { workspace: Workspace }) {
       return;
     }
     wasOffline.current = true;
-    userToast({
-      description: m.connection_offline_body(),
-      id: 'workspace-offline',
-      title: m.connection_offline_title(),
-      variant: 'warning',
-    });
+    toastOffline();
   }, [online, workspace.id]);
 
   useEffect(() => {

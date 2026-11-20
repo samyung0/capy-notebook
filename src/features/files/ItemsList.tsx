@@ -59,11 +59,8 @@ import {
   blockLink,
   useBlockActions,
 } from '@/features/materials/useBlockActions';
+import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { resumedConnect } from '@/features/workspace/connectResume';
-import {
-  AddSourceDialog,
-  addSourceIntent,
-} from '@/features/workspace/LazyAddSourceDialog';
 import { m } from '@/i18n';
 import {
   csv,
@@ -251,7 +248,6 @@ export function ItemsList({
   // Add file also makes blocks: its Create tab (Epo 2026-11-12).
   const actions = (
     <Button
-      {...addSourceIntent}
       className="px-2.5 font-bold text-link"
       disabled={blocks.frozen}
       iconLeft="plus"

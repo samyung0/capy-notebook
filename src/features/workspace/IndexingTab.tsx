@@ -32,7 +32,7 @@ import {
   materialIconName,
 } from '@/lib/fileIcons';
 import { userColorPair } from '@/lib/userColor';
-import { AddSourceDialog, addSourceIntent } from './LazyAddSourceDialog';
+import { AddSourceDialog } from './AddSourceDialog';
 import { retryFailedFile } from './retryProcessing';
 import {
   useCancelFileChanges,
@@ -259,7 +259,6 @@ function FailedFiles({
             </span>
             {owner && (
               <Button
-                {...addSourceIntent}
                 className="col-start-3 row-span-2 row-start-1"
                 disabled={retryingIds.includes(file.id)}
                 onClick={() =>

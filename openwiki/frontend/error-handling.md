@@ -381,18 +381,22 @@ a connection that is down while the browser reports online still takes
 TanStack's reload.
 
 Two pieces of a workspace page load only when wanted (Q619), so a failed load
-leaves the page. Hover or focus loads each ahead of the click, except offline, where
-it asks for nothing, since the browser would keep the failure until a reload. A
-preload that fails says nothing: only an open the user asked for shows a toast.
+leaves the page. Each loads ahead of the press, except offline, where it asks for
+nothing, since the browser would keep the failure until a reload. A preload that
+fails says nothing: only an open the user asked for shows a toast.
 
-- **Add file** (`LazyAddSourceDialog`; the file panel, the Dashboard, the Files page,
-  the Indexing tab, a failed file's row). With its code not here on the click, a
-  loading toast shows from 300 ms. A press or key once that toast is up means the
-  user moved elsewhere, as does leaving the page: nothing opens later, and the code
-  keeps loading for the next time. If it won't load, a toast says so and nothing
-  opens: offline the offline copy, stalled past 20 s the connection copy, otherwise
-  "An update is ready" with Reload. Any of these also ends a pending return from
-  connecting a drive, so re-entering the page doesn't try Import again.
+- **Add file's drive pickers** (`AddSourceDialog`: the Google Drive picker and
+  OneDrive's with MSAL). The dialog itself comes with the page and opens at once,
+  offline too (Epo 2026-11-20); Import opening loads the pickers' code, and a
+  picker pressed waits for it, both pickers disabled; closing the dialog
+  meanwhile ends the press, so nothing opens when the code arrives. If it won't
+  load the dialog stays, and "An update is ready" with Reload says so; offline
+  the page's offline toast shows again (`toastOffline`, under its id, so it
+  replaces the workspace's instead of stacking; the Files page has none of its
+  own, and a workspace's closes after 12 s). A press
+  checks OneDrive's settings (`msalConfig.ts`, no MSAL) before it opens the
+  picker's window, and opens none while its last load had failed; if the code
+  arrives after all, that press ends quietly and the next opens the window.
 - **The chat's Markdown** (`Prose`) loads once a workspace page is first idle
   (Q681, `preloadProseWhenIdle`: at most 5 s after it opened, 2 s without
   `requestIdleCallback`), so saved chats read formatted offline later; offline at

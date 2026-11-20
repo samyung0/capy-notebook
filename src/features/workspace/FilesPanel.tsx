@@ -25,7 +25,6 @@ import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
-import { addSourceIntent } from './LazyAddSourceDialog';
 import { PanelNewRow } from './PanelNewRow';
 import { matchesSearch, PanelSearch } from './PanelSearch';
 import type { TabAction } from './PanelTabRow';
@@ -471,7 +470,7 @@ export function FilesPanel({
         />
       )}
       {onAddSource && (
-        <div className="contents" data-workspace-add-menu {...addSourceIntent}>
+        <div className="contents" data-workspace-add-menu>
           <PanelNewRow
             icon="plus"
             label={m.action_new_file_or_topic()}

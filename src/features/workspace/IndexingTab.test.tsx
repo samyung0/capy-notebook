@@ -14,9 +14,8 @@ import { IndexingTab } from './IndexingTab';
 
 const userToast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/ui/userToast', () => ({ userToast }));
-vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
+vi.mock('@/features/workspace/AddSourceDialog', () => ({
   AddSourceDialog: () => null,
-  addSourceIntent: {},
 }));
 
 // No DOM: each render records the Button props, and the test calls onClick.
