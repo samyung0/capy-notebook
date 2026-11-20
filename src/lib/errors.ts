@@ -45,8 +45,9 @@ export interface ErrorDescription {
   title: string;
 }
 
+// The last: Vite's preload helper, for a chunk's stylesheet, before it imports.
 const CHUNK_LOAD_PATTERN =
-  /chunkloaderror|loading chunk \d+ failed|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i;
+  /chunkloaderror|loading chunk \d+ failed|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|unable to preload css/i;
 const NETWORK_ERROR_PATTERN =
   /failed to fetch|networkerror|network error|load failed|connection refused|fetch failed/i;
 

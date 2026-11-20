@@ -374,6 +374,10 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	var name, kind, path, sha string
 	var revision, size int64
 	err = tx.QueryRow(ctx, `SELECT name,kind,COALESCE(blob_path,''),COALESCE(source_sha256,''),revision,size_bytes FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&name, &kind, &path, &sha, &revision, &size)
+	// Trashed since the lock's read: the handler asks whether it was deleted.
+	if isNoRows(err) {
+		return SourceSession{}, ErrNotFound
+	}
 	if err != nil {
 		return SourceSession{}, err
 	}

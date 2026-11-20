@@ -3,6 +3,7 @@ import { ApiError } from '@/api/client';
 import {
   RECONNECT_GRACE_MS,
   refusalDropsDrafts,
+  refusalKeepsDrafts,
   roomReconnector,
   roomRefusal,
   sendCheckpointRequest,
@@ -36,12 +37,17 @@ describe('refusalDropsDrafts', () => {
     const suspended = new ApiError(403, 'Forbidden', undefined, {
       code: 'account_suspended',
     });
-    expect(refusalDropsDrafts('notFound')).toBe(true);
+    expect(refusalDropsDrafts('notFound', new ApiError(404, 'Not Found'))).toBe(
+      true
+    );
     expect(refusalDropsDrafts('forbidden', forbidden)).toBe(true);
     expect(refusalDropsDrafts('forbidden', suspended)).toBe(false);
-    // The collaboration service's reason alone reads the same for a lock.
+  });
+
+  it("keeps them on the collaboration service's reason alone, which a deleted item and an account lock give too", () => {
+    expect(refusalDropsDrafts('notFound')).toBe(false);
+    expect(refusalKeepsDrafts('notFound')).toBe(true);
     expect(refusalDropsDrafts('forbidden')).toBe(false);
-    expect(refusalDropsDrafts('retry', forbidden)).toBe(false);
   });
 });
 

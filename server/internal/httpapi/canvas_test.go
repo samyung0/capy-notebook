@@ -518,8 +518,9 @@ func TestATrashedCanvasOpensReadOnlyFromItsCreatorsTrash(t *testing.T) {
 		expectStatus(t, doReq(t, h, http.MethodGet, "/api/canvases/"+canvas.ID, user, nil), http.StatusNotFound, user+" reading the trashed canvas")
 		expectStatus(t, doReq(t, h, http.MethodGet, board, user, nil), http.StatusNotFound, user+" reading its board")
 	}
-	if status, _, _ := canvasToken(t, h, "u_editor", canvas.ID, nil); status != http.StatusNotFound {
-		t.Errorf("a room token for the trashed canvas = %d, want 404", status)
+	// Its creator could read it live, so its room says it was deleted.
+	if status, _, _ := canvasToken(t, h, "u_editor", canvas.ID, nil); status != http.StatusGone {
+		t.Errorf("a room token for the trashed canvas = %d, want 410", status)
 	}
 
 	expectStatus(t, doReq(t, h, http.MethodPost, "/api/trash/material/"+canvas.ID+"/restore", "u_editor",

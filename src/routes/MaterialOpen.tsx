@@ -1,4 +1,6 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { useRef } from 'react';
+import { deletedItemOf } from '@/api/client';
 import { useFile, useMaterial, useWorkspace } from '@/api/hooks';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -24,8 +26,16 @@ export default function MaterialOpen() {
     ? fileQuery
     : materialQuery;
   const workspaceId = data?.workspaceId ?? '';
+  // Shown live, then deleted (`item_deleted`, or to its trash readers read
+  // trashed): the page stays, for the item's body to show what this device
+  // kept of it (Q39), never the Trash's strip.
+  const shownLive = useRef<string | null>(null);
+  const openId = fileId ?? materialId ?? null;
+  if (data && !data.trash) shownLive.current = openId;
+  const wasLive = !!openId && shownLive.current === openId;
+  const deleted = wasLive && (!!deletedItemOf(error) || !!data?.trash);
   // Opened from the Trash: read-only until restored, which reopens it live.
-  const trash = data?.trash;
+  const trash = wasLive ? undefined : data?.trash;
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
   });
@@ -53,7 +63,7 @@ export default function MaterialOpen() {
           <QueryPausedState />
         ) : isPending ? (
           <FileLoading />
-        ) : isError || !data ? (
+        ) : (isError || !data) && !deleted ? (
           <FileError
             errorId={unexpectedErrorId(error)}
             onRetry={() => void refetch()}

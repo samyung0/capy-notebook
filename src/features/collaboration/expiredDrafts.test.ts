@@ -8,9 +8,17 @@ it("downloads a board's expired edits as its blocks in JSON", () => {
   const block = new Y.Map<unknown>();
   doc.getMap('blocks').set('surface', block);
   block.set('sys:flavour', 'affine:surface');
-  const { extension, text } = draftFile(doc, undefined);
-  expect(extension).toBe('json');
-  expect(JSON.parse(text)).toEqual({
-    surface: { 'sys:flavour': 'affine:surface' },
+  expect(draftFile(doc, 'canvas', undefined)).toEqual({
+    extension: 'json',
+    text: JSON.stringify(
+      { surface: { 'sys:flavour': 'affine:surface' } },
+      null,
+      2
+    ),
   });
+});
+
+// Drafts that hold nothing to save make no empty file (review 2026-11-20).
+it('makes no file of drafts that hold nothing', () => {
+  expect(draftFile(new Y.Doc(), 'diagram', undefined)).toBeNull();
 });

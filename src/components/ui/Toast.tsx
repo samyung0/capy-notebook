@@ -23,6 +23,9 @@ interface ToastOptions {
   id?: string | number;
   /** It closed: its × or its button (not replaced by a toast of its id). */
   onClose?: () => void;
+  /** A plain, ringed action before the filled one: the other choice (a
+   * deleted item's Discard beside Download, Epo 2026-11-20). */
+  secondary?: ToastButton;
   title: string;
   /** `loading` is a working toast: it stays until the same id updates it. */
   variant?: ToastVariant;
@@ -56,11 +59,12 @@ function Glyph({ paths }: { paths: string[] }) {
 
 /**
  * Ding's toast (toast.css, Epo 2026-11-12): the 44px icon cell with its
- * glyph, the copy (title, count, description; at most 340px), then the
- * filled action and the close (every toast, Epo 2026-11-12) beside it. A
- * screen too narrow for both puts the buttons on a row of their own at the
- * right. A plain toast is a green check; one with its own icon (Link
- * copied) shows it in the glyph's place, in the text colour.
+ * glyph, the copy (title, count, description; at most 340px), then a plain
+ * ringed action, the filled action and the close (every toast, Epo
+ * 2026-11-12) beside it. A screen too narrow for them puts the buttons on a
+ * row of their own at the right, all together. A plain toast is a green
+ * check; one with its own icon (Link copied) shows it in the glyph's place,
+ * in the text colour.
  */
 function Toast({
   toast,
@@ -71,7 +75,14 @@ function Toast({
   count?: number;
   onClose: () => void;
 }) {
-  const { button, description, icon, title, variant = 'default' } = toast;
+  const {
+    button,
+    description,
+    icon,
+    secondary,
+    title,
+    variant = 'default',
+  } = toast;
   // A plain toast confirms something (Moved, Invitation submitted): the green
   // check, unless it brings its own icon (Epo 2026-11-12).
   const type = variant === 'default' ? (icon ? undefined : 'success') : variant;
@@ -79,7 +90,8 @@ function Toast({
   const copy = useRef<HTMLDivElement>(null);
   const buttons = useRef<HTMLButtonElement>(null);
   const [wrapped, setWrapped] = useState(false);
-  // Ding's test: the first button starts below the copy, not beside it.
+  // Ding's test, taken on the close, the last button, so every button wraps
+  // together onto a row of its own: it starts below the copy, not beside it.
   useLayoutEffect(() => {
     const node = pill.current;
     if (!node) return;
@@ -124,24 +136,28 @@ function Toast({
             {description && <div className="tst-desc">{description}</div>}
           </ContentSwap>
         </div>
-        {button && (
-          <button
-            className="tst-action"
-            onClick={() => {
-              button.onClick();
-              onClose();
-            }}
-            ref={buttons}
-            type="button"
-          >
-            {button.label}
-          </button>
+        {[secondary, button].map(
+          (action) =>
+            action && (
+              <button
+                className="tst-action"
+                data-kind={action === secondary ? 'plain' : undefined}
+                key={action === secondary ? 'plain' : 'filled'}
+                onClick={() => {
+                  action.onClick();
+                  onClose();
+                }}
+                type="button"
+              >
+                {action.label}
+              </button>
+            )
         )}
         <button
           aria-label={m.action_close()}
           className="tst-close"
           onClick={onClose}
-          ref={button ? undefined : buttons}
+          ref={buttons}
           type="button"
         >
           <svg aria-hidden height={12} viewBox="0 0 24 24" width={12}>

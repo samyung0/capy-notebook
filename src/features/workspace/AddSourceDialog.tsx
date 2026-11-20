@@ -16,6 +16,7 @@ import {
   useUploadSource,
   useWorkspace,
 } from '@/api/hooks';
+import { showErrorToast } from '@/api/queryClient';
 import type {
   FileLinks,
   InspectSourceImportsResponse,
@@ -58,26 +59,11 @@ import { markGettingStarted } from '@/features/guide/gettingStarted';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { errorCopy } from '@/lib/errors';
+import { errorCopy, errorKind } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
-import {
-  createGooglePicker,
-  type GooglePicker,
-  googlePickerEnv,
-  loadGooglePicker,
-} from '@/lib/googlePicker';
-import {
-  acquirePickerToken,
-  assertMsalConfigured,
-  clearPickerAuth,
-} from '@/lib/msalPickerAuth';
-import {
-  type ImportSourceRef,
-  isPickerConsentBlocked,
-  isPickerUserCancelled,
-  openOneDrivePicker,
-  pickerLocale,
-} from '@/lib/onedrivePicker';
+import type { GooglePicker } from '@/lib/googlePicker';
+import { msalConfigured } from '@/lib/msalConfig';
+import type { ImportSourceRef } from '@/lib/onedrivePicker';
 import {
   useMicrosoftLoginHint,
   useProviderConnect,
@@ -133,7 +119,46 @@ import {
   TopicSelect,
   topicByName,
 } from './TopicSelect';
+import { toastOffline } from './WorkspaceHealth';
 import { YourFilesPanel } from './YourFilesPanel';
+
+/* The drive pickers' code, MSAL with OneDrive's, is all of Add file that loads
+ * on demand (Epo 2026-11-20: the dialog comes with the page): Import opening
+ * loads it ahead, and a picker pressed waits for it, its buttons disabled. Code
+ * that cannot load shows the error toast (offline, the connection toast) and
+ * the dialog stays. */
+const loadGoogleCode = () => import('@/lib/googlePicker');
+/** OneDrive's code failed last time: a browser that keeps a failed import
+ * fails it again, so a press opens no window for it. */
+let microsoftCodeFailed = false;
+const loadMicrosoftCode = () =>
+  Promise.all([
+    import('@/lib/msalPickerAuth'),
+    import('@/lib/onedrivePicker'),
+  ]).then(
+    ([auth, picker]) => {
+      microsoftCodeFailed = false;
+      return { auth, picker };
+    },
+    (error: unknown) => {
+      microsoftCodeFailed = true;
+      throw error;
+    }
+  );
+
+function preloadPickers() {
+  // Offline it would fail, and the browser keeps a failed import until a reload.
+  if (navigator.onLine === false) return;
+  loadGoogleCode().catch(() => undefined);
+  loadMicrosoftCode().catch(() => undefined);
+}
+
+/** A picker's code, or the error it could not load with. */
+const pickerCode = <T,>(load: () => Promise<T>) =>
+  load().then(
+    (code) => ({ code }),
+    (error: unknown) => ({ error })
+  );
 
 function reportPickerFailure(
   provider: Provider,
@@ -768,6 +793,9 @@ export function AddSourceDialog({
     { errorBoundary: false }
   );
   const [mode, setMode] = useState<string>(initialMode);
+  useEffect(() => {
+    if (mode === 'import') preloadPickers();
+  }, [mode]);
   const [inspectionGuard] = useState(createSourceInspectionGuard);
   const uploads = useSourceBatch(
     uploadPolicy,
@@ -1123,23 +1151,43 @@ export function AddSourceDialog({
     }
   }
 
+  /** Ends a press whose picker's code could not load. Offline it shows the
+   * page's offline toast again: in a workspace that one closes after 12 s, and
+   * the Files page has none. */
+  function pickerCodeFailed(error: unknown) {
+    pickerBusy.current = false;
+    setIsPicking(false);
+    if (errorKind(error) === 'offline') toastOffline();
+    else showErrorToast(error);
+  }
+
   async function openGooglePicker() {
     if (pickerBusy.current) return;
-    if (USE_MSW) {
-      await inspect('google', [{ id: 'mock_drive_file' }]);
-      return;
-    }
+    // Held from the press: a second one waits, and closing the dialog ends it.
     pickerBusy.current = true;
     setIsPicking(true);
     const isCurrent = inspectionGuard.begin();
+    const loaded = await pickerCode(loadGoogleCode);
+    if (!isCurrent()) return;
+    if ('error' in loaded) {
+      pickerCodeFailed(loaded.error);
+      return;
+    }
+    const google = loaded.code;
+    if (USE_MSW) {
+      pickerBusy.current = false;
+      setIsPicking(false);
+      await inspect('google', [{ id: 'mock_drive_file' }], isCurrent);
+      return;
+    }
     try {
-      const { apiKey, appId } = googlePickerEnv();
+      const { apiKey, appId } = google.googlePickerEnv();
       const { accessToken } = await api.get<{ accessToken: string }>(
         '/integrations/google/picker-token'
       );
-      await loadGooglePicker();
+      await google.loadGooglePicker();
       if (!isCurrent()) return;
-      const picker = createGooglePicker({
+      const picker = google.createGooglePicker({
         accessToken,
         apiKey,
         appId,
@@ -1219,17 +1267,47 @@ export function AddSourceDialog({
 
   async function openMicrosoftPicker() {
     if (pickerBusy.current) return;
-    if (USE_MSW) {
-      await inspect('microsoft', [{ id: 'mock_drive_file' }]);
+    if (!(USE_MSW || msalConfigured())) {
+      reportPickerFailure('microsoft', 'open');
+      userToast({
+        title: m.onedrive_picker_missing_config(),
+        variant: 'error',
+      });
       return;
     }
-    const isCurrent = inspectionGuard.begin();
+    // Held from the press: a second one waits, and closing the dialog ends it.
     pickerBusy.current = true;
     setIsPicking(true);
-    let pickerWindow: Window | null = null;
+    const isCurrent = inspectionGuard.begin();
+    // Before any wait, while the press still allows a window.
+    const windowless = !USE_MSW && microsoftCodeFailed;
+    const pickerWindow =
+      USE_MSW || windowless
+        ? null
+        : window.open('', 'OneDrivePicker', 'width=1080,height=680');
+    const loaded = await pickerCode(loadMicrosoftCode);
+    if (!isCurrent()) {
+      pickerWindow?.close();
+      return;
+    }
+    if ('error' in loaded) {
+      pickerWindow?.close();
+      pickerCodeFailed(loaded.error);
+      return;
+    }
+    if (USE_MSW || windowless) {
+      pickerBusy.current = false;
+      setIsPicking(false);
+    }
+    if (USE_MSW) {
+      await inspect('microsoft', [{ id: 'mock_drive_file' }], isCurrent);
+      return;
+    }
+    // Its code came after all, with no window to show it in: this press ends
+    // quietly, and the next opens one.
+    if (windowless) return;
+    const { auth, picker } = loaded.code;
     try {
-      assertMsalConfigured();
-      pickerWindow = window.open('', 'OneDrivePicker', 'width=1080,height=680');
       if (!pickerWindow) throw new Error('POPUP_BLOCKED');
       const drive = await api.get<MicrosoftDriveHost>(
         '/integrations/microsoft/drive'
@@ -1238,11 +1316,11 @@ export function AddSourceDialog({
         pickerWindow.close();
         return;
       }
-      const items = await openOneDrivePicker({
-        acquireToken: acquirePickerToken,
-        clearAuth: clearPickerAuth,
+      const items = await picker.openOneDrivePicker({
+        acquireToken: auth.acquirePickerToken,
+        clearAuth: auth.clearPickerAuth,
         drive,
-        locale: pickerLocale(getLocale()),
+        locale: picker.pickerLocale(getLocale()),
         loginHint: microsoftLoginHint ?? undefined,
         openWindow: () => pickerWindow,
       });
@@ -1252,19 +1330,12 @@ export function AddSourceDialog({
     } catch (error) {
       if (pickerWindow && !pickerWindow.closed) pickerWindow.close();
       if (!isCurrent()) return;
-      if (isPickerUserCancelled(error)) return;
+      if (picker.isPickerUserCancelled(error)) return;
       reportPickerFailure('microsoft', 'open');
-      if (isPickerConsentBlocked(error)) {
+      if (picker.isPickerConsentBlocked(error)) {
         userToast({
           description: m.onedrive_picker_blocked_body(),
           title: m.onedrive_picker_blocked_title(),
-          variant: 'error',
-        });
-        return;
-      }
-      if (error instanceof Error && error.message === 'MSAL_CONFIG') {
-        userToast({
-          title: m.onedrive_picker_missing_config(),
           variant: 'error',
         });
         return;

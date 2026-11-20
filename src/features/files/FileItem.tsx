@@ -5,9 +5,9 @@ import type { ListView } from '@/components/app/ListToolbar';
 import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
 import { toastLostAccess } from '@/features/files/lostAccess';
 import { relativeTime } from '@/features/materials/MaterialListCard';
+import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
-import { AddSourceDialog } from '@/features/workspace/LazyAddSourceDialog';
 import {
   type RetryProcessing,
   retryFailedFile,

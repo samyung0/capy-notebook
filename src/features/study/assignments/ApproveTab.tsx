@@ -300,7 +300,10 @@ export function ApproveTab({
         )}
       >
         <span className="t-meta text-fg-secondary">
-          {m.assignment_to_approve({ count: toApprove })}
+          {/* Manual grading has nothing to approve (Epo 2026-11-20). */}
+          {manual
+            ? m.assignment_to_grade_count({ count: toApprove })
+            : m.assignment_to_approve({ count: toApprove })}
           {notGraded > 0 && (
             <>
               {' · '}
@@ -371,7 +374,9 @@ export function ApproveTab({
             }}
             size="sm"
           >
-            {m.assignment_start_approving()}
+            {manual
+              ? m.assignment_start_grading()
+              : m.assignment_start_approving()}
           </Button>
           <Button
             className="max-md:hidden"
@@ -381,7 +386,9 @@ export function ApproveTab({
             size="sm"
             variant="outline"
           >
-            {m.assignment_next_to_approve()}
+            {manual
+              ? m.assignment_next_to_grade()
+              : m.assignment_next_to_approve()}
           </Button>
           {fullscreen && (
             <ToolbarButton
@@ -418,7 +425,9 @@ export function ApproveTab({
             {toDo.length > 0 && (
               <>
                 <p className="t-label pt-3 pb-1.5 text-fg-muted uppercase">
-                  {m.assignment_section_to_approve()}
+                  {manual
+                    ? m.assignment_to_grade()
+                    : m.assignment_section_to_approve()}
                 </p>
                 <ul className="flex flex-col gap-0.5">
                   {toDo.map(questionRow)}
@@ -473,7 +482,9 @@ export function ApproveTab({
           {!paper && (
             <div className="flex items-center justify-between gap-2 pb-2 max-md:pt-4">
               <span className="t-meta text-fg-secondary">
-                {m.assignment_to_approve({
+                {(manual
+                  ? m.assignment_to_grade_count
+                  : m.assignment_to_approve)({
                   count: rows.filter(
                     (row) => row.waiting && (manual || row.aiMarked)
                   ).length,
@@ -1058,7 +1069,12 @@ function MarkForm({
           {m.action_previous()}
         </Button>
         <Button disabled={!complete || isPending} onClick={approve}>
-          {waiting ? m.assignment_approve() : m.action_save()}
+          {/* Under manual grading the marks typed are saved, not approved. */}
+          {waiting
+            ? assignment.manage?.marking === 'manual'
+              ? m.assignment_save_marks()
+              : m.assignment_approve()
+            : m.action_save()}
         </Button>
       </div>
     </div>

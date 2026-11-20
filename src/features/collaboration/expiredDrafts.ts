@@ -1,37 +1,57 @@
 import type * as Y from 'yjs';
+import type { Material } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { readCards } from '@/features/flashcards/liveSet';
 import { readMermaid } from '@/features/materials/liveMermaid';
-import { readQuestions } from '@/features/quizzes/liveQuiz';
+import { keysScope, readQuestions } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
 
-/** What an item's drafts hold, as a file a person can read: a diagram's source,
- * a set's cards as tab-separated lines, a quiz's questions as JSON, a canvas's
- * blocks as JSON (its board's elements live in its surface block). */
-export function draftFile(doc: Y.Doc, document: 'keys' | undefined) {
-  const shared = new Set(doc.share.keys());
-  if (shared.has('blocks'))
-    return {
-      extension: 'json',
-      text: JSON.stringify(doc.getMap('blocks').toJSON(), null, 2),
-    };
-  if (document === 'keys' || shared.has('questions'))
-    return {
-      extension: 'json',
-      text: JSON.stringify(
-        document === 'keys' ? doc.toJSON() : readQuestions(doc, null),
-        null,
-        2
-      ),
-    };
-  const mermaid = shared.has('content') ? readMermaid(doc) : null;
-  if (mermaid) return { extension: 'mmd', text: mermaid.source.toString() };
-  return {
-    extension: 'tsv',
-    text: readCards(doc)
-      .map((card) => `${card.front}\t${card.back}`)
-      .join('\n'),
-  };
+/** A live item's kind: every material kind but a note, whose drafts open
+ * as the merge view's pieces. */
+export type ItemKind = Exclude<Material['kind'], 'note'>;
+
+/** What an item's drafts hold, as a file a person can read, by the item's
+ * known kind: a diagram's source, a set's cards as tab-separated lines, a
+ * quiz's questions (or its keys document) as JSON, a canvas's blocks as JSON
+ * (its board's elements live in its surface block). Null when they hold
+ * nothing to save: no empty file is made. */
+export function draftFile(
+  doc: Y.Doc,
+  kind: ItemKind,
+  document: 'keys' | undefined
+): { extension: string; text: string } | null {
+  switch (kind) {
+    case 'canvas': {
+      const blocks = doc.getMap('blocks');
+      return blocks.size
+        ? { extension: 'json', text: JSON.stringify(blocks.toJSON(), null, 2) }
+        : null;
+    }
+    case 'quiz': {
+      // A document drawn from rows has no root types until asked for one.
+      const value =
+        document === 'keys'
+          ? keysScope(doc).toJSON()
+          : readQuestions(doc, null);
+      return Object.keys(value).length
+        ? { extension: 'json', text: JSON.stringify(value, null, 2) }
+        : null;
+    }
+    case 'diagram':
+    case 'mindmap': {
+      const source = readMermaid(doc)?.source.toString();
+      return source ? { extension: 'mmd', text: source } : null;
+    }
+    case 'flashcards': {
+      const cards = readCards(doc);
+      return cards.length
+        ? {
+            extension: 'tsv',
+            text: cards.map((card) => `${card.front}\t${card.back}`).join('\n'),
+          }
+        : null;
+    }
+  }
 }
 
 function download(name: string, text: string) {
@@ -52,33 +72,45 @@ function download(name: string, text: string) {
 export function offerExpiredDrafts({
   doc,
   document: which,
+  kind,
   materialId,
   onGone,
   title,
 }: {
   doc: Y.Doc;
   document: 'keys' | undefined;
+  kind: ItemKind;
   materialId: string;
   /** The toast closed: the rows go. */
   onGone: () => void;
   /** The file's name, read when it is downloaded. */
   title: () => string;
 }) {
+  // A file that could not be made keeps them, for the next open's toast.
+  let failed = false;
   userToast({
     button: {
       label: m.editor_old_edits_download(),
       onClick: () => {
-        const { extension, text } = draftFile(doc, which);
+        const made = draftFile(doc, kind, which);
+        if (!made) {
+          failed = true;
+          userToast({
+            title: m.lost_edits_download_failed(),
+            variant: 'error',
+          });
+          return;
+        }
         download(
-          `${title()} (${m.editor_old_edits_file()}).${extension}`,
-          text
+          `${title()} (${m.editor_old_edits_file()}).${made.extension}`,
+          made.text
         );
       },
     },
     description: m.editor_old_edits_body(),
     id: `expired-drafts-${materialId}-${which ?? 'content'}`,
     onClose: () => {
-      onGone();
+      if (!failed) onGone();
       doc.destroy();
     },
     title: m.editor_old_edits_title(),

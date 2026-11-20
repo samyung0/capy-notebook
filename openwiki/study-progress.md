@@ -1710,7 +1710,7 @@ approve · {k} not graded", Grade {k} with AI (only when some wait; Read papers 
 under manual marking), an "Only {name}" chip when opened from a member's "to approve"
 on Responses By member, Overview and Next to approve. Below, from `lg` three columns: every
 question (Epo 2026-11-19; the report's `answers` hold a row for every answer)
-under To approve (count of waiting answers) and Done (tick), "AI marked" in the
+under To approve (count of waiting answers; under Manual marking, To grade, as are the toolbar's "N to grade", Start grading, Next to grade and the form's Save marks, Epo 2026-11-20) and Done (tick), "AI marked" in the
 accent colour after "Q3 · 6 marks" on one with a written or drawn part unless
 Marking is Manual; the chosen question's members (waiting first, Approve all),
 and the grading pane, showing a written answer as the member's results do (Epo

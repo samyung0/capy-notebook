@@ -314,9 +314,11 @@ func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialO
 	if err != nil {
 		return a.getTrashedMaterial(ctx, in, err)
 	}
+	a.checked(in.ID)
+	// Not found past the role check: trashed since, read as a trashed one.
 	res, err := a.s.GetMaterial(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return a.getTrashedMaterial(ctx, in, err)
 	}
 	// View reads a material (a note, a live quiz or set, a diagram or
 	// mindmap, Q453) while its room may hold edits the idle projection has
@@ -324,7 +326,7 @@ func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialO
 	// the stored one and is reported.
 	if !in.NoContent && a.projectLive(ctx, in.ID) {
 		if res, err = a.s.GetMaterial(ctx, in.ID); err != nil {
-			return nil, hErr(err)
+			return a.getTrashedMaterial(ctx, in, err)
 		}
 	}
 	readOnly, err := a.readOnly(ctx, res.OwnerUserID)
@@ -352,6 +354,10 @@ func (a *api) getMaterial(ctx context.Context, in *getMaterialInput) (*materialO
 func (a *api) getTrashedMaterial(ctx context.Context, in *getMaterialInput, denied error) (*materialOutput, error) {
 	mt, err := a.trashedMaterial(ctx, in.ID, !in.NoContent, denied)
 	if err != nil {
+		live := func() error { _, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), in.ID); return err }
+		if gone := a.deletedError(ctx, agenttools.KindMaterial, in.ID, err, live); gone != nil {
+			return nil, gone
+		}
 		return nil, hErr(err)
 	}
 	out, err := a.materialResponse(ctx, mt, "", true, false)

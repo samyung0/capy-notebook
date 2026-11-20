@@ -72,6 +72,9 @@ import {
   deleteAccountDrafts,
   deleteDocumentDrafts,
   deleteDrafts,
+  deletedDocument,
+  deleteShownDrafts,
+  deleteUnheldDrafts,
   draftBytes,
   draftGroups,
   draftSender,
@@ -80,6 +83,7 @@ import {
   dropLostDrafts,
   type EditDraft,
   heldDraftSessions,
+  holdDraftDocument,
   markDraftsReported,
   openRecoveryGroup,
   putDrafts,
@@ -202,6 +206,222 @@ describe('the draft store', () => {
     expect(await readDrafts('u_sweep:material:kept')).toHaveLength(1);
     // Another account's rows are never checked.
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
+  });
+
+  // Q39-Q41: a deleted item's drafts stay for its toast, a lost one's go
+  // silently (counted), and one the server could not answer waits.
+  it("offers a deleted item's drafts and keeps them, drops a lost one's, and leaves an unanswered one", async () => {
+    await putDrafts([
+      draft('trashed', { key: 'u_gone:material:trashed' }),
+      draft('trashed-keys', { key: 'u_gone:material:trashed:keys' }),
+      draft('lost', { data: new Uint8Array(3), key: 'u_gone:material:lost' }),
+      draft('away', { key: 'u_gone:file:away' }),
+    ]);
+    post.mockClear();
+    const onDeleted = vi.fn();
+    const kept = await sweepDrafts(
+      'u_gone',
+      {
+        post: async (path) => {
+          if (path.includes('trashed'))
+            throw new ApiError(410, 'Gone', undefined, {
+              code: 'item_deleted',
+              kind: 'quiz',
+              name: 'Cell quiz',
+            });
+          if (path.includes('lost')) throw new ApiError(404, 'Not Found');
+          throw new TypeError('Failed to fetch');
+        },
+      },
+      { onDeleted }
+    );
+    // One offer for the quiz, naming both its documents.
+    expect(onDeleted).toHaveBeenCalledOnce();
+    expect(onDeleted.mock.calls[0][0]).toMatchObject({
+      file: false,
+      id: 'trashed',
+      item: { kind: 'quiz', name: 'Cell quiz' },
+    });
+    expect(onDeleted.mock.calls[0][0].keys.sort()).toEqual([
+      'u_gone:material:trashed',
+      'u_gone:material:trashed:keys',
+    ]);
+    expect(await readDrafts('u_gone:material:trashed')).toHaveLength(1);
+    expect(await readDrafts('u_gone:material:trashed:keys')).toHaveLength(1);
+    expect(await readDrafts('u_gone:material:lost')).toEqual([]);
+    expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
+      fileId: 'lost',
+      fileKind: 'material',
+      kind: 'discard_unsaved',
+      reason: 'not_found',
+      sizeBytes: 3,
+    });
+    expect(await readDrafts('u_gone:file:away')).toHaveLength(1);
+    // The device-copy sweep keeps the deleted quiz's copy alone (review
+    // 2026-11-20 (3)).
+    expect(kept).toEqual(new Set(['trashed']));
+  });
+
+  // Q39 (review 2026-11-20): a page showing a deleted item holds its
+  // documents, their one owner: the load sweep neither offers nor deletes
+  // them meanwhile.
+  it('leaves a deleted item a page here shows to that page', async () => {
+    const key = 'u_held:material:shown';
+    await putDrafts([draft('shown', { key })]);
+    const release = holdDraftDocument(key);
+    const onDeleted = vi.fn();
+    const kept = await sweepDrafts(
+      'u_held',
+      {
+        post: async () => {
+          throw new ApiError(410, 'Gone', undefined, {
+            code: 'item_deleted',
+            kind: 'note',
+            name: 'Cell notes',
+          });
+        },
+      },
+      { onDeleted }
+    );
+    release();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(await readDrafts(key)).toHaveLength(1);
+    // Its copy is that page's to decide.
+    expect(kept).toEqual(new Set(['shown']));
+  });
+
+  // Review 2026-11-20: Reload and Download delete only the rows what they
+  // showed or drew holds; another tab's edits and an unreviewed piece stay
+  // for the next page load's offer.
+  it('deletes only the rows a shown document holds', async () => {
+    const key = 'u_1:material:shown';
+    const { client } = syncedClient('Mitosis');
+    client.getText('content').insert(7, ' splits');
+    const other = new Y.Doc();
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(client));
+    other.getText('content').insert(0, 'Another tab: ');
+    const mine = draft('mine', {
+      data: Y.encodeStateAsUpdate(client),
+      key,
+      kind: 'state',
+    });
+    const theirs = draft('theirs', {
+      data: Y.encodeStateAsUpdate(other, Y.encodeStateVector(client)),
+      key,
+      savedAt: 1,
+    });
+    const piece = draft('piece', { key, kind: 'piece' });
+    await putDrafts([mine, theirs, piece]);
+    const drawn = deletedDocument(await readDrafts(key));
+    expect(drawn?.doc.getText('content').toString()).toBe(
+      'Another tab: Mitosis splits'
+    );
+    // Shown without the other tab's edit: only its own row goes.
+    const shown = new Y.Doc();
+    Y.applyUpdate(shown, Y.encodeStateAsUpdate(client));
+    expect(await deleteShownDrafts(key, { doc: shown })).toBeGreaterThan(0);
+    expect((await readDrafts(key)).map((row) => row.id).sort()).toEqual([
+      'piece',
+      'theirs',
+    ]);
+    await deleteShownDrafts(key, { rows: [piece] });
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual(['theirs']);
+  });
+
+  // Review 2026-11-20 (2): a deleted item's toast acts on the rows it
+  // offered alone: the item restored and opened again in this tab, its
+  // session's rows stay, and a document an editor holds is left whole.
+  it("deletes a toast's offered rows alone, and nothing of a document an editor holds", async () => {
+    const key = 'u_1:material:restored';
+    await putDrafts([draft('offered', { key }), draft('since', { key })]);
+    const ids = async () => (await readDrafts(key)).map((row) => row.id);
+    const release = holdDraftDocument(key);
+    expect(await deleteUnheldDrafts(key, () => true)).toBeNull();
+    release();
+    expect((await ids()).sort()).toEqual(['offered', 'since']);
+    expect(
+      await deleteUnheldDrafts(key, (row) => row.id === 'offered')
+    ).not.toBeNull();
+    expect(await ids()).toEqual(['since']);
+  });
+
+  // Review 2026-11-20 (2): a board's hidden edits (Q33) copy its early board
+  // with what still showed deleted. Drawn with the session's rows, they would
+  // delete that from the drawing, and its Download would then delete them,
+  // the only copy. They are a group of their own, offered next.
+  it("draws a board's hidden edits apart from its session's, and deletes only the group drawn", async () => {
+    const key = 'u_1:material:board';
+    const early = new Y.Doc();
+    const blocks = early.getMap<string>('blocks');
+    blocks.set('kept', 'Shown on the board');
+    blocks.set('hidden', 'Hidden by the room');
+    const hiddenCopy = new Y.Doc();
+    Y.applyUpdate(hiddenCopy, Y.encodeStateAsUpdate(early));
+    hiddenCopy.getMap('blocks').delete('kept');
+    const hidden = draft('s1:hidden', {
+      data: Y.encodeStateAsUpdate(hiddenCopy),
+      hidden: true,
+      key,
+      kind: 'state',
+      refused: true,
+      savedAt: 1,
+    });
+    early.getMap<string>('blocks').set('later', 'Drawn after the join');
+    const session = draft('s2:state', {
+      data: Y.encodeStateAsUpdate(early),
+      key,
+      kind: 'state',
+      savedAt: 2,
+    });
+    await putDrafts([hidden, session]);
+
+    const drawn = deletedDocument(await readDrafts(key));
+    expect(drawn?.doc.getMap('blocks').toJSON()).toEqual({
+      hidden: 'Hidden by the room',
+      kept: 'Shown on the board',
+      later: 'Drawn after the join',
+    });
+    expect(drawn?.rows.map((row) => row.id)).toEqual(['s2:state']);
+    if (drawn) await deleteShownDrafts(key, drawn);
+    // The hidden edits stay, the next offer's drawing.
+    const next = deletedDocument(await readDrafts(key));
+    expect(next?.rows.map((row) => row.id)).toEqual(['s1:hidden']);
+    expect(next?.doc.getMap('blocks').toJSON()).toEqual({
+      hidden: 'Hidden by the room',
+    });
+  });
+
+  // Review 2026-11-20 (3): a crashed online session's updates on the room's
+  // state stay pending in the drawing; its Reload or Download deletes only
+  // the rows it drew, and the pending ones stay for the next offer, whose
+  // Download fails on them and whose Discard deletes them.
+  it('deletes only the rows a deleted drawing holds, keeping pending updates', async () => {
+    const key = 'u_1:material:pending';
+    const older = new Y.Doc();
+    older.getText('content').insert(0, 'Stored whole');
+    const state = draft('s1:state', {
+      data: Y.encodeStateAsUpdate(older),
+      key,
+      kind: 'state',
+      savedAt: 1,
+    });
+    const { client } = syncedClient('Room text');
+    const before = Y.encodeStateVector(client);
+    client.getText('content').insert(9, ' typed online');
+    const pending = draft('s1:2', {
+      data: Y.encodeStateAsUpdate(client, before),
+      key,
+      savedAt: 2,
+    });
+    await putDrafts([state, pending]);
+
+    const drawn = deletedDocument(await readDrafts(key));
+    expect(drawn?.doc.getText('content').toString()).toBe('Stored whole');
+    expect(drawn?.rows.map((row) => row.id)).toEqual(['s1:state']);
+    if (drawn) await deleteShownDrafts(key, drawn);
+    const left = await readDrafts(key);
+    expect(left.map((row) => row.id)).toEqual(['s1:2']);
+    expect(deletedDocument(left)).toBeNull();
   });
 
   it('keeps a recovery group whose base read failed, and drops one nothing can draw', async () => {

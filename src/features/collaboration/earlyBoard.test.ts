@@ -269,7 +269,7 @@ const made = (
   new ItemRoom(id, {
     awareness: true,
     board: BOARD,
-    drafts: { actorId: 'u_mock' },
+    drafts: { actorId: 'u_mock', kind: 'canvas' },
     onReplace,
     seed,
   });
@@ -1559,7 +1559,7 @@ it("gives an earlier session's lock back as the early tab that took it leaves, o
   const gone = new ItemRoom(id, {
     awareness: true,
     board: BOARD,
-    drafts: { actorId: 'u_mock' },
+    drafts: { actorId: 'u_mock', kind: 'canvas' },
     seed: second,
   });
   void gone.start();

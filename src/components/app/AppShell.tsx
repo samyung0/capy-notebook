@@ -2,6 +2,7 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
+import { offerDeletedEdits } from '@/features/collaboration/deletedEditsToast';
 import { useDeviceCopySweep } from '@/features/collaboration/deviceCopy';
 import { Tour } from '@/features/guide/Tour';
 import { useRunningTour } from '@/features/guide/tourStore';
@@ -35,11 +36,11 @@ export function AppShell() {
   }, [pathname]);
 
   // Stored edits go to their rooms from any page; those of documents this
-  // account no longer has are deleted.
+  // account no longer has are deleted, and a deleted item's are offered (Q40).
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
   useEffect(() => {
-    if (actorId) startDraftSweeps(actorId, api);
+    if (actorId) startDraftSweeps(actorId, api, offerDeletedEdits);
   }, [actorId]);
   useDeviceCopySweep(actorId);
   useFinishToasts();

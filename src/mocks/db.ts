@@ -71,8 +71,10 @@ import {
 } from './chatFixtures';
 import { dialogFiles, dialogSourceFile } from './dialogFiles';
 import {
+  buildDrawingQuizNoteValue,
   buildEditorNoteValue,
   buildTableEndNoteValue,
+  DRAWING_QUIZ_NOTE,
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
   RUNNING_CHAT,
@@ -3055,6 +3057,24 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
       scopeFileNames: [],
       scopeTopics: [],
       title: TABLE_END_NOTE.title,
+      topicId: null,
+      workspaceId: EDITOR_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
+    }),
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      content: createMaterialDocument(
+        buildDrawingQuizNoteValue() as MaterialValue
+      ),
+      // The oldest in the workspace, so lists other specs read keep their order.
+      createdAt: days(400),
+      id: DRAWING_QUIZ_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeFileNames: [],
+      scopeTopics: [],
+      title: DRAWING_QUIZ_NOTE.title,
       topicId: null,
       workspaceId: EDITOR_WORKSPACE_ID,
       workspaceName: 'Biology 101',

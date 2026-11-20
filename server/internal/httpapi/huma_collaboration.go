@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -280,10 +281,20 @@ func (a *api) createMaterialCollaborationToken(
 	in *materialCollaborationTokenInput,
 ) (*collaborationTokenOutput, error) {
 	uid := userID(ctx)
+	live := func() error { _, err := a.s.MaterialEffectiveRole(ctx, uid, in.ID); return err }
+	// A refusal, or a later read's not found: a trash committed after the
+	// role check answers as one before it did.
+	refused := func(err error) error {
+		if gone := a.deletedError(ctx, agenttools.KindMaterial, in.ID, err, live); gone != nil {
+			return gone
+		}
+		return collaborationError(err)
+	}
 	role, err := a.s.MaterialEffectiveRole(ctx, uid, in.ID)
 	if err != nil {
-		return nil, collaborationError(err)
+		return nil, refused(err)
 	}
+	a.checked(in.ID)
 	access := "write"
 	if !store.RoleCanEdit(role) {
 		// Viewers join read-only: the server closes a read channel that writes.
@@ -300,7 +311,7 @@ func (a *api) createMaterialCollaborationToken(
 	// not found above.)
 	owner, err := a.s.MaterialOwnerAccess(ctx, in.ID)
 	if err != nil {
-		return nil, collaborationError(err)
+		return nil, refused(err)
 	}
 	actor, err := a.s.AccountAccess(ctx, uid)
 	if err != nil {
@@ -316,14 +327,14 @@ func (a *api) createMaterialCollaborationToken(
 	me, _ := a.s.Me(ctx, uid)
 	room, err := a.s.MaterialRoom(ctx, in.ID)
 	if err != nil {
-		return nil, collaborationError(err)
+		return nil, refused(err)
 	}
 	if in.Body != nil && in.Body.Document == "keys" {
 		// A quiz's keys go to editors who can write, never to a reader
 		// (Epo 2026-10-10): the per-room access check is the key filter.
 		mt, err := a.s.GetMaterial(ctx, in.ID)
 		if err != nil {
-			return nil, collaborationError(err)
+			return nil, refused(err)
 		}
 		if mt.Kind != store.MaterialQuiz {
 			return nil, huma.Error404NotFound("not found")

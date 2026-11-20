@@ -34,6 +34,9 @@ function combined(a: ItemRoomStatus, b: ItemRoomStatus): ItemRoomStatus {
 export interface QuizRooms {
   access: 'read' | 'write' | null;
   content: ItemRoom | null;
+  /** The quiz was deleted (`item_deleted`, Q39): either document's stored
+   * edits show as its recovery. */
+  deleted: boolean;
   /** The keys document, in Edit for editors who can write. */
   keys: ItemRoom | null;
   /** The device's copy of the keys: undefined while it reads, null with none. */
@@ -97,19 +100,28 @@ export function useQuizRooms(
   // A page's rooms wait for its copy's read, a few milliseconds.
   const contentEnabled =
     enabled && (!edit || !!actorId) && (!copy || copy.seed !== undefined);
-  const content = useItemRoom(quizId, contentEnabled, {
+  const content = useItemRoom(quizId, 'quiz', contentEnabled, {
     actorId,
     inside,
     keep: copy?.keep,
     seed: copy?.seed,
     wake,
   });
+  // A writer's keys room stays while a fresh content room asks its token
+  // (a moved room, a deleted quiz's), until it answers read.
+  const wrote = useRef(false);
+  if (content.snapshot.access === 'write') wrote.current = true;
+  else if (content.snapshot.access === 'read') wrote.current = false;
+  // A deleted quiz's keys show their unsent edits beside its content's (Q39).
+  const deleted = content.snapshot.deleted;
   const wantKeys =
     contentEnabled &&
     edit &&
-    content.snapshot.access === 'write' &&
+    (content.snapshot.access === 'write' ||
+      (content.snapshot.access === null && wrote.current) ||
+      deleted) &&
     (!copy || keysSeed !== undefined);
-  const keys = useItemRoom(quizId, wantKeys, {
+  const keys = useItemRoom(quizId, 'quiz', wantKeys, {
     actorId,
     document: 'keys',
     inside,
@@ -131,6 +143,7 @@ export function useQuizRooms(
   const keysRecovery = wantKeys ? keys.snapshot.recovery : null;
   const contentRoom = content.room;
   const keysRoom = keys.room;
+  const keysDeleted = wantKeys && keys.snapshot.deleted;
   const recovery = useMemo(
     () =>
       contentRecovery || keysRecovery
@@ -138,12 +151,18 @@ export function useQuizRooms(
             content: contentRecovery,
             keys: keysRecovery,
             reload: () => {
+              // A deleted quiz's Reload takes both documents' shown edits at
+              // once.
+              if (deleted || keysDeleted) {
+                void (deleted ? contentRoom : keysRoom)?.reload();
+                return;
+              }
               if (contentRecovery) void contentRoom?.reload();
               if (keysRecovery) void keysRoom?.reload();
             },
           }
         : null,
-    [contentRecovery, keysRecovery, contentRoom, keysRoom]
+    [contentRecovery, keysRecovery, contentRoom, keysRoom, deleted, keysDeleted]
   );
   const offline = OFFLINE.find(
     (state) =>
@@ -153,6 +172,7 @@ export function useQuizRooms(
   return {
     access: content.snapshot.access,
     content: content.room,
+    deleted: deleted || keysDeleted,
     keys: wantKeys ? keys.room : null,
     keysSeed,
     offline: offline ?? null,

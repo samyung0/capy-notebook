@@ -156,7 +156,14 @@ export function SourceTextView({
     >
       <FileModeControl
         canEdit={canEdit}
-        disabled={leaving || source.handoff || source.replaced || sizeLimited}
+        // Deleted (Q39): View would save to a file that is gone.
+        disabled={
+          source.banner === 'deleted' ||
+          leaving ||
+          source.handoff ||
+          source.replaced ||
+          sizeLimited
+        }
         mode={mode}
         onChange={(mode) => {
           if (mode === 'edit') {

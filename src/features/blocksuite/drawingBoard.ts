@@ -453,6 +453,27 @@ function downloadBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** An image block whose file cannot load, in a downloaded image: a light box
+ * at its place saying so (Epo 2026-11-20, Q43). */
+function missingImage(
+  ctx: CanvasRenderingContext2D,
+  [x, y, w, h]: readonly [number, number, number, number],
+  scale: number
+) {
+  ctx.save();
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.12)';
+  ctx.lineWidth = scale;
+  ctx.strokeRect(x + scale / 2, y + scale / 2, w - scale, h - scale);
+  ctx.fillStyle = '#5c5c5c';
+  ctx.font = `500 ${14 * scale}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(m.drawing_board_image_unavailable(), x + w / 2, y + h / 2, w);
+  ctx.restore();
+}
+
 /** A pasted image drawn as the page draws it: an SVG too, which createImageBitmap
  * can't decode from a file. */
 async function decodeImage(file: Blob) {
@@ -1104,6 +1125,11 @@ export function mountDrawingBoard(
       item.elementBound.isOverlapWithBound(seen)
     );
   };
+  // Resolved once the board first shows, its first view set.
+  let shown!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    shown = resolve;
+  });
   let frame = requestAnimationFrame(function mountLayer() {
     const background = container.querySelector('.edgeless-background');
     if (!background || !gfx.viewport.width) {
@@ -1128,6 +1154,7 @@ export function mountDrawingBoard(
       place();
       fitted = true;
     } else fitView();
+    shown();
   });
 
   /** A pasted image from its file; a note card by html2canvas, as it's DOM. */
@@ -1161,8 +1188,9 @@ export function mountDrawingBoard(
 
   /** The board drawn layer by layer on white, its longest side at most `side`
    * pixels: the marking image (see toImage) draws far groups nearer, a download
-   * draws the board as it lies. */
-  const drawImage = async (side: number, nearer: boolean) => {
+   * draws the board as it lies. `missing`: an image whose file cannot load is a
+   * box saying so (a download, Q43); the marking image leaves it out. */
+  const drawImage = async (side: number, nearer: boolean, missing: boolean) => {
     await formulasDrawn(gfx);
     const renderer = surfaceOf(gfx)?.renderer;
     if (!(renderer instanceof CanvasRenderer))
@@ -1221,6 +1249,8 @@ export function mountDrawingBoard(
         ] as const;
         const image = await blockImage(block);
         if (image) ctx.drawImage(image, ...place);
+        else if (missing && block instanceof ImageBlockModel)
+          missingImage(ctx, place, scale);
       }
     }
     const png = await new Promise<Blob | null>((resolve) =>
@@ -1231,11 +1261,15 @@ export function mountDrawingBoard(
   };
 
   /** Drawn in the light palette, whatever the app's theme. */
-  const lightImage = async (side: number, nearer: boolean) => {
+  const lightImage = async (
+    side: number,
+    nearer: boolean,
+    missing: boolean
+  ) => {
     root.dataset.boardLight = '';
     theme$.value = ColorScheme.Light;
     try {
-      return await drawImage(side, nearer);
+      return await drawImage(side, nearer, missing);
     } finally {
       delete root.dataset.boardLight;
       followTheme();
@@ -1256,7 +1290,7 @@ export function mountDrawingBoard(
     if (!readOnly) finishPlot();
     try {
       downloadBlob(
-        await lightImage(DOWNLOAD_SIDE_MAX, false),
+        await lightImage(DOWNLOAD_SIDE_MAX, false, true),
         `${imageName()}.png`
       );
     } catch (error) {
@@ -1277,6 +1311,8 @@ export function mountDrawingBoard(
     },
     /** Whether the board holds `id`, a card or anything else drawn. */
     has: (id: string) => !!gfx.getElementById(id),
+    /** The whole board as a PNG, as Download as image draws it. */
+    image: () => lightImage(DOWNLOAD_SIDE_MAX, false, true),
     /** The same with every file the board can get, asking for the ones it
      * doesn't hold yet (a stored drawing's, not shown so far): what Done sends.
      * An image whose file is nowhere is left out, and stays an empty frame. */
@@ -1317,6 +1353,8 @@ export function mountDrawingBoard(
       std.selection.clear();
       std.event.deactivate();
     },
+    /** Resolves once the board first shows (`image` draws it from then). */
+    ready,
     /** Redraws the quiz and flashcard cards, and an open Misc panel's list of
      * them, after the workspace's list changes: the board may show before the
      * list has loaded. */
@@ -1401,7 +1439,7 @@ export function mountDrawingBoard(
     toImage: async () => {
       if (!readOnly) finishPlot();
       // Marked on white in the light palette, whatever the app's theme.
-      const png = await lightImage(IMAGE_SIDE_MAX, true);
+      const png = await lightImage(IMAGE_SIDE_MAX, true, false);
       // The encode runs in the compressor's worker; drawing needs the page.
       // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
       // (Epo 2026-11-06: minimise drawing storage).

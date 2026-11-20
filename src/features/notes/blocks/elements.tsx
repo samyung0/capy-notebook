@@ -31,6 +31,12 @@ import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import {
+  HtmlEmbedSourceDialog,
+  htmlSourceCode,
+  useCodeFailed,
+} from '@/features/materials/blockCode';
+import { CannotShow } from '@/features/materials/CannotShow';
+import {
   BLOCK_CAPTION_MAX,
   type FlashcardElement as FlashcardNode,
   type HtmlEmbedElement as HtmlEmbedNode,
@@ -417,7 +423,6 @@ export function MaterialRefElement(props: PlateElementProps) {
 }
 
 const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
-const HtmlEmbedSourceDialog = lazy(() => import('./HtmlEmbedSourceDialog'));
 const LiveFigureDialog = lazy(() =>
   import('./VisualBlockDialog').then((module) => ({
     default: module.LiveFigureDialog,
@@ -770,12 +775,14 @@ export function MermaidElement(props: PlateElementProps) {
   );
 }
 
-/** Interactive HTML block: View source (editors save from it), Copy, Delete. */
+/** Interactive HTML block: View source (editors save from it), Copy, Delete;
+ * "This block cannot be shown" for View source when its code could not load. */
 export function HtmlEmbedElement(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
   const element = props.element as unknown as HtmlEmbedNode;
   const [viewing, setViewing] = useState(false);
+  const sourceFailed = useCodeFailed(htmlSourceCode);
   const locate = () => editor.api.findPath(props.element);
   return (
     <PlateElement {...props} className="relative my-3">
@@ -797,13 +804,17 @@ export function HtmlEmbedElement(props: PlateElementProps) {
           id={element.id}
           toolbar={
             <>
-              <ToolbarButton
-                label={m.html_embed_view_source()}
-                onClick={() => setViewing(true)}
-                tooltipSide="top"
-              >
-                <EditorIcon name="code" />
-              </ToolbarButton>
+              {sourceFailed ? (
+                <CannotShow inToolbar />
+              ) : (
+                <ToolbarButton
+                  label={m.html_embed_view_source()}
+                  onClick={() => setViewing(true)}
+                  tooltipSide="top"
+                >
+                  <EditorIcon name="code" />
+                </ToolbarButton>
+              )}
               {!readOnly && (
                 <>
                   <CopyBlockButton element={props.element} />
@@ -826,7 +837,7 @@ export function HtmlEmbedElement(props: PlateElementProps) {
       </div>
       {/* Slate's void spacer, kept positioned like the mermaid block's. */}
       <span className="absolute top-0 left-0">{props.children}</span>
-      {viewing && (
+      {viewing && !sourceFailed && (
         <Suspense fallback={null}>
           <HtmlEmbedSourceDialog
             caption={element.caption}

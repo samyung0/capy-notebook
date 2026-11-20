@@ -87,9 +87,8 @@ vi.mock('@/features/workspace/ContentActions', () => ({
 vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   useAccountFrozen: () => false,
 }));
-vi.mock('@/features/workspace/LazyAddSourceDialog', () => ({
+vi.mock('@/features/workspace/AddSourceDialog', () => ({
   AddSourceDialog: () => null,
-  addSourceIntent: {},
 }));
 
 const { deleteCopy, ItemsList } = await import('./ItemsList');

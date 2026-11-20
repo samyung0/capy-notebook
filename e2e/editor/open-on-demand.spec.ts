@@ -3,9 +3,10 @@ import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
 import { showChatHistory, showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
-// A workspace opens without Add file's code (MSAL with it) or the chat's
-// Markdown code: Add file loads as it's wanted, the Markdown once the page is
-// idle (Q681), and a note asks for its one room token as it opens (Q618, Q619).
+// A workspace opens with Add file's dialog but without the drive pickers' code
+// (MSAL with OneDrive's) or the chat's Markdown code: the pickers load as
+// Import opens (Epo 2026-11-20), the Markdown once the page is idle (Q681), and
+// a note asks for its one room token as it opens (Q618).
 
 const WORKSPACE = `/workspaces/${EDITOR_WORKSPACE_ID}`;
 const SAVED_CHAT = 'Answer: prose, code + math';
@@ -73,6 +74,15 @@ async function hold(page: Page, pattern: string) {
     );
 }
 
+/** The drive pickers' modules, MSAL among them (its settings' check,
+ * msalConfig, comes with the dialog). */
+const PICKERS = [
+  'googlePicker',
+  'onedrivePicker',
+  'msalPickerAuth',
+  'msal-browser',
+];
+
 const addMenu = (page: Page) =>
   page
     .locator('[data-workspace-add-menu]')
@@ -86,7 +96,7 @@ async function openAddFile(page: Page) {
     .click();
 }
 
-test('a workspace opens without Add file or the chat Markdown: the Markdown loads at idle, Add file on hover', async ({
+test('a workspace opens with Add file but without its pickers or the chat Markdown, which loads at idle', async ({
   page,
 }) => {
   const urls = watchRequests(page);
@@ -97,18 +107,11 @@ test('a workspace opens without Add file or the chat Markdown: the Markdown load
   await expect
     .poll(() => asked(urls, 'proseBody').length, { timeout: 30_000 })
     .toBe(1);
+  expect(asked(urls, '/AddSourceDialog')).toHaveLength(1);
   await showPanelView(page, m.workspace_tab_files());
-  await page.waitForTimeout(1500);
-  expect(asked(urls, '/AddSourceDialog')).toEqual([]);
-  expect(asked(urls, 'msal')).toEqual([]);
-
-  // Hovering what opens it starts the load, before any click.
   await addMenu(page).hover();
-  await expect.poll(() => asked(urls, '/AddSourceDialog').length).toBe(1);
-  await expect
-    .poll(() => asked(urls, 'msal').length, { timeout: 30_000 })
-    .toBeGreaterThan(0);
-  expect(asked(urls, 'proseBody')).toHaveLength(1);
+  await page.waitForTimeout(1500);
+  for (const picker of PICKERS) expect(asked(urls, picker)).toEqual([]);
 });
 
 test('a saved chat opened offline reads formatted, its Markdown loaded at idle', async ({
@@ -145,16 +148,22 @@ test('a saved chat opened offline reads formatted, its Markdown loaded at idle',
   await context.setOffline(false);
 });
 
-test('Add file opens, with its Google and Microsoft pickers', async ({
+test("Add file opens, and Import loads its Google and Microsoft pickers' code", async ({
   page,
 }) => {
+  const urls = watchRequests(page);
   await openWorkspace(page);
   await openAddFile(page);
   const dialog = page.getByRole('dialog', { name: m.action_add_file() });
   await expect(
     dialog.getByRole('button', { name: m.source_upload_computer() })
   ).toBeVisible({ timeout: 30_000 });
+  for (const picker of PICKERS) expect(asked(urls, picker)).toEqual([]);
   await dialog.getByRole('tab', { name: m.action_import() }).click();
+  for (const picker of PICKERS)
+    await expect
+      .poll(() => asked(urls, picker).length, { timeout: 30_000 })
+      .toBeGreaterThan(0);
   // Under MSW each picker hands over a mock file at once. A click does nothing
   // until the upload policy answers, and picking a file again keeps its one row.
   const rows = dialog.getByText('cloud-notes-1.docx', { exact: true });
@@ -166,36 +175,89 @@ test('Add file opens, with its Google and Microsoft pickers', async ({
   await expect(rows).toHaveCount(2, { timeout: 30_000 });
 });
 
-test('Add file whose code will not load says so and leaves the page', async ({
+test("closing Add file while a picker's code loads leaves nothing to arrive", async ({
+  page,
+}) => {
+  const urls = watchRequests(page);
+  // Without its upload policy an inspection would not start anyway.
+  const policy = page.waitForResponse((response) =>
+    response.url().includes('source-upload-policy')
+  );
+  await openWorkspace(page);
+  await openAddFile(page);
+  await policy;
+  const dialog = page.getByRole('dialog', { name: m.action_add_file() });
+  const release = await hold(page, 'googlePicker');
+  await dialog.getByRole('tab', { name: m.action_import() }).click();
+  const google = dialog.getByRole('button', { name: 'Google Drive' });
+  await google.click();
+  // The press holds the pickers while its code loads.
+  await expect(google).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'OneDrive' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await release();
+  await page.waitForTimeout(1500);
+  expect(asked(urls, 'import-inspect')).toEqual([]);
+});
+
+test('a picker pressed twice while its code loads opens once', async ({
+  page,
+}) => {
+  const urls = watchRequests(page);
+  const policy = page.waitForResponse((response) =>
+    response.url().includes('source-upload-policy')
+  );
+  await openWorkspace(page);
+  await openAddFile(page);
+  await policy;
+  const dialog = page.getByRole('dialog', { name: m.action_add_file() });
+  const release = await hold(page, 'googlePicker');
+  await dialog.getByRole('tab', { name: m.action_import() }).click();
+  await dialog
+    .getByRole('button', { name: 'Google Drive' })
+    .evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+  await release();
+  await expect(
+    dialog.getByText('cloud-notes-1.docx', { exact: true })
+  ).toHaveCount(1, { timeout: 30_000 });
+  await page.waitForTimeout(1000);
+  expect(asked(urls, 'import-inspect')).toHaveLength(1);
+});
+
+test('a picker whose code will not load says so when pressed, and the dialog stays', async ({
   page,
 }) => {
   await openWorkspace(page);
-  await failModule(page, 'AddSourceDialog');
+  await failModule(page, 'googlePicker');
   await openAddFile(page);
-  await expect(
-    page.getByText(m.error_chunk_title(), { exact: true })
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const dialog = page.getByRole('dialog', { name: m.action_add_file() });
+  await dialog.getByRole('tab', { name: m.action_import() }).click();
+  // Import's load ahead failing says nothing.
+  await page.waitForTimeout(1500);
+  const failed = page.getByText(m.error_chunk_title(), { exact: true });
+  await expect(failed).toHaveCount(0);
+  await expect(async () => {
+    await dialog.getByRole('button', { name: 'Google Drive' }).click();
+    await expect(failed).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(dialog).toBeVisible();
   await expect(page.locator('[data-error-surface]')).toHaveCount(0);
-  await expect(page.locator('[data-workspace-file-tree]')).toBeVisible();
 });
 
-test('Add file offline with its code not loaded shows the offline toast', async ({
-  context,
-  page,
-}) => {
+test('Add file opens offline at once', async ({ context, page }) => {
   await openWorkspace(page);
   await showPanelView(page, m.workspace_tab_files());
   await context.setOffline(true);
-  await addMenu(page).click();
-  await page
-    .getByRole('menuitem', { name: m.action_upload_or_import() })
-    .click();
+  await openAddFile(page);
+  // The page's own offline toast shows; the dialog needs nothing more.
+  const dialog = page.getByRole('dialog', { name: m.action_add_file() });
   await expect(
-    page.getByText(m.error_offline_title(), { exact: true }).first()
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('[data-error-surface]')).toHaveCount(0);
+    dialog.getByRole('button', { name: m.source_upload_computer() })
+  ).toBeVisible({ timeout: 2000 });
   await context.setOffline(false);
 });
 
@@ -452,36 +514,11 @@ test('a reader who scrolled up keeps their place as the Markdown lands', async (
   expect(await thread.evaluate((box) => box.scrollTop)).toBe(0);
 });
 
-test('hovering Add file offline loads nothing, and online it still opens', async ({
-  context,
-  page,
-}) => {
-  const urls = watchRequests(page);
-  await openWorkspace(page);
-  await showPanelView(page, m.workspace_tab_files());
-  await context.setOffline(true);
-  await addMenu(page).hover();
-  await addMenu(page).focus();
-  await page.waitForTimeout(800);
-  expect(asked(urls, '/AddSourceDialog')).toEqual([]);
-  await context.setOffline(false);
-  await openAddFile(page);
-  await expect(
-    page.getByRole('dialog', { name: m.action_add_file() })
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(m.error_chunk_title())).toHaveCount(0);
-});
-
 test('a preload that failed says nothing, and only asking to open says so', async ({
   page,
 }) => {
-  // The Markdown's idle load and Add file's hover both fail, quietly.
-  await openWorkspaceAfter(page, async () => {
-    await failModule(page, 'proseBody');
-    await failModule(page, '/AddSourceDialog');
-  });
-  await showPanelView(page, m.workspace_tab_files());
-  await addMenu(page).hover();
+  // The Markdown's idle load fails, quietly.
+  await openWorkspaceAfter(page, () => failModule(page, 'proseBody'));
   await page.waitForTimeout(1500);
   await expect(page.getByText(m.error_chunk_title())).toHaveCount(0);
   await showChatHistory(page);
@@ -490,53 +527,6 @@ test('a preload that failed says nothing, and only asking to open says so', asyn
     timeout: 30_000,
   });
   await expect(page.getByText(m.error_chunk_title())).toBeVisible();
-});
-
-test('a first Add file on a slow load says so within moments, then opens', async ({
-  page,
-}) => {
-  await openWorkspace(page);
-  await showPanelView(page, m.workspace_tab_files());
-  const release = await hold(page, '/AddSourceDialog');
-  await addMenu(page).click();
-  await page
-    .getByRole('menuitem', { name: m.action_upload_or_import() })
-    .click();
-  const waiting = page.locator('[data-toast="loading"]');
-  await expect(waiting).toBeVisible({ timeout: 1000 });
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await release();
-  await expect(
-    page.getByRole('dialog', { name: m.action_add_file() })
-  ).toBeVisible({ timeout: 30_000 });
-  await expect(waiting).toHaveCount(0);
-});
-
-test('Add file does not arrive once the user has moved elsewhere', async ({
-  page,
-}) => {
-  await openWorkspace(page);
-  await showPanelView(page, m.workspace_tab_files());
-  const release = await hold(page, '/AddSourceDialog');
-  await addMenu(page).click();
-  await page
-    .getByRole('menuitem', { name: m.action_upload_or_import() })
-    .click();
-  const waiting = page.locator('[data-toast="loading"]');
-  await expect(waiting).toBeVisible({ timeout: 1000 });
-  await page
-    .getByRole('navigation', { name: m.workspace_rail_label() })
-    .getByRole('button', { exact: true, name: m.workspace_section_dashboard() })
-    .click();
-  await expect(waiting).toHaveCount(0);
-  await release();
-  await page.waitForTimeout(1500);
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  // Asked for again, it opens at once.
-  await openAddFile(page);
-  await expect(
-    page.getByRole('dialog', { name: m.action_add_file() })
-  ).toBeVisible({ timeout: 2000 });
 });
 
 test('a link with ?add= opens Add file', async ({ page }) => {

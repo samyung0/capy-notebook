@@ -72,6 +72,7 @@ export function readLive(
     // Shared with another copy of the quiz in the note (r6 S-2).
     const { close: leave, room } = openItemRoom(quizId, {
       inside,
+      kind: 'quiz',
       onReplace,
       read: true,
     });

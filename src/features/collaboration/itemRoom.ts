@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
-import { qk } from '@/api/client';
+import { isApiError, qk } from '@/api/client';
 import { getMaterialCollaborationToken } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
 import {
@@ -16,14 +16,17 @@ import {
 } from '@/features/notes/collaborationEvents';
 import {
   type RoomReconnector,
+  refusalKeepsDrafts,
   roomReconnector,
   roomRefusal,
 } from '@/features/notes/roomConnection';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from '@/features/notes/saveDelay';
 import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
+import type { LearnerQuestion } from '@/features/questions/types';
 import {
   applyReaderMessage,
   type ReaderLists,
+  readLearnerQuestions,
 } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
@@ -36,12 +39,14 @@ import {
   type DraftRecorder,
   type DraftSender,
   deleteDrafts,
+  deletedDocument,
   draftGroups,
   draftKey,
   draftSender,
   dropExpiredGroup,
   type EditDraft,
   heldDraftSessions,
+  holdDraftDocument,
   markDraftsRefused,
   readDrafts,
   recordDrafts,
@@ -51,9 +56,15 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { dropDeviceCopies } from '@/lib/sourceCache';
 import { copyOf, hiddenEdits } from './boardHidden';
-import { type CopyLabel, keepDeviceCopy, type RoomSeed } from './deviceCopy';
-import { offerExpiredDrafts } from './expiredDrafts';
-import type { NoteSeat } from './noteSeat';
+import {
+  type CopyLabel,
+  dropDeletedCopies,
+  keepDeviceCopy,
+  type RoomSeed,
+} from './deviceCopy';
+import { type ItemKind, offerExpiredDrafts } from './expiredDrafts';
+import { deletedTarget, reloadDeleted, showDeletedDrafts } from './lostEdits';
+import { type NoteSeat, roomKey } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { tokenClientIds } from './protocol';
 import {
@@ -94,6 +105,10 @@ export type ItemRoomStatus =
   | 'unavailable';
 
 export interface ItemRecovery {
+  /** The item was deleted (Q39): its stored edits drawn from the rows alone
+   * (`deletedDocument`); Reload deletes the rows it shows and reloads the
+   * page. */
+  deleted?: boolean;
   doc: Y.Doc;
   /** An early board's edits the room's state hides (made to something
    * another person deleted meanwhile, Q33): the room runs on its document
@@ -111,6 +126,10 @@ export interface ItemRoomSnapshot {
    * 2026-10-04), or the room said a store failed while this device had edits
    * unsaved: "Saving is delayed" until a receipt answers. */
   delayed: boolean;
+  /** The item was deleted (`item_deleted`, Q39): its edits, when this
+   * document has any, are the recovery; a quiz's keys room stays beside its
+   * content's for its own (`liveQuizRooms`). */
+  deleted: boolean;
   /** A board painted from its device copy takes edits before its join (Epo
    * 2026-11-19, Q27 b1, Q31): under its document's own client id, kept as
    * drafts, renamed to the room's in place at the join (`rename`, Q38). */
@@ -256,8 +275,8 @@ export interface ItemRoomOptions {
   /** A quiz's keys document instead of the material's own. */
   document?: 'keys';
   /** An editor's room: unsent edits are kept on this device under this
-   * account (readers keep none). */
-  drafts?: { actorId: string };
+   * account (readers keep none); `kind` names the file they download as. */
+  drafts?: { actorId: string; kind: ItemKind };
   /** Where this room's first token comes from, when not its own request. */
   firstToken?: () => ReturnType<typeof getMaterialCollaborationToken>;
   /** An embedded quiz's or set's room: it joins inside its note's channel
@@ -282,6 +301,14 @@ export interface ItemRoomOptions {
   seed?: RoomSeed | null;
 }
 
+/** A 409 from a token request: the item was restored between the server's
+ * checks (`deletedError`), so asking again joins it. */
+const restoredMeanwhile = (error: unknown) =>
+  isApiError(error) && error.status === 409;
+
+/** About how long a first token's 409 waits before asking again. */
+const START_AGAIN_MS = 1000;
+
 export class ItemRoom {
   /** The document the page shows and edits, for the room's whole life. */
   readonly doc: Y.Doc;
@@ -296,6 +323,7 @@ export class ItemRoom {
   private snapshot: ItemRoomSnapshot = {
     access: null,
     delayed: false,
+    deleted: false,
     early: false,
     listsVersion: 0,
     offline: null,
@@ -340,6 +368,10 @@ export class ItemRoom {
   /** Releases the locks of the late rows a refused early board shows for
    * copying (`keepStored`). */
   private keptLate: (() => void) | null = null;
+  /** Releases a deleted item's stored edits this room shows (`deleted`). */
+  private keptDeleted: (() => void) | null = null;
+  /** What its deleted recovery shows, for the page's Reload. */
+  private shownDeleted: (() => void) | null = null;
   /** What an early board painted (Q38): the temporary ids of the earlier
    * sessions' late rows it took, oldest first (`chain`), its own (`own`, the
    * document's id then), and what the rename is checked against (`base`:
@@ -478,6 +510,11 @@ export class ItemRoom {
 
   readonly getSnapshot = () => this.snapshot;
 
+  /** A quiz content room's questions as a learner sees them, once synced. */
+  learnerQuestions(): LearnerQuestion[] | undefined {
+    if (this.snapshot.synced) return readLearnerQuestions(this.doc, this.lists);
+  }
+
   private set(patch: Partial<ItemRoomSnapshot>) {
     const next = { ...this.snapshot, ...patch };
     if (
@@ -598,16 +635,21 @@ export class ItemRoom {
       first = await (this.options.firstToken?.() ??
         getMaterialCollaborationToken(this.materialId, this.tokenRequest()));
     } catch (error) {
-      // Gone or no longer this user's (404, 403): unavailable for good.
-      // Offline or a server error: paused until it can join (REVIEW5 B1).
+      // Deleted (410): its edits to copy. Gone or no longer this user's
+      // (404, 403): unavailable for good. Offline or a server error: paused
+      // until it can join (REVIEW5 B1).
       const refusal = roomRefusal('', error);
-      if (refusal === 'notFound' || refusal === 'forbidden') {
+      if (refusal === 'deleted') {
+        this.answerMerge(false);
+        await this.deleted();
+      } else if (refusal === 'notFound' || refusal === 'forbidden') {
         // An early board's edits, waiting ones too, stay to copy: painted
         // ones with the board (`keepEarly`), the rest as stored.
         this.answerMerge(false);
         if (this.earlyOpen && !(await this.earlyOpen)) await this.keepStored();
         this.refusedAccess();
-      } else this.startLater();
+      } else if (restoredMeanwhile(error)) this.startAgain();
+      else this.startLater();
       return;
     }
     if (this.destroyed) return;
@@ -681,8 +723,21 @@ export class ItemRoom {
       onAuthenticationFailed: ({ reason }) => {
         // Gone or no longer this user's (the server's reason, or the API's
         // 404/403 for the token): no retry (REVIEW3 N2).
-        const refusal = roomRefusal(reason, this.tokenError);
+        const failedToken = this.tokenError;
+        const refusal = roomRefusal(reason, failedToken);
         this.tokenError = null;
+        // Deleted meanwhile: the unsent edits stay stored, and the fresh
+        // room's token shows them (`deleted`).
+        if (refusal === 'deleted') {
+          this.moved(true);
+          return;
+        }
+        // Not found by the collaboration service alone, which a deleted
+        // item says too: a fresh token decides, the edits kept meanwhile.
+        if (refusalKeepsDrafts(refusal, failedToken)) {
+          void this.notFoundByRoom();
+          return;
+        }
         if (refusal === 'notFound' || refusal === 'forbidden') {
           this.refusedAccess();
           return;
@@ -749,7 +804,7 @@ export class ItemRoom {
             void queryClient.invalidateQueries({
               queryKey: qk.material(this.materialId),
             });
-            this.moved();
+            this.moved(true);
           }
           return;
         }
@@ -1149,11 +1204,20 @@ export class ItemRoom {
     });
   }
 
-  /** A refusal: this copy goes, and nothing writes it back. */
-  private dropCopy() {
+  /** A refusal: this copy goes, and nothing writes it back. `deleted`: the
+   * item was, or may have been, deleted (`item_deleted`, a discard), and the
+   * recorder's last rows being written: the copy stays while this device
+   * holds stored edits to it (`dropDeletedCopies`). */
+  private dropCopy(deleted?: Promise<unknown>) {
     this.keeper?.stop();
     this.keeper = null;
-    void dropDeviceCopies(this.materialId, this.options.document);
+    const { document, drafts } = this.options;
+    if (deleted)
+      void dropDeletedCopies(drafts?.actorId, this.materialId, {
+        after: deleted,
+        document,
+      });
+    else void dropDeviceCopies(this.materialId, document);
   }
 
   /** Sends the never-accepted stored steps while the room joins (Q319,
@@ -1229,6 +1293,24 @@ export class ItemRoom {
   /** An embed closed as its note's oldest is near the screen again. */
   wake() {
     this.provider?.wake();
+  }
+
+  /** A first token that answered 409 (restored since its check): asked
+   * again shortly, still connecting; the reconnector's watch from `start`
+   * says when it never joins. */
+  private startAgain() {
+    if (this.destroyed || this.waiting) return;
+    const timer = setTimeout(
+      () => {
+        this.waiting = null;
+        void this.start();
+      },
+      START_AGAIN_MS * (0.5 + Math.random())
+    );
+    this.waiting = () => {
+      this.waiting = null;
+      clearTimeout(timer);
+    };
   }
 
   /** A first open that failed for want of the network or the server: the
@@ -1309,10 +1391,13 @@ export class ItemRoom {
         return null;
       }
       // Past the 7-day expiry: the room opens, and a toast offers them (D14).
-      if (doc)
+      // Only an editor's room (`drafts`) reads stored rows.
+      const { drafts } = this.options;
+      if (doc && drafts)
         offerExpiredDrafts({
           doc,
           document: this.options.document,
+          kind: drafts.kind,
           materialId: this.materialId,
           onGone: () =>
             dropExpiredGroup(
@@ -1767,17 +1852,18 @@ export class ItemRoom {
   }
 
   /** The room's lineage moved: unsent edits stay stored under the old one
-   * (they open for copying), and a fresh room joins the new one. */
-  private moved() {
+   * (they open for copying), and a fresh room joins the new one. `deleted`:
+   * moved by a deletion, or a discard a trash sends too (`dropCopy`). */
+  private moved(deleted = false) {
     if (this.ended || this.destroyed) return;
     this.ended = true;
-    this.dropCopy();
     this.leaveRenamed();
     // Its rows hold the renamed edit once its whole document landed.
     if (this.recorder && this.replaced)
       this.dropReplacedOn(this.recorder.stored());
-    void this.recorder?.dispose();
+    const stored = this.recorder?.dispose() ?? Promise.resolve();
     this.recorder = null;
+    this.dropCopy(deleted ? stored : undefined);
     this.end();
   }
 
@@ -1855,6 +1941,87 @@ export class ItemRoom {
         queryKey: qk.material(this.materialId),
       });
     this.unavailable();
+  }
+
+  /** The item was deleted (`item_deleted`, Q39): its stored edits stay,
+   * drawn from the rows alone and shown read-only to copy until Reload,
+   * which deletes the rows shown; with none drawn, or a store that cannot be
+   * read, it is unavailable and the rows stay for the next page load's
+   * toast. The page's read answers the same, and the page holds the edits
+   * meanwhile (`useDeletedEdits`). */
+  private async deleted() {
+    if (this.destroyed) return;
+    // The recorder's last rows, an early board's edits too, which are stored
+    // rows like any: the rows shown and the copy's fate wait for them.
+    const stored = (async () => {
+      await this.earlyOpen;
+      const recorder = this.recorder;
+      this.recorder = null;
+      await recorder?.dispose();
+    })();
+    this.dropCopy(stored);
+    this.reconnector.dispose();
+    void queryClient.invalidateQueries({
+      queryKey: qk.material(this.materialId),
+    });
+    this.set({ deleted: true });
+    // This room is their owner while it shows them: no sweep offers them.
+    const key = this.draftKey();
+    if (key) this.keptDeleted = holdDraftDocument(key);
+    await stored;
+    const rows = key
+      ? await readDrafts(key).catch((error) => {
+          console.warn('Draft storage failed:', error);
+          return null;
+        })
+      : [];
+    if (this.destroyed) return;
+    const drawn = rows && deletedDocument(rows);
+    if (!(key && rows && drawn)) {
+      this.set({ status: 'unavailable' });
+      return;
+    }
+    this.shownDeleted = showDeletedDrafts(key, {
+      doc: drawn.doc,
+      rows: drawn.rows,
+    });
+    this.set({
+      recovery: {
+        deleted: true,
+        doc: drawn.doc,
+        refused: true,
+        rows: drawn.rows,
+      },
+      status: 'saved',
+      synced: true,
+    });
+  }
+
+  /** The collaboration service said the item is not found, with no token
+   * answer behind it: a fresh token says whether it was deleted (its edits
+   * to copy, through a fresh room), live (a token, or 409 for one restored
+   * since: it rejoins), or is gone (404, 403), which shows it unavailable,
+   * its edits kept for the page's read or the next page load to settle. No
+   * answer joins again too, its copy kept. */
+  private async notFoundByRoom() {
+    const error = await getMaterialCollaborationToken(
+      this.materialId,
+      this.tokenRequest()
+    ).then(
+      () => null,
+      (error: unknown) => error
+    );
+    if (this.destroyed) return;
+    // Live (a token, a 409 for one restored since), or no answer (offline, a
+    // server error): it joins again, its copy kept. Only a refusal ends it.
+    const refusal = roomRefusal('', error);
+    if (refusal === 'retry') {
+      this.reconnector.refused();
+      return;
+    }
+    this.reconnector.dispose();
+    if (refusal === 'deleted') this.moved(true);
+    else this.refusedAccess();
   }
 
   /** The item is gone or no longer this user's: the room stops for good.
@@ -1942,7 +2109,20 @@ export class ItemRoom {
 
   /** Leaves recovery: the stored edits go and a fresh room opens. */
   async reload() {
-    const { recovery } = this.snapshot;
+    const { deleted, recovery } = this.snapshot;
+    // A deleted item's shown edits go, a quiz's in both documents, and the
+    // page loads again (Q39).
+    const { drafts } = this.options;
+    if (deleted && drafts) {
+      const target = deletedTarget(
+        drafts.actorId,
+        false,
+        this.materialId,
+        drafts.kind === 'quiz'
+      );
+      if (target) reloadDeleted(target);
+      return;
+    }
     await deleteDrafts(recovery?.rows ?? []).catch(() => undefined);
     // Beside a live room (early edits its state hides): the room shows.
     if (recovery?.merged && !(this.ended || this.destroyed)) {
@@ -1977,6 +2157,8 @@ export class ItemRoom {
     this.stopUnloaded?.();
     this.mergeWait?.(false);
     this.keptLate?.();
+    this.keptDeleted?.();
+    this.shownDeleted?.();
     // The early rows a renamed edit stands for go once a whole document
     // holding it landed, unless they hold the only copy of what the room's
     // state hides; until then they stay, flagged copy-only, never applied.
@@ -2003,12 +2185,15 @@ export class ItemRoom {
  */
 export function openItemRoom(
   materialId: string,
-  options: ItemRoomOptions & { onReplace: () => void }
+  {
+    kind,
+    ...options
+  }: ItemRoomOptions & { kind: ItemKind; onReplace: () => void }
 ): { close: () => void; room: ItemRoom } {
   const { inside, onReplace } = options;
   const writer = options.read ? inside?.writer : undefined;
   const opening: ItemRoomOptions = writer
-    ? { ...options, drafts: { actorId: writer }, read: false }
+    ? { ...options, drafts: { actorId: writer, kind }, read: false }
     : options;
   const create = (replace: () => void) => {
     const room = new ItemRoom(materialId, { ...opening, onReplace: replace });
@@ -2019,8 +2204,10 @@ export function openItemRoom(
     const room = create(onReplace);
     return { close: () => room.destroy(), room };
   }
-  const key = [materialId, opening.document ?? 'content', !!opening.read].join(
-    ' '
+  const key = roomKey(
+    materialId,
+    opening.document ?? 'content',
+    !!opening.read
   );
   const { release, room } = inside.hold(key, create, onReplace);
   // A reader may have opened it first, and it keeps no device copy.
@@ -2035,6 +2222,7 @@ export function openItemRoom(
  */
 export function useItemRoom(
   materialId: string | null,
+  kind: ItemKind,
   enabled = true,
   {
     actorId,
@@ -2075,9 +2263,10 @@ export function useItemRoom(
       awareness,
       board: start.current.board,
       document,
-      drafts: actorId ? { actorId } : undefined,
+      drafts: actorId ? { actorId, kind } : undefined,
       inside,
       keep: start.current.keep,
+      kind,
       onLeave: () => start.current.onLeave?.(),
       onReplace: () => setGeneration((value) => value + 1),
       // Unusable once a room ended on it (its document went with the room).
@@ -2088,7 +2277,16 @@ export function useItemRoom(
       close();
       setRoom((current) => (current === created ? null : current));
     };
-  }, [materialId, enabled, document, actorId, awareness, inside, generation]);
+  }, [
+    materialId,
+    kind,
+    enabled,
+    document,
+    actorId,
+    awareness,
+    inside,
+    generation,
+  ]);
   useEffect(() => {
     if (wake) room?.wake();
   }, [room, wake]);
@@ -2105,6 +2303,7 @@ const noSubscribe = () => () => undefined;
 const INITIAL: ItemRoomSnapshot = {
   access: null,
   delayed: false,
+  deleted: false,
   early: false,
   listsVersion: 0,
   offline: null,
