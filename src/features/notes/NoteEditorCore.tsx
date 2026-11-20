@@ -30,9 +30,10 @@ import {
   useState,
 } from 'react';
 import { defaultScrollSelectionIntoView, type ReactEditor } from 'slate-react';
+import { useIsMounted } from 'usehooks-ts';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
-import { qk } from '@/api/client';
+import { isApiError, qk } from '@/api/client';
 import {
   getMaterialCollaborationToken,
   type useMaterialDiscussions,
@@ -745,8 +746,10 @@ export function NoteEditorCore({
    * NOTE_SAVE_DELAY_MS while the editor keeps its edits; false once the
    * receipts catch up. */
   onSaveDelayed?: (delayed: boolean) => void;
-  /** The note was trashed or deleted, or this user lost access to it (its
-   * stored edits went too, except for an account lock). */
+  /** This user lost access to the note (its stored edits went too, except
+   * for an account lock), or the collaboration service alone said not found
+   * and a fresh token was no 410 (its edits kept for the page's read). A
+   * deletion reports nothing: the page's read says what shows (Q39). */
   onUnavailable?: () => void;
   /** The device copy this mount starts from: its document already holds the
    * state, and the JOIN names its version, so the room answers the
@@ -848,6 +851,7 @@ export function NoteEditorCore({
   const [outdated, setOutdated] = useState(false);
   // The room refused this person on rejoining.
   const [accessLost, setAccessLost] = useState(false);
+  const isMounted = useIsMounted();
   const stale = useRef(false);
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
@@ -1628,7 +1632,21 @@ export function NoteEditorCore({
         statusChange.current?.(null);
         statusChange.current = undefined;
         setAccessLost(true);
-        reportUnavailable.current?.();
+        // A deleted note never reads as lost access (Q39): the page's read
+        // alone says what shows. The collaboration service's not-found alone,
+        // which a deleted note says too, asks one fresh token first, as an
+        // item room's does (`notFoundByRoom`), and reports unless it is a 410.
+        if (refusal === 'notFound' && !isApiError(failedToken))
+          void getMaterialCollaborationToken(material.id)
+            .then(
+              () => null,
+              (error: unknown) => error
+            )
+            .then((error) => {
+              if (isMounted() && roomRefusal('', error) !== 'deleted')
+                reportUnavailable.current?.();
+            });
+        else if (refusal !== 'deleted') reportUnavailable.current?.();
       }
     };
     // Each rejoin's token; a refusal is kept for onAuthenticationFailed.
@@ -1807,6 +1825,7 @@ export function NoteEditorCore({
     handleStatelessEvent,
     hasUnsavedWork,
     hiddenTyping,
+    isMounted,
     lateDocument,
     markSlowed,
     material.id,

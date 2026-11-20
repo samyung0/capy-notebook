@@ -85,6 +85,17 @@ const deleteItem = (
     [id, { kind, name, payer }, queued] as const
   );
 
+/** Restores a deleted material (`restoreMockItem`) and reads it again. */
+const restoreItem = (page: Page, id: string) =>
+  page.evaluate(async (itemId) => {
+    const paths = ['/src/mocks/collaboration.ts', '/src/api/queryClient.ts'];
+    const [rooms, { queryClient }] = await Promise.all(
+      paths.map((path) => import(path))
+    );
+    (rooms as Collaboration).restoreMockItem(itemId);
+    await queryClient.invalidateQueries({ queryKey: ['material', itemId] });
+  }, id);
+
 const loseAccess = (page: Page, id: string) =>
   page.evaluate(async (itemId) => {
     const path = '/src/mocks/collaboration.ts';
@@ -391,21 +402,127 @@ test('a note its creator trashed elsewhere and restored while open edits again',
     timeout: 30_000,
   });
 
-  await page.evaluate(async (id) => {
-    const paths = ['/src/mocks/collaboration.ts', '/src/api/queryClient.ts'];
-    const [rooms, { queryClient }] = await Promise.all(
-      paths.map((path) => import(path))
-    );
-    (rooms as Collaboration).restoreMockItem(id);
-    await queryClient.invalidateQueries({ queryKey: ['material', id] });
-  }, NOTE);
+  await restoreItem(page, NOTE);
   await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
     timeout: 30_000,
   });
   await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
+  // Deleted, never kicked: no lost-access strip once restored either.
+  await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
   // Its live editor, writable.
   await seedText(page);
 });
+
+/** Holds the page's read of a material until `releaseRead`, then lets the
+ * mocks answer it, as a read slower than the room's token is. */
+const holdRead = (page: Page, id: string) =>
+  page.evaluate(async (itemId) => {
+    const path = '/src/mocks/browser.ts';
+    const { http, worker } = await import(path);
+    const released = new Promise((resolve) =>
+      window.addEventListener('read-release', resolve, { once: true })
+    );
+    worker.use(
+      http.get(`/api/materials/${itemId}`, async () => {
+        await released;
+      })
+    );
+  }, id);
+const releaseRead = (page: Page) =>
+  page.evaluate(() => window.dispatchEvent(new Event('read-release')));
+
+/** A material's content as the mocks store it from its room's checkpoints. */
+const storedContent = (page: Page, id: string) =>
+  page.evaluate(async (materialId) => {
+    const path = '/src/mocks/db.ts';
+    const db = await import(path);
+    const material = db.materials.find(
+      (row: { id: string }) => row.id === materialId
+    );
+    return JSON.stringify(material?.content ?? null);
+  }, id);
+
+// A note's, a set's or a diagram's room hears of the deletion (its rejoin's
+// or fresh room's token, 410) before the page's read does: it says
+// unavailable, never that access went (Epo 2026-11-20), and restored and read
+// again it edits on a fresh room.
+for (const [name, url, id, kind, title] of [
+  ['note', `${WORKSPACE}?material=${NOTE}`, NOTE, 'note', 'Scenario note'],
+  [
+    'flashcard set',
+    '/workspaces/ws_scenarios?material=mock-scenario-cards',
+    'mock-scenario-cards',
+    'flashcards',
+    'Scenario flashcards',
+  ],
+  [
+    'diagram',
+    '/workspaces/ws_bio?material=mat_2',
+    'mat_2',
+    'diagram',
+    'Protein secretion pathway',
+  ],
+] as const)
+  test(`a ${name} deleted while open with nothing unsent says it is unavailable, and edits again once restored`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.goto(url);
+    const saveState = page.getByTestId('editor-save-state');
+    await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+      timeout: 60_000,
+    });
+    await holdRead(page, id);
+    await deleteItem(page, id, kind, title);
+    // Its room said so (no save status), the read still out.
+    await expect(saveState).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+    await releaseRead(page);
+    await expect(page.getByText(m.error_not_found_title())).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+
+    await restoreItem(page, id);
+    await expect(saveState).toHaveAttribute('data-save-state', 'saved', {
+      timeout: 30_000,
+    });
+    await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
+    await expect(page.getByText(m.editor_read_only_strip())).toHaveCount(0);
+    // An edit lands, stored through the fresh room.
+    const edit = {
+      diagram: '%% restored',
+      flashcards: 'Restored card',
+      note: 'Restored note.',
+    }[kind];
+    if (kind === 'note') {
+      await clickTextEnd(await seedText(page));
+      await page.keyboard.type(` ${edit}`);
+    } else if (kind === 'flashcards') {
+      await page
+        .getByRole('button', { exact: true, name: m.flashcards_add_card() })
+        .first()
+        .click();
+      const dialog = page.getByRole('dialog', {
+        name: m.flashcards_edit_card(),
+      });
+      await dialog
+        .getByRole('textbox', { name: m.editor_card_front() })
+        .fill(edit);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    } else {
+      await page
+        .getByRole('textbox', { name: m.editor_mermaid_source() })
+        .click();
+      await page.keyboard.press('ControlOrMeta+End');
+      await page.keyboard.type(`\n${edit}`);
+    }
+    await expect
+      .poll(() => storedContent(page, id), { timeout: 30_000 })
+      .toContain(edit);
+    await expect(saveState).toHaveAttribute('data-save-state', 'saved');
+  });
 
 // Review 2026-11-20: the creator trashing their own note in another tab is
 // read the trashed note (the trash fallback), and this page says deleted, not
