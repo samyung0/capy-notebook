@@ -17,8 +17,6 @@ import (
 func (a *api) registerPapers(api huma.API) {
 	reg(api, "DELETE", "/api/assignment-attempts/{id}/paper/{fileId}", "removePaperFile", "assignments",
 		"Remove a file from a running attempt's paper", 204, a.removePaperFile)
-	reg(api, "PUT", "/api/assignment-attempts/{id}/paper/order", "orderPaperFiles", "assignments",
-		"Put a running attempt's paper files in order", 204, a.orderPaperFiles)
 	reg(api, "GET", "/api/assignment-attempts/{id}/paper/{fileId}/links", "getPaperFileLinks", "assignments",
 		"A paper file's presigned reads, for its member or the class's staff", 200, a.getPaperFileLinks)
 	// A hand-in (S3, T2): an unmarked assignment's files, through the source
@@ -50,17 +48,6 @@ func paperError(err error) error {
 
 func (a *api) removePaperFile(ctx context.Context, in *paperFileInput) (*Empty, error) {
 	return &Empty{}, paperError(a.s.RemovePaperFile(ctx, userID(ctx), in.ID, in.FileID, time.Now()))
-}
-
-type paperOrderInput struct {
-	ID   string `path:"id" maxLength:"64"`
-	Body struct {
-		FileIDs []string `json:"fileIds" nullable:"false" maxItems:"15"`
-	}
-}
-
-func (a *api) orderPaperFiles(ctx context.Context, in *paperOrderInput) (*Empty, error) {
-	return &Empty{}, paperError(a.s.OrderPaperFiles(ctx, userID(ctx), in.ID, in.Body.FileIDs, time.Now()))
 }
 
 func (a *api) removeHandInFile(ctx context.Context, in *paperFileInput) (*Empty, error) {

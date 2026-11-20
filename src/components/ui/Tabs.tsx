@@ -40,8 +40,10 @@ export function Tabs({
     if (!(row && tab) || vertical) return;
     const box = row.getBoundingClientRect();
     const { left, right } = tab.getBoundingClientRect();
-    if (right > box.right) row.scrollLeft += right - box.right;
-    else if (left < box.left) row.scrollLeft -= box.left - left;
+    // Whole pixels up: a fractional scrollLeft rounds down, leaving the tab a
+    // sliver short of the edge.
+    if (right > box.right) row.scrollLeft += Math.ceil(right - box.right);
+    else if (left < box.left) row.scrollLeft -= Math.ceil(box.left - left);
   }, [value, vertical]);
   const focusable = items.some((t) => t.value === value)
     ? value

@@ -9,6 +9,18 @@ vi.mock('@/api/hooks', () => ({
   useCopyQuizToGradedQuiz: () => ({ isPending: false, mutate: vi.fn() }),
   useCreateBankQuiz: () => ({ isPending: false, mutate: vi.fn() }),
   useCreateMaterial: () => ({ isPending: false, mutate: vi.fn() }),
+  useFiles: () => ({
+    data: [
+      {
+        hasBytes: true,
+        id: 'f1',
+        kind: 'pdf',
+        name: 'Mock paper.pdf',
+        sizeBytes: 2048,
+      },
+    ],
+  }),
+  useMakeFileGradedQuiz: () => ({ isPending: false, mutate: vi.fn() }),
   useMaterials: () => ({ data: [] }),
   usePractice: () => ({
     data: { items: [{ id: 'qz1', kind: 'quiz', size: 12, title: 'Osmosis' }] },
@@ -77,9 +89,10 @@ it('opens Add quiz on Convert to quiz, the first of its four tabs', () => {
   expect(html).toContain('data-files-tab="true"');
 });
 
-// Epo 2026-11-16: New graded quiz's Questions step starts on Existing quiz,
-// a quiz the workspace already has, ahead of the four ways to make one.
-it("opens New graded quiz's Questions on Existing quiz, listing the workspace's quizzes", () => {
+// Epo 2026-11-16: New graded quiz's Questions step starts on Existing file,
+// a quiz or (2026-11-20) a file the workspace already has, ahead of the four
+// ways to make one.
+it("opens New graded quiz's Questions on Existing file, listing the workspace's quizzes and files", () => {
   const html = render({
     form: {} as never,
     onBack: () => undefined,
@@ -94,4 +107,5 @@ it("opens New graded quiz's Questions on Existing quiz, listing the workspace's 
   expect(at).toEqual([...at].sort((a, b) => a - b));
   expect(html).toContain('data-files-tab="false"');
   expect(html).toContain('Osmosis');
+  expect(html).toContain('Mock paper.pdf');
 });

@@ -53,4 +53,10 @@ export interface AssignmentFormReq {
      * @maxLength 120
      */
   title: string;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  totalMarks?: number;
+  uploadOnly?: boolean;
 }

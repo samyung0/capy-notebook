@@ -143,6 +143,8 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
   const { data: workspaceTopics } = useTopics(workspaceId);
   const [showClosed, setShowClosed] = useState(false);
   const [topics, setTopics] = useState<string[]>([]);
+  // Both kinds picked keeps both, as none does.
+  const [kinds, setKinds] = useState<Assignment['kind'][]>([]);
   const { server, sorting } = useAssignmentSort();
   const {
     data,
@@ -156,7 +158,13 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
     refetch,
   } = useAssignments(
     workspaceId,
-    { closed: showClosed, done: true, sort: server, topics },
+    {
+      closed: showClosed,
+      done: true,
+      kind: kinds.length === 1 ? kinds[0] : undefined,
+      sort: server,
+      topics,
+    },
     { errorBoundary: false }
   );
   const revealRef = useLoadingReveal(isPending);
@@ -201,25 +209,43 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
         >
           {showClosed ? m.assignment_hide_closed() : m.assignment_show_closed()}
         </Button>
-        {!!workspaceTopics?.length && (
-          // The list pages' Filter: the workspace's topics, no Other files
-          // (Epo 2026-11-13); the server filters, as the list comes in pages.
-          <FilterPopover
-            filters={[
-              {
-                key: 'topic',
-                label: m.practice_col_topics(),
-                onToggle: (value) => setTopics(toggleValue(topics, value)),
-                options: workspaceTopics.map((t) => ({
-                  label: t.name,
-                  value: t.id,
-                })),
-                selected: topics,
-              },
-            ]}
-            onResetFilters={() => setTopics([])}
-          />
-        )}
+        {/* The list pages' Filter: the workspace's topics, no Other files
+            (Epo 2026-11-13), and the kind (Epo 2026-11-19); the server
+            filters, as the list comes in pages. */}
+        <FilterPopover
+          filters={[
+            ...(workspaceTopics?.length
+              ? [
+                  {
+                    key: 'topic',
+                    label: m.practice_col_topics(),
+                    onToggle: (value: string) =>
+                      setTopics(toggleValue(topics, value)),
+                    options: workspaceTopics.map((t) => ({
+                      label: t.name,
+                      value: t.id,
+                    })),
+                    selected: topics,
+                  },
+                ]
+              : []),
+            {
+              key: 'kind',
+              label: m.assignment_col_kind(),
+              onToggle: (value: string) =>
+                setKinds(toggleValue(kinds, value as Assignment['kind'])),
+              options: [
+                { label: m.assignment_kind_marked(), value: 'marked' },
+                { label: m.assignment_kind_assignment(), value: 'unmarked' },
+              ],
+              selected: kinds,
+            },
+          ]}
+          onResetFilters={() => {
+            setTopics([]);
+            setKinds([]);
+          }}
+        />
       </div>
       {isPending ? (
         <SkeletonList className="mt-6" count={5} rowHeight={40} />
@@ -233,7 +259,9 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
         />
       ) : rows.length === 0 ? (
         <p className="t-meta mt-6 text-fg-muted">
-          {topics.length ? m.common_no_matches() : m.common_nothing_yet()}
+          {topics.length || kinds.length
+            ? m.common_no_matches()
+            : m.common_nothing_yet()}
         </p>
       ) : (
         <div ref={revealRef}>

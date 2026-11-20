@@ -33,6 +33,7 @@ vi.mock('./assignmentFields', async (importOriginal) => {
     GradesSelect: none,
     LatePenaltySelect: none,
     MarkingSelect: none,
+    SubmissionSelect: none,
     SwitchRow: none,
     TimeLimitSelect: none,
   };

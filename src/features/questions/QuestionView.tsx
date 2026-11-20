@@ -259,35 +259,77 @@ export function OptionKey({
  * correct answer the learner missed once checked. */
 export type RowState = 'selected' | 'right' | 'wrong' | 'missed';
 
-/** Answer item (an option, True or False, an ordering item): a full box
- * (board K5). Chosen is a purple tint; once checked a right choice fills
- * green, a wrong one red, and the correct answer the learner did not choose
- * gets a green outline only, so green fill always means chosen and right. */
-export function answerBoxClass(state?: RowState) {
-  return cn(
-    'flex min-h-11.5 items-center gap-2.5 rounded-tile border bg-surface px-3.5 py-2.5 font-semibold text-fg text-sm',
-    !state && 'border-line',
-    state === 'selected' && 'border-solid-accent-1 bg-tint-accent-1',
-    state === 'right' && 'border-tint-success-fg bg-tint-success',
-    state === 'wrong' && 'border-tint-error-fg bg-tint-error',
-    state === 'missed' && 'border-tint-success-fg'
+/** A row's tag at its end: Correct in green, or a quiz's verdict on a pick
+ * (Wrong in red, the Correct answer it missed in green). */
+export function CorrectTag({
+  className,
+  label = m.question_ui_status_correct(),
+  wrong,
+}: {
+  className?: string;
+  label?: string;
+  wrong?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        'shrink-0 whitespace-nowrap font-bold text-[12.5px]',
+        wrong ? 'text-tint-error-fg' : 'text-tint-success-fg',
+        className
+      )}
+    >
+      {label}
+    </span>
   );
 }
 
-/** A box's letter or number, coloured with its state. */
-export function answerLetterClass(state?: RowState) {
-  return cn(
-    'w-5.5 shrink-0 font-bold',
-    !state && 'text-fg-muted',
-    state === 'selected' && 'text-tint-accent-1-fg',
-    (state === 'right' || state === 'missed') && 'text-tint-success-fg',
-    state === 'wrong' && 'text-tint-error-fg'
+/** A choice's marker: a radio, or a box for Multiple answer. Checked, it is
+ * the correct answer, in green. A quiz colours it by `state`: a pick in
+ * purple, checked right green or wrong red, a correct one not picked ringed
+ * green (Epo 2026-11-19, A). */
+export function ChoiceMarker({
+  checked,
+  className,
+  multiple,
+  state,
+}: {
+  checked: boolean;
+  className?: string;
+  multiple: boolean;
+  state?: RowState;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        // A pixel up, to sit level with its row's text (Epo 2026-11-15).
+        'relative -top-px grid size-4.5 shrink-0 place-items-center border-2 border-line-strong text-surface',
+        multiple ? 'rounded-[4px]' : 'rounded-full',
+        checked &&
+          (state === 'selected'
+            ? 'border-solid-accent-1 bg-solid-accent-1'
+            : state === 'wrong'
+              ? 'border-tint-error-fg bg-tint-error-fg'
+              : 'border-tint-success-fg bg-tint-success-fg'),
+        checked && !multiple && 'shadow-[inset_0_0_0_3px_var(--color-surface)]',
+        !checked && state === 'missed' && 'border-tint-success-fg',
+        className
+      )}
+    >
+      {checked && multiple && (
+        <Icon
+          name={state === 'wrong' ? 'x' : 'check'}
+          size={12}
+          strokeWidth={3}
+        />
+      )}
+    </span>
   );
 }
 
-/** Boxes stack with an 8px gap; paper questions set options two by two. */
-export const answerBoxesClass = (twoColumns = false) =>
-  cn('grid gap-2', twoColumns && '@xl:grid-cols-2');
+/** Choice rows stack as the editor's; paper questions set them two by two. */
+export const choiceRowsClass = (twoColumns = false) =>
+  cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-6');
 
 // Answer areas span the text and marks columns of a part row.
 function Choices({
@@ -306,11 +348,14 @@ function Choices({
             {m.question_ui_multiple_answers()}
           </p>
         )}
-        <ol className={answerBoxesClass(twoColumns)}>
-          {shownOptions(answer).map(({ index, text }, i) => (
-            <li className={answerBoxClass()} key={index}>
-              <span className={answerLetterClass()}>{optionLetter(i)}</span>
-              <TextView className="min-w-0 flex-1" text={text} />
+        <ol className={choiceRowsClass(twoColumns)}>
+          {shownOptions(answer).map(({ index, text }) => (
+            <li className="flex min-h-11 items-center gap-3" key={index}>
+              <ChoiceMarker
+                checked={false}
+                multiple={multipleAnswers(answer)}
+              />
+              <TextView className="min-w-0 flex-1 px-0.5" text={text} />
             </li>
           ))}
         </ol>
@@ -329,11 +374,11 @@ function Choices({
     );
   if (answer.type === 'ordering')
     return (
-      <ol className={cn('col-[2/-1] min-w-0', answerBoxesClass())}>
+      <ol className="col-[2/-1] min-w-0">
         {answer.items.map((text, i) => (
-          <li className={answerBoxClass()} key={i}>
-            <span className={answerLetterClass()}>{i + 1}</span>
-            <TextView className="min-w-0 flex-1" text={text} />
+          <li className="flex min-h-11 items-center gap-3" key={i}>
+            <span className="w-4.5 shrink-0">{i + 1}.</span>
+            <TextView className="min-w-0 flex-1 px-0.5" text={text} />
           </li>
         ))}
       </ol>
@@ -341,7 +386,8 @@ function Choices({
   return null;
 }
 
-const marksText = (count: number) =>
+/** "1 mark", "3 marks". */
+export const marksText = (count: number) =>
   count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
 
 /** A number or part label. Each stacks the question's other labels unseen,

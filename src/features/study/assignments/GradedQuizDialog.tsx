@@ -2,10 +2,9 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useRefreshAssignments, useWorkspace } from '@/api/hooks';
 import type { AssignmentFormReq } from '@/api/types';
-import { Icon } from '@/components/ui/Icon';
+import { DialogStep } from '@/components/ui/Dialog';
 import type { MakeQuizChoice } from '@/features/makeQuiz/MakeQuizDialog';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { AddPracticeDialog } from '../practice/AddPractice';
 import { assignmentsLink } from '../studyRoutes';
 import { NewAssignmentDialog } from './NewAssignmentDialog';
@@ -45,6 +44,14 @@ export function GradedQuizDialog({
   const { data: ws } = useWorkspace(workspaceId, { errorBoundary: false });
   const [form, setForm] = useState<AssignmentFormReq>();
   const [step, setStep] = useState<'settings' | 'questions'>('settings');
+  // Past the first step each opens in the other's place without the open
+  // motion, the same size, so Next and Back read as one dialog (Epo
+  // 2026-11-19).
+  const [continued, setContinued] = useState(false);
+  const go = (next: 'settings' | 'questions') => {
+    setContinued(true);
+    setStep(next);
+  };
   // Convert's own steps, as the address holds them for Add quiz.
   const [make, setMake] = useState<{
     choice: MakeQuizChoice;
@@ -70,111 +77,63 @@ export function GradedQuizDialog({
   if (!ws) return null;
   if (step === 'settings' || !form)
     return (
-      <NewAssignmentDialog
-        graded={{
-          initial: form,
-          onNext: (next) => {
-            setForm(next);
-            setStep('questions');
-          },
-          title: <GradedTitle step={1} />,
-        }}
-        onClose={onClose}
-        onDone={onClose}
-        own={own}
-        presetAssignee={presetAssignee}
-        workspaceId={workspaceId}
-      />
+      <DialogStep continued={continued}>
+        <NewAssignmentDialog
+          graded={{
+            initial: form,
+            onNext: (next) => {
+              setForm(next);
+              go('questions');
+            },
+            title: m.assignment_new_graded_quiz(),
+          }}
+          onClose={onClose}
+          onDone={onClose}
+          own={own}
+          presetAssignee={presetAssignee}
+          workspaceId={workspaceId}
+        />
+      </DialogStep>
     );
   return (
-    <AddPracticeDialog
-      graded={{
-        form,
-        initialTopicId: presetTopicId,
-        onBack: () => setStep('settings'),
-        onMade: done,
-        own,
-        title: <GradedTitle step={2} />,
-      }}
-      make={{
-        file: make.file,
-        // AI-read questions are read before the graded quiz goes out; a
-        // task for oneself has no draft.
-        graded: own ? form : { ...form, draft: true },
-        initial: make.choice,
-        onClose,
-        // The run goes on here, and its graded quiz closes the dialog.
-        onConfirmed: () => undefined,
-        onDone: (_, assignmentId) => {
-          if (assignmentId) done(assignmentId);
-        },
-        onFile: (file) => setMake((current) => ({ ...current, file })),
-        onRunBack: () =>
-          setMake((current) => ({ ...current, run: undefined, step: 'pages' })),
-        onShowFiles: (choice) => setMake({ choice, step: 'files' }),
-        onShowPages: (choice) => setMake({ choice, step: 'pages' }),
-        onStarted: (run, choice) => setMake({ choice, run, step: 'run' }),
-        runId: make.run,
-        step: make.step,
-        workspaceId,
-        workspaceName: ws.name,
-      }}
-    />
-  );
-}
-
-/** "New graded quiz", then where it is: 1 Settings › 2 Questions. */
-function GradedTitle({ step }: { step: 1 | 2 }) {
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-3">
-      <span className="min-w-0 flex-1 truncate">
-        {m.assignment_new_graded_quiz()}
-      </span>
-      <span className="flex shrink-0 items-center gap-2 font-semibold text-sm max-sm:hidden">
-        <StepLabel
-          current={step === 1}
-          label={m.assignment_step_settings()}
-          n={1}
-        />
-        <Icon className="text-fg-muted" name="chevronRight" size={12} />
-        <StepLabel
-          current={step === 2}
-          label={m.assignment_step_questions()}
-          n={2}
-        />
-      </span>
-    </span>
-  );
-}
-
-function StepLabel({
-  current,
-  label,
-  n,
-}: {
-  current: boolean;
-  label: string;
-  n: number;
-}) {
-  return (
-    <span
-      aria-current={current ? 'step' : undefined}
-      className={cn(
-        'flex items-center gap-1.5',
-        current ? 'text-fg' : 'text-fg-muted'
-      )}
-    >
-      <span
-        className={cn(
-          'flex size-5 items-center justify-center rounded-full font-bold text-[11.5px]',
-          current
-            ? 'bg-action text-action-fg'
-            : 'bg-page-hover text-fg-secondary'
-        )}
-      >
-        {n}
-      </span>
-      {label}
-    </span>
+    <DialogStep continued={continued}>
+      <AddPracticeDialog
+        graded={{
+          form,
+          initialTopicId: presetTopicId,
+          onBack: () => go('settings'),
+          onMade: done,
+          own,
+          title: m.assignment_new_graded_quiz(),
+        }}
+        make={{
+          file: make.file,
+          // AI-read questions are read before the graded quiz goes out; a
+          // task for oneself has no draft.
+          graded: own ? form : { ...form, draft: true },
+          initial: make.choice,
+          onClose,
+          // The run goes on here, and its graded quiz closes the dialog.
+          onConfirmed: () => undefined,
+          onDone: (_, assignmentId) => {
+            if (assignmentId) done(assignmentId);
+          },
+          onFile: (file) => setMake((current) => ({ ...current, file })),
+          onRunBack: () =>
+            setMake((current) => ({
+              ...current,
+              run: undefined,
+              step: 'pages',
+            })),
+          onShowFiles: (choice) => setMake({ choice, step: 'files' }),
+          onShowPages: (choice) => setMake({ choice, step: 'pages' }),
+          onStarted: (run, choice) => setMake({ choice, run, step: 'run' }),
+          runId: make.run,
+          step: make.step,
+          workspaceId,
+          workspaceName: ws.name,
+        }}
+      />
+    </DialogStep>
   );
 }

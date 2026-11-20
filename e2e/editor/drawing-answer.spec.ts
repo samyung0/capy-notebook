@@ -81,24 +81,16 @@ const hideMockPanel = (page: Page) =>
       '[data-testid="mock-scenario-panel"] { display: none !important; }',
   });
 
-/** The part's question by its row in the list, or on an assignment's phone
- * page, where the list is hidden, by its number in the strip above. */
+/** The part's question by its row in the list, or on an assignment's page by
+ * its number (the grid, or a phone's strip above the question). */
 async function openQuestion(page: Page) {
-  const row = page.locator(`[data-question-row="${DRAWN}"]`).first();
-  await row.waitFor({ state: 'attached', timeout: 60_000 });
-  if (await row.isVisible()) await row.click();
-  else {
-    const number = await row.evaluate(
-      (el) =>
-        [...document.querySelectorAll('[data-question-row]')].indexOf(el) + 1
-    );
-    await page
-      .getByRole('navigation', { name: m.assignment_questions_nav() })
-      .getByRole('button', {
-        name: new RegExp(`^${m.assignment_question_n({ number })}(,|$)`),
-      })
-      .click();
-  }
+  const pick = page
+    .locator(
+      `[data-question-row="${DRAWN}"], [data-question-number="${DRAWN}"]`
+    )
+    .locator('visible=true')
+    .first();
+  await pick.click({ timeout: 60_000 });
   return page.locator(`[data-question-id="${DRAWN}"]`).first();
 }
 
@@ -220,7 +212,7 @@ for (const { screen, width } of SCREENS) {
     await asScenario(
       page,
       null,
-      `/workspaces/ws_bio/assignments?assignment=${assignment}&tab=approve`
+      `/workspaces/ws_bio/assignments?assignment=${assignment}&tab=grading`
     );
     // Grade with AI, in the row above the lists, grades what the AI has not.
     await page

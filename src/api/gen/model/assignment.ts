@@ -29,6 +29,7 @@ export interface Assignment {
   mine?: AssignmentMine;
   noLate: boolean;
   own: boolean;
+  paperFile: boolean;
   points?: number;
   postedAt: string;
   postedBy: string;
@@ -36,5 +37,6 @@ export interface Assignment {
   timeLimitMin?: number;
   title: string;
   topicIds: string[];
+  uploadOnly: boolean;
   workspaceId: string;
 }

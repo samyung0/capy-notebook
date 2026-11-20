@@ -257,8 +257,12 @@ func waitForAIError(t *testing.T, h http.Handler, id string) answerRow {
 		rec := doReq(t, h, http.MethodGet, "/api/assignments/"+id+"/report", "u_owner", nil)
 		var report struct{ Answers []answerRow }
 		_ = json.Unmarshal(rec.Body.Bytes(), &report)
-		if len(report.Answers) > 0 && report.Answers[0].AIError != "" {
-			return report.Answers[0]
+		// Every question's answers are listed (Epo 2026-11-19): the reason is on
+		// the row the AI couldn't grade, whichever it is.
+		for _, row := range report.Answers {
+			if row.AIError != "" {
+				return row
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("no reason on the row: %s", rec.Body.String())

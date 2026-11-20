@@ -105,7 +105,6 @@ test.describe('workspace invitations', () => {
     );
     await viewerPage.getByRole('button', { name: m.invite_accept() }).click();
     expect((await acceptResponse).status()).toBe(200);
-    await viewerPage.getByRole('button', { name: m.invite_open() }).click();
     await expect(
       viewerPage.getByRole('heading', { name: workspace.name })
     ).toBeVisible();

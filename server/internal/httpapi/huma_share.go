@@ -67,9 +67,10 @@ func (a *api) materialRead(ctx context.Context, matID string) (bool, error) {
 }
 
 // fileRead applies the file's workspace read rule, or its owner's alone for a
-// standalone file; returns isOwner.
+// standalone file, with a question paper's starters (FileReadRole); returns
+// isOwner.
 func (a *api) fileRead(ctx context.Context, fileID string) (bool, error) {
-	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), fileID)
+	role, err := a.s.FileReadRole(ctx, userID(ctx), fileID)
 	if err != nil {
 		return false, err
 	}
@@ -80,7 +81,7 @@ func (a *api) fileRead(ctx context.Context, fileID string) (bool, error) {
 // what it pays for after losing access, getting its latest saved state (Epo
 // 2026-10-27, D3); it still cannot open or restore it in place.
 func (a *api) fileReadOrPayer(ctx context.Context, fileID string) (store.WorkspaceRole, error) {
-	role, err := a.s.FileEffectiveRole(ctx, userID(ctx), fileID)
+	role, err := a.s.FileReadRole(ctx, userID(ctx), fileID)
 	if !errors.Is(err, store.ErrNotFound) {
 		return role, err
 	}

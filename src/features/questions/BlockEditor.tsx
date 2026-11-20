@@ -1350,7 +1350,9 @@ function TableBlockEditor({
                                 column: j + 1,
                                 row: i + 1,
                               })}
-                              className="min-h-8 w-full cursor-text text-left"
+                              // The open cell's own lines, 20px from its 4px
+                              // top, so typing moves no text (Epo 2026-11-19).
+                              className="flex min-h-8 w-full cursor-text flex-col pt-1 text-left [&>div]:leading-5"
                               onClick={(event) => {
                                 cellClick.current =
                                   event.detail &&
@@ -1369,7 +1371,7 @@ function TableBlockEditor({
                                   block={{ text, type: 'text' }}
                                 />
                               ) : (
-                                <p className="font-normal text-placeholder leading-relaxed">
+                                <p className="font-normal text-placeholder leading-5">
                                   {placeholder}
                                 </p>
                               )}

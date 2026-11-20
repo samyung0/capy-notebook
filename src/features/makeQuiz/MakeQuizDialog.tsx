@@ -694,7 +694,8 @@ export function MakeQuizDialog({
             onBack: tabs?.onBack,
             onCloseClick: onClose,
             title: tabs?.title ?? m.make_quiz_title(),
-            width: tabs ? 600 : 720,
+            // New graded quiz's five tabs need the wider one (Epo 2026-11-19).
+            width: tabs && !graded ? 600 : 720,
           };
   // The tabs share one height, so switching tabs or adding files never
   // resizes the dialog; a tab's own body scrolls (Epo 2026-11-16).

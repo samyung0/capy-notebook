@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
+import { isApiError } from '@/api/client';
 import {
   useDeleteAssignment,
   usePublishAssignment,
@@ -36,6 +37,7 @@ import {
   LatePenaltySelect,
   MarkingSelect,
   PointsField,
+  SubmissionSelect,
   SwitchRow,
   TimeLimitSelect,
 } from './assignmentFields';
@@ -271,19 +273,36 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
   const takesPoints = !marked && !assignment.own;
   const gradedAssignment = takesPoints && watch('points') !== undefined;
   const changes = Object.keys(dirtyFields).length;
-  const save = handleSubmit((values) =>
+  // A new total waits for a yes while anyone is graded, past members too:
+  // their marks stay as given (Epo 2026-11-20).
+  const [confirming, setConfirming] = useState<AssignmentFormReq | null>(null);
+  const send = (values: AssignmentFormReq) =>
     update(
       // Publish alone ends a draft.
       { ...assignmentBody(values, members), draft: assignment.draft },
       {
         onError: (error) =>
-          setError('root', {
-            message: errorCopy(error, m.assignment_save_failed()),
-          }),
+          isApiError(error) && error.code === 'total_below_mark'
+            ? setError('totalMarks', {
+                message: m.assignment_total_below_mark(),
+              })
+            : setError('root', {
+                message: errorCopy(error, m.assignment_save_failed()),
+              }),
         onSuccess: (saved) => reset(assignmentDefaults(saved)),
       }
+    );
+  const save = handleSubmit((values) => {
+    if (!assignment.paperFile) return send(values);
+    if (values.totalMarks === undefined)
+      return setError('totalMarks', { message: m.assignment_total_required() });
+    if (
+      values.totalMarks !== assignment.marks &&
+      (assignment.manage?.graded ?? 0) > 0
     )
-  );
+      return setConfirming(values);
+    send(values);
+  });
   const grid = 'grid gap-x-4 gap-y-3.5 sm:grid-cols-2';
   return (
     <form
@@ -336,7 +355,12 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
             />
           </Field>
           {takesPoints && (
-            <PointsField control={control} error={errors.points?.message} />
+            <PointsField
+              control={control}
+              error={errors.points?.message}
+              label={m.assignment_field_points()}
+              name="points"
+            />
           )}
           {marked && (
             <>
@@ -376,8 +400,19 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
           <div className={grid}>
             {marked && (
               <Field label={m.assignment_field_marking()}>
-                <MarkingSelect control={control} />
+                <MarkingSelect
+                  control={control}
+                  disabled={assignment.paperFile}
+                />
               </Field>
+            )}
+            {assignment.paperFile && (
+              <PointsField
+                control={control}
+                error={errors.totalMarks?.message}
+                label={m.assignment_field_total_marks()}
+                name="totalMarks"
+              />
             )}
             <Field label={m.assignment_field_grades()}>
               <GradesSelect control={control} />
@@ -393,11 +428,20 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
       <section className="flex flex-col gap-3.5">
         <SectionTitle title={m.assignment_section_submissions()} />
         <div className={grid}>
-          <SwitchRow
-            control={control}
-            label={m.assignment_switch_uploads()}
-            name="allowUploads"
-          />
+          {marked ? (
+            <Field label={m.assignment_field_submission()}>
+              <SubmissionSelect
+                control={control}
+                disabled={assignment.paperFile}
+              />
+            </Field>
+          ) : (
+            <SwitchRow
+              control={control}
+              label={m.assignment_switch_uploads()}
+              name="allowUploads"
+            />
+          )}
           {marked && (
             <SwitchRow
               control={control}
@@ -448,6 +492,23 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
           {m.action_save()}
         </Button>
       </div>
+      {confirming && (
+        <ConfirmDialog
+          body={m.assignment_total_change_body()}
+          confirmLabel={m.action_save()}
+          danger={false}
+          onClose={() => setConfirming(null)}
+          onConfirm={() => send(confirming)}
+          open
+          title={
+            confirming.totalMarks === 1
+              ? m.assignment_total_change_title_one()
+              : m.assignment_total_change_title({
+                  total: String(confirming.totalMarks),
+                })
+          }
+        />
+      )}
     </form>
   );
 }

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ReactNode, useRef, useState } from 'react';
-import { type Control, Controller } from 'react-hook-form';
+import { type Control, Controller, useController } from 'react-hook-form';
 import { z } from 'zod';
 import {
   CreateAssignmentBody,
@@ -478,6 +478,8 @@ export function assignmentDefaults(
     shuffle: manage?.shuffle ?? false,
     timeLimitMin: existing?.timeLimitMin,
     title: existing?.title ?? '',
+    totalMarks: existing?.paperFile ? existing.marks : undefined,
+    uploadOnly: existing?.uploadOnly ?? false,
     ...start,
   };
 }
@@ -532,26 +534,34 @@ export function assignmentBody(
     showGrades: isGraded(values) ? values.showGrades : 'automatic',
     timeLimitMin: marked ? values.timeLimitMin : undefined,
     title: values.title.trim(),
+    uploadOnly: marked && values.uploadOnly,
   };
 }
 
 type Controlled = { control: Control<AssignmentFormReq> };
 
-/** A class's Assignment's Points (Epo 2026-11-14, board Task): empty is not
- * graded; staff then grade each member out of them. */
+/** A whole number of marks: a class's Assignment's Points (Epo 2026-11-14,
+ * board Task), empty is not graded, staff then grading each member out of
+ * them; or a graded quiz from a file's Total marks (Epo 2026-11-20). */
 export function PointsField({
   control,
   error,
-}: Controlled & { error?: string }) {
+  label,
+  name,
+}: Controlled & {
+  error?: string;
+  label: string;
+  name: 'points' | 'totalMarks';
+}) {
   return (
-    <Field error={error} label={m.assignment_field_points()}>
+    <Field error={error} label={label}>
       <Controller
         control={control}
-        name="points"
+        name={name}
         render={({ field, fieldState }) => (
           <Input
             aria-invalid={fieldState.invalid}
-            aria-label={m.assignment_field_points()}
+            aria-label={label}
             autoComplete="off"
             inputMode="numeric"
             name={field.name}
@@ -626,14 +636,22 @@ export function AttemptsSelect({ control }: Controlled) {
   );
 }
 
-/** How answers are marked (A4, Epo 2026-11-06). */
-export function MarkingSelect({ control }: Controlled) {
+/** How answers are marked (A4, Epo 2026-11-06). `disabled`: a file's graded
+ * quiz, marked by hand alone (Epo 2026-11-20). */
+export function MarkingSelect({
+  control,
+  disabled,
+}: Controlled & { disabled?: boolean }) {
   return (
     <Controller
       control={control}
       name="marking"
       render={({ field }) => (
-        <Select onValueChange={field.onChange} value={field.value}>
+        <Select
+          disabled={disabled}
+          onValueChange={field.onChange}
+          value={field.value}
+        >
           <SelectTrigger aria-label={m.assignment_field_marking()}>
             <SelectValue />
           </SelectTrigger>
@@ -649,6 +667,44 @@ export function MarkingSelect({ control }: Controlled) {
         </Select>
       )}
     />
+  );
+}
+
+/** How a marked assignment is answered (Epo 2026-11-19): online assessment
+ * only, upload only, or either, the member choosing in Before you start.
+ * `disabled`: a file's graded quiz, answered by upload alone (2026-11-20). */
+export function SubmissionSelect({
+  control,
+  disabled,
+}: Controlled & { disabled?: boolean }) {
+  const {
+    field: { onChange: setUploads, value: uploads },
+  } = useController({ control, name: 'allowUploads' });
+  const {
+    field: { onChange: setOnly, value: only },
+  } = useController({ control, name: 'uploadOnly' });
+  return (
+    <Select
+      disabled={disabled}
+      onValueChange={(value) => {
+        setUploads(value !== 'online');
+        setOnly(value === 'upload');
+      }}
+      value={only ? 'upload' : uploads ? 'both' : 'online'}
+    >
+      <SelectTrigger aria-label={m.assignment_field_submission()}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="online">
+          {m.assignment_submission_online()}
+        </SelectItem>
+        <SelectItem value="upload">
+          {m.assignment_submission_upload()}
+        </SelectItem>
+        <SelectItem value="both">{m.assignment_submission_both()}</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 
