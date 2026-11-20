@@ -74,49 +74,49 @@ interface Timings {
 
 /**
  * Medians of three runs of the Performance workflow's `office` job on
- * ubuntu-24.04, 2026-11-07 (Q692): 42323528888, 42325355691 and 42325364585 on
- * 97e63a68a, one each on AMD EPYC 7763, AMD EPYC 9V45 (30-40% faster on every
- * figure) and Intel Xeon 8370C runners. For XLSX/PPTX `editReadyMs` ends at
- * `collaboration-ready` (see above). Heap figures are report-only
- * (openwiki/editor-perf.md).
+ * ubuntu-24.04, 2026-11-20 after Q691's second round (Q757 A):
+ * 44715718554, 44715736656 and 44715754042 on 65bdfc1e8, two on AMD EPYC 7763
+ * and one on Intel Xeon 6975P-C (25-30% faster on every figure). For XLSX/PPTX
+ * `editReadyMs` ends at `collaboration-ready` (see above). Heap figures are
+ * report-only (openwiki/editor-perf.md).
  */
 const MEDIANS: Record<Fixture['id'], Timings> = {
   // MSW adds ~1.1 s per call to every open.
   'bio-office-docx': {
-    editReadyMs: 3460,
-    keyToFrameP50Ms: 35,
-    keyToFrameP90Ms: 43,
-    openFirstPaintMs: 4211,
+    editReadyMs: 2579,
+    keyToFrameP50Ms: 28,
+    keyToFrameP90Ms: 38,
+    openFirstPaintMs: 4085,
   },
   'bio-office-docx-long': {
-    editReadyMs: 4924,
-    keyToFrameP50Ms: 163,
-    keyToFrameP90Ms: 184,
-    openFirstPaintMs: 5282,
+    editReadyMs: 4593,
+    keyToFrameP50Ms: 120,
+    keyToFrameP90Ms: 139,
+    openFirstPaintMs: 5908,
   },
   'bio-office-pptx': {
-    editReadyMs: 982,
-    keyToFrameP50Ms: 14,
-    keyToFrameP90Ms: 17,
-    openFirstPaintMs: 2015,
+    editReadyMs: 997,
+    keyToFrameP50Ms: 11,
+    keyToFrameP90Ms: 14,
+    openFirstPaintMs: 2048,
   },
   'bio-office-pptx-long': {
-    editReadyMs: 2909,
-    keyToFrameP50Ms: 62,
-    keyToFrameP90Ms: 69,
-    openFirstPaintMs: 4184,
+    editReadyMs: 3044,
+    keyToFrameP50Ms: 49,
+    keyToFrameP90Ms: 54,
+    openFirstPaintMs: 4391,
   },
   'bio-office-xlsx': {
-    editReadyMs: 1044,
+    editReadyMs: 1083,
     keyToFrameP50Ms: 5,
     keyToFrameP90Ms: 10,
-    openFirstPaintMs: 1856,
+    openFirstPaintMs: 1870,
   },
   'bio-office-xlsx-long': {
-    editReadyMs: 3058,
-    keyToFrameP50Ms: 6,
-    keyToFrameP90Ms: 10,
-    openFirstPaintMs: 2753,
+    editReadyMs: 3014,
+    keyToFrameP50Ms: 5,
+    keyToFrameP90Ms: 13,
+    openFirstPaintMs: 2365,
   },
 };
 
