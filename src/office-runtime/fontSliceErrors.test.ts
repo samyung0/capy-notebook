@@ -46,6 +46,29 @@ test("a server's slice failure also goes to Sentry by its face", () => {
   expect(calls.onNotice).toHaveBeenCalledOnce();
 });
 
+// Q755 B: a face first needed while editing whose index, skeleton or the
+// fonts module fails comes as the slice's error, naming the face's index.
+test('a face that fails to open while editing is the same notice, reported by its face', () => {
+  const calls = host();
+  const errors = fontSliceErrors(calls);
+  const index = FontSliceUnavailableError.from({
+    file: 'NotoSansKR-Regular/slices.json',
+    name: 'FontSliceError',
+    reason: 'server',
+    status: 404,
+  });
+  errors.report(index);
+  errors.report(
+    new FontSliceUnavailableError('NotoSansKR-Regular/slices.json', 'network')
+  );
+  expect(calls.onFontError).toHaveBeenCalledExactlyOnceWith(
+    'NotoSansKR-Regular',
+    index
+  );
+  expect(calls.onNotice.mock.calls).toEqual([['font-slice-unavailable']]);
+  expect(calls.onError).not.toHaveBeenCalled();
+});
+
 test('every other error stays fatal, a slice failing as the document opens included', () => {
   const calls = host();
   const opening = new Error(
