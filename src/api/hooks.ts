@@ -12,6 +12,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
+import { toastAccessLost } from '@/features/collaboration/accessLostNotice';
 import { legacyOfficeTarget } from '@/features/files/fileUtils';
 import { forgetDrawingBoards } from '@/features/quizzes/drawing/drawingBoards';
 import {
@@ -49,6 +50,7 @@ import {
   type StreamEvent,
 } from './eventStream';
 import { pagedRows } from './paged';
+import { isMissing } from './queryClient';
 import { persisted } from './queryPersistence';
 import type {
   AccountStatus,
@@ -601,15 +603,73 @@ function applyChatTurn(
     void qc.invalidateQueries({ predicate: isConversationList });
 }
 
+/** The workspace a notification says the person was removed from or given
+ * another role in. */
+function accessChangedIn(event: NotificationStreamEvent): string | undefined {
+  if (event.type !== 'created') return;
+  const { notification } = event;
+  if (
+    notification?.kind !== 'workspace_member_removed' &&
+    notification?.kind !== 'workspace_role_changed'
+  )
+    return;
+  const { data } = notification;
+  if (typeof data !== 'object' || data === null || !('workspaceId' in data))
+    return;
+  return typeof data.workspaceId === 'string' ? data.workspaceId : undefined;
+}
+
+/** Reads the open workspace again after the person's access to it changed
+ * (Epo 2026-11-20). Still readable (another role, or removed from a public or
+ * redeemed link workspace): its lists too, so items hidden from them go.
+ * Refused: the page shows the workspace unavailable (`WorkspaceOpen` on a
+ * missing read), and `lost` runs if it showed the workspace. True when
+ * refused. */
+async function recheckWorkspace(
+  qc: QueryClient,
+  wsId: string,
+  lost: () => void
+): Promise<boolean> {
+  const shown = qc.getQueryData(qk.workspace(wsId)) !== undefined;
+  try {
+    await qc.fetchQuery({ ...workspaceQuery(wsId), staleTime: 0 });
+  } catch (error) {
+    if (!isMissing(error)) return false;
+    if (shown) lost();
+    return true;
+  }
+  // Everything under the workspace but its row, just read.
+  void qc.invalidateQueries({
+    predicate: ({ queryKey }) => queryKey.length > 2,
+    queryKey: qk.workspace(wsId),
+  });
+  void qc.invalidateQueries({ queryKey: [...qk.canvases, wsId] });
+  return false;
+}
+
 /** The one SSE connection a signed-in tab holds: notifications always, plus
  * ingest progress and tree changes for the workspace being viewed. Redis
  * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
  * lists the stream feeds; while disconnected there is no polling, only the
- * banner and a backoff reconnect. No-op under MSW (the dev mock has no event
- * stream). */
+ * banner and a backoff reconnect. Under MSW (the dev mock has no event
+ * stream) it hears the mock's events instead. */
 export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
+    // The workspace refused this person: the stream goes on without it.
+    let refused = false;
+    let told = false;
+    const lost = () => {
+      if (told) return;
+      told = true;
+      toastAccessLost();
+    };
+    const followAccess = (event: NotificationStreamEvent) => {
+      if (!wsId || accessChangedIn(event) !== wsId) return;
+      void recheckWorkspace(qc, wsId, lost).then((gone) => {
+        if (gone) refused = true;
+      });
+    };
     if (USE_MSW) {
       // The mock's stand-in for the stream, for what a mock run reports. An
       // ingest event names its workspace as the worker's does, and reaches
@@ -618,8 +678,10 @@ export function useEventStream(wsId: string) {
         const { detail } = event as CustomEvent<
           NotificationStreamEvent | (IngestEvent & { workspaceId: string })
         >;
-        if (!('workspaceId' in detail)) applyNotificationEvent(qc, detail);
-        else if (detail.workspaceId === wsId)
+        if (!('workspaceId' in detail)) {
+          applyNotificationEvent(qc, detail);
+          followAccess(detail);
+        } else if (detail.workspaceId === wsId)
           applyIngestEvent(qc, wsId, detail);
       };
       window.addEventListener('capy:mock-stream', heard);
@@ -635,7 +697,7 @@ export function useEventStream(wsId: string) {
 
     const setStatus = (status: EventStreamState['status']) =>
       qc.setQueryData<EventStreamState>(qk.eventStream, { status });
-    const reconcile = () => {
+    const reconcile = (streamWs: string) => {
       const keys: QueryKey[] = [
         qk.notifications,
         qk.notificationUnread,
@@ -644,7 +706,7 @@ export function useEventStream(wsId: string) {
         // Standalone files' ingest events ride the notifications.
         qk.ownedFilesRoot,
       ];
-      if (wsId) {
+      if (streamWs) {
         keys.push(qk.files(wsId), qk.materials(wsId), qk.topics(wsId));
       }
       for (const queryKey of keys) {
@@ -658,12 +720,12 @@ export function useEventStream(wsId: string) {
     // burst into one refetch. Topics ride along: a row that arrives in a
     // topic this tab has not loaded would otherwise render nowhere. A
     // hidden tab only marks the lists stale; refetch-on-focus reads them when
-    // it comes back.
+    // it comes back. A canvas's changes come as `materials` (migration 0189).
     const refetchTree = (kind: 'files' | 'materials') => {
-      const keys: QueryKey[] = [
-        kind === 'files' ? qk.files(wsId) : qk.materials(wsId),
-        qk.topics(wsId),
-      ];
+      const keys: QueryKey[] =
+        kind === 'files'
+          ? [qk.files(wsId), qk.topics(wsId)]
+          : [qk.materials(wsId), qk.topics(wsId), [...qk.canvases, wsId]];
       for (const queryKey of keys) {
         void qc.invalidateQueries({
           queryKey,
@@ -675,6 +737,7 @@ export function useEventStream(wsId: string) {
       switch (event.name) {
         case 'notification':
           applyNotificationEvent(qc, event.data);
+          followAccess(event.data);
           return;
         case 'ingest':
           applyIngestEvent(qc, wsId, event.data);
@@ -689,9 +752,10 @@ export function useEventStream(wsId: string) {
     const connect = async () => {
       if (stopped) return;
       controller = new AbortController();
+      const streamWs = refused ? '' : wsId;
       let clean = false;
       try {
-        await readEventStream(wsId, handle, controller.signal, () => {
+        await readEventStream(streamWs, handle, controller.signal, () => {
           // The backoff grew, so this is the way back from a fault (a redeploy,
           // a dropped network): retry the reads that failed meanwhile too.
           if (delay > 1000)
@@ -701,11 +765,21 @@ export function useEventStream(wsId: string) {
             });
           delay = 1000;
           setStatus('connected');
-          reconcile();
+          reconcile(streamWs);
         });
         clean = true;
-      } catch {
-        /* reconnect below */
+      } catch (error) {
+        // The workspace refused this person (removed, or opened without
+        // access): no fault, so no banner, and notifications go on without it.
+        if (
+          streamWs &&
+          isApiError(error) &&
+          (error.status === 404 || error.status === 403)
+        ) {
+          refused = true;
+          clean = true;
+          void recheckWorkspace(qc, wsId, lost);
+        }
       }
       if (stopped) return;
       // A clean end is the server's bounded stream lifetime or a fanout

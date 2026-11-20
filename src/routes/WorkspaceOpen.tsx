@@ -35,6 +35,7 @@ import {
   useWorkspace,
   workspaceQuery,
 } from '@/api/hooks';
+import { isMissing } from '@/api/queryClient';
 import type { Citation, Region, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
@@ -322,6 +323,7 @@ function WorkspaceOpen() {
   // Other failures without data go to the error boundary.
   const {
     data: ws,
+    error: wsError,
     fetchStatus: wsFetchStatus,
     isLoading: wsLoading,
   } = useWorkspace(workspaceId, {
@@ -740,7 +742,9 @@ function WorkspaceOpen() {
       </Panel>
     );
 
-  if (!ws)
+  // A read refused after the page showed it (the person removed, Epo
+  // 2026-11-20) ends the page as one refused at the first read does.
+  if (!ws || isMissing(wsError))
     return <WorkspaceError backLabel={m.workspace_back_to()} backTo="/" />;
 
   // Members and anyone who may clone have settings: phones open on the tab

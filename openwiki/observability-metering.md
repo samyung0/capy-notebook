@@ -2180,7 +2180,10 @@ Worth knowing before trusting a dashboard:
   each — one `PSUBSCRIBE ingest:*, notif:*` per process fans out in memory
   (`server/internal/httpapi/fanout.go`), and workspace tree changes reach the
   same fanout from one Postgres `LISTEN workspace_tree` connection per process
-  (raised by the `files`/`materials` triggers in migration 0004; while that
+  (raised by the `files`/`materials` triggers in migration 0004 for every
+  column the lists return, the `hidden` flag included since 0189, and for a
+  canvas, which sits in no workspace, as a `materials` change of the workspace
+  it names, its sharing included; while that
   LISTEN is detached, workspace streams are refused with 503 and `workspace
   tree listener stopped` is logged) — so the remaining ceiling is the
   container's open-file limit. Access is re-checked at the 25 s ping, not the

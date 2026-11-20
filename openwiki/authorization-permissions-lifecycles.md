@@ -510,7 +510,11 @@ unchanged.
   Epo 2026-11-16). Owners and editors may switch it: the
   write locks the workspace and re-reads the actor's effective role like any
   content write (`lockWorkspaceEditorMutationTx`); a frozen account is refused
-  and a standalone or embedded item answers 404. Hiding drains the item's live
+  and a standalone or embedded item answers 404. Either way the write raises
+  the workspace's tree event (`hidden` is a column the `files` and `materials`
+  tree triggers watch, migration 0189), so every open workspace page reads
+  its file or material list again: the item leaves a viewer's lists, or joins
+  them. Hiding drains the item's live
   collaboration rooms through the eviction outbox, so a viewer with the
   document open is disconnected and cannot reconnect. Their page stays as it
   was until a read of it is refused (below).
@@ -1072,13 +1076,15 @@ and [material editor checks](../server/internal/store/share.go#L209).
   leaves their page: a reader's as it was, an editor's read-only under a grey "You
   no longer have access" strip with no save status (`access_lost` for notes,
   quizzes, flashcards and diagrams; `access-lost` for Office and text files). The
-  editor stays mounted, showing what it holds, and asks for no read. A
-  refusal not preceded by a 4403 may mean the item is gone (someone trashed it
-  while this person typed or was away), so the page asks for its read again, as a
-  discard's notice does (`isDiscardNotice`); 4403 alone says their access changed,
-  and that keeps the strip (Epo 2026-11-05, Q644). A refused read ends what shows,
-  a material's and a file's alike (`isRefusedRead` in `CenterContent`), for "This
-  item is unavailable": it never says blocked rather than gone. So nobody keeps
+  editor stays mounted, showing what it holds, and the page asks for its read
+  again, as a discard's notice does (`isDiscardNotice`): the item may be gone
+  (someone trashed it while this person typed or was away), or no longer
+  theirs, a refusal after a 4403 included (Epo 2026-11-20, "the page should
+  itself refetch and show the 404 error", narrowing Q644's 4403 exception). A
+  read that still answers keeps the strip. A refused read ends what shows, a
+  material's, a file's and a canvas's alike (`isRefusedRead` in
+  `accessLostNotice.ts`), for "This item is unavailable": it never says blocked
+  rather than gone. So nobody keeps
   viewing a deleted item past their next read, and someone removed while offline
   sees that page too. A deleted item is told apart (`item_deleted`, 410, see
   Trash): an editor holding unsent edits to it keeps them on screen read-only
@@ -1086,7 +1092,20 @@ and [material editor checks](../server/internal/store/share.go#L209).
   until you reload." until its Reload discards them; with none the page says
   it is unavailable (Q39, Epo 2026-11-19). Its trash readers, read the trashed
   item, see the same on a page that showed it live; nothing that writes stays
-  on that page (the View/Edit toggles, item actions, Practice). A close
+  on that page (the View/Edit toggles, item actions, Practice) but Properties
+  and downloads made from what it shows (Epo 2026-11-20). Kicked (Epo
+  2026-11-20): a read refused after a room that had joined refused the person
+  adds an error toast "You no longer have access", once per item, and the page
+  reads the lists showing the item again. A member removed from the workspace
+  gets a notification event, and their workspace stream ends at its next 25 s
+  access check with reconnects to it refused (404). Either one makes their
+  page read the workspace again: refused, it shows the workspace unavailable
+  with the same toast, once, and the stream goes on without the workspace;
+  still readable (a public or redeemed link workspace), and for a member whose
+  role changed, the workspace and its lists read again (Epo 2026-11-20, see
+  [error handling](frontend/error-handling.md)). Hiding an item and unsharing
+  a canvas raise the workspace's `tree` event (migration 0189), which
+  refetches the open workspace's file, material, topic and canvas lists. A close
   for one person's access change (4403, no notice) joins again in every room kind,
   so the token says what they have now: a read token gives an editor the read-only
   strip and keeps a reader live, a refused one gives the above.
@@ -1507,9 +1526,13 @@ room per canvas whether it is shared or not;
   covers them close. Sharing widens access and queues nothing. A membership,
   role or lifecycle change in the workspace rechecks the channels of that
   workspace's canvases too (`enqueue_workspace_collaboration_evictions` also
-  selects `kind='canvas' AND canvas_workspace_id`). Nothing announces a share
-  or an unshare to the other members (the hidden-file write publishes no
-  event either): the picker reads its list again each time it opens.
+  selects `kind='canvas' AND canvas_workspace_id`). A share or an unshare,
+  like any list-visible write of a canvas (made, renamed, trashed or
+  restored, deleted with a leaver), raises the `materials` tree event of the
+  workspace it names (`materials_canvas_tree_notify_after`, migration 0189;
+  the row's `workspace_id` is null, so the materials tree trigger skips it).
+  An open workspace page reads its canvas list again on that event, as the
+  picker does each time it opens.
 - **The routes.** `GET /api/canvases` lists every canvas the caller made
   (their own first, then the ones they drew in workspaces); with
   `workspaceId` (members only) the ones they drew there and the other members'

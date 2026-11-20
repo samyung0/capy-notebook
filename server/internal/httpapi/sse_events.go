@@ -143,8 +143,8 @@ func (a *api) publishNotificationRemovals(ctx context.Context, removals []store.
 // the Python worker), including `billing` events that ask the tab to refetch
 // billing. With `?workspace=` it also carries that workspace's
 // ingest progress (`ingest:{workspaceId}`, published by the worker) and tree
-// changes (`tree:{workspaceId}`, raised by the Postgres triggers in migration
-// 0004 and relayed by listenWorkspaceTree). Each event names its source in
+// changes (`tree:{workspaceId}`, raised by the Postgres triggers in migrations
+// 0004 and 0189 and relayed by listenWorkspaceTree). Each event names its source in
 // the SSE `event:` field. Nothing here is durable: the browser refetches the
 // affected lists on every connect, so a workspace stream is refused while
 // the tree LISTEN is detached rather than opened over a silent feed.

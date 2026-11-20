@@ -1,5 +1,5 @@
 import { authHeaders } from './auth';
-import { API_BASE } from './client';
+import { API_BASE, ApiError } from './client';
 import { consumeSSE, sseData, sseEvent } from './sse';
 import type { AppNotification, ChatStatus, FileStatus } from './types';
 
@@ -132,8 +132,9 @@ export async function readEventStream(
     method: 'GET',
     signal,
   });
+  // Its status tells a refused workspace (404, 403) from a fault.
   if (!response.ok || !response.body) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw new ApiError(response.status, response.statusText);
   }
 
   onOpen?.();
