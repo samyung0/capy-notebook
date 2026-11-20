@@ -204,7 +204,6 @@ export type {
 export { AccountState } from './gen/model/accountState';
 export { FileStatus } from './gen/model/fileStatus';
 export { MaterialKind } from './gen/model/materialKind';
-export { MaterialRefType } from './gen/model/materialRefType';
 export { NotificationKind } from './gen/model/notificationKind';
 export { PlanTier } from './gen/model/planTier';
 export { Privacy } from './gen/model/privacy';

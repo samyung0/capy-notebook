@@ -94,8 +94,8 @@ export function Tour({ workspaceId }: { workspaceId: string }) {
     ...historyQuery({ kinds: ['revision'], workspaceIds: [workspaceId] }),
     meta: { errorBoundary: false },
   });
-  const note = materials?.find((item) => item.type === 'note')?.id;
-  const quiz = materials?.find((item) => item.type === 'quiz')?.id;
+  const note = materials?.find((item) => item.kind === 'note')?.id;
+  const quiz = materials?.find((item) => item.kind === 'quiz')?.id;
   const session = reviews?.pages[0]?.items[0]?.id;
 
   const inWorkspace = (search: WorkspaceOpenSearch = {}) =>

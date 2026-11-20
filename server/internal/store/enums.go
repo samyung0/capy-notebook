@@ -167,29 +167,6 @@ func (GenerateQuestionType) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "GenerateQuestionType", "mcq", "boolean", "short", "open", "ordering", "matching")
 }
 
-// MaterialRefType is the kind exposed by the unified materials list.
-type MaterialRefType string
-
-const (
-	MaterialRefMindmap    MaterialRefType = "mindmap"
-	MaterialRefCanvas     MaterialRefType = "canvas"
-	MaterialRefDiagram    MaterialRefType = "diagram"
-	MaterialRefQuiz       MaterialRefType = "quiz"
-	MaterialRefFlashcards MaterialRefType = "flashcards"
-	MaterialRefNote       MaterialRefType = "note"
-)
-
-func (MaterialRefType) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "MaterialRefType", "mindmap", "diagram", "quiz", "flashcards", "note", "canvas")
-}
-
-func (k MaterialKind) RefType() MaterialRefType {
-	if k == MaterialFlashcards {
-		return MaterialRefFlashcards
-	}
-	return MaterialRefType(k)
-}
-
 // PlanTier is the account subscription tier.
 type PlanTier string
 

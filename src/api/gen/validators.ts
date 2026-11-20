@@ -5272,8 +5272,8 @@ export const ListItemsResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "lostAccess": zod.boolean(),
   "materialId": zod.string().optional(),
+  "materialKind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "materialTitle": zod.string(),
-  "materialType": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "name": zod.string(),
   "purpose": zod.enum(['image', 'audio']),
   "sizeBytes": zod.int(),
@@ -10663,6 +10663,7 @@ export const ListMaterialsResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "hidden": zod.boolean().optional(),
   "id": zod.string(),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas']),
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
@@ -10714,8 +10715,7 @@ export const ListMaterialsResponseItem = zod.object({
 }).optional(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
-  "topicId": zod.string().nullable(),
-  "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note', 'canvas'])
+  "topicId": zod.string().nullable()
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
 

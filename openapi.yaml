@@ -3258,10 +3258,10 @@ components:
           type: boolean
         materialId:
           type: string
+        materialKind:
+          $ref: "#/components/schemas/MaterialKind"
         materialTitle:
           type: string
-        materialType:
-          $ref: "#/components/schemas/MaterialRefType"
         name:
           type: string
         purpose:
@@ -3285,7 +3285,7 @@ components:
         - purpose
         - sizeBytes
         - createdAt
-        - materialType
+        - materialKind
         - materialTitle
         - workspaceName
         - lostAccess
@@ -5181,6 +5181,8 @@ components:
           type: boolean
         id:
           type: string
+        kind:
+          $ref: "#/components/schemas/MaterialKind"
         maxDepth:
           format: int64
           type: integer
@@ -5200,11 +5202,9 @@ components:
         topicId:
           nullable: true
           type: string
-        type:
-          $ref: "#/components/schemas/MaterialRefType"
       required:
         - id
-        - type
+        - kind
         - title
         - topicId
         - position
@@ -5213,15 +5213,6 @@ components:
         - nodeCount
         - maxDepth
       type: object
-    MaterialRefType:
-      enum:
-        - mindmap
-        - diagram
-        - quiz
-        - flashcards
-        - note
-        - canvas
-      type: string
     MaterialUpdateResult:
       additionalProperties: false
       properties:

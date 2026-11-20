@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { qk } from '@/api/client';
-import type { Assignment, FileKind, MaterialRefType } from '@/api/types';
+import type { Assignment, FileKind, MaterialKind } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
@@ -50,7 +50,7 @@ export function SectionLabel({
 export const assignmentFileIcon = (file: Assignment['files'][number]) =>
   file.fileId
     ? fileIconName({ kind: file.kind as FileKind, name: file.name })
-    : materialIconName(file.kind as MaterialRefType);
+    : materialIconName(file.kind as MaterialKind);
 
 /** Opens an assignment's page (Epo 2026-11-05): it starts or continues the work,
  * or shows the counted submission. Staff who assigned themselves open their own. */

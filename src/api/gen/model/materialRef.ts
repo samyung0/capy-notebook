@@ -4,13 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { MaterialRefType } from './materialRefType.ts';
+import type { MaterialKind } from './materialKind.ts';
 import type { Provenance } from './provenance.ts';
 
 export interface MaterialRef {
   createdAt: string;
   hidden?: boolean;
   id: string;
+  kind: MaterialKind;
   maxDepth: number;
   nodeCount: number;
   position: number;
@@ -19,5 +20,4 @@ export interface MaterialRef {
   title: string;
   /** @nullable */
   topicId: string | null;
-  type: MaterialRefType;
 }

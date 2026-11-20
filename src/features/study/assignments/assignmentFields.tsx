@@ -378,7 +378,7 @@ export function FilesField({
       ref: { fileId: f.id } as AssignmentFileRef,
     })),
     ...(materials ?? []).map((mt) => ({
-      icon: materialIconName(mt.type),
+      icon: materialIconName(mt.kind),
       id: mt.id,
       name: mt.title,
       ref: { materialId: mt.id } as AssignmentFileRef,

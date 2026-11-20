@@ -2528,7 +2528,7 @@ longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
 The Files page lists every image and audio clip the caller pays for
 (`GET /api/items`, `ListEditorAssets`), under its note's current title and
-kind (`materialType`), marked
+kind (`materialKind`), marked
 `lostAccess` when the caller can no longer reach the note's workspace
 (`lostAccessSQL`; title and workspace name blank once that workspace's owner
 is no longer live). One in a note the caller can open opens that note; one it

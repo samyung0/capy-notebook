@@ -12,7 +12,7 @@ export interface HeavyMaterial {
 /** How the reader chose to open a document the browser warned about. */
 export type HeavyMaterialChoice = 'interactive' | 'readOnly';
 
-type MaterialWeight = Pick<MaterialRef, 'nodeCount' | 'sizeBytes' | 'type'>;
+type MaterialWeight = Pick<MaterialRef, 'kind' | 'nodeCount' | 'sizeBytes'>;
 
 /**
  * Decides whether opening a note is worth an interstitial: notes only (Epo
@@ -24,7 +24,7 @@ type MaterialWeight = Pick<MaterialRef, 'nodeCount' | 'sizeBytes' | 'type'>;
 export function heavyMaterial(
   reference: MaterialWeight | null | undefined
 ): HeavyMaterial | null {
-  if (reference?.type !== 'note') return null;
+  if (reference?.kind !== 'note') return null;
   const { nodeCount, sizeBytes } = reference;
   if (sizeBytes > MATERIAL_RENDER_WARNING.contentBytes) {
     return { nodeCount, reason: 'size', sizeBytes };

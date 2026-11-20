@@ -696,8 +696,8 @@ type EditorAssetItem struct {
 	// MaterialID is the note, quiz or set it sits in (an embedded quiz's or
 	// set's note), to open; empty when LostAccess.
 	MaterialID string `json:"materialId,omitempty"`
-	// MaterialType is that note's, quiz's or set's kind, for its icon.
-	MaterialType MaterialRefType `json:"materialType"`
+	// MaterialKind is that note's, quiz's or set's kind, for its icon.
+	MaterialKind MaterialKind `json:"materialKind"`
 	// MaterialTitle and WorkspaceName are blank once that workspace's owner is
 	// no longer live.
 	MaterialTitle string `json:"materialTitle"`
@@ -788,11 +788,9 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EditorAssetItem, error) {
 		var item EditorAssetItem
-		var kind MaterialKind
 		err := row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
-			&item.MaterialID, &kind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess,
+			&item.MaterialID, &item.MaterialKind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess,
 			&item.ThumbnailKey, &item.Bank)
-		item.MaterialType = kind.RefType()
 		return item, err
 	})
 	if err != nil {

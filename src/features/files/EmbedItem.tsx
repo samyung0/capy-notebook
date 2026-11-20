@@ -53,7 +53,7 @@ export const EmbedItem = memo(function EmbedItem({
         open
           ? // A canvas has no page of its own: its image opens its workspace's
             // Canvas tab, or the Canvas page for one of the person's own.
-            item.materialType === 'canvas'
+            item.materialKind === 'canvas'
             ? item.workspaceId
               ? linkOptions({
                   params: { workspaceId: item.workspaceId },

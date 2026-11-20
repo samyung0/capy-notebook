@@ -12,8 +12,8 @@ describe('practiceSources', () => {
       { id: 'f3', indexed: true, name: 'f3', topicId: null },
     ] as SourceFile[];
     const materials = [
-      { id: 'n1', title: 'n1', topicId: 'noted', type: 'note' },
-      { id: 'q1', title: 'q1', topicId: 'quizzes', type: 'quiz' },
+      { id: 'n1', kind: 'note', title: 'n1', topicId: 'noted' },
+      { id: 'q1', kind: 'quiz', title: 'q1', topicId: 'quizzes' },
     ] as MaterialRef[];
     const got = practiceSources(
       ['noted', 'read', 'waiting', 'quizzes'].map(topic),
