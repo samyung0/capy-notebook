@@ -287,9 +287,17 @@ test('study progress: a quiz finished, a set studied and a short review are reco
   // marking item and the call was recorded, charged to the learner.
   const openQuiz = await quiz(run, workspaceId, 'Open quiz', openPart);
   await page.goto(`${run.env.appUrl}/quizzes/${openQuiz}/attempt`);
+  // A long answer is written in the text-and-formulas editor (Epo
+  // 2026-11-16, mock B).
   await page
-    .getByRole('textbox', { exact: true, name: m.question_ui_your_answer() })
-    .fill('The plants keep the carbon in their roots and in the wet soil.');
+    .getByRole('textbox', {
+      exact: true,
+      name: m.question_ui_text_and_formulas(),
+    })
+    .click();
+  await page.keyboard.type(
+    'The plants keep the carbon in their roots and in the wet soil.'
+  );
   assert.equal(
     await clicked(
       page,

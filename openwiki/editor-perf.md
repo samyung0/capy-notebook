@@ -312,23 +312,24 @@ keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
 anything smaller. The medians come from three runs of the `office` job below
-on 97e63a68a, 2026-11-07 (Q692, refreshed after the 0.5.1 pin and the ribbon):
-42323528888, 42325355691 and 42325364585, one each on AMD EPYC 7763, AMD EPYC
-9V45 and Intel Xeon 8370C runners. The EPYC 9V45 run was 30-40% faster on
-every figure, so the medians are mostly the other two runs'. Per fixture, the
-three runs and their median (ms):
+on 65bdfc1e8, 2026-11-20 (Q757 A, recalibrated after Q691's second round):
+44715718554, 44715736656 and 44715754042, two on AMD EPYC 7763 and one on
+Intel Xeon 6975P-C runners. The Xeon run was 25-30% faster on every figure, so
+the medians are mostly the EPYC runs'. Per fixture, the three runs and their
+median (ms):
 
 | Fixture | Open | View to Edit | Key p50 | Key p90 |
 |---|---|---|---|---|
-| exchange-plan.docx | 4211/3093/4213 -> 4211 | 3525/2207/3460 -> 3460 | 35/23/35 -> 35 | 44/32/43 -> 43 |
-| long-handbook.docx | 5754/3935/5282 -> 5282 | 5085/3143/4924 -> 4924 | 165/104/163 -> 163 | 184/122/187 -> 184 |
-| lecture.pptx | 2266/2015/1925 -> 2015 | 996/702/982 -> 982 | 14/8/16 -> 14 | 17/10/17 -> 17 |
-| jp_llm2.pptx | 4455/3011/4184 -> 4184 | 3093/1898/2909 -> 2909 | 65/38/62 -> 62 | 69/40/69 -> 69 |
-| course-guide.xlsx | 2015/1832/1856 -> 1856 | 1057/763/1044 -> 1044 | 5/3/6 -> 5 | 10/6/11 -> 10 |
-| large-gradebook.xlsx | 2850/2567/2753 -> 2753 | 3237/2077/3058 -> 3058 | 6/3/6 -> 6 | 10/8/12 -> 10 |
+| exchange-plan.docx | 4617/3175/4085 -> 4085 | 2579/2109/3032 -> 2579 | 29/26/28 -> 28 | 40/35/38 -> 38 |
+| long-handbook.docx | 5908/4819/6311 -> 5908 | 4593/3286/4829 -> 4593 | 120/92/127 -> 120 | 139/103/145 -> 139 |
+| lecture.pptx | 2048/1851/2291 -> 2048 | 997/846/1026 -> 997 | 11/11/12 -> 11 | 14/12/15 -> 14 |
+| jp_llm2.pptx | 4391/3439/4611 -> 4391 | 3044/2292/3160 -> 3044 | 49/40/52 -> 49 | 54/44/61 -> 54 |
+| course-guide.xlsx | 1870/1714/2148 -> 1870 | 1083/851/1103 -> 1083 | 5/5/5 -> 5 | 10/13/10 -> 10 |
+| large-gradebook.xlsx | 2488/2094/2365 -> 2365 | 3014/2272/3059 -> 3014 | 5/5/6 -> 5 | 13/10/13 -> 13 |
 
-The bench's earlier medians (2026-10-04, before the 0.5.1 pin) are in its
-history; the PC baseline the second BetterOffice sync is compared against is
+The bench's earlier medians (2026-11-07 on 97e63a68a, Q692; 2026-10-04 before
+the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
+sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
 Heap and download figures stay report-only: they go to the results JSON
