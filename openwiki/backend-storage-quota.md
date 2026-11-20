@@ -182,8 +182,10 @@ are; a task someone set themself (`assignments.own`) keeps its copies with no
 workspace either, charged to its maker like the rest of it. Its question JSON is `assignments.frozen_bytes`, measured as a material's
 content is and checked by the same gate, so publishing past the limit is refused
 as any creation is, images or not; a trigger moves the charge through the deltas
-(migration `0149_assignment_storage.sql`). Nothing edits a published copy, and the
-trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
+(migration `0149_assignment_storage.sql`). Only a graded quiz from a file edits a
+published copy, its total or its file's name (`rewritePaperTx`): `frozen_bytes`
+is measured again for the same `frozen_by`, unchecked, as it moves by a few bytes;
+the trigger moves any change to `frozen_bytes` or `frozen_by` anyway. Deleting the
 assignment or the workspace releases both, and a workspace clone leaves them out.
 Purging the publisher deletes the images, as it deletes everything it pays for, but
 keeps the questions, so the class keeps the paper and its members' work, charged to
@@ -299,12 +301,12 @@ objects for the reaper.
   drawing, is charged for it and goes over, into the usual over-quota states.
   A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
   the same way (`reservePaperStorageTx`), within 15 files and the member's
-  source file cap across them; Upload file can only start while storage is not
+  source file cap across them; Upload can only start while storage is not
   full, and the Files page deletes them once marked and closed. A hand-in's
   files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
   reserve the same way within the same bounds, are stored with no parse or
   credits, and the Files page deletes them once the assignment closes.
-  Like Upload file, a hand-in takes a new file only while the member's storage
+  Like Upload, a hand-in takes a new file only while the member's storage
   is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
   upload session; Epo 2026-11-09, Q728 A): a file added while there was room
   still saves past the limit, files already added stay, and Hand in and Undo

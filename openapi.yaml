@@ -453,6 +453,8 @@ components:
           type: boolean
         own:
           type: boolean
+        paperFile:
+          type: boolean
         points:
           format: int64
           type: integer
@@ -473,6 +475,8 @@ components:
           items:
             type: string
           type: array
+        uploadOnly:
+          type: boolean
         workspaceId:
           type: string
       required:
@@ -492,6 +496,8 @@ components:
         - marks
         - drawingParts
         - allowUploads
+        - uploadOnly
+        - paperFile
         - topicIds
         - files
         - gradesHidden
@@ -717,6 +723,13 @@ components:
           type: string
         name:
           type: string
+        preview:
+          additionalProperties: true
+          description: A text file's opening characters or a material's list-card preview (openwiki/thumbnails.md)
+          type: object
+        thumbnailUrl:
+          description: Hour-stable presigned GET of a file's page-1 thumbnail; the assignment's own read only
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -813,6 +826,13 @@ components:
           maxLength: 120
           minLength: 1
           type: string
+        totalMarks:
+          format: int64
+          maximum: 1000
+          minimum: 1
+          type: integer
+        uploadOnly:
+          type: boolean
       required:
         - kind
         - title
@@ -905,6 +925,9 @@ components:
         done:
           format: int64
           type: integer
+        graded:
+          format: int64
+          type: integer
         gradesReleasedAt:
           format: date-time
           type: string
@@ -953,6 +976,7 @@ components:
         - done
         - toApprove
         - notGraded
+        - graded
         - approvalsCheckedOff
       type: object
     AssignmentMark:
@@ -3690,6 +3714,21 @@ components:
         - state
         - lastEditedAt
       type: object
+    FileGradedQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/FileGradedQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        gradedQuiz:
+          $ref: "#/components/schemas/AssignmentFormReq"
+          description: The graded quiz's settings (marked, no quizId, with totalMarks); a draft holds its question already
+      required:
+        - gradedQuiz
+      type: object
     FileIndexLimit:
       enum:
         - page_limit
@@ -4272,6 +4311,23 @@ components:
         - google
         - microsoft
         - microsoftFilesRead
+      type: object
+    InvitePreview:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/InvitePreview.json
+          format: uri
+          readOnly: true
+          type: string
+        role:
+          $ref: "#/components/schemas/WorkspaceRole"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+      required:
+        - role
+        - workspaceKind
       type: object
     Invoice:
       additionalProperties: false
@@ -5965,22 +6021,22 @@ components:
         - sizeBytes
         - status
       type: object
-    PaperOrderInputBody:
+    PaperFileReq:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/PaperOrderInputBody.json
+          example: https://example.com/schemas/PaperFileReq.json
           format: uri
           readOnly: true
           type: string
-        fileIds:
-          items:
-            type: string
-          maxItems: 15
-          type: array
+        fileId:
+          description: A file of the graded quiz's workspace
+          maxLength: 64
+          minLength: 1
+          type: string
       required:
-        - fileIds
+        - fileId
       type: object
     PastReview:
       additionalProperties: false
@@ -10151,34 +10207,6 @@ paths:
       summary: Set or change a question's marks and comment in a member's answers
       tags:
         - Assignments
-  /api/assignment-attempts/{id}/paper/order:
-    put:
-      operationId: orderPaperFiles
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            maxLength: 64
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PaperOrderInputBody"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Put a running attempt's paper files in order
-      tags:
-        - assignments
   /api/assignment-attempts/{id}/paper/{fileId}:
     delete:
       operationId: removePaperFile
@@ -10549,6 +10577,38 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Have the AI mark the answers still waiting, in the background
+      tags:
+        - Assignments
+  /api/assignments/{id}/paper-file:
+    put:
+      operationId: changeAssignmentPaperFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaperFileReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Point a graded quiz from a file at another file of its workspace, keeping answers and marks
       tags:
         - Assignments
   /api/assignments/{id}/publish:
@@ -12714,6 +12774,40 @@ paths:
       summary: Create source room token
       tags:
         - Source collaboration
+  /api/files/{id}/graded-quiz:
+    post:
+      operationId: makeFileGradedQuiz
+      parameters:
+        - description: "The file: its question paper"
+          in: path
+          name: id
+          required: true
+          schema:
+            description: "The file: its question paper"
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileGradedQuizReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Make a graded quiz whose question paper is a file of the workspace, answered by upload and marked by hand
+      tags:
+        - Assignments
   /api/files/{id}/hidden:
     put:
       operationId: setFileHidden
@@ -15987,6 +16081,31 @@ paths:
       summary: Transcribe an account chat voice recording for the composer
       tags:
         - Chat
+  /api/workspace-invites/{token}:
+    get:
+      operationId: previewWorkspaceInvite
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitePreview"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read a workspace invite for its invitee
+      tags:
+        - Workspace collaboration
   /api/workspace-invites/{token}/accept:
     post:
       operationId: acceptWorkspaceInvite
@@ -16179,6 +16298,16 @@ paths:
           name: topic
           schema:
             description: "Comma-separated topic ids: only those on one of them"
+            type: string
+        - description: Only graded quizzes (marked) or only assignments (unmarked); none keeps both
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: Only graded quizzes (marked) or only assignments (unmarked); none keeps both
+            enum:
+              - marked
+              - unmarked
             type: string
         - description: A column to order by, open ones still first; none is the page's own order
           explode: false

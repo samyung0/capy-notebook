@@ -104,6 +104,7 @@ import type {
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
+  InvitePreview,
   InvoiceList,
   ItemListParams,
   ItemPage,
@@ -2823,6 +2824,21 @@ export function useCancelWorkspaceInvite(workspaceId: string) {
   });
 }
 
+/** What joining shares, for the invite's own invitee; anyone else gets the
+ * same unavailable answer as Accept. Not kept once the page leaves, since the
+ * key holds the token. */
+export const useWorkspaceInvitePreview = (token: string | undefined) =>
+  useQuery({
+    enabled: !!token,
+    gcTime: 0,
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () =>
+      api.get<InvitePreview>(
+        `/workspace-invites/${encodeURIComponent(token ?? '')}`
+      ),
+    queryKey: ['workspace-invite', token],
+  });
+
 export function useAcceptWorkspaceInvite() {
   const qc = useQueryClient();
   return useMutation({
@@ -2841,6 +2857,8 @@ export function useAcceptWorkspaceInvite() {
       });
       qc.invalidateQueries({ queryKey: qk.notifications });
       qc.invalidateQueries({ queryKey: qk.notificationUnread });
+      // Agreed to on the invite page: a copy cached before then is stale.
+      qc.invalidateQueries({ queryKey: qk.sharingNotice(member.workspaceId) });
     },
   });
 }
@@ -3242,6 +3260,8 @@ export interface AssignmentListParams {
   closed: boolean;
   /** Keep the ones the caller has done. */
   done: boolean;
+  /** Only graded quizzes or only assignments; none keeps both. */
+  kind?: Assignment['kind'];
   /** A column's order, open ones still first; none is the page's own. */
   sort?: { ascending: boolean; by: AssignmentSort };
   /** Only those on one of these topics; none keeps all. */
@@ -3267,6 +3287,7 @@ export const useAssignments = (
             closed: String(params.closed),
             dir: params.sort ? (params.sort.ascending ? 'asc' : 'desc') : '',
             done: String(params.done),
+            kind: params.kind,
             sort: params.sort?.by,
             topic: params.topics,
           },
@@ -3301,10 +3322,44 @@ export const useAssignment = (id: string, options?: QueryUiOptions) =>
     queryKey: qk.assignment(id),
   });
 
-export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
-  useQuery({
+/** The attempts whose answer rows a report read changed: their marks moved
+ * (the AI's arrived, staff approved), so an open answer reads them anew. */
+export function changedAttempts(
+  before: AssignmentReport,
+  after: AssignmentReport
+) {
+  const state = (row: AssignmentReport['answers'][number]) =>
+    [row.waiting, row.aiMarked, row.aiAwarded, row.awarded, row.marking].join();
+  const held = new Map(
+    before.answers.map((row) => [`${row.attemptId}/${row.questionId}`, row])
+  );
+  const changed = new Set<string>();
+  for (const row of after.answers) {
+    const was = held.get(`${row.attemptId}/${row.questionId}`);
+    if (!was || state(was) !== state(row)) changed.add(row.attemptId);
+  }
+  return changed;
+}
+
+export function useAssignmentReport(id: string, options?: QueryUiOptions) {
+  const qc = useQueryClient();
+  return useQuery({
     meta: queryMeta(options),
-    queryFn: () => api.get<AssignmentReport>(`/assignments/${id}/report`),
+    queryFn: async () => {
+      const before = qc.getQueryData<AssignmentReport>(qk.assignmentReport(id));
+      const after = await api.get<AssignmentReport>(
+        `/assignments/${id}/report`
+      );
+      // Attempts keep their 5 minutes otherwise: one whose marks the report
+      // says moved reads again, which the open grading pane is (Epo
+      // 2026-11-19).
+      if (before)
+        for (const attemptId of changedAttempts(before, after))
+          void qc.invalidateQueries({
+            queryKey: qk.assignmentAttempt(attemptId),
+          });
+      return after;
+    },
     queryKey: qk.assignmentReport(id),
     // The AI marks in the background: its progress, and which answers and
     // members it holds, show while it does (Q729).
@@ -3315,6 +3370,7 @@ export const useAssignmentReport = (id: string, options?: QueryUiOptions) =>
         ? 3000
         : false,
   });
+}
 
 export const useAssignmentAttempt = (
   id: string,
@@ -3391,6 +3447,36 @@ export function useCopyQuizToGradedQuiz(workspaceId: string) {
     }) =>
       api.post<Assignment>(`/quizzes/${quizId}/graded-copy`, { gradedQuiz }),
     onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+/** A graded quiz whose question paper is a workspace file (Epo 2026-11-20),
+ * answered by upload and marked by hand out of `marks`. */
+export function useMakeFileGradedQuiz(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: ({
+      fileId,
+      gradedQuiz,
+    }: {
+      fileId: string;
+      /** Its `totalMarks` is what each hand-in is marked out of. */
+      gradedQuiz: AssignmentFormReq;
+    }) => api.post<Assignment>(`/files/${fileId}/graded-quiz`, { gradedQuiz }),
+    onSuccess: () => refreshAssignment(qc, workspaceId),
+  });
+}
+
+/** A graded quiz from a file's Change file (Epo 2026-11-20): answers and marks
+ * stay. */
+export function useChangePaperFile(workspaceId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (fileId: string) =>
+      api.put<Assignment>(`/assignments/${id}/paper-file`, { fileId }),
+    onSuccess: () => refreshAssignment(qc, workspaceId, id),
   });
 }
 
@@ -3627,17 +3713,6 @@ export function useRemovePaperFile(attemptId: string) {
   });
 }
 
-/** Put the running paper's files in this order. */
-export function useOrderPaperFiles(attemptId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (fileIds: string[]) =>
-      api.put(`/assignment-attempts/${attemptId}/paper/order`, { fileIds }),
-    onSettled: () =>
-      qc.invalidateQueries({ queryKey: qk.assignmentAttempt(attemptId) }),
-  });
-}
-
 /** Whose files: a paper's attempt, or the member's hand-in on an unmarked
  * assignment (S3). */
 export type SubmissionOf = { attemptId: string } | { handInId: string };
@@ -3659,15 +3734,24 @@ export function useRemoveHandInFile(assignmentId: string) {
 }
 
 /** A paper or hand-in file's links, for its member or the class's staff. */
-export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
-  useQuery({
+/** A paper's or hand-in's file, signed for a few minutes (`B2_LINK_TTL`): the
+ * URL itself shows a PDF or photo in the browser and downloads anything else.
+ * Fresh until half a minute before it expires, so a click never gets a dead
+ * one; a mounted view keeps the bytes it already loaded. */
+export const paperFileLinksQuery = (of: SubmissionOf, fileId: string) =>
+  queryOptions({
     meta: { errorBoundary: false },
     queryFn: () =>
       api.get<FileLinks>(`${submissionFilePath(of, fileId)}/links`),
     queryKey: ['paperFileLinks', of, fileId] as const,
-    // Presigned for the hour.
-    staleTime: 30 * 60_000,
+    staleTime: (query) => {
+      const at = query.state.data?.expiresAt;
+      return at ? Math.max(0, Date.parse(at) - Date.now() - 30_000) : 0;
+    },
   });
+
+export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
+  useQuery(paperFileLinksQuery(of, fileId));
 
 function invalidateAfterPaperDelete(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.itemsRoot });

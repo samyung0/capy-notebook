@@ -77,7 +77,7 @@ on a closed-to-open transition, independently of autofocus; failed submissions
 keep their current input.
 
 Accordions use `motion-accordion` and `motion-accordion-chevron`, on the question
-bank's tree (`QuestionBank`) and New assignment's Advanced (`AdvancedSection`): the
+bank's tree (`QuestionBank`) and New assignment's Advanced (`Accordion`, also the Grading tab's members): the
 panel stays mounted and `inert` while closed, its grid row grows from `0fr` to `1fr`
 over `--motion-duration-fast` with `--motion-ease-smooth-out`, its one child clips,
 fades and unblurs, and the chevron turns on the same timing. Padding goes inside that

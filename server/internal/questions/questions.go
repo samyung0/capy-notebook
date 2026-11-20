@@ -1489,9 +1489,12 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 		if !ok {
 			continue
 		}
+		had, _ := p["blocks"].([]any)
 		p["blocks"] = rewrite(p["blocks"])
 		p["solution"] = rewrite(p["solution"])
-		if len(p["blocks"].([]any)) == 0 {
+		// Emptied by its removed images. A part written with no blocks (a
+		// file's graded quiz's one part, paperQuestion) stands as it is.
+		if len(had) > 0 && len(p["blocks"].([]any)) == 0 {
 			return false
 		}
 		// A drawn sample answer goes whole when either asset has no replacement;

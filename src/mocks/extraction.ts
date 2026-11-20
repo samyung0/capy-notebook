@@ -7,7 +7,7 @@ import type {
   ExtractionReport,
 } from '@/api/types';
 import type { Question } from '@/features/questions/types';
-import { addMockGradedQuiz } from './assignments';
+import { addMockGradedQuiz, numberedTitle } from './assignments';
 import * as db from './db';
 import { uid } from './db';
 import { biologyOfficeFixtures } from './officeFixtures';
@@ -371,8 +371,7 @@ export function extractionHandlers(
     title: string,
     questions: Question[],
     hidden: boolean
-  ) => string,
-  titleTaken: (workspaceId: string, title: string) => boolean
+  ) => string
 ) {
   return [
     http.post(
@@ -392,11 +391,6 @@ export function extractionHandlers(
               detail: `a run reads at most ${EXTRACTION_PAGES_MAX} selected pages`,
             },
             { status: 400 }
-          );
-        if (titleTaken(workspaceId, body.title))
-          return HttpResponse.json(
-            { code: 'title_taken', detail: 'title taken' },
-            { status: 409 }
           );
         const run: Extraction = {
           answered: 0,
@@ -452,9 +446,12 @@ export function extractionHandlers(
               if (status === 'done') {
                 const chosen = questions.slice(0, confirmed);
                 const kept = leaves ? chosen.slice(0, -1) : chosen;
+                // A graded quiz's own quiz lists nowhere, so keeps its name.
                 run.quizId = saveQuiz(
                   workspaceId,
-                  body.title,
+                  body.gradedQuiz
+                    ? body.title
+                    : numberedTitle(workspaceId, body.title),
                   kept,
                   body.hidden || !!body.gradedQuiz
                 );

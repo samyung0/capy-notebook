@@ -193,7 +193,8 @@ phones the card's ⋮ holds Solution and Sample answer. A closed part's answer i
 has none; the editor sets a closed part's marks, and each marking point's, in a
 small typed box (`MarksInput`: whole marks 1 to the cap, arrows step, anything
 else reverts on leaving; Epo 2026-11-15, as Google Forms' points) and an open
-part's from its items. Authored parts are told from learner parts by their
+part's from its items, its footer reading them in the label's own text, "Marks 6"
+(Epo 2026-11-19). Authored parts are told from learner parts by their
 worked solution (`isAuthoredPart`). A matching
 answer stores the full choice pool independently from its correct pairings, so
 unused and reused options survive generation, editing and rendering. The
@@ -667,7 +668,7 @@ pills shared through `src/features/notes/blockMenu.tsx`): a row's pill drags the
 row and opens Insert above, Insert below and Delete; a column's pill over its
 first cell opens Insert left, Insert right and Delete; + bars along the right
 edge and under the last row add one at the end; Header row toggles beside the
-cell's formula tools in the dialog's heading row. The other cards are drawn in the
+cell's formula tools in the dialog's heading row. A cell at rest lays its text out as the open cell does (4px from its top, 20px lines), so opening it to type moves no text (Epo 2026-11-19). The other cards are drawn in the
 open card's own layout (`QuestionCardView`, Epo 2026-11-15, as Google Forms'
 closed cards are): the number row with marks, the first text beside the
 number where the card is 32rem wide or more (Epo 2026-11-16; opening moves it
@@ -698,8 +699,8 @@ the normal header, beside the workspace's left panel: the quiz with its chip, �
 and save state, then Undo, Redo and Study. Until its rooms sync the same page shows
 with a working rail and a question that takes no input: drawn from the device's copy
 with its keys, else from the read, with answers waiting rather than a key it doesn't
-know. Phones show the cards alone, the closed ones
-as one line each (number, first words, an issue's warning, marks), with the
+know. Phones show the cards alone, the closed ones whole as on wider screens
+(Epo 2026-11-19), 10px from the pane's sides and 12px inside, with the
 type menu full width, the footer wrapping and Solution, Sample answer and Add
 part in the card's ⋮; below md the rail hides. A full closed card carries an
 issue's warning at its top right. A
@@ -1341,7 +1342,7 @@ hold a blank above them ("Text with blanks"), each block selected on a click and
 editor on a double click, whose Back returns to the question (the bank keeps
 the staged answer first). A blank is right only when it equals an accepted answer,
 ignoring case and spacing; unlike short answers there is no typo tolerance. `QuestionRunner` renders each blank as a small field inside
-the sentence, green or red on review, with every blank's accepted answers listed under it as "Correct answers" (Epo 2026-11-18, as a short answer's Correct answer shows), what the learner wrote beside a missed one. It is authored only, so in-app generation does not offer it. A question with one part shows its
+the sentence, green or red on review, with every blank's accepted answers listed under it as "Correct answers" (Epo 2026-11-18, as a short answer's Correct answer shows), Not answered beside an empty one (what was written shows in the sentence above, Epo 2026-11-19). It is authored only, so in-app generation does not offer it. A question with one part shows its
 marks once, in the header. Multiple-choice options sit two by two (A B / C D)
 when a paper-layout answer area is at least 36rem wide (a container query);
 split-layout questions keep one column beside their passage. Layouts follow
@@ -1455,17 +1456,20 @@ score and awards, but its matching picks and ordering rows show as
 unanswered and its gaps as wrong.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
-pane padding and a 1.5rem number column. Options, True / False and ordering
-items are full boxes (board K5, Epo 2026-11-03; `answerBoxClass` and
-`answerLetterClass` in `QuestionView.tsx`): 46px tall, `rounded-tile`, the
-letter or number muted before the text. Chosen is a purple tint
-(`tint-accent-1` with the accent border). After checking (L1, Epo 2026-11-18)
-only the learner's own pick is marked: green with ✓ Correct or red with ✗
-Wrong; no other box changes. Under the boxes the part's verdict reads as a
+pane padding and a 1.5rem number column. Options and True / False are the
+question editor's rows (A, Epo 2026-11-19, as Google Forms): `ChoiceMarker`
+(a radio, or a square for multiple answers) then the text, 44px tall, no box
+and no letter, in the runner (`ChoiceRow`) and the read-only view alike. A
+pick fills the marker purple (`solid-accent-1`); after checking a right pick
+fills green with Correct, a wrong one red with Wrong (✗ in a square), and a
+correct option left unpicked is ringed green with "Correct answer"
+(`CorrectTag` at the row's end). Ordering items are the editor's rows too
+(Epo 2026-11-19): "1." then the text, Move up and Move down at the end while
+answering. Under the choices the part's verdict reads as a
 chip and its marks ("Wrong 0 / 2", or "Not answered", which counts as
-wrong), and when the part is short of full marks "Correct answer" lists the
-correct options apart. A checked ordering (O4) shows "Your order", each item
-green in its right place and red elsewhere, and when any is misplaced
+wrong); the rows already show the correct options, so no "Correct answer"
+list follows them (Epo 2026-11-19). A checked ordering (O4) shows "Your order", each item's number
+green with Correct in its right place and red with Wrong elsewhere, and when any is misplaced
 "Correct order"; a short answer keeps its field, then its verdict and
 "Correct answer". These lists are plain text lines, not boxes (`PlainList`:
 the letter or number muted, then the text, one column even on paper
@@ -1487,9 +1491,12 @@ multiple choice grid): the left items as rows, the options as columns, one
 pick per row filled dark. Each row is a native radio group (arrow keys move
 its pick), each cell named "row: column" (`question_ui_grid_cell`); on phones
 the grid scrolls sideways inside the answer area with the row names sticky.
-After checking, a short answer lists every accepted answer with its unit; a
+After checking, a short answer lists every accepted answer with its unit (in a
+member's result, as a choice's: "Your answer" green or red, then "Correct
+answer", Epo 2026-11-19, not the underlined field with its tick); a
 gaps part lists the key under the learner's own answer ("Correct answers"),
-right or not, noting what the learner wrote beside a missed blank; a
+right or not, Not answered beside an empty blank (no "you wrote": the
+sentence above shows it, Epo 2026-11-19); a
 matching grid fills a right pick green and a wrong one red and marks no
 other cell, and "Correct answer" lists each row with its answer under the
 grid (always in a member's result, short of full marks otherwise; Epo

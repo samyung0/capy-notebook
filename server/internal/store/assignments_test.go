@@ -187,7 +187,8 @@ func TestQuestionReports(t *testing.T) {
 			waiting++
 		}
 	}
-	if len(rows) != 4 || waiting != 1 {
+	// A row for every answer, closed questions' too (Epo 2026-11-19).
+	if len(rows) != 12 || waiting != 1 {
 		t.Fatalf("answer rows = %+v", rows)
 	}
 
@@ -301,8 +302,8 @@ func newAssignmentFixture(t *testing.T, label string) assignmentFixture {
 var everyAssignment = AssignmentListParams{Closed: true, Done: true, Limit: 100}
 
 // The list pages in SQL (Epo 2026-11-13): open ones by due date, then closed
-// ones; Closed and Done keep those out until asked for; a topic keeps only its
-// own; the cursor goes on where the page stopped.
+// ones; Closed and Done keep those out until asked for; a topic or a kind keeps
+// only its own; the cursor goes on where the page stopped.
 func TestAssignmentListPages(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-pages")
 	ctx := context.Background()
@@ -352,9 +353,21 @@ func TestAssignmentListPages(t *testing.T) {
 	if none, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, TopicIDs: []string{"tp_none"}, Limit: 10}); err != nil || len(none.Items) != 0 {
 		t.Fatalf("another topic = %v, err %v", titles(none), err)
 	}
+	// A kind keeps only its own.
+	task := f.form(t, now.Add(96*time.Hour))
+	task.Kind, task.Title, task.QuizID = "unmarked", "Read", ""
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, task, now); err != nil {
+		t.Fatal(err)
+	}
+	if quizzes, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, Kind: "marked", Limit: 10}); err != nil || !slices.Equal(titles(quizzes), []string{"Soon", "Later", "Shut"}) {
+		t.Fatalf("graded quizzes = %v, err %v", titles(quizzes), err)
+	}
+	if tasks, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, Kind: "unmarked", Limit: 10}); err != nil || !slices.Equal(titles(tasks), []string{"Read"}) {
+		t.Fatalf("assignments = %v, err %v", titles(tasks), err)
+	}
 	// A column sort keeps open ones first.
 	byTitle, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Closed: true, Done: true, Sort: "title", Ascending: true, Limit: 10})
-	if err != nil || !slices.Equal(titles(byTitle), []string{"Later", "Soon", "Shut"}) {
+	if err != nil || !slices.Equal(titles(byTitle), []string{"Later", "Read", "Soon", "Shut"}) {
 		t.Fatalf("by title = %v, err %v", titles(byTitle), err)
 	}
 }
@@ -476,7 +489,7 @@ func TestAssignmentRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Members) != 2 || len(report.Answers) != 1 || !report.Answers[0].Waiting {
+	if open := rowsOn(report.Answers, "q3"); len(report.Members) != 2 || len(open) != 1 || !open[0].Waiting {
 		t.Fatalf("report = %+v", report)
 	}
 	marked, err := f.s.MarkAssignmentAnswer(ctx, f.editor, run.ID, AssignmentMark{
@@ -1017,13 +1030,14 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 	if row.WaitingAnswers != 1 {
 		t.Fatalf("their row waits on %d answers, want the other submission's 1", row.WaitingAnswers)
 	}
+	open := rowsOn(report.Answers, "q3")
 	waiting := -1
-	for i, answer := range report.Answers {
+	for i, answer := range open {
 		if answer.AttemptID == late {
 			waiting = i
 		}
 	}
-	if len(report.Answers) != 2 || waiting < 0 || !report.Answers[waiting].Waiting || report.Answers[waiting].AttemptNumber != 5 {
+	if len(open) != 2 || waiting < 0 || !open[waiting].Waiting || open[waiting].AttemptNumber != 5 {
 		t.Fatalf("answers to approve = %+v", report.Answers)
 	}
 	if got, err := f.s.GetAssignment(ctx, f.user, created.ID, past); err != nil || got.Manage.ToApprove != 1 {
@@ -1042,7 +1056,7 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 		t.Fatal(err)
 	}
 	row, report = counts(past, late, 4.8, 20)
-	if row.WaitingAnswers != 0 || len(report.Answers) != 1 || report.Answers[0].AttemptID != late || report.Answers[0].Waiting {
+	if open := rowsOn(report.Answers, "q3"); row.WaitingAnswers != 0 || len(open) != 1 || open[0].AttemptID != late || open[0].Waiting {
 		t.Fatalf("after marking: %+v, answers %+v", row, report.Answers)
 	}
 	// A higher penalty set later reads through: 3 ties the 3 on time, to the latest.
@@ -1265,8 +1279,9 @@ func TestGradedQuizMadeWithItsQuiz(t *testing.T) {
 		Kind: MaterialQuiz, Title: "Refused", Content: content, GradedQuiz: undated}); !errors.As(err, &refused) {
 		t.Fatalf("an undated graded quiz: %v", err)
 	}
-	if taken, err := f.s.MaterialTitleTaken(ctx, f.ws.ID, "Refused"); err != nil || taken {
-		t.Fatalf("a refused graded quiz left its quiz: %v, err %v", taken, err)
+	var left int
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM materials WHERE workspace_id=$1 AND title='Refused'`, f.ws.ID).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("a refused graded quiz left %d quizzes, err %v", left, err)
 	}
 }
 
@@ -1330,6 +1345,24 @@ func TestCopyQuizToGradedQuiz(t *testing.T) {
 	first, firstQuiz := copyOf(f.quiz.ID, qs, "Term 1")
 	if first.Questions != 3 || firstQuiz.Title != "Term 1" || !firstQuiz.Hidden {
 		t.Fatalf("copied = %+v, quiz %+v", first, firstQuiz)
+	}
+	// A made-up name is numbered against what Files lists (Epo 2026-11-20):
+	// the graded quiz's own quiz is not there, a second listed "Term 1" is.
+	if name, err := f.s.DisambiguateMaterialTitle(ctx, f.ws.ID, "Term 1"); err != nil || name != "Term 1" {
+		t.Fatalf("beside a graded quiz's own quiz = %q, err %v", name, err)
+	}
+	listed, err := materialdoc.QuizDocument(json.RawMessage(assignmentQuestions), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name,
+			Kind: MaterialQuiz, Title: "Term 1", Content: listed}); err != nil {
+			t.Fatalf("a repeated name: %v", err)
+		}
+	}
+	if name, err := f.s.DisambiguateMaterialTitle(ctx, f.ws.ID, "Term 1"); err != nil || name != "Term 1 2" {
+		t.Fatalf("beside a listed quiz = %q, err %v", name, err)
 	}
 	image := imageOf(firstQuiz.ID)
 	if image.ID == assetID || image.MaterialID != firstQuiz.ID || image.UserID != f.editor {
@@ -2574,8 +2607,8 @@ func TestStillAnswers(t *testing.T) {
 }
 
 // TestReportKeepsWhatLeftTheCopy: a part a republish took from a question stays on
-// the report with its waiting answer, and a member whose copy has no open part gets
-// no row when the question gains one.
+// the report with its waiting answer, and a member whose copy has no open part has
+// nothing waiting when the question gains one.
 func TestReportKeepsWhatLeftTheCopy(t *testing.T) {
 	take := func(id string, answers map[string]any, qs []map[string]any) reportAttempt {
 		graded, given := gradeAttempt(qs, answers)
@@ -2608,8 +2641,8 @@ func TestReportKeepsWhatLeftTheCopy(t *testing.T) {
 	gained[0]["parts"] = append(gained[0]["parts"].([]any), frozenFixture(t)[2]["parts"].([]any)[0])
 	_, rows = questionReports(withRemoved(gained, []reportAttempt{waiting}), []reportAttempt{waiting}, nil)
 	for _, row := range rows {
-		if row.QuestionID == "q1" {
-			t.Fatalf("a row with nothing to mark: %+v", row)
+		if row.QuestionID == "q1" && row.Waiting {
+			t.Fatalf("a row waiting with nothing to mark: %+v", row)
 		}
 	}
 }
@@ -2788,4 +2821,15 @@ func TestReviewShowsTheMembersOrder(t *testing.T) {
 	if got := order(graded); !reflect.DeepEqual(got, want) {
 		t.Fatalf("with answers: order %v, want %v", got, want)
 	}
+}
+
+// rowsOn is the report's answer rows on one question.
+func rowsOn(rows []AssignmentAnswerRow, questionID string) []AssignmentAnswerRow {
+	var out []AssignmentAnswerRow
+	for _, row := range rows {
+		if row.QuestionID == questionID {
+			out = append(out, row)
+		}
+	}
+	return out
 }

@@ -105,41 +105,6 @@ func (s *Store) RemovePaperFile(ctx context.Context, userID, attemptID, fileID s
 	})
 }
 
-// OrderPaperFiles puts the running paper's files in the order given, which
-// must name each of them once.
-func (s *Store) OrderPaperFiles(ctx context.Context, userID, attemptID string, fileIDs []string, now time.Time) error {
-	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
-			return err
-		}
-		if err := s.checkPaperUploadTx(ctx, tx, attemptID, userID, 0, 1<<62, now); err != nil && !errors.Is(err, ErrPaperFull) {
-			return err
-		}
-		var held []string
-		rows, err := tx.Query(ctx, `SELECT id FROM files WHERE attempt_id=$1`, attemptID)
-		if err != nil {
-			return err
-		}
-		held, err = pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return err
-		}
-		if len(held) != len(fileIDs) || len(uniqueStrings(fileIDs)) != len(fileIDs) {
-			return assignmentInput("name each of the paper's files once")
-		}
-		for i, id := range fileIDs {
-			tag, err := tx.Exec(ctx, `UPDATE files SET submission_position=$3 WHERE id=$1 AND attempt_id=$2`, id, attemptID, i+1)
-			if err != nil {
-				return err
-			}
-			if tag.RowsAffected() == 0 {
-				return assignmentInput("name each of the paper's files once")
-			}
-		}
-		return nil
-	})
-}
-
 // PaperPart is one part of a paper as the read call lists it.
 type PaperPart struct {
 	// Label is how the paper numbers it: the question's number in the
@@ -503,11 +468,21 @@ func (s *Store) SavePaperRead(ctx context.Context, attemptID string, reads map[s
 }
 
 // handInPaperTx submits a paper attempt: nothing is marked or logged yet, and
-// every part waits for the read (paper 'reading').
+// every part waits for the read (paper 'reading'), or a file's graded quiz's
+// one part for staff's mark.
 func (s *Store) handInPaperTx(ctx context.Context, tx pgx.Tx, r attemptRow, auto bool, now time.Time) error {
 	frozen, err := decodeFrozen(r.frozen)
 	if err != nil {
 		return err
+	}
+	// No read maps a file's graded quiz to pages (Epo 2026-11-20, no AI).
+	var paperFile bool
+	if err := tx.QueryRow(ctx, `SELECT paper_file FROM assignments WHERE id=$1`, r.assignmentID).Scan(&paperFile); err != nil {
+		return err
+	}
+	read := "reading"
+	if paperFile {
+		read = "read"
 	}
 	graded, _ := gradeAttempt(frozen, map[string]any{})
 	for _, q := range graded {
@@ -525,8 +500,8 @@ func (s *Store) handInPaperTx(ctx context.Context, tx pgx.Tx, r attemptRow, auto
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE attempts SET answers='{}', questions=$2, correct=$3, total=$4, pct=0, taken_at=$5,
-			submitted_at=$5, auto_submitted=$6, waiting_marks=$7, waiting_answers=$8, paper='reading' WHERE id=$1`,
-		r.id, rawGraded, correct, total, now, auto, waitingMarks, waitingAnswers)
+			submitted_at=$5, auto_submitted=$6, waiting_marks=$7, waiting_answers=$8, paper=$9 WHERE id=$1`,
+		r.id, rawGraded, correct, total, now, auto, waitingMarks, waitingAnswers, read)
 	return err
 }
 

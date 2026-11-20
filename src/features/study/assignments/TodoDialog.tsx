@@ -18,6 +18,7 @@ import {
   dateTimeLabel,
   isGraded,
   minutesText,
+  questionPaperOf,
 } from './assignmentText';
 import { NewAssignmentDialog } from './LazyNewAssignmentDialog';
 import { assignmentFileIcon, useOpenAssignment } from './todoParts';
@@ -89,7 +90,7 @@ export function TodoDialog({
     primary = go(
       m.todo_approve_marks(),
       () => {
-        void navigate(assignmentPage(a, { tab: 'approve' }));
+        void navigate(assignmentPage(a, { tab: 'grading' }));
       },
       false
     );
@@ -202,11 +203,15 @@ export function TodoDialog({
               a.marks === 1
                 ? m.question_ui_one_mark()
                 : m.question_ui_marks({ count: formatPoints(a.marks) }),
-            questions: questionsLabel(a.questions),
+            questions: a.paperFile
+              ? (questionPaperOf(a)?.name ?? m.assignment_question_paper())
+              : questionsLabel(a.questions),
           })}
           {a.allowUploads && (
             <span className="t-meta block text-fg-muted">
-              {m.todo_uploads_allowed()}
+              {a.uploadOnly
+                ? m.assignment_submission_upload()
+                : m.todo_uploads_allowed()}
             </span>
           )}
         </>

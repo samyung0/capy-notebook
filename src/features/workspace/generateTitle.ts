@@ -1,8 +1,5 @@
-import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import type { GenerateKind } from '@/api/types';
 import { m } from '@/i18n';
-
-export const GENERATE_TITLE_MAX = updateMaterialBodyTitleMax;
 
 export function defaultGenerateTitle(
   kind: GenerateKind,
@@ -37,24 +34,4 @@ export function nextGenerateTitle(
     }
   }
   return defaultGenerateTitle(kind, workspaceName, Date.now());
-}
-
-export function validateGenerateTitle(
-  title: string,
-  existingTitles: readonly string[]
-): string | null {
-  const trimmed = title.trim();
-  if (!trimmed) {
-    return m.generate_name_required();
-  }
-  if ([...trimmed].length > GENERATE_TITLE_MAX) {
-    return m.generate_name_too_long({ max: GENERATE_TITLE_MAX });
-  }
-  const key = trimmed.toLowerCase();
-  if (
-    existingTitles.some((existing) => existing.trim().toLowerCase() === key)
-  ) {
-    return m.generate_name_taken();
-  }
-  return null;
 }

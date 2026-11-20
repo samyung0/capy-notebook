@@ -129,7 +129,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if canEdit {
-		if title, err = a.freeGenerateTitle(ctx, wsID, title); err != nil {
+		if title, err = a.s.DisambiguateMaterialTitle(ctx, wsID, title); err != nil {
 			return nil, hErr(err)
 		}
 	}
@@ -197,18 +197,6 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 		FileIds: req.FileIds,
 		Title:   title,
 		Mix:     req.Mix,
-	}
-}
-
-// freeGenerateTitle numbers a title the workspace already holds: nobody typed it.
-func (a *api) freeGenerateTitle(ctx context.Context, wsID, title string) (string, error) {
-	candidate := title
-	for n := 2; ; n++ {
-		taken, err := a.s.MaterialTitleTaken(ctx, wsID, candidate)
-		if err != nil || !taken {
-			return candidate, err
-		}
-		candidate = fmt.Sprintf("%s %d", title, n)
 	}
 }
 

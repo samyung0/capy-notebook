@@ -126,22 +126,20 @@ test.describe('assignments', () => {
     ).json()) as { items: { id: string }[] };
     expect(listed.items.map((item) => item.id)).toEqual([assignment.id]);
 
-    // The member answers on their page.
+    // The member answers on their page. Accept told them what a class member
+    // shares, so no notice opens (Epo 2026-11-19).
     await viewerPage.goto(`/workspaces/${workspaceId}/assignments`);
-    // Told once what a class member shares (Epo 2026-11-04).
-    await viewerPage
-      .getByRole('button', { exact: true, name: m.sharing_notice_ok() })
-      .click();
     await viewerPage
       .getByRole('button', { exact: true, name: m.assignment_start() })
       .locator('visible=true')
       .click();
-    await viewerPage
-      .locator('[data-question-row]')
-      .nth(1)
-      .waitFor({ state: 'attached' });
+    // The question numbers (Epo 2026-11-19): the grid, or a phone's strip.
+    const numbers = viewerPage
+      .locator('[data-question-number]')
+      .locator('visible=true');
+    await numbers.nth(1).waitFor();
     await viewerPage.getByText('Mitochondria').click();
-    await viewerPage.locator('[data-question-row]').nth(1).click();
+    await numbers.nth(1).click();
     await viewerPage.getByRole('textbox').fill('By osmosis.');
     await viewerPage
       .getByRole('button', { name: m.assignment_submit() })
@@ -160,7 +158,10 @@ test.describe('assignments', () => {
       await ownerApi.get(`/api/assignments/${assignment.id}/report`)
     ).json();
     expect(report.members[0].waitingAnswers).toBe(1);
-    expect(report.answers[0].waiting).toBe(true);
+    // Every answer is listed (Epo 2026-11-19): the open one alone waits.
+    expect(
+      report.answers.filter((row: { waiting: boolean }) => row.waiting)
+    ).toHaveLength(1);
     const attemptId = report.members[0].attemptId as string;
 
     // Nobody but the owner's side reads a member's report.
@@ -170,7 +171,7 @@ test.describe('assignments', () => {
 
     // The owner marks it on Approve AI marks, and no model marked it first.
     await ownerPage.goto(
-      `/workspaces/${workspaceId}/assignments?assignment=${assignment.id}&tab=approve`
+      `/workspaces/${workspaceId}/assignments?assignment=${assignment.id}&tab=grading`
     );
     await expect(ownerPage.getByText('By osmosis.')).toBeVisible();
     // Marks are typed (Epo 2026-11-18).

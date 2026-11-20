@@ -1,16 +1,13 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
 import { useSetAssignmentDone } from '@/api/hooks';
-import type { Assignment, FileKind, MaterialRefType } from '@/api/types';
+import type { Assignment } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { FileIcon } from '@/components/ui/FileIcon';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { PracticeFrame } from '../practice/studyPage';
 import { BackToAssignments } from './AssignmentAttemptPage';
-import { fileLink } from './assignmentPage';
+import { AssignmentFiles } from './AssignmentFiles';
 import { dayLabel, kindLabel, markText } from './assignmentText';
 import { YourWork } from './HandIns';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
@@ -84,16 +81,13 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
 }
 
 /** An unmarked assignment as its members see it: its title, Mark as done or
- * Hand in, its files and Your work. `preview` is staff's Preview tab (Epo
- * 2026-11-13): the same page with its buttons off. */
+ * Hand in, its files and Your work. */
 export function UnmarkedView({
   assignment,
   className,
-  preview = false,
 }: {
   assignment: Assignment;
   className?: string;
-  preview?: boolean;
 }) {
   const { mutate, isPending } = useSetAssignmentDone(assignment.workspaceId);
   const done = !!assignment.mine?.done;
@@ -151,7 +145,6 @@ export function UnmarkedView({
           >
             <Button
               disabled={
-                preview ||
                 isPending ||
                 closed ||
                 (!done && (uploading || !assignment.mine?.handIn?.length))
@@ -164,7 +157,7 @@ export function UnmarkedView({
           </span>
         ) : (
           <Button
-            disabled={preview || isPending || closed}
+            disabled={isPending || closed}
             onClick={() => mutate({ done: !done, id: assignment.id })}
             variant={done ? 'outline' : undefined}
           >
@@ -172,42 +165,11 @@ export function UnmarkedView({
           </Button>
         )}
       </div>
-      {assignment.files.length > 0 && (
-        <section className="mt-6.5 max-w-180">
-          <h2 className="t-subtitle">{m.assignment_field_files()}</h2>
-          <ul className="mt-2">
-            {assignment.files.map((file) => (
-              <li
-                className="flex min-h-10 items-center gap-2 border-divider border-b"
-                key={file.fileId ?? file.materialId}
-              >
-                <FileIcon
-                  className="size-4 shrink-0"
-                  name={
-                    file.fileId
-                      ? fileIconName({
-                          kind: file.kind as FileKind,
-                          name: file.name,
-                        })
-                      : materialIconName(file.kind as MaterialRefType)
-                  }
-                />
-                <span className="min-w-0 flex-1 truncate font-semibold">
-                  {file.name}
-                </span>
-                <UnderlineLink asChild className="text-fg">
-                  <Link {...fileLink(file)}>{m.assignment_open()}</Link>
-                </UnderlineLink>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <AssignmentFiles assignment={assignment} />
       {handIn && (
         <YourWork
           assignment={assignment}
-          open={!(preview || done || closed)}
-          preview={preview}
+          open={!(done || closed)}
           uploads={uploads}
         />
       )}

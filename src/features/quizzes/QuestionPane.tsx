@@ -9,23 +9,20 @@ import {
 } from 'react';
 import type { Question, Topic } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog, useIsPhone } from '@/components/ui/Dialog';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { Separator } from '@/components/ui/Separator';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { AddToBankItem } from '@/features/itemBanks/AddToBankItem';
 import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
-import {
-  ChoiceMarker,
-  GapChip,
-  MenuItem,
-} from '@/features/questions/editorFields';
+import { GapChip, MenuItem } from '@/features/questions/editorFields';
 import { issueMessages, questionIssues } from '@/features/questions/issues';
 import { MatchingGrid } from '@/features/questions/MatchingGrid';
 import {
   QuestionCard,
   QuestionCardView,
 } from '@/features/questions/QuestionCard';
+import { ChoiceMarker, CorrectTag } from '@/features/questions/QuestionView';
 import type { FigureRoom } from '@/features/questions/questionEdits';
 import { TextView } from '@/features/questions/TextView';
 import { TopicField, withTopics } from '@/features/questions/TopicField';
@@ -35,12 +32,11 @@ import {
   type LearnerPart,
   multipleAnswers,
   type QuestionPart,
-  questionMarks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { UploadDrawnSample } from './drawing/DrawnSample';
-import { questionSummary, RowMark } from './QuizSplit';
+import { RowMark } from './QuizSplit';
 
 /** The nearest box that scrolls `element` (a note's scroll area). */
 function scrollParent(element: HTMLElement | null): HTMLElement | null {
@@ -51,21 +47,9 @@ function scrollParent(element: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-const marksLabel = (count: number) =>
-  count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
-
 /** A workspace quiz's topics, for its questions' own topics, and the quiz's
  * topic, which a question without its own follows. */
 export type QuestionTopics = { quizTopic?: Topic; topics: Topic[] };
-
-/** "Correct" after a key's row, in green. */
-function CorrectTag() {
-  return (
-    <span className="ml-auto shrink-0 whitespace-nowrap font-bold text-[12.5px] text-tint-success-fg">
-      {m.question_ui_status_correct()}
-    </span>
-  );
-}
 
 /** A list row as the open card's: `lead` (a marker, a number), the text
  * where its input's is, `end` after it, then the remove button's room. */
@@ -156,7 +140,9 @@ export function PartKey({
         <div>
           {key.options.map((option, i) => (
             <KeyRow
-              end={key.correct.includes(i) && <CorrectTag />}
+              end={
+                key.correct.includes(i) && <CorrectTag className="ml-auto" />
+              }
               key={i}
               lead={
                 <ChoiceMarker
@@ -174,7 +160,10 @@ export function PartKey({
         <div>
           {[true, false].map((value) => (
             <KeyRow
-              end={!pending && key.correct === value && <CorrectTag />}
+              end={
+                !pending &&
+                key.correct === value && <CorrectTag className="ml-auto" />
+              }
               key={String(value)}
               lead={
                 <ChoiceMarker
@@ -315,8 +304,8 @@ function IssueMark({ className }: { className?: string }) {
   );
 }
 
-/** A card not open: as members see it with the key marked, one line on a
- * phone; a click opens it. Memoized on the question's object, which stays the
+/** A card not open: as members see it with the key marked, phones too (Epo
+ * 2026-11-19); a click opens it. Memoized on the question's object, which stays the
  * same until it changes (`useQuizQuestions`), so typing in the open card
  * leaves the others be. */
 const ClosedCard = memo(function ClosedCard({
@@ -325,14 +314,12 @@ const ClosedCard = memo(function ClosedCard({
   number,
   onOpen,
   opening,
-  phone,
   question,
 }: {
   keysPending?: boolean;
   number: number;
   onOpen: (id: string, part?: string) => void;
   opening?: boolean;
-  phone: boolean;
   /** In a note: no card outline (Epo 2026-11-15). */
   embedded?: boolean;
   question: Question;
@@ -345,30 +332,17 @@ const ClosedCard = memo(function ClosedCard({
         'relative scroll-mt-3 scroll-mb-20',
         embedded
           ? 'py-3.5'
-          : 'rounded-xl border border-line bg-surface px-4 py-3.5 sm:px-6 sm:py-5'
+          : 'rounded-xl border border-line bg-surface px-3 py-3.5 sm:px-6 sm:py-5'
       )}
       data-question-id={question.id}
     >
-      {phone ? (
-        <p className="flex items-center gap-2 text-[13.5px]">
-          <span className="font-bold">{number}.</span>
-          <span className="min-w-0 flex-1 truncate">
-            {questionSummary(question)}
-          </span>
-          {issue && <IssueMark />}
-          <span className="text-fg-muted">
-            {marksLabel(questionMarks(question))}
-          </span>
-        </p>
-      ) : (
-        <QuestionCardView
-          answer={(part) => <PartKey part={part} pending={keysPending} />}
-          issue={issue && <IssueMark />}
-          keysPending={keysPending}
-          number={number}
-          question={question}
-        />
-      )}
+      <QuestionCardView
+        answer={(part) => <PartKey part={part} pending={keysPending} />}
+        issue={issue && <IssueMark />}
+        keysPending={keysPending}
+        number={number}
+        question={question}
+      />
       {/* The whole card opens it. */}
       <button
         aria-label={m.question_ui_edit_question_number({ number })}
@@ -457,7 +431,6 @@ export function QuestionPane({
   uploadSample: UploadDrawnSample;
   write: (question: Question) => void;
 }) {
-  const phone = useIsPhone();
   const [removing, setRemoving] = useState<string | null>(null);
   const openIndex = questions.findIndex((question) => question.id === picked);
   const scroller = useRef<HTMLDivElement>(null);
@@ -544,7 +517,6 @@ export function QuestionPane({
           number={number}
           onOpen={openCard}
           opening={opening}
-          phone={phone}
           question={question}
         />
       );
@@ -563,7 +535,7 @@ export function QuestionPane({
           // by its controls.
           embedded
             ? 'py-3.5'
-            : 'rounded-xl border-2 border-action-accent bg-surface px-3.75 py-3.25 sm:px-5.75 sm:py-4.75'
+            : 'rounded-xl border-2 border-action-accent bg-surface px-2.75 py-3.25 sm:px-5.75 sm:py-4.75'
         )}
         data-question-id={question.id}
         // The tour outlines it.
@@ -683,7 +655,7 @@ export function QuestionPane({
           the rooms sync the cards wait (inert), the pane around them still
           scrolling. */}
       <div
-        className="mx-auto flex max-w-190 flex-col gap-3 @min-[58rem]:px-0 px-4 pt-3 @min-[58rem]:pb-6 pb-24 sm:gap-3.5 sm:pt-5"
+        className="mx-auto flex max-w-190 flex-col gap-3 @min-[58rem]:px-0 px-2.5 pt-3 @min-[58rem]:pb-6 pb-24 sm:gap-3.5 sm:px-4 sm:pt-5"
         inert={opening}
       >
         {head}

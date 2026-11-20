@@ -98,10 +98,12 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
 	reg(api, http.MethodPost, "/api/quizzes/{id}/graded-copy", "copyQuizToGradedQuiz", tag, "Make a graded quiz from a copy of a practice quiz in the same workspace, images and all", http.StatusCreated, a.copyQuizToGradedQuiz)
+	reg(api, http.MethodPost, "/api/files/{id}/graded-quiz", "makeFileGradedQuiz", tag, "Make a graded quiz whose question paper is a file of the workspace, answered by upload and marked by hand", http.StatusCreated, a.makeFileGradedQuiz)
 	reg(api, http.MethodGet, "/api/assignments/{id}", "getAssignment", tag, "An assignment", http.StatusOK, a.getAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}", "updateAssignment", tag, "Change an assignment's settings", http.StatusOK, a.updateAssignment)
 	reg(api, http.MethodDelete, "/api/assignments/{id}", "deleteAssignment", tag, "Delete an assignment with its results", http.StatusNoContent, a.deleteAssignment)
 	reg(api, http.MethodPost, "/api/assignments/{id}/publish", "publishAssignment", tag, "Give a draft to its members", http.StatusOK, a.publishAssignment)
+	reg(api, http.MethodPut, "/api/assignments/{id}/paper-file", "changeAssignmentPaperFile", tag, "Point a graded quiz from a file at another file of its workspace, keeping answers and marks", http.StatusOK, a.changeAssignmentPaperFile)
 	reg(api, http.MethodPost, "/api/assignments/{id}/republish", "republishAssignment", tag, "Replace an open assignment's questions with its quiz as it is now", http.StatusOK, a.republishAssignment)
 	reg(api, http.MethodPut, "/api/assignments/{id}/closed", "setAssignmentClosed", tag, "Close an assignment to late submissions, or reopen it", http.StatusOK, a.setAssignmentClosed)
 	reg(api, http.MethodPost, "/api/assignments/{id}/release-grades", "releaseAssignmentGrades", tag, "Show members their grades on an assignment whose grades are released by hand", http.StatusOK, a.releaseAssignmentGrades)
@@ -134,6 +136,8 @@ func assignmentError(err error) error {
 		return conflictError("attempt_finished", err.Error())
 	case errors.Is(err, store.ErrAssignmentQuizGone):
 		return conflictError("assignment_quiz_gone", err.Error())
+	case errors.Is(err, store.ErrPaperTotalBelowMark):
+		return conflictError("total_below_mark", err.Error())
 	}
 	return hErr(err)
 }
@@ -146,6 +150,7 @@ type assignmentListInput struct {
 	Closed bool   `query:"closed" doc:"Keep the closed ones"`
 	Done   bool   `query:"done" doc:"Keep the ones the caller has done"`
 	Topic  string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
+	Kind   string `query:"kind" enum:"marked,unmarked" doc:"Only graded quizzes (marked) or only assignments (unmarked); none keeps both"`
 	Sort   string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
 	Dir    string `query:"dir" enum:"asc,desc" default:"asc"`
 	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
@@ -161,7 +166,7 @@ func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*as
 		offset = n
 	}
 	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now(), store.AssignmentListParams{
-		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic),
+		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic), Kind: in.Kind,
 		Sort: in.Sort, Ascending: in.Dir == "asc", Offset: offset, Limit: assignmentPage,
 	})
 	if err != nil {
@@ -189,8 +194,8 @@ func assignmentForm(b apimodel.AssignmentFormReq) store.AssignmentForm {
 		Kind: b.Kind, Title: b.Title, QuizID: b.QuizID, DueAt: b.DueAt, TimeLimitMin: b.TimeLimitMin, Attempts: b.Attempts,
 		NoLate: b.NoLate, LatePenaltyPct: b.LatePenaltyPct,
 		AssignAll: b.AssignAll, Assignees: b.Assignees, Draft: b.Draft, Marking: b.Marking,
-		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, Files: b.Files,
-		Points: (*int)(b.Points),
+		ShowAnswers: b.ShowAnswers, ShowGrades: b.ShowGrades, Shuffle: b.Shuffle, AllowUploads: b.AllowUploads, UploadOnly: b.UploadOnly, Files: b.Files,
+		Points: (*int)(b.Points), TotalMarks: (*int)(b.TotalMarks),
 	}
 }
 
@@ -265,14 +270,11 @@ func (a *api) copyQuizToGradedQuiz(ctx context.Context, in *copyQuizToGradedQuiz
 	if err != nil {
 		return nil, err
 	}
+	// Its own quiz is never listed, so its name stands as given.
 	form := assignmentForm(in.Body.GradedQuiz)
-	title, err := a.s.DisambiguateMaterialTitle(ctx, ws.ID, form.Title)
-	if err != nil {
-		return nil, hErr(err)
-	}
 	res, err := a.s.CopyQuizToGradedQuiz(ctx, store.QuizCopy{
 		ActorID: userID(ctx), WorkspaceID: ws.ID, WorkspaceName: ws.Name,
-		SourceID: source.ID, Questions: qs, Title: title, Form: form,
+		SourceID: source.ID, Questions: qs, Title: form.Title, Form: form,
 	}, time.Now())
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
@@ -284,10 +286,64 @@ func (a *api) copyQuizToGradedQuiz(ctx context.Context, in *copyQuizToGradedQuiz
 	return &assignmentOutput{Body: res}, nil
 }
 
+type makeFileGradedQuizInput struct {
+	ID   string `path:"id" maxLength:"64" doc:"The file: its question paper"`
+	Body apimodel.FileGradedQuizReq
+}
+
+// makeFileGradedQuiz makes a graded quiz from a file of a workspace the caller
+// edits (Epo 2026-11-20). The file stays where it is and is read live.
+func (a *api) makeFileGradedQuiz(ctx context.Context, in *makeFileGradedQuizInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	file, err := a.s.GetFile(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if file.WorkspaceID == "" {
+		return nil, hErr(store.ErrNotFound)
+	}
+	if err := a.assertWorkspaceEditor(ctx, file.WorkspaceID); err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.MakeFileGradedQuiz(ctx, userID(ctx), file.WorkspaceID, file.ID, assignmentForm(in.Body.GradedQuiz), time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	a.gradedQuizMade(ctx, res.ID)
+	return &assignmentOutput{Body: res}, nil
+}
+
+type changePaperFileInput struct {
+	ID   string `path:"id" maxLength:"64"`
+	Body apimodel.PaperFileReq
+}
+
+// changeAssignmentPaperFile is its staff's Change file (Epo 2026-11-20); open
+// pages reread, so a running attempt shows the new file.
+func (a *api) changeAssignmentPaperFile(ctx context.Context, in *changePaperFileInput) (*assignmentOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	res, err := a.s.ChangePaperFile(ctx, userID(ctx), in.ID, in.Body.FileID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	a.publishAssignmentUpdated(ctx, in.ID)
+	return &assignmentOutput{Body: res}, nil
+}
+
 func (a *api) getAssignment(ctx context.Context, in *assignmentIDInput) (*assignmentOutput, error) {
 	res, err := a.s.GetAssignment(ctx, userID(ctx), in.ID, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
+	}
+	// Its files are the ones the caller may open, so their cards may show.
+	for i := range res.Files {
+		if res.Files[i].ThumbnailURL, err = a.thumbnailURL(ctx, res.Files[i].ThumbnailKey); err != nil {
+			return nil, err
+		}
 	}
 	return &assignmentOutput{Body: res}, nil
 }

@@ -75,6 +75,8 @@ import {
   addPaperFile,
   assignmentActivity,
   assignmentHandlers,
+  markSharingNoticeSeen,
+  numberedTitle,
   recentFor,
   submittedPapers,
   workspaceMaterialRefs,
@@ -799,32 +801,26 @@ function gradeOne(
 seedExtractionFiles();
 
 export const handlers = [
-  ...extractionHandlers(
-    (workspaceId, title, questions, hidden) => {
-      const quiz = db.makeMaterial({
-        ...ownerMaterialAccess,
-        content: quizDocument(questions),
-        createdAt: new Date().toISOString(),
-        hidden,
-        id: uid('qz'),
-        kind: 'quiz',
-        privacy: 'private',
-        scopeFileNames: [],
-        scopeTopics: [],
-        title,
-        topicId: null,
-        workspaceId,
-        workspaceName:
-          db.workspaces.find((row) => row.id === workspaceId)?.name ?? '',
-      });
-      db.materials.unshift(quiz);
-      return quiz.id;
-    },
-    (workspaceId, title) =>
-      db.materials.some(
-        (row) => row.workspaceId === workspaceId && row.title === title
-      )
-  ),
+  ...extractionHandlers((workspaceId, title, questions, hidden) => {
+    const quiz = db.makeMaterial({
+      ...ownerMaterialAccess,
+      content: quizDocument(questions),
+      createdAt: new Date().toISOString(),
+      hidden,
+      id: uid('qz'),
+      kind: 'quiz',
+      privacy: 'private',
+      scopeFileNames: [],
+      scopeTopics: [],
+      title,
+      topicId: null,
+      workspaceId,
+      workspaceName:
+        db.workspaces.find((row) => row.id === workspaceId)?.name ?? '',
+    });
+    db.materials.unshift(quiz);
+    return quiz.id;
+  }),
   ...questionBankHandlers,
   ...editorAssetHandlers,
   ...canvasHandlers((id) => db.workspaces.find((ws) => ws.id === id)),
@@ -1786,6 +1782,21 @@ export const handlers = [
     };
     return HttpResponse.json(ws);
   }),
+  http.get('/api/workspace-invites/:token', ({ params }) => {
+    // Scenario and spec links (mock-…) open as any invite would; what
+    // Accept answers is the scenario's.
+    if (String(params.token).startsWith('mock-'))
+      return HttpResponse.json({ role: 'editor', workspaceKind: 'personal' });
+    const invite = mockWorkspaceInvites.find(
+      (item) =>
+        (item.id === params.token || item.token === params.token) &&
+        pendingInvite(item) &&
+        item.invitedUserId === db.user.id
+    );
+    const ws = db.workspaces.find((w) => w.id === invite?.workspaceId);
+    if (!invite || !ws) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json({ role: invite.role, workspaceKind: ws.kind });
+  }),
   http.post('/api/workspace-invites/:token/accept', async ({ params }) => {
     const invite = mockWorkspaceInvites.find(
       (item) =>
@@ -1821,6 +1832,10 @@ export const handlers = [
       (notification) => notification.href === `/workspace-invites/${invite.id}`
     );
     if (notificationIndex >= 0) db.notifications.splice(notificationIndex, 1);
+    // A class's member agreed to what they share on the invite page.
+    const ws = db.workspaces.find((w) => w.id === invite.workspaceId);
+    if (ws?.kind === 'class' && invite.role === 'viewer')
+      markSharingNoticeSeen();
     return HttpResponse.json(member);
   }),
   http.delete('/api/workspaces/:id', async ({ params }) => {
@@ -3238,20 +3253,6 @@ export const handlers = [
         { status: 422 }
       );
     }
-    const titleTaken = db.materials.some(
-      (mt) =>
-        mt.workspaceId === wsId &&
-        mt.title.trim().toLowerCase() === title.toLowerCase()
-    );
-    if (titleTaken) {
-      return HttpResponse.json(
-        {
-          code: 'title_taken',
-          message: 'a material with this name already exists in this workspace',
-        },
-        { status: 409 }
-      );
-    }
 
     const qs: Question[] = Array.from({ length: count }, (_, i) => {
       const type = opts.types[i % opts.types.length];
@@ -3264,7 +3265,7 @@ export const handlers = [
       ];
       return question;
     });
-    const name = title;
+    const name = numberedTitle(wsId, title);
     const quizMat = db.makeMaterial({
       ...ownerMaterialAccess,
       content: quizDocument(qs),
@@ -3374,22 +3375,6 @@ export const handlers = [
     if (!source || (workspaceId && !workspace))
       return new HttpResponse(null, { status: 404 });
     const title = body.title.trim();
-    if (
-      workspaceId &&
-      db.materials.some(
-        (mt) =>
-          mt.workspaceId === workspaceId &&
-          mt.title.trim().toLowerCase() === title.toLowerCase()
-      )
-    ) {
-      return HttpResponse.json(
-        {
-          code: 'title_taken',
-          message: 'a material with this name already exists in this workspace',
-        },
-        { status: 409 }
-      );
-    }
     const id = uid('mat');
     const cards =
       source.kind === 'flashcards'

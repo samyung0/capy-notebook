@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -650,63 +651,80 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 	}, err
 }
 
+// inviteByReference reads an invite by its id or its raw token, with its
+// workspace's kind and owner; lock holds the workspace and invite rows.
+func inviteByReference(ctx context.Context, q rowQueryer, reference string, lock bool) (WorkspaceInvite, string, WorkspaceKind, error) {
+	query := `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
+		wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
+		owner.id, w.kind
+		FROM workspace_invites wi
+		JOIN workspaces w ON w.id=wi.workspace_id
+		JOIN users owner ON owner.id=w.user_id
+		WHERE %s
+		  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL`
+	if lock {
+		query += ` FOR UPDATE OF w, wi`
+	}
+	var invite WorkspaceInvite
+	var ownerID string
+	var kind WorkspaceKind
+	read := func(where string, arg any) error {
+		return q.QueryRow(ctx, fmt.Sprintf(query, where), arg).
+			Scan(&invite.ID, &invite.WorkspaceID, &invite.InvitedUserID, &invite.Email, &invite.Role,
+				&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt,
+				&ownerID, &kind)
+	}
+	tokenHash := inviteTokenHash(reference)
+	var err error
+	if isInviteID(reference) {
+		err = read("wi.id=$1", reference)
+		// A raw token can legally start with "inv_". Only an existing complete
+		// invite id is treated as an id; otherwise always retry token-hash
+		// lookup instead of rejecting a valid token by prefix alone.
+		if isNoRows(err) {
+			err = read("wi.token_hash=$1", tokenHash[:])
+		}
+	} else {
+		err = read("wi.token_hash=$1", tokenHash[:])
+	}
+	return invite, ownerID, kind, err
+}
+
+// InvitePreview is what the invite page tells its invitee before Accept.
+type InvitePreview struct {
+	Role          WorkspaceRole `json:"role"`
+	WorkspaceKind WorkspaceKind `json:"workspaceKind"`
+}
+
+// PreviewWorkspaceInvite reads an invite for its own invitee, answering not
+// found wherever accepting it would.
+func (s *Store) PreviewWorkspaceInvite(ctx context.Context, reference, userID string) (InvitePreview, error) {
+	invite, ownerID, kind, err := inviteByReference(ctx, s.pool, reference, false)
+	if isNoRows(err) {
+		return InvitePreview{}, ErrNotFound
+	}
+	if err != nil {
+		return InvitePreview{}, err
+	}
+	ownerStatus, err := s.accountAccess(ctx, s.pool, ownerID)
+	if err != nil {
+		return InvitePreview{}, err
+	}
+	if ownerStatus.Err() != nil || invite.AcceptedAt != nil || invite.RevokedAt != nil ||
+		time.Now().UTC().After(invite.ExpiresAt) ||
+		invite.InvitedUserID == "" || invite.InvitedUserID != userID {
+		return InvitePreview{}, ErrNotFound
+	}
+	return InvitePreview{Role: invite.Role, WorkspaceKind: kind}, nil
+}
+
 func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID string) (WorkspaceMember, []string, *Notification, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return WorkspaceMember{}, nil, nil, err
 	}
 	defer tx.Rollback(ctx)
-	var invite WorkspaceInvite
-	var ownerID string
-	query := `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
-		wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
-		owner.id
-		FROM workspace_invites wi
-		JOIN workspaces w ON w.id=wi.workspace_id
-		JOIN users owner ON owner.id=w.user_id
-		WHERE wi.token_hash=$1
-		  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-		FOR UPDATE OF w, wi`
-	var arg any
-	if isInviteID(reference) {
-		query = `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
-			wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
-			owner.id
-			FROM workspace_invites wi
-			JOIN workspaces w ON w.id=wi.workspace_id
-			JOIN users owner ON owner.id=w.user_id
-			WHERE wi.id=$1
-			  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-			FOR UPDATE OF w, wi`
-		arg = reference
-	} else {
-		tokenHash := inviteTokenHash(reference)
-		arg = tokenHash[:]
-	}
-	err = tx.QueryRow(ctx, query, arg).
-		Scan(&invite.ID, &invite.WorkspaceID, &invite.InvitedUserID, &invite.Email, &invite.Role,
-			&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt,
-			&ownerID)
-	if isNoRows(err) {
-		// A raw token can legally start with "inv_". Only an existing complete
-		// invite id is treated as an id; otherwise always retry token-hash
-		// lookup instead of rejecting a valid token by prefix alone.
-		if isInviteID(reference) {
-			tokenHash := inviteTokenHash(reference)
-			err = tx.QueryRow(ctx, `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
-				wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
-				owner.id
-				FROM workspace_invites wi
-				JOIN workspaces w ON w.id=wi.workspace_id
-				JOIN users owner ON owner.id=w.user_id
-				WHERE wi.token_hash=$1
-				  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-					FOR UPDATE OF w, wi`, tokenHash[:]).
-				Scan(&invite.ID, &invite.WorkspaceID, &invite.InvitedUserID, &invite.Email, &invite.Role,
-					&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt,
-					&ownerID)
-		}
-	}
+	invite, ownerID, _, err := inviteByReference(ctx, tx, reference, true)
 	if isNoRows(err) {
 		return WorkspaceMember{}, nil, nil, ErrNotFound
 	}

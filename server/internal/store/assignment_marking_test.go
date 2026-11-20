@@ -90,7 +90,7 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Answers) != 1 || !report.Answers[0].AIMarked || report.Answers[0].AIAwarded != 2 {
+	if open := rowsOn(report.Answers, "q3"); len(open) != 1 || !open[0].AIMarked || open[0].AIAwarded != 2 {
 		t.Fatalf("the report's row = %+v", report.Answers)
 	}
 

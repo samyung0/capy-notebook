@@ -22,7 +22,6 @@ func TestMapHTTPErrorCodes(t *testing.T) {
 		{store.ErrAccountDeletionBusy, http.StatusConflict, "account_deletion_busy"},
 		{store.ErrSubscriptionExists, http.StatusConflict, "subscription_exists"},
 		{fmt.Errorf("clone: %w", store.ErrCloneSourceChanged), http.StatusConflict, "clone_source_changed"},
-		{store.ErrTitleTaken, http.StatusConflict, "title_taken"},
 		{store.ErrAudioTranscribing, http.StatusConflict, "audio_transcribing"},
 		{store.ErrInvalidPDFAnnotation, http.StatusBadRequest, ""},
 		{store.ErrSourceRoleLost, http.StatusNotFound, "role_lost"},

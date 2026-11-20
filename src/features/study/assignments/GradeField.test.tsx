@@ -48,16 +48,25 @@ const enter = async (value: string) => {
     // Past React's own value tracker, as typing would be.
     Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(field, value);
     field.dispatchEvent(new window.Event('input', { bubbles: true }));
-    field.dispatchEvent(new window.Event('focusout', { bubbles: true }));
   });
   return root;
 };
+// Enter, or the hand-in page's Save: the form's submit.
+const submit = () =>
+  act(async () => {
+    host
+      .querySelector('form')
+      ?.dispatchEvent(
+        new window.Event('submit', { bubbles: true, cancelable: true })
+      );
+  });
 
 beforeEach(() => grade.mockReset());
 
 // Epo 2026-11-14: staff grade a member out of the points, in half points.
-it('saves a grade on leaving the field', async () => {
+it('saves a grade on Enter', async () => {
   const root = await enter('7.5');
+  await submit();
   await vi.waitFor(() =>
     expect(grade).toHaveBeenCalledWith(
       { points: 7.5, userId: 'ann' },

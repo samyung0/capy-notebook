@@ -5,9 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PaperOrderInputBody {
+export interface PaperFileReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @maxItems 15 */
-  fileIds: string[];
+  /**
+     * A file of the graded quiz's workspace
+     * @minLength 1
+     * @maxLength 64
+     */
+  fileId: string;
 }

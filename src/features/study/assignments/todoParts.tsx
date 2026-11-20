@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
 import { qk } from '@/api/client';
 import type { Assignment, FileKind, MaterialRefType } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
+import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { assignmentPage } from './assignmentPage';
 
@@ -20,6 +22,27 @@ export function WorkChip({ title }: { title: string }) {
         {title}
       </span>
     </span>
+  );
+}
+
+/** A section's small heading on a paper's pages: Question paper, Your
+ * answers, Feedback. */
+export function SectionLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cn(
+        'font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]',
+        className
+      )}
+    >
+      {children}
+    </p>
   );
 }
 

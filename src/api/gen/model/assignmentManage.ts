@@ -15,6 +15,7 @@ export interface AssignmentManage {
   assignees: string[];
   average?: number;
   done: number;
+  graded: number;
   gradesReleasedAt?: string;
   marking: AssignmentManageMarking;
   notGraded: number;

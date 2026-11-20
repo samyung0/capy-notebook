@@ -69,7 +69,13 @@ export function MaterialListItem({
         to="/workspaces/$workspaceId"
       >
         <FileIcon className="size-4" name={materialIconName(matRef.type)} />
-        <span className="min-w-0 flex-1 translate-y-px truncate">
+        <span
+          className={cn(
+            'min-w-0 flex-1 translate-y-px truncate',
+            // Not shared with members: muted, as a file's (Epo 2026-11-20).
+            matRef.hidden && 'text-fg-muted'
+          )}
+        >
           {matRef.type === 'quiz'
             ? m.files_quiz_row({ title: matRef.title })
             : matRef.title}

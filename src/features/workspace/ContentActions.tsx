@@ -19,12 +19,12 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Menu, type MenuItem, type MenuProps } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import { PropertyList, PropertyRow } from '@/components/ui/PropertyList';
 import { userToast } from '@/components/ui/userToast';
 import { downloadFile, downloadNote } from '@/features/files/downloadItem';
 import { fileIsTranscribing, formatFileSize } from '@/features/files/fileUtils';
 import { MoveToTopicDialog } from '@/features/workspace/MoveToTopicDialog';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { CloneItemDialog } from './CloneItemDialog';
 import type { ContentActionTarget } from './contentActionTarget';
@@ -423,7 +423,7 @@ export function ContentActions({
 /** An item's properties: a file's size, status and upload time; a material's
  * size, structure and creation time, each row only where the item has it. */
 export function ContentPropertiesDialog({
-  className = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
+  className = 'text-sm',
   content,
   labelClassName = 'text-fg-muted',
   onClose,
@@ -444,68 +444,51 @@ export function ContentPropertiesDialog({
         kind: file ? m.common_file() : m.common_material(),
       })}
     >
-      <dl className={className}>
-        <Row
+      <PropertyList className={className}>
+        <PropertyRow
           label={m.common_name()}
           labelClassName={labelClassName}
           value={content.name}
         />
-        <Row
+        <PropertyRow
           label={m.common_type()}
           labelClassName={labelClassName}
           value={content.kind.toUpperCase()}
         />
         {content.sizeBytes !== undefined && (
-          <Row
+          <PropertyRow
             label={m.common_size()}
             labelClassName={labelClassName}
             value={formatFileSize(content.sizeBytes)}
           />
         )}
         {file && (
-          <Row
+          <PropertyRow
             label={m.common_status()}
             labelClassName={labelClassName}
             value={content.status ?? 'ready'}
           />
         )}
         {content.nodeCount !== undefined && (
-          <Row
+          <PropertyRow
             label={m.content_nodes()}
             labelClassName={labelClassName}
             value={String(content.nodeCount)}
           />
         )}
         {content.maxDepth !== undefined && (
-          <Row
+          <PropertyRow
             label={m.content_max_depth()}
             labelClassName={labelClassName}
             value={String(content.maxDepth)}
           />
         )}
-        <Row
+        <PropertyRow
           label={file ? m.common_added() : m.common_created()}
           labelClassName={labelClassName}
           value={new Date(content.createdAt).toLocaleString()}
         />
-      </dl>
+      </PropertyList>
     </SimpleDialog>
-  );
-}
-
-function Row({
-  label,
-  labelClassName,
-  value,
-}: {
-  label: string;
-  labelClassName: string;
-  value: string;
-}) {
-  return (
-    <>
-      <p className={cn(labelClassName)}>{label}</p>
-      <p className="truncate">{value}</p>
-    </>
   );
 }
