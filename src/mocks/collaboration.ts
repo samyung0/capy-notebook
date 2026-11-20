@@ -962,7 +962,10 @@ class MockCollaborationProvider implements UnifiedProvider {
       this.options.onAuthenticationFailed?.(outdated);
       return;
     }
-    if (deletedByPeer(this.options.materialId)) {
+    if (
+      deletedByPeer(this.options.materialId) ||
+      refusedReaders.has(this.options.materialId)
+    ) {
       void this.refusedAtToken();
       return;
     }
@@ -1057,6 +1060,20 @@ class MockCollaborationProvider implements UnifiedProvider {
   deleted(materialId: string) {
     if (this.options.materialId !== materialId || !this.isConnected) return;
     this.options.onStateless?.({ payload: ROOM_DISCARDED });
+    this.closed(4000);
+  }
+
+  /** The service closed this note's room on the open socket for an access
+   * change (4403: a member removed, the note hidden from them), and the
+   * editor's rejoin is refused at its token (`connect`). */
+  accessChanged() {
+    if (!this.isConnected) return;
+    refusedReaders.add(this.options.materialId);
+    this.closed(4403);
+  }
+
+  /** The room closed on the open socket: a close, no disconnect. */
+  private closed(code: number) {
     materialProviders.delete(this);
     this.leave?.();
     this.leave = undefined;
@@ -1064,7 +1081,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.isConnected = false;
     this.isSynced = false;
     this.onSyncChange?.(false);
-    this.options.onClose?.({ code: 4000 });
+    this.options.onClose?.({ code });
   }
 
   /** The token request refused (the editor holds its error), told as the
@@ -1464,6 +1481,14 @@ export function admitMockNoteDrafts(materialId: string, update: Uint8Array) {
 // asked again as the refusal asks for its read).
 const refusedReaders = new Set<string>();
 export const roomRefusedReader = (id: string) => refusedReaders.has(id);
+
+/** Every open note's room closes for an access change (4403) and refuses
+ * this reader when it rejoins. Returns how many there were. */
+export function closeOpenNotesForAccess() {
+  const open = [...materialProviders];
+  for (const provider of open) provider.accessChanged();
+  return open.length;
+}
 
 /** Every open room refuses this reader when it rejoins: it was hidden from
  * them, or they lost their access. Returns how many there were. */

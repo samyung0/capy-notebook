@@ -428,7 +428,8 @@ it('rejoins after a close the server gives everyone', async () => {
 
 // Epo 2026-11-05: a close for one person's access change comes with no notice,
 // so it joins again and the token says what they have: a demotion reads on, a
-// removal stops there.
+// removal stops there, and the page's read says what shows (Epo 2026-11-20,
+// "the page should itself refetch and show the 404 error").
 it('joins again after a close for this person, and the token decides', async () => {
   const { onReplace, room } = await started();
   const [provider] = providers;
@@ -454,8 +455,11 @@ it('joins again after a close for this person, and the token decides', async () 
   );
   expect(room.getSnapshot().status).toBe('unavailable');
   expect(onReplace).not.toHaveBeenCalled();
-  // Told its access changed, the page stays: no read asked for.
-  expect(invalidateQueries).not.toHaveBeenCalled();
+  expect(invalidateQueries.mock.calls).toEqual([
+    [{ queryKey: qk.material('q') }],
+    [{ queryKey: qk.quiz('q') }],
+  ]);
+  invalidateQueries.mockClear();
   room.destroy();
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { dismissToast } from '@/components/ui/userToast';
 import type { MaterialValue } from '@/features/materials/document';
 import {
@@ -9,6 +9,7 @@ import {
   holdDraftDocument,
   readDrafts,
   type ShownDrafts,
+  shownRows,
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 
@@ -17,9 +18,10 @@ import { editIncidentReporter } from '@/lib/editIncidents';
  * could read it, and its trash readers' open pages read it trashed, while an
  * item whose access went answers the non-disclosing 404 and its edits go
  * silently (`dropLostDrafts`). Open, the page shows the edits read-only until
- * Reload; not open, the load sweep's toast offers them. Reload and Download
- * delete only the rows they showed or drew (`ShownDrafts`): the rest come
- * back as the next page load's toast. */
+ * Reload; not open, the load sweep's toast offers them. Reload and the
+ * toast's Download delete only the rows they showed or drew (`ShownDrafts`):
+ * the rest come back as the next page load's toast. The open page's
+ * Download, on its strip and its ⋮ (Epo 2026-11-20), deletes none. */
 
 /** A deleted item's stored documents, as the page or the sweep names them. */
 export type DeletedTarget = Omit<DeletedDrafts, 'item' | 'offered'>;
@@ -38,16 +40,54 @@ export function deletedTarget(
 }
 
 // What this page shows of each deleted document's stored edits, by key: what
-// its Reload deletes.
+// its Reload deletes; and who is told when that changes.
 const shownHere = new Map<string, ShownDrafts>();
+const shownListeners = new Set<() => void>();
+
+function shownChanged() {
+  for (const listener of shownListeners) listener();
+}
 
 /** What an open page shows of a deleted document's stored edits: its Reload
  * deletes those rows and no others. Returns the release. */
 export function showDeletedDrafts(key: string, shown: ShownDrafts) {
   shownHere.set(key, shown);
+  shownChanged();
   return () => {
-    if (shownHere.get(key) === shown) shownHere.delete(key);
+    if (shownHere.get(key) !== shown) return;
+    shownHere.delete(key);
+    shownChanged();
   };
+}
+
+function subscribeShown(listener: () => void) {
+  shownListeners.add(listener);
+  return () => void shownListeners.delete(listener);
+}
+
+/** Whether this page shows any of a deleted item's documents' stored edits
+ * yet: a room or session draws them after the page reads `kept`, and until
+ * then a Download would draw nothing. */
+export function useShowsDeleted(target: DeletedTarget | null) {
+  return useSyncExternalStore(
+    subscribeShown,
+    () => !!target?.keys.some((key) => shownHere.has(key))
+  );
+}
+
+/** The rows this page shows of a deleted item's documents, by key, matched
+ * by id and seq as Reload matches them (`shownRows`): what its strip's and
+ * its ⋮'s Download draw (`downloadShownEdits`). A document it shows nothing of
+ * gives none. */
+export async function shownDeletedRows(
+  target: DeletedTarget
+): Promise<Record<string, EditDraft[]>> {
+  const rows: Record<string, EditDraft[]> = {};
+  for (const key of target.keys) {
+    const shown = shownHere.get(key);
+    rows[key] = shown ? shownRows(await readDrafts(key), shown) : [];
+  }
+  return rows;
 }
 
 /** Reports a deleted item's discarded edits. */

@@ -27,7 +27,7 @@ const store = vi.hoisted(() => ({
   released: [] as string[],
   rows: new Map<string, unknown[]>(),
 }));
-vi.mock('@/lib/editDrafts', () => ({
+vi.mock('@/lib/editDrafts', async (load) => ({
   deleteShownDrafts: vi.fn(async (key: string, shown: unknown) => {
     store.deletedShown.push({ key, shown });
     return 5;
@@ -55,6 +55,7 @@ vi.mock('@/lib/editDrafts', () => ({
     if (store.failing) throw new Error('storage gone');
     return store.rows.get(key) ?? [];
   },
+  shownRows: (await load<typeof import('@/lib/editDrafts')>()).shownRows,
 }));
 vi.mock('@/components/ui/userToast', () => ({
   dismissToast: (id: string) => store.dismissed.push(id),
@@ -66,10 +67,12 @@ vi.mock('@/lib/editIncidents', () => ({
 }));
 // A note's drawing: its first row, shown.
 const NOTE = [{ children: [{ text: 'Kept to copy.' }], type: 'p' }];
-// Whether the offered drafts make a file.
+// Whether the offered drafts make a file; the files saved.
 const drawable = vi.hoisted(() => ({ value: true }));
+const saveShownEdits = vi.hoisted(() => vi.fn());
 vi.mock('./deletedEditsFile', () => ({
   canSaveDeletedEdits: async () => drawable.value,
+  saveShownEdits,
 }));
 vi.mock('./deletedNote', () => ({
   deletedNote: (rows: unknown[]) =>
@@ -78,12 +81,10 @@ vi.mock('./deletedNote', () => ({
 
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { deletedTarget, reloadDeleted, useDeletedEdits } = await import(
-  './lostEdits'
-);
-const { discardDeletedEdits, offerDeletedEdits } = await import(
-  './deletedEditsToast'
-);
+const { deletedTarget, reloadDeleted, useDeletedEdits, useShowsDeleted } =
+  await import('./lostEdits');
+const { discardDeletedEdits, downloadShownEdits, offerDeletedEdits } =
+  await import('./deletedEditsToast');
 const { deleteUnheldDrafts } = await import('@/lib/editDrafts');
 const { userToast } = await import('@/components/ui/userToast');
 const { m } = await import('@/i18n');
@@ -103,13 +104,15 @@ afterEach(() => vi.clearAllMocks());
 
 type State = ReturnType<typeof useDeletedEdits>;
 
-/** The hook on a page showing `id`, deleted; resolves its settled state and
- * the page's unmount. */
+/** The hook on a page showing `id`, deleted; resolves its settled state,
+ * whether it shows edits to download, and the page's unmount. */
 async function shown(id: string, kind: 'note' | 'quiz') {
   const target = deletedTarget('u', false, id, kind === 'quiz');
   const states: State[] = [];
+  let shows = false;
   function Page() {
     states.push(useDeletedEdits(target, true, kind === 'note'));
+    shows = useShowsDeleted(target);
     return null;
   }
   const root = createRoot(document.getElementById('root') as never);
@@ -117,16 +120,18 @@ async function shown(id: string, kind: 'note' | 'quiz') {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  return { root, state: states.at(-1), target };
+  return { root, shows, state: states.at(-1), target };
 }
 
 // Q39: a page showing a deleted quiz holds both its documents, the edits'
 // one owner, and an offer of them already on screen goes; it keeps the quiz
-// on screen while edits are stored, and lets go when the page goes.
+// on screen while edits are stored, and lets go when the page goes. Until its
+// room draws them, it has nothing to download (review 2026-11-20).
 it("holds a deleted item's documents while it shows its stored edits", async () => {
   store.rows.set('u:material:q:keys', [{ id: 'k' }]);
-  const { root, state } = await shown('q', 'quiz');
+  const { root, shows, state } = await shown('q', 'quiz');
   expect(state).toEqual({ status: 'kept' });
+  expect(shows).toBe(false);
   expect(store.held).toEqual(['u:material:q', 'u:material:q:keys']);
   expect(store.dismissed).toEqual(['deleted-edits-material-q']);
   await act(async () => root.unmount());
@@ -139,8 +144,9 @@ it("holds a deleted item's documents while it shows its stored edits", async () 
 it('draws a deleted note, and its Reload deletes only what it shows', async () => {
   const row = { id: 's:state' };
   store.rows.set('u:material:n', [row, { id: 'piece' }]);
-  const { root, state, target } = await shown('n', 'note');
+  const { root, shows, state, target } = await shown('n', 'note');
   expect(state).toEqual({ note: NOTE, status: 'kept' });
+  expect(shows).toBe(true);
   reloadDeleted(target!);
   await vi.waitFor(() => expect(reload).toHaveBeenCalled());
   expect(store.deletedShown).toEqual([
@@ -209,3 +215,43 @@ it.each([
     expect(toast.button?.label).toBe(makes ? m.action_download() : undefined);
   }
 );
+
+// Epo 2026-11-20: the open page's Download (its strip, its ⋮) saves the file
+// from the rows it shows, matched by id and seq as Reload matches them (a row
+// rewritten since is not drawn), a note's ⋮ also as Word, and deletes
+// nothing; a file that could not be made says so.
+it('downloads what the open page shows and deletes nothing', async () => {
+  const row = { id: 's:state', seq: 1 };
+  store.rows.set('u:material:n', [row, { id: 'since', seq: 1 }]);
+  const { root, target } = await shown('n', 'note');
+  const item = { kind: 'note' as const, name: 'Cell notes' };
+  const destroy = vi.fn();
+  saveShownEdits.mockResolvedValueOnce(
+    new Map([['u:material:n', { doc: { destroy } }]])
+  );
+  await downloadShownEdits(target!, item, 'docx');
+  expect(saveShownEdits).toHaveBeenCalledWith(
+    { ...target, item },
+    { 'u:material:n': [row] },
+    'docx'
+  );
+  expect(destroy).toHaveBeenCalled();
+  expect(store.deletedShown).toEqual([]);
+  expect(deleteUnheldDrafts).not.toHaveBeenCalled();
+
+  store.rows.set('u:material:n', [{ id: 's:state', seq: 2 }]);
+  saveShownEdits.mockRejectedValueOnce(new Error('no file'));
+  vi.spyOn(console, 'error').mockImplementationOnce(() => undefined);
+  await downloadShownEdits(target!, item);
+  expect(saveShownEdits).toHaveBeenLastCalledWith(
+    { ...target, item },
+    { 'u:material:n': [] },
+    undefined
+  );
+  expect(userToast).toHaveBeenCalledWith({
+    title: m.lost_edits_download_failed(),
+    variant: 'error',
+  });
+  expect(deleteUnheldDrafts).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});

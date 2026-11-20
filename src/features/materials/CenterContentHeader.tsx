@@ -357,6 +357,7 @@ export function Header({
   imageZoom,
   onImageZoomChange,
   isFullscreen,
+  deletedDownloads = [],
   onDeleted,
   onToggleFullscreen,
   editorStatus,
@@ -376,6 +377,9 @@ export function Header({
   oneColumn?: OneColumnChrome;
   /** Opened from the Trash: its trashed read is what shows. */
   trashed?: boolean;
+  /** Deleted while its page shows its unsent edits (Q39): ⋮'s downloads,
+   * made from what the page shows (Epo 2026-11-20). */
+  deletedDownloads?: MenuItem[];
   /** The open file's buttons a phone has no room for, first in ⋮ there
    * (Preview, Epo 2026-11-16; `usePhoneMenuItem`). */
   phoneItems?: MenuItem[];
@@ -527,17 +531,18 @@ export function Header({
         canClone={canClone}
         canMoveTo={canMoveTo}
         color={color}
-        // Deleted (Q39): nothing of the item's own (rename, move, share,
-        // download, delete) works against the server it is gone from.
         content={
-          deleted
-            ? undefined
-            : file
-              ? toFileActionTarget(file)
-              : material
-                ? toMaterialActionTarget(material)
-                : undefined
+          file
+            ? toFileActionTarget(file)
+            : material
+              ? toMaterialActionTarget(material)
+              : undefined
         }
+        // Deleted (Q39): nothing of the item's own that asks the server it is
+        // gone from (rename, move, share, clone, its download, delete);
+        // Properties from its last read and the page's own downloads stay
+        // (Epo 2026-11-20).
+        deletedDownloads={deleted ? deletedDownloads : undefined}
         display="menu"
         key={`${item.kind}:${item.id}`}
         leadingItems={[

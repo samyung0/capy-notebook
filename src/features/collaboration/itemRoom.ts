@@ -77,6 +77,7 @@ import {
   renameRefusal,
 } from './renameClient';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
+import { markRoomRefusal } from './roomRefusals';
 import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
 /* A live item's room (a flashcard set, a quiz's content or keys document;
@@ -454,8 +455,6 @@ export class ItemRoom {
   private readonly pending = new Map<string, number>();
   /** The mode of the eviction notice that came before a close. */
   private eviction: string | null = null;
-  /** Closed for this person's access change (4403), until it syncs again. */
-  private accessChanged = false;
   /** Stops waiting to start again after a first open that failed. */
   private waiting: (() => void) | null = null;
   /** The draft send of never-accepted stored steps (Q319, Q327, Q328). */
@@ -768,10 +767,9 @@ export class ItemRoom {
         this.delay.disconnected();
         this.set({ slowed: false });
         // This person's access changed, with no notice: a fresh token says
-        // what they have now. A demotion reads on; a removal is refused and
-        // stops at the token, keeping the page (Epo 2026-11-05).
+        // what they have now. A demotion reads on; a removal is refused at
+        // the token, and the page's read decides (Epo 2026-11-20).
         if (code === 4403) {
-          this.accessChanged = true;
           this.set({ stopped: true });
           this.rejoin();
           return;
@@ -820,7 +818,6 @@ export class ItemRoom {
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
-          this.accessChanged = false;
           if (this.snapshot.offline || this.heldEpisode)
             this.recorder?.connected();
           this.heldEpisode = false;
@@ -1933,13 +1930,17 @@ export class ItemRoom {
       this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
   }
 
-  /** A refusal not told as an access change may mean the item is gone: the
-   * page's read says, and a refused one ends what shows (Epo 2026-11-05, Q644). */
+  /** Refused, an access change (4403) included: the item may be gone or no
+   * longer this person's, so the page's reads say (a quiz's own read too),
+   * and a refused one ends what shows, saying they lost access when this
+   * room had joined (Epo 2026-11-20, narrowing Q644). */
   private refusedAccess() {
-    if (!this.accessChanged)
-      void queryClient.invalidateQueries({
-        queryKey: qk.material(this.materialId),
-      });
+    if (this.snapshot.synced) markRoomRefusal(false, this.materialId);
+    for (const queryKey of [
+      qk.material(this.materialId),
+      qk.quiz(this.materialId),
+    ])
+      void queryClient.invalidateQueries({ queryKey });
     this.unavailable();
   }
 

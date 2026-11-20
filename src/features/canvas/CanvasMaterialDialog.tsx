@@ -1,7 +1,12 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense } from 'react';
-import { qk } from '@/api/client';
+import { deletedItemOf, qk } from '@/api/client';
+import { materialQuery, quizQuery } from '@/api/hooks';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import {
+  isRefusedRead,
+  useAccessLostNotice,
+} from '@/features/collaboration/accessLostNotice';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import type { CardMaterialKind } from './materialCardHosts';
 
@@ -42,6 +47,7 @@ export function CanvasMaterialDialog({
   };
   return (
     <SimpleDialog onClose={close} open={!!material} title={material?.title}>
+      {material && <AccessLostNotice material={material} />}
       {material && (
         <Suspense fallback={<EmbedLoading />}>
           {/* As a canvas card's Edit: with no onEmpty a quiz may lose its last
@@ -51,4 +57,28 @@ export function CanvasMaterialDialog({
       )}
     </SimpleDialog>
   );
+}
+
+/** Kicked from the quiz or set the dialog edits (Epo 2026-11-20): its room
+ * refused this person, then the editor's read did too (`AppEmbedEdit`'s gate,
+ * which the room's refusal read again). The editor says it is unavailable;
+ * the toast says they lost access and the lists read again. Reads nothing
+ * itself. */
+function AccessLostNotice({ material }: { material: DialogMaterial }) {
+  const { error: quizError } = useQuery({
+    ...quizQuery(material.id),
+    enabled: false,
+  });
+  const { error: setError } = useQuery({
+    ...materialQuery(material.id),
+    enabled: false,
+  });
+  const error = material.kind === 'quiz' ? quizError : setError;
+  useAccessLostNotice(
+    false,
+    material.id,
+    isRefusedRead(error) && !deletedItemOf(error),
+    null
+  );
+  return null;
 }

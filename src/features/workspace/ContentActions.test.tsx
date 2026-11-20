@@ -213,3 +213,27 @@ describe('sharing an item with members', () => {
     vi.unstubAllGlobals();
   });
 });
+
+// Q39, Epo 2026-11-20: an item deleted while its page shows its unsent edits
+// keeps Properties and the page's own downloads, nothing that asks the server.
+it('keeps only Properties and the given downloads for a deleted item', () => {
+  const download = { label: 'Download what shows', onClick: () => undefined };
+  menus.length = 0;
+  renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <ContentActions
+        canClone
+        canMoveTo
+        content={file('docx', 'ready')}
+        deletedDownloads={[download]}
+        display="menu"
+        topics={[]}
+        workspaceId="ws_1"
+      />
+    </QueryClientProvider>
+  );
+  expect(menus[0]?.map((item) => item.label)).toEqual([
+    download.label,
+    m.content_properties(),
+  ]);
+});

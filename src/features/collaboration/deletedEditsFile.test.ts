@@ -9,7 +9,11 @@ import {
   seedQuiz,
 } from '@/features/quizzes/liveQuiz';
 import type { DeletedDrafts, EditDraft } from '@/lib/editDrafts';
-import { canSaveDeletedEdits, saveDeletedEdits } from './deletedEditsFile';
+import {
+  canSaveDeletedEdits,
+  saveDeletedEdits,
+  saveShownEdits,
+} from './deletedEditsFile';
 
 // The stored rows by document, and what was saved: no server is asked.
 const stored = vi.hoisted(() => ({
@@ -27,16 +31,19 @@ vi.mock('@/features/notes/documentAdapters', () => ({
   downloadEditorFile: (blob: Blob, name: string) =>
     stored.saved.push({ blob, name }),
 }));
-// The export worker's Markdown, run in this process.
+// The export worker's Markdown, run in this process; a Word export is the
+// same text under its extension.
 vi.mock('@/features/notes/export/client', async (load) => {
   const { exportLabels } =
     await load<typeof import('@/features/notes/export/client')>();
   const { renderExport } = await import('@/features/notes/export/render');
   return {
     runExportWorker: async ({
+      format,
       noteUrl,
       value,
     }: {
+      format: 'markdown' | 'docx';
       noteUrl: string;
       value: Parameters<typeof renderExport>[0];
     }) => {
@@ -48,7 +55,10 @@ vi.mock('@/features/notes/export/client', async (load) => {
         noteUrl,
         () => Promise.reject(new Error('no figures here'))
       );
-      return { blob: new Blob([content]), extension: 'md' };
+      return {
+        blob: new Blob([content]),
+        extension: format === 'docx' ? 'docx' : 'md',
+      };
     },
   };
 });
@@ -142,6 +152,33 @@ it('saves a note as Markdown, with what the server holds as lines saying it is n
   expect(text).toContain('Mitosis splits a nucleus.');
   expect(text).toContain('Image not included');
   expect(text).toContain('Quiz not included');
+});
+
+// Epo 2026-11-20: the open page's ⋮ also saves a deleted note as Word, from
+// the rows the page shows.
+it('saves a shown note as Word when asked', async () => {
+  const doc = new Y.Doc();
+  doc
+    .get('content', Y.XmlText)
+    .applyDelta(
+      slateNodesToInsertDelta([
+        { children: [{ text: 'Kept to copy.' }], type: 'p' },
+      ] as never),
+      { sanitize: false }
+    );
+  await saveShownEdits(
+    {
+      file: false,
+      id: 'n',
+      item: { kind: 'note', name: 'Cell notes' },
+      keys: ['u:material:n'],
+    },
+    { 'u:material:n': [stateRow('u:material:n', doc)] },
+    'docx'
+  );
+  const { name, text } = await saved();
+  expect(name).toBe('Cell notes (unsaved edits).docx');
+  expect(text).toContain('Kept to copy.');
 });
 
 it("saves a quiz's questions with its keys' edits as JSON", async () => {

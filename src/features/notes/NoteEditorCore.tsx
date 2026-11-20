@@ -74,6 +74,7 @@ import {
   type PresenceStore,
 } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
+import { markRoomRefusal } from '@/features/collaboration/roomRefusals';
 import { limitUndo } from '@/features/collaboration/undo';
 import type {
   MaterialDocument,
@@ -847,8 +848,6 @@ export function NoteEditorCore({
   const [outdated, setOutdated] = useState(false);
   // The room refused this person on rejoining.
   const [accessLost, setAccessLost] = useState(false);
-  // Closed for this person's access change (4403), until it syncs again.
-  const accessChanged = useRef(false);
   const stale = useRef(false);
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
@@ -1616,10 +1615,13 @@ export function NoteEditorCore({
             void recorder.current?.discard();
           }
         }
-        // Not told as an access change, it may be gone: the page's read says,
-        // and a refused one ends what shows (Epo 2026-11-05, Q644).
-        if (!accessChanged.current)
-          void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+        // Gone or no longer theirs, an access change (4403) included: the
+        // page's read says, and a refused one ends what shows, saying they
+        // lost access when the room had joined (Epo 2026-11-20, narrowing
+        // Q644).
+        if (hasSynced.current && refusal !== 'deleted')
+          markRoomRefusal(false, material.id);
+        void qc.invalidateQueries({ queryKey: qk.material(material.id) });
         // The note stays as it is, read-only under a strip (Epo 2026-11-05):
         // nothing rejoins, and it has no save status.
         stale.current = true;
@@ -1660,8 +1662,7 @@ export function NoteEditorCore({
       return token.token;
     };
     // The service closed the room on the open socket: the reconnector rejoins.
-    const roomClosed = ({ code }: { code: number }) => {
-      if (code === 4403) accessChanged.current = true;
+    const roomClosed = () => {
       roomSynced.current = false;
       markSlowed(false);
       reconnector.current?.closed(
@@ -1699,7 +1700,6 @@ export function NoteEditorCore({
           },
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
-            if (isSynced) accessChanged.current = false;
             // A bind Plate tried before the first sync happens now.
             if (isSynced) {
               reportJoinFailed.current?.(false);

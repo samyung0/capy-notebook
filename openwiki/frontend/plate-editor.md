@@ -1474,9 +1474,28 @@ under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) keep the page, a reader's as it was and
-an editor's read-only under the "You no longer have access" strip; with no 4403
-close before it the page asks for its read, and a refused read shows "This item
-is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)).
+an editor's read-only under the "You no longer have access" strip, and the
+page asks for its read, after a 4403 close too (Epo 2026-11-20, "the page
+should itself refetch and show the 404 error", narrowing Q644): a refused read
+shows "This item is unavailable" (see
+[authorization](../authorization-permissions-lifecycles.md)), a read that
+still answers keeps the strip, and a demotion (a read token) is unchanged.
+When a room that had joined refused them first (an editor's or a reader's
+room, any kind: notes, quizzes, sets, diagrams, canvases, Office and text
+files; `markRoomRefusal` in `roomRefusals.ts`, which marks only an item a page
+watches, so an embed's or a card's room marks nothing, and the mark goes with
+the page), that page also shows an error toast titled "You no longer have
+access" with no body, once per item, under the one id `access-lost` the
+workspace's removal toast has too, and the lists showing the item read again
+(its workspace's Files panel tree, the Files page, Recent, block, canvas,
+Study and Continue lists), since the tree event hiding or unsharing raises
+refetches only the open workspace's file, material, topic and canvas lists,
+and a removed member's page shows the workspace unavailable (Epo 2026-11-20,
+`useAccessLostNotice` in `accessLostNotice.ts`, used by `CenterContent`, a
+canvas's board and the account Canvas page's quiz or set dialog). A kicked
+canvas's board goes for the unavailable panel and its picker, read again,
+shows another canvas; edits it shows to copy stay whatever the read says. An
+item simply opened unavailable, or one deleted, says nothing more.
 The service's not found alone, an item room's or a source's, and a source
 save failing `lostAccess: "not_found"` (a trash only queues the room's
 eviction, so a save may land first) ask a fresh token first (review
@@ -2610,14 +2629,29 @@ canvases as their recovery view's (`ItemRecovery.deleted`, drawn the same
 way); a quiz's writer keeps its keys room while a fresh token is asked, so
 edits to its keys alone show beside its questions as last read. While
 deleted, nothing that writes or needs the server stays: the View/Edit
-toggles, a note's Preview and ⋮ item actions (rename, move, share, download,
-delete), a quiz's or set's Practice.
+toggles, a note's Preview, the ⋮ item actions that ask the server (rename,
+move, Shared with members, clone, its usual download, delete), a quiz's or
+set's Practice. The ⋮ keeps Properties, from the item's last read, and
+downloads made from what the page shows (Epo 2026-11-20): a note's Download
+Markdown and Download Word, an Office or text file's Download, each the
+strip's file; other kinds have none there. The deleted strip has Download
+beside Reload for every kind (`DeletedDownload` in `SaveBanner`, Office's in
+its frame, a canvas's on its board's strip): the toast's file
+(`saveShownEdits`) from the rows the page shows (`shownDeletedRows`, matched
+by id and seq as Reload matches them), deleting nothing, so Reload still ends
+them; a file that cannot be made says "Your edits couldn't be downloaded.
+They're kept on this device.". The strip's Download and the ⋮ entries show
+once the room, session or note drawing shows the edits
+(`useShowsDeleted`), before which they would draw nothing. A canvas's board
+menu keeps its Download as image of the board shown, and Office its menu
+bar's Download of the open document.
 
 What shows, what Download writes and what Reload deletes come from one
 drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
 lineage and base, a board's hidden edits from Q33 always a group of their
 own, since they copy the early board with what still showed deleted), and
-Reload or Download deletes the rows of that group as drawn (by id and seq);
+Reload or the toast's Download deletes the rows of that group as drawn (by id
+and seq; the open page's Download deletes none);
 an open session's own document deletes the rows it holds. Rows of another
 group, another tab's lineage, an older base or an unreviewed piece stay and
 come back as the next page load's toast. The toast acts on the rows it

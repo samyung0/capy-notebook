@@ -235,6 +235,78 @@ test('a note deleted by another person while open keeps its unsent edits on scre
   await expect(toast(page, 'Scenario note')).toHaveCount(0);
 });
 
+/** The text of a saved .docx. */
+async function docxText(path: string) {
+  const zip = unzipSync(new Uint8Array(await readFile(path)));
+  return strFromU8(zip['word/document.xml']).replace(/<[^>]+>/g, '');
+}
+
+// Epo 2026-11-20: the deleted strip downloads what shows beside its Reload, as
+// the toast's file, and the header's ⋮ keeps Properties and the page's own
+// downloads (a note's Markdown and Word); none of them deletes anything.
+test('a note deleted while open downloads what shows from its strip and its ⋮, and keeps Properties', async ({
+  page,
+}) => {
+  test.slow();
+  await typeOffline(page, ' Kept to copy.');
+  await deleteItem(page, NOTE, 'note', 'Scenario note');
+  await setReachable(page, true);
+  const strip = page.getByTestId('save-banner');
+  await expect(strip).toHaveAttribute('data-kind', 'deleted', {
+    timeout: 30_000,
+  });
+  await expect(page.getByText(`${SEED} Kept to copy.`)).toBeVisible();
+  await shot(page, 'strip-download');
+
+  const markdown = page.waitForEvent('download');
+  await strip.getByRole('button', { name: m.action_download() }).click();
+  const md = await markdown;
+  expect(md.suggestedFilename()).toBe(
+    `Scenario note (${m.lost_edits_file()}).md`
+  );
+  expect(await readFile(await md.path(), 'utf8')).toContain(
+    `${SEED} Kept to copy.`
+  );
+  await expect(strip).toHaveAttribute('data-kind', 'deleted');
+  expect(await storedRows(page, NOTE)).toBeGreaterThan(0);
+
+  const menu = page
+    .getByTestId('content-header')
+    .getByRole('button', { name: m.a11y_open_menu() });
+  await menu.click();
+  const word = page.getByRole('menuitem', { name: m.action_download_docx() });
+  await expect(word).toBeVisible();
+  await expect(
+    page.getByRole('menuitem', { name: m.action_download_markdown() })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('menuitem', { name: m.content_properties() })
+  ).toBeVisible();
+  for (const gone of [m.action_rename(), m.action_delete()])
+    await expect(page.getByRole('menuitem', { name: gone })).toHaveCount(0);
+  if (shots) {
+    // Past the menu's entrance.
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `${shots}/menu.png` });
+  }
+  const saving = page.waitForEvent('download');
+  await word.click();
+  const docx = await saving;
+  expect(docx.suggestedFilename()).toBe(
+    `Scenario note (${m.lost_edits_file()}).docx`
+  );
+  expect(await docxText(await docx.path())).toContain('Kept to copy.');
+
+  await menu.click();
+  await page.getByRole('menuitem', { name: m.content_properties() }).click();
+  const properties = page.getByRole('dialog').filter({
+    hasText: m.content_properties_title({ kind: m.common_material() }),
+  });
+  await expect(properties).toBeVisible();
+  await expect(properties).toContainText('Scenario note');
+  expect(await storedRows(page, NOTE)).toBeGreaterThan(0);
+});
+
 // Review 2026-11-20 (2): online, unacknowledged typing is update rows only,
 // which no drawing places without the room; the discard's notice writes the
 // whole document first, so the page's read, which says deleted before the
@@ -288,6 +360,8 @@ test('a note deleted by another person while open with nothing unsent says it is
     timeout: 30_000,
   });
   await expect(page.getByText(m.editor_deleted_strip())).toHaveCount(0);
+  // Deleted, not kicked: no lost-access toast (Epo 2026-11-20).
+  await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
 });
 
 // Review 2026-11-20: the creator trashing their own note in another tab is
@@ -423,6 +497,60 @@ test("a deleted canvas's Download saves its unsent strokes as a PNG", async ({
   await expect.poll(() => storedRows(page, CANVAS)).toBe(0);
 });
 
+// Epo 2026-11-20: a canvas deleted while open keeps its unsent strokes on
+// the board under the deleted strip, whose Download saves them as its board's
+// image, as the toast's does, and deletes nothing.
+test('a canvas deleted while open downloads its unsent strokes from its strip and keeps them', async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto(`${WORKSPACE}?view=canvas`);
+  await page.waitForFunction(() => (window as { __board?: unknown }).__board);
+  await page.addStyleTag({
+    content: '[data-testid="mock-scenario-panel"] { display: none; }',
+  });
+  const socket = (up: boolean) =>
+    page.evaluate(
+      async ([id, back]) => {
+        const path = '/src/mocks/collaboration.ts';
+        const { mockBoardSocket } = (await import(path)) as Collaboration;
+        mockBoardSocket(id, back);
+      },
+      [CANVAS, up] as const
+    );
+  // The tab's socket down: the stroke stays on this device.
+  await socket(false);
+  await page.locator('edgeless-pen-tool-button').first().click();
+  const box = await page.locator('affine-edgeless-root').boundingBox();
+  if (!box) throw new Error('no board');
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step++)
+    await page.mouse.move(
+      box.x + box.width * (0.4 + step * 0.02),
+      box.y + box.height * (0.4 + step * 0.01)
+    );
+  await page.mouse.up();
+  await expect.poll(() => storedRows(page, CANVAS)).toBeGreaterThan(0);
+  await deleteItem(page, CANVAS, 'canvas', 'Lab board');
+  await socket(true);
+
+  const strip = page.locator('[data-canvas-strip]');
+  await expect(strip).toContainText(m.editor_deleted_strip(), {
+    timeout: 30_000,
+  });
+  await shot(page, 'canvas-strip-download');
+  const saving = page.waitForEvent('download');
+  await strip.getByRole('button', { name: m.action_download() }).click();
+  const file = await saving;
+  // Named as the page names the canvas.
+  expect(file.suggestedFilename()).toBe(
+    `User scenarios (${m.lost_edits_file()}).png`
+  );
+  await expect(strip).toContainText(m.editor_deleted_strip());
+  expect(await storedRows(page, CANVAS)).toBeGreaterThan(0);
+});
+
 const DOCX = 'mock-scenario-docx';
 const DOCX_NAME = 'Scenario document.docx';
 
@@ -479,6 +607,30 @@ test('a DOCX deleted while open keeps its unsent edits under the deleted strip, 
   await expect.poll(() => storedRows(page, DOCX, 'file')).toBe(0);
 });
 
+// Epo 2026-11-20: the strip's Download in the frame saves the toast's .docx
+// and deletes nothing.
+test('a DOCX deleted while open downloads its unsent edits from its strip and keeps them', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await typeDocxOffline(page, ' Kept to copy.');
+  await deleteItem(page, DOCX, 'doc', DOCX_NAME);
+  await setOnline(page, true);
+  const strip = officeFrame(page).getByTestId('save-banner');
+  await expect(strip).toHaveAttribute('data-kind', 'deleted', {
+    timeout: 60_000,
+  });
+  const saving = page.waitForEvent('download');
+  await strip.getByRole('button', { name: m.action_download() }).click();
+  const file = await saving;
+  expect(file.suggestedFilename()).toBe(
+    `Scenario document (${m.lost_edits_file()}).docx`
+  );
+  expect(await docxText(await file.path())).toContain('Kept to copy.');
+  await expect(strip).toHaveAttribute('data-kind', 'deleted');
+  expect(await storedRows(page, DOCX, 'file')).toBeGreaterThan(0);
+});
+
 // Review 2026-11-20: the toast's Download writes a real .docx, the editor's
 // export over the base the edits grew from.
 test("a deleted DOCX's Download saves its unsent edits as a .docx", async ({
@@ -500,9 +652,9 @@ test("a deleted DOCX's Download saves its unsent edits as a .docx", async ({
   expect(file.suggestedFilename()).toBe(
     `Scenario document (${m.lost_edits_file()}).docx`
   );
-  const zip = unzipSync(new Uint8Array(await readFile(await file.path())));
-  const text = strFromU8(zip['word/document.xml']).replace(/<[^>]+>/g, '');
-  expect(text).toContain('Typed before the delete.');
+  expect(await docxText(await file.path())).toContain(
+    'Typed before the delete.'
+  );
   await expect.poll(() => storedRows(page, DOCX, 'file')).toBe(0);
 });
 

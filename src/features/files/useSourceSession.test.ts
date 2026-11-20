@@ -343,38 +343,34 @@ describe('an Office edit session opening while its base downloads', () => {
     expect(recorder.discard).toHaveBeenCalled();
   });
 
-  // Epo 2026-11-05 (Q644): it may be gone, so the file's read says.
-  it('asks for the read when refused with no access change first', async () => {
-    const { options } = await open({ ...SESSION, access: 'write' });
-    options.onSynced?.({ state: true });
-    invalidateQueries.mockClear();
-    options.onAuthenticationFailed?.({
-      reason: COLLABORATION_NOT_FOUND_REASON,
-    });
-    await vi.waitFor(() =>
-      expect(invalidateQueries).toHaveBeenCalledWith({
-        queryKey: qk.file(SESSION.fileId),
-      })
-    );
-    expect(render().unavailable).toBeNull();
-  });
-
-  it('asks for no read when told its access changed', async () => {
-    const { options } = await open({ ...SESSION, access: 'write' });
-    options.onSynced?.({ state: true });
-    invalidateQueries.mockClear();
-    options.onClose?.({ code: 4403, reason: 'collaboration access changed' });
-    options.onAuthenticationFailed?.({
-      reason: COLLABORATION_NOT_FOUND_REASON,
-    });
-    await vi.waitFor(() =>
+  // Epo 2026-11-05 (Q644): it may be gone, so the file's read says; told its
+  // access changed (4403) too (Epo 2026-11-20, "the page should itself
+  // refetch and show the 404 error"). Meanwhile it stays under the strip.
+  it.each([false, true])(
+    'asks for the read when refused (access change first: %s)',
+    async (changed) => {
+      const { options } = await open({ ...SESSION, access: 'write' });
+      options.onSynced?.({ state: true });
+      invalidateQueries.mockClear();
+      if (changed)
+        options.onClose?.({
+          code: 4403,
+          reason: 'collaboration access changed',
+        });
+      options.onAuthenticationFailed?.({
+        reason: COLLABORATION_NOT_FOUND_REASON,
+      });
+      await vi.waitFor(() =>
+        expect(invalidateQueries).toHaveBeenCalledWith({
+          queryKey: qk.file(SESSION.fileId),
+        })
+      );
       expect(render()).toMatchObject({
         banner: 'access-lost',
         unavailable: null,
-      })
-    );
-    expect(invalidateQueries).not.toHaveBeenCalled();
-  });
+      });
+    }
+  );
 
   // Review 2026-11-20 (3): a trashed file's session read may answer 404
   // before its token's 410; a fresh token decides before anything goes.

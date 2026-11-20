@@ -397,7 +397,7 @@ test('the keyboard and a drag move nothing on a board that takes no edits', asyn
     await page.evaluate(() => (window as Shown).peer?.elements().from.xywh)
   ).toBe('[0,0,100,100]');
 
-  // An editor's board, locked once their access is taken back.
+  // An editor's board, locked once their account freezes.
   const edited = await memberCanvas(page, 'editor', 'Field notes');
   await switchTo(page, 'Lab diagrams', 'Field notes');
   await expect(page).toHaveURL(new RegExp(`c=${edited}`));
@@ -405,9 +405,11 @@ test('the keyboard and a drag move nothing on a board that takes no edits', asyn
   await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
   await drawStroke(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
+  // Saved first: a read channel keeps only what the room holds.
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
   await keep(page);
-  await room(page, 'mockRevokeBoard', edited);
-  await expect(page.getByText('You no longer have access')).toBeVisible();
+  await narrow(page, edited, 'frozen');
+  await expect(strip(page)).toContainText('This file is read-only now.');
   const locked = await documentOf(page);
   expect(await nudgeAll(page)).toBe(1);
   expect(await documentOf(page)).toBe(locked);
@@ -625,7 +627,11 @@ test("an image pasted into a note's text is stored before it lands too, and land
   await leaveWhileStoring(page, held);
 });
 
-test('an editor whose access is taken back keeps the board as it was, read-only, where they were looking', async ({
+// Epo 2026-11-20 ("the page should itself refetch and show the 404 error"):
+// an editor whose access is taken back is kicked. The room's refusal reads
+// the canvas again, refused too: the board goes, a toast says they lost
+// access, and the picker, read again, lists it no more and shows another.
+test('an editor whose access is taken back is told so, and the canvas leaves the picker', async ({
   page,
 }) => {
   test.slow();
@@ -636,43 +642,28 @@ test('an editor whose access is taken back keeps the board as it was, read-only,
   await switchTo(page, 'Biology 101', 'Lab diagrams');
   await expect(page).toHaveURL(new RegExp(`c=${theirs}`));
   await boardShown(page);
-  const pen = page.locator('edgeless-pen-tool-button').first();
-  await expect(pen).toBeVisible();
   await drawStroke(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
-  // Somewhere of their own to look.
-  await page.mouse.move(600, 300);
-  await page.keyboard.down('Control');
-  await page.mouse.wheel(0, -300);
-  await page.keyboard.up('Control');
-  await page.mouse.wheel(120, 80);
-  await page.waitForTimeout(400);
-  const before = await viewOf(page);
-  await keep(page);
+  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
 
   await room(page, 'mockRevokeBoard', theirs);
-  await expect(page.getByText('You no longer have access')).toBeVisible();
-  // The same board, at the same view, with the stroke, and no tools.
-  await expect(pen).toBeHidden();
-  expect(await kept(page)).toBe(true);
-  expect(await viewOf(page)).toEqual(before);
-  expect(await drawn(page)).toEqual(['brush']);
-  // A drag draws nothing now.
-  const box = await page.locator('affine-edgeless-root').boundingBox();
-  if (!box) throw new Error('no board');
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.6);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.7, {
-    steps: 5,
-  });
-  await page.mouse.up();
-  expect(await drawn(page)).toEqual(['brush']);
-  // Closed, the strip leaves nothing over the board, which stays as it is.
-  const strip = page.locator('[data-canvas-strip]');
-  await expect(strip).toBeVisible();
-  await strip.getByRole('button', { name: 'Close' }).click();
-  await expect(strip).toBeHidden();
-  await expect(pen).toBeHidden();
+  const toast = page
+    .getByRole('alert')
+    .filter({ hasText: 'You no longer have access' });
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  await expect(page).not.toHaveURL(new RegExp(`c=${theirs}`));
+  await expect(picker(page, 'Biology 101')).toBeVisible();
+  await expect(strip(page)).toHaveCount(0);
+  await expect(toast).toHaveCount(1);
+  await expect(page.locator('.tst-count')).toHaveCount(0);
+  await picker(page, 'Biology 101').click();
+  const listed = page.locator('[data-slot=popover-content]');
+  await expect(
+    listed.getByRole('button', { name: 'Biology 101' })
+  ).toBeVisible();
+  await expect(
+    listed.getByRole('button', { name: 'Lab diagrams' })
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

@@ -6,6 +6,7 @@ import {
 import { useNavigate } from '@tanstack/react-router';
 import {
   type ComponentProps,
+  createContext,
   lazy,
   type ReactNode,
   Suspense,
@@ -17,6 +18,7 @@ import {
   useState,
 } from 'react';
 import {
+  type DeletedItem,
   deletedItemOf,
   isApiError,
   isMaterialContentUnreadable,
@@ -43,7 +45,7 @@ import type {
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { DeletedDownload, SaveBanner } from '@/components/banners/SaveBanner';
 import { PageButton } from '@/components/ui/Button';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
@@ -51,6 +53,11 @@ import type { MenuItem } from '@/components/ui/Menu';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import {
+  isRefusedRead,
+  useAccessLostNotice,
+} from '@/features/collaboration/accessLostNotice';
+import { downloadShownEdits } from '@/features/collaboration/deletedEditsToast';
 import {
   copyLabel,
   dropDeletedCopies,
@@ -61,9 +68,11 @@ import {
   useRoomSeed,
 } from '@/features/collaboration/deviceCopy';
 import {
+  type DeletedTarget,
   deletedTarget,
   reloadDeleted,
   useDeletedEdits,
+  useShowsDeleted,
 } from '@/features/collaboration/lostEdits';
 import {
   createPresenceStore,
@@ -99,6 +108,7 @@ import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import type { ExportFormat } from '@/features/notes/export/render';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import {
   QuizEditor,
@@ -225,6 +235,19 @@ export function CenterContent({
   const setPresence = presence.getState().report;
   // An Office file's menus reached the header: its second row shows.
   const [menuShown, setMenuShown] = useState(false);
+  // A deleted item whose unsent edits the body shows: its strip's and ⋮'s
+  // Download (Epo 2026-11-20).
+  const [shownDeleted, setShownDeleted] = useState<ShownDeleted | null>(null);
+  const stripDownload = useMemo(
+    () =>
+      shownDeleted &&
+      (() => void downloadShownEdits(shownDeleted.target, shownDeleted.item)),
+    [shownDeleted]
+  );
+  const deletedDownloads = useMemo(
+    () => deletedMenuItems(shownDeleted),
+    [shownDeleted]
+  );
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);
@@ -292,6 +315,7 @@ export function CenterContent({
                         <div className={isFullscreen ? 'hidden' : 'contents'}>
                           <Header
                             color={color}
+                            deletedDownloads={deletedDownloads}
                             editorStatus={editorStatus}
                             fileActions={
                               <span
@@ -332,52 +356,56 @@ export function CenterContent({
                           />
                         </div>
                         {/* One strip at a time under the header: the newest shows. */}
-                        <BannerStack key={item.id}>
-                          {trash && (
-                            <TrashBanner
-                              item={item}
-                              trash={trash}
-                              workspaceId={workspaceId}
-                            />
-                          )}
-                          <div
-                            className={cn(
-                              'relative min-h-0 flex-1',
-                              item.kind === 'file'
-                                ? 'flex flex-col overflow-hidden'
-                                : 'overflow-auto'
-                            )}
-                          >
-                            {item.kind === 'material' && (
-                              <MaterialBody
-                                allowExternalAssets={!readOnly}
-                                centerQuiz={!standalone}
-                                citation={item.citation}
-                                key={item.id}
-                                materialId={item.id}
-                                onEditorStatusChange={setEditorStatus}
-                                onPresenceChange={setPresence}
-                                readOnly={readOnly}
-                                target={item.target}
-                                trashed={trashed}
-                                workspaceId={workspaceId}
-                              />
-                            )}
-                            {item.kind === 'file' && (
-                              <FileBody
-                                citation={item.citation}
-                                color={color}
-                                fileId={item.id}
-                                imageZoom={imageZoom}
-                                key={item.id}
-                                onImageZoomChange={setImageZoom}
-                                page={item.page}
-                                regions={item.regions}
-                                trashed={trashed}
-                              />
-                            )}
-                          </div>
-                        </BannerStack>
+                        <ShownDeletedContext.Provider value={setShownDeleted}>
+                          <DeletedDownload.Provider value={stripDownload}>
+                            <BannerStack key={item.id}>
+                              {trash && (
+                                <TrashBanner
+                                  item={item}
+                                  trash={trash}
+                                  workspaceId={workspaceId}
+                                />
+                              )}
+                              <div
+                                className={cn(
+                                  'relative min-h-0 flex-1',
+                                  item.kind === 'file'
+                                    ? 'flex flex-col overflow-hidden'
+                                    : 'overflow-auto'
+                                )}
+                              >
+                                {item.kind === 'material' && (
+                                  <MaterialBody
+                                    allowExternalAssets={!readOnly}
+                                    centerQuiz={!standalone}
+                                    citation={item.citation}
+                                    key={item.id}
+                                    materialId={item.id}
+                                    onEditorStatusChange={setEditorStatus}
+                                    onPresenceChange={setPresence}
+                                    readOnly={readOnly}
+                                    target={item.target}
+                                    trashed={trashed}
+                                    workspaceId={workspaceId}
+                                  />
+                                )}
+                                {item.kind === 'file' && (
+                                  <FileBody
+                                    citation={item.citation}
+                                    color={color}
+                                    fileId={item.id}
+                                    imageZoom={imageZoom}
+                                    key={item.id}
+                                    onImageZoomChange={setImageZoom}
+                                    page={item.page}
+                                    regions={item.regions}
+                                    trashed={trashed}
+                                  />
+                                )}
+                              </div>
+                            </BannerStack>
+                          </DeletedDownload.Provider>
+                        </ShownDeletedContext.Provider>
                       </div>
                     </PhoneMenuItems.Provider>
                   </FileMenuShown.Provider>
@@ -406,13 +434,63 @@ function listedKind(queryClient: QueryClient, id: string) {
   }
 }
 
-/** A read the server refused. A rate limit, a timeout or a server error says
- * nothing about the item: such a read could not answer. */
-const isRefusedRead = (error: unknown) =>
-  isApiError(error) &&
-  error.status < 500 &&
-  error.status !== 408 &&
-  error.status !== 429;
+/** A deleted item whose unsent edits the body shows (Q39): the header's ⋮
+ * and the deleted strip download what shows (Epo 2026-11-20). */
+interface ShownDeleted {
+  item: DeletedItem;
+  target: DeletedTarget;
+}
+
+const ShownDeletedContext = createContext<
+  ((shown: ShownDeleted | null) => void) | null
+>(null);
+
+/** Names the deleted item the body shows its unsent edits of, once its room,
+ * session or note drawing shows them (`useShowsDeleted`): before, a Download
+ * would draw nothing. */
+function useShowDeleted(
+  target: DeletedTarget | null,
+  item: DeletedItem | undefined
+) {
+  const set = useContext(ShownDeletedContext);
+  const drawn = useShowsDeleted(target);
+  const shown = drawn && target && item ? { item, target } : null;
+  const latest = useRef(shown);
+  latest.current = shown;
+  const key = shown
+    ? [target?.id, ...(target?.keys ?? []), item?.kind, item?.name].join('\n')
+    : '';
+  useEffect(() => {
+    if (!(set && key)) return;
+    set(latest.current);
+    return () => set(null);
+  }, [set, key]);
+}
+
+/** The header ⋮'s downloads of a deleted item's unsent edits, made from what
+ * the page shows, as its strip's Download (Epo 2026-11-20): a note's as
+ * Markdown and Word, a file's in its own format. Other kinds have no download
+ * in ⋮: their strip's, and a canvas's Download as image in its board menu. */
+function deletedMenuItems(shown: ShownDeleted | null): MenuItem[] {
+  if (!shown) return [];
+  const save = (format?: ExportFormat) => () =>
+    void downloadShownEdits(shown.target, shown.item, format);
+  if (shown.target.file)
+    return [{ icon: 'download', label: m.action_download(), onClick: save() }];
+  if (shown.item.kind !== 'note') return [];
+  return [
+    {
+      icon: 'download',
+      label: m.action_download_markdown(),
+      onClick: save('markdown'),
+    },
+    {
+      icon: 'download',
+      label: m.action_download_docx(),
+      onClick: save('docx'),
+    },
+  ];
+}
 
 const UNREADABLE_TITLES: Partial<Record<Material['kind'], () => string>> = {
   flashcards: m.material_decode_flashcards_title,
@@ -705,6 +783,16 @@ function MaterialContentBody({
     loaded?.kind === 'note' ? undefined : loaded,
     isStatic ? null : me?.id,
     copied
+  );
+  useShowDeleted(
+    deletedEdits?.status === 'kept' ? deletedDocs : null,
+    keptDeleted && { kind: keptDeleted.kind, name: keptDeleted.title }
+  );
+  useAccessLostNotice(
+    false,
+    materialId,
+    refused && !deleted,
+    shown?.workspaceId
   );
   const noteBody = (loaded: Material | undefined, editing: boolean) => (
     <NoteBody
@@ -1188,16 +1276,28 @@ function FileBody({
   const deleted = !!deletedItemOf(error) || (!trashed && !!read?.trash);
   const shownLive = useRef<SourceFile | undefined>(undefined);
   if (read && !deleted) shownLive.current = read;
+  const deletedDocs = deletedTarget(me?.id, true, fileId);
   const deletedEdits = useDeletedEdits(
-    deletedTarget(me?.id, true, fileId),
+    deletedDocs,
     deleted && !!shownLive.current
   );
   const kept =
     deleted && deletedEdits?.status !== 'none' ? shownLive.current : undefined;
   const file = kept ?? (deleted ? undefined : read);
+  const refused = isRefusedRead(error);
+  useShowDeleted(
+    deletedEdits?.status === 'kept' ? deletedDocs : null,
+    kept && { kind: kept.kind, name: kept.name }
+  );
+  useAccessLostNotice(
+    true,
+    fileId,
+    refused && !deleted,
+    shownLive.current?.workspaceId
+  );
   if (isLoading) return <FileLoading />;
   // A refusal ends what shows, as a material's does (Epo 2026-11-05).
-  if ((isRefusedRead(error) || deleted) && !kept) return <UnavailableItem />;
+  if ((refused || deleted) && !kept) return <UnavailableItem />;
   if (!file && isError)
     return (
       <FileError
