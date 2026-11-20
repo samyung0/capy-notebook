@@ -111,12 +111,13 @@ async function listed(actor: Actor, workspaceId: string) {
 /**
  * The next collaboration token the page's own client gets at `path`: `read`
  * is a 201 read token, `refused` a 404. `asked` tells an editor's request (its
- * own access) from a View's read channel (`{access: 'read'}`).
+ * own access) from a View's read channel (`{access: 'read'}`); `either` takes
+ * whichever comes.
  */
 function browserToken(
   page: Page,
   path: string,
-  asked: 'own' | 'read',
+  asked: 'own' | 'read' | 'either',
   outcome: 'read' | 'refused'
 ) {
   return page.waitForResponse(
@@ -125,7 +126,8 @@ function browserToken(
       if (
         request.method() !== 'POST' ||
         new URL(response.url()).pathname !== path ||
-        (request.postData() ?? '').includes('"read"') !== (asked === 'read')
+        (asked !== 'either' &&
+          (request.postData() ?? '').includes('"read"') !== (asked === 'read'))
       )
         return false;
       if (outcome === 'refused') return response.status() === 404;
@@ -388,11 +390,14 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   noteRooms.closes.length = 0;
   officeRooms.closes.length = 0;
 
-  // 2. Demoted to viewer: each open editor reconnects on a read token and
-  // drops to View under the read-only strip; the note's View joins its room
-  // on a read channel (on that reconnect's read token, Q618), so it follows
-  // the bystander's typing below. The member still reads but cannot write.
-  const noteReadOnly = browserToken(member.page, noteToken, 'own', 'read');
+  // 2. Demoted to viewer: each open editor drops to View under the read-only
+  // strip. The Office editor reconnects on a read token. The note's View
+  // joins its room on a read channel, so it follows the bystander's typing
+  // below: on the editor's reconnect read token when the room's close comes
+  // first (Q618), else on its own read-channel ask, when the workspace's
+  // re-read turns the page view-only first. The member still reads but cannot
+  // write.
+  const noteReadOnly = browserToken(member.page, noteToken, 'either', 'read');
   const officeReadOnly = browserToken(office.page, fileToken, 'own', 'read');
   expect(await changeMember(run, workspaceId, member, 'viewer')).toBe(204);
   await Promise.all([noteReadOnly, officeReadOnly]);
