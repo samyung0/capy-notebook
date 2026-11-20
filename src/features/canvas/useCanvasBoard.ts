@@ -108,8 +108,9 @@ export type CanvasBoardState = {
  * are kept on this device as any live item's are (`itemRoom.ts`), and sent on
  * the next open. A member's device keeps a copy of what the room confirmed
  * (`deviceCopy.ts`): the next open shows it at once, offline too, taking edits
- * when the copy says its person may edit; the join re-applies those under the
- * room's client id (`ItemRoom.reauthor`).
+ * when the copy says its person may edit; the join renames those to the
+ * room's client id in the same document, so the board never mounts again for
+ * it (`ItemRoom.rename`, Q38).
  *
  * The board is read-only for whoever the room gives a read channel (a
  * workspace viewer on a shared canvas, a frozen account, a payer at its
@@ -324,8 +325,7 @@ export function useCanvasBoard(
     (room && !refusedFirst && (snapshot.synced || seeded) ? room.doc : null);
   // Painted from the copy before the join, an editor's board takes edits
   // (Epo 2026-11-19, Q27 b1, Q31; `early`) unless the token said read; the
-  // join re-authors them onto the room's document, which the board then
-  // shows, mounted again where the person was looking.
+  // join renames them in place (Q38), the board as it is.
   const readOnly =
     !!trashDoc ||
     !!recovery ||
@@ -357,7 +357,6 @@ export function useCanvasBoard(
   // the view this device kept while it shows something (Epo 2026-11-19, Q32
   // and Q35), else it fits.
   const view = useRef<BoardView | null>(null);
-  const selection = useRef<string[]>([]);
   useEffect(() => {
     const host = container.current;
     if (!(host && doc && ready)) return;
@@ -393,7 +392,6 @@ export function useCanvasBoard(
         openPlane: latest.current.openPlane,
         readOnly: !tools,
         room: { doc },
-        selected: selection.current,
         title: () => title.current,
         view: view.current ?? undefined,
         workspace: latest.current.workspace,
@@ -413,17 +411,9 @@ export function useCanvasBoard(
     latest.current.onBoard?.(drawing);
     if (import.meta.env.DEV) Object.assign(window, { __board: drawing });
     const unkeep = keepViewOf(id, drawing);
-    // What the person has selected while the board takes edits, for one that
-    // replaces it (an early board's edits re-applied, Q31): locking a board
-    // clears its selection.
-    const presence = drawing.presence;
-    const unselect = presence?.onSelection(() => {
-      if (!locked.current) selection.current = [...presence.selected()];
-    });
     return () => {
       disposed = true;
       view.current = drawing.view() ?? view.current;
-      unselect?.();
       unkeep();
       latest.current.onBoard?.(null);
       drawing.unmount();
@@ -568,8 +558,9 @@ export function useCanvasBoard(
               }
             : snapshot.offline
               ? { kind: 'save', state: snapshot.offline }
-              : // The re-apply's merge code did not load (Q295, Q398): Retry,
-                // as a note's, after offline (Q420).
+              : // The early edits' flags could not be stored, or the merge
+                // that paints them did not load (Q295, Q398): Retry, as a
+                // note's, after offline (Q420).
                 snapshot.unloaded
                 ? {
                     kind: 'save',

@@ -11,6 +11,7 @@ import type {
   BoardTextPoint,
 } from '@/features/blocksuite/drawingBoard';
 import { presenceClients } from '@/features/collaboration/presence';
+import { renameClients } from '@/features/collaboration/renameClient';
 import { bytesToBase64 } from '@/lib/base64';
 import {
   type BoardPresence,
@@ -277,6 +278,21 @@ it('sends the selected elements, and a caret as soon as it is placed', () => {
   // More than 16 elements send none, as a note's runs.
   select(Array.from({ length: 17 }, (_, n) => `e${n}`));
   expect(state()).toEqual({ p: null });
+});
+
+it('sends the caret again after a rename of the early edits it names', () => {
+  vi.useFakeTimers();
+  const { at, awareness, doc, select, state, view } = board();
+  sendBoardPresence(view, awareness);
+  vi.advanceTimersByTime(50);
+  select(['note1'], { anchor: at(5), focus: at(5) });
+  vi.advanceTimersByTime(50);
+  renameClients(doc, [doc.clientID], 4242, {
+    history: new Set(),
+    painted: new Map(),
+  });
+  vi.advanceTimersByTime(50);
+  expect(resolveCaret(doc, state()?.s ?? '')).toMatchObject({ index: 5 });
 });
 
 it('draws a peer the room names: an outline, and a caret and range in text', () => {

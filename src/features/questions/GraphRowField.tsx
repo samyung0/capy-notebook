@@ -51,7 +51,7 @@ export function GraphRowField({
   useLayoutEffect(() => {
     let cancelled = false;
     let cleanup = () => {};
-    const mount = (Element: typeof MathfieldElement) => {
+    const mount = (Element: typeof MathfieldElement, focus = autoFocus) => {
       if (cancelled || !host.current) return;
       Element.fontsDirectory = '/mathlive/fonts';
       Element.soundsDirectory = null;
@@ -117,20 +117,20 @@ export function GraphRowField({
       element.setValue(initial.current, { silenceNotifications: true });
       field.current = element;
       callbacks.current.register(element);
-      if (autoFocus) element.focus();
+      if (focus) element.focus();
       // Keep the phone keyboard inside the dialog's focus boundary.
       const dialog = host.current.closest<HTMLElement>(
         '[data-slot="dialog-content"]'
       );
-      const focus = () => {
+      const keyboardIn = () => {
         window.mathVirtualKeyboard.container = dialog ?? document.body;
       };
-      element.addEventListener('focus', focus);
+      element.addEventListener('focus', keyboardIn);
       cleanup = () => {
         element.removeEventListener('input', input);
         element.removeEventListener('keydown', key, true);
         element.removeEventListener('move-out', moveOut);
-        element.removeEventListener('focus', focus);
+        element.removeEventListener('focus', keyboardIn);
         callbacks.current.register(null);
         element.remove();
         field.current = null;
@@ -139,13 +139,29 @@ export function GraphRowField({
     const registered = customElements.get('math-field') as
       | typeof MathfieldElement
       | undefined;
+    // MathLive's first field on the page loads it first: one that is to take
+    // focus takes it then only if the person did nothing meanwhile, so a
+    // menu they opened (the plane editor's More) stays open.
+    let focusLater = !!autoFocus;
+    const acted = () => {
+      focusLater = false;
+    };
+    const stopWatching = () => {
+      document.removeEventListener('pointerdown', acted, true);
+      document.removeEventListener('keydown', acted, true);
+    };
     if (registered) mount(registered);
-    else
-      import('mathlive').then(({ MathfieldElement }) =>
-        mount(MathfieldElement)
-      );
+    else {
+      document.addEventListener('pointerdown', acted, true);
+      document.addEventListener('keydown', acted, true);
+      import('mathlive').then(({ MathfieldElement }) => {
+        stopWatching();
+        mount(MathfieldElement, focusLater);
+      });
+    }
     return () => {
       cancelled = true;
+      stopWatching();
       cleanup();
     };
   }, []);

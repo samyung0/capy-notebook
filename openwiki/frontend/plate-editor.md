@@ -2739,7 +2739,12 @@ The editor stays mounted, joined and undoable behind it (its mounts hidden and `
 actions stay reachable (Review leaves Preview first), and it reads none of the editor's
 contexts. It draws `PaintedNote` from the editor's own value, so it reads no note body,
 opens offline and shows text not yet saved; images use the links the editor already holds
-(`resolvedAssetLinks.ts`). It
+(`resolvedAssetLinks.ts`). Its code is there once the editor is: the static renderer comes
+with the editor's chunk, and `loadEditor` (`NoteBody.tsx`) loads the question text editor
+beside it, which an embedded quiz's long answers take in Preview (`QuestionRunner` loads it
+with the first long answer anywhere else), so drawing it offline needs no chunk the
+editor did not bring; opening a drawing answer's board, a drawn sample or an HTML embed's
+source still loads its own. It
 redraws at most every 250 ms from the editor's value changes (`subscribeNoteValue`), which
 a collaborator's typing runs through too, and only changed blocks draw again. A room swap
 hands it the next editor without moving the reader.
@@ -5249,7 +5254,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `rowsAfterEdit`, no second syntax), laid out compact (36 px, 14 px text, 15 px
   formulas; kind icon as the field's label, ⋮ with style, Hide and Delete). Every row the dialog takes (a function with its
   restriction, an equation in x and y, a named point `A=(1,2)`, `segment(A, B)`, `line`, `circle`, `angle`, `arc`,
-  `sector`, `polygon`) is a MathLive field (loaded when the list first opens) that draws
+  `sector`, `polygon`) is a MathLive field (loaded when the list first opens; the row that
+  takes focus as it opens takes it once MathLive is in only if the person pressed nothing
+  meanwhile, so the More menu opened first stays open, `GraphRowField`) that draws
   as it's typed and writes on Enter or leaving, one undo step; emptied it goes. A point a
   tool places is a named `A = (a, b)` row; a line's or vector's `(a, b) to (c, d)` and a
   label's text are typed in place and written on change; curves, ellipses and formulas
@@ -5737,56 +5744,125 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       or 30 s unreachable with the API up) the document takes the id the token
       offers before its first edit (`adopt`): an id assigned to this user that no
       session bound yet, so the JOIN binds it as any session's (Q236,
-      `ClientIds::holds`) and nothing is re-applied. With no token yet (offline at
+      `ClientIds::holds`) and nothing is renamed; what follows a rename (below)
+      follows this change of id too, as it does the id a JOIN's token offers
+      (`adoptClientId`), so a label editor open meanwhile keeps its Undo. With no token yet (offline at
       open) the edits go under the tab's own id, which no room assigned, kept as
-      `late` draft rows (the removals-only gate reading the copy's size, under the
-      offline bound of cap less size less 64 KiB): at the join the room opens on a
-      fresh document from the copy, and the edits are re-applied under the room's
-      id by the catch-up merge (`reauthor`: `mergeLate` with the joined document's
-      id, `applyMerged` re-authored), the board moving onto that document at the
-      view and selection it had (`useCanvasBoard`), its size the board's until the
-      new document's measure. The re-apply is not repeat-safe (text typed into a
-      board note, a note or image added, would go in twice), so before the merged
-      update goes the early rows are flagged refused in place (`reauthoring`): a
-      later open shows them copy-only and never re-applies them. They go once a
-      write of the re-applied edit landed (its whole document, or the refused row
-      a refusal keeps; a move or a leave writes it first) or a receipt covers it;
-      a write that failed leaves them, so storage failing never deletes their only
-      copy. Each recorder keeps its own `late` mark. A field both
-      sides changed (a shape both people moved) takes Yjs's own pick, with no
-      review step (Epo 2026-11-19, Q33, "Yes, one side wins"). What would not show
-      is decided per element and block (`boardHidden.ts`; the merge names hidden
-      edits by top-level block, and every element sits in the one surface block):
-      an early edit is hidden when something both documents held around it is
-      deleted in the merged one. When that is an element or block the merged
-      board no longer shows (another person deleted it), those alone are kept as
-      one hidden refused row and shown in the copy-only recovery (`merged`, the
-      `changed` strip) while the room runs on the merged document; anything else
-      hidden (typing into a text another person replaced) offers the whole early
-      board there, as does a hidden part the merge reports that this check does
-      not find. Reload (asking first) drops it and shows the room. Until the
-      hidden row is stored the early rows stay; if it cannot be, they stay as its
-      copy. Merge code that does not load (the
-      chunk, the worker or its WASM), or flags that cannot be stored, keep the
-      edits as they are, the board read-only under the note's `late-unloaded`
-      strip ("Couldn't sync your edits. Retry or reload the page."), and try
-      again on Retry and on the browser's reconnect (Q295, Q398); the merge's
-      download has no time limit, the board saying Syncing meanwhile. A merge
-      that ran and failed (its 10 s, Q281), a refusal
-      (size or any other) or a token refused at the join (403/404) keep every
-      early edit in the copy-only recovery with Reload asking first, the strokes
-      still on screen, and only the room's refusals toast. A token that says read
-      at the join (a demotion, a freeze) discards them as any read-only turn does
-      (Epo 2026-09-29): a fresh room opens on what was saved, read-only. Each tab
-      writes under its own id, so two tabs of one person drawing early both land;
-      a tab leaves another live tab's late rows alone (`heldDraftSessions`;
-      without Web Locks it may take them, as Q420 accepts for notes). A reload
-      before the join paints the rows earlier sessions left: early ones are
-      re-applied with this session's at the join, as a note's late rows are;
-      ones of a session that held a room's id (it joined, or its token answered)
-      go as at any open (Q326), accepted ones with the joined document and
-      never-accepted ones through the draft send, which goes first (a board
-      joining as it is waits for it at its JOIN, `beforeJoin`). Rows to copy, or
+      `late` draft rows naming it (`client`; the removals-only gate reading the
+      copy's size, under the offline bound of cap less size less 64 KiB). At the
+      join they become the room's in place, before the board's provider connects
+      (Epo 2026-11-19, Q38, "Yes, rename in place"; `rename` in `itemRoom.ts`,
+      `renameClient.ts`): every struct the board's one live document holds under
+      a temporary id (its own, and those earlier tabs' late rows name, one after
+      another so the new id's clocks run on from 0) becomes the same struct
+      under the id the token offers. What follows it (`onRenamed`): every Item's
+      `origin`, `rightOrigin` and `redone`; `doc.clientID`; BlockSuite's Undo
+      stack (`renameUndo`, from roomStore's `followClientId`); every text
+      editor open on the board (`followTextEditors`): a label editor's own Undo
+      (a text's, a shape's or connector's label, a frame's or group's title:
+      `rich-text` keeps a manager of its own, tracking the id the document had
+      as it opened, which now tracks the new one too) and each editor's kept
+      caret (`renamePosition`); and the presence's caret, sent again
+      (`boardPresence`). BlockSuite's own awareness (its selections, never sent)
+      keeps the old id; the provider and its awareness take the new one at the
+      first JOIN, as at any. Nothing remounts: the same DOM, view, selection and
+      Undo, and Undo after the join takes back an offline stroke, in the room
+      too. The rename is sound only when no conflict was ever settled by
+      comparing a temporary id with another client (Yjs orders concurrent
+      inserts, and picks a map key's value, by client id): every struct under
+      the temporary ids comes after every other struct the document holds, and
+      their sessions form one chain, each painting the whole of the one before.
+      Each early row names what its session painted (`painted`: the temporary
+      ids, oldest first, and the state vector). At the open the sessions are
+      ordered by that, never by how rows are stored (`earlyChain`, review M1);
+      one that edited beside something it never saw (two tabs early side by
+      side, both closed before their joins; one that painted an older copy) is
+      written anew under this tab's id by the late merge on top of everything
+      else (`mergeEarly`: its worker loads only then; a key whose value it holds
+      follows the key's value there, while a key whose value Yjs gave another
+      keeps it, `followHeads`, review re-check R1; where two such writes would
+      then settle by client id against Yjs's pick, the value's chain follows
+      the other's, re-check 2 R3; a text's units land as typed, theirs first
+      at a spot both typed at), its rows flagged refused first and deleted
+      once this session's whole document landed, what the merge hides kept
+      apart as below; assigned ids' structs are never written anew (review
+      M2). When the merge's code does not load (offline with nothing cached)
+      the board shows the copy, read-only, under "Couldn't sync your edits.
+      Retry or reload the page.", and Retry, the browser's reconnect and the
+      join (which waits) try again, a token that answered while the merge ran
+      once at once; once it loads the same document fills in place, nothing
+      remounting (`mergeLater`, review re-check R2). A token that says read
+      meanwhile, or while the merge ran, ends the wait: the strip goes, and
+      the read-only join has its 30 s (re-check 2 m5). A refusal (404, 403)
+      before the board painted (the merge's code did not load, the merge
+      failed, a group waits for copying) shows the stored rows for copying:
+      the first group the room cannot take as a join's `restore` would, else
+      the rows over the copy under the refused toast, their sessions held
+      until the tab goes, the canvas then unavailable (`keepStored`,
+      re-check 3 m6); a board that painted keeps what it painted for copying
+      though nothing was drawn on it, and so does any room refused before its
+      first sync, the rows `restore` applied (the refusal drops the device
+      copy, so no later open could show them, re-check 4 m7). Otherwise a merge
+      that fails once loaded leaves the board to wait for its join, which
+      offers the rows for copying. Until the rename nothing else comes in: the
+      provider connects only after it (`beforeJoin` waits for it and Retry goes
+      through it, review M3). The rename is pinned to Yjs 13.6.31's internals
+      (`renameClient.test.ts` fails on an upgrade that moves them) and goes
+      only when the new id is not in the document, no temporary id is in the
+      copy's history (nothing under it ever left the tab), nothing is pending
+      and no client but this tab's own holds more than it painted
+      (`renameRefusal`); else every early edit is kept in the copy-only
+      recovery, nothing saying the room refused it. Near the cap (4 MiB in some
+      4,000 strokes, 35,000 to 43,000 structs) the rename itself takes about 2
+      ms, and with the renamed state's encode for the drafts the step takes
+      about 50 ms (47 and 55 measured) on the main thread in Chromium
+      (`canvas:rename`, measured by canvas-room-states.spec.ts); the board
+      before the room's state, when it
+      must be decoded, about 60 to 80 ms more. Since the same edits under two
+      ids would go in twice, the early rows are flagged refused in place first
+      (`flagCopyOnly`): a later open shows them copy-only and never applies them.
+      A session under the new id records from there, its first row the renamed
+      document whole (`renamed`), and the early recorder stops (`handOver`): its
+      rows go once that write landed or a receipt covers it, and the room's
+      state is in with what it hides stored (`replacedHolds`, review m4), or,
+      when the room goes before its state came in (a refusal, a move, a leave),
+      once the write it ends with did; a write that failed leaves them, so
+      storage failing never deletes their only copy. Each recorder keeps its own `late` mark. A
+      field both sides changed (a shape both people moved) takes Yjs's own
+      pick, with no review step (Epo 2026-11-19, Q33, "Yes, one side wins").
+      What would not show is decided per element and block (`boardHidden.ts`),
+      in the same document: the board before the room's state came in (the
+      renamed state and this tab's edits until then, decoded only when the
+      room's state deleted something under the new id) against the board after.
+      An early edit is hidden when something both held around it is deleted
+      after. When that is an element or block the board no longer shows
+      (another person deleted it), those alone are kept as one hidden refused
+      row and shown in the copy-only recovery (`merged`, the `changed` strip)
+      while the room runs on; anything else hidden (typing into a text another
+      person replaced) offers the whole early board there. Reload (asking
+      first) drops it and shows the room. Until the hidden row is stored the
+      early rows stay; if it cannot be, they stay as its copy. Flags that
+      cannot be stored keep the edits as they are, the board read-only under
+      the note's `late-unloaded` strip ("Couldn't sync your edits. Retry or
+      reload the page."), and try again on Retry and on the browser's
+      reconnect (Q295, Q398). A refusal (size or any other) or a token refused
+      at the join (403/404) keep every early edit in the copy-only recovery with
+      Reload asking first, the strokes still on screen, and only the room's
+      refusals toast. A token that says read at the join (a demotion, a freeze)
+      discards them as any read-only turn does (Epo 2026-09-29): a fresh room
+      opens on what was saved, read-only. Each tab writes under its own id, so
+      two tabs of one person drawing early both land; a tab leaves another live
+      tab's late rows alone (`heldDraftSessions`; without Web Locks it may take
+      them, as Q420 accepts for notes), and so does one whose earlier sessions'
+      late rows another early tab painted: that tab holds their sessions' locks
+      until its early recorder stops, or gives them back at once when it
+      painted nothing (`claimLateRows`, review m1). A reload before the join paints the rows
+      earlier sessions left: early ones are renamed with this session's at the
+      join; ones of a session that held a room's id (it joined, or its token
+      answered) go as at any open (Q326), accepted ones with the document and
+      never-accepted ones through the draft send, which goes first (the rename
+      waits for it; a board joining as it is waits for it at its JOIN,
+      `beforeJoin`). The board's notes keep their own late merge. Rows to copy, or
       a viewer's copy, keep the board locked until the room has synced. The copy's label follows the canvas's read: a rename or a
       demotion is written with the next copy (`ItemRoom.keepAs`, `relabel`), so the
       next open paints with the current title and tools. A board's copy is at most

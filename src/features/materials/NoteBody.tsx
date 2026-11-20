@@ -82,8 +82,15 @@ import type { NoteCitationTarget } from './openItem';
 import { embedKey, useNoteFooter } from './useNoteFooter';
 
 /* Interactive Plate is the heaviest chunk in this route: it loads behind a
- * painted note, never before one. */
-const loadEditor = () => import('@/features/notes/NoteEditor');
+ * painted note, never before one. Preview's code is here once the editor is
+ * (Q669: Preview opens offline): the static renderer comes with the editor,
+ * and an embedded quiz's long answers take the question text editor, which
+ * QuestionRunner otherwise loads with the first one. */
+const loadEditor = () =>
+  Promise.all([
+    import('@/features/notes/NoteEditor'),
+    import('@/features/questions/TextEditor'),
+  ]).then(([editor]) => editor);
 const NoteEditor = lazy(() =>
   loadEditor().then((module) => ({ default: module.NoteEditor }))
 );

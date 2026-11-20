@@ -561,6 +561,53 @@ func TestACanvasIsChargedItsStoredBoard(t *testing.T) {
 	}
 }
 
+// A canvas's room seeds its Yjs row on its first open and projects nothing for
+// it (stored and projected version 1), so the seed itself charges the board
+// (0184): an untouched canvas pays for its content and its seeded state, and
+// its creator's storage moves by the state's bytes. Nothing else moves: the
+// seed queues no eviction and leaves the revision and update time alone.
+func TestAnUntouchedCanvasIsChargedItsSeededBoard(t *testing.T) {
+	f := newCanvasFixture(t, "canvas-seed")
+	ctx := context.Background()
+	usage := func() int64 {
+		t.Helper()
+		u, err := f.s.StorageUsage(ctx, f.editor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u.UsedBytes
+	}
+	canvas := f.canvas(t, f.editor, false)
+	before := usage()
+
+	const seeded = 700
+	seed := func() error {
+		_, err := f.s.pool.Exec(ctx, `INSERT INTO material_yjs_documents
+			(material_id, room_schema, state, stored_version, projected_version, projected_at)
+			VALUES ($1,1,$2,1,1,now()) ON CONFLICT (material_id) DO NOTHING`, canvas.ID, make([]byte, seeded))
+		return err
+	}
+	if queued := queuedEvictions(t, f.s, seed); len(queued) != 0 {
+		t.Fatalf("the seed queued %v", queued)
+	}
+	var charged, board, revision int64
+	var updated time.Time
+	if err := f.s.pool.QueryRow(ctx, `SELECT m.size_bytes, octet_length(m.content::text) + octet_length(d.state) + d.log_bytes,
+		m.revision, m.updated_at
+		FROM materials m JOIN material_yjs_documents d ON d.material_id=m.id WHERE m.id=$1`, canvas.ID).
+		Scan(&charged, &board, &revision, &updated); err != nil {
+		t.Fatal(err)
+	}
+	if charged != board || charged != canvas.SizeBytes+seeded || usage() != before+seeded {
+		t.Fatalf("the seeded canvas is charged %d (was %d), want its content and board %d; usage grew %d",
+			charged, canvas.SizeBytes, board, usage()-before)
+	}
+	if revision != canvas.Revision || !updated.Equal(canvas.UpdatedAt) {
+		t.Fatalf("the seed moved the revision %d to %d or the update time %v to %v",
+			canvas.Revision, revision, canvas.UpdatedAt, updated)
+	}
+}
+
 // Unsharing a canvas queues a revoke of its room, so the other members'
 // channels are rechecked and its creator stays joined; sharing queues nothing.
 // A member removed from the workspace, or lowered in it, has their channels on

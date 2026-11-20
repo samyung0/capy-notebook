@@ -4650,7 +4650,14 @@ Steps on UAT:
    ```
 
    `size_bytes` is the two added as of that projection; a store since then
-   shows in `yjs_bytes` first.
+   shows in `yjs_bytes` first. Since
+   [`0184_canvas_seeded_board_bytes.sql`](../server/migrations/0184_canvas_seeded_board_bytes.sql)
+   (Epo 2026-11-20) this holds for an empty board too: the room's seed
+   charges the seeded state at once, so a canvas opened and never drawn on
+   shows the two added with no projection. It refuses nothing, backfills
+   nothing (a canvas seeded before it and never drawn on since keeps its
+   content-only charge until its first projection) and needs no order with
+   the collaboration server.
 
 Locally the compose gateway runs the three at start and deletes local
 canvases the same way. As of 2026-11-18 the board room's integration tests

@@ -409,13 +409,24 @@ function rememberCheckpoint(room: Room) {
     room.target.id.startsWith('mock-scenario-') &&
     typeof sessionStorage !== 'undefined'
   ) {
-    sessionStorage.setItem(
-      `capy.scenario.room.${room.name}`,
-      JSON.stringify({
-        state: [...Y.encodeStateAsUpdate(room.document)],
-        version: room.version,
-      })
-    );
+    const key = `capy.scenario.room.${room.name}`;
+    // A state past the tab's quota (a board near its cap) is the page's
+    // alone, as `keepBoard` keeps it.
+    try {
+      sessionStorage.setItem(
+        key,
+        JSON.stringify({
+          state: [...Y.encodeStateAsUpdate(room.document)],
+          version: room.version,
+        })
+      );
+    } catch (error) {
+      if (
+        !(error instanceof DOMException && error.name === 'QuotaExceededError')
+      )
+        throw error;
+      sessionStorage.removeItem(key);
+    }
   }
 }
 
@@ -2414,11 +2425,60 @@ export function mockExpireBoardJoin(materialId: string) {
   expiringJoins.add(materialId);
 }
 
-/** A draft group the service admitted into a canvas's open room (the
- * `/drafts` stub): its update goes in, and the ids it wrote under are this
- * person's from then on, as the service records a draft's first writes. */
-export function admitMockBoardDrafts(materialId: string, update: Uint8Array) {
+/** A peer draws pen strokes into a canvas's open room until it is `short`
+ * bytes from its cap (e2e): a board near its cap made of many elements, as a
+ * long session's drawing is. Answers how many it drew. */
+export function mockDrawBoardStrokes(materialId: string, short: number) {
   const room = openBoard(materialId);
+  const peer = mockBoardPeer(materialId);
+  const target = BOARD_MAX - short;
+  let drawn = 0;
+  let bytes = Y.encodeStateAsUpdate(room.document).byteLength;
+  // Bytes a stroke takes, from the last batch: the next stays under target.
+  let each = 1000;
+  while (bytes < target) {
+    const batch = Math.max(
+      1,
+      Math.min(500, Math.floor((target - bytes) / each))
+    );
+    peer.document.transact(() => {
+      for (const end = drawn + batch; drawn < end; drawn++) {
+        const [x, y] = [(drawn % 60) * 50, Math.floor(drawn / 60) * 30];
+        peer.add(`stroke-${drawn}`, {
+          color: '#000000',
+          index: 'a0',
+          lineWidth: 4,
+          points: Array.from({ length: 120 }, (_, at) => [
+            at % 40,
+            (at * 7) % 20,
+          ]),
+          rotate: 0,
+          seed: drawn,
+          type: 'brush',
+          xywh: `[${x},${y},40,20]`,
+        });
+      }
+    });
+    const now = Y.encodeStateAsUpdate(room.document).byteLength;
+    each = (now - bytes) / batch;
+    bytes = now;
+  }
+  peer.leave();
+  return drawn;
+}
+
+/** A draft group the service admitted into a canvas's room (the `/drafts`
+ * stub), which it loads as the service does when no one is in it: its update
+ * goes in, and the ids it wrote under are this person's from then on, as the
+ * service records a draft's first writes. */
+export async function admitMockBoardDrafts(
+  materialId: string,
+  update: Uint8Array
+) {
+  const room = boardRoom(
+    `material:${materialId}:schema:1`,
+    await boardFirstState()
+  );
   const ids = boardIds(materialId);
   for (const client of writtenClients(room.document, update)) ids.add(client);
   keepBoardIds(materialId);
