@@ -57,7 +57,8 @@ const membership = (run: UatRun, workspaceId: string, userId: string) =>
     [workspaceId, userId]
   );
 
-/** A one-question quiz the owner creates through the API; returns its id. */
+/** A one-question quiz the owner creates through the API and shows to the
+ * members (every quiz starts hidden, Epo 2026-11-16); returns its id. */
 async function apiQuiz(run: UatRun, workspaceId: string, prompt: string) {
   const question = {
     children: [{ text: '' }],
@@ -95,7 +96,16 @@ async function apiQuiz(run: UatRun, workspaceId: string, prompt: string) {
       201
     )
   );
-  return string(created.id);
+  const id = string(created.id);
+  // Shown, so a member demoted to viewer keeps reading it under the strip.
+  await api(
+    run.owner,
+    `/api/materials/${id}/hidden`,
+    'PUT',
+    { hidden: false },
+    200
+  );
+  return id;
 }
 
 /** The account's stored plus reserved bytes. */
