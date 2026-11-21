@@ -1,0 +1,1332 @@
+[
+ {
+  "arm": "c30",
+  "repeat": 1,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 0,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 150
+  },
+  "keys": [
+   73,
+   73
+  ],
+  "disagree": [],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 100,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 245.2,
+  "maps_done_s": 40.1,
+  "cpu_s": 16.5,
+  "billed_usd": 0.15061,
+  "credits": 317.88,
+  "map_credits": 19.7,
+  "credits_per_question": 2.21,
+  "calls": 113,
+  "upload_mb": 338.2,
+  "peak_in_flight": 10,
+  "peak_mb_in_flight": 15.0,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 113
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 1,
+    "input": 47881,
+    "cached": 0,
+    "output": 8452,
+    "usd": 0.0095,
+    "mb": 0.1634,
+    "max_input": 47881,
+    "max_s": 37.99
+   },
+   "extraction_copy": {
+    "calls": 31,
+    "input": 1685301,
+    "cached": 1540352,
+    "output": 52067,
+    "usd": 0.0586,
+    "mb": 92.7136,
+    "max_input": 64821,
+    "max_s": 36.67
+   },
+   "extraction_solve": {
+    "calls": 75,
+    "input": 4699249,
+    "cached": 4689152,
+    "output": 65495,
+    "usd": 0.0819,
+    "mb": 244.6566,
+    "max_input": 71415,
+    "max_s": 20.5
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6770,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.6819,
+    "max_input": 1148,
+    "max_s": 2.19
+   }
+  }
+ },
+ {
+  "arm": "c30",
+  "repeat": 2,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 0,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 149,
+   "mcq": 1
+  },
+  "keys": [
+   72,
+   73
+  ],
+  "disagree": [
+   "P4.1#4: ['1.0 gal/hour']"
+  ],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 221.7,
+  "maps_done_s": 35.1,
+  "cpu_s": 14.3,
+  "billed_usd": 0.13434,
+  "credits": 285.55,
+  "map_credits": 18.4,
+  "credits_per_question": 1.98,
+  "calls": 113,
+  "upload_mb": 344.2,
+  "peak_in_flight": 6,
+  "peak_mb_in_flight": 15.0,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 113
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 1,
+    "input": 47879,
+    "cached": 0,
+    "output": 7350,
+    "usd": 0.0087,
+    "mb": 0.1634,
+    "max_input": 47879,
+    "max_s": 34.42
+   },
+   "extraction_copy": {
+    "calls": 27,
+    "input": 1431431,
+    "cached": 1291008,
+    "output": 39087,
+    "usd": 0.0476,
+    "mb": 86.5323,
+    "max_input": 60112,
+    "max_s": 22.86
+   },
+   "extraction_solve": {
+    "calls": 79,
+    "input": 4462744,
+    "cached": 4453760,
+    "output": 61648,
+    "usd": 0.0774,
+    "mb": 256.8175,
+    "max_input": 64328,
+    "max_s": 23.44
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6777,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.682,
+    "max_input": 1156,
+    "max_s": 1.45
+   }
+  }
+ },
+ {
+  "arm": "one",
+  "repeat": 1,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 0,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 149,
+   "mcq": 1
+  },
+  "keys": [
+   64,
+   73
+  ],
+  "disagree": [
+   "P4.1#6: []",
+   "P4.1#6: []",
+   "P4.1#6: []",
+   "P4.1#6: []",
+   "P4.1#5: []",
+   "P4.1#4: []",
+   "P4.1#3: []",
+   "P4.1#2: []",
+   "P4.1#1: []"
+  ],
+  "answered": 136,
+  "no_answer": 14,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 1840.4,
+  "maps_done_s": 57.0,
+  "cpu_s": 58.5,
+  "billed_usd": 0.38804,
+  "credits": 881.55,
+  "map_credits": 40.1,
+  "credits_per_question": 6.12,
+  "calls": 152,
+  "upload_mb": 2611.2,
+  "peak_in_flight": 6,
+  "peak_mb_in_flight": 89.4,
+  "cut_off": 2,
+  "providers": {
+   "Wafer": 142,
+   "Cloudflare": 3,
+   "null": 1,
+   "InferenceNet": 6
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 1,
+    "input": 156838,
+    "cached": 0,
+    "output": 7273,
+    "usd": 0.0093,
+    "mb": 17.8333,
+    "max_input": 156838,
+    "max_s": 53.27
+   },
+   "extraction_copy": {
+    "calls": 18,
+    "input": 3002822,
+    "cached": 2809344,
+    "output": 46990,
+    "usd": 0.0586,
+    "mb": 321.5365,
+    "max_input": 171190,
+    "max_s": 67.71
+   },
+   "extraction_solve": {
+    "calls": 127,
+    "input": 21282245,
+    "cached": 21224320,
+    "output": 210520,
+    "usd": 0.3196,
+    "mb": 2271.1494,
+    "max_input": 182780,
+    "max_s": 142.36
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6750,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.6819,
+    "max_input": 1137,
+    "max_s": 2.06
+   }
+  }
+ },
+ {
+  "arm": "one",
+  "repeat": 2,
+  "saved": 144,
+  "found": 136,
+  "lost": [
+   "E2.3#6@65",
+   "E2.3#8@66",
+   "P2.4#5@71",
+   "P3.3#2@92",
+   "P3.3#3@93",
+   "E4.1#6@112",
+   "E4.1#10@114",
+   "E4.1#11@115"
+  ],
+  "duplicated": 0,
+  "extras": [
+   "w0:K4@56",
+   "w0:K6@56",
+   "w0:K8@57",
+   "w0:O9@75",
+   "w0:R1@82",
+   "w0:U6@101",
+   "w0:U10@103",
+   "w0:U11@104"
+  ],
+  "relabelled": [
+   "E3.2#2 as S4",
+   "P2.3#7 as L9",
+   "P2.3#5 as L7",
+   "P2.3#3 as L5",
+   "P2.3#4 as L6",
+   "P2.3#6 as L8",
+   "E3.2#1 as S3",
+   "E3.2#4 as S2",
+   "P2.3#8 as L10",
+   "E3.1#9 as Q2",
+   "E2.3#10 as M5",
+   "P3.2#2 as R4",
+   "P3.3#4 as R2",
+   "E2.3#9 as K7",
+   "E2.3#7 as K5",
+   "E2.3#5 as K3"
+  ],
+  "pages_off": 47,
+  "collisions": 0,
+  "within_collisions": 0,
+  "parts_right": 135,
+  "numbers_right": 92,
+  "numbers_wrong": [
+   "P3.1#1 as P1",
+   "P4.1#4 as V4",
+   "P3.1#9 as P9",
+   "P3.1#8 as P8",
+   "P3.1#6 as P6",
+   "P4.1#5 as V5",
+   "P4.1#9 as V9",
+   "P3.1#4 as P4",
+   "P2.3#7 as L9",
+   "P4.1#8 as V8",
+   "P2.3#5 as L7",
+   "P4.1#1 as V1",
+   "P3.1#5 as P5",
+   "P4.1#3 as V3",
+   "P4.1#2 as V2",
+   "P3.1#3 as P3",
+   "P4.1#7 as V7",
+   "P3.1#7 as P7",
+   "P3.1#2 as P2",
+   "P2.3#3 as L5",
+   "P4.1#6 as V6",
+   "P4.1#10 as V10",
+   "P2.3#4 as L6",
+   "P4.1#11 as V11",
+   "P2.3#6 as L8",
+   "E3.2#1 as S3",
+   "E3.2#4 as S2",
+   "P2.3#8 as L10",
+   "E3.1#9 as Q2",
+   "E2.3#10 as M5",
+   "E3.1#1 as O1",
+   "E4.1#4 as U4",
+   "E4.1#5 as U5",
+   "P3.2#2 as R4",
+   "P3.3#4 as R2",
+   "E4.1#9 as U9",
+   "E2.3#9 as K7",
+   "E2.3#7 as K5",
+   "E4.1#8 as U8",
+   "E4.1#1 as U1",
+   "E4.1#3 as U3",
+   "E4.1#2 as U2",
+   "E4.1#7 as U7",
+   "E2.3#5 as K3"
+  ],
+  "marks_right": 136,
+  "types": {
+   "open": 139
+  },
+  "keys": [
+   41,
+   70
+  ],
+  "disagree": [
+   "P3.1#1: ['12.26 lbs/gal']",
+   "P4.1#4: ['0.6 gallons per hour']",
+   "P3.1#9: ['51.5 lbs/cf']",
+   "P3.1#8: ['127.9 lbs/cf']",
+   "P3.1#6: ['1.71']",
+   "P4.1#9: ['708,895 lbs']",
+   "P3.1#4: ['52.1 lbs']",
+   "P2.3#7: ['About 913 gallons; about 733 square feet of sleeve.']",
+   "P4.1#8: ['\\\\$130,813.12']",
+   "P2.3#5: ['8 ft']",
+   "P4.1#1: ['3,056,000 gallons']",
+   "P3.1#5: ['506.7 lbs']",
+   "P4.1#3: ['119 pounds per day']",
+   "P4.1#2: ['0.47 ppm']",
+   "P3.1#3: ['128.1 lbs']",
+   "P4.1#7: ['\\\\$15,637.50 per day']",
+   "P3.1#7: ['646.8 lbs']",
+   "P3.1#2: ['2.37']",
+   "P2.3#3: ['76,412 gal']",
+   "P4.1#6: ['41.3 gallons']",
+   "P4.1#6: ['95.35 pounds']",
+   "P4.1#6: ['\\\\$101.15']",
+   "P4.1#6: ['\\\\$157.33']",
+   "P4.1#10: ['\\\\$98,015']",
+   "P2.3#4: ['\\\\$10,684']",
+   "P4.1#11: ['10.79 ppm']",
+   "P2.3#6: ['7.9 ft']",
+   "P2.3#8: ['The 25-foot diameter, 30-foot tall cylinder tank provides adequate storage (ab",
+   "P3.2#2: ['0.125%']"
+  ],
+  "answered": 139,
+  "no_answer": 0,
+  "figures": [
+   5,
+   7,
+   0
+  ],
+  "one_quiz_holds": 100,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 1812.9,
+  "maps_done_s": 69.3,
+  "cpu_s": 64.5,
+  "billed_usd": 0.359,
+  "credits": 786.37,
+  "map_credits": 39.9,
+  "credits_per_question": 5.46,
+  "calls": 160,
+  "upload_mb": 2719.0,
+  "peak_in_flight": 6,
+  "peak_mb_in_flight": 71.6,
+  "cut_off": 0,
+  "providers": {
+   "Wafer": 152,
+   "InferenceNet": 8
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 1,
+    "input": 156841,
+    "cached": 0,
+    "output": 7072,
+    "usd": 0.0092,
+    "mb": 17.8333,
+    "max_input": 156841,
+    "max_s": 65.66
+   },
+   "extraction_copy": {
+    "calls": 19,
+    "input": 3170744,
+    "cached": 3141248,
+    "output": 51334,
+    "usd": 0.0581,
+    "mb": 339.4145,
+    "max_input": 172777,
+    "max_s": 81.54
+   },
+   "extraction_solve": {
+    "calls": 132,
+    "input": 22846509,
+    "cached": 22782336,
+    "output": 121797,
+    "usd": 0.291,
+    "mb": 2360.7703,
+    "max_input": 179219,
+    "max_s": 63.2
+   },
+   "extraction_figures": {
+    "calls": 8,
+    "input": 8999,
+    "cached": 2048,
+    "output": 104,
+    "usd": 0.0006,
+    "mb": 0.9691,
+    "max_input": 1138,
+    "max_s": 2.13
+   }
+  }
+ },
+ {
+  "arm": "w10",
+  "repeat": 1,
+  "saved": 158,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [
+   "w1:5@None",
+   "w2:1@26",
+   "w2:2@26",
+   "w2:3@27",
+   "w2:4@28",
+   "w2:5@28",
+   "w2:6@30",
+   "w2:7@30",
+   "w2:8@32",
+   "w2:9@33",
+   "w2:10@33",
+   "w2:11@35",
+   "w6:6@None",
+   "w6:7@None"
+  ],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 105,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 149,
+   "mcq": 1
+  },
+  "keys": [
+   72,
+   73
+  ],
+  "disagree": [
+   "P4.1#4: ['1.0 gal/hour']"
+  ],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 240.7,
+  "maps_done_s": 29.1,
+  "cpu_s": 18.4,
+  "billed_usd": 0.17369,
+  "credits": 356.79,
+  "map_credits": 94.0,
+  "credits_per_question": 2.26,
+  "calls": 125,
+  "upload_mb": 227.8,
+  "peak_in_flight": 11,
+  "peak_mb_in_flight": 21.6,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 125
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 11,
+    "input": 358044,
+    "cached": 19456,
+    "output": 21565,
+    "usd": 0.0416,
+    "mb": 21.5863,
+    "max_input": 33650,
+    "max_s": 25.17
+   },
+   "extraction_copy": {
+    "calls": 35,
+    "input": 1305593,
+    "cached": 1296128,
+    "output": 56839,
+    "usd": 0.049,
+    "mb": 69.9268,
+    "max_input": 47559,
+    "max_s": 27.93
+   },
+   "extraction_solve": {
+    "calls": 72,
+    "input": 2900279,
+    "cached": 2892288,
+    "output": 88001,
+    "usd": 0.0824,
+    "mb": 135.4758,
+    "max_input": 54039,
+    "max_s": 43.46
+   },
+   "extraction_figures": {
+    "calls": 7,
+    "input": 7892,
+    "cached": 0,
+    "output": 131,
+    "usd": 0.0007,
+    "mb": 0.8271,
+    "max_input": 1141,
+    "max_s": 2.34
+   }
+  }
+ },
+ {
+  "arm": "w10",
+  "repeat": 2,
+  "saved": 157,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [
+   "w2:1@26",
+   "w2:2@26",
+   "w2:3@27",
+   "w2:4@28",
+   "w2:5@28",
+   "w2:6@30",
+   "w2:7@30",
+   "w2:8@32",
+   "w2:9@33",
+   "w2:10@33",
+   "w2:11@35",
+   "w6:6@None",
+   "w6:7@None"
+  ],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 104,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 142,
+  "numbers_wrong": [
+   "E3.2#4 as B4",
+   "E3.2#2 as B2"
+  ],
+  "marks_right": 144,
+  "types": {
+   "open": 145,
+   "short": 4,
+   "mcq": 1
+  },
+  "keys": [
+   73,
+   73
+  ],
+  "disagree": [],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 222.2,
+  "maps_done_s": 33.2,
+  "cpu_s": 19.2,
+  "billed_usd": 0.16919,
+  "credits": 347.62,
+  "map_credits": 89.6,
+  "credits_per_question": 2.21,
+  "calls": 125,
+  "upload_mb": 224.1,
+  "peak_in_flight": 12,
+  "peak_mb_in_flight": 22.8,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 125
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 11,
+    "input": 358044,
+    "cached": 19456,
+    "output": 17901,
+    "usd": 0.0392,
+    "mb": 21.5863,
+    "max_input": 33650,
+    "max_s": 29.58
+   },
+   "extraction_copy": {
+    "calls": 33,
+    "input": 1200999,
+    "cached": 1196928,
+    "output": 52909,
+    "usd": 0.0451,
+    "mb": 65.4793,
+    "max_input": 41545,
+    "max_s": 29.65
+   },
+   "extraction_solve": {
+    "calls": 71,
+    "input": 2833845,
+    "cached": 2826240,
+    "output": 91060,
+    "usd": 0.0839,
+    "mb": 135.5836,
+    "max_input": 47740,
+    "max_s": 34.05
+   },
+   "extraction_figures": {
+    "calls": 10,
+    "input": 11258,
+    "cached": 0,
+    "output": 182,
+    "usd": 0.001,
+    "mb": 1.4088,
+    "max_input": 1143,
+    "max_s": 1.32
+   }
+  }
+ },
+ {
+  "arm": "w20",
+  "repeat": 1,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 59,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 149,
+   "mcq": 1
+  },
+  "keys": [
+   73,
+   73
+  ],
+  "disagree": [],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 239.2,
+  "maps_done_s": 33.0,
+  "cpu_s": 20.6,
+  "billed_usd": 0.16236,
+  "credits": 334.24,
+  "map_credits": 68.6,
+  "credits_per_question": 2.32,
+  "calls": 105,
+  "upload_mb": 335.3,
+  "peak_in_flight": 7,
+  "peak_mb_in_flight": 23.3,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 105
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 6,
+    "input": 256986,
+    "cached": 7296,
+    "output": 15466,
+    "usd": 0.0303,
+    "mb": 19.4668,
+    "max_input": 46020,
+    "max_s": 28.84
+   },
+   "extraction_copy": {
+    "calls": 24,
+    "input": 1147912,
+    "cached": 1144320,
+    "output": 48951,
+    "usd": 0.042,
+    "mb": 78.6105,
+    "max_input": 55786,
+    "max_s": 25.07
+   },
+   "extraction_solve": {
+    "calls": 69,
+    "input": 3649369,
+    "cached": 3642240,
+    "output": 89572,
+    "usd": 0.0894,
+    "mb": 236.5857,
+    "max_input": 61061,
+    "max_s": 38.63
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6779,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.682,
+    "max_input": 1142,
+    "max_s": 1.73
+   }
+  }
+ },
+ {
+  "arm": "w20",
+  "repeat": 2,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 90,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "short": 24,
+   "open": 125,
+   "mcq": 1
+  },
+  "keys": [
+   72,
+   73
+  ],
+  "disagree": [
+   "P4.1#4: ['1.0 gal/hour']"
+  ],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 124,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 215.8,
+  "maps_done_s": 22.3,
+  "cpu_s": 19.0,
+  "billed_usd": 0.145,
+  "credits": 303.43,
+  "map_credits": 62.4,
+  "credits_per_question": 2.11,
+  "calls": 110,
+  "upload_mb": 351.4,
+  "peak_in_flight": 7,
+  "peak_mb_in_flight": 23.3,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 110
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 6,
+    "input": 256998,
+    "cached": 9728,
+    "output": 10595,
+    "usd": 0.0269,
+    "mb": 19.4668,
+    "max_input": 46022,
+    "max_s": 18.62
+   },
+   "extraction_copy": {
+    "calls": 27,
+    "input": 1272493,
+    "cached": 1268864,
+    "output": 47306,
+    "usd": 0.0419,
+    "mb": 89.6943,
+    "max_input": 54409,
+    "max_s": 35.46
+   },
+   "extraction_solve": {
+    "calls": 71,
+    "input": 3638883,
+    "cached": 3632640,
+    "output": 69007,
+    "usd": 0.0755,
+    "mb": 241.5353,
+    "max_input": 57832,
+    "max_s": 26.72
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6761,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.6819,
+    "max_input": 1141,
+    "max_s": 1.68
+   }
+  }
+ },
+ {
+  "arm": "w20o",
+  "repeat": 1,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 90,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 146,
+   "short": 3,
+   "mcq": 1
+  },
+  "keys": [
+   72,
+   73
+  ],
+  "disagree": [
+   "P4.1#4: ['1.0 gal/hour']"
+  ],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 260.4,
+  "maps_done_s": 33.7,
+  "cpu_s": 26.5,
+  "billed_usd": 0.14808,
+  "credits": 299.9,
+  "map_credits": 51.9,
+  "credits_per_question": 2.08,
+  "calls": 111,
+  "upload_mb": 347.5,
+  "peak_in_flight": 7,
+  "peak_mb_in_flight": 22.9,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 111
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 6,
+    "input": 189739,
+    "cached": 9728,
+    "output": 13045,
+    "usd": 0.0232,
+    "mb": 19.2872,
+    "max_input": 36181,
+    "max_s": 24.41
+   },
+   "extraction_copy": {
+    "calls": 28,
+    "input": 1033407,
+    "cached": 1028992,
+    "output": 49700,
+    "usd": 0.0417,
+    "mb": 92.915,
+    "max_input": 44607,
+    "max_s": 28.35
+   },
+   "extraction_solve": {
+    "calls": 71,
+    "input": 2909348,
+    "cached": 2902272,
+    "output": 88328,
+    "usd": 0.0826,
+    "mb": 234.6299,
+    "max_input": 48683,
+    "max_s": 37.15
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6775,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.682,
+    "max_input": 1147,
+    "max_s": 1.69
+   }
+  }
+ },
+ {
+  "arm": "w20o",
+  "repeat": 2,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 86,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 146,
+   "short": 3,
+   "mcq": 1
+  },
+  "keys": [
+   73,
+   73
+  ],
+  "disagree": [],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 216.1,
+  "maps_done_s": 39.3,
+  "cpu_s": 25.8,
+  "billed_usd": 0.14891,
+  "credits": 300.73,
+  "map_credits": 56.0,
+  "credits_per_question": 2.09,
+  "calls": 106,
+  "upload_mb": 333.9,
+  "peak_in_flight": 7,
+  "peak_mb_in_flight": 22.7,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 106
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 6,
+    "input": 189733,
+    "cached": 12160,
+    "output": 16884,
+    "usd": 0.0255,
+    "mb": 19.2872,
+    "max_input": 36180,
+    "max_s": 30.1
+   },
+   "extraction_copy": {
+    "calls": 24,
+    "input": 890522,
+    "cached": 886528,
+    "output": 48343,
+    "usd": 0.0396,
+    "mb": 77.9141,
+    "max_input": 46781,
+    "max_s": 27.59
+   },
+   "extraction_solve": {
+    "calls": 70,
+    "input": 2950419,
+    "cached": 2942464,
+    "output": 88533,
+    "usd": 0.0831,
+    "mb": 235.9796,
+    "max_input": 52105,
+    "max_s": 34.5
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6772,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.6819,
+    "max_input": 1145,
+    "max_s": 1.67
+   }
+  }
+ },
+ {
+  "arm": "w40",
+  "repeat": 1,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [
+   "E2.1#8 as 2.1-16",
+   "E2.1#7 as 2.1-15",
+   "E2.1#6 as 2.1-14",
+   "E2.1#5 as 2.1-13",
+   "E2.1#4 as 2.1-12",
+   "E2.1#3 as 2.1-11",
+   "E2.1#2 as 2.1-10",
+   "E2.1#1 as 2.1-9",
+   "E1.2#4 as 1.2-6",
+   "E1.2#3 as 1.2-5",
+   "E1.2#2 as 1.2-4",
+   "E1.2#1 as 1.2-3",
+   "E1.1b#10 as 1.1b-20",
+   "E1.1b#9 as 1.1b-19",
+   "E1.1b#8 as 1.1b-18",
+   "E1.1b#7 as 1.1b-17",
+   "E1.1b#6 as 1.1b-16",
+   "E1.1b#5 as 1.1b-15",
+   "E1.1b#4 as 1.1b-14",
+   "E1.1b#3 as 1.1b-13",
+   "E1.1b#2 as 1.1b-12",
+   "E1.1b#1 as 1.1b-11",
+   "E1.1a#3 as 1.1a-6",
+   "E1.1a#2 as 1.1a-5",
+   "E1.1a#1 as 1.1a-4"
+  ],
+  "pages_off": 0,
+  "collisions": 0,
+  "within_collisions": 0,
+  "parts_right": 142,
+  "numbers_right": 144,
+  "numbers_wrong": [],
+  "marks_right": 144,
+  "types": {
+   "open": 145,
+   "short": 4,
+   "mcq": 1
+  },
+  "keys": [
+   72,
+   73
+  ],
+  "disagree": [
+   "P4.1#4: ['1.0 gal/hour']"
+  ],
+  "answered": 150,
+  "no_answer": 0,
+  "figures": [
+   6,
+   7,
+   0
+  ],
+  "one_quiz_holds": 101,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 272.4,
+  "maps_done_s": 37.0,
+  "cpu_s": 22.7,
+  "billed_usd": 0.17493,
+  "credits": 365.76,
+  "map_credits": 51.8,
+  "credits_per_question": 2.54,
+  "calls": 99,
+  "upload_mb": 594.0,
+  "peak_in_flight": 5,
+  "peak_mb_in_flight": 29.9,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 99
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 3,
+    "input": 196672,
+    "cached": 4864,
+    "output": 11107,
+    "usd": 0.0228,
+    "mb": 18.3734,
+    "max_input": 70922,
+    "max_s": 33.25
+   },
+   "extraction_copy": {
+    "calls": 27,
+    "input": 2007015,
+    "cached": 2003072,
+    "output": 52612,
+    "usd": 0.0514,
+    "mb": 173.1647,
+    "max_input": 83056,
+    "max_s": 35.43
+   },
+   "extraction_solve": {
+    "calls": 64,
+    "input": 4976792,
+    "cached": 4970752,
+    "output": 90094,
+    "usd": 0.1003,
+    "mb": 401.8219,
+    "max_input": 89883,
+    "max_s": 37.15
+   },
+   "extraction_figures": {
+    "calls": 5,
+    "input": 5671,
+    "cached": 0,
+    "output": 97,
+    "usd": 0.0005,
+    "mb": 0.6065,
+    "max_input": 1151,
+    "max_s": 1.52
+   }
+  }
+ },
+ {
+  "arm": "w40",
+  "repeat": 2,
+  "saved": 144,
+  "found": 144,
+  "lost": [],
+  "duplicated": 0,
+  "extras": [],
+  "relabelled": [],
+  "pages_off": 0,
+  "collisions": 70,
+  "within_collisions": 0,
+  "parts_right": 141,
+  "numbers_right": 135,
+  "numbers_wrong": [
+   "P3.1#1 as G1",
+   "P3.1#9 as G9",
+   "P3.1#8 as G8",
+   "P3.1#6 as G6",
+   "P3.1#4 as G4",
+   "P3.1#5 as G5",
+   "P3.1#3 as G3",
+   "P3.1#7 as G7",
+   "P3.1#2 as G2"
+  ],
+  "marks_right": 144,
+  "types": {
+   "open": 151
+  },
+  "keys": [
+   65,
+   74
+  ],
+  "disagree": [
+   "P3.1#1: ['12.26 lbs/gal']",
+   "P3.1#9: ['51.5 lbs/cf']",
+   "P3.1#8: ['127.9 lbs/cf']",
+   "P3.1#6: ['1.71']",
+   "P3.1#4: ['52.1 lbs']",
+   "P3.1#5: ['506.7 lbs']",
+   "P3.1#3: ['128.1 lbs']",
+   "P3.1#7: ['646.8 lbs']",
+   "P3.1#2: ['2.37']"
+  ],
+  "answered": 151,
+  "no_answer": 0,
+  "figures": [
+   7,
+   7,
+   0
+  ],
+  "one_quiz_holds": 99,
+  "failed_windows": 0,
+  "stopped": [],
+  "seconds": 264.8,
+  "maps_done_s": 30.8,
+  "cpu_s": 24.8,
+  "billed_usd": 0.17399,
+  "credits": 362.67,
+  "map_credits": 52.1,
+  "credits_per_question": 2.52,
+  "calls": 97,
+  "upload_mb": 573.0,
+  "peak_in_flight": 7,
+  "peak_mb_in_flight": 28.0,
+  "cut_off": 0,
+  "providers": {
+   "InferenceNet": 97
+  },
+  "by_purpose": {
+   "extraction_map": {
+    "calls": 3,
+    "input": 196684,
+    "cached": 2432,
+    "output": 10966,
+    "usd": 0.0229,
+    "mb": 18.3734,
+    "max_input": 70926,
+    "max_s": 26.73
+   },
+   "extraction_copy": {
+    "calls": 20,
+    "input": 1445407,
+    "cached": 1441664,
+    "output": 48472,
+    "usd": 0.0441,
+    "mb": 124.4059,
+    "max_input": 81513,
+    "max_s": 34.68
+   },
+   "extraction_solve": {
+    "calls": 68,
+    "input": 5251005,
+    "cached": 5244032,
+    "output": 95920,
+    "usd": 0.1064,
+    "mb": 429.5557,
+    "max_input": 86602,
+    "max_s": 35.3
+   },
+   "extraction_figures": {
+    "calls": 6,
+    "input": 6756,
+    "cached": 0,
+    "output": 114,
+    "usd": 0.0006,
+    "mb": 0.6819,
+    "max_input": 1140,
+    "max_s": 1.72
+   }
+  }
+ }
+]
