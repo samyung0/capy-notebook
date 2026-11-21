@@ -101,15 +101,15 @@ describe('Make a quiz', () => {
 
   it('picks pages up to the cap across files, and all of a file', () => {
     let selected: ReadonlySet<string> = new Set();
-    selected = toggleAllPages(selected, 'a', 30);
-    expect(selected.size).toBe(30);
+    selected = toggleAllPages(selected, 'a', 20);
+    expect(selected.size).toBe(20);
     selected = toggleAllPages(selected, 'b', 30);
     expect(selected.size).toBe(EXTRACTION_PAGES_MAX);
     expect(pickedPages(selected, 'b')).toHaveLength(10);
     expect(togglePage(selected, pageKey({ fileId: 'b', page: 20 })).size).toBe(
       EXTRACTION_PAGES_MAX
     );
-    selected = toggleAllPages(selected, 'a', 30);
+    selected = toggleAllPages(selected, 'a', 20);
     expect(pickedPages(selected, 'a')).toEqual([]);
   });
 
