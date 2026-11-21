@@ -39,6 +39,8 @@ export interface OfficeFamily {
 export interface SlicedOfficeFace {
   bytes: ArrayBuffer;
   families: OfficeFamily[];
+  /** Its private family, naming it across the batches of one layout. */
+  id: string;
 }
 
 const failures = new Set<(error: Error) => void>();
@@ -122,14 +124,13 @@ export function usedOfficeFaces(displayList: unknown): OfficeFace[] {
   return paintedFaces(used.values(), displayList);
 }
 
-/** The viewer's sliced faces, each under the families `displayList` paints
- * it with. */
+/** The viewer's sliced faces, by private family, each under the families of
+ * `painted` (`paintedFamilies`) it paints. */
 export function slicedOfficeFaces(
-  sliced: readonly DocxViewerSlicedFace[],
-  displayList: unknown
-): SlicedOfficeFace[] {
-  const painted = paintedFamilies(displayList);
-  return sliced.map(({ bytes, family, slices }) => {
+  sliced: readonly Pick<DocxViewerSlicedFace, 'family' | 'slices'>[],
+  painted: ReadonlySet<string>
+): Omit<SlicedOfficeFace, 'bytes'>[] {
+  return sliced.map(({ family, slices }) => {
     const families: OfficeFamily[] = [{ family }];
     // Opaque to DOCX: the fonts package's location.
     const index = (slices as SliceLocation).ref.index;
@@ -140,10 +141,10 @@ export function slicedOfficeFaces(
         weight: String(face.weight),
       });
     return {
-      bytes,
       families: families.filter(({ family }) =>
         painted.has(family.toLowerCase())
       ),
+      id: family,
     };
   });
 }

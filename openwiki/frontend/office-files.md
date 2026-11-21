@@ -240,15 +240,15 @@ performance marks (`src/lib/officeMarks.ts`), for UAT's measure lane and
 later RUM; no telemetry is sent. Capy's page clears its marks when an open
 starts and marks `open`, `session`, `token`, `base` (`bytes`, `cached`),
 `provider`, `synced`, `load-posted` (`bytes`, `checkpointBytes`,
-`initialUpdateBytes`), `runtime-initialized`, `ready` and
-`collaboration-ready`. The frame marks `runtime-boot`, `load-received`
-(`bytes`), `chunk:<format>-<mode>:start`/`:end`,
+`initialUpdateBytes`), `runtime-initialized`, `painted` (DOCX View's first
+pages), `ready` and `collaboration-ready`. The frame marks `runtime-boot`,
+`load-received` (`bytes`), `chunk:<format>-<mode>:start`/`:end`,
 `wasm:<module>:start`/`:end` (`docx-edit`, `pptx-edit`, `pptx-view`,
 `xlsx-view`, and `xlsx-edit-fetch` for the cache warm-up), `fonts:start`/`:end`
-(DOCX view) and `fonts:faces` (PPTX view); the DOCX viewer worker posts
-`wasm:docx-view:start`/`:end`, `worker:open-start`, `worker:open-end` and
-`worker:display-list` back with its result, and the frame marks them at the
-worker's times.
+(DOCX view, the first pages' faces) and `fonts:faces` (PPTX view); the DOCX
+viewer worker posts `wasm:docx-view:start`/`:end`, `worker:open-start`,
+`worker:layout-end`, `worker:first-pages` and `worker:open-end` back with its
+last message, and the frame marks them at the worker's times.
 
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
 WASM omits editing, collaboration, undo, and save machinery; the DOCX viewer
@@ -257,9 +257,18 @@ bridge with the editor. The React editor and editor WASM are imported only after
 the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
-The DOCX viewer builds that list from the engine's typed state eight pages at a
-time, parsing the display extras once, with measured text as the editor's
-joined glyph runs, and frees its WASM before posting.
+The DOCX viewer builds that list from the engine's typed state, parsing the
+display extras once, with measured text as the editor's joined glyph runs, and
+shows it progressively (C6, Q790 A): after the layout, which sizes every page,
+it builds and posts the pages the frame shows at the top plus one, then the
+rest eight at a time, each batch once its sliced faces hold its outlines; the
+frame draws each batch as it comes and holds the space of the pages still to
+come, so the scroll height is final from the first paint. A later page's list
+marker that names a sliced face after an earlier page's family re-sends that
+earlier page, so the final pages equal a whole build's. The frame posts
+`painted` at the first paint and `ready` once every page is in; print and a
+citation's highlight wait for every page. The worker frees its WASM after the
+last batch and goes.
 Every editor and viewer WASM module grows its linear memory in steps as large
 as the memory already is, at most 64 MiB (`vendor/betteroffice/crates/wasm-alloc`):
 Rust's allocator alone grows it by the 64 KiB a request needs, and each grow

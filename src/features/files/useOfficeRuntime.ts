@@ -832,6 +832,13 @@ export function useOfficeRuntime({
         renderRequests.current.delete(message.id);
         return;
       }
+      // DOCX View's first pages are up: the skeleton goes and the page count
+      // shows before the rest are in (`ready`).
+      if (message.type === 'painted') {
+        officeMark('painted');
+        setAnalysis(message.analysis);
+        return;
+      }
       if (message.type === 'ready') {
         officeMark('ready');
         if (frameOpen.current === 'opening') frameOpen.current = 'ready';

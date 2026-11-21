@@ -35,7 +35,10 @@ class FakeFontFace {
 vi.stubGlobal('FontFace', FakeFontFace);
 
 // Each layout's viewer worker, answered by the test.
-const workers: { answer: (family: string) => void }[] = [];
+const workers: {
+  answer: (family: string) => void;
+  send: (data: unknown) => void;
+}[] = [];
 vi.mock('./docxViewerWorker', () => ({
   takeDocxViewerWorker: () => {
     const worker = {
@@ -43,25 +46,42 @@ vi.mock('./docxViewerWorker', () => ({
       postMessage: () => {},
       terminate: () => {},
     };
-    const entry = {
-      answer: (family: string) =>
-        worker.onmessage?.({
-          data: {
-            displayList: { pages: [] },
-            faces: [],
-            marks: {},
-            sliced: [{ bytes: new ArrayBuffer(1), families: [{ family }] }],
-            type: 'ready',
-          },
-        }),
-    };
-    workers.push(entry);
+    const send = (data: unknown) => worker.onmessage?.({ data });
+    workers.push({
+      answer: (family: string) => {
+        send({
+          faces: [],
+          pages: [],
+          sizes: [],
+          sliced: [
+            { bytes: new ArrayBuffer(1), families: [{ family }], id: family },
+          ],
+          type: 'pages',
+        });
+        send({ marks: {}, type: 'ready' });
+      },
+      send,
+    });
     return worker;
   },
 }));
+// What the viewer was last given to draw.
+const drawn: { pages: number; pending: number }[] = [];
 vi.mock('@betteroffice/docx-react', () => ({
   DOCX_PAGES_PRESENTED_EVENT: 'docx-pages-presented',
-  DocxDisplayListViewer: () => null,
+  DocxDisplayListViewer: ({
+    displayList,
+    pendingPages,
+  }: {
+    displayList: { pages: unknown[] };
+    pendingPages?: unknown[];
+  }) => {
+    drawn.push({
+      pages: displayList.pages.length,
+      pending: pendingPages?.length ?? 0,
+    });
+    return null;
+  },
 }));
 
 const { act } = await import('react');
@@ -72,6 +92,7 @@ afterEach(() => {
   fonts.clear();
   loads.length = 0;
   workers.length = 0;
+  drawn.length = 0;
 });
 
 const families = () => [...fonts].map((face) => face.family);
@@ -92,6 +113,7 @@ function viewer(bytes: Uint8Array) {
       onAnalysis={noop}
       onError={noop}
       onMenus={noop}
+      onPainted={noop}
       onRenderer={noop}
       onZoomChange={noop}
     />
@@ -125,4 +147,34 @@ it('deletes the faces of an open cancelled while they loaded', async () => {
   await act(async () => root.unmount());
   await settle();
   expect(families()).toEqual([]);
+});
+
+it('draws the first pages before the rest are in, holding their space', async () => {
+  document.body.innerHTML = '<div id="root"></div>';
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () => root.render(viewer(new Uint8Array([1]))));
+  const size = { height: 1056, width: 816 };
+  const page = (pageIndex: number) => ({ pageIndex, primitives: [] });
+  const pages = (from: number, to: number, sizes?: unknown[]) =>
+    workers[0]?.send({
+      faces: [],
+      pages: Array.from({ length: to - from }, (_, i) => page(from + i)),
+      sizes,
+      sliced: [],
+      type: 'pages',
+    });
+  await act(async () =>
+    pages(
+      0,
+      2,
+      Array.from({ length: 5 }, () => size)
+    )
+  );
+  await settle();
+  expect(drawn.at(-1)).toEqual({ pages: 2, pending: 3 });
+
+  await act(async () => pages(2, 5));
+  await settle();
+  expect(drawn.at(-1)).toEqual({ pages: 5, pending: 0 });
+  await act(async () => root.unmount());
 });
