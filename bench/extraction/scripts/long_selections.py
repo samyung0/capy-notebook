@@ -24,6 +24,12 @@ of ``BATCHES_AT_ONCE`` across the windows, as one run's batches do; the maps go 
 The merged quiz keeps each window's questions apart, so the score sees label collisions
 a merge would have to resolve instead of losing them.
 
+``--exams DATA`` runs the same arms on scans instead: six scanned HKDSE mathematics
+papers picked in one run (67 pages, 165 questions, every paper numbering from 1) with
+three scanned marking schemes and one key file, from the ignored data folder. A scan's
+page read is its indexed text, as at ingest; arms ending in ``i`` send the marking
+schemes as page images (production's for a scan), the others as their page reads.
+
 Patched for the bench only: no layout service (no boxes, so every figure takes the box
 call, production's path when the service is down), the quiz's part caps lifted so the
 extraction itself is measured past them, a nonce on the system prompt so no run reads
@@ -271,10 +277,44 @@ def show_gold() -> None:
 @dataclass
 class Window:
     index: int
-    own: set[int]
+    # Its own pages as (file name, page number): papers in one selection share numbers.
+    own: set[tuple[str, int]]
     # The chunk arm's group: the chunk map's lines for its questions, which
     # stand in for the map call's reply.
     replay: str | None = None
+
+
+def page_key(page) -> tuple[str, int]:
+    return page.file_name, page.number
+
+
+def resolve(rows, pages) -> list[tuple[int, int] | None]:
+    """Each map row's first and last page, as indexes into ``pages``. A row gives only
+    page numbers, which several files share, so a row's first page is the next page
+    with its number at or after the previous row's, as the map lists in order."""
+    out, cursor = [], 0
+    for row in rows:
+        at = next(
+            (i for i in range(cursor, len(pages)) if pages[i].number == row.first),
+            None,
+        )
+        if at is None:
+            at = next((i for i, p in enumerate(pages) if p.number == row.first), None)
+        if at is None:
+            out.append(None)
+            continue
+        end = next(
+            (
+                i
+                for i in range(at, len(pages))
+                if pages[i].file_name == pages[at].file_name
+                and pages[i].number == row.last
+            ),
+            at,
+        )
+        out.append((at, end))
+        cursor = at
+    return out
 
 
 @dataclass
@@ -330,13 +370,23 @@ def install() -> None:
             pages, answers, boxes, model=model
         )
         window = WINDOW.get()
-        kept = rows if window is None else [r for r in rows if r.first in window.own]
+        spans = resolve(rows, pages)
+        kept = (
+            rows
+            if window is None
+            else [
+                r
+                for r, span in zip(rows, spans)
+                if span and page_key(pages[span[0]]) in window.own
+            ]
+        )
         STATE.get().maps.append(
             {
                 "window": None if window is None else window.index,
                 "replay": bool(window and window.replay is not None),
                 "seconds": round(time.monotonic() - STATE.get().started, 1),
                 "rows": [[r.label, r.first, r.last, r.parts, r.figures] for r in rows],
+                "files": [span and pages[span[0]].file_name for span in spans],
                 "kept": [r.label for r in kept],
             }
         )
@@ -349,7 +399,7 @@ def install() -> None:
     def uncopied(self, rows, pages):
         window = WINDOW.get()
         if window is not None:
-            pages = [p for p in pages if p.number in window.own]
+            pages = [p for p in pages if page_key(p) in window.own]
         return production_uncopied(self, rows, pages)
 
     extraction.Run.uncopied = uncopied
@@ -499,8 +549,137 @@ def own_answer_pages(own: list[int]) -> list[int]:
     return out
 
 
-def windows_of(size: int) -> list[list[int]]:
-    return [QUESTION_PAGES[i : i + size] for i in range(0, len(QUESTION_PAGES), size)]
+# --------------------------------------------------- the scanned papers' selection
+
+# "book" (the textbook) or "exams": six scanned HKDSE mathematics papers picked in one
+# run, each numbering from 1, with three scanned marking schemes and one key file.
+SELECTION = "book"
+DATA: Path | None = None
+EXAM_PAPERS = (
+    ("2021-p1", range(2, 9)),
+    ("2022-p1", range(2, 9)),
+    ("2024-p1", range(2, 9)),
+    ("2022-p2", range(1, 17)),
+    ("2021-p2", range(1, 16)),
+    ("2025-p2", range(1, 16)),
+)
+EXAM_SCHEMES = ("2021-ans", "2022-ans", "2024-ans")
+
+
+def _refs() -> Path:
+    return DATA / "question-bank/references/hkdse-math-compulsory"
+
+
+def _page_read(paper: str, number: int) -> str:
+    """The cached page read of a scanned page: the indexed text a scan has."""
+    path = DATA / "extraction-bench-results/study-extraction/text"
+    return (path / f"{paper}-{number:02d}.txt").read_text()
+
+
+def _scan_renderers(cfg, capture, extraction, pdf: Path):
+    async def image(number):
+        jpeg, _b, _s = await asyncio.to_thread(
+            capture.render, pdf, number, None, cfg.capture_max_edge
+        )
+        return capture.data_url(jpeg)
+
+    async def crop(number, box):
+        jpeg, _b, size = await asyncio.to_thread(
+            capture.render,
+            pdf,
+            number,
+            box,
+            cfg.capture_max_edge,
+            page_edge=extraction.FIGURE_PAGE_EDGE,
+        )
+        return jpeg, size
+
+    return image, crop
+
+
+def _exam_pages(cfg, capture, extraction) -> list:
+    """The papers' pages as production builds a scan's: the page read as its text,
+    which the image map doesn't send, and the layer from the PDF."""
+    pages = []
+    for paper, numbers in EXAM_PAPERS:
+        pdf = _refs() / f"{paper}.pdf"
+        image, crop = _scan_renderers(cfg, capture, extraction, pdf)
+        texts = {n: _page_read(paper, n) for n in numbers}
+        layers = extraction.page_layers(pdf, texts)
+        pages += [
+            extraction.Page(
+                n,
+                pdf.name,
+                texts[n],
+                functools.partial(image, n),
+                functools.partial(crop, n),
+                layer=layers[n],
+            )
+            for n in numbers
+        ]
+    return pages
+
+
+def _exam_answers(cfg, capture, extraction, *, images: bool) -> list:
+    """The marking schemes as images (production's for a scan) or as their page
+    reads, and the multiple-choice paper's key as a text file."""
+    import pymupdf
+
+    files = []
+    picked = {paper for paper, _numbers in EXAM_PAPERS}
+    for scheme in (s for s in EXAM_SCHEMES if f"{s[:4]}-p1" in picked):
+        pdf = _refs() / f"{scheme}.pdf"
+        with pymupdf.open(pdf) as doc:
+            numbers = range(1, len(doc) + 1)
+        texts = {n: _page_read(scheme, n) for n in numbers}
+        if images:
+            image, _crop = _scan_renderers(cfg, capture, extraction, pdf)
+            layers = extraction.page_layers(pdf, texts)
+            files.append(
+                extraction.AnswerFile(
+                    pdf.name,
+                    images=tuple(
+                        (n, functools.partial(image, n))
+                        for n in numbers
+                        if layers[n] != extraction.BLANK
+                    ),
+                )
+            )
+        else:
+            files.append(
+                extraction.AnswerFile(pdf.name, "\n\n".join(texts[n] for n in numbers))
+            )
+    if "2022-p2" in picked:
+        key = exam_gold()["2022-p2.pdf"]
+        files.append(
+            extraction.AnswerFile(
+                "2022-p2-answers.txt",
+                "\n".join(f"{q['label']}. {q['parts'][0]['correct']}" for q in key),
+            )
+        )
+    return files
+
+
+def exam_gold() -> dict[str, list[dict]]:
+    """Each paper's questions: the extraction gold where there is one (labels, parts,
+    marks, keys, figures), else a multiple-choice paper's 45 one-mark items."""
+    gold_dir = DATA / "extraction-bench-fixtures/fixtures/gold"
+    out = {}
+    for paper, _numbers in EXAM_PAPERS:
+        path = gold_dir / f"{paper}.json"
+        if path.exists():
+            out[f"{paper}.pdf"] = json.loads(path.read_text())["questions"]
+        else:
+            out[f"{paper}.pdf"] = [
+                {
+                    "label": str(n),
+                    "total": 1,
+                    "figure": None,
+                    "parts": [{"label": "", "type": "mcq", "marks": 1}],
+                }
+                for n in range(1, 46)
+            ]
+    return out
 
 
 async def _collect(run, crops_dir: Path) -> dict:
@@ -523,53 +702,77 @@ async def _collect(run, crops_dir: Path) -> dict:
     }
 
 
-async def _chunk_arm(limit: int, pages, answers, model, validate, crops: Path) -> list:
+async def _chunk_arm(
+    limit: int, pages, answers, model, validate, crops: Path, *, reletter: bool
+) -> list:
     """One map over every page's chunk text and no image (production's text-paper
     map), then the map's questions grouped by page into runs of at most ``limit``
-    page images, each replaying the map's lines for its questions."""
+    page images, each replaying the map's lines for its questions. With
+    ``reletter``, code letters a label two files share by its file first."""
     from pipeline.retrieval import extraction
 
     text_pages = [dataclasses.replace(p, image=None, crop=None) for p in pages]
     _messages, rows, _output = await extraction._attempted(
         functools.partial(extraction.read_map, text_pages, answers, {}, model=model)
     )
-    numbers = {p.number for p in pages}
+    spans = resolve(rows, pages)
+    if reletter:
+        rows = relettered(rows, [s and pages[s[0]].file_name for s in spans])
     groups: list[tuple[list, set[int]]] = []
-    for row in rows:
-        span = set(range(row.first, row.last + 1)) & numbers
-        if not span:
+    for row, span in zip(rows, spans):
+        if span is None:
             continue
-        if not groups or len(groups[-1][1] | span) > limit:
+        indexes = set(range(span[0], span[1] + 1))
+        if not groups or len(groups[-1][1] | indexes) > limit:
             groups.append(([], set()))
         groups[-1][0].append(row)
-        groups[-1][1].update(span)
-    by_number = {p.number: p for p in pages}
+        groups[-1][1].update(indexes)
 
-    async def group(index: int, kept: list, own: set[int]) -> dict:
+    async def group(index: int, kept: list, indexes: set[int]) -> dict:
         lines = "\n".join(
             f"{r.label} | pages {r.first}-{r.last} | parts {', '.join(r.parts) or 'none'} "
             "| figures none"
             for r in kept
         )
-        WINDOW.set(Window(index, own, replay=lines))
-        sent = sorted(own)
+        sent = [pages[i] for i in sorted(indexes)]
+        WINDOW.set(Window(index, {page_key(p) for p in sent}, replay=lines))
         try:
             result = await _collect(
-                extraction.run(
-                    [by_number[n] for n in sent],
-                    answers,
-                    model=model,
-                    validate=validate,
-                ),
+                extraction.run(sent, answers, model=model, validate=validate),
                 crops / f"g{index}",
             )
         except Exception as exc:  # A group that fails is a finding.
             result = {"failed": repr(exc)[:300], "questions": [], "report": {}}
-        return {"index": index, "own": sent, "sent": sent, **result}
+        return {"index": index, "own": _ids(sent), "sent": _ids(sent), **result}
 
     return await asyncio.gather(
-        *(group(i, kept, own) for i, (kept, own) in enumerate(groups))
+        *(group(i, kept, indexes) for i, (kept, indexes) in enumerate(groups))
     )
+
+
+def relettered(rows, files: list[str | None]) -> list:
+    """A label that rows of two files share, lettered by its file's place in the
+    selection (A for the first file): 1 in the second paper becomes B1."""
+    from pipeline.retrieval.extraction import label_key
+
+    order = list(dict.fromkeys(f for f in files if f))
+    owners = collections.defaultdict(set)
+    for row, file in zip(rows, files):
+        owners[label_key(row.label)].add(file)
+    return [
+        dataclasses.replace(row, label=f"{chr(65 + order.index(file))}{row.label}")
+        if file and len(owners[label_key(row.label)]) > 1
+        else row
+        for row, file in zip(rows, files)
+    ]
+
+
+def _ids(pages) -> list:
+    """Pages as a run's record names them: numbers for the book, file:number for the
+    papers."""
+    if SELECTION == "book":
+        return [p.number for p in pages]
+    return [f"{p.file_name}:{p.number}" for p in pages]
 
 
 async def one(arm: str, repeat: int, model, validate) -> dict:
@@ -584,8 +787,12 @@ async def one(arm: str, repeat: int, model, validate) -> dict:
         time.monotonic(),
     )
     STATE.set(state)
-    pages = _pages(cfg, capture, extraction)
-    answers = _answers(extraction)
+    if SELECTION == "book":
+        pages = _pages(cfg, capture, extraction)
+        answers = _answers(extraction)
+    else:
+        pages = _exam_pages(cfg, capture, extraction)
+        answers = _exam_answers(cfg, capture, extraction, images=arm.endswith("i"))
     elitellm.bind_route_slot("extraction")
     bind_request_llm("mid")
     limits.bind_call_slots(limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S))
@@ -593,45 +800,38 @@ async def one(arm: str, repeat: int, model, validate) -> dict:
     cpu = resource.getrusage(resource.RUSAGE_SELF)
     crops = OUT / "crops" / f"{arm}-{repeat}"
     windows: list[dict] = []
+    size = int(arm[1:].rstrip("oir")) if arm != "one" else 0
     if arm.startswith("c"):
-        windows = await _chunk_arm(int(arm[1:]), pages, answers, model, validate, crops)
+        windows = await _chunk_arm(
+            size, pages, answers, model, validate, crops, reletter=arm.endswith("r")
+        )
     elif arm == "one":
         result = await _collect(
             extraction.run(pages, answers, model=model, validate=validate), crops
         )
-        windows.append(
-            {"index": 0, "own": QUESTION_PAGES, "sent": QUESTION_PAGES, **result}
-        )
+        windows.append({"index": 0, "own": _ids(pages), "sent": _ids(pages), **result})
     else:
-        by_number = {p.number: p for p in pages}
 
-        async def window(index: int, own: list[int]) -> dict:
-            WINDOW.set(Window(index, set(own)))
-            sent = [n for n in range(own[0] - 1, own[-1] + 2) if n in by_number]
+        async def window(index: int, start: int) -> dict:
+            own = pages[start : start + size]
+            sent = pages[max(0, start - 1) : start + size + 1]
+            WINDOW.set(Window(index, {page_key(p) for p in own}))
             mine = (
-                _answers(extraction, own_answer_pages(own))
+                _answers(extraction, own_answer_pages([p.number for p in own]))
                 if arm.endswith("o")
                 else answers
             )
             try:
                 result = await _collect(
-                    extraction.run(
-                        [by_number[n] for n in sent],
-                        mine,
-                        model=model,
-                        validate=validate,
-                    ),
+                    extraction.run(sent, mine, model=model, validate=validate),
                     crops / f"w{index}",
                 )
             except Exception as exc:  # A window that fails is a finding.
                 result = {"failed": repr(exc)[:300], "questions": [], "report": {}}
-            return {"index": index, "own": own, "sent": sent, **result}
+            return {"index": index, "own": _ids(own), "sent": _ids(sent), **result}
 
         windows = await asyncio.gather(
-            *(
-                window(i, own)
-                for i, own in enumerate(windows_of(int(arm[1:].rstrip("o"))))
-            )
+            *(window(i, start) for i, start in enumerate(range(0, len(pages), size)))
         )
     after = resource.getrusage(resource.RUSAGE_SELF)
     rates = bench.CAPTIONING[2]
@@ -664,8 +864,21 @@ async def one(arm: str, repeat: int, model, validate) -> dict:
     }
 
 
+def _pick_exams(args) -> None:
+    """--exams DATA: the scanned papers' selection, from the ignored data folder;
+    --papers keeps a smoke test to a few of them, apart from the measured runs."""
+    global OUT, SELECTION, DATA, EXAM_PAPERS
+    if not args.exams:
+        return
+    SELECTION, DATA, OUT = "exams", Path(args.exams), OUT / "exams"
+    if args.papers:
+        EXAM_PAPERS = tuple(p for p in EXAM_PAPERS if p[0] in args.papers)
+        OUT = OUT / f"smoke-{'-'.join(args.papers)}"
+
+
 async def run_arms(args) -> None:
     global OUT, QUESTION_PAGES
+    _pick_exams(args)
     if args.pages:
         # A smoke test on a few pages, kept apart from the measured runs.
         first, last = map(int, args.pages.split("-"))
@@ -938,26 +1151,6 @@ def score_run(result: dict, gold_items: list[dict]) -> dict:
         ):
             break
         held, parts_n, open_n = held + 1, parts_n + p, open_n + o
-    calls = result["calls"]
-    by_purpose = collections.defaultdict(lambda: collections.Counter())
-    for c in calls:
-        row = by_purpose[c["purpose"]]
-        row["calls"] += 1
-        row["input"] += c.get("input") or 0
-        row["cached"] += c.get("cached") or 0
-        row["output"] += c.get("output") or 0
-        row["usd"] += c.get("cost") or 0
-        row["mb"] += c["bytes"] / 1e6
-        row["max_input"] = max(row["max_input"], c.get("input") or 0)
-        row["max_s"] = max(row["max_s"], c.get("seconds") or 0)
-    rates = bench.CAPTIONING[2]
-    map_credits = sum(
-        ((c.get("input") or 0) - (c.get("cached") or 0)) * rates[0] / 1e6
-        + (c.get("cached") or 0) * rates[1] / 1e6
-        + (c.get("output") or 0) * rates[2] / 1e6
-        for c in calls
-        if c["purpose"] == "extraction_map"
-    )
     lost = [g for i, g in enumerate(gold_items) if i not in matched]
     return {
         "arm": result["arm"],
@@ -986,13 +1179,40 @@ def score_run(result: dict, gold_items: list[dict]) -> dict:
         "stopped": sorted(
             {w["report"].get("stopped", "") for w in result["windows"]} - {""}
         ),
+        **_costs(result, len(saved)),
+    }
+
+
+def _costs(result: dict, saved: int) -> dict:
+    """A run's time, spend, calls and upload, in all and by purpose."""
+    calls = result["calls"]
+    by_purpose = collections.defaultdict(lambda: collections.Counter())
+    for c in calls:
+        row = by_purpose[c["purpose"]]
+        row["calls"] += 1
+        row["input"] += c.get("input") or 0
+        row["cached"] += c.get("cached") or 0
+        row["output"] += c.get("output") or 0
+        row["usd"] += c.get("cost") or 0
+        row["mb"] += c["bytes"] / 1e6
+        row["max_input"] = max(row["max_input"], c.get("input") or 0)
+        row["max_s"] = max(row["max_s"], c.get("seconds") or 0)
+    rates = bench.CAPTIONING[2]
+    map_credits = sum(
+        ((c.get("input") or 0) - (c.get("cached") or 0)) * rates[0] / 1e6
+        + (c.get("cached") or 0) * rates[1] / 1e6
+        + (c.get("output") or 0) * rates[2] / 1e6
+        for c in calls
+        if c["purpose"] == "extraction_map"
+    )
+    return {
         "seconds": result["seconds"],
         "maps_done_s": result["maps_done_s"],
         "cpu_s": result["cpu_s"],
         "billed_usd": result["billed_usd"],
         "credits": result["credits"],
         "map_credits": round(map_credits, 1),
-        "credits_per_question": round(result["credits"] / max(1, len(saved)), 2),
+        "credits_per_question": round(result["credits"] / max(1, saved), 2),
         "calls": len(calls),
         "upload_mb": round(sum(c["bytes"] for c in calls) / 1e6, 1),
         "peak_in_flight": result["peak_in_flight"],
@@ -1081,6 +1301,177 @@ def score(args) -> None:
                 f"\n  relabelled {r['relabelled'][:30]}"
                 f"\n  types {r['types']} stopped {r['stopped']} cut off {r['cut_off']} "
                 f"providers {r['providers']}\n  disagree {r['disagree'][:12]}"
+            )
+            for k, v in r["by_purpose"].items():
+                print(f"  {k}: {v}")
+
+
+def score_exam_run(result: dict, gold: dict[str, list[dict]]) -> dict:
+    """One run over the scanned papers: each saved question is placed on its paper
+    by its map row's first page and matched by its printed number. A copy whose
+    label no map row of its thread gives, or rows of two papers give, is placed by
+    its text against the page reads of the pages its thread sent (``by_text``)."""
+    from pipeline.generated import limits
+
+    wanted = {(f, _label_key(g["label"])): g for f, qs in gold.items() for g in qs}
+    saved, by_text = [], []
+    for window in result["windows"]:
+        index = None if result["arm"] == "one" else window["index"]
+        record = next(
+            (m for m in result["maps"] if m["window"] == index),
+            {"rows": [], "files": [], "kept": []},
+        )
+        files = collections.defaultdict(set)
+        for r, f in zip(record["rows"], record["files"]):
+            if r[0] in record["kept"]:
+                files[_label_key(r[0])].add(f)
+        reads = {}
+        for sent in window["sent"]:
+            name, number = sent.rsplit(":", 1)
+            reads[name, int(number)] = _tokens(
+                _page_read(name.removesuffix(".pdf"), int(number))
+            )
+        for label, question in zip(
+            window["report"].get("recorded", []), window["questions"]
+        ):
+            numbers = re.findall(r"\d+", label)
+            owners = files.get(_label_key(label), set())
+            if len(owners) == 1:
+                file = next(iter(owners))
+            else:
+                mine = _tokens(_question_text(question))
+                file = max(
+                    reads, key=lambda k: len(mine & reads[k]) / max(1, len(mine))
+                )[0]
+                by_text.append(f"w{window['index']}:{label}@{file}")
+            saved.append(
+                {
+                    "window": window["index"],
+                    "label": label,
+                    "key": (file, numbers[-1] if numbers else ""),
+                    "question": question,
+                }
+            )
+    seen: dict[tuple, dict] = {}
+    extras, duplicated = [], 0
+    for q in saved:
+        if q["key"] not in wanted:
+            extras.append(f"w{q['window']}:{q['label']}@{q['key'][0]}")
+        elif q["key"] in seen:
+            duplicated += 1
+        else:
+            seen[q["key"]] = q
+    structure = marks = keys = keys_total = figures = figures_gold = 0
+    answered = no_answer = 0
+    by_paper = collections.Counter()
+    for key, g in wanted.items():
+        figures_gold += bool(g.get("figure"))
+        q = seen.get(key)
+        if q is None:
+            continue
+        by_paper[key[0]] += 1
+        parts = q["question"]["parts"]
+        types = [(p.get("answer") or {}).get("type") for p in parts]
+        structure += types == [gp["type"] for gp in g["parts"]]
+        marks += [p.get("marks") for p in parts] == [gp["marks"] for gp in g["parts"]]
+        figures += bool(g.get("figure")) and any(
+            b.get("type") == "image" for b in _blocks(q["question"])
+        )
+        for p, gp in zip(parts, g["parts"]):
+            answer = p.get("answer") or {}
+            accepted = [a for a in answer.get("accepted") or [] if str(a).strip()]
+            if accepted or answer.get("correct") or p.get("markscheme"):
+                answered += 1
+            else:
+                no_answer += 1
+            if gp.get("correct"):
+                keys_total += 1
+                keys += answer.get("correct") == [ord(gp["correct"]) - ord("A")]
+    held = parts_n = open_n = 0
+    for q in saved:
+        p = len(q["question"]["parts"])
+        o = sum(
+            (x.get("answer") or {}).get("type") == "open"
+            for x in q["question"]["parts"]
+        )
+        if (
+            parts_n + p > limits.QUIZ_PARTS_MAX
+            or open_n + o > limits.QUIZ_OPEN_PARTS_MAX
+        ):
+            break
+        held, parts_n, open_n = held + 1, parts_n + p, open_n + o
+    return {
+        "arm": result["arm"],
+        "repeat": result["repeat"],
+        "saved": len(saved),
+        "found": len(seen),
+        "by_paper": dict(by_paper),
+        "lost": [f"{f}#{label}" for f, label in wanted if (f, label) not in seen],
+        "duplicated": duplicated,
+        "extras": extras,
+        "by_text": by_text,
+        "parts_right": structure,
+        "marks_right": marks,
+        "keys": [keys, keys_total],
+        "answered": answered,
+        "no_answer": no_answer,
+        "figures": [figures, figures_gold],
+        "one_quiz_holds": held,
+        "threads": len(result["windows"]),
+        "failed_windows": sum(1 for w in result["windows"] if w.get("failed")),
+        "stopped": sorted(
+            {w["report"].get("stopped", "") for w in result["windows"]} - {""}
+        ),
+        **_costs(result, len(saved)),
+    }
+
+
+def score_exams(args) -> None:
+    gold = exam_gold()
+    total = sum(len(qs) for qs in gold.values())
+    rows = [
+        score_exam_run(json.loads(path.read_text()), gold)
+        for path in sorted(OUT.glob("*-[0-9]*.json"))
+    ]
+    if args.json:
+        Path(args.json).write_text(json.dumps(rows, indent=1, ensure_ascii=False))
+    print(
+        "| Arm | Runs | Found | Extra | Duplicated | Parts right | Marks right | Keys | "
+        "No answer | Figures | Threads | Wall s | Map s | Billed | Credits a question | "
+        "Peak calls | Upload MB |"
+    )
+    print("|" + "---|" * 17)
+    by_arm = collections.defaultdict(list)
+    for r in rows:
+        by_arm[r["arm"]].append(r)
+    for arm, rs in sorted(by_arm.items()):
+
+        def both(f):
+            return ", ".join(str(f(r)) for r in rs)
+
+        def keyed(r):
+            return "{}/{}".format(*r["keys"])
+
+        print(
+            f"| `{arm}` | {len(rs)} | {both(lambda r: r['found'])} of {total} | "
+            f"{both(lambda r: len(r['extras']))} | {both(lambda r: r['duplicated'])} | "
+            f"{both(lambda r: r['parts_right'])} | {both(lambda r: r['marks_right'])} | "
+            f"{both(keyed)} | {both(lambda r: r['no_answer'])} | "
+            f"{both(lambda r: r['figures'][0])} of {rs[0]['figures'][1]} | "
+            f"{both(lambda r: r['threads'])} | "
+            f"{_spread([r['seconds'] for r in rs])} | "
+            f"{_spread([r['maps_done_s'] or 0 for r in rs])} | "
+            f"${_spread([r['billed_usd'] for r in rs], 3)} | "
+            f"{_spread([r['credits_per_question'] for r in rs], 2)} | "
+            f"{_spread([r['peak_in_flight'] for r in rs])} | "
+            f"{_spread([r['upload_mb'] for r in rs])} |"
+        )
+    if args.detail:
+        for r in rows:
+            print(
+                f"\n{r['arm']}-{r['repeat']}: by paper {r['by_paper']}\n  lost {r['lost']}"
+                f"\n  extras {r['extras']}\n  placed by text {r['by_text']}\n  stopped {r['stopped']} failed "
+                f"{r['failed_windows']} cut off {r['cut_off']} providers {r['providers']}"
             )
             for k, v in r["by_purpose"].items():
                 print(f"  {k}: {v}")
@@ -1220,11 +1611,15 @@ def main() -> None:
     scored.add_argument("--pages", help="first-last question pages of a smoke test")
     scored.add_argument("--json", help="write the scores here")
     scored.add_argument("--detail", action="store_true")
+    scored.add_argument("--exams", help="the data folder: score the scanned papers")
+    scored.add_argument("--papers", nargs="+")
     ran = sub.add_parser("run")
     ran.add_argument("--env-file", required=True)
     ran.add_argument("--arms", nargs="+", required=True)
     ran.add_argument("--hard-stop", type=float, default=4.5)
     ran.add_argument("--pages", help="first-last question pages, for a smoke test")
+    ran.add_argument("--exams", help="the data folder: run the scanned papers")
+    ran.add_argument("--papers", nargs="+", help="a smoke test's papers")
     args = parser.parse_args()
     if args.command == "gold":
         show_gold()
@@ -1234,7 +1629,8 @@ def main() -> None:
             first, last = map(int, args.pages.split("-"))
             QUESTION_PAGES = list(range(first, last + 1))
             OUT = OUT / f"pages-{first}-{last}"
-        score(args)
+        _pick_exams(args)
+        score_exams(args) if args.exams else score(args)
     elif args.command == "scan-maps":
         if args.score:
             score_scan_maps(args)

@@ -4,19 +4,23 @@ Epo asked how Make a quiz maps questions and whether a long textbook can be sent
 reads at most 40 picked pages, because one map call sees every page image and every copy and solve
 call carries that same message. This round measures what happens past the cap: the whole selection
 in one map, maps in page windows, and (Epo's question mid-round, "shouldnt we send chunks?") a map
-over the pages' indexed text with images only for the pages that hold questions.
+over the pages' indexed text with images only for the pages that hold questions. Epo then asked
+for the same on scans: six scanned exam papers picked together, end to end.
 
 All 1017 on the extraction route. Script: `scripts/long_selections.py`, around the production
 `extraction.run`. No app or pipeline code changed. Mac, 2026-11-21. Scores and per-purpose tokens of
-every run are in `2026-11-21-long-selections/scores.json`.
+every run are in `2026-11-21-long-selections/scores.json` (the textbook) and `scores-exams.json` (the
+scanned papers).
 
 ## Answer
 
-**Yes, with a text map.** Map every picked page from its indexed text (no images), then copy and
-solve in threads that carry only the pages that hold questions, at most 30 page images a call. On
-110 textbook pages with 144 questions, in both runs, it found every question with every printed
-number, agreed with the book's solutions on 145 of 146 parts (the other is 1.0 gal/hour for the
-book's 0.96), kept every figure, and cost 2.1 credits a question in about 4 minutes.
+**Yes, with a text map, and code lettering the labels when several files are picked.** Map every
+picked page from its indexed text (no images), then copy and solve in threads that carry only the
+pages that hold questions, at most 30 page images a call. On 110 textbook pages with 144 questions, in
+both runs, it found every question with every printed number, agreed with the book's solutions on
+145 of 146 parts (the other is 1.0 gal/hour for the book's 0.96), kept every figure, and cost 2.1
+credits a question in about 4 minutes. On six scanned exam papers picked together it found all 165
+questions in both runs once code lettered the labels the papers share.
 
 - **One map over everything doesn't work.** Past about 109 page images InferenceNet refuses the
   request, and past 32 so does Cloudflare, so only Wafer served it: 30 minutes a run, 2.7 GB
@@ -29,9 +33,16 @@ book's 0.96), kept every figure, and cost 2.1 credits a question in about 4 minu
   merge would have to re-letter. Windows of 40 renumbered 25 exercises in one run and copied 9
   practice questions with their exercise twins' numbers in the other. Windows of 10 took 11 worked
   examples for questions in both runs (the user would pay 4 credits each).
-- **The text map holds on scans.** On four scanned HKDSE papers, mapped twice each from their page
-  reads, every label, part list and page matched the gold and production's image map, with 2.5 times
-  fewer tokens.
+- **Scans, end to end: labels are the risk, not the page reads.** Six scanned HKDSE papers picked
+  together (67 pages, 165 questions, every paper numbering from 1), mapped from their page reads. In
+  one of two runs the text map labelled every paper from 1, so a thread holding four papers kept one
+  question per label and 82 were lost. With code lettering a label two papers share by its file (A1,
+  B1), both runs found all 165 with every multiple-choice key, every Paper 1 mark and every figure;
+  one run also saved 6 questions twice. 20-page windows also found all 165 twice, but their labels
+  would clash on 39 and 3 when merged. On scans the text map costs what the windows do (2.6 against
+  2.5 credits a question), since every thread still carries its page images. On the map step alone,
+  four scanned papers mapped from their page reads matched the gold and the image map on every label,
+  part and page.
 - **Twin sets are the one fidelity risk.** This book prints each practice set again as an exercise
   set with the same wording and new numbers. In 3 of 12 runs copies took the twin's numbers (44
   questions in one map, 9 at 40 pages, 2 at 10 pages from the page before the window); never in the
@@ -59,14 +70,16 @@ counted on the parts as saved.
 
 | Decision | My pick | Why |
 |---|---|---|
-| Route past 40 pages | **Text map, then threads of question pages** | Same accuracy as 20-page windows, no label collisions, no worked examples taken for questions, cheapest map. See [the arms](#the-arms) |
+| Route past 40 pages | **Text map, then threads of question pages** | On the textbook: same accuracy as 20-page windows, no label collisions, no worked examples taken for questions, cheapest map. On scanned papers: the same as the windows once code letters the labels, at the same cost. See [the arms](#the-arms) |
 | Images a thread | **30**, answer images included | Cloudflare refuses 33; InferenceNet stops near 109. See [provider limits](#provider-limits) |
 | Answer files | **The whole file in every thread, as today** | Giving each window only its own solution pages saved 10% and scored no better; code can't pair them anyway |
 | Page cap | **150 picked pages** | What a run costs follows its questions, not its pages: an explanation page costs only its text in one map call (about 330 tokens a page here). At the 6,000 characters a page the map already allows, 150 pages stay near 300K tokens, inside 1017's 1M |
-| Word and PowerPoint | **Keep 40 pages until the browser sends each drawn page's text** | Their drawn pages carry no text and the indexed text's pages need not match them, so the text map can't place their questions. Untested. See [what changes](#what-the-build-changes) |
+| Several files in one run | **Code places each map row on its file and letters a number two files share by its file (A1, B1), whatever the map wrote** | Rows give only page numbers, which papers share. The text map told six papers apart itself in 2 of 4 runs; once it didn't, 82 questions were lost. Where it wrote long prefixes (`2025P2-37`), the copy saved 15 under the printed number instead, 6 of them twice. Code's letters ran clean once. Today's runs of several papers under 40 pages lean on the map the same way. See [scanned papers](#scanned-papers-end-to-end) |
+| Scanned answer files | **Their page reads, in every thread** (needs your OK) | Three marking schemes are 38 page images, more than a thread holds. As page reads, every Paper 1 part got its scheme's marks in every run that found it. As images past 30, untested |
+| Word and PowerPoint | **PowerPoint takes the text map by slide; Word's threads take one page either side** | The map reads LibreOffice's pages and the threads the runtime's drawn pages. Slides agree; Word's breaks can drift. Untested. See [what changes](#what-the-build-changes) |
 | More questions than one quiz holds | **The confirm dialog offers the first that fit, as it does for credits** | One quiz holds 150 parts and 100 AI-marked parts. Several quizzes from one run would be a product change |
 | Price | **Keep 4 credits a question** | The text map cost 2.0 to 2.2 credits a question, the windows 2.1 to 2.5; one map over everything (5.5 to 6.1) would not be covered |
-| How prompts are sent | **Needs your OK**: the map gets the text-paper system prompt, a scan's page read included (today a scan sends no text, your "scans only" of 2026-11-05), and each copy thread starts from its pages with the map's lines for its questions as the reply | No wording changes, but which prompt, which text and which reply a call sees does. The copy still never sees a scan's text. See [what changes](#what-the-build-changes) |
+| How prompts are sent | **Needs your OK**: the map gets the text-paper system prompt, a scan's page read included (today a scan sends no text, your "scans only" of 2026-11-05); each copy thread starts from its pages with the map's lines for its questions as the reply; and a scanned answer file goes to copy and solve as its page read, not its images | No wording changes, but which prompt, which text and which reply a call sees does. The copy never sees a question scan's text. See [what changes](#what-the-build-changes) |
 | The 40-page cap today | **Note only** | A run of 33 to 40 images can't go to Cloudflare, the route's second provider. Threads of 30 would fix that too |
 
 ## The arms
@@ -161,6 +174,50 @@ Same pages compares each text map with the image map of the same repeat. Every r
 right; this says nothing yet about a scanned textbook, whose explanation pages a page read may render
 less cleanly.
 
+### Scanned papers, end to end
+
+`--exams` picks six scanned HKDSE mathematics papers in one run, as a teacher building a revision quiz
+might: Section A(1) of three Paper 1s (pages 2 to 8 of 2021, 2022 and 2024, 10 questions each, from
+the extraction gold) and three whole multiple-choice Paper 2s (2022 with its gold and key, 2021 and
+2025 with 45 one-mark items each). 67 pages, 165 questions, every paper numbering from 1. The answer
+files are the three Paper 1 marking schemes (38 scanned pages) and the 2022 Paper 2 key as a text
+file. The pages go as production builds a scan's: images, no text to the image map, the cached page
+read as the indexed text.
+
+| Arm | Runs | Found | Saved twice | Parts right | Marks right | Keys | Figures | Wall s | Billed | Credits a question | Upload MB |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `c30`, text map, the map's labels | 2 | 165, 83 of 165 | 0, 1 | 157, 83 | 165, 83 | 45/45, 37/38 | 14, 10 of 14 | 260 (208-312) | $0.165 (0.127-0.203) | 2.83 (2.52-3.13) | 266 (192-339) |
+| **`c30r`, text map, code's letters** | 2 | 165, 165 of 165 | 0, 6 | 162, 158 | 165, 165 | 45/45, 45/45 | 14, 14 of 14 | 380 (347-412) | $0.213 (0.185-0.240) | 2.59 (2.29-2.89) | 376 (328-423) |
+| `w20`, 20-page windows | 2 | 165, 165 of 165 | 0, 0 | 156, 156 | 165, 165 | 45/45, 45/45 | 14, 14 of 14 | 361 (358-364) | $0.203 (0.202-0.204) | 2.46 (2.44-2.47) | 232 (229-235) |
+
+A saved question is placed on its paper by its map row's first page and matched by its printed
+number; a copy whose label no row of its thread gives is placed by its text against the page reads.
+Parts and marks are counted on the questions found; marks come from the schemes, so a mark right is
+also the scheme read right. Keys are the 2022 Paper 2's letters, from its key file.
+
+- **The map's own labels lose questions.** The map prompt asks for a section (A1, B1) only when two
+  questions would share a number. Over six papers the text map wrote `2021-p1-1` in one run and plain
+  `1` for every paper in the other. That run's first thread held three Paper 1s and the first ten
+  pages of a Paper 2, so four questions shared each of `1` to `10`; production's run keeps one
+  question per label, and 82 questions were lost.
+- **Code's letters fix it.** `c30r` places each row on its file (rows give only page numbers, so code
+  walks them in printed order) and letters a label two files share by its file's place: `1` in the
+  second paper is `B1`. The first run's map wrote plain numbers, code lettered them, and every
+  question came through. The second run's map wrote `2021P1-1` itself, so code had nothing to do, and
+  the copy saved 15 questions under their printed number instead (`37` for `2025P2-37`). 9 are in the
+  quiz under that label; 6 are Paper 1 and Paper 2 questions saved a second time, which the user
+  would pay for. Code that always rewrites the map's labels to its own letters would have given that
+  run `F37`; one clean run is all the evidence for that.
+- **Windows found everything but don't merge.** Each window's image map told its papers apart, but
+  each in its own way: `2021-1`, `2024P1-10`, `A4` after plain `1` to `3`, plain `24`. Merging the
+  four windows would clash on 39 labels in one run and 3 in the other. The textbook's windows had the
+  same problem.
+- **No cheaper on scans.** The textbook's map saving came from 110 pages of mostly explanations; here
+  every page holds questions, so every page image goes to a thread either way. The text map's threads
+  of 30 carried more images a call than the windows' 22, so it uploaded more.
+- **Answer images untested.** The marking schemes went as their page reads in every arm (38 images
+  don't fit a thread of 30). A run with them as images was planned and dropped to keep spend down.
+
 ### Cost and the quiz
 
 - **Where the credits go.** Solve calls are most of every arm's cost, because each carries its
@@ -185,23 +242,29 @@ shorter one keeps today's route exactly.
    box numbers, so `fill_figures` (the map's boxes for a question its batch gave none) has nothing to
    fill from; on earlier benches it filled 28 of 536 rows.
 2. **Threads.** Code groups the map's rows in printed order by their pages, at most 30 page images a
-   thread, answer images included. A scanned answer file that doesn't fit goes as its indexed text, as
-   today when its pages exceed the images left.
+   thread, answer images included. A scanned answer file goes as its page read: today it goes as
+   images, and three marking schemes alone are 38.
 3. **Each thread's first message** is production's `map_messages` over its own pages (images, boxes,
    answer files) and, as its reply, the map's lines for its questions. Copy, repairs and solve run as
    today, 4 batches at once across threads.
 4. **Layout** runs only on the grouped pages. Its run budget (`ALL_PAGES_TIMEOUT_S`, 90 s for all of
    a run's pages) fits about 40 pages on a full queue
    ([layout capacity](2026-11-04-layout-capacity.md), int8 halves it), so it should scale with pages.
-5. **Gateway and dialog.** `fieldlimits.ExtractionPages` 40 to 150 and the picker's counter; the
+5. **Labels.** Rows give only page numbers, which the picked files share, so code places each row on
+   its file in printed order. When two picked files share a question number, code letters every row
+   by its file's place (A1 for the first file, B1 for the second), replacing what the map wrote.
+6. **Gateway and dialog.** `fieldlimits.ExtractionPages` 40 to 150 and the picker's counter; the
    confirm dialog offers the first questions that fit one quiz, as it already does for credits.
    A selection of exam papers is all question pages, so 150 of them is 5 or more threads; nothing
    else changes.
-6. **Word and PowerPoint** don't fit this as they are. The browser draws their pages and they go as a
-   scan's do, images with no text, because the indexed text's page breaks need not match the drawn
-   ones (`_drawn_pages`). A text map over their indexed text can't say which drawn page a question
-   is on, and the threads are cut by page. Either the browser sends each drawn page's text with its
-   image, or Word and PowerPoint keep today's 40-page cap. Untested.
+7. **Word and PowerPoint.** Ingest chunks them from a LibreOffice PDF (`parser/odl/document.py`), so
+   their indexed text has page numbers, but no PDF is kept: the picker draws their pages with the
+   Office runtime's print path and they go as a scan's do, images with no text (`_drawn_pages`). The
+   text map reads the indexed text and the threads take the drawn pages, so the two numberings
+   must agree. PowerPoint's do, slide for slide (hidden slides kept, Q276), unless the print path
+   skips hidden slides. Word's page breaks are laid out twice, by LibreOffice and by the runtime, and
+   can drift; a thread taking one page either side of its questions, as the windows did, would
+   likely cover it. Both untested.
 
 This changes which prompts calls see but no wording: the map gets the text-paper system prompt (today
 only plain text files do) and each thread's first reply is code's copy of the map's
@@ -209,8 +272,10 @@ lines, not the model's own reply.
 
 ## Limits and noise
 
-- Formats: one born-digital PDF end to end; scans only at the map step, on four short exam papers
-  (no long scan, no text-map run through copy and solve on a scan); Word and PowerPoint not at all.
+- Formats: one born-digital textbook and six scanned exam papers end to end; Word and PowerPoint not
+  at all. No scanned textbook: exam papers are all question pages and numbered questions.
+- The scans' page reads are the earlier rounds' cached reads (1017 through `models.read_page`, 1,280 px
+  grey), not necessarily the page-read model ingest runs today.
 - One textbook, born digital, two runs an arm. Its practice questions are worked unit conversions and
   geometry, one or two parts each, no printed marks.
 - No layout service on the Mac: no boxes, so every figure took the box call in every arm. The text
@@ -242,7 +307,9 @@ lines, not the model's own reply.
   so no run reads another's cache; the window and thread rules above.
 - **Model:** `deepseek/deepseek-v4.1-flash-1017` on the extraction route; credits at Epo's 1017 price
   (200, 20 and 1,200 micros a token).
-- **Spend:** $2.43 of the $5: $2.33 for the 12 measured runs, $0.08 for smoke tests on pages 9 to 21, $0.02 for the 16 scan maps.
+- **Spend:** $3.69 of the $5. The textbook: $2.33 for the 12 measured runs and $0.08 for smoke tests
+  on pages 9 to 21. The scans: $0.02 for the 16 scan maps, $1.16 for the 6 runs over the six papers
+  and $0.10 for a smoke test on two of them.
 
 ## What other apps do
 
@@ -280,6 +347,10 @@ python -I $S/long_selections.py scan-maps --env-file deploy/.env.uat \
   --gold <extraction gold> --text-cache <.results/text of the earlier rounds> --repeat 1
 python -I $S/long_selections.py scan-maps --refs ... --gold <extraction gold> --score
 # --pages 9-21 on run and score keeps a smoke test apart.
+python -I $S/long_selections.py run --env-file deploy/.env.uat --exams $D \
+  --arms c30:2 w20:2 c30r:2 --hard-stop 3.9
+python -I $S/long_selections.py score --exams $D --detail --json scores-exams.json
+# --papers 2022-p1 2022-p2 on run and score keeps a smoke test apart.
 ```
 
-Results land in the ignored `.results/long/`.
+Results land in the ignored `.results/long/` (the scans' in `.results/long/exams/`).

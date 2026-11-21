@@ -452,7 +452,8 @@ through the production run: 110 pages of a committed CC BY textbook
 (`parsers/fixtures/budget/waterworks-math.pdf`, units 1 to 4, gold from its
 text layer, its own solutions as the answer file) as one map, in page windows,
 and as one map over the pages' indexed text with copy threads of at most 30
-question-page images; `scan-maps` maps the scanned gold papers from images and
+question-page images; `--exams` runs the same arms on six scanned HKDSE papers
+picked together, and `scan-maps` maps the scanned gold papers from images and
 from their page reads.
 [Long selections](extraction/reports/2026-11-21-long-selections.md) has the
 results.
