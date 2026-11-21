@@ -2,6 +2,7 @@ import { isApiError } from '@/api/client';
 import { createExtractionBodyTitleMax } from '@/api/gen/validators';
 import {
   EXTRACTION_ANSWER_FILES_MAX,
+  EXTRACTION_BODY_MAX,
   EXTRACTION_PAGES_MAX,
   EXTRACTION_PAPER_FILES_MAX,
   EXTRACTION_QUESTION_CREDITS,
@@ -108,19 +109,12 @@ export function pickedPages(selected: ReadonlySet<string>, fileId: string) {
     .sort((a, b) => a - b);
 }
 
-function extractionFile(
-  fileId: string,
-  selected: ReadonlySet<string>,
-  drawn: ReadonlyMap<string, string>
-) {
-  const pages = pickedPages(selected, fileId);
-  const images = pages.flatMap(
-    (page) => drawn.get(pageKey({ fileId, page })) ?? []
-  );
-  return { fileId, pages, ...(images.length > 0 ? { images } : {}) };
-}
-
-/** The run's request: each file with its picked pages and any page the browser drew. */
+/**
+ * The run's request: each file with its picked pages and any page the browser drew.
+ * The drawn pages past the body's limit are left out, the last picked first and the
+ * question files' before the answer files' (Epo 2026-11-21); a drawn file left with
+ * none is left out too.
+ */
 export function extractionRequest(
   title: string,
   paperFileIds: readonly string[],
@@ -131,14 +125,32 @@ export function extractionRequest(
   /** Each browser-drawn page's base64 JPEG, by its page key. */
   drawn: ReadonlyMap<string, string> = new Map()
 ): CreateExtractionReq {
+  // The rest of the request is far under the 1 MiB the limit leaves it.
+  let room = EXTRACTION_BODY_MAX - 2 ** 20;
+  const file = (fileId: string) => {
+    const picked = pickedPages(selected, fileId);
+    const pages: number[] = [];
+    const images: string[] = [];
+    for (const page of picked) {
+      const image = drawn.get(pageKey({ fileId, page }));
+      if (image !== undefined && image.length > room) {
+        room = 0;
+        continue;
+      }
+      if (image !== undefined) {
+        room -= image.length;
+        images.push(image);
+      }
+      pages.push(page);
+    }
+    if (picked.length > 0 && pages.length === 0) return [];
+    return [{ fileId, pages, ...(images.length > 0 ? { images } : {}) }];
+  };
+  const paper = paperFileIds.flatMap((fileId) => file(fileId));
   return {
-    answers: answerFileIds.map((fileId) =>
-      extractionFile(fileId, selected, drawn)
-    ),
+    answers: answerFileIds.flatMap((fileId) => file(fileId)),
     hidden,
-    paper: paperFileIds.map((fileId) =>
-      extractionFile(fileId, selected, drawn)
-    ),
+    paper,
     title,
   };
 }

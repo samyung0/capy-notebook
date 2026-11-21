@@ -399,11 +399,11 @@ def install() -> None:
 
     production_uncopied = extraction.Run.uncopied
 
-    def uncopied(self, rows, pages, copied=None):
+    def uncopied(self, rows, pages):
         window = WINDOW.get()
         if window is not None:
             pages = [p for p in pages if page_key(p) in window.own]
-        return production_uncopied(self, rows, pages, copied)
+        return production_uncopied(self, rows, pages)
 
     extraction.Run.uncopied = uncopied
 

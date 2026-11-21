@@ -131,6 +131,12 @@ const (
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
+	// A browser-drawn page is a JPEG of at most ExtractionDrawnPage bytes, and a Make
+	// a quiz request's body at most ExtractionBody: 40 of the largest drawn pages in
+	// base64 and 1 MiB for the rest, about 140 drawn pages of a typical 300 KB. The
+	// browser leaves out the drawn pages past it (Epo 2026-11-21).
+	ExtractionDrawnPage = 1 << 20
+	ExtractionBody      = 40*ExtractionDrawnPage*4/3 + 1<<20
 	// A generated quiz reads at most GenerateFiles picked files, as many as a
 	// Make a quiz question paper (Epo 2026-11-14). apimodel.GenerateReq's
 	// maxItems repeats it.

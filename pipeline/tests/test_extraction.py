@@ -612,7 +612,7 @@ def test_a_text_paper_counts_its_whole_text_in_the_output_budget():
         return extraction._pages_worth(extraction.Page(1, "a", "x" * chars, None, None))
 
     assert (worth(1), worth(3_856)) == (1, 8)
-    assert worth(extraction.RUN_TEXT_CHARS) == extraction.limits.EXTRACTION_PAGES_MAX
+    assert worth(extraction.RUN_TEXT_CHARS) == extraction.TEXT_RUN_PAGES
 
 
 async def test_prepare_reads_a_text_paper_whole(monkeypatch):
@@ -634,7 +634,7 @@ def _indexed(monkeypatch, pages: dict[int, str]) -> None:
 
 async def test_a_word_papers_drawn_pages_go_as_a_scans_do(monkeypatch):
     """The browser drew them: the image goes, a figure crops from it, and the indexed
-    text of the same page number rides along for the long route's map."""
+    text of the same page number rides along only for the long route's map."""
     _indexed(monkeypatch, {3: "1. Find x."})
     buffer = io.BytesIO()
     Image.new("RGB", (200, 100), "white").save(buffer, "JPEG")
@@ -642,11 +642,14 @@ async def test_a_word_papers_drawn_pages_go_as_a_scans_do(monkeypatch):
     file = {"fileId": "f", "name": "paper.docx", "pages": [3], "images": [drawn]}
     pages, files = await extraction.prepare("w", [file], [])
     assert files == [] and [(p.number, p.text, p.layer) for p in pages] == [
-        (3, "1. Find x.", extraction.SCAN)
+        (3, "", extraction.SCAN)
     ]
     assert (await pages[0].image()).startswith("data:image/jpeg;base64,")
     _, size = await pages[0].crop([0, 0, 500, 500])
     assert size == (100, 50)
+    monkeypatch.setattr(extraction, "THREAD_IMAGES", 0)
+    pages, _ = await extraction.prepare("w", [file], [])
+    assert pages[0].text == "1. Find x."
 
 
 async def test_a_drawn_page_larger_than_the_picker_draws_is_shrunk_for_the_model(
@@ -1628,15 +1631,14 @@ async def test_only_an_answer_file_s_picked_pages_go(monkeypatch, tmp_path):
     assert refused.value.code == "page_out_of_range"
 
 
-async def test_a_word_answer_file_goes_as_the_pages_the_browser_drew(monkeypatch):
-    _indexed(monkeypatch, {1: "Not picked.", 2: "1. B"})
+async def test_a_word_answer_file_goes_as_the_pages_the_browser_drew():
     jpeg = base64.b64encode(b"jpeg").decode()
     _, [word] = await extraction.prepare(
         "w",
         [],
         [{"fileId": "a", "name": "answers.docx", "pages": [2], "images": [jpeg]}],
     )
-    assert word.text == "1. B"
+    assert word.text == ""
     assert [number for number, _ in word.images] == [2]
 
 
@@ -2481,3 +2483,74 @@ def test_a_word_question_takes_the_page_either_side_in_its_thread():
     rows = [extraction.MapRow("1", 2, 2, [], []), extraction.MapRow("2", 4, 4, [], [])]
     groups = extraction.thread_groups(rows, [(1, 1), (3, 3)], pages, 3)
     assert groups == [([rows[0]], [0, 1, 2]), ([rows[1]], [2, 3])]
+
+
+def test_a_new_paper_starts_where_its_numbers_and_pages_go_back():
+    """Two photographed worksheets after a book, each a page 1; a slip that gives a
+    question an earlier page; a section numbered from 1 again further on."""
+    pages = [
+        _paper_page(0, 1, ""),
+        _paper_page(0, 2, ""),
+        _paper_page(0, 3, ""),
+        _paper_page(1, 1, ""),
+        _paper_page(2, 1, ""),
+    ]
+    rows = [
+        extraction.MapRow(label, first, first, [], [])
+        for label, first in (
+            ("1", 1),
+            ("2", 3),
+            ("3", 2),
+            ("1", 3),
+            ("1", 1),
+            ("2", 1),
+            ("1", 1),
+        )
+    ]
+    assert [span[0] for span in extraction.place_rows(rows, pages)] == [
+        0,
+        2,
+        1,
+        2,
+        3,
+        3,
+        4,
+    ]
+
+
+def test_a_question_longer_than_a_thread_keeps_its_first_pages():
+    pages = [_page(n) for n in (1, 2, 3, 4)]
+    row = extraction.MapRow("1", 1, 4, [], [])
+    assert extraction.thread_groups([row], [(0, 3)], pages, 3) == [([row], [0, 1, 2])]
+
+
+async def test_a_question_the_map_missed_between_threads_is_asked_in_the_one_before(
+    monkeypatch,
+):
+    monkeypatch.setattr(extraction, "THREAD_IMAGES", 2)
+    pages = [_page(1, "1. a"), _page(2, "2. b\n3. c"), _page(3, "4. d")]
+    items = {label: _mcq(label, ["p", "q"], 0) for label in "1234"}
+    script = Script(
+        "\n".join([_row("1", 1, 1), _row("2", 2, 2), _row("4", 3, 3)]),
+        {
+            "Copy questions 1 to 2 now.": [
+                _tools(
+                    ("record_question", _copy(items["1"], 1, 1)),
+                    ("record_question", _copy(items["2"], 2, 2)),
+                )
+            ],
+            "Copy question 4 now.": [
+                _tools(("record_question", _copy(items["4"], 3, 3)))
+            ],
+            "Copy question 3 now.": [
+                _tools(("record_question", _copy(items["3"], 2, 2)))
+            ],
+        },
+    )
+    events = await _run(monkeypatch, script, pages)
+    repair = next(c for c in script.sent if c["ask"] == "Copy question 3 now.")
+    assert repair["messages"][3] == {
+        "role": "user",
+        "content": "Copy questions 1 to 2 now.",
+    }
+    assert events[-1]["report"]["recorded"] == ["1", "2", "3", "4"]

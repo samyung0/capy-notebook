@@ -60,7 +60,9 @@ function FoundQuestions({
   found: ExtractionFound;
 }) {
   const total = found.questions.length;
-  const short = affordable < total;
+  // What is offered at most: the questions that fit one quiz.
+  const priced = Math.min(total, fitting);
+  const short = affordable < priced;
   return (
     <div className="flex flex-col gap-4 pb-1">
       <p className="t-meta text-fg-muted">{sourceLine(found)}</p>
@@ -73,7 +75,7 @@ function FoundQuestions({
       )}
       {!short && (
         <ul className="max-h-60 overflow-y-auto border-divider border-y">
-          {found.questions.map((question) => (
+          {found.questions.slice(0, priced).map((question) => (
             <li
               className="grid grid-cols-[48px_minmax(0,1fr)] py-2 text-sm sm:grid-cols-[72px_minmax(0,1fr)]"
               key={`${question.label}:${question.first}`}
@@ -89,16 +91,16 @@ function FoundQuestions({
       <div className="flex flex-col gap-1 text-sm">
         <div className="flex justify-between gap-3">
           <span>
-            {total === 1
+            {priced === 1
               ? m.make_quiz_price_one({ price: EXTRACTION_QUESTION_CREDITS })
               : m.make_quiz_price_line({
-                  count: total,
+                  count: priced,
                   price: EXTRACTION_QUESTION_CREDITS,
                 })}
           </span>
           <strong className="shrink-0 font-semibold">
             {m.make_quiz_price_total({
-              count: total * EXTRACTION_QUESTION_CREDITS,
+              count: priced * EXTRACTION_QUESTION_CREDITS,
             })}
           </strong>
         </div>
@@ -127,7 +129,7 @@ function FoundQuestions({
               : m.make_quiz_enough({ count: affordable })}
         </p>
       )}
-      {fitting < Math.min(total, affordable) && (
+      {fitting < total && !short && (
         <p className="text-sm">
           {m.make_quiz_quiz_holds({ count: fitting, parts: QUIZ_PARTS_MAX })}
         </p>

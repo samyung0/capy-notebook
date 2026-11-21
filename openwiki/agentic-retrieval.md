@@ -6024,8 +6024,10 @@ job. The screens (boards X0a, X0b, X1, X2) are in
   images}]` and up to `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
   from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (150, Epo
   2026-11-21; 40 before) across the files, however it is sent. The request body stays
-  bounded at 40 drawn pages at their 1 MB most (`extractionBodyPages`), about 180 typical
-  drawn pages. A PDF takes any of its pages, an image page 1, a Word
+  bounded at 40 drawn pages at their 1 MB most in base64 (`fieldlimits.ExtractionBody`,
+  `EXTRACTION_BODY_MAX`), about 140 typical drawn pages; the browser leaves out the drawn
+  pages past it, the last picked first and the question files' before the answer files', and
+  says nothing (Epo 2026-11-21). A PDF takes any of its pages, an image page 1, a Word
   or PowerPoint file its picked pages as browser-drawn JPEGs (`images`, at most 1 MB and 5 megapixels in Go, then shrunk by `capture.image_jpeg` to `capture_max_edge` like any image to a model), and any other
   indexed file no pages: it goes whole. Every file must be the workspace's and untrashed.
   A question file must be indexed. An answer file still being read is refused, and one that
@@ -6142,20 +6144,27 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      route (`long_route`), because Cloudflare refuses a call over 32 images and InferenceNet one
      over about 109. The map reads every picked page as its indexed text with no image
      (`SYSTEM_TEXT_ONLY`, `text_page`, at most `PAGE_TEXT_CHARS` a page): a scan's page read and
-     a drawn Word or PowerPoint page's indexed text of the same page number included, against
-     "scans only" for this map alone. A scanned or drawn answer file goes as its picked pages'
-     indexed text; an image upload stays an image. Rows give page numbers alone, so
-     `place_rows` puts each on its file in printed order (`Page.file_index`), and when two
-     picked files share a question number `relabelled` names every row by its file's letter and
-     number (A1, B1; a file whose own numbers repeat keeps the map's label after its letter).
-     After the confirm, `thread_groups` cuts the rows in printed order into groups of at most 30
-     page images (less the answer images left), a Word question taking the page either side as
-     its page breaks are LibreOffice's in the index and the browser's in the image. Layout runs
-     on those pages only, while the starter confirms. Each group's threads start from
-     `map_message` over its own pages, boxes and answer files with `map_lines`, code's copy of
-     the map's lines, as the reply; copy, repairs (per group), solve and the gate of 4 are as
-     above, and `fill_figures` has no map boxes to fill from. A shorter selection keeps the route
-     above exactly.
+     a drawn Word or PowerPoint page's indexed text of the same page number included (`prepare`
+     gives a drawn page its text only in a long run), against "scans only" for this map alone.
+     A scanned answer file goes as its picked pages' page read; a drawn Word or PowerPoint
+     answer file and an image upload stay images, at most half a thread (15) of them, the rest
+     cut. Rows give page numbers alone, so `place_rows` puts each on its file
+     (`Page.file_index`): it stays in the row before's file while that file has its first page,
+     and moves to the next file with that page when its number goes back down and its page
+     doesn't go on, as a new paper's do (a paper numbered on from the file before can still land
+     on the earlier file). When two picked files share a question number `relabelled` names
+     every row by its file's letter and number (A1, B1; a file whose own numbers repeat keeps
+     the map's label after its letter). After the confirm, `thread_groups` cuts the rows in
+     printed order into groups of at most 30 page images (less the answer images left), a Word
+     question taking the page either side as its page breaks are LibreOffice's in the index and
+     the browser's in the image; a question on more pages than that keeps its first pages, and
+     the starter isn't told. Layout runs on those pages only, while the starter confirms. Each
+     group's threads start from `map_message` over its own pages, boxes and answer files with
+     `map_lines`, code's copy of the map's lines, as the reply; copy, solve and the gate of 4
+     are as above. Repairs work out what is missing over the whole run, as above, and ask each
+     question in the thread holding its own row, else the row before it in printed order.
+     `fill_figures` has no map boxes to fill from. A shorter selection keeps the route above
+     exactly.
   7. A part left with no answer stays as copied (an mcq with `correct: []`, a short part with
      `accepted: []`, an open part with no marking items) with whatever keys its other parts got, and is
      named in `answersMissing` (Epo 2026-11-05, "allow no answers for questions then"). A part the model sends with every answer field empty is a skip (Epo 2026-11-05, the pages can't give it): it stays as copied and is not asked for again. The

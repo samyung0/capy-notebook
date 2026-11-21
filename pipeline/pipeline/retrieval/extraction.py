@@ -29,7 +29,9 @@ reads every page's indexed text and no image, code places its rows on their file
 letters numbers two files share, layout runs on the pages that hold questions, and each
 group of at most THREAD_IMAGES page images starts its copy and solve threads from the
 map's message over its own pages with code's copy of the map's lines as the reply. A
-scanned answer file goes as its page read there.
+scanned answer file goes as its page read there, other answer images keep half a thread,
+a question on more pages than a thread keeps its first pages, and repairs are worked out
+over the whole run.
 
 Every recorded question and answer goes through the Go validator at once and a
 problem goes back to the model. A call that fails is tried once more where it is
@@ -119,8 +121,11 @@ PAGE_TEXT_CHARS = 6_000
 # and the most a long route's thread carries (Epo 2026-11-21): Cloudflare, the extraction
 # route's second provider, refuses a call over 32 images.
 THREAD_IMAGES = 30
-# A file with no page view counts one page of output budget per this much text.
+# A file with no page view counts one page of output budget per this much text, and
+# at most TEXT_RUN_PAGES pages: the 40 picked pages a run took before the long route
+# (Epo 2026-11-21).
 TEXT_PAGE_CHARS = 500
+TEXT_RUN_PAGES = 40
 # The most whole-file and answer text a run sends, about 60 dense pages (Epo
 # 2026-11-05); more is refused rather than cut.
 RUN_TEXT_CHARS = 200_000
@@ -1059,19 +1064,14 @@ class Run:
         self.answered.add(key)
         return f"Question {new.label}: recorded."
 
-    def uncopied(
-        self, rows: list[MapRow], pages: list[Page], copied: set[str] | None = None
-    ) -> list[str]:
+    def uncopied(self, rows: list[MapRow], pages: list[Page]) -> list[str]:
         """What a repair should copy: map rows with no copy, numbers missing inside
-        the map and the copies (``copied``, the run's when None), and the next number
-        when it is on a page past the last question's: a page no row covers."""
+        the map and the copies, and the next number when it is on a page past
+        the last question's: a page no row covers."""
         out = [row.label for row in rows if label_key(row.label) not in self.copies]
         if self.only is not None:
             return out
-        labels = [
-            *(row.label for row in rows),
-            *(self.copies if copied is None else copied),
-        ]
+        labels = [*(row.label for row in rows), *self.copies]
         numbers = {_number(label) for label in labels} - {None}
         if not numbers:
             return out
@@ -1085,14 +1085,7 @@ class Run:
                 if str(n) not in known
             ]
         last_page = max(
-            [
-                *(row.last for row in rows),
-                *(
-                    span[1]
-                    for key, span in self.spans.items()
-                    if copied is None or key in copied
-                ),
-            ],
+            [*(row.last for row in rows), *(span[1] for span in self.spans.values())],
             default=pages[0].number,
         )
         following = re.compile(rf"(?m)^\W*{max(numbers) + 1}\s*[.)]?(\s|$)")
@@ -1458,7 +1451,7 @@ def _pages_worth(page: Page) -> int:
     if page.image:
         return 1
     worth = math.ceil(len(page.text) / TEXT_PAGE_CHARS)
-    return min(max(1, worth), limits.EXTRACTION_PAGES_MAX)
+    return min(max(1, worth), TEXT_RUN_PAGES)
 
 
 def _credits_out() -> bool:
@@ -1479,31 +1472,45 @@ def long_route(pages: list[Page], answers: list[AnswerFile]) -> bool:
 def place_rows(rows: list[MapRow], pages: list[Page]) -> list[tuple[int, int] | None]:
     """Each row's first and last page as indexes into ``pages``, or None when no
     picked page has its number. A row gives page numbers alone, which several files
-    share, so its first page is the next with its number from the row before's on, as
-    the map lists in printed order, else the first anywhere."""
+    share, so it stays in the file of the row before while that file has its first
+    page, and moves to the next file with that page when its number goes back down and
+    its page does not go on, as a new paper's do (Epo 2026-11-21); a section that
+    numbers from 1 again further on stays."""
     out: list[tuple[int, int] | None] = []
-    cursor = 0
+    file = pages[0].file_index if pages else 0
+    before: tuple[int, int] | None = None  # the row before's number and first page
     for row in rows:
-        at = next(
-            (i for i in range(cursor, len(pages)) if pages[i].number == row.first),
-            None,
+        number = _number(row.label)
+        candidates = [i for i, page in enumerate(pages) if page.number == row.first]
+        own = [i for i in candidates if pages[i].file_index == file]
+        later = [i for i in candidates if pages[i].file_index > file]
+        new_paper = (
+            before is not None
+            and number is not None
+            and number <= before[0]
+            and row.first <= before[1]
         )
-        if at is None:
-            at = next((i for i, p in enumerate(pages) if p.number == row.first), None)
-        if at is None:
+        if own and not (new_paper and later):
+            at = own[0]
+        elif later:
+            at = later[0]
+        elif candidates:
+            at = candidates[0]
+        else:
             out.append(None)
             continue
+        file = pages[at].file_index
         end = next(
             (
                 i
                 for i in range(at, len(pages))
-                if pages[i].file_index == pages[at].file_index
-                and pages[i].number == row.last
+                if pages[i].file_index == file and pages[i].number == row.last
             ),
             at,
         )
         out.append((at, end))
-        cursor = at
+        if number is not None:
+            before = (number, row.first)
     return out
 
 
@@ -1549,6 +1556,10 @@ def thread_groups(
                 first -= 1
             if last + 1 < len(pages) and pages[last + 1].file_index == same:
                 last += 1
+        pictured = [i for i in range(first, last + 1) if pages[i].image]
+        if len(pictured) > limit:
+            # Its first pages: a thread never passes its images (Epo 2026-11-21).
+            last = pictured[limit - 1]
         indexes = set(range(first, last + 1))
         if (
             not groups
@@ -1603,11 +1614,15 @@ async def run(
     regions: asyncio.Task[list[tuple[layout.Region, ...]]] | None = None
     needed: list[int] = []
     if long:
-        # A scanned or drawn answer file goes as its text, an image upload as itself.
-        answers = [
-            dataclasses.replace(file, images=()) if file.text else file
-            for file in answers
-        ]
+        # A scanned answer file goes as its page read; other answer images keep half a
+        # thread at most, the rest cut (Epo 2026-11-21).
+        room = THREAD_IMAGES // 2
+        cut = []
+        for file in answers:
+            images = () if file.text else file.images[:room]
+            room -= len(images)
+            cut.append(dataclasses.replace(file, images=images))
+        answers = cut
         thread_limit = THREAD_IMAGES - sum(len(file.images) for file in answers)
         text_pages = [
             dataclasses.replace(
@@ -1835,34 +1850,31 @@ async def run(
                     }
             if confirm:
                 yield current.progress()
+        batch_of = {
+            label_key(label): i for i, labels in enumerate(batches) for label in labels
+        }
+
+        def repairing(label: str) -> int:
+            """The batch that asks for a missing question: its own row's, else the
+            row's before it in printed order (Epo 2026-11-21)."""
+            if label_key(label) in batch_of:
+                return batch_of[label_key(label)]
+            number = _number(label) or 0
+            after = next(
+                (n for n, row in enumerate(rows) if (_number(row.label) or 0) > number),
+                len(rows),
+            )
+            return batch_of[label_key(rows[max(after - 1, 0)].label)]
+
         tried: set[str] = set()
         for _ in range(COPY_REPAIR_PASSES):
+            missing = [
+                label for label in current.uncopied(rows, pages) if label not in tried
+            ]
+            tried.update(missing)
             asks: dict[int, list[list[str]]] = {}
-            for v, view in enumerate(views):
-                mine = [i for i, w in enumerate(view_of) if w == v]
-                copied = (
-                    None
-                    if len(views) == 1
-                    else {k for k, i in copied_in.items() if view_of[i] == v}
-                )
-                missing = [
-                    label
-                    for label in current.uncopied(view.rows, view.pages, copied)
-                    if label not in tried
-                ]
-                tried.update(missing)
-                for labels in _runs_of(missing):
-                    number = _number(labels[0]) or 0
-                    index = next(
-                        (
-                            i
-                            for i in mine
-                            if max(_number(label) or 0 for label in batches[i])
-                            >= number
-                        ),
-                        mine[-1],
-                    )
-                    asks.setdefault(index, []).append(labels)
+            for labels in _runs_of(missing):
+                asks.setdefault(repairing(labels[0]), []).append(labels)
             if not asks or current.stopping:
                 break
             repairs = [
@@ -2094,15 +2106,12 @@ def _whole_text(name: str, passages: list[dict[str, Any]]) -> str:
 async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
     """An answer file's picked pages as they go: indexed text for a born-digital PDF,
     page images for a scan, an image upload or a Word or PowerPoint file the browser
-    drew; a text file goes whole (Epo 2026-11-05). A scan and a drawn file also carry
-    their picked pages' indexed text, which the long route sends instead (Epo
-    2026-11-21)."""
+    drew; a text file goes whole (Epo 2026-11-05). A scan also carries its picked pages'
+    page read, which the long route sends instead (Epo 2026-11-21)."""
     file_id, name, numbers = file["fileId"], file["name"], file["pages"]
     if file.get("images"):
-        indexed = page_texts(await store.file_passages(workspace_id, file_id))
         return AnswerFile(
             name,
-            "\n\n".join(indexed.get(number, "") for number in numbers).strip(),
             images=tuple(
                 (number, functools.partial(_drawn_image, jpeg))
                 for number, jpeg in zip(
@@ -2173,7 +2182,8 @@ def _drawn_pages(
     """A Word or PowerPoint paper's selected pages, as the browser drew them (Epo
     2026-11-05, "draw those pages on client side"). They go as a scan's do: their page
     breaks are the browser's, which the indexed text's need not match. The indexed text
-    of the same page number is what a long route's map reads (Epo 2026-11-21)."""
+    of the same page number is what a long route's map reads (Epo 2026-11-21); prepare
+    takes it out of a shorter run's."""
     return [
         Page(
             number,
@@ -2256,6 +2266,14 @@ async def prepare(
     files = [await _answer_file(workspace_id, file) for file in answers]
     # An answer file with page images goes as its text only on the long route.
     long = long_route(pages, files)
+    if not long:
+        # A drawn page's text is LibreOffice's page, which a short run's repairs
+        # would read as the drawn one's (Epo 2026-11-21).
+        drawn = {n for n, file in enumerate(paper) if file.get("images")}
+        pages = [
+            dataclasses.replace(page, text="") if page.file_index in drawn else page
+            for page in pages
+        ]
     text = sum(len(file.text) for file in files if long or not file.images) + sum(
         len(page.text) for page in pages if not page.image
     )
