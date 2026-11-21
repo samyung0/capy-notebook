@@ -6076,6 +6076,14 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      answers one plain line a question: label, first and last page, part labels,
      box numbers (`parse_map`). A reply that calls a tool, is cut off or holds no
      line is a failed attempt; with no line twice the run has no questions.
+     The map ask wants a section (A1, B1) only when two questions would share a
+     number, and the model doesn't always write one: over six scanned papers it labelled
+     every paper from 1 in one of two runs. A run keeps one question a label, so when
+     the map repeats a label code letters each run of numbering, a new letter where a
+     label repeats (`lettered`: two papers' 1, 2 and 1, 2 become A1, A2, B1, B2), and
+     the reply every thread continues becomes code's lines with those labels
+     (`map_lines`), so no copy replaces another (Epo 2026-11-21). A map with no repeat
+     stays as written; a question the map lists twice may be saved twice.
      Page text (Epo 2026-11-05, "scans only"): a run sends it only when no selected
      page of the question paper is a scan and at least one is born digital, so a run
      has one system prompt. An answer file has no say.

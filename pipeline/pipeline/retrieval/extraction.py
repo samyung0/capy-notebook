@@ -7,7 +7,9 @@ solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
 0. The layout service's regions on every selected page (``layout``), which
    number the boxes figures are picked from, once across the selection.
 1. The map: one call sees every selected page and its boxes and answers one
-   line a question: label, pages, parts, figures.
+   line a question: label, pages, parts, figures. A label it repeats (two papers
+   both numbering from 1) letters each run of numbering, A1… and B1…, in its reply
+   too, so no copy replaces another (Epo 2026-11-21).
    The answer files go with it (Epo 2026-11-05, "dont use code for pairing, send the
    files directly"), as indexed text or page images, so every later call reads them
    from the cache. The run then waits for its starter to confirm the questions found
@@ -50,6 +52,7 @@ import json
 import logging
 import math
 import re
+import string
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -1234,7 +1237,41 @@ async def read_map(
     rows = parse_map(str(reply.get("content") or ""))
     if not rows:
         raise EmptyMap("the map reply held no map lines")
-    return [*messages, reply], rows, response.usage.output_tokens
+    distinct = lettered(rows)
+    if distinct is not rows:
+        # Every thread continues this reply: it names the questions by their new labels.
+        reply = {**reply, "content": map_lines(distinct)}
+    return [*messages, reply], distinct, response.usage.output_tokens
+
+
+def lettered(rows: list[MapRow]) -> list[MapRow]:
+    """With a label the map repeats, each run of numbering takes a letter, a new one
+    where a label repeats: two papers both numbering from 1 are A1… and B1…, as a run
+    keeps one question a label (Epo 2026-11-21). Rows with no repeat come back as
+    they are."""
+    keys = [label_key(row.label) for row in rows]
+    if len(set(keys)) == len(keys):
+        return rows
+    out: list[MapRow] = []
+    seen: set[str] = set()
+    run = 0
+    for row, key in zip(rows, keys):
+        if key in seen:
+            run, seen = run + 1, set()
+        seen.add(key)
+        letter = string.ascii_uppercase[run % 26] * (run // 26 + 1)
+        out.append(dataclasses.replace(row, label=f"{letter}{row.label}"))
+    return out
+
+
+def map_lines(rows: list[MapRow]) -> str:
+    """The map's lines as code writes them, in the map ask's form."""
+    return "\n".join(
+        f"{row.label} | pages {row.first}-{row.last} | parts "
+        f"{', '.join(row.parts) or 'none'} | figures "
+        f"{', '.join(map(str, row.figures)) or 'none'}"
+        for row in rows
+    )
 
 
 Handle = Callable[[str, dict[str, Any]], Awaitable[str]]
