@@ -12,6 +12,7 @@ import {
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
+  renderLimit,
   reportOfficeFontFailure,
   viewCheckpoint,
 } from './useOfficeRuntime';
@@ -232,6 +233,26 @@ describe('the frame editing while the tab holds back', () => {
       expect(expire).toHaveBeenCalledTimes(1);
     } finally {
       setHeld(holder, false);
+      vi.useRealTimers();
+    }
+  });
+});
+
+// Q804 A: Print clicked while a DOCX view's pages still arrive waits for
+// them; its minute counts from `ready`.
+describe("a render's limit", () => {
+  it('starts when the waiting renders are started at ready', () => {
+    vi.useFakeTimers();
+    const expire = vi.fn();
+    const waiting = new Set<() => void>();
+    try {
+      renderLimit(expire, waiting);
+      vi.advanceTimersByTime(120_000);
+      expect(expire).not.toHaveBeenCalled();
+      for (const start of waiting) start();
+      vi.advanceTimersByTime(60_000);
+      expect(expire).toHaveBeenCalledTimes(1);
+    } finally {
       vi.useRealTimers();
     }
   });

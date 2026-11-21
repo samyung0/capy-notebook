@@ -124,10 +124,15 @@ together and regenerate in about 20 s.
 
 Per file it reports:
 
-- open to first paint: the file click to the runtime's `ready`, on the host's
-  clock. Every viewer sends it once its first pages, grid or slide (pictures
-  included) are painted, with the runtime's own `timings` (`loadMs` frame
-  start to `load`, `paintMs` `load` to first paint; `OfficeReadyTimings`);
+- open to first paint: the file click, on the host's clock, to the message
+  a viewer sends once its first pages, grid or slide (pictures included) are
+  painted, with the runtime's own `timings` (`loadMs` frame start to `load`,
+  `paintMs` `load` to that paint; `OfficeReadyTimings`): `ready` for XLSX and
+  PPTX, `painted` for DOCX, whose View paints its first pages before the rest
+  are in. DOCX also reports the click to `ready`, every page in, as
+  `open.allPagesMs` (report-only). Its `openFirstPaintMs` budget still comes
+  from medians measured to `ready`, until recalibrated from three CI runs
+  (Q804 A);
 - View to Edit: the mode toggle click to the edit frame's `ready`, its first
   painted pages, grid or slide, with timings (`edit.firstPaintMs`). DOCX gates
   that as `editReadyMs`; XLSX and PPTX still gate `editReadyMs` on

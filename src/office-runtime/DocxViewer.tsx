@@ -436,11 +436,18 @@ export function DocxViewer({
       host.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, presented);
   }, [layoutId]);
 
-  // The first pages are painted; ready once every page is in too.
+  // The first pages are painted; ready once every page is in too. A file
+  // opened from a citation sends no early paint: the host keeps its skeleton
+  // until every page is in and the quote is found (Q802 B).
+  const citedRef = useRef(citation);
+  useEffect(() => {
+    citedRef.current = citation;
+  }, [citation]);
   const allPages =
     (displayList?.pages.length ?? 0) + (shown?.pending.length ?? 0);
   useEffect(() => {
-    if (painted) onPainted({ format: 'docx', pageCount: allPages });
+    if (painted && !citedRef.current)
+      onPainted({ format: 'docx', pageCount: allPages });
   }, [allPages, onPainted, painted]);
   const pageCount = complete ? (displayList?.pages.length ?? 0) : 0;
   useEffect(() => {
