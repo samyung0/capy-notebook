@@ -63,6 +63,7 @@ counted on the parts as saved.
 | Images a thread | **30**, answer images included | Cloudflare refuses 33; InferenceNet stops near 109. See [provider limits](#provider-limits) |
 | Answer files | **The whole file in every thread, as today** | Giving each window only its own solution pages saved 10% and scored no better; code can't pair them anyway |
 | Page cap | **150 picked pages** | What a run costs follows its questions, not its pages: an explanation page costs only its text in one map call (about 330 tokens a page here). At the 6,000 characters a page the map already allows, 150 pages stay near 300K tokens, inside 1017's 1M |
+| Word and PowerPoint | **Keep 40 pages until the browser sends each drawn page's text** | Their drawn pages carry no text and the indexed text's pages need not match them, so the text map can't place their questions. Untested. See [what changes](#what-the-build-changes) |
 | More questions than one quiz holds | **The confirm dialog offers the first that fit, as it does for credits** | One quiz holds 150 parts and 100 AI-marked parts. Several quizzes from one run would be a product change |
 | Price | **Keep 4 credits a question** | The text map cost 2.0 to 2.2 credits a question, the windows 2.1 to 2.5; one map over everything (5.5 to 6.1) would not be covered |
 | How prompts are sent | **Needs your OK**: the map gets the text-paper system prompt, a scan's page read included (today a scan sends no text, your "scans only" of 2026-11-05), and each copy thread starts from its pages with the map's lines for its questions as the reply | No wording changes, but which prompt, which text and which reply a call sees does. The copy still never sees a scan's text. See [what changes](#what-the-build-changes) |
@@ -196,13 +197,20 @@ shorter one keeps today's route exactly.
    confirm dialog offers the first questions that fit one quiz, as it already does for credits.
    A selection of exam papers is all question pages, so 150 of them is 5 or more threads; nothing
    else changes.
+6. **Word and PowerPoint** don't fit this as they are. The browser draws their pages and they go as a
+   scan's do, images with no text, because the indexed text's page breaks need not match the drawn
+   ones (`_drawn_pages`). A text map over their indexed text can't say which drawn page a question
+   is on, and the threads are cut by page. Either the browser sends each drawn page's text with its
+   image, or Word and PowerPoint keep today's 40-page cap. Untested.
 
 This changes which prompts calls see but no wording: the map gets the text-paper system prompt (today
-only Word, PowerPoint and text papers do) and each thread's first reply is code's copy of the map's
+only plain text files do) and each thread's first reply is code's copy of the map's
 lines, not the model's own reply.
 
 ## Limits and noise
 
+- Formats: one born-digital PDF end to end; scans only at the map step, on four short exam papers
+  (no long scan, no text-map run through copy and solve on a scan); Word and PowerPoint not at all.
 - One textbook, born digital, two runs an arm. Its practice questions are worked unit conversions and
   geometry, one or two parts each, no printed marks.
 - No layout service on the Mac: no boxes, so every figure took the box call in every arm. The text
