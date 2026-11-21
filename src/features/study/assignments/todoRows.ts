@@ -77,8 +77,7 @@ const typeOf = (a: Assignment): TodoType =>
  * then the open rows, in the sort's order. What's done or ticked off has moved
  * to Done, closed or not (done for them is done). By Posted or Due, classes
  * with answers waiting come first, then the one whose first row leads (newest
- * posted, due soonest); by To do, classes go by name.
- * The tasks with no workspace (an empty id, Epo 2026-11-11) stay first. */
+ * posted, due soonest); by To do, classes go by name. */
 export function todoSections(
   workspaces: TodoWorkspace[],
   view: TodoView
@@ -106,9 +105,6 @@ export function todoSections(
     })
     .filter((s) => s.rows.length > 0)
     .sort((x, y) => {
-      const loose =
-        Number(!y.workspace.workspaceId) - Number(!x.workspace.workspaceId);
-      if (loose !== 0) return loose;
       if (view.sort === 'title') {
         const names = x.workspace.name.localeCompare(y.workspace.name);
         return view.ascending ? names : -names;

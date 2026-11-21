@@ -318,10 +318,11 @@ export function MemberCell({
   );
 }
 
-/** T2: who handed in what. A row opens the Grading tab at that member (Epo
- * 2026-11-19), as a graded quiz's opens their attempt; a graded one's Grade
- * column shows each grade, read only. No Member header: the section's
- * Members title says it. */
+/** T2: who handed in what, an Assignment's Responses (Epo 2026-11-21). A row
+ * opens the Grading tab at that member (Epo 2026-11-19), as a graded quiz's
+ * opens their attempt; with no Grading (`onOpen` unset) rows open nothing. One
+ * taking files has a Work column, one graded on points a Grade column, read
+ * only; one taking neither says Done. */
 export function HandInMembers({
   assignment,
   members,
@@ -329,12 +330,15 @@ export function HandInMembers({
 }: {
   assignment: Assignment;
   members: AssignmentMemberRow[];
-  onOpen: (member: AssignmentMemberRow) => void;
+  onOpen?: (member: AssignmentMemberRow) => void;
 }) {
-  const { points } = assignment;
+  const { allowUploads, points } = assignment;
   // Read only, as a graded quiz's Responses: grading is the Grading tab's.
   const grade = (member: AssignmentMemberRow) =>
     points !== undefined && <GradeText member={member} points={points} />;
+  const notYet = allowUploads
+    ? m.assignment_not_handed_in()
+    : m.assignment_not_done();
   const handedIn = (member: AssignmentMemberRow) =>
     member.submittedAt ? (
       <span className="flex items-center gap-2">
@@ -342,23 +346,26 @@ export function HandInMembers({
         {member.late && <LateBadge penaltyPct={member.latePenaltyPct} />}
       </span>
     ) : (
-      m.assignment_not_handed_in()
+      notYet
     );
   // A file's own button takes its clicks; the rest of the row opens.
   const openRow = (event: React.MouseEvent, member: AssignmentMemberRow) => {
     if ((event.target as Element).closest('input, button, a')) return;
-    onOpen(member);
+    onOpen?.(member);
   };
+  const files = (member: AssignmentMemberRow) => member.files ?? [];
   return (
     <>
       <table className="mt-2 hidden w-full table-fixed border-separate border-spacing-0 md:table">
         <thead>
           <tr>
-            <Th className="w-[34%]">
-              <span className="sr-only">{m.assignment_col_member()}</span>
+            <Th className="w-[34%]">{m.assignment_col_member()}</Th>
+            <Th className="w-45">
+              {allowUploads
+                ? m.assignment_col_handed_in()
+                : m.assignment_done()}
             </Th>
-            <Th className="w-45">{m.assignment_col_handed_in()}</Th>
-            <Th>{m.assignment_col_work()}</Th>
+            {allowUploads && <Th>{m.assignment_col_work()}</Th>}
             {points !== undefined && (
               <Th className="w-36">{m.assignment_col_grade()}</Th>
             )}
@@ -367,36 +374,44 @@ export function HandInMembers({
         <tbody>
           {members.map((member) => (
             <tr
-              className="cursor-pointer hover:bg-surface-hover-bg"
+              className={cn(
+                onOpen && 'cursor-pointer hover:[&>td]:bg-surface-hover-bg'
+              )}
               key={member.userId}
               onClick={(event) => openRow(event, member)}
             >
               <Td>
-                {/* The row's button for the keyboard; a click anywhere opens. */}
-                <button
-                  className="flex min-w-0 max-w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-action"
-                  onClick={() => onOpen(member)}
-                  type="button"
-                >
-                  <MemberCell member={member} />
-                </button>
-              </Td>
-              <Td muted={!member.submittedAt}>{handedIn(member)}</Td>
-              <Td className="whitespace-normal" muted={!member.files?.length}>
-                {member.files?.length ? (
-                  <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
-                    {member.files.map((file) => (
-                      <SubmissionFileLink
-                        file={file}
-                        key={file.id}
-                        of={{ handInId: assignment.id }}
-                      />
-                    ))}
-                  </span>
+                {onOpen ? (
+                  // The row's button for the keyboard; a click anywhere opens.
+                  <button
+                    className="flex min-w-0 max-w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-action"
+                    onClick={() => onOpen(member)}
+                    type="button"
+                  >
+                    <MemberCell member={member} />
+                  </button>
                 ) : (
-                  '–'
+                  <MemberCell member={member} />
                 )}
               </Td>
+              <Td muted={!member.submittedAt}>{handedIn(member)}</Td>
+              {allowUploads && (
+                <Td className="whitespace-normal" muted={!files(member).length}>
+                  {files(member).length ? (
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+                      {files(member).map((file) => (
+                        <SubmissionFileLink
+                          file={file}
+                          key={file.id}
+                          of={{ handInId: assignment.id }}
+                        />
+                      ))}
+                    </span>
+                  ) : (
+                    '–'
+                  )}
+                </Td>
+              )}
               {points !== undefined && <Td>{grade(member)}</Td>}
             </tr>
           ))}
@@ -404,35 +419,46 @@ export function HandInMembers({
       </table>
       <ul className="mt-1 md:hidden">
         {members.map((member) => {
-          const files = member.files ?? [];
+          const line = (
+            <>
+              <div className="min-w-0 flex-1">
+                <MemberCell member={member} />
+                <div className="t-meta mt-0.5 truncate pl-9 text-fg-muted">
+                  {member.submittedAt
+                    ? [
+                        dayLabel(member.submittedAt),
+                        files(member).length > 0 && workSummary(files(member)),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : notYet}
+                </div>
+              </div>
+              {member.late && <LateBadge penaltyPct={member.latePenaltyPct} />}
+              <span className="shrink-0">{grade(member)}</span>
+            </>
+          );
+          const rowClass =
+            'flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-left';
           return (
             <li
               className="flex items-center gap-3 border-divider border-b"
               key={member.userId}
             >
-              <button
-                className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-                onClick={() => onOpen(member)}
-                type="button"
-              >
-                <div className="min-w-0 flex-1">
-                  <MemberCell member={member} />
-                  <div className="t-meta mt-0.5 truncate pl-9 text-fg-muted">
-                    {member.submittedAt
-                      ? [
-                          dayLabel(member.submittedAt),
-                          files.length > 0 && workSummary(files),
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')
-                      : m.assignment_not_handed_in()}
-                  </div>
-                </div>
-                {member.late && (
-                  <LateBadge penaltyPct={member.latePenaltyPct} />
-                )}
-                <span className="shrink-0">{grade(member)}</span>
-              </button>
+              {onOpen ? (
+                <button
+                  className={cn(
+                    rowClass,
+                    'outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset'
+                  )}
+                  onClick={() => onOpen(member)}
+                  type="button"
+                >
+                  {line}
+                </button>
+              ) : (
+                <div className={rowClass}>{line}</div>
+              )}
             </li>
           );
         })}

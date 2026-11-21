@@ -25,7 +25,7 @@ from starlette.exceptions import HTTPException
 
 from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
-from ..generated.limits import CHAT_CHARACTER_LIMIT
+from ..generated.limits import CHAT_CHARACTER_LIMIT, GENERATE_INSTRUCTIONS_MAX
 from ..prompts import generate as generate_prompts
 from ..retrieval import (
     accounting,
@@ -138,21 +138,6 @@ async def unexpected_error_handler(request: Request, exc: Exception):
 async def context_too_large_handler(_request: Request, exc: compact.ContextTooLarge):
     return JSONResponse(
         {"code": "context_too_large", "message": str(exc)}, status_code=400
-    )
-
-
-@app.exception_handler(workflows.PendingSourceContextTooLarge)
-async def pending_source_context_handler(
-    _request: Request, exc: workflows.PendingSourceContextTooLarge
-):
-    return JSONResponse(
-        {
-            "code": "pending_sources_too_large",
-            "message": str(exc),
-            "fileIds": exc.file_ids,
-            "materialIds": exc.material_ids,
-        },
-        status_code=400,
     )
 
 
@@ -344,6 +329,8 @@ class GenerateReq(LLMPin):
     fileIds: list[str] | None = None
     # The names of fileIds, for the prompt's scope line.
     fileNames: list[str] | None = None
+    # The user's own words to the model, trimmed by the gateway (Epo 2026-11-21).
+    instructions: str = Field(default="", max_length=GENERATE_INSTRUCTIONS_MAX)
     locale: str | None = None
     spendSessionId: str = ""
 
@@ -666,13 +653,14 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         count=req.count, types=req.types, levels=_cognitive_levels(req)
     )
     scope = workflows.scope_label(topics, req.fileNames or [])
-    context, _passages, changes = await workflows.generation_context(
+    context, _passages = await workflows.generation_context(
         workspace_id=req.workspaceId,
         file_ids=file_ids or None,
         instruction=instruction,
         scope=scope,
         model=model,
         locale=req.locale,
+        instructions=req.instructions,
     )
     raw = await workflows.produce(
         instruction=instruction,
@@ -680,7 +668,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         scope=scope,
         model=model,
         locale=req.locale,
-        pending_sources=changes,
+        instructions=req.instructions,
     )
 
     questions = workflows.normalize_questions(workflows.require_json_list(raw, "quiz"))

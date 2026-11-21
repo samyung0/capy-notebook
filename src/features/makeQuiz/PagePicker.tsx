@@ -14,6 +14,7 @@ import {
 } from '@/api/limits.generated';
 import type { SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import { CheckBox, CheckRow } from '@/components/ui/Checkbox';
 import { useIsPhone } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
@@ -43,12 +44,14 @@ import {
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-/** Board X1's sheet: drawn once, at this CSS width, and scaled to its column. */
-const SHEET_WIDTH = 220;
+/** Board X1's sheet: drawn once, at this CSS width, and scaled to its column
+ * (up to about 320px: three columns of a lone file's pane). */
+const SHEET_WIDTH = 320;
 /** A page yet to be measured takes a4's shape. */
 const SHEET_RATIO = 220 / 296;
 
-/** One page: a large sheet, one click selects it (Epo 2026-11-02). */
+/** One page: a large sheet, one click selects it (Epo 2026-11-02), its box
+ * beside its number as From question bank's cards have (Epo 2026-11-21). */
 function Sheet({
   children,
   disabled,
@@ -101,18 +104,14 @@ function Sheet({
         <span className="absolute inset-0 overflow-hidden rounded-[inherit]">
           {children}
         </span>
-        {selected && (
-          <span className="absolute -top-2.5 -right-2.5 flex size-6.5 items-center justify-center rounded-full bg-action-accent text-white shadow-[0_0_0_3px_var(--color-surface)]">
-            <Icon name="check" size={16} />
-          </span>
-        )}
       </span>
       <span
         className={cn(
-          'font-semibold text-[13px] text-fg-muted',
+          'flex items-center gap-2 font-semibold text-[13px] text-fg-muted',
           selected && 'text-tint-accent-1-fg'
         )}
       >
+        <CheckBox checked={selected} />
         {number}
       </span>
     </button>
@@ -448,7 +447,6 @@ export function usePageStep({
   answers,
   file,
   hidden,
-  onCancel,
   onChangeFiles,
   onFile,
   onNext,
@@ -462,7 +460,6 @@ export function usePageStep({
   hidden: boolean;
   /** The file on show, from the address; a phone's list when there is none. */
   file: string | undefined;
-  onCancel: () => void;
   /** Back to the files, with what was chosen and picked. */
   onChangeFiles: () => void;
   onFile: (fileId: string | undefined) => void;
@@ -587,10 +584,12 @@ export function usePageStep({
   const counter = (
     <p className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">
       <strong className="font-semibold">
-        {m.make_quiz_pages_count({
-          count: selected.size,
-          max: EXTRACTION_PAGES_MAX,
-        })}
+        {selected.size === 1
+          ? m.make_quiz_one_page_selected({ max: EXTRACTION_PAGES_MAX })
+          : m.make_quiz_pages_selected({
+              count: selected.size,
+              max: EXTRACTION_PAGES_MAX,
+            })}
       </strong>
       <span
         className={cn(
@@ -683,7 +682,9 @@ export function usePageStep({
             <div
               className={cn(
                 'flex min-h-0 min-w-0 flex-1 flex-col sm:-mr-5.5 sm:overflow-y-auto sm:pr-5.5',
-                listed && 'sm:pl-4'
+                // Room for a picked page's outline, which the scrolling pane
+                // would otherwise clip; a lone file's pane starts at the edge.
+                listed ? 'sm:pl-4' : 'sm:-ml-1.5 sm:pl-1.5'
               )}
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -701,25 +702,25 @@ export function usePageStep({
                     .join(' · ')}
                 </p>
                 {kind === 'pages' && (
-                  <Button
+                  <CheckRow
+                    // Level with its one line of smaller text, as From
+                    // question bank's (Epo 2026-11-21).
+                    boxClassName="mt-px"
+                    checked={allPicked}
+                    className="border-b-0 py-1.5 pr-2 font-semibold text-sm"
                     disabled={
                       !activeCount || (full && !allPicked && activePicked === 0)
                     }
-                    onClick={() =>
+                    onChange={() =>
                       current &&
                       activeCount &&
                       setSelected((picks) =>
                         toggleAllPages(picks, current.id, activeCount)
                       )
                     }
-                    size="sm"
-                    type="button"
-                    variant="outline"
                   >
-                    {allPicked
-                      ? m.make_quiz_clear_all()
-                      : m.make_quiz_select_all()}
-                  </Button>
+                    {m.make_quiz_select_all()}
+                  </CheckRow>
                 )}
               </div>
               {rows
@@ -730,7 +731,9 @@ export function usePageStep({
                   return (
                     <div
                       aria-label={row.name}
-                      className="grid grid-cols-2 gap-x-6 gap-y-6 pt-4 pb-5 sm:grid-cols-[repeat(auto-fill,190px)] sm:justify-center"
+                      // Columns fill the pane, at most three, each at least
+                      // 220px (Epo 2026-11-21).
+                      className="grid grid-cols-2 gap-x-4 gap-y-6 pt-4 pb-5 sm:grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_2rem)/3)),1fr))]"
                       hidden={row.id !== current?.id}
                       key={row.id}
                       role="group"
@@ -786,12 +789,15 @@ export function usePageStep({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {counter}
             <div className="ml-auto flex items-center gap-1">
-              <Button onClick={onChangeFiles} type="button" variant="outline">
-                {m.make_quiz_change_files()}
-              </Button>
+              {/* Phones go back from the title's arrow. */}
               <span className="contents max-sm:hidden">
-                <Button onClick={onCancel} type="button" variant="ghost-hover">
-                  {m.action_cancel()}
+                <Button
+                  onClick={onChangeFiles}
+                  size="md"
+                  type="button"
+                  variant="outline"
+                >
+                  {m.action_back()}
                 </Button>
               </span>
               <Button

@@ -86,12 +86,10 @@ export function dueText(
 
 /** A graded quiz, else an Assignment in a class and a Task one set oneself
  * (Epo 2026-11-14). */
-export const kindLabel = ({ kind, own }: Pick<Assignment, 'kind' | 'own'>) =>
+export const kindLabel = ({ kind }: Pick<Assignment, 'kind'>) =>
   kind === 'marked'
     ? m.assignment_kind_marked()
-    : own
-      ? m.assignment_kind_task()
-      : m.assignment_kind_assignment();
+    : m.assignment_kind_assignment();
 
 export const minutesText = (count: number) =>
   count === 1 ? m.assignment_minutes_one() : m.assignment_minutes({ count });

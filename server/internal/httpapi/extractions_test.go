@@ -154,8 +154,8 @@ func TestFinishedExtractionStoresItsFiguresAsTheQuizsAssets(t *testing.T) {
 }
 
 // A run started for a graded quiz keeps its form, and its quiz is made with
-// that graded quiz, which froze the questions (Epo 2026-11-16). In the
-// personal seeded workspace it is the starter's own task. Needs Postgres (CI).
+// that graded quiz, which froze the questions (Epo 2026-11-16). Needs Postgres
+// (CI).
 func TestExtractionMakesItsGradedQuiz(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, testdb.URL(t))
@@ -166,6 +166,12 @@ func TestExtractionMakesItsGradedQuiz(t *testing.T) {
 	if err := st.LoadPlanLimits(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.Pool().Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id='ws_e2e_private'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE workspaces SET kind='personal' WHERE id='ws_e2e_private'`)
+	})
 	a := &api{s: st, blob: blob.NewMemory()}
 	due := time.Now().Add(time.Hour)
 	form := &store.AssignmentForm{Kind: store.AssignmentMarked, Title: "Converted", DueAt: &due, Attempts: 1,
@@ -191,9 +197,9 @@ func TestExtractionMakesItsGradedQuiz(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM assignments WHERE id=$1`, *ended.AssignmentID)
 	})
-	task, err := st.GetAssignment(ctx, "u_editor", *ended.AssignmentID, time.Now())
-	if err != nil || !task.Own || task.Questions != 1 {
-		t.Fatalf("its graded quiz = %+v, err %v", task, err)
+	made, err := st.GetAssignment(ctx, "u_editor", *ended.AssignmentID, time.Now())
+	if err != nil || made.Manage == nil || made.Questions != 1 {
+		t.Fatalf("its graded quiz = %+v, err %v", made, err)
 	}
 }
 

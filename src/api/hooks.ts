@@ -3419,17 +3419,13 @@ function refreshAssignment(
   ]);
 }
 
-/** Makes an assignment or a task in the workspace, or with no workspace (an
- * empty id, Epo 2026-11-11) a task that is its maker's alone. */
+/** Makes an assignment in a class, from its staff. */
 export function useCreateAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
     mutationFn: (body: AssignmentFormReq) =>
-      api.post<Assignment>(
-        workspaceId ? `/workspaces/${workspaceId}/assignments` : '/todo/tasks',
-        body
-      ),
+      api.post<Assignment>(`/workspaces/${workspaceId}/assignments`, body),
     onSuccess: () => refreshAssignment(qc, workspaceId),
   });
 }

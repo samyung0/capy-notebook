@@ -34,15 +34,12 @@ export type GradedQuizMade = { id: string; kind: 'marked' };
 export function GradedQuizDialog({
   onClose,
   onDone,
-  own,
   presetAssignee,
   presetTopicId,
   workspaceId,
 }: {
   onClose: () => void;
   onDone: (made: GradedQuizMade) => void;
-  /** A personal workspace's: a task for oneself. */
-  own?: boolean;
   /** Opened from a member's profile (Q721): them as the only assignee. */
   presetAssignee?: string;
   /** The topic Generate quiz starts on: the profile's weakest (Q721). */
@@ -52,7 +49,6 @@ export function GradedQuizDialog({
   const { data: ws } = useWorkspace(workspaceId, { errorBoundary: false });
   const settings = useAssignmentForm({
     graded: true,
-    own,
     presetAssignee,
     workspaceId,
   });
@@ -68,9 +64,8 @@ export function GradedQuizDialog({
   const refreshAssignments = useRefreshAssignments(workspaceId);
   const { mutate: remove } = useDeleteAssignment(workspaceId);
   // Made: the dialog closes on the page behind it (Epo 2026-11-20, in place of
-  // opening it), and the toast's Open goes to its questions to read or write,
-  // a class's on its report's Questions tab, a task for oneself on its page.
-  // Undo, as the Assignments page's toast had, wherever it was made.
+  // opening it), and the toast's Open goes to its report's Questions tab to
+  // read or write. Undo, as the Assignments page's toast had, wherever it was made.
   const done = (id: string) => {
     void refreshAssignments();
     onDone({ id, kind: 'marked' });
@@ -81,7 +76,7 @@ export function GradedQuizDialog({
           void navigate(
             assignmentsLink(workspaceId, {
               assignment: id,
-              ...(!own && { tab: 'questions' as const }),
+              tab: 'questions',
             })
           ),
       },

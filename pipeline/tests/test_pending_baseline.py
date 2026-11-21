@@ -6,7 +6,7 @@ import secrets
 import pytest
 
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import agent, contract, pending, store, tools, workflows
+from pipeline.retrieval import agent, contract, pending, store, tools
 from pipeline.retrieval.stream import AssembledResponse, ToolCall
 from pipeline.retrieval.usage_extract import NormalizedUsage
 
@@ -123,43 +123,6 @@ async def test_a_viewers_load_leaves_out_hidden_items(workspace, monkeypatch):
     }
 
 
-async def test_generation_rejects_new_index_paired_with_captured_changes(
-    workspace, monkeypatch
-):
-    file_id = _seed(workspace)
-    real_load = pending.load
-
-    async def capture_then_publish(*args, **kwargs):
-        captured = await real_load(*args, **kwargs)
-        _publish(workspace, file_id, B, 1)
-        _publish(workspace, file_id, C, 2)
-        return captured
-
-    async def forbidden(*_args, **_kwargs):
-        pytest.fail("A mixed source baseline reached the provider")
-
-    monkeypatch.setattr(pending, "load", capture_then_publish)
-    monkeypatch.setattr(workflows.models, "complete_text", forbidden)
-    context, passages, captured = await workflows.generation_context(
-        workspace_id=workspace.id,
-        file_ids=[file_id],
-        instruction="Make cards",
-        scope="facts",
-        model=_model(),
-        locale="en",
-    )
-    assert passages[0].text == C
-    assert captured.files[0]["changes"][0]["after"] == "blue"
-    with pytest.raises(pending.SourceChanged):
-        await workflows.produce(
-            instruction="Make cards",
-            context=context,
-            scope="facts",
-            model=_model(),
-            pending_sources=captured,
-        )
-
-
 async def test_chat_rejects_publication_after_tool_read_before_compaction_or_next_model(
     workspace, monkeypatch
 ):
@@ -253,11 +216,10 @@ async def test_baseline_includes_files_without_pending_or_published_content(
 
 
 async def test_new_authored_edits_and_unselected_files_preserve_captured_turn(
-    workspace, monkeypatch
+    workspace,
 ):
     file_id = _seed(workspace)
     captured = await pending.load(workspace.id, [file_id])
-    original = captured.message()
     with workspace._connect() as conn:
         conn.execute(
             "UPDATE source_documents SET checkpoint=2,state='later',pending_effects='[]' WHERE file_id=%s",
@@ -265,30 +227,8 @@ async def test_new_authored_edits_and_unselected_files_preserve_captured_turn(
         )
     workspace.add_file("outside-selection.txt")
     await captured.validate()
-    sent = []
-
-    async def complete(messages, **_kwargs):
-        sent.extend(messages)
-        return "captured answer"
-
-    monkeypatch.setattr(workflows.models, "complete_text", complete)
-    assert (
-        await workflows.produce(
-            instruction="Make cards",
-            context=A,
-            scope="facts",
-            model=_model(),
-            pending_sources=captured,
-        )
-        == "captured answer"
-    )
-    # Measuring keeps each message's estimate on it under "_tokens".
-    assert [
-        {k: v for k, v in message.items() if k != "_tokens"}
-        for message in sent
-        if message.get("_kind") == "pending_sources"
-    ] == [original]
-    assert all("content_id" not in message.get("content", "") for message in sent)
+    shown = captured.for_read(file_id)
+    assert '"after":"blue"' in shown and "content_id" not in shown
 
 
 async def test_first_authored_edit_preserves_existing_published_baseline(workspace):

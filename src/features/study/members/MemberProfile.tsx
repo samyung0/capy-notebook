@@ -146,7 +146,7 @@ export function MemberProfilePage({
               member: memberId,
               show,
             }
-          : { assignment: a.id, tab: 'members' }
+          : { assignment: a.id, tab: 'responses' }
       )
     );
   return (

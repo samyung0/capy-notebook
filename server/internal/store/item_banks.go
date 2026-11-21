@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -131,28 +132,39 @@ func (s *Store) lockItemBankTx(ctx context.Context, tx pgx.Tx, actorID, bank str
 	return s.itemBankScope(ctx, tx, actorID, bank)
 }
 
-// ItemBanks lists the banks the caller may use from a workspace: the class's
-// own when they are its staff, then their own. With no workspace, their own.
+// ItemBanks lists every bank the caller reaches (Epo 2026-11-21): the class
+// they are in first when they are its staff, then their own, then every other
+// class they own or edit (itemBankScope), A–Z.
 func (s *Store) ItemBanks(ctx context.Context, actorID, workspaceID string) ([]ItemBank, error) {
-	var banks []ItemBank
-	if workspaceID != "" {
-		if _, err := s.itemBankScope(ctx, s.pool, actorID, workspaceID); err == nil {
-			bank := ItemBank{ID: workspaceID, Kind: "workspace"}
-			if err := s.pool.QueryRow(ctx, `SELECT w.name,
-					(SELECT count(*) FROM item_bank_questions q WHERE q.workspace_id=w.id)
-				FROM workspaces w WHERE w.id=$1`, workspaceID).Scan(&bank.Name, &bank.Count); err != nil {
-				return nil, err
-			}
-			banks = append(banks, bank)
-		} else if !errors.Is(err, ErrNotFound) {
-			return nil, err
-		}
+	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name,
+			(SELECT count(*) FROM item_bank_questions q WHERE q.workspace_id=w.id)
+		FROM workspaces w
+		JOIN users owner ON owner.id=w.user_id
+		WHERE w.kind='class'
+			AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1
+				UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1 AND role IN ('owner','editor'))
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+			AND (owner.suspended_at IS NULL OR owner.id=$1)
+		ORDER BY w.id=$2 DESC, w.name, w.id`, actorID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	classes, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ItemBank, error) {
+		bank := ItemBank{Kind: "workspace"}
+		return bank, row.Scan(&bank.ID, &bank.Name, &bank.Count)
+	})
+	if err != nil {
+		return nil, err
 	}
 	own := ItemBank{ID: PersonalBank, Kind: "personal"}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM item_bank_questions WHERE user_id=$1`, actorID).Scan(&own.Count); err != nil {
 		return nil, err
 	}
-	return append(banks, own), nil
+	at := 0
+	if len(classes) > 0 && classes[0].ID == workspaceID {
+		at = 1
+	}
+	return slices.Concat(classes[:at], []ItemBank{own}, classes[at:]), nil
 }
 
 // ListItemBankQuestions pages through a bank, newest first; a search pages

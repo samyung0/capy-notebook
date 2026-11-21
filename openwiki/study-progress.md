@@ -484,7 +484,19 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   their icons; Files is Convert's field (Choose a file over the chosen rows,
   a searchable menu of the workspace's readable files and notes), at most 5
   (`GENERATE_FILES_MAX`, `fieldlimits.GenerateFiles`, the request's
-  `maxItems`). **Extract from file** is Make a quiz from a
+  `maxItems`). A run reads at most the first 20 indexed items of its topics
+  (`GENERATE_SCOPE_FILES_MAX`, Epo 2026-11-21); past that Topics' label says
+  "Topics · Uses the first 20 of N files" (`practice_first_files`). A line
+  under the label says the topics' files are scanned, not every page may be
+  read, and individual files give more accurate questions
+  (`practice_topics_scanned`, `Picks`' `hint`). Either way
+  the run fills the model's input: short files go in whole and a longer one is
+  read in windows across its sections, not only its opening
+  ([agentic-retrieval.md](agentic-retrieval.md#generate-workflow), Epo
+  2026-11-21). An optional
+  Instructions textarea under Questions and Question types (at most 1,000
+  characters, `generateBodyInstructionsMax`, counted like other inputs) is sent
+  to the model as the user's own words (Epo 2026-11-21); past the limit Start, and New graded quiz's Next, stay off. **Extract from file** is Make a quiz from a
   file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot
   (`onBack` to the cards, `other` for the cards or another way), so Back and
   Continue sit at the footer's end like every way's, and Continue goes on to
@@ -589,8 +601,7 @@ under the workspace's `study` key).
   2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
   Done or the due date; a row opens their results, whose back link then names
   the member and returns to the profile (`member` beside `attempt` in the URL,
-  Epo 2026-11-16), or the report's Members tab
-  (a graded quiz's Responses) before a submission) with Overall score, and Topics as Summary shows them; both
+  Epo 2026-11-16), or the report's Responses before a submission) with Overall score, and Topics as Summary shows them; both
   lists share one grid, an assignment's status and date over a topic's count
   and squares (Epo 2026-11-16). From
   lg that side takes what the right's 380px leaves, up to 1000px, and the gap
@@ -1111,11 +1122,10 @@ its title, its progress bar, and "Due Sat 14 Nov" at the row's end (Epo
 2026-11-16, in place of the average, which the wide table's Average column
 keeps); no kind line, so it takes two lines (Epo 2026-11-20, the wide table's
 Kind column keeps it). The wide table keeps Posted's label whole (`Th`'s
-`fit`), as it starts sorted and its dates alone are narrower. Anyone else's
-page there, a class member's or a personal workspace's To do, is To do's table
-for that workspace (Epo 2026-11-20, "the two todo should align"):
-`TodoSection` with `page`, the Dashboard's To do with a page title, New (New
-task for a class member), Show done and the To do page's selection bar
+`fit`), as it starts sorted and its dates alone are narrower. A class member's
+page there, their To do, is To do's table for that class (Epo 2026-11-20, "the
+two todo should align"): `TodoSection` with `page`, the Dashboard's To do with a
+page title, Show done and the To do page's selection bar
 (Mark as done, Mark as not done), newest posted first; a row opens To do's
 details dialog. It reads To do's list (`GET /api/todo`), not the paged
 assignments list, which only staff's table reads now.
@@ -1125,8 +1135,7 @@ owns a quiz of its own (`materials.assignment_id`, migration
 `0174_graded_quiz_owner.sql`), freezes it, members submit it, it is marked and it
 counts. A class's unmarked one is an *Assignment*: a title and optional files
 (picked from the workspace's) that members tick, graded on points when it has
-them (below). One set for oneself (`own`) is a *Task*, marked or not, never
-graded on points (`kindLabel` in `assignmentText.ts`). None is a file. There
+them (below) (`kindLabel` in `assignmentText.ts`). None is a file. There
 is no other state than draft or published: a draft is invisible to members, and
 publishing posts it.
 
@@ -1146,14 +1155,12 @@ that makes the run's quiz (a form that no longer fits then fails the run), and
 the run's `assignmentId` (and the quiz's) tells the dialog; a run refused then
 says why (`graded_quiz_invalid`, or one of the assignment limits). The dialog
 sends Generate's, Convert's and Create blank's as drafts, so AI-made or empty
-questions are read before anything goes out, except a task for oneself, which
-has no draft (`checkOwnTask`). Settings may leave the title empty: each way then
+questions are read before anything goes out. Settings may leave the title empty: each way then
 sends its quiz's name (the picked quiz's, "{workspace} quiz {n}", the
 generated or converted quiz's title). Once made, the dialog closes on the page
 behind it with a Graded quiz created toast (Epo 2026-11-20, in place of
-opening it, Epo 2026-11-16): Open goes to its report's Questions tab (a task
-for oneself to its page) and Undo deletes it, wherever it was made (the
-Assignments page, To do, a member profile). The Assignments page's own toast
+opening it, Epo 2026-11-16): Open goes to its report's Questions tab and Undo deletes it, wherever it was made (the
+Assignments page, a member profile). The Assignments page's own toast
 is left to Assignment. `POST
 /api/workspaces/{id}/assignments` no longer makes a graded quiz from a quiz id.
 An owned quiz never lists (Files, the file tree, Recent, search, Practice, Study,
@@ -1161,7 +1168,7 @@ reviews and new items, pickers, Explore, a workspace clone with its images, the
 agent's outline and summary search; each list's SQL has `m.assignment_id IS
 NULL`), is held from every viewer for good (`materialHiddenSQL` reads
 `m.assignment_id IS NOT NULL`, as `live_access` does), so only the class's staff
-(and a Task's maker) open it, and it cannot be trashed, cloned or hidden by hand
+open it, and it cannot be trashed, cloned or hidden by hand
 (`ErrNotFound`; its header has no Hide or ⋮). Members' answers on it still count
 in their topic standings and Still missing once released, as answered only
 (`standingQuizSQL`). Deleting the assignment deletes the quiz (`ON DELETE
@@ -1178,7 +1185,7 @@ unique.
 
 | Table or column | Holds |
 | --- | --- |
-| `assignments` | `own` (migration 0168: a task a member set themself, its maker's alone, whose `workspace_id` may be null; it takes the rest of this row as a class's assignment does, but for `assign_all` and `draft`). Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its answers joined reviews, once) |
+| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its answers joined reviews, once) |
 | `materials.assignment_id` | The marked assignment that owns this quiz (migration 0174, unique, cascades on delete) |
 | `question_extractions.graded_quiz` | A Convert run started there, whose quiz is saved waiting |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
@@ -1186,7 +1193,7 @@ unique.
 | `assignment_done` | A member's tick |
 | `assignments.points` | A graded Assignment's points, 1 to `fieldlimits.AssignmentPoints` (1000); null is not graded; only on a class's unmarked one (migration 0176) |
 | `assignment_grades` | A member's grade on a graded Assignment: `points` (one decimal place at most), `graded_by`, `graded_at`; apart from the tick, so Undo hand in keeps it (migration 0176) |
-| `editor_assets.assignment_id` | A frozen copy's image rows (an own task's have no `workspace_id` either: migration 0168 lets the assignment alone own a row) |
+| `editor_assets.assignment_id` | A frozen copy's image rows |
 | `assignments.frozen_by`, `frozen_bytes` | Who pays for the frozen question JSON and its size (migration `0149_assignment_storage.sql`) |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
 | `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
@@ -1214,10 +1221,7 @@ JSON's charge to whoever republished; an image the assignment already holds keep
 payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
 still delete an assignment, and Republish, which writes, is refused for them. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
-nobody (`AdoptEditorAssets`). An own task's quiz may sit in another workspace or
-none (below), so its image copies name the task alone, with no workspace, and are
-copied from the task's source quiz (`copyFrozenAssetsTx`); only its maker reads them.
-Members are only ever served this copy:
+nobody (`AdoptEditorAssets`). Members are only ever served this copy:
 answer-free while running (`questions.LearnerViews`), with keys after
 submitting only as Show answers allows (below).
 
@@ -1604,13 +1608,13 @@ no file is added (`storageFullErr` at the ticket and the upload session, as a
 Marked paper's start, Q728 A): the refusal toasts the storage-limit copy, a
 file added while there was room still saves past the limit, and Hand in and
 Undo still work. The report's chip reads
-"N of M handed in", and its Members tab lists each member's date (Late past the
-due date) and what they handed in, each file by name opening it in a new tab,
-under no Member header (the section's title says it), grades read only; a row
-opens the Grading tab at that member (Epo 2026-11-19, as a graded quiz's row
+"N of M handed in", and its Responses tab (Members until Epo 2026-11-21)
+lists each member's date (Late past the due date) and what they handed in, each
+file by name opening it in a new tab, grades read only; a row opens the Grading
+tab at that member (Epo 2026-11-19, as a graded quiz's row
 opens the attempt). **Grading** (`tab=grading`, `GradingTab.tsx`, mock A after
 Google Classroom's grading tool; named Hand-ins when there are no points) is
-the tab of an Assignment taking files or graded on points: the members on the
+the tab of an Assignment taking files: the members on the
 left in the app's `Accordion` (folds by hand), the open one (`member=<user
 id>`, else the first who handed in) showing when they handed in, their files
 with sizes (`work=<file id>` the one shown; not `file`, which the workspace
@@ -1673,8 +1677,8 @@ has no Approve AI grades button any more (Epo 2026-11-19). The report's head
 reads as a member's attempt: the back link, then the title on one line (an
 ellipsis, the full title on hover) with its chips under it 4px down, the
 actions (save status, Preview, Publish, Release grades) at the right, top
-aligned; below 20rem of room the actions wrap under. Older links still open: a graded quiz's `tab=members` is
-Responses By member, and an unknown tab (the old `tab=preview`) its first tab. By question's folded rows
+aligned; below 20rem of room the actions wrap under. A tab the report does not have (the old `tab=preview`
+or `tab=members`) opens its first tab. By question's folded rows
 are one 36px line from md, as By member's table rows (Epo 2026-11-16). By
 question shows a row of numbers first, Submitted
 "n of m", Average, Average time (the mean of members' minutes), and Attempts
@@ -1700,8 +1704,13 @@ comment can change. Grading takes `&question=` and `&member=` (A3 by
 question, A3b by member). Percent,
 average and the table's Average count from the first marked result: the
 five-result minimum (§11.8) no longer applies to assignments (Epo 2026-11-13). An unmarked
-assignment keeps Members, Settings and Preview (a draft Settings and Preview);
-its Members tab opens with its Handed in or Done count. Preview shows what
+assignment has Content | Responses | Settings, with Grading before Settings when
+it takes files (Epo 2026-11-21, as a graded quiz's Questions |
+Responses | Grading | Settings; a draft Settings alone): Content holds the files
+it gives out ("No files given out" with none), Responses opens with its Handed in
+or Done count, then the members in the hand-ins table's design (`HandInMembers`:
+Member, Done or Handed in, Work when it takes files, Grade read only when graded),
+each row opening Grading at that member; with no Grading the rows open nothing. Preview shows what
 members see (Epo 2026-11-13 A). A graded quiz's (`PreviewDialog`, a large
 dialog, full screen on phones) shows the question list and one question at a
 time (`AssignmentPreview`, `TakeQuestion` shared with `AssignmentTake`), with
@@ -1797,13 +1806,19 @@ members list's late note says only that late work stays open until staff close
 it.
 
 **Graded assignments** (Epo 2026-11-14, `todo-graded-quizzes.md`, after Canvas;
-migration `0176_assignment_points.sql`). A class's Assignment may have **Points**
-(New assignment's own row under Due and Assign to, board Task, and the Settings
-tab's Details; empty is not graded, whole points 1 to 1000; a Task has none, and
-the store refuses points on a graded quiz or a task). Graded, the form adds Show
+migration `0176_assignment_points.sql`). A class's Assignment taking uploads may
+have **Points** (Epo 2026-11-21: with nothing handed in there is nothing to
+grade; Canvas grades No Submission and On Paper assignments too, which Capy
+leaves out). They show under Allow submission with uploads once it is on, in New
+assignment and in the Settings tab's Submissions, as a graded quiz's Points sit
+with its Submission; empty is not graded, whole points 1 to 1000. The form drops
+them when uploads go off (`assignmentBody`), and the store refuses points on a
+graded quiz or on an Assignment without uploads (422, and the
+`assignments_points_kind` check; migration `0189_drop_own_tasks.sql` cleared the
+points, grades and late penalty of those that had them). Graded, the form adds Show
 grades (in Advanced; Settings' Marking and results) and the late penalty, and an
 ungraded one sends Show grades Automatic and no penalty. Its staff enter each
-member's grade on the Grading tab (`GradeField`), the Members tab showing it
+member's grade on the Grading tab (`GradeField`), the Responses tab showing it
 read only (Epo 2026-11-19, as a graded quiz's Responses), from 0 to the points
 with at most one decimal place, saved on Enter or Save, never on
 leaving the field (as quiz marks wait for Save), emptied to clear it (`PUT
@@ -1812,7 +1827,7 @@ quiz marks, for anyone it went to, ticked or not, open or closed; a draft or an
 ungraded one refuses). Every read takes the grade where a graded quiz takes its
 counted submission (`gradesSQL`, `assignmentGrades`): the report's member rows
 (`correct`, `mark` after the penalty, `total` the points, `latePenaltyPct`), the
-Assignments table's Average and the Members tab's stat (the mean of mark over
+Assignments table's Average and the Responses tab's stat (the mean of mark over
 points), `mine` (the member's Assignments row, To do's Details and the details
 dialog read "17/20", their page "Grade 17 / 20" or "Out of 20"), and Members'
 standings and profile (a grade counts its points into Overall). Late is the
@@ -1905,123 +1920,29 @@ done (or Mark as not done on Done) beside it while it can be ticked, which still
 asks first. On phones both buttons follow the content, since a long
 title needs the header's width. The table takes the page's full width; titles stay
 on one line and end in an ellipsis, and a Posted by column shows from xl (1280px).
-Add task, a dark button, sits at the toolbar's right for everyone
-(`NewAssignmentAnywhere`, Epo 2026-11-10). The form opens at once as a task with no
-workspace, and its first field, Workspace (optional, No workspace then the
-workspaces the caller is a member of), puts it in one (Epo 2026-11-11: "the same
-design as existing one, just with a workspace option"; the step that asked which
-workspace first is gone). It is one dialog (`NewAssignmentDialog`, Epo
-2026-11-11: "dont spwn another dialog, make both dialog the same thing, just
-hide/render the options/inputs that applies"): picking a workspace shows or hides
-fields in place, a class the caller runs giving the assignment's fields and
-anything else or No workspace a task's: every one of those but Assign to and
-Draft only (below). What is typed stays; what belongs to the workspace left
-behind is cleared (its quiz, its people, an assignment's files), while a task's
-quiz and files stay from task to task.
-Outside a workspace the words are
-the same for everyone (Epo 2026-11-10): the button, the dialog and its toast say
-task and workspace, never assignment or class.
+Nothing is added on To do (Epo 2026-11-21): it lists what classes give out.
 
-**A task with no workspace** (Epo 2026-11-11) is `own` with a null
-`workspace_id` (migration 0168 drops the NOT NULL, with a check that only an own
-task has none). `POST /api/todo/tasks` makes one from the same body, held to a
-task for oneself; its maker alone reads, changes, ticks and deletes it through the
-assignment routes (`lockTaskTx` and `taskRow` take an empty workspace, `ownedSQL`
-stands in for the membership `givenSQL` reads). `GET /api/todo` and
-`/api/todo/done` return these tasks as a section with an empty `workspaceId`, name
-and icon, first on To do; the table shows it first under either sort, under a
-group row reading No workspace with no icon, and the details dialog has no
-Workspace row. The 100-task cap counts them apart from any workspace's, and the
-account purge deletes a person's own tasks, since no workspace's cascade would.
-Its pages (taking its quiz, results, its report and settings) have no workspace
-to sit in, so `/todo/task?assignment=` hosts the same components
-(`routes/TodoTask.tsx`, `assignmentPage` picking between it and
-`/workspaces/{id}`); with no `assignment` it goes back to `/todo`, as the pages'
-own back links do.
+**No tasks for oneself** (Epo 2026-11-21, reversing 2026-11-10/11's New task and
+Add task: "they are for self tracking, no one can read the uploaded files for
+general task"; a personal workspace studies by practising, and nobody sets a
+graded quiz for themself). Only a class's owner and editors give out work, from
+the Assignments page's New menu: `POST /api/workspaces/{id}/assignments` refuses
+anyone else, and a personal workspace takes none. Migration `0189_drop_own_tasks.sql` deleted the
+tasks people had set themselves and dropped `assignments.own`, so every
+assignment has a workspace again. A personal workspace has no To do: no rail
+row, no Dashboard section, and a link to its `assignments` page goes to Practice
+(`studyView`). Google Classroom's to-do lists assigned work only (personal tasks
+live in Google Tasks, outside it); Canvas lets a student add a planner note, which
+Capy has no counterpart for. What a class gave out still hides while the
+workspace is personal.
 
-**A task's files come from anywhere** (Epo 2026-11-11: "files chosen should have
-nothing to do with which workspace this task belongs to"). For an own task, in a
-workspace or not, the store takes any file or block its maker can open
-(`ownTaskFileSQL`, `ownTaskMaterialSQL`: their own with no workspace, and what a
-workspace they are a member of shows them, a canvas left out; one they only pay
-for in a workspace they left is not theirs to open) and reads each back only while they still can, so one
-they lose leaves the task. `AssignmentFile` carries `workspaceId` and
-`workspaceName`, absent for a file with no workspace. In the form
-(`TaskFilesField` in `TaskFiles.tsx`, which the dialog shows in place of the
-class's `FilesField` for a task of one's own) Choose a file opens Make a quiz's
-search menu (`FileSearchMenu`): a field over `GET /api/items?scope=all&q=`, newest
-first until something is typed, each row with its workspace's name or No workspace;
-a row adds the file. Both Files fields keep Choose a file, a full-width
-select-like trigger (`ChooseFileButton`), above the files chosen, each 32px row ending
-in a small muted × (`RemoveFileButton`), with no dividers; the menu ticks the files
-already on the task and stays open for more until closed, a ticked row takes its file
-off, and at the files cap its unticked rows are disabled while the trigger still opens
-it (Epo 2026-11-12). The task's Quiz field opens the same menu and closes on its pick. A picked row
-names its workspace, and the details dialog opens each file where it sits
-(`/workspaces/{id}?file=`, or `/files/{id}` and `/materials/{id}` with none),
-naming the workspace when it is not the task's own. An assignment's files stay
-its class's, picked from the class (`FilesField`), since members must open them.
-
-Inside a workspace the words follow who gives out work (Epo 2026-11-10, the
-menu 2026-11-14): a class's owner and editor members get the New menu
-(Assignment, Graded quiz), a personal workspace's people the New menu with Task
-and Graded quiz, and a class's viewer members New task, since a viewer gives out
-no assignments. The button sits in the Dashboard's To do section (a small
-outline `NewAssignmentMenu`, `small`) and at the top of the Assignments or To do
-page. The Dashboard's section stays with nothing in it (Epo 2026-11-10: always
-show, and nothing is hidden that he did not ask to hide): its heading, its
-button (a visitor who is no member has none) and the To do page's "Nothing to
-do". A
-workspace with no files shows it too, above its empty state.
-
-New task is a task for oneself, the same dialog with `own` set (its heading New
-task; there is no second form), saved as an assignment with `own` set (migration
-0168) that names its maker alone. It takes every option an assignment does but
-Assign to (Epo 2026-11-11: "everything should apply except for the assigning
-members, and maybe filtering files"): marked or not, time limit, attempts,
-marking, Show grades, Show answers, Allow submission with uploads and Advanced.
-There is no Draft only, since To do lists no drafts and the task would have
-nowhere to be found. A marked Task is made through New › Graded quiz (below) and
-owns its quiz as a class's graded quiz does: it is made with its quiz in one
-request (the quiz maker's `gradedQuiz`, or Existing quiz's copy; The owned
-quiz), and Republish freezes the
-owned quiz again (`checkFreezeTx`). `POST /api/workspaces/{id}/assignments` takes a task from any
-member who is not a class's staff, and from them only for themself
-(`checkOwnTask`: no draft, nobody else); a class's staff make assignments there
-as before.
-
-An own task is the case of staff who are also the one it went to: its maker
-holds both `manage` and `mine` (`readAssignments`), and every assignment route
-reads standing from the task's row (`taskRow`, `staffOf`, `lockStaffOfTx`)
-instead of the workspace alone, so its maker publishes again, closes, reads the
-report, approves and changes marks, and takes it, in a class, a personal
-workspace or none, while a class's staff and the workspace's owner get 404 on
-all of it (`givenSQL`): they neither list it nor count it (Members, the
-Dashboard's Activity, the `todo` event and the class's caps leave it out). A
-task in a workspace needs its maker still a member; on leaving or removal their
-tasks there move to no workspace with their attempts
-(`RemoveWorkspaceMemberWithResult`), and a workspace that is deleted leaves every
-member's tasks the same way (`deleteWorkspaceWithResultTx`) instead of taking
-them in its cascade. While the workspace's owner is suspended or leaving, a task
-in it is out of reach like everything else there. What it does not do: it never
-hides a quiz it does not own, releasing its grades sends no notification,
-and its answer events log under the quiz's own workspace, as practising the quiz
-does, so that workspace's row is key-shared before the accounts
-(`taskRow.lockQuizWorkspaceTx`). What a
-class gave out still hides while the workspace is personal. The task sits in its
-maker's To do and Done under the workspace's name, in the Dashboard's To do and
-the workspace's To do page; its tick is the plain task's, and it opens To do's
-details dialog wherever it is listed (ticking as the To do page does: a plain
-task's tick is its done, a quiz's or a hand-in's asks first and only clears To
-do), with Delete and Edit in
-the footer and, for one with a quiz, Start quiz, Continue quiz or See results:
-Edit opens the same form, Delete asks and then deletes the task for good (`DELETE
-/api/assignments/{id}`, its maker only, also while frozen). Its results page
-keeps Attempt again and Practise again for its maker, though they run it too, and
-its back link opens the report. A file on its pages opens where the file sits
-(`fileLink`). A member holds at most 100 own tasks in one
-workspace, and 100 with no workspace, done or not (`OwnTasksPerMember`, 409
-`task_limit`).
+A class's Dashboard To do section stays with nothing in it (Epo 2026-11-10:
+always show, and nothing is hidden that he did not ask to hide): its heading and
+the To do page's "Nothing to do", with no button, since members get what staff
+give out and staff's is mostly approving marks (as Canvas's instructor To Do and
+Google Classroom's To review create nothing). A workspace with no files shows it
+too, above its empty state. Staff's Assignments page (`ListAssignments`) lists
+assignments only.
 
 A class holds at most 500 assignments, 100 of them open
 (`row_caps.go`, 409 `assignment_limit` and `assignment_open_limit`, shown in the
@@ -2044,10 +1965,8 @@ do while its page says it closed. The sweep submitting an attempt left running
 tells the class's staff and that member (`publishSweptTodo`).
 
 **The New menu** (Epo 2026-11-14, `NewAssignmentMenu.tsx`). Assignments' header
-(a class's staff) offers Assignment and Graded quiz; a personal workspace's To do
-offers Task and Graded quiz; a class member keeps a plain New task. Assignment and
-Task open `NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked
-form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with its
+(a class's staff) offers Assignment and Graded quiz. Assignment opens
+`NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with its
 questions first and Settings last (Epo 2026-11-20, reversing 2026-11-16's
 Settings first, which followed Canvas, Google Classroom and Moodle: what was
 picked decides some settings, and Title can start on its name). There is no

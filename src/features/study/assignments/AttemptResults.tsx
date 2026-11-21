@@ -380,8 +380,6 @@ function MarkedResults({
   fromProfile?: ProfileOrigin;
 }) {
   const staff = !!assignment.manage;
-  // A task's maker runs it and takes it: the attempt here is their own.
-  const taker = !staff || !!assignment.own;
   // A file's graded quiz reads as a hand-in, to its member and its staff.
   const paperQuiz = assignment.paperFile;
   const { dialog, start, starting } = useAssignmentStart(
@@ -402,7 +400,7 @@ function MarkedResults({
   const decided = attempt.total - attempt.waitingMarks;
   const when = attempt.submittedAt ? dayLabel(attempt.submittedAt) : '';
   const left =
-    taker &&
+    !staff &&
     !assignment.closedAt &&
     assignment.mine &&
     assignment.attempts - assignment.mine.attemptsUsed > 0;

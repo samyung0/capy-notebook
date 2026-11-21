@@ -885,11 +885,6 @@ func (s *Store) deleteWorkspaceWithResultTx(
 		return nil, err
 	}
 	rows.Close()
-	// The tasks its members set themselves are theirs, not the workspace's:
-	// they stay, in no workspace, as when a member leaves.
-	if _, err := tx.Exec(ctx, `UPDATE assignments SET workspace_id=NULL WHERE workspace_id=$1 AND own`, id); err != nil {
-		return nil, err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
 		return nil, err
 	}

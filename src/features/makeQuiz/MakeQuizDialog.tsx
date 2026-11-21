@@ -525,7 +525,6 @@ export function MakeQuizDialog({
     answers: choice.answers,
     file,
     hidden,
-    onCancel: onClose,
     onChangeFiles: () => onShowFiles(choice),
     onFile,
     onNext: graded?.onNext,

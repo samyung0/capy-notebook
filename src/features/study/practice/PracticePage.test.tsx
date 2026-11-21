@@ -155,24 +155,20 @@ it('gives each of the four people their rail', () => {
     m.workspace_tab_study(),
     m.workspace_section_canvas(),
   ]);
-  // Everyone else has their own To do and Study, and sees who the members are
-  // without marks.
-  for (const own of [
-    rail('class', 'viewer'),
-    rail('personal', 'owner'),
-    rail('personal', 'viewer'),
-  ])
-    expect(own).toEqual([
-      ...before,
-      m.nav_todo(),
-      m.study_panel_members(),
-      m.workspace_tab_study(),
-      m.workspace_section_canvas(),
-    ]);
+  // A class's members have their own To do and Study, and see who the members
+  // are without marks; a personal workspace has no To do (Epo 2026-11-21).
+  const rest = [
+    m.study_panel_members(),
+    m.workspace_tab_study(),
+    m.workspace_section_canvas(),
+  ];
+  expect(rail('class', 'viewer')).toEqual([...before, m.nav_todo(), ...rest]);
+  for (const own of [rail('personal', 'owner'), rail('personal', 'viewer')])
+    expect(own).toEqual([...before, ...rest]);
   // A link or public visitor is no member: no Members, and no canvas.
   expect(
     workspaceSections({ kind: 'personal', role: '' as never }).map(
       (section) => section.label
     )
-  ).toEqual([...before, m.nav_todo(), m.workspace_tab_study()]);
+  ).toEqual([...before, m.workspace_tab_study()]);
 });

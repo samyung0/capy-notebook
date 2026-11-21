@@ -133,6 +133,13 @@ const (
 	// Make a quiz question paper (Epo 2026-11-14). apimodel.GenerateReq's
 	// maxItems repeats it.
 	GenerateFiles = 5
+	// A Generate run reads at most GenerateScopeFiles indexed items of its
+	// scope, files then notes in topic order (Epo 2026-11-21); the dialog says
+	// so past it.
+	GenerateScopeFiles = 20
+	// GenerateInstructions bounds the optional instructions a Generate run
+	// sends the model as the user's own words, in characters (Epo 2026-11-21).
+	GenerateInstructions = 1_000
 	// A drawing answer's saved board (undo history stripped) and its marking
 	// image, each at most this many bytes (Epo 2026-11-06: 250 KB and 300 KB),
 	// the image at most DrawingImageSide px on its longer side, as the browser

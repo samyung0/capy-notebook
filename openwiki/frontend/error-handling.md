@@ -933,9 +933,8 @@ and credits are required for processing rather than persistence.
 Chat `pending_sources` events show when edited source evidence is awaiting
 processing. If exact pending evidence exceeds the request budget, the message
 warns that source information may be outdated and offers Process file changes.
-Generation returns `pending_sources_too_large` with the edited file ids instead
-of silently using incomplete pending evidence, and offers the same action for
-exactly those files; a plain `context_too_large` is an ordinary failure. The action toasts that processing started,
+Generation reads indexed text only, so it has no pending-evidence failure; a
+`context_too_large` is an ordinary failure. The action toasts that processing started,
 or that it could not start with the reason (`useProcessFileChanges`).
 Processing shows no progress anywhere else; the workspace settings Indexing
 tab lists every file with unprocessed edits as waiting, queued, processing

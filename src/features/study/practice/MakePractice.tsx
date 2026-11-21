@@ -1,8 +1,16 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import { isApiError } from '@/api/client';
+import { Controller, useForm, useWatch } from 'react-hook-form';
+import {
+  GenerateBody,
+  generateBodyInstructionsMax,
+} from '@/api/gen/validators';
 import { useFiles, useGenerate, useMaterials, useTopics } from '@/api/hooks';
-import { GENERATE_FILES_MAX } from '@/api/limits.generated';
+import {
+  GENERATE_FILES_MAX,
+  GENERATE_SCOPE_FILES_MAX,
+} from '@/api/limits.generated';
 import type {
   AssignmentFormReq,
   MaterialRef,
@@ -20,7 +28,7 @@ import {
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { InputTitle } from '@/components/ui/Input';
+import { InputError, InputTitle } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
 import {
   Select,
@@ -30,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
+import { Textarea } from '@/components/ui/TextArea';
 import {
   ChooseFileButton,
   FileMenuNote,
@@ -42,12 +51,12 @@ import { matchesSearch } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
-  CopyError,
   deferStorageRefusal,
   describeError,
   unexpectedErrorId,
 } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { textLength } from '@/lib/textLength';
 
 const COUNTS = [5, 10, 15, 20] as const;
 
@@ -64,8 +73,9 @@ const TYPES: { label: () => string; types: QuestionType[]; value: string }[] = [
   { label: m.quiz_type_open, types: ['open'], value: 'open' },
 ];
 
-/** What a topic can feed a run: its indexed files and notes. A generate run
- * reads sources, so a topic holding only quizzes has nothing to offer. */
+/** What a topic can feed a run: its indexed files and notes, counted. A
+ * generate run reads sources, so a topic holding only quizzes has nothing to
+ * offer. */
 export function practiceSources(
   topics: Topic[],
   files: SourceFile[],
@@ -85,8 +95,8 @@ export function practiceSources(
   ];
   const offered = [...topics]
     .sort((a, b) => a.order - b.order)
-    .map((t) => ({ id: t.id, name: t.name }))
-    .filter((t) => inTopic(t.id).length > 0);
+    .map((t) => ({ count: inTopic(t.id).length, id: t.id, name: t.name }))
+    .filter((t) => t.count > 0);
   const items = [...topics.map((t) => t.id), null].flatMap(inTopic);
   return { items, topics: offered };
 }
@@ -94,13 +104,19 @@ export function practiceSources(
 /** Removable picks, then a menu adding one more. */
 function Picks({
   add,
+  hint,
   label,
+  note,
   onChange,
   options,
   picked,
 }: {
   add: string;
+  /** A line under the label. */
+  hint?: string;
   label: string;
+  /** Said after the label, as Files says its limit. */
+  note?: string;
   onChange: (ids: string[]) => void;
   options: { id: string; name: string }[];
   picked: string[];
@@ -108,7 +124,15 @@ function Picks({
   const left = options.filter((o) => !picked.includes(o.id));
   return (
     <div className="flex flex-col gap-1.5">
-      <InputTitle>{label}</InputTitle>
+      <div>
+        <InputTitle>
+          {label}
+          {note && (
+            <span className="t-meta font-normal text-fg-muted"> · {note}</span>
+          )}
+        </InputTitle>
+        {hint && <p className="t-meta text-fg-muted">{hint}</p>}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {options
           .filter((o) => picked.includes(o.id))
@@ -148,6 +172,9 @@ function Picks({
 }
 
 type PracticeItem = ReturnType<typeof practiceSources>['items'][number];
+
+/** The user's own words to the model (Epo 2026-11-21). */
+const InstructionsBody = GenerateBody.pick({ instructions: true });
 
 /** Files' field as Make a quiz's question paper has it (Epo 2026-11-14): Choose
  * a file over the files chosen, its menu searching the workspace's readable
@@ -310,6 +337,15 @@ export function useMakePractice({
   const [count, setCount] = useState(10);
   const [types, setTypes] = useState('mixed');
   const [mix, setMix] = useState(false);
+  const {
+    control,
+    formState: { errors },
+  } = useForm({
+    defaultValues: { instructions: '' },
+    mode: 'onChange',
+    resolver: zodResolver(InstructionsBody),
+  });
+  const instructions = useWatch({ control, name: 'instructions' }) ?? '';
   // The start topic once it is known to have sources, else the first that does.
   const startTopic =
     sources.topics.find((t) => t.id === initialTopicId) ?? sources.topics[0];
@@ -317,6 +353,13 @@ export function useMakePractice({
     pickedTopics ?? (startTopic ? [startTopic.id] : ([] as string[]));
   const ready =
     from === 'topics' ? chosenTopics.length > 0 : pickedFiles.length > 0;
+  // Start, and New graded quiz's Next, wait for valid instructions too.
+  const canStart = ready && !errors.instructions;
+  // A run reads the first GENERATE_SCOPE_FILES_MAX of the topics' files and
+  // notes (Epo 2026-11-21), and says so past it.
+  const topicItems = sources.topics
+    .filter((t) => chosenTopics.includes(t.id))
+    .reduce((n, t) => n + t.count, 0);
   // Loaded, and nothing to generate from: says why Start stays off.
   const nothingToRead =
     !!topics &&
@@ -342,6 +385,7 @@ export function useMakePractice({
         count,
         fileIds: from === 'files' ? picked : [],
         gradedQuiz,
+        instructions: instructions.trim() || undefined,
         mix: mixable && mix,
         title,
         topics: from === 'topics' ? picked : [],
@@ -355,24 +399,18 @@ export function useMakePractice({
           to: '/quizzes/$quizId/attempt',
         });
     } catch (error) {
-      const pending =
-        isApiError(error) && error.code === 'pending_sources_too_large';
       // A frozen or storage refusal shows as the workspace status instead.
-      if (!pending && deferStorageRefusal(error)) return;
-      if (gradedQuiz)
-        throw pending ? new CopyError(m.source_pending_context()) : error;
-      if (pending)
-        setFormError({ errorId: null, message: m.source_pending_context() });
-      else
-        setFormError({
-          errorId: unexpectedErrorId(error),
-          message: describeError(error).description,
-        });
+      if (deferStorageRefusal(error)) return;
+      if (gradedQuiz) throw error;
+      setFormError({
+        errorId: unexpectedErrorId(error),
+        message: describeError(error).description,
+      });
     }
   }
 
   const startButton = (
-    <Button disabled={!ready || isPending} onClick={() => void start()}>
+    <Button disabled={!canStart || isPending} onClick={() => void start()}>
       {isPending ? m.generating_quiz() : m.review_start()}
     </Button>
   );
@@ -396,7 +434,16 @@ export function useMakePractice({
         {from === 'topics' ? (
           <Picks
             add={m.practice_add_topic()}
+            hint={m.practice_topics_scanned()}
             label={m.practice_from_topics()}
+            note={
+              topicItems > GENERATE_SCOPE_FILES_MAX
+                ? m.practice_first_files({
+                    count: GENERATE_SCOPE_FILES_MAX,
+                    total: topicItems,
+                  })
+                : undefined
+            }
             onChange={setPickedTopics}
             options={sources.topics}
             picked={chosenTopics}
@@ -428,6 +475,28 @@ export function useMakePractice({
             value={types}
           />
         </div>
+        <Controller
+          control={control}
+          name="instructions"
+          render={({ field, fieldState }) => (
+            <label className="flex flex-col gap-1.5">
+              <InputTitle
+                count={{
+                  max: generateBodyInstructionsMax,
+                  value: textLength(field.value),
+                }}
+              >
+                {m.practice_instructions()}
+              </InputTitle>
+              <Textarea
+                {...field}
+                aria-invalid={fieldState.invalid}
+                value={field.value ?? ''}
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </label>
+          )}
+        />
         {mixable && (
           <label className="flex items-center justify-between gap-3">
             <InputTitle>{m.practice_mix_answered()}</InputTitle>
@@ -448,7 +517,7 @@ export function useMakePractice({
     </>
   );
   // New graded quiz's pick: its questions are read before it goes out.
-  const source: GradedSource | undefined = ready
+  const source: GradedSource | undefined = canStart
     ? {
         busyLabel: m.generating_quiz(),
         draft: true,

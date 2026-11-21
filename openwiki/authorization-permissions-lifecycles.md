@@ -112,10 +112,9 @@ results", class only) and who pays for AI marking (class: the owner for
 assignments, a member for their own practice; personal: each person).
 
 Assignments ([study-progress.md](study-progress.md#assignments)) are a class's
-alone, but for the tasks a member sets themself in any workspace (after the
-table), and the store checks each of these itself (`assignmentStaff`, `taskStaff`,
-`lockAssignmentStaffTx`; `staffOf` and `lockStaffOfTx` read the assignment's row
-first, since a task's only staff is its maker):
+alone, made by its owner and editors; nobody sets work for themself (Epo
+2026-11-21), and the store checks each of these itself (`assignmentStaff`,
+`lockAssignmentStaffTx`):
 
 | Action | Owner | Editor member | Link/public editor | Viewer member it went to | Other viewer member |
 | --- | --- | --- | --- | --- | --- |
@@ -130,25 +129,9 @@ first, since a task's only staff is its maker):
 | Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No | No |
 
 Everything else answers 404. A personal workspace hides a class's assignments
-without deleting them. Apart from assignments, any member of a workspace sets
-themself tasks (Epo 2026-11-10, New task: `assignments.own`, naming its maker
-alone and never a draft): a class's viewer members and everyone in a personal
-workspace, while a class's owner and editor members make assignments instead.
-Such a task takes every option an assignment does but who it goes to (Epo
-2026-11-11), and its maker is both its staff and the one it went to: they alone
-read, take, tick, mark, close, republish and delete it and read its report and
-its frozen images, on the same routes, while a class's staff and the workspace's
-owner get 404 on every one and see none of them. In a workspace it needs its
-maker still a member; when they leave or are removed, or the workspace is
-deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
-/api/todo/tasks`), and its quiz and files are any its maker can open, from any
-workspace or none (`ownTaskFileSQL`, `ownTaskMaterialSQL`), while a marked
-task's quiz is made with it and the task owns it (`makeGradedQuizTx`, Epo
-2026-11-16): never one hidden from them (a class's quiz under an open
-assignment is held from every viewer member, and one it went to stays refused
-past the close while its keys are held), and a file they later lose access to leaves
-the task, so a task shows its maker nothing they could not open themself;
-in a personal workspace every otherassignment route answers 404; Members' store refuses a class's own viewer
+without deleting them, takes no new one (`POST /api/workspaces/{id}/assignments`
+answers 404 there and to a class's viewer members) and lists none; in a personal
+workspace every other assignment route answers 404; Members' store refuses a class's own viewer
 members with `ErrForbidden` (`membersStaff`), which the API answers as 404 like
 the rest (`TestMembersRoutesAuthorize`). Members shows staff a member's practice
 as counts only, never answers; its Frequently wrong lists prompts from the class's
@@ -484,12 +467,12 @@ unchanged.
 - **Owned by a graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
   (`materials.assignment_id`, migration 0174) is hidden for good: claiming it
   sets `hidden`, and `materialHiddenSQL` and `live_access` read it as hidden
-  whatever the column says, so only the class's staff (and a Task's maker) open
+  whatever the column says, so only the class's staff open
   it, before and after the close. It lists nowhere (every list, search, picker,
   Practice, Study, Explore and the pipeline's scope, outline and summary queries
   have `m.assignment_id IS NULL`), hiding it by hand and trashing it answer 404,
   and it goes when its assignment is deleted (`ON DELETE CASCADE`). A graded
-  quiz or a marked task is made with its quiz in one request (the quiz maker's
+  quiz is made with its quiz in one request (the quiz maker's
   `gradedQuiz`, or a copy of a workspace quiz, Epo 2026-11-16), so no quiz
   waits unowned. It is charged to its maker, so
   their account purge deletes it and the assignment keeps its frozen copy. See

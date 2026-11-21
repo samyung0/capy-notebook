@@ -78,7 +78,7 @@ func makeGradedQuiz(t *testing.T, h http.Handler, user string, questions any, fo
 // TestAssignmentRoutesAuthorize walks the routes as each role, on the seeded
 // workspace where u_owner, u_editor and u_viewer are members and u_other is not:
 // only the owner's side manages or reads the report, a member is served no keys,
-// and a personal workspace holds only the tasks a person sets themself.
+// and a personal workspace has no assignments.
 func TestAssignmentRoutesAuthorize(t *testing.T) {
 	h := openShareAPI(t, pipeline.New("http://127.0.0.1:1", ""))
 	const ws = "/api/workspaces/ws_e2e_private"
@@ -88,38 +88,15 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 			t.Fatalf("set kind %s: status = %d body=%s", kind, rec.Code, rec.Body.String())
 		}
 	}
-	// A personal workspace takes the task its maker sets themself, theirs alone.
-	own := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", map[string]any{
+	// A personal workspace has no assignments, and nobody sets one for themself
+	// (Epo 2026-11-21).
+	task := map[string]any{
 		"kind": "unmarked", "title": "Read chapter 4", "attempts": 1, "noLate": false, "latePenaltyPct": 0,
 		"assignAll": false, "assignees": []string{"u_owner"}, "draft": false,
 		"marking": "ai_approve", "showAnswers": "closed", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	})
-	var task struct {
-		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(own.Body.Bytes(), &task); err != nil || own.Code != http.StatusCreated {
-		t.Fatalf("an owner's own task: status = %d body=%s", own.Code, own.Body.String())
-	}
-	if rec := doReq(t, h, http.MethodGet, "/api/assignments/"+task.ID, "u_editor", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("an editor reads the owner's task: status = %d", rec.Code)
-	}
-	if rec := doReq(t, h, http.MethodDelete, "/api/assignments/"+task.ID, "u_owner", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("its maker deletes it: status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	// A task with no workspace (Epo 2026-11-11) is its maker's alone too.
-	loose := doReq(t, h, http.MethodPost, "/api/todo/tasks", "u_viewer", map[string]any{
-		"kind": "unmarked", "title": "Buy graph paper", "attempts": 1, "noLate": false, "latePenaltyPct": 0,
-		"assignAll": false, "assignees": []string{"u_viewer"}, "draft": false,
-		"marking": "ai_approve", "showAnswers": "closed", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	})
-	if err := json.Unmarshal(loose.Body.Bytes(), &task); err != nil || loose.Code != http.StatusCreated {
-		t.Fatalf("a task with no workspace: status = %d body=%s", loose.Code, loose.Body.String())
-	}
-	if rec := doReq(t, h, http.MethodGet, "/api/assignments/"+task.ID, "u_owner", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("someone else reads a task with no workspace: status = %d", rec.Code)
-	}
-	if rec := doReq(t, h, http.MethodDelete, "/api/assignments/"+task.ID, "u_viewer", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("its maker deletes a task with no workspace: status = %d body=%s", rec.Code, rec.Body.String())
+	if rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_owner", task); rec.Code != http.StatusNotFound {
+		t.Fatalf("an assignment in a personal workspace: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	setKind("class")
 	t.Cleanup(func() { setKind("personal") })
@@ -138,21 +115,9 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 			t.Fatalf("%s makes a graded quiz: status = %d body=%s", user, rec.Code, rec.Body.String())
 		}
 	}
-	mine := doReq(t, h, http.MethodPost, ws+"/assignments", "u_viewer", map[string]any{
-		"kind": "unmarked", "title": "Revise osmosis", "attempts": 1, "noLate": false, "latePenaltyPct": 0,
-		"assignAll": false, "assignees": []string{"u_viewer"}, "draft": false,
-		"marking": "ai_approve", "showAnswers": "closed", "showGrades": "automatic", "shuffle": false, "files": []any{},
-	})
-	if err := json.Unmarshal(mine.Body.Bytes(), &task); err != nil || mine.Code != http.StatusCreated {
-		t.Fatalf("a viewer's own task: status = %d body=%s", mine.Code, mine.Body.String())
-	}
-	for _, path := range []string{"", "/report"} {
-		if rec := doReq(t, h, http.MethodGet, "/api/assignments/"+task.ID+path, "u_owner", nil); rec.Code != http.StatusNotFound {
-			t.Fatalf("the owner reads a member's task%s: status = %d", path, rec.Code)
-		}
-	}
-	if rec := doReq(t, h, http.MethodDelete, "/api/assignments/"+task.ID, "u_viewer", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("a viewer deletes their task: status = %d body=%s", rec.Code, rec.Body.String())
+	task["assignees"] = []string{"u_viewer"}
+	if rec := doReq(t, h, http.MethodPost, ws+"/assignments", "u_viewer", task); rec.Code != http.StatusNotFound {
+		t.Fatalf("a viewer's assignment for themself: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	assignmentID, quizID := makeGradedQuiz(t, h, "u_editor", []any{gradedQuizQuestion}, form)
 	path := "/api/assignments/" + assignmentID

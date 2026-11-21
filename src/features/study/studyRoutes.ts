@@ -13,18 +13,20 @@ import { type HistorySearch, parseHistorySearch } from './reviewSearch';
 export type StudyTab = 'summary' | 'topics' | 'practice' | 'bank' | 'history';
 
 /** A report's tab in the URL: a graded quiz's Questions, Responses, Grading
- * (grading and approving its answers) and Settings; a task's Members, Grading
- * (one graded on points or taking files) and Settings. */
+ * (grading and approving its answers) and Settings; an Assignment's Content,
+ * Responses, Grading (one graded on points or taking files) and Settings (Epo
+ * 2026-11-21). */
 export type ReportTab =
   | 'questions'
+  | 'content'
   | 'responses'
-  | 'members'
   | 'grading'
   | 'settings';
 
 /** The Assignments page's URL, `assignments`. `assignment` opens
  * one: its report for a class's owner and teaching assistants (unless `own`, the
- * page of one given to them), its page for a member. `attempt` opens a try: a
+ * page of one they gave themselves with "You"), its page for a member.
+ * `attempt` opens a try: a
  * running one, or results, a member's for staff. `tab`, `by`, `question` and
  * `member` are a report's view (todo-study-tracking.md §9, Links), Grading's
  * `member` and `work` the member and hand-in file it shows (Epo 2026-11-19;
@@ -76,8 +78,8 @@ const text = (value: unknown) =>
 
 const REPORT_TABS = [
   'questions',
+  'content',
   'responses',
-  'members',
   'grading',
   'settings',
 ] as const satisfies readonly ReportTab[];

@@ -515,7 +515,6 @@ export const GetAssignmentResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -650,7 +649,6 @@ export const UpdateAssignmentResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -761,7 +759,6 @@ export const SetAssignmentClosedResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -951,7 +948,6 @@ export const ChangeAssignmentPaperFileResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -1041,7 +1037,6 @@ export const PublishAssignmentResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -1131,7 +1126,6 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -1299,7 +1293,6 @@ export const RepublishAssignmentResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -4328,7 +4321,6 @@ export const MakeFileGradedQuizResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -4864,7 +4856,7 @@ export const DeleteIntegrationResponse = zod.void()
 
 
 /**
- * @summary The banks the caller may use: a class workspace's when they are its staff, then their own
+ * @summary Every bank the caller reaches: the class they are in first when they are its staff, then their own, then every other class they own or edit, A–Z
  */
 export const listItemBanksQueryWorkspaceIdMax = 64;
 
@@ -7995,7 +7987,6 @@ export const CopyQuizToGradedQuizResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -8834,7 +8825,6 @@ export const GetTodoResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -8938,7 +8928,6 @@ export const GetTodoDoneResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -8969,137 +8958,6 @@ export const HideTodoDoneBody = zod.object({
 })
 
 export const HideTodoDoneResponse = zod.void()
-
-
-/**
- * @summary Set oneself a task that belongs to no workspace
- */
-export const createTodoTaskBodyAssigneesMax = 500;
-
-export const createTodoTaskBodyAttemptsMax = 10;
-
-export const createTodoTaskBodyFilesMax = 20;
-
-export const createTodoTaskBodyLatePenaltyPctMin = 0;
-export const createTodoTaskBodyLatePenaltyPctMax = 50;
-
-export const createTodoTaskBodyPointsMax = 1000;
-
-export const createTodoTaskBodyTimeLimitMinMax = 1440;
-
-export const createTodoTaskBodyTitleMax = 120;
-
-export const createTodoTaskBodyTotalMarksMax = 1000;
-
-
-
-export const CreateTodoTaskBody = zod.object({
-  "allowUploads": zod.boolean().optional(),
-  "assignAll": zod.boolean(),
-  "assignees": zod.array(zod.string()).max(createTodoTaskBodyAssigneesMax),
-  "attempts": zod.int().min(1).max(createTodoTaskBodyAttemptsMax),
-  "draft": zod.boolean(),
-  "dueAt": zod.iso.datetime({"offset":true}).optional(),
-  "files": zod.array(zod.object({
-  "fileId": zod.string().optional(),
-  "materialId": zod.string().optional()
-})).max(createTodoTaskBodyFilesMax),
-  "kind": zod.enum(['marked', 'unmarked']),
-  "latePenaltyPct": zod.int().min(createTodoTaskBodyLatePenaltyPctMin).max(createTodoTaskBodyLatePenaltyPctMax),
-  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
-  "noLate": zod.boolean(),
-  "points": zod.int().min(1).max(createTodoTaskBodyPointsMax).optional(),
-  "quizId": zod.string().optional(),
-  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
-  "showGrades": zod.enum(['automatic', 'manual']),
-  "shuffle": zod.boolean(),
-  "timeLimitMin": zod.int().min(1).max(createTodoTaskBodyTimeLimitMinMax).optional(),
-  "title": zod.string().min(1).max(createTodoTaskBodyTitleMax),
-  "totalMarks": zod.int().min(1).max(createTodoTaskBodyTotalMarksMax).optional(),
-  "uploadOnly": zod.boolean().optional()
-})
-
-export const CreateTodoTaskResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "allowUploads": zod.boolean(),
-  "attempts": zod.int(),
-  "closed": zod.boolean(),
-  "closedAt": zod.iso.datetime({"offset":true}).optional(),
-  "draft": zod.boolean(),
-  "drawingParts": zod.boolean(),
-  "dueAt": zod.iso.datetime({"offset":true}).optional(),
-  "files": zod.array(zod.object({
-  "fileId": zod.string().optional(),
-  "kind": zod.string(),
-  "materialId": zod.string().optional(),
-  "name": zod.string(),
-  "preview": zod.record(zod.string(), zod.unknown()).optional().describe('A text file\'s opening characters or a material\'s list-card preview (openwiki/thumbnails.md)'),
-  "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail; the assignment\'s own read only'),
-  "workspaceId": zod.string().optional(),
-  "workspaceName": zod.string().optional()
-})),
-  "gradesHidden": zod.boolean(),
-  "id": zod.string(),
-  "kind": zod.enum(['marked', 'unmarked']),
-  "latePenaltyPct": zod.int(),
-  "manage": zod.object({
-  "approvalsCheckedOff": zod.boolean(),
-  "assignAll": zod.boolean(),
-  "assigned": zod.int(),
-  "assignees": zod.array(zod.string()),
-  "average": zod.number().optional(),
-  "done": zod.int(),
-  "graded": zod.int(),
-  "gradesReleasedAt": zod.iso.datetime({"offset":true}).optional(),
-  "marking": zod.enum(['ai_approve', 'ai', 'manual']),
-  "notGraded": zod.int(),
-  "quizChanged": zod.boolean().optional(),
-  "quizId": zod.string().optional(),
-  "quizTitle": zod.string().optional(),
-  "quizUpdatedAt": zod.iso.datetime({"offset":true}).optional(),
-  "showAnswers": zod.enum(['closed', 'submitted', 'never']),
-  "showGrades": zod.enum(['automatic', 'manual']),
-  "shuffle": zod.boolean(),
-  "toApprove": zod.int()
-}).optional(),
-  "marks": zod.number(),
-  "mine": zod.object({
-  "attemptsUsed": zod.int(),
-  "checkedAt": zod.iso.datetime({"offset":true}).optional(),
-  "checkedOff": zod.boolean(),
-  "correct": zod.number().optional(),
-  "countedAttemptId": zod.string().optional(),
-  "done": zod.boolean(),
-  "doneAt": zod.iso.datetime({"offset":true}).optional(),
-  "handIn": zod.array(zod.object({
-  "id": zod.string(),
-  "kind": zod.string(),
-  "name": zod.string(),
-  "sizeBytes": zod.int(),
-  "status": zod.string()
-})).nullish(),
-  "late": zod.boolean(),
-  "latePenaltyPct": zod.int(),
-  "mark": zod.number().optional(),
-  "missing": zod.boolean(),
-  "runningAttemptId": zod.string().optional(),
-  "total": zod.number().optional(),
-  "waitingAnswers": zod.int(),
-  "waitingMarks": zod.number()
-}).optional(),
-  "noLate": zod.boolean(),
-  "own": zod.boolean(),
-  "paperFile": zod.boolean(),
-  "points": zod.int().optional(),
-  "postedAt": zod.iso.datetime({"offset":true}),
-  "postedBy": zod.string(),
-  "questions": zod.int(),
-  "timeLimitMin": zod.int().optional(),
-  "title": zod.string(),
-  "topicIds": zod.array(zod.string()),
-  "uploadOnly": zod.boolean(),
-  "workspaceId": zod.string()
-})
 
 
 /**
@@ -9829,7 +9687,6 @@ export const ListAssignmentsResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -9847,7 +9704,7 @@ export const ListAssignmentsResponse = zod.object({
 
 
 /**
- * @summary Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
+ * @summary Give a class an unmarked assignment; a graded quiz is made with its questions
  */
 export const CreateAssignmentParams = zod.object({
   "id": zod.string()
@@ -9967,7 +9824,6 @@ export const CreateAssignmentResponse = zod.object({
   "waitingMarks": zod.number()
 }).optional(),
   "noLate": zod.boolean(),
-  "own": zod.boolean(),
   "paperFile": zod.boolean(),
   "points": zod.int().optional(),
   "postedAt": zod.iso.datetime({"offset":true}),
@@ -10567,6 +10423,8 @@ export const generateBodyGradedQuizTitleMax = 120;
 
 export const generateBodyGradedQuizTotalMarksMax = 1000;
 
+export const generateBodyInstructionsMax = 1000;
+
 export const generateBodyTitleMax = 120;
 
 
@@ -10601,6 +10459,7 @@ export const GenerateBody = zod.object({
   "totalMarks": zod.int().min(1).max(generateBodyGradedQuizTotalMarksMax).optional(),
   "uploadOnly": zod.boolean().optional()
 }).optional().describe('The New graded quiz dialog\'s settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId'),
+  "instructions": zod.string().max(generateBodyInstructionsMax).optional().describe('Optional instructions for the quiz, sent to the model as the user\'s own words'),
   "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
   "mix": zod.boolean().optional().describe('Add the caller\'s answered questions to the new ones'),
   "title": zod.string().min(1).max(generateBodyTitleMax),

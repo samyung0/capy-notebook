@@ -101,11 +101,8 @@ export function AssignmentSubmitted({
           iconLeft="navigationBack"
           noArrow
         >
-          {/* A task with no workspace goes back to To do, which holds it. */}
           <Link search={{}} to=".">
-            {assignment.workspaceId
-              ? m.workspace_section_dashboard()
-              : m.nav_todo()}
+            {m.workspace_section_dashboard()}
           </Link>
         </UnderlineLink>
         <UnderlineLink className="text-fg" onClick={onSeeResults}>

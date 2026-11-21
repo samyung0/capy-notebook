@@ -6988,7 +6988,7 @@ export const getListItemBanksUrl = (params?: ListItemBanksParams,) => {
 }
 
 /**
- * @summary The banks the caller may use: a class workspace's when they are its staff, then their own
+ * @summary Every bank the caller reaches: the class they are in first when they are its staff, then their own, then every other class they own or edit, A–Z
  */
 export const listItemBanks = async (params?: ListItemBanksParams, options?: RequestInit): Promise<listItemBanksResponse> => {
 
@@ -11896,70 +11896,6 @@ const res = await fetch(getHideTodoDoneUrl(),
 
 
 
-export type createTodoTaskResponse201 = {
-  data: Assignment
-  status: 201
-}
-
-export type createTodoTaskResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createTodoTaskResponseSuccess = (createTodoTaskResponse201) & {
-  headers: Headers;
-};
-export type createTodoTaskResponseError = (createTodoTaskResponseDefault) & {
-  headers: Headers;
-};
-
-export type createTodoTaskResponse = (createTodoTaskResponseSuccess | createTodoTaskResponseError)
-
-export const getCreateTodoTaskUrl = () => {
-
-
-
-
-  return `/api/todo/tasks`
-}
-
-/**
- * @summary Set oneself a task that belongs to no workspace
- */
-export const createTodoTask = async (assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createTodoTaskResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCreateTodoTaskUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(assignmentFormReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createTodoTaskResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createTodoTaskResponse
-}
-
-
-
 export type deleteTopicResponse204 = {
   data: void
   status: 204
@@ -12904,7 +12840,7 @@ export const getCreateAssignmentUrl = (id: string,) => {
 }
 
 /**
- * @summary Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
+ * @summary Give a class an unmarked assignment; a graded quiz is made with its questions
  */
 export const createAssignment = async (id: string,
     assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createAssignmentResponse> => {

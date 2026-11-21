@@ -76,7 +76,7 @@ import {
 } from './assignmentText';
 import { GradedQuizQuestions } from './GradedQuizQuestions';
 import { GradingTab } from './GradingTab';
-import { GradeText, HandInMembers } from './HandIns';
+import { HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
 import { QuestionPaperView } from './LazyPaper';
 import { MarkingNow } from './MarkingNow';
@@ -89,8 +89,8 @@ const CHIP =
   'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
 
 const TAB_LABELS: Record<ReportTab, () => string> = {
+  content: m.assignment_tab_content,
   grading: m.assignment_tab_grading,
-  members: m.assignment_tab_members,
   questions: m.assignment_tab_questions,
   responses: m.assignment_tab_responses,
   settings: m.assignment_tab_settings,
@@ -100,9 +100,9 @@ const TAB_LABELS: Record<ReportTab, () => string> = {
  * tabs, each with its own link. A graded quiz (Epo 2026-11-15, boards Main and
  * Responses) has Questions, its quiz edited in place, Responses, Grading
  * (Epo 2026-11-19) and Settings,
- * Preview and a draft's Publish in its header; a task lists who has ticked it,
- * a Grading tab when it takes files or points (a member's row opens it at
- * them) and a Settings tab. */
+ * Preview and a draft's Publish in its header; an Assignment has Content (its
+ * files), Responses (who has done it; a member's row opens Grading at them),
+ * Grading when it takes files or points, and Settings (Epo 2026-11-21). */
 export function AssignmentReport({
   assignment,
   search,
@@ -397,13 +397,18 @@ export function AssignmentReport({
           onExitFullscreen={() => setFullscreen(false)}
           search={search}
         />
+      ) : tab === 'content' ? (
+        <AssignmentContent assignment={assignment} />
       ) : (
-        <UnmarkedBody
+        <AssignmentResponses
           assignment={assignment}
           loading={isPending}
           members={data?.members ?? []}
-          onOpen={(member) =>
-            void go({ member: member.userId, tab: 'grading' })
+          // Only Grading has more of a member to show.
+          onOpen={
+            tabs.includes('grading')
+              ? (member) => void go({ member: member.userId, tab: 'grading' })
+              : undefined
           }
         />
       )}
@@ -528,8 +533,20 @@ function ResponsesTab({
   );
 }
 
-/** An unmarked assignment's files, and who has ticked it. */
-function UnmarkedBody({
+/** An Assignment's Content (Epo 2026-11-21): the files it gives out. */
+function AssignmentContent({ assignment }: { assignment: Assignment }) {
+  return assignment.files.length > 0 ? (
+    <AssignmentFiles assignment={assignment} />
+  ) : (
+    <p className="t-meta tab-body-mt text-fg-muted">
+      {m.assignment_content_empty()}
+    </p>
+  );
+}
+
+/** An Assignment's Responses (Epo 2026-11-21): its numbers, then the members
+ * in the hand-ins table's design, a row opening Grading at them. */
+function AssignmentResponses({
   assignment,
   loading,
   members,
@@ -538,53 +555,18 @@ function UnmarkedBody({
   assignment: Assignment;
   loading: boolean;
   members: AssignmentMemberRow[];
-  onOpen: (member: AssignmentMemberRow) => void;
+  onOpen?: (member: AssignmentMemberRow) => void;
 }) {
+  if (loading)
+    return <SkeletonList className="tab-body-mt" count={5} rowHeight={40} />;
   return (
     <>
-      {!loading && (
-        <AssignmentStats assignment={assignment} members={members} />
-      )}
-      <AssignmentFiles assignment={assignment} />
-      <section className="mt-6.5">
-        <h2 className="t-subtitle">{m.assignment_tab_members()}</h2>
-        {loading ? (
-          <SkeletonList className="mt-3" count={5} rowHeight={40} />
-        ) : assignment.allowUploads ? (
-          <HandInMembers
-            assignment={assignment}
-            members={members}
-            onOpen={onOpen}
-          />
-        ) : (
-          <ul className="mt-2">
-            {members.map((member) => (
-              <li
-                className="flex min-h-10 items-center gap-2.5 border-divider border-b"
-                key={member.userId}
-              >
-                <MemberName member={member} />
-                <span className="t-meta ml-auto flex shrink-0 items-center gap-2 text-fg-muted">
-                  {member.submittedAt
-                    ? m.assignment_done_on({
-                        date: dayLabel(member.submittedAt),
-                      })
-                    : m.assignment_not_done()}
-                  {member.late && (
-                    <LateBadge penaltyPct={member.latePenaltyPct} />
-                  )}
-                </span>
-                {/* Read only: grading is the Grading tab's (Epo 2026-11-19). */}
-                {assignment.points !== undefined && (
-                  <span className="shrink-0">
-                    <GradeText member={member} points={assignment.points} />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <AssignmentStats assignment={assignment} members={members} />
+      <HandInMembers
+        assignment={assignment}
+        members={members}
+        onOpen={onOpen}
+      />
     </>
   );
 }

@@ -14,11 +14,17 @@ import type {
 import { ErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
-import { checkboxVariants } from '@/components/ui/Checkbox';
+import { CheckRow } from '@/components/ui/Checkbox';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList, Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { SearchInput } from '@/components/ui/SearchInput';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import { Tabs } from '@/components/ui/Tabs';
 import { TwoWaySwitch } from '@/components/ui/TwoWaySwitch';
 import { userToast } from '@/components/ui/userToast';
@@ -287,30 +293,65 @@ function BankPickerBody({
     label: switchName(option),
     value: option.id,
   }));
-  // A wide dialog (Epo 2026-11-20) keeps the banks in a column on the left
-  // and the questions in three columns; a narrow one, a phone's, the switch
-  // above one column.
+  // A wide dialog (Epo 2026-11-20) keeps the banks in a column on the left,
+  // each with its question count (Epo 2026-11-21), and the questions in three
+  // columns; a narrow one, a phone's, a switch of two banks or a select of
+  // more above one column.
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 @3xl:flex-row flex-col @3xl:gap-6">
+        {banks.length === 2 && (
+          <TwoWaySwitch
+            className="mb-3 @3xl:hidden"
+            label={m.practice_tab_bank()}
+            onChange={pickBank}
+            options={[options[0], options[1]]}
+            value={bank}
+          />
+        )}
+        {banks.length > 2 && (
+          <div className="mb-3 @3xl:hidden">
+            <Select onValueChange={pickBank} value={bank}>
+              <SelectTrigger aria-label={m.practice_tab_bank()}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {banks.map((option) => (
+                  <SelectItem
+                    hint={option.count}
+                    key={option.id}
+                    value={option.id}
+                  >
+                    {switchName(option)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         {banks.length > 1 && (
-          <>
-            <TwoWaySwitch
-              className="mb-3 @3xl:hidden"
-              label={m.practice_tab_bank()}
-              onChange={pickBank}
-              options={[options[0], options[1]]}
-              value={bank}
-            />
+          <div className="scroll-fade-y @3xl:block hidden w-44 shrink-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <Tabs
               // Its rows' text closer to the column's edge (Epo 2026-11-20).
-              className="@3xl:flex hidden w-44 shrink-0 [&>[role=tab]]:px-2.5"
+              className="[&>[role=tab]]:px-2.5"
               onChange={pickBank}
               orientation="vertical"
-              tabs={options}
+              tabs={banks.map((option) => ({
+                label: (
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate">
+                      {switchName(option)}
+                    </span>
+                    <span className="shrink-0 font-normal text-fg-muted">
+                      {option.count}
+                    </span>
+                  </span>
+                ),
+                value: option.id,
+              }))}
               value={bank}
             />
-          </>
+          </div>
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* Keyed, so a bank's search and tags start over with it. */}
@@ -413,20 +454,22 @@ function BankQuestions({
     list = (
       <>
         <div>
-          <PickRow
+          <CheckRow
+            // Level with its one line of smaller text (Epo 2026-11-21).
+            boxClassName="mt-px"
             checked={allPicked}
             className="@3xl:mb-2 @3xl:border-b-0 py-2 font-semibold text-sm"
             onChange={(on) => void toggleAll(on)}
           >
             {m.bank_select_all({ count: total })}
             {loadingAll && <Spinner className="ml-2 text-fg-muted" />}
-          </PickRow>
+          </CheckRow>
           {/* Rows when narrow; cards three to a row when wide. */}
           <div className="@3xl:grid @3xl:grid-cols-3 @3xl:gap-2">
             {items.map((item) => {
               const on = pickedIds.has(item.id);
               return (
-                <PickRow
+                <CheckRow
                   checked={on}
                   className={cn(
                     '@3xl:rounded-card @3xl:border @3xl:p-3',
@@ -456,7 +499,7 @@ function BankQuestions({
                       topics={topics}
                     />
                   )}
-                </PickRow>
+                </CheckRow>
               );
             })}
           </div>
@@ -496,44 +539,5 @@ function BankQuestions({
         {list}
       </div>
     </>
-  );
-}
-
-/** A row that is its own checkbox: a click or Space anywhere on it picks it. */
-function PickRow({
-  checked,
-  children,
-  className,
-  onChange,
-}: {
-  checked: boolean;
-  children: ReactNode;
-  className?: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div
-      aria-checked={checked}
-      className={cn(
-        'flex cursor-pointer items-start gap-3 border-divider border-b px-1 py-3 outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg',
-        className
-      )}
-      onClick={() => onChange(!checked)}
-      onKeyDown={(event) => {
-        if (event.key !== ' ' && event.key !== 'Enter') return;
-        event.preventDefault();
-        onChange(!checked);
-      }}
-      role="checkbox"
-      tabIndex={0}
-    >
-      <span
-        aria-hidden
-        className={cn(checkboxVariants({ checked }), 'mt-0.5 size-4.5')}
-      >
-        {checked && <Icon name="check" size={13} strokeWidth={2.4} />}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">{children}</span>
-    </div>
   );
 }

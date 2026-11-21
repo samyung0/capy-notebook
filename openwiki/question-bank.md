@@ -574,9 +574,13 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   with Back returning to the list. A lone file needs no list. Every PDF, Word, PowerPoint and
   image file picks pages, answer files too; an image is picked already, and a text file goes
   whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
-  the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
-  Change files, Cancel (not on phones) and Extract from file (Extract questions until Epo 2026-11-11, then Convert to quiz until 2026-11-20; Next in New graded quiz), and sticks on phones. Change
-  files goes back and keeps the picks of files left in. Extract waits for answer files still
+  the files, and the Select all checkbox takes a whole file up to the cap. Each page has the
+  From question bank checkbox beside its number (`CheckBox`, `CheckRow` for Select all; Epo
+  2026-11-21), and its columns, at most three and at least 220px, fill the pane. The bottom bar holds "Selected:
+  N pages (max 40)", Back (not on phones, whose title arrow goes back) and Extract from file
+  (Extract questions until Epo 2026-11-11, then Convert to quiz until 2026-11-20; Next in New
+  graded quiz), and sticks on phones; Change files and Cancel left it on Epo 2026-11-21. Back
+  goes to the files and keeps the picks of files left in. Extract waits for answer files still
   reading, an answer file with no page picked and Word or PowerPoint pages still drawing. One
   that failed after the dialog says so in the list and doesn't hold the run. A refusal shows
   in the bar (`extractionRefusal`). The quiz takes the paper's name, the next number when it
@@ -1087,8 +1091,10 @@ comma). There are two kinds, both rows of `item_bank_questions` (migration
   people use My bank.
 
 Every route names the bank the same way, `me` or the workspace id
-(`/api/item-banks/{bank}/…`); `GET /api/item-banks?workspaceId=` lists the
-banks the caller may use there, the class's first, then My bank, with counts.
+(`/api/item-banks/{bank}/…`); `GET /api/item-banks?workspaceId=` lists every
+bank the caller reaches, with counts (Epo 2026-11-21): the class they are in
+first when they are its staff, then My bank, then every other class they own or
+edit, A–Z (`store.ItemBanks`). Users making banks of their own comes later.
 A bank's list (`GET …/questions?q=&tags=&cursor=`) pages newest first and
 returns `total`, the filtered count. Search matches `search_text`, the
 lowercased stem, group, part and solution text plus answer options, accepted
@@ -1128,8 +1134,8 @@ quiz of the bank's own workspace; elsewhere it follows the new quiz's topic.
 
 Questions come in only by hand: New question opens `QuestionDialog` staged
 (`onSave`, quiz policy) on a blank question, and a quiz question's ⋮ in the
-editor offers Add to bank with a submenu of the caller's banks
-(`AddToBankItem`), sending a copy (`withoutBlanks`), off while the keys load or
+editor offers Add to bank with a submenu of the workspace's bank and My bank
+only (`AddToBankItem` keeps those two of the list), sending a copy (`withoutBlanks`), off while the keys load or
 the question has an issue. A row opens the same dialog to edit; its ⋮ edits
 or deletes it. On the bank page (class bank and My bank) the dialog, for an
 edit or a New question, has Tags under Topic (Epo 2026-11-15, as Canvas's
@@ -1141,15 +1147,18 @@ Other callers (/qb, Make a quiz's list) show no Tags.
 Questions go out through New quiz's **From question bank** way (From the bank until Epo
 2026-11-20; `BankPicker.tsx`, for Study's Add practice and New graded quiz's first step,
 whose Settings sends the
-graded quiz's settings with the picks, Epo 2026-11-16): a switch between
-the banks the caller may use there (`GET /api/item-banks?workspaceId=`; My bank
-alone shows no switch; its options say the class's name and Personal, without
-"bank", Epo 2026-11-16), Search, Filter, Select all N (loads every page of the
+graded quiz's settings with the picks, Epo 2026-11-16): a choice of every bank
+the caller reaches (`GET /api/item-banks?workspaceId=`, so another class's
+questions can go into this class's quiz; My bank alone shows no choice; its
+options say the class's name and Personal, without "bank", Epo 2026-11-16),
+Search, Filter, Select all N (loads every page of the
 filter first) and a box per question with its text, types, marks and tags. A dialog
 wider than 48rem (Epo 2026-11-20: New quiz, New graded quiz and the editor's dialog are
-1040px wide) puts the banks in a column on the left (vertical `Tabs`) and the questions in
+1040px wide) puts the banks in a column on the left (vertical `Tabs`, each row's question
+count at its right, Epo 2026-11-21; the column scrolls when they overflow) and the questions in
 three columns of cards (its rows padded 10px), a picked card's border in the accent; a narrower one, a tablet's or
-a phone's, keeps the switch above one column of rows (container queries, `@3xl`). Picks
+a phone's, puts a switch of two banks, or a select of more, above one column of rows
+(container queries, `@3xl`). Picks
 belong to the bank shown: switching banks starts them over; they keep the order
 picked across searches. The footer counts "N questions · M marks", or says why
 the picks exceed a quiz's bounds (`quizBounds`). The primary button calls
@@ -1172,7 +1181,7 @@ The quiz editor's add bar (`QuestionPane`: beside the open card, at the bottom
 on narrow panes, spread across a phone, and the empty quiz's bar) has
 **From the bank** after Add question (Epo 2026-11-15, boards Main and Phone).
 It opens the same picker in a dialog (`BankQuestionsDialog` in
-`BankPicker.tsx`) with the quiz's workspace's banks, whose footer counts the
+`BankPicker.tsx`) with every bank the caller reaches, whose footer counts the
 picks against the quiz's bounds together with the questions it holds and whose
 "Add N questions" calls `POST /api/quizzes/{id}/bank-questions` (`bank`,
 `questionIds` in order, at most 150; operation `copyBankQuestionsToQuiz`). The

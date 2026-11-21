@@ -364,19 +364,14 @@ export function TodoTable({
             name="chevronRight"
             size={18}
           />
-          {/* The tasks with no workspace: a group with no icon. */}
-          {workspace.workspaceId && (
-            <img
-              alt=""
-              className="size-5.5 shrink-0 rounded-[5px]"
-              height={22}
-              src={iconUrl(workspace.iconId)}
-              width={22}
-            />
-          )}
-          <span className="t-subtitle truncate">
-            {workspace.workspaceId ? workspace.name : m.todo_no_workspace()}
-          </span>
+          <img
+            alt=""
+            className="size-5.5 shrink-0 rounded-[5px]"
+            height={22}
+            src={iconUrl(workspace.iconId)}
+            width={22}
+          />
+          <span className="t-subtitle truncate">{workspace.name}</span>
           {section.open !== undefined && (
             <span className="t-meta shrink-0 text-fg-muted">
               {m.todo_group_open({ count: section.open })}

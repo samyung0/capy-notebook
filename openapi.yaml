@@ -451,8 +451,6 @@ components:
           $ref: "#/components/schemas/AssignmentMine"
         noLate:
           type: boolean
-        own:
-          type: boolean
         paperFile:
           type: boolean
         points:
@@ -488,7 +486,6 @@ components:
         - postedBy
         - closed
         - draft
-        - own
         - noLate
         - latePenaltyPct
         - attempts
@@ -3944,6 +3941,10 @@ components:
         gradedQuiz:
           $ref: "#/components/schemas/AssignmentFormReq"
           description: The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId
+        instructions:
+          description: Optional instructions for the quiz, sent to the model as the user's own words
+          maxLength: 1000
+          type: string
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
@@ -13254,7 +13255,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: "The banks the caller may use: a class workspace's when they are its staff, then their own"
+      summary: "Every bank the caller reaches: the class they are in first when they are its staff, then their own, then every other class they own or edit, A–Z"
       tags:
         - Item banks
   /api/item-banks/{bank}/questions:
@@ -15759,31 +15760,6 @@ paths:
       summary: Take rows off the caller's Done tab, changing nothing else
       tags:
         - Assignments
-  /api/todo/tasks:
-    post:
-      operationId: createTodoTask
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AssignmentFormReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Assignment"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Set oneself a task that belongs to no workspace
-      tags:
-        - Assignments
   /api/topics/{id}:
     delete:
       operationId: deleteTopic
@@ -16375,7 +16351,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
+      summary: Give a class an unmarked assignment; a graded quiz is made with its questions
       tags:
         - Assignments
   /api/workspaces/{id}/clone:

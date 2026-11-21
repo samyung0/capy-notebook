@@ -713,6 +713,8 @@ export interface GenerateOptions {
   fileIds: string[];
   /** A graded quiz's settings: made with the quiz (GenerateReq.gradedQuiz). */
   gradedQuiz?: GenAssignmentFormReq;
+  /** The user's own words to the model (GenerateReq.instructions). */
+  instructions?: string;
   mix?: boolean;
   title: string;
   topics: string[]; // topic ids

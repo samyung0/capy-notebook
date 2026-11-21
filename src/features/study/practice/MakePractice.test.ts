@@ -20,7 +20,10 @@ describe('practiceSources', () => {
       files,
       materials
     );
-    expect(got.topics.map((t) => t.id)).toEqual(['noted', 'read']);
+    expect(got.topics).toEqual([
+      { count: 1, id: 'noted', name: 'noted' },
+      { count: 1, id: 'read', name: 'read' },
+    ]);
     expect(got.items.map((i) => i.id)).toEqual(['n1', 'f1', 'f3']);
   });
 });

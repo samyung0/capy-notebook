@@ -96,7 +96,7 @@ type sharingNoticeOutput struct {
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
 	reg(api, http.MethodPost, "/api/quizzes/{id}/graded-copy", "copyQuizToGradedQuiz", tag, "Make a graded quiz from a copy of a practice quiz in the same workspace, images and all", http.StatusCreated, a.copyQuizToGradedQuiz)
 	reg(api, http.MethodPost, "/api/files/{id}/graded-quiz", "makeFileGradedQuiz", tag, "Make a graded quiz whose question paper is a file of the workspace, answered by upload and marked by hand", http.StatusCreated, a.makeFileGradedQuiz)
 	reg(api, http.MethodGet, "/api/assignments/{id}", "getAssignment", tag, "An assignment", http.StatusOK, a.getAssignment)
@@ -220,14 +220,12 @@ func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	// Any member: a class's staff make an assignment, anyone else a task for
-	// themself (the store holds it to that).
-	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
-	if err != nil {
+	// A class's staff only; the store checks again in the write.
+	if err := a.s.AssertWorkspaceMemberEditor(ctx, userID(ctx), in.ID); err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			err = store.ErrNotFound
+		}
 		return nil, hErr(err)
-	}
-	if role == "" {
-		return nil, hErr(store.ErrNotFound)
 	}
 	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, assignmentForm(in.Body), time.Now())
 	if err != nil {
@@ -404,14 +402,6 @@ func (a *api) freezeAssignment(ctx context.Context, id string, freeze func(conte
 	quizID, err := a.s.AssignmentSourceQuiz(ctx, id)
 	if err != nil {
 		return nil, assignmentError(err)
-	}
-	// A task's maker who can no longer open its quiz has none to freeze.
-	if quizID != "" && current.Own {
-		if _, err := a.materialRead(ctx, quizID); errors.Is(err, store.ErrNotFound) {
-			quizID = ""
-		} else if err != nil {
-			return nil, hErr(err)
-		}
 	}
 	var qs []map[string]any
 	if quizID != "" {

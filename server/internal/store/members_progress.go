@@ -408,7 +408,7 @@ func (s *Store) membersStorageFull(ctx context.Context, users []string) (map[str
 func (s *Store) membersMarks(ctx context.Context, wsID string, users []string, now time.Time) (map[string]MemberMarks, error) {
 	out := map[string]MemberMarks{}
 	var ids []string
-	rows, err := s.pool.Query(ctx, `SELECT id FROM assignments WHERE workspace_id=$1 AND NOT draft AND NOT own`, wsID)
+	rows, err := s.pool.Query(ctx, `SELECT id FROM assignments WHERE workspace_id=$1 AND NOT draft`, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -574,7 +574,7 @@ func (s *Store) WorkspaceMemberProfile(ctx context.Context, userID, wsID, member
 			COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url, ''), wm.created_at,
 			GREATEST((SELECT max(created_at) FROM answer_events WHERE workspace_id=$1 AND user_id=$2),
 				(SELECT max(t.submitted_at) FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-					WHERE a.workspace_id=$1 AND NOT a.own AND t.user_id=$2))
+					WHERE a.workspace_id=$1 AND t.user_id=$2))
 		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
 		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role='viewer'`, wsID, memberID).
 		Scan(&out.Name, &out.AvatarURL, &out.JoinedAt, &out.LastActiveAt)
@@ -621,7 +621,7 @@ func (s *Store) WorkspaceMemberProfile(ctx context.Context, userID, wsID, member
 func (s *Store) memberAssignments(ctx context.Context, wsID, memberID string, now time.Time) ([]MemberAssignment, error) {
 	out := []MemberAssignment{}
 	var ids []string
-	rows, err := s.pool.Query(ctx, `SELECT id FROM assignments WHERE workspace_id=$1 AND NOT draft AND NOT own`, wsID)
+	rows, err := s.pool.Query(ctx, `SELECT id FROM assignments WHERE workspace_id=$1 AND NOT draft`, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -812,7 +812,7 @@ func (s *Store) memberActivity(ctx context.Context, wsID, memberID string, topic
 		UNION ALL
 		(SELECT 'assignment', a.title, NULL, NULL, a.question_count, t.submitted_at
 			FROM attempts t JOIN assignments a ON a.id=t.assignment_id
-			WHERE a.workspace_id=$1 AND NOT a.own AND t.user_id=$2 AND t.submitted_at IS NOT NULL)
+			WHERE a.workspace_id=$1 AND t.user_id=$2 AND t.submitted_at IS NOT NULL)
 		ORDER BY 6 DESC LIMIT $3`, wsID, memberID, activityShown)
 	if err != nil {
 		return nil, err

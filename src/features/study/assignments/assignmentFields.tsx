@@ -59,7 +59,6 @@ import {
   localInputValue,
   minutesText,
 } from './assignmentText';
-import { ChooseFileRow } from './TaskFiles';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
@@ -523,17 +522,21 @@ export function assignmentBody(
   members: WorkspaceMember[] | undefined
 ): AssignmentFormReq {
   const marked = values.kind === 'marked';
+  // An Assignment is graded only on what is handed in (Epo 2026-11-21).
+  const points = marked || !values.allowUploads ? undefined : values.points;
   return {
     ...values,
-    ...latePolicy(values),
+    ...latePolicy({ ...values, points }),
     assignees: values.assignees?.filter(
       (id) => !members || members.some((member) => member.userId === id)
     ),
     files: marked ? [] : values.files,
-    points: marked ? undefined : values.points,
+    points,
     quizId: marked ? values.quizId : undefined,
     // Grades held for release need something graded.
-    showGrades: isGraded(values) ? values.showGrades : 'automatic',
+    showGrades: isGraded({ kind: values.kind, points })
+      ? values.showGrades
+      : 'automatic',
     timeLimitMin: marked ? values.timeLimitMin : undefined,
     title: values.title.trim(),
     uploadOnly: marked && values.uploadOnly,
@@ -836,5 +839,27 @@ export function LatePenaltySelect({
         </Select>
       )}
     />
+  );
+}
+
+/** Choose a file, with the files cap under it once an assignment holds as
+ * many as the server takes (its menu's unticked rows are disabled then; the
+ * trigger stays, so the menu still opens and closes). */
+function ChooseFileRow({
+  children,
+  count,
+}: {
+  children: ReactNode;
+  count: number;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {children}
+      {count >= createAssignmentBodyFilesMax && (
+        <span className="t-meta text-fg-muted">
+          {m.assignment_files_max({ max: createAssignmentBodyFilesMax })}
+        </span>
+      )}
+    </div>
   );
 }

@@ -28,9 +28,12 @@ test('a member adds their work and hands it in', async ({ page }) => {
   ).toBeVisible();
 });
 
-// T2: the Members tab says who handed in what, and a file opens in a new tab.
+// T2: Responses (the Members tab until Epo 2026-11-21) says who handed in
+// what, and a file opens in a new tab.
 test('staff open what a member handed in', async ({ page }) => {
-  await page.goto('/workspaces/ws_bio/assignments?assignment=as_lab');
+  await page.goto(
+    '/workspaces/ws_bio/assignments?assignment=as_lab&tab=responses'
+  );
   // Four of the mock class's 18 (src/mocks/workspaceMembers.ts).
   await expect(
     page.getByText(m.assignment_stat_of({ done: 4, total: 18 }))

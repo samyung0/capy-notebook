@@ -51,8 +51,6 @@ type Viewer = 'owner' | 'member';
 type Row = {
   id: string;
   workspaceId: string;
-  /** A task its maker set themself: nobody else's, staff included. */
-  own?: boolean;
   /** Topics beyond its quiz's or files', to show a row with several. */
   moreTopicIds?: string[];
   kind: 'marked' | 'unmarked';
@@ -218,7 +216,7 @@ const pictureType = (data: string) =>
         : 'image/webp';
 
 /** A new assignment in a workspace, as POST makes it. */
-function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
+function addRow(wsId: string, body: AssignmentFormReq) {
   const row: Row = {
     allowUploads: false,
     assignAll: true,
@@ -231,7 +229,6 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
     latePenaltyPct: 0,
     marking: 'ai_approve' as const,
     noLate: false,
-    own,
     postedAt: new Date().toISOString(),
     quizId: body.quizId,
     showAnswers: 'closed' as const,
@@ -255,7 +252,7 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
  * (e2e/editor/assignment-settings.spec.ts, drawing-answer.spec.ts). */
 export function assignAsMockOwner(wsId: string, body: AssignmentFormReq) {
   seed();
-  return addRow(wsId, body, false).id;
+  return addRow(wsId, body).id;
 }
 
 /** A quiz maker's `gradedQuiz` (Epo 2026-11-16): the graded quiz made with
@@ -266,7 +263,7 @@ export function addMockGradedQuiz(
   quizId: string
 ) {
   seed();
-  return addRow(wsId, { ...form, kind: 'marked', quizId }, false).id;
+  return addRow(wsId, { ...form, kind: 'marked', quizId }).id;
 }
 
 /** A member's submitted attempt at an assignment: the Members mock's profile
@@ -1610,17 +1607,17 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
   }
 }
 
-/** A class has staff; a personal workspace only each person's own tasks. */
+/** A class has staff and gives out work; a personal workspace neither. */
 const isClass = (workspaceId: string) =>
   db.workspaces.find((ws) => ws.id === workspaceId)?.kind === 'class';
 
-/** Whether the viewer runs the row as its staff: a class's owner, or the maker
- * of a task they set themself, which the mock's viewer always is. */
-const runs = (row: Row, viewer: Viewer) => !!row.own || viewer === 'owner';
+/** Whether the viewer runs the row as its staff: a class's owner. */
+const runs = (row: Row, viewer: Viewer) =>
+  viewer === 'owner' && isClass(row.workspaceId);
 
 function toAssignment(row: Row, viewer: Viewer): Assignment {
   sweep(row);
-  const staff = row.own || (viewer === 'owner' && isClass(row.workspaceId));
+  const staff = runs(row, viewer);
   const questions = row.questions ?? [];
   const marks = questions.reduce(
     (sum, q) => sum + q.parts.reduce((n, p) => n + p.marks, 0),
@@ -1718,13 +1715,10 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     latePenaltyPct: row.latePenaltyPct,
     marks,
     noLate: row.noLate,
-    own: !!row.own,
     paperFile: !!row.paperFile,
     points: row.points,
     postedAt: row.postedAt,
-    postedBy: row.own
-      ? db.user.name
-      : (POSTERS[row.workspaceId] ?? db.user.name),
+    postedBy: POSTERS[row.workspaceId] ?? db.user.name,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
     title: row.title,
@@ -2193,19 +2187,14 @@ function freeze(row: Row) {
 /** The Dashboard's "assigned" Activity rows. */
 export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
   seed();
-  return (
-    [...rows.values()]
-      // A member's own task is nobody's news.
-      .filter(
-        (row) => row.workspaceId === workspaceId && !row.draft && !row.own
-      )
-      .map((row) => ({
-        assignmentId: row.id,
-        at: row.postedAt,
-        kind: 'assigned' as const,
-        title: row.title,
-      }))
-  );
+  return [...rows.values()]
+    .filter((row) => row.workspaceId === workspaceId && !row.draft)
+    .map((row) => ({
+      assignmentId: row.id,
+      at: row.postedAt,
+      kind: 'assigned' as const,
+      title: row.title,
+    }));
 }
 
 /** Told once in this page's life. */
@@ -2340,12 +2329,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
   return [
     http.get('/api/todo', () => {
       seed();
-      // The viewer's tasks with no workspace come first, as a section with
-      // an empty id.
-      const workspaces = [
-        { iconId: '', id: '', kind: 'personal', name: '' },
-        ...db.workspaces,
-      ]
+      const workspaces = db.workspaces
         .map((ws) => ({
           iconId: ws.iconId,
           items: [...rows.values()]
@@ -2471,37 +2455,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
           offset + PAGE < all.length ? String(offset + PAGE) : undefined,
       } satisfies AssignmentList);
     }),
-    // A task with no workspace: its maker's alone.
-    http.post('/api/todo/tasks', async ({ request }) => {
-      seed();
-      const body = (await request.json()) as AssignmentFormReq;
-      const row: Row = {
-        allowUploads: false,
-        assignAll: false,
-        assignees: [],
-        attempts: 1,
-        draft: false,
-        files: [],
-        id: newId('as'),
-        kind: body.kind,
-        latePenaltyPct: 0,
-        marking: 'ai_approve' as const,
-        noLate: false,
-        own: true,
-        postedAt: new Date().toISOString(),
-        quizId: body.quizId,
-        showAnswers: 'closed' as const,
-        showGrades: 'automatic' as const,
-        shuffle: false,
-        title: body.title,
-        uploadOnly: false,
-        workspaceId: '',
-      };
-      applyForm(row, body);
-      if (row.kind === 'marked') freeze(row);
-      rows.set(row.id, row);
-      return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
-    }),
     // Existing file: a workspace file as a graded quiz's question paper.
     http.post('/api/files/:id/graded-quiz', async ({ params, request }) => {
       const file = db.files.find((f) => f.id === params.id);
@@ -2511,11 +2464,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       };
       const marks = gradedQuiz.totalMarks ?? 0;
       seed();
-      const row = addRow(
-        file.workspaceId,
-        { ...gradedQuiz, kind: 'marked' },
-        false
-      );
+      const row = addRow(file.workspaceId, { ...gradedQuiz, kind: 'marked' });
       row.paperFile = true;
       row.files = [{ fileId: file.id }];
       row.allowUploads = true;
@@ -2554,8 +2503,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
         const wsId = String(params.id);
-        // From anyone but a class's staff it is a task for themself.
-        const row = addRow(wsId, body, !(viewer === 'owner' && isClass(wsId)));
+        // Only a class's staff give out work.
+        if (!(viewer === 'owner' && isClass(wsId)))
+          return new HttpResponse(null, { status: 403 });
+        const row = addRow(wsId, body);
         return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
       }
     ),
@@ -2666,7 +2617,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const { closed } = (await request.json()) as { closed: boolean };
       row.closedAt = closed ? new Date().toISOString() : undefined;
       // Under Do not show nothing is released (Epo 2026-11-14).
-      if (closed && (row.own || row.showAnswers !== 'never'))
+      if (closed && row.showAnswers !== 'never')
         row.releasedAt ??= new Date().toISOString();
       // The stream's word to whoever is taking it (`publishAssignmentClosed`).
       if (

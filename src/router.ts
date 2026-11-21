@@ -364,12 +364,6 @@ const appRoutes = [
     path: '/todo',
     validateSearch: parseTodoSearch,
   }),
-  createRoute({
-    component: lazyPage(() => import('@/routes/TodoTask')),
-    getParentRoute: () => authShellRoute,
-    path: '/todo/task',
-    validateSearch: parseAssignmentsSearch,
-  }),
   workspaceRoute.addChildren(workspacePages),
   // The account's Canvas page: `c` names the canvas of the person's own shown,
   // `open` what fills its screen (a plane's or chart's editor, a drawing answer).

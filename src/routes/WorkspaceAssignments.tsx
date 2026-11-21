@@ -3,7 +3,7 @@ import { AssignmentsPage } from '@/features/study/assignments/AssignmentsPage';
 
 const from = '/auth-shell/workspaces/$workspaceId/assignments';
 
-/** The workspace's To do, Assignments to a class's staff, in its centre. */
+/** A class's To do, Assignments to its staff, in the workspace's centre. */
 export default function WorkspaceAssignments() {
   const { workspaceId } = useParams({ from });
   const {

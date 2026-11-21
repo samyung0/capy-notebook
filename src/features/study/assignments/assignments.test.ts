@@ -59,10 +59,10 @@ it('draws dates as the boards do', () => {
 
 it('keeps each report link in the URL', () => {
   const parse = parseAssignmentsSearch;
-  expect(parse({ tab: 'members' }).tab).toBe(undefined);
-  expect(parse({ assignment: 'as1', tab: 'members' })).toMatchObject({
+  expect(parse({ tab: 'responses' }).tab).toBe(undefined);
+  expect(parse({ assignment: 'as1', tab: 'responses' })).toMatchObject({
     assignment: 'as1',
-    tab: 'members',
+    tab: 'responses',
   });
   expect(
     parse({

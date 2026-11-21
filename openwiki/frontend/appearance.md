@@ -166,7 +166,7 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   up), phone values first and the `sm` breakpoint's in a media block.
   Components read them and never set a height per style; one that needs a
   control's height uses `h-(--control-h)`.
-  A page or file header's action (New workspace, Add task, the workspace
+  A page or file header's action (New workspace, the workspace
   Dashboard's Upload and Make a quiz, New assignment, Add practice, a
   file's Preview, a quiz's or set's Practice) is `PageButton`: 36px (`h-9`) in every
   style and on every screen (Epo 2026-11-16). The center header row

@@ -501,8 +501,9 @@ type AssignmentFormReq struct {
 	// (Epo 2026-11-19); it needs AllowUploads.
 	UploadOnly bool                      `json:"uploadOnly,omitempty"`
 	Files      []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
-	// Points grades a class's Assignment out of this many (Epo 2026-11-14);
-	// absent, it is not graded. A graded quiz and a task have none.
+	// Points grades a class's Assignment that takes uploads out of this many
+	// (Epo 2026-11-14, 2026-11-21); absent, it is not graded. A graded quiz has
+	// none.
 	Points *AssignmentPoints `json:"points,omitempty"`
 	// TotalMarks is a graded quiz from a file's total, what each hand-in is
 	// marked out of (Epo 2026-11-20); it has one, nothing else does.

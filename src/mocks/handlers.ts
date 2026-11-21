@@ -1011,7 +1011,7 @@ export const handlers = [
   ...editorAssetHandlers,
   ...canvasHandlers((id) => db.workspaces.find((ws) => ws.id === id)),
   ...itemBankHandlers(
-    (id) => db.workspaces.find((ws) => ws.id === id),
+    () => db.workspaces,
     (id) =>
       db.topics.filter((topic) => topic.workspaceId === id).map((t) => t.id),
     ({ hidden, questions, title, workspaceId }) => {

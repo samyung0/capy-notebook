@@ -9,7 +9,6 @@ import type { ColumnSort } from '@/components/app/SortHeader';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
 import { SelectionAction, SelectionBar } from '@/features/files/SelectionBar';
-import { NewAssignmentAnywhere } from '@/features/study/assignments/NewAssignmentAnywhere';
 import {
   TodoTable,
   useTodoTicks,
@@ -41,8 +40,8 @@ const ascendsFirst = (sort: TodoSort) => sort === 'due' || sort === 'title';
  * 2026-11-20). Selected rows turn the toolbar into a selection bar with Mark as
  * done and Mark as not done (Epo 2026-11-10), and Delete on Done. Approvals
  * stay in the To do tab; Done reads its own list, closed work included. The
- * table takes the page's full width (Epo 2026-11-10). Add task sits at the
- * toolbar's right for everyone (Epo 2026-11-10). */
+ * table takes the page's full width (Epo 2026-11-10). Nothing is added here:
+ * it is what classes give out (Epo 2026-11-21). */
 export default function Todo() {
   const search = useSearch({ from: '/auth-shell/todo' });
   const tab = search.tab ?? 'todo';
@@ -140,7 +139,6 @@ export default function Todo() {
         value={tab}
       />
       <ListToolbar
-        action={<NewAssignmentAnywhere />}
         filters={[
           {
             key: 'type',

@@ -27,6 +27,7 @@ type (
 	Email                string
 	UserName             string
 	CommentText          string
+	GenerateInstructions string
 )
 
 func withMax(s *huma.Schema, max int) *huma.Schema {
@@ -78,6 +79,9 @@ func (UserName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 }
 func (CommentText) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.Comment)
+}
+func (GenerateInstructions) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.GenerateInstructions)
 }
 
 // AssignmentPoints is what a graded Assignment is out of, 1 to

@@ -36,10 +36,10 @@ import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentMenu } from './NewAssignmentMenu';
 import { TodoSection } from './TodoSection';
 
-/** The workspace's To do, Assignments to a class's staff (boards W1, W2; its
- * own page on the rail since Epo 2026-11-11), the workspace's centre page at
- * `assignments`. Anyone else's is To do's table for this workspace (Epo
- * 2026-11-20), as its Dashboard shows it. */
+/** A class's To do, Assignments to its staff (boards W1, W2; its own page on
+ * the rail since Epo 2026-11-11), the workspace's centre page at
+ * `assignments`. A member's is To do's table for this class (Epo 2026-11-20),
+ * as its Dashboard shows it. */
 export function AssignmentsPage({
   search,
   workspaceId,
@@ -73,16 +73,16 @@ export function AssignmentsPage({
   return studyView(ws).manages ? (
     <StaffList key={workspaceId} workspaceId={workspaceId} />
   ) : (
-    // A member's or a personal workspace's: the To do page's table for this
-    // workspace (Epo 2026-11-20), as its Dashboard shows it.
+    // A member's: the To do page's table for this class (Epo 2026-11-20), as
+    // its Dashboard shows it.
     <PracticeFrame className="@container">
       <TodoSection manages={false} page workspace={ws} />
     </PracticeFrame>
   );
 }
 
-/** One assignment's or task's page: its report to whoever runs it (unless
- * `own`), else the page of the one it is given to. */
+/** One assignment's page: its report to whoever runs it (unless `own`), else
+ * the page of the one it is given to. */
 export function AssignmentDetail({
   id,
   search,
@@ -192,7 +192,6 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
               variant: 'success',
             });
           }}
-          own={false}
           workspaceId={workspaceId}
         />
       </div>
