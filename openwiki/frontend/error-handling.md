@@ -162,8 +162,8 @@ other failure without data goes to the boundary with its normal copy and Retry.
 A deleted item's 410 `item_deleted` (Q41, `deletedItemOf` in `api/client.ts`)
 counts as missing (`isMissing`) and is never retried; an item's page tells it
 apart only to keep unsent edits on screen (plate-editor, the draft sweep),
-with Download on its strip and Properties and downloads of what it shows in
-its ⋮ (Epo 2026-11-20). A
+with Discard (ghost-hover) then Download (dark) on its strip (Epo 2026-11-21)
+and Properties and downloads of what it shows in its ⋮ (Epo 2026-11-20). A
 stored (persisted) read that fails with it keeps its data, unlike a 401 or
 404's: its reader could still open the item, and the page showing it keeps its
 header and its unsent edits on that read.

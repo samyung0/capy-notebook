@@ -71,7 +71,7 @@ export type CanvasStrip =
        * (Epo 2026-11-20). */
       onDownload?: () => void;
       /** Recovery's Reload (after asking), which leaves the copy-only edits
-       * for a fresh room. */
+       * for a fresh room; a deleted canvas's Discard. */
       onReload?: () => void;
       /** `unreachable`'s and `late-unloaded`'s Retry. */
       onRetry?: () => void;

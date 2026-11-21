@@ -1103,6 +1103,23 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
 .office-banner > button:hover:enabled {
   background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
+/* FileBanner's Button variants (the deleted strip's Discard and Download):
+   semibold with no underline; ghost-hover keeps the strip's hover. */
+.office-banner > button[data-variant] {
+  font-weight: 600;
+  text-decoration: none;
+}
+.office-banner > button[data-variant="dark"] {
+  color: var(--action-primary-fg);
+  background: var(--action-primary-bg);
+}
+.office-banner > button[data-variant="dark"]:hover:enabled {
+  background: var(--action-primary-hover);
+}
+.office-banner > button[data-variant="dark"]:focus-visible {
+  outline: 2px solid var(--action-primary-bg);
+  outline-offset: 2px;
+}
 .office-banner > .office-banner__close {
   display: inline-grid;
   place-items: center;

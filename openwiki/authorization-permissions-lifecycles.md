@@ -1089,7 +1089,7 @@ and [material editor checks](../server/internal/store/share.go#L209).
   sees that page too. A deleted item is told apart (`item_deleted`, 410, see
   Trash): an editor holding unsent edits to it keeps them on screen read-only
   under "This item was deleted. Your unsaved edits are shown here to copy
-  until you reload." until its Reload discards them; with none the page says
+  until you discard them." until its Discard drops them; with none the page says
   it is unavailable (Q39, Epo 2026-11-19). Its trash readers, read the trashed
   item, see the same on a page that showed it live; nothing that writes stays
   on that page (the View/Edit toggles, item actions, Practice) but Properties

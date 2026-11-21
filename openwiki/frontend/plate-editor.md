@@ -2673,8 +2673,8 @@ The open editor writes its whole document once more (`snapshot`, so the rows
 draw without the room) and turns read-only as for a refusal, the recorder
 keeping the rows until it unmounts; the page, whose read answers the same,
 keeps the item on screen under "This item was deleted. Your unsaved edits are
-shown here to copy until you reload." while this device holds unsent edits to
-it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
+shown here to copy until you discard them." while this device holds unsent
+edits to it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
 offers or deletes them meanwhile, and dismissing a toast already offering
 them), and says "This item is unavailable" when it holds none or cannot read
 its store. A deleted note, quiz, set or diagram never reads as lost access: a
@@ -2706,24 +2706,28 @@ move, Shared with members, clone, its usual download, delete), a quiz's or
 set's Practice. The ⋮ keeps Properties, from the item's last read, and
 downloads made from what the page shows (Epo 2026-11-20): a note's Download
 Markdown and Download Word, an Office or text file's Download, each the
-strip's file; other kinds have none there. The deleted strip has Download
-beside Reload for every kind (`DeletedDownload` in `SaveBanner`, Office's in
-its frame, a canvas's on its board's strip): the toast's file
+strip's file; other kinds have none there. The deleted strip has Discard
+then Download for every kind (Epo 2026-11-21: Discard the `ghost-hover`
+Button, Download the `dark` one, neither underlined; `DeletedDownload` in
+`SaveBanner`, Office's in its frame drawn alike, a canvas's on its board's
+strip, where Discard asks first and its confirm reads Discard; Discard alone
+where the page has no Download). Discard (`discardDeleted`) deletes the rows
+the page shows and loads the page again. Download saves the toast's file
 (`saveShownEdits`) from the rows the page shows (`shownDeletedRows`, matched
-by id and seq as Reload matches them), deleting nothing, so Reload still ends
-them; a file that cannot be made says "Your edits couldn't be downloaded.
+by id and seq as Discard matches them), deleting nothing, so Discard still
+ends them; a file that cannot be made says "Your edits couldn't be downloaded.
 They're kept on this device.". The strip's Download and the ⋮ entries show
 once the room, session or note drawing shows the edits
 (`useShowsDeleted`), before which they would draw nothing. A canvas's board
 menu keeps its Download as image of the board shown, and Office its menu
 bar's Download of the open document.
 
-What shows, what Download writes and what Reload deletes come from one
-drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
+What shows, what Download writes and what the strip's Discard deletes come
+from one drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
 lineage and base, a board's hidden edits from Q33 always a group of their
 own, since they copy the early board with what still showed deleted), and
-Reload or the toast's Download deletes the rows of that group as drawn (by id
-and seq; the open page's Download deletes none);
+the strip's Discard or the toast's Download deletes the rows of that group as
+drawn (by id and seq; the open page's Download deletes none);
 an open session's own document deletes the rows it holds. Rows of another
 group, another tab's lineage, an older base or an unreviewed piece stay and
 come back as the next page load's toast. The toast acts on the rows it
@@ -2739,7 +2743,7 @@ rooms and file sessions draw from their own document. A quiz whose keys
 alone have edits takes its questions from this device's copy of its
 content room, which the copy sweep keeps while any edits to the item are
 stored (`sweepDeviceCopies`); with none, its file says the questions are
-not included. Reload and Discard are counted as
+not included. The strip's and the toast's Discard are counted as
 `discard_unsaved` with the reason `item_deleted`, apart from a lost item's
 silent `not_found`. A read of the store that fails deletes nothing and shows
 the item unavailable. The collaboration service's "not found" alone (no API

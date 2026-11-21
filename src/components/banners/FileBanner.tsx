@@ -20,6 +20,9 @@ export interface FileBannerAction {
   disabled?: boolean;
   label: string;
   onClick: () => void;
+  /** A Button variant in place of the underlined look (the deleted strip's
+   * Discard and Download, Epo 2026-11-21). */
+  variant?: 'dark' | 'ghost-hover';
 }
 
 /** What a strip looks like, for a place that draws it itself. */
@@ -141,12 +144,17 @@ export function FileBanner({
   if (!showing || outlet) return null;
   const buttons = actions.map((action) => (
     <Button
-      className="h-7 px-2 underline underline-offset-3 hover:bg-fg/5"
+      className={cn(
+        'h-7 px-2',
+        !action.variant && 'underline underline-offset-3',
+        // The strip's own hover: ghost-hover's matches a neutral strip.
+        action.variant !== 'dark' && 'hover:bg-fg/5'
+      )}
       disabled={action.disabled}
       key={action.label}
       onClick={action.onClick}
       size="sm"
-      variant="ghost"
+      variant={action.variant ?? 'ghost'}
     >
       {action.label}
     </Button>

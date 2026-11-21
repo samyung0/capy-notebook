@@ -23,7 +23,7 @@ const decoder = new TextDecoder();
  * with neither, its merge view's pieces, each the user's version of a block.
  * What the server holds (images, audio, embedded quizzes and sets,
  * interactive blocks) is a line saying it is not included. `shown`: the
- * rows drawn, which its Reload or Download deletes; the rest stay for the
+ * rows drawn, which its Discard or Download deletes; the rest stay for the
  * next page load's offer. Null when nothing draws.
  */
 export function deletedNote(

@@ -540,7 +540,7 @@ export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
  * content from the drawing. A group none of whose rows the document can
  * place without the room's state is passed over for the next. The group's
  * newest row says its base; `rows` are the group's rows the document holds,
- * the only ones its Reload or Download deletes: an update still pending in
+ * the only ones its Discard or Download deletes: an update still pending in
  * it (a crashed online session's, on the room's state) stays for the next
  * page load's offer. Null when no group places anything. */
 export function deletedDocument(
@@ -569,7 +569,7 @@ export function deletedDocument(
 }
 
 /** What a deleted item's open page shows of its stored edits, or its
- * Download drew (Q39, Q42). Its Reload or Download deletes only those rows
+ * Download drew (Q39, Q42). Its Discard or Download deletes only those rows
  * (`shownRows`); the rest stay for the next page load's offer. */
 export interface ShownDrafts {
   /** The document shown: drawn from `rows`, or an open session's own. */

@@ -156,8 +156,8 @@ export function useQuizRooms(
             content: contentRecovery,
             keys: keysRecovery,
             reload: () => {
-              // A deleted quiz's Reload takes both documents' shown edits at
-              // once.
+              // A deleted quiz's Discard takes both documents' shown edits
+              // at once.
               if (deleted || keysDeleted) {
                 void (deleted ? contentRoom : keysRoom)?.reload();
                 return;

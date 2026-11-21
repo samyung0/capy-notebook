@@ -562,9 +562,10 @@ export function OfficeHeader({
     (strip: FileBannerStrip | null) =>
       showFrameBanner(
         strip && {
-          actions: strip.actions.map(({ disabled, label }) => ({
+          actions: strip.actions.map(({ disabled, label, variant }) => ({
             disabled,
             label,
+            variant,
           })),
           closeable: strip.closeable,
           inline: strip.inline,
