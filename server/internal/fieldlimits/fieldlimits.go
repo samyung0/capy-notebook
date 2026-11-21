@@ -123,9 +123,11 @@ const (
 	// count (Epo 2026-11-15, todo-question-topics.md).
 	QuestionTopics = 5
 	// A Make a quiz run reads at most ExtractionPaperFiles question files and
-	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
-	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
-	ExtractionPages           = 40
+	// ExtractionAnswerFiles answer files (Epo 2026-11-05), and at most ExtractionPages
+	// picked pages across them (Epo 2026-11-21, up from 40: a run past 30 page images
+	// maps from the pages' text and copies in threads). Each saved question costs
+	// ExtractionQuestionCredits.
+	ExtractionPages           = 150
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4

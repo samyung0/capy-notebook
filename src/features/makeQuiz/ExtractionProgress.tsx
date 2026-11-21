@@ -7,7 +7,10 @@ import {
   useConfirmExtraction,
   useExtraction,
 } from '@/api/hooks';
-import { EXTRACTION_QUESTION_CREDITS } from '@/api/limits.generated';
+import {
+  EXTRACTION_QUESTION_CREDITS,
+  QUIZ_PARTS_MAX,
+} from '@/api/limits.generated';
 import type { Extraction, ExtractionFound } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -20,6 +23,7 @@ import {
   affordableQuestions,
   extractionFailure,
   extractionNotice,
+  fittingQuestions,
   foundPagesLabel,
 } from './makeQuiz';
 import type { DialogStep } from './PagePicker';
@@ -42,12 +46,17 @@ function sourceLine({ answerFiles, paperName, paperPages }: ExtractionFound) {
     .join(', ');
 }
 
-/** The questions found and their price, or how many the starter can afford. */
+/**
+ * The questions found and their price, or how many the starter can afford, and how
+ * many fit one quiz.
+ */
 function FoundQuestions({
   affordable,
+  fitting,
   found,
 }: {
   affordable: number;
+  fitting: number;
   found: ExtractionFound;
 }) {
   const total = found.questions.length;
@@ -116,6 +125,11 @@ function FoundQuestions({
             : affordable === 1
               ? m.make_quiz_enough_one()
               : m.make_quiz_enough({ count: affordable })}
+        </p>
+      )}
+      {fitting < Math.min(total, affordable) && (
+        <p className="text-sm">
+          {m.make_quiz_quiz_holds({ count: fitting, parts: QUIZ_PARTS_MAX })}
         </p>
       )}
     </div>
@@ -203,15 +217,17 @@ export function useRunStep({
     const pending = confirming || cancelling;
     const total = found.questions.length;
     const affordable = affordableQuestions(total, found.availableCredits);
-    const short = affordable < total;
+    const fitting = fittingQuestions(found.questions);
+    const offered = Math.min(affordable, fitting);
+    const short = offered < total;
     const stepError = confirmError ?? cancelError;
     return {
-      action: affordable > 0 && (
+      action: offered > 0 && (
         <Button
           disabled={pending}
           onClick={() =>
             confirm(
-              { questions: affordable },
+              { questions: offered },
               { onSuccess: (next) => onConfirmed(next) }
             )
           }
@@ -220,10 +236,10 @@ export function useRunStep({
           {confirming ? (
             <Spinner />
           ) : short ? (
-            affordable === 1 ? (
+            offered === 1 ? (
               m.make_quiz_make_one()
             ) : (
-              m.make_quiz_make_count({ count: affordable })
+              m.make_quiz_make_count({ count: offered })
             )
           ) : (
             m.make_quiz_make()
@@ -232,7 +248,11 @@ export function useRunStep({
       ),
       body: (
         <>
-          <FoundQuestions affordable={affordable} found={found} />
+          <FoundQuestions
+            affordable={affordable}
+            fitting={fitting}
+            found={found}
+          />
           <FormAlert
             errorId={unexpectedErrorId(stepError)}
             message={

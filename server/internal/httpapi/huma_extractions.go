@@ -132,10 +132,12 @@ func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, er
 }
 
 // A browser-drawn page: at most this many bytes of JPEG, and a request's body holds
-// a run's worth of them in base64.
+// extractionBodyPages of them at their largest in base64, about 180 drawn pages of a
+// typical 300 KB. The 150-page cap (Epo 2026-11-21) left the body where 40 pages put it.
 const (
 	extractionImageBytes = 1 << 20
-	extractionMaxBody    = fieldlimits.ExtractionPages*extractionImageBytes*4/3 + 1<<20
+	extractionBodyPages  = 40
+	extractionMaxBody    = extractionBodyPages*extractionImageBytes*4/3 + 1<<20
 )
 
 // extractionFile is a file as the retrieval service reads it.

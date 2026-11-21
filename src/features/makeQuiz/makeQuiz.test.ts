@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, parseErrorBody } from '@/api/client';
-import { EXTRACTION_PAGES_MAX } from '@/api/limits.generated';
+import { EXTRACTION_PAGES_MAX, QUIZ_PARTS_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
   affordableQuestions,
@@ -8,6 +8,7 @@ import {
   extractionNotice,
   extractionRefusal,
   extractionRequest,
+  fittingQuestions,
   foundPagesLabel,
   hasAnswerRoom,
   hasPaperRoom,
@@ -149,6 +150,16 @@ describe('Make a quiz', () => {
     expect(affordableQuestions(12, 100)).toBe(12);
     expect(affordableQuestions(12, 21)).toBe(5);
     expect(affordableQuestions(12, 3)).toBe(0);
+  });
+
+  it('offers the first questions whose parts fit one quiz', () => {
+    const two = { parts: ['a', 'b'] };
+    const whole = Array.from({ length: QUIZ_PARTS_MAX / 2 }, () => two);
+    expect(fittingQuestions(whole)).toBe(QUIZ_PARTS_MAX / 2);
+    expect(fittingQuestions([...whole, { parts: [] }, two])).toBe(
+      QUIZ_PARTS_MAX / 2
+    );
+    expect(fittingQuestions([{ parts: [] }, { parts: [] }])).toBe(2);
   });
 
   it('says where a found question is', () => {

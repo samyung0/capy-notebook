@@ -353,6 +353,9 @@ def install() -> None:
 
     # Measure the extraction past the quiz's part caps; the score applies them.
     limits.QUIZ_PARTS_MAX = limits.QUIZ_OPEN_PARTS_MAX = 100_000
+    # The arms are the routes this bench compared, so production's own long route
+    # (built from them, Epo 2026-11-21) stays off.
+    extraction.THREAD_IMAGES = 100_000
 
     production_messages = prompts.map_messages
 
@@ -396,11 +399,11 @@ def install() -> None:
 
     production_uncopied = extraction.Run.uncopied
 
-    def uncopied(self, rows, pages):
+    def uncopied(self, rows, pages, copied=None):
         window = WINDOW.get()
         if window is not None:
             pages = [p for p in pages if page_key(p) in window.own]
-        return production_uncopied(self, rows, pages)
+        return production_uncopied(self, rows, pages, copied)
 
     extraction.Run.uncopied = uncopied
 

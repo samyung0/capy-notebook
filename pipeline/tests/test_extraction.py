@@ -620,22 +620,39 @@ async def test_prepare_reads_a_text_paper_whole(monkeypatch):
     assert [(p.number, p.text, p.image) for p in pages] == [(1, LINE.strip(), None)]
 
 
-async def test_a_word_papers_drawn_pages_go_as_a_scans_do():
-    """The browser drew them: the image goes, a figure crops from it, and no text."""
+def _indexed(monkeypatch, pages: dict[int, str]) -> None:
+    """A file's indexed text, by page."""
+
+    async def passages(workspace_id, file_id):
+        return [
+            {"text": text, "page_start": number, "page_end": number}
+            for number, text in pages.items()
+        ]
+
+    monkeypatch.setattr(extraction.store, "file_passages", passages)
+
+
+async def test_a_word_papers_drawn_pages_go_as_a_scans_do(monkeypatch):
+    """The browser drew them: the image goes, a figure crops from it, and the indexed
+    text of the same page number rides along for the long route's map."""
+    _indexed(monkeypatch, {3: "1. Find x."})
     buffer = io.BytesIO()
     Image.new("RGB", (200, 100), "white").save(buffer, "JPEG")
     drawn = base64.b64encode(buffer.getvalue()).decode()
     file = {"fileId": "f", "name": "paper.docx", "pages": [3], "images": [drawn]}
     pages, files = await extraction.prepare("w", [file], [])
     assert files == [] and [(p.number, p.text, p.layer) for p in pages] == [
-        (3, "", extraction.SCAN)
+        (3, "1. Find x.", extraction.SCAN)
     ]
     assert (await pages[0].image()).startswith("data:image/jpeg;base64,")
     _, size = await pages[0].crop([0, 0, 500, 500])
     assert size == (100, 50)
 
 
-async def test_a_drawn_page_larger_than_the_picker_draws_is_shrunk_for_the_model():
+async def test_a_drawn_page_larger_than_the_picker_draws_is_shrunk_for_the_model(
+    monkeypatch,
+):
+    _indexed(monkeypatch, {})
     buffer = io.BytesIO()
     Image.new("RGB", (3000, 1500), "white").save(buffer, "JPEG")
     drawn = base64.b64encode(buffer.getvalue()).decode()
@@ -1611,14 +1628,15 @@ async def test_only_an_answer_file_s_picked_pages_go(monkeypatch, tmp_path):
     assert refused.value.code == "page_out_of_range"
 
 
-async def test_a_word_answer_file_goes_as_the_pages_the_browser_drew():
+async def test_a_word_answer_file_goes_as_the_pages_the_browser_drew(monkeypatch):
+    _indexed(monkeypatch, {1: "Not picked.", 2: "1. B"})
     jpeg = base64.b64encode(b"jpeg").decode()
     _, [word] = await extraction.prepare(
         "w",
         [],
         [{"fileId": "a", "name": "answers.docx", "pages": [2], "images": [jpeg]}],
     )
-    assert word.text == ""
+    assert word.text == "1. B"
     assert [number for number, _ in word.images] == [2]
 
 
@@ -2346,3 +2364,120 @@ def test_a_run_keeps_its_first_figures_in_printed_order(monkeypatch):
     held = [question("1", 2), question("2", 0), question("3", 2), question("4", 1)]
     assert extraction._capped_figures(held) == ["3", "4"]
     assert [len(q.figures) for q in held] == [2, 0, 1, 0]
+
+
+# ------------------------------------------------- the long route (Epo 2026-11-21)
+
+
+def _paper_page(file_index: int, number: int, text: str) -> extraction.Page:
+    page = _page(number, text)
+    name = "abcde"[file_index] + ".pdf"
+    return dataclasses.replace(page, file_name=name, file_index=file_index)
+
+
+async def test_a_long_selection_maps_from_text_and_copies_in_threads_of_its_pages(
+    monkeypatch,
+):
+    """Past THREAD_IMAGES page images the map reads the pages' text with no image and
+    a scanned answer file as its page read; code letters the numbers two papers share
+    and each group of pages starts its threads from its own pages with code's copy of
+    the map's lines as the reply."""
+    monkeypatch.setattr(extraction, "THREAD_IMAGES", 2)
+    pages = [
+        _paper_page(0, 1, "1. alpha"),
+        _paper_page(0, 2, "2. beta"),
+        _paper_page(1, 1, "1. gamma"),
+        _paper_page(1, 2, "2. delta"),
+    ]
+
+    async def scheme_image():
+        return "data:image/jpeg;base64,scheme"
+
+    answers = [extraction.AnswerFile("scheme.pdf", "1. p", images=((1, scheme_image),))]
+    items = {label: _mcq(label, ["p", "q"], 0) for label in ("A1", "A2", "B1", "B2")}
+    script = Script(
+        "\n".join([_row("1", 1, 1), _row("2", 2, 2), _row("1", 1, 1), _row("2", 2, 2)]),
+        {
+            f"Copy questions {first} to {second} now.": [
+                _tools(
+                    ("record_question", _copy(items[first], 1, 1)),
+                    ("record_question", _copy(items[second], 2, 2)),
+                )
+            ]
+            for first, second in (("A1", "A2"), ("B1", "B2"))
+        }
+        | {
+            f"Give the answers to questions {first} to {second} now.": [
+                _tools(
+                    ("record_answers", _answers(items[first])),
+                    ("record_answers", _answers(items[second])),
+                )
+            ]
+            for first, second in (("A1", "A2"), ("B1", "B2"))
+        },
+    )
+    events = await _run(monkeypatch, script, pages, answers)
+
+    map_call = script.sent[0]
+    assert map_call["ask"] == "map"
+    assert map_call["messages"][0]["content"].endswith(
+        extraction.prompts.SYSTEM_TEXT_ONLY
+    )
+    map_content = map_call["messages"][1]["content"]
+    assert not any(block.get("type") == "image_url" for block in map_content)
+    assert map_content[0]["text"].startswith("Page 1 of a.pdf. Its indexed text:")
+    assert any(
+        block.get("text", "").startswith("Answer file scheme.pdf. Its indexed text:")
+        for block in map_content
+    )
+    copies = {call["ask"]: call["messages"] for call in script.sent[1:3]}
+    first = copies["Copy questions A1 to A2 now."]
+    assert [block["text"] for block in first[1]["content"] if block["type"] == "text"][
+        :2
+    ] == ["Page image 1: page 1 of a.pdf.", "Page image 2: page 2 of a.pdf."]
+    assert sum(block["type"] == "image_url" for block in first[1]["content"]) == 2
+    assert first[2] == {
+        "role": "assistant",
+        "content": "A1 | pages 1-1 | parts none | figures none\n"
+        "A2 | pages 2-2 | parts none | figures none",
+    }
+    assert events[-1]["report"]["recorded"] == ["A1", "A2", "B1", "B2"]
+    assert all(
+        q["parts"][0]["answer"]["correct"] == [0] for q in events[-1]["questions"]
+    )
+
+
+def test_rows_are_placed_on_their_files_and_shared_numbers_lettered():
+    pages = [
+        _paper_page(0, 2, ""),
+        _paper_page(0, 3, ""),
+        _paper_page(1, 1, ""),
+        _paper_page(1, 2, ""),
+    ]
+    rows = [
+        extraction.MapRow(label, first, last, [], [])
+        for label, first, last in (("1", 2, 3), ("2", 3, 3), ("1", 1, 1), ("2", 2, 2))
+    ]
+    spans = extraction.place_rows(rows, pages)
+    assert spans == [(0, 1), (1, 1), (2, 2), (3, 3)]
+    assert [row.label for row in extraction.relabelled(rows, spans, pages)] == [
+        "A1",
+        "A2",
+        "B1",
+        "B2",
+    ]
+    one_file = [pages[0], pages[1]]
+    assert extraction.relabelled(rows[:2], spans[:2], one_file) == rows[:2]
+    # A file whose own numbers repeat keeps the map's label after its letter.
+    sections = [extraction.MapRow(label, 2, 2, [], []) for label in ("A1", "B1")]
+    mixed = extraction.relabelled([*sections, rows[2]], [(0, 0), (0, 0), (2, 2)], pages)
+    assert [row.label for row in mixed] == ["AA1", "AB1", "B1"]
+
+
+def test_a_word_question_takes_the_page_either_side_in_its_thread():
+    pages = [
+        dataclasses.replace(_page(n), file_name="paper.docx") for n in (1, 2, 3, 4)
+    ]
+    rows = [extraction.MapRow("1", 2, 2, [], []), extraction.MapRow("2", 4, 4, [], [])]
+    groups = extraction.thread_groups(rows, [(1, 1), (3, 3)], pages, 3)
+    assert groups == [([rows[0]], [0, 1, 2]), ([rows[1]], [2, 3])]

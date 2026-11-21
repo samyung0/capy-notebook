@@ -584,7 +584,9 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
 - **The run** (`useRunStep`). Reading until the map ends, closable: the run keeps going, and
   a toast with Review reopens it when it has found the questions (`extractionEnd.ts`). Then
   the questions found, their price at 4 credits each and what finding them cost, naming any
-  answer file left out unread. With credits short it offers the first questions they afford
+  answer file left out unread. It offers at most the first questions whose map parts fit one
+  quiz's 150 (`fittingQuestions`, Epo 2026-11-21) and says so. With credits short it offers the
+  first questions they afford
   and Get credits, in a new tab so the run waits and the balance reads again on return.
   Only Cancel ends it, back to the pages with their picks: a stray click, Escape or route
   change doesn't lose the map it paid for.

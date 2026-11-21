@@ -609,9 +609,9 @@ def install() -> None:
     record_answers = extraction.Run.record_answers
     label_key = extraction.label_key
 
-    async def copied(self, item, pages):
+    async def copied(self, item, pages, *rest):
         state = STATE.get()
-        result = await copy_question(self, item, pages)
+        result = await copy_question(self, item, pages, *rest)
         key = label_key(str(item.get("label") or ""))
         state.copies_raw.append(
             {
@@ -628,7 +628,7 @@ def install() -> None:
             ]
         return result
 
-    async def answered(self, args, pages):
+    async def answered(self, args, pages, *rest):
         """Production's, with the part's marks from the new field when it gives them.
         A refusal leaves the copy as it was, so the next try starts clean."""
         state = STATE.get()
@@ -643,7 +643,7 @@ def install() -> None:
                 marks = extraction._whole(given.get("marks"))
                 if part is not None and marks is not None and marks >= 1:
                     part["marks"] = marks
-        result = await record_answers(self, args, pages)
+        result = await record_answers(self, args, pages, *rest)
         if kept is not None and not result.endswith("recorded."):
             self.copies[key] = before
         state.answers_raw.append(
