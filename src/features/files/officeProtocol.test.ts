@@ -186,6 +186,12 @@ describe('office host protocol', () => {
     expect(isOfficeHostMessage(message({ ...banner, actions: 'x' }))).toBe(
       false
     );
+    // The deleted strip's Button variants (Epo 2026-11-21), no others.
+    const variant = (value: string) =>
+      message({ ...banner, actions: [{ label: 'Download', variant: value }] });
+    expect(isOfficeHostMessage(variant('dark'))).toBe(true);
+    expect(isOfficeHostMessage(variant('ghost-hover'))).toBe(true);
+    expect(isOfficeHostMessage(variant('danger'))).toBe(false);
   });
 
   it('takes a strip click, and the keyboard leaving the ribbon, with a revision', () => {

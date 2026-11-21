@@ -18,10 +18,10 @@ import { editIncidentReporter } from '@/lib/editIncidents';
  * could read it, and its trash readers' open pages read it trashed, while an
  * item whose access went answers the non-disclosing 404 and its edits go
  * silently (`dropLostDrafts`). Open, the page shows the edits read-only until
- * Reload; not open, the load sweep's toast offers them. Reload and the
- * toast's Download delete only the rows they showed or drew (`ShownDrafts`):
- * the rest come back as the next page load's toast. The open page's
- * Download, on its strip and its ⋮ (Epo 2026-11-20), deletes none. */
+ * its strip's Discard; not open, the load sweep's toast offers them. That
+ * Discard and the toast's Download delete only the rows they showed or drew
+ * (`ShownDrafts`): the rest come back as the next page load's toast. The open
+ * page's Download, on its strip and its ⋮ (Epo 2026-11-20), deletes none. */
 
 /** A deleted item's stored documents, as the page or the sweep names them. */
 export type DeletedTarget = Omit<DeletedDrafts, 'item' | 'offered'>;
@@ -40,7 +40,7 @@ export function deletedTarget(
 }
 
 // What this page shows of each deleted document's stored edits, by key: what
-// its Reload deletes; and who is told when that changes.
+// its Discard deletes; and who is told when that changes.
 const shownHere = new Map<string, ShownDrafts>();
 const shownListeners = new Set<() => void>();
 
@@ -48,7 +48,7 @@ function shownChanged() {
   for (const listener of shownListeners) listener();
 }
 
-/** What an open page shows of a deleted document's stored edits: its Reload
+/** What an open page shows of a deleted document's stored edits: its Discard
  * deletes those rows and no others. Returns the release. */
 export function showDeletedDrafts(key: string, shown: ShownDrafts) {
   shownHere.set(key, shown);
@@ -74,7 +74,7 @@ export function useShowsDeleted(target: DeletedTarget | null) {
 }
 
 /** The rows this page shows of a deleted item's documents, by key, matched
- * by id and seq as Reload matches them (`shownRows`): what its strip's and
+ * by id and seq as Discard matches them (`shownRows`): what its strip's and
  * its ⋮'s Download draw (`downloadShownEdits`). A document it shows nothing of
  * gives none. */
 export async function shownDeletedRows(
@@ -92,10 +92,18 @@ export async function shownDeletedRows(
 export const deletedEditsReporter = ({ file, id }: DeletedTarget) =>
   editIncidentReporter(file ? 'source_file' : 'material', id);
 
-/** The open page's Reload: the rows it shows go, counted as the person's
- * discard (`item_deleted`); others stay for the next page load's toast. Then
- * the page loads again. */
-export function reloadDeleted(target: DeletedTarget) {
+// A Discard's deletes in flight: a second click meanwhile would delete and
+// report the same rows again. Cleared before the reload, which a beforeunload
+// prompt (an upload in flight) may cancel, so Discard works again after it.
+let discarding = false;
+
+/** The deleted strip's Discard (Epo 2026-11-21): the rows the page shows go,
+ * counted as the person's discard (`discard_unsaved`, `item_deleted`);
+ * others stay for the next page load's toast. Then the page loads again.
+ * A call while one is in flight does nothing. */
+export function discardDeleted(target: DeletedTarget) {
+  if (discarding) return;
+  discarding = true;
   void (async () => {
     let bytes = 0;
     for (const key of target.keys) {
@@ -106,7 +114,10 @@ export function reloadDeleted(target: DeletedTarget) {
       deletedEditsReporter(target)('discard_unsaved', 'item_deleted', bytes);
   })()
     .catch((error) => console.warn('Draft storage failed:', error))
-    .finally(() => window.location.reload());
+    .finally(() => {
+      discarding = false;
+      window.location.reload();
+    });
 }
 
 /** The id of a deleted item's page-load toast (`deletedEditsToast`). */
@@ -116,7 +127,7 @@ export const deletedToastId = ({ file, id }: DeletedTarget) =>
 /** What an open page shows of a deleted item's stored edits. */
 export type DeletedEdits =
   | { status: 'checking' | 'none' }
-  /** Shown read-only to copy until Reload: a note's drawn here, any other
+  /** Shown read-only to copy until Discard: a note's drawn here, any other
    * item's by its room or session. */
   | { note?: MaterialValue; status: 'kept' };
 

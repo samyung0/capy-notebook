@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from 'react';
 import { m } from '@/i18n';
 import { reloadIntoNewRelease } from '@/lib/appRelease';
-import { FileBanner } from './FileBanner';
+import { FileBanner, type FileBannerAction } from './FileBanner';
 
 /**
  * An open editor's save strip, one state at a time:
@@ -17,8 +17,9 @@ import { FileBanner } from './FileBanner';
  *   item rooms; a note opens the merge view instead, Q251); Reload is the
  *   only way out, so these cannot be closed. `deleted`: the item was
  *   deleted with unsent edits on this device (Q39), shown the same way for
- *   every editor; its Reload discards them, and its Download (Epo
- *   2026-11-20, `DeletedDownload`) saves what shows, deleting nothing.
+ *   every editor; its Discard (ghost-hover) drops them and loads the page
+ *   again, and its Download (dark, after Discard: Epo 2026-11-20 and
+ *   2026-11-21, `DeletedDownload`) saves what shows, deleting nothing.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
@@ -64,7 +65,7 @@ export function isRecoveryBanner(state: SaveBannerState | null) {
 }
 
 /** The open page's Download of the deleted item's edits it shows (Epo
- * 2026-11-20), beside the deleted strip's Reload; none where nothing
+ * 2026-11-20), after the deleted strip's Discard; none where nothing
  * provides it. */
 export const DeletedDownload = createContext<(() => void) | null>(null);
 
@@ -99,8 +100,9 @@ const MESSAGES: Record<
 
 /**
  * Render it only while its state lasts: closing hides it for that episode,
- * and the next episode mounts it again. One row in every state: Reload takes
- * the close button's place in recovery and when outdated.
+ * and the next episode mounts it again. One row in every state: Reload (the
+ * deleted strip's Discard and Download) takes the close button's place in
+ * recovery and when outdated.
  */
 export function SaveBanner({
   state,
@@ -113,6 +115,7 @@ export function SaveBanner({
   state: SaveBannerState;
   /** `review`: drop every piece (after a confirmation). */
   onDiscard?: () => void;
+  /** Recovery's Reload; the deleted strip's Discard. */
   onReload?: () => void;
   /** `review`: open the merge view. */
   onReview?: () => void;
@@ -134,20 +137,19 @@ export function SaveBanner({
               { label: m.merge_review(), onClick: onReview },
               { label: m.merge_discard_all(), onClick: onDiscard },
             ]
-          : isRecoveryBanner(state) && onReload
-            ? [
-                ...(state === 'deleted' && download
-                  ? [{ label: m.action_download(), onClick: download }]
-                  : []),
-                {
-                  disabled: reloading,
-                  label: m.error_action_reload(),
-                  onClick: onReload,
-                },
-              ]
-            : retry
-              ? [{ label: m.error_action_retry(), onClick: retry }]
-              : []
+          : state === 'deleted' && onReload
+            ? deletedActions(onReload, download, reloading)
+            : isRecoveryBanner(state) && onReload
+              ? [
+                  {
+                    disabled: reloading,
+                    label: m.error_action_reload(),
+                    onClick: onReload,
+                  },
+                ]
+              : retry
+                ? [{ label: m.error_action_retry(), onClick: retry }]
+                : []
       }
       closeable={
         !(
@@ -173,6 +175,30 @@ export function SaveBanner({
       }
     />
   );
+}
+
+/** The deleted strip's Discard, then the page's Download when it has one
+ * (Epo 2026-11-21). */
+function deletedActions(
+  discard: () => void,
+  download: (() => void) | null,
+  discarding: boolean
+): FileBannerAction[] {
+  const actions: FileBannerAction[] = [
+    {
+      disabled: discarding,
+      label: m.action_discard(),
+      onClick: discard,
+      variant: 'ghost-hover',
+    },
+  ];
+  if (download)
+    actions.push({
+      label: m.action_download(),
+      onClick: download,
+      variant: 'dark',
+    });
+  return actions;
 }
 
 /** Reload loads the page only once the new app is served; until then the

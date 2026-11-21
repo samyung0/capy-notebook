@@ -1292,7 +1292,7 @@
   "lost_edits_flashcards": "Flashcard set not included",
   "lost_edits_interactive": "Interactive block not included",
   "lost_edits_questions": "Questions not included. Only your answer key edits are here.",
-  "editor_deleted_strip": "This item was deleted. Your unsaved edits are shown here to copy until you reload.",
+  "editor_deleted_strip": "This item was deleted. Your unsaved edits are shown here to copy until you discard them.",
   "drawing_board_image_unavailable": "Image not available",
   "editor_embed_preview": "Preview",
   "editor_status_saved": "Saved",

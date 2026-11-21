@@ -101,7 +101,12 @@ export const OFFICE_RIBBON_COMMANDS = {
  * (Q566): what FileBanner would draw; `banner-action` carries the clicks back.
  */
 export interface OfficeBanner {
-  actions: { disabled?: boolean; label: string }[];
+  /** `variant`: FileBanner's Button variant, drawn alike in the frame. */
+  actions: {
+    disabled?: boolean;
+    label: string;
+    variant?: 'dark' | 'ghost-hover';
+  }[];
   closeable: boolean;
   inline: boolean;
   kind?: string;
@@ -297,7 +302,11 @@ export function isOfficeBanner(value: unknown): value is OfficeBanner {
     Array.isArray(banner.actions) &&
     banner.actions.every(
       (action) =>
-        isText(action?.label) && isOptional(action?.disabled, 'boolean')
+        isText(action?.label) &&
+        isOptional(action?.disabled, 'boolean') &&
+        (action?.variant === undefined ||
+          action.variant === 'dark' ||
+          action.variant === 'ghost-hover')
     )
   );
 }

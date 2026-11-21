@@ -81,11 +81,13 @@ vi.mock('./deletedNote', () => ({
 
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { deletedTarget, reloadDeleted, useDeletedEdits, useShowsDeleted } =
+const { deletedTarget, discardDeleted, useDeletedEdits, useShowsDeleted } =
   await import('./lostEdits');
 const { discardDeletedEdits, downloadShownEdits, offerDeletedEdits } =
   await import('./deletedEditsToast');
-const { deleteUnheldDrafts } = await import('@/lib/editDrafts');
+const { deleteShownDrafts, deleteUnheldDrafts } = await import(
+  '@/lib/editDrafts'
+);
 const { userToast } = await import('@/components/ui/userToast');
 const { m } = await import('@/i18n');
 
@@ -139,21 +141,40 @@ it("holds a deleted item's documents while it shows its stored edits", async () 
 });
 
 // Review 2026-11-20: a deleted note's stored edits are drawn here, as its
-// Download draws them, and its Reload deletes only the rows drawn, counted
-// as the person's discard apart from a lost item's drop.
-it('draws a deleted note, and its Reload deletes only what it shows', async () => {
+// Download draws them, and its strip's Discard deletes only the rows drawn,
+// counted as the person's discard apart from a lost item's drop. Review
+// 2026-11-21: a double click deletes and reports once.
+it('draws a deleted note, and its Discard deletes only what it shows, once however often it is clicked', async () => {
   const row = { id: 's:state' };
   store.rows.set('u:material:n', [row, { id: 'piece' }]);
   const { root, shows, state, target } = await shown('n', 'note');
   expect(state).toEqual({ note: NOTE, status: 'kept' });
   expect(shows).toBe(true);
-  reloadDeleted(target!);
+  discardDeleted(target!);
+  discardDeleted(target!);
   await vi.waitFor(() => expect(reload).toHaveBeenCalled());
   expect(store.deletedShown).toEqual([
     { key: 'u:material:n', shown: { rows: [row] } },
   ]);
+  expect(report).toHaveBeenCalledOnce();
   expect(report).toHaveBeenCalledWith('discard_unsaved', 'item_deleted', 5);
+  expect(reload).toHaveBeenCalledOnce();
   expect(deleteUnheldDrafts).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});
+
+// Review 2026-11-21: a reload a beforeunload prompt cancelled (an upload in
+// flight) leaves Discard working; it finds nothing left, reports nothing and
+// reloads again.
+it('discards again after a cancelled reload, reporting nothing when nothing is left', async () => {
+  store.rows.set('u:material:c', [{ id: 's:state' }]);
+  const { root, target } = await shown('c', 'note');
+  discardDeleted(target!);
+  await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+  vi.mocked(deleteShownDrafts).mockResolvedValueOnce(0);
+  discardDeleted(target!);
+  await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(2));
+  expect(report).toHaveBeenCalledOnce();
   await act(async () => root.unmount());
 });
 

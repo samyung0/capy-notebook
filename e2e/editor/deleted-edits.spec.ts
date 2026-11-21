@@ -231,7 +231,7 @@ test("a deleted note's Download saves its edits as Markdown, an image as a line 
   await expect.poll(() => storedRows(page, NOTE)).toBe(0);
 });
 
-test('a note deleted by another person while open keeps its unsent edits on screen under the deleted strip, and Reload ends them', async ({
+test('a note deleted by another person while open keeps its unsent edits on screen under the deleted strip, and Discard ends them', async ({
   page,
 }) => {
   test.slow();
@@ -248,10 +248,12 @@ test('a note deleted by another person while open keeps its unsent edits on scre
   ).toHaveCount(0);
   await expect(toast(page, 'Scenario note')).toHaveCount(0);
 
-  await page
-    .getByTestId('save-banner')
-    .getByRole('button', { name: m.error_action_reload() })
-    .click();
+  // Epo 2026-11-21: Discard (ghost-hover), then the dark Download.
+  const actions = page.getByTestId('save-banner').getByRole('button');
+  await expect(actions).toHaveText([m.action_discard(), m.action_download()]);
+  await expect(actions.first()).toHaveAttribute('data-variant', 'ghost-hover');
+  await expect(actions.last()).toHaveAttribute('data-variant', 'dark');
+  await actions.first().click();
   await expect(page.getByText(m.error_not_found_title())).toBeVisible({
     timeout: 60_000,
   });
@@ -265,7 +267,7 @@ async function docxText(path: string) {
   return strFromU8(zip['word/document.xml']).replace(/<[^>]+>/g, '');
 }
 
-// Epo 2026-11-20: the deleted strip downloads what shows beside its Reload, as
+// Epo 2026-11-20: the deleted strip downloads what shows after its Discard, as
 // the toast's file, and the header's ⋮ keeps Properties and the page's own
 // downloads (a note's Markdown and Word); none of them deletes anything.
 test('a note deleted while open downloads what shows from its strip and its ⋮, and keeps Properties', async ({
@@ -362,7 +364,7 @@ test('a note deleted while its editor is online keeps its unacknowledged typing 
 
   await page
     .getByTestId('save-banner')
-    .getByRole('button', { name: m.error_action_reload() })
+    .getByRole('button', { name: m.action_discard() })
     .click();
   await expect(page.getByText(m.error_not_found_title())).toBeVisible({
     timeout: 60_000,
@@ -544,7 +546,7 @@ test('a note its creator trashed in another tab keeps its unsent edits under the
 
   await page
     .getByTestId('save-banner')
-    .getByRole('button', { name: m.error_action_reload() })
+    .getByRole('button', { name: m.action_discard() })
     .click();
   await expect(page.getByText(m.error_not_found_title())).toBeVisible({
     timeout: 60_000,
@@ -574,7 +576,7 @@ for (const payer of [false, true])
     const loaded = page.waitForEvent('load', { timeout: 60_000 });
     await page
       .getByTestId('save-banner')
-      .getByRole('button', { name: m.error_action_reload() })
+      .getByRole('button', { name: m.action_discard() })
       .click();
     await loaded;
     await expect.poll(() => storedRows(page, NOTE)).toBe(0);
@@ -659,8 +661,9 @@ test("a deleted canvas's Download saves its unsent strokes as a PNG", async ({
 
 // Epo 2026-11-20: a canvas deleted while open keeps its unsent strokes on
 // the board under the deleted strip, whose Download saves them as its board's
-// image, as the toast's does, and deletes nothing.
-test('a canvas deleted while open downloads its unsent strokes from its strip and keeps them', async ({
+// image, as the toast's does, and deletes nothing. Epo 2026-11-21: its
+// Discard asks first, the confirm reading Discard.
+test('a canvas deleted while open downloads its unsent strokes from its strip and keeps them, and Discard ends them after asking', async ({
   page,
 }) => {
   test.slow();
@@ -709,6 +712,19 @@ test('a canvas deleted while open downloads its unsent strokes from its strip an
   );
   await expect(strip).toContainText(m.editor_deleted_strip());
   expect(await storedRows(page, CANVAS)).toBeGreaterThan(0);
+
+  const actions = strip.getByRole('button');
+  await expect(actions).toHaveText([m.action_discard(), m.action_download()]);
+  await expect(actions.first()).toHaveAttribute('data-variant', 'ghost-hover');
+  await expect(actions.last()).toHaveAttribute('data-variant', 'dark');
+  await actions.first().click();
+  const loaded = page.waitForEvent('load', { timeout: 60_000 });
+  await page
+    .getByRole('dialog', { name: m.canvas_reload_discard_title() })
+    .getByRole('button', { name: m.action_discard() })
+    .click();
+  await loaded;
+  await expect.poll(() => storedRows(page, CANVAS)).toBe(0);
 });
 
 // Review 2026-11-20 (1): a member's shared canvas its maker deletes while it
@@ -845,7 +861,7 @@ async function typeDocxOffline(page: Page, text: string) {
 
 // Review 2026-11-20: an Office file deleted while open keeps its edits under
 // the deleted strip, its View/Edit control off (both need the file).
-test('a DOCX deleted while open keeps its unsent edits under the deleted strip, and Reload ends them', async ({
+test('a DOCX deleted while open keeps its unsent edits under the deleted strip, and Discard ends them', async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -862,8 +878,20 @@ test('a DOCX deleted while open keeps its unsent edits under the deleted strip, 
   ).toBeDisabled();
   await expect(toast(page, DOCX_NAME)).toHaveCount(0);
 
+  // The frame draws Discard (ghost-hover), then the dark Download, neither
+  // underlined (Epo 2026-11-21): its own CSS, office-runtime.css.
+  const actions = strip.getByRole('button');
+  await expect(actions).toHaveText([m.action_discard(), m.action_download()]);
+  await expect(actions.first()).toHaveAttribute('data-variant', 'ghost-hover');
+  await expect(actions.last()).toHaveAttribute('data-variant', 'dark');
+  for (const action of [actions.first(), actions.last()])
+    await expect(action).toHaveCSS('text-decoration-line', 'none');
+  await expect(actions.last()).not.toHaveCSS(
+    'background-color',
+    'rgba(0, 0, 0, 0)'
+  );
   const loaded = page.waitForEvent('load', { timeout: 60_000 });
-  await strip.getByRole('button', { name: m.error_action_reload() }).click();
+  await actions.first().click();
   await loaded;
   await expect.poll(() => storedRows(page, DOCX, 'file')).toBe(0);
 });

@@ -64,7 +64,7 @@ import {
   type RoomSeed,
 } from './deviceCopy';
 import { type ItemKind, offerExpiredDrafts } from './expiredDrafts';
-import { deletedTarget, reloadDeleted, showDeletedDrafts } from './lostEdits';
+import { deletedTarget, discardDeleted, showDeletedDrafts } from './lostEdits';
 import { type NoteSeat, roomKey } from './noteSeat';
 import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { tokenClientIds } from './protocol';
@@ -108,8 +108,8 @@ export type ItemRoomStatus =
 
 export interface ItemRecovery {
   /** The item was deleted (Q39): its stored edits drawn from the rows alone
-   * (`deletedDocument`); Reload deletes the rows it shows and reloads the
-   * page. */
+   * (`deletedDocument`); its strip's Discard deletes the rows it shows and
+   * reloads the page. */
   deleted?: boolean;
   doc: Y.Doc;
   /** An early board's edits the room's state hides (made to something
@@ -372,7 +372,7 @@ export class ItemRoom {
   private keptLate: (() => void) | null = null;
   /** Releases a deleted item's stored edits this room shows (`deleted`). */
   private keptDeleted: (() => void) | null = null;
-  /** What its deleted recovery shows, for the page's Reload. */
+  /** What its deleted recovery shows, for the page's Discard. */
   private shownDeleted: (() => void) | null = null;
   /** What an early board painted (Q38): the temporary ids of the earlier
    * sessions' late rows it took, oldest first (`chain`), its own (`own`, the
@@ -1966,7 +1966,7 @@ export class ItemRoom {
   }
 
   /** The item was deleted (`item_deleted`, Q39): its stored edits stay,
-   * drawn from the rows alone and shown read-only to copy until Reload,
+   * drawn from the rows alone and shown read-only to copy until Discard,
    * which deletes the rows shown; with none drawn, or a store that cannot be
    * read, it is unavailable and the rows stay for the next page load's
    * toast. The page's read answers the same, and the page holds the edits
@@ -2142,7 +2142,7 @@ export class ItemRoom {
         this.materialId,
         drafts.kind === 'quiz'
       );
-      if (target) reloadDeleted(target);
+      if (target) discardDeleted(target);
       return;
     }
     await deleteDrafts(recovery?.rows ?? []).catch(() => undefined);
