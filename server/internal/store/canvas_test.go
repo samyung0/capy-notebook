@@ -710,7 +710,8 @@ func TestCanvasRoomMigrationsApplyOverOldCanvases(t *testing.T) {
 		}
 	}
 	// Back to 0180: no flag, the board cap 0164 set, and a saved canvas with a
-	// board asset over a sample answer's cap.
+	// board asset over a sample answer's cap. 0189's tree trigger reads the flag.
+	exec(`DROP TRIGGER materials_canvas_tree_notify_after ON materials`)
 	exec(`DROP TRIGGER materials_canvas_unshared_eviction ON materials`)
 	exec(`DROP FUNCTION canvas_unshared_eviction_trigger()`)
 	exec(`DROP INDEX materials_canvas_workspace_idx`)

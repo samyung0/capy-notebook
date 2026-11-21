@@ -339,15 +339,15 @@ function CollaborativeNoteEditor({
     },
     [qc, material.id]
   );
-  // Trashed, deleted, or access lost while open: the room refused to let the
-  // editor back in.
   const storedKey = meData
     ? draftKey(meData.id, 'material', material.id)
     : null;
-  // The editor already dropped the stored edits (kept for a deleted item, whose
-  // page shows them, Q39) and turned read-only (NoteEditorCore), staying
-  // mounted under a strip saying so (Epo 2026-11-05); only a refused read ends
-  // what shows, which this doesn't ask for.
+  // Access lost while open, or not found by the collaboration service alone
+  // and a fresh token was no 410 (a deleted note reports nothing, Q39): the
+  // editor already dropped the stored edits (kept for that not-found) and
+  // turned read-only (NoteEditorCore), staying mounted under a strip saying so
+  // (Epo 2026-11-05); only a refused read ends what shows, which this doesn't
+  // ask for.
   const onUnavailable = useCallback(
     () => onReadOnly?.('access_lost'),
     [onReadOnly]

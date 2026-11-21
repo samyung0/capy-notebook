@@ -49,6 +49,7 @@ type webhookStore interface {
 	HoldDispute(ctx context.Context, paymentIntentID string) (string, error)
 	ReleaseDispute(ctx context.Context, paymentIntentID string) (string, error)
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
+	ReloadInvoicesRetryingOnOtherCards(ctx context.Context, userID, pmID string) ([]string, error)
 	ReloadRetryUnwanted(ctx context.Context, invoiceID string) (bool, error)
 	ArmReload(ctx context.Context, userID string) error
 	ForgetCreditCheckout(ctx context.Context, sessionID string) error
@@ -721,8 +722,8 @@ func (a *api) saveReloadMethod(ctx context.Context, userID, setupIntentID string
 	if _, err := a.wh.GrantStarterCredits(ctx, userID, pm.CardKey); err != nil {
 		return err
 	}
-	// A new card ends Stripe's retries of the old one.
-	retrying, err := a.wh.RetryingReloadInvoices(ctx, userID)
+	// A new card ends Stripe's retries of the old one, never its own (Q785 A).
+	retrying, err := a.wh.ReloadInvoicesRetryingOnOtherCards(ctx, userID, pm.ID)
 	if err != nil || (!saved && len(retrying) == 0) {
 		return err
 	}

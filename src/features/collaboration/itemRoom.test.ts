@@ -428,7 +428,8 @@ it('rejoins after a close the server gives everyone', async () => {
 
 // Epo 2026-11-05: a close for one person's access change comes with no notice,
 // so it joins again and the token says what they have: a demotion reads on, a
-// removal stops there.
+// removal stops there, and the page's read says what shows (Epo 2026-11-20,
+// "the page should itself refetch and show the 404 error").
 it('joins again after a close for this person, and the token decides', async () => {
   const { onReplace, room } = await started();
   const [provider] = providers;
@@ -454,8 +455,61 @@ it('joins again after a close for this person, and the token decides', async () 
   );
   expect(room.getSnapshot().status).toBe('unavailable');
   expect(onReplace).not.toHaveBeenCalled();
-  // Told its access changed, the page stays: no read asked for.
+  expect(invalidateQueries.mock.calls).toEqual([
+    [{ queryKey: qk.material('q') }],
+    [{ queryKey: qk.quiz('q') }],
+  ]);
+  invalidateQueries.mockClear();
+  room.destroy();
+});
+
+// A quiz's keys room started as its editor is demoted: its first token is
+// refused as read-only, as the server refuses keys to anyone who cannot write.
+// That is the room turning read-only, not lost access.
+it('reads a keys room whose first token is refused as read-only, asking for no read', async () => {
+  tokens.push(new ApiError(403, 'Forbidden', 'collaboration-read-only'));
+  const room = new ItemRoom('q', {
+    document: 'keys',
+    drafts: { actorId: 'u', kind: 'quiz' },
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(room.getSnapshot()).toMatchObject({ access: 'read', offline: null });
+  expect(room.getSnapshot().status).not.toBe('unavailable');
+  expect(providers).toHaveLength(0);
   expect(invalidateQueries).not.toHaveBeenCalled();
+  room.destroy();
+});
+
+// A quiz's keys closed for the demotion (4403): their rejoin's token is
+// refused as read-only, and the room reads, joining nothing more, rather than
+// retrying the refusal into the offline strip.
+it('reads a keys room whose rejoin is refused as read-only, joining no more', async () => {
+  const room = new ItemRoom('q', {
+    document: 'keys',
+    drafts: { actorId: 'u', kind: 'quiz' },
+    onReplace: vi.fn(),
+  });
+  await room.start();
+  const [provider] = providers;
+  await provider.config.token();
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({
+    code: 4403,
+    reason: 'collaboration access changed',
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(provider.connects).toBe(2);
+  tokens.push(new ApiError(403, 'Forbidden', 'collaboration-read-only'));
+  await provider.config.token().catch((thrown: Error) =>
+    provider.config.onAuthenticationFailed?.({
+      reason: `Failed to get token: ${thrown.message}`,
+    })
+  );
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(room.getSnapshot()).toMatchObject({ access: 'read', offline: null });
+  expect(provider.connects).toBe(2);
   room.destroy();
 });
 

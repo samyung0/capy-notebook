@@ -12,6 +12,7 @@ import type { RoomCopy } from '@/features/collaboration/deviceCopy';
 import {
   itemEditingStopped,
   useItemRoom,
+  useReportReadOnly,
 } from '@/features/collaboration/itemRoom';
 import { itemSaveState } from '@/features/collaboration/LiveItemControls';
 import type { InNote } from '@/features/collaboration/noteSeat';
@@ -108,14 +109,16 @@ export function LiveFlashcards({
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
 
-  useEffect(() => {
-    if (snapshot.access === 'read')
-      onReadOnly?.(snapshot.readOnlyCode ?? undefined);
-  }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
+  // Lowered after its room could write here: the page reads it under its
+  // strip. One opened read-only shows no cue (D1).
+  useReportReadOnly(snapshot, setId, onReadOnly);
   const refused = snapshot.status === 'unavailable';
+  // A deleted set never reads as lost access (Q39): the page's read, which
+  // its room asked for, says what shows.
+  const lost = refused && !snapshot.deleted;
   useEffect(() => {
-    if (refused) onReadOnly?.('access_lost');
-  }, [refused, onReadOnly]);
+    if (lost) onReadOnly?.('access_lost');
+  }, [lost, onReadOnly]);
   if (refused && !onReadOnly)
     return (
       <p className="t-meta text-fg-muted">{m.material_ref_unavailable()}</p>

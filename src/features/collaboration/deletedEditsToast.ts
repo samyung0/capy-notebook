@@ -1,4 +1,6 @@
+import type { DeletedItem } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
+import type { ExportFormat } from '@/features/notes/export/render';
 import { m } from '@/i18n';
 import {
   type DeletedDrafts,
@@ -6,12 +8,39 @@ import {
   draftDocumentHeld,
   type ShownDrafts,
 } from '@/lib/editDrafts';
-import { deletedEditsReporter, deletedToastId } from './lostEdits';
+import {
+  type DeletedTarget,
+  deletedEditsReporter,
+  deletedToastId,
+  shownDeletedRows,
+} from './lostEdits';
 
 /* The page-load toast for a deleted item's unsent edits (Q40 A): Discard and
- * Download. Apart from lostEdits, which open pages' rooms import, so they
- * never reach the Download's file writers (tsc follows a dynamic import too,
- * and the board's check would take in the note exporters). */
+ * Download; and the open page's Download of what it shows. Apart from
+ * lostEdits, which open pages' rooms import, so they never reach the
+ * Download's file writers (tsc follows a dynamic import too, and the board's
+ * check would take in the note exporters). */
+
+/** The open page's Download (Epo 2026-11-20), on the deleted strip and the
+ * header's ⋮: the toast's file (`deletedEditsFile`) from the rows the page
+ * shows (`shownDeletedRows`, by id and seq), a note's ⋮ also as Word. It
+ * deletes nothing: Reload still ends them. A file that could not be made says
+ * so, the edits kept as they are. */
+export async function downloadShownEdits(
+  target: DeletedTarget,
+  item: DeletedItem,
+  format?: ExportFormat
+) {
+  try {
+    const shown = await shownDeletedRows(target);
+    const { saveShownEdits } = await import('./deletedEditsFile');
+    const drew = await saveShownEdits({ ...target, item }, shown, format);
+    for (const { doc } of drew.values()) doc?.destroy();
+  } catch (error) {
+    console.error(error);
+    userToast({ title: m.lost_edits_download_failed(), variant: 'error' });
+  }
+}
 
 /** The toast's Discard: every row it offered goes, the person's own choice,
  * counted apart from a lost item's silent drop (`item_deleted`). Rows

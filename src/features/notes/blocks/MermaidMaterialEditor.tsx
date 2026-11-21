@@ -15,6 +15,7 @@ import type { RoomCopy } from '@/features/collaboration/deviceCopy';
 import {
   itemEditingStopped,
   useItemRoom,
+  useReportReadOnly,
 } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
@@ -131,14 +132,16 @@ export default function MermaidMaterialEditor({
   ]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
   useReportPresence(onPresenceChange, snapshot.presence);
-  useEffect(() => {
-    if (snapshot.access === 'read')
-      onReadOnly(snapshot.readOnlyCode ?? undefined);
-  }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
+  // Lowered after its room could write here: the page reads it under its
+  // strip. One opened read-only shows no cue (D1).
+  useReportReadOnly(snapshot, materialId, onReadOnly);
   const refused = snapshot.status === 'unavailable';
+  // A deleted diagram never reads as lost access (Q39): the page's read,
+  // which its room asked for, says what shows.
+  const lost = refused && !snapshot.deleted;
   useEffect(() => {
-    if (refused) onReadOnly('access_lost');
-  }, [refused, onReadOnly]);
+    if (lost) onReadOnly('access_lost');
+  }, [lost, onReadOnly]);
   if (room && snapshot.recovery)
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">

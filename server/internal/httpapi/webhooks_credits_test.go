@@ -191,6 +191,23 @@ func TestStripeWebhook_ARedeliveredReloadCardSaveVoidsWhatItsFailedVoidLeft(t *t
 	}
 }
 
+// Q785 A: saving card pm_setup, and Stripe's second event for it, void the
+// retry on the old card and leave a retry on pm_setup itself. Fails with every
+// retrying invoice voided.
+func TestStripeWebhook_AReloadCardSaveLeavesARetryOnTheSameCard(t *testing.T) {
+	f := newFakeStore()
+	f.stripeCustomers["cus_1"] = "user_1"
+	f.retryingReloads = []string{"in_old_card", "in_same_card"}
+	f.retryingReloadCards = map[string]string{"in_same_card": "pm_setup"}
+	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{})
+
+	sendStripe(t, srv, "evt_intent", "setup_intent.succeeded", reloadSetupIntent("reload_method", "user_1"))
+	sendStripe(t, srv, "evt_checkout", "checkout.session.completed", reloadSetupCheckout())
+	if !slices.Equal(*voided, []string{"in_old_card"}) {
+		t.Fatalf("voided = %q, want only the old card's retry", *voided)
+	}
+}
+
 // Q783 A: Stripe redelivers both events of a card set up an hour ago after a
 // newer card was saved; neither brings the old card back, grants or voids.
 // Fails with the replaced card's event handled as a failure.

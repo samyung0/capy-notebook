@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { m } from '@/i18n';
 import { reloadIntoNewRelease } from '@/lib/appRelease';
 import { FileBanner } from './FileBanner';
@@ -17,7 +17,8 @@ import { FileBanner } from './FileBanner';
  *   item rooms; a note opens the merge view instead, Q251); Reload is the
  *   only way out, so these cannot be closed. `deleted`: the item was
  *   deleted with unsent edits on this device (Q39), shown the same way for
- *   every editor; its Reload discards them.
+ *   every editor; its Reload discards them, and its Download (Epo
+ *   2026-11-20, `DeletedDownload`) saves what shows, deleting nothing.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
@@ -61,6 +62,11 @@ export function isRecoveryBanner(state: SaveBannerState | null) {
     state === 'deleted'
   );
 }
+
+/** The open page's Download of the deleted item's edits it shows (Epo
+ * 2026-11-20), beside the deleted strip's Reload; none where nothing
+ * provides it. */
+export const DeletedDownload = createContext<(() => void) | null>(null);
 
 /** The strip of a copy-only group of stored edits. */
 export function recoveryBanner(group: {
@@ -114,6 +120,7 @@ export function SaveBanner({
   onRetry?: () => void;
   reloading?: boolean;
 }) {
+  const download = useContext(DeletedDownload);
   if (isOutdatedBanner(state))
     return <OutdatedBanner stored={state === 'outdated'} />;
   const review = state === 'review' && onReview && onDiscard;
@@ -129,6 +136,9 @@ export function SaveBanner({
             ]
           : isRecoveryBanner(state) && onReload
             ? [
+                ...(state === 'deleted' && download
+                  ? [{ label: m.action_download(), onClick: download }]
+                  : []),
                 {
                   disabled: reloading,
                   label: m.error_action_reload(),

@@ -20,6 +20,7 @@ import {
   reloadDeleted,
   showDeletedDrafts,
 } from '@/features/collaboration/lostEdits';
+import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
@@ -406,9 +407,6 @@ export function useSourceSession(
     let disposed = false;
     const controller = new AbortController();
     let provider: SourceProvider | null = null;
-    // A discard's notice came: a refused rejoin may mean the file is gone.
-    // Closed for this person's access change (4403), until it syncs again.
-    let accessChanged = false;
     let doc: Y.Doc | null = null;
     // What its deleted strip shows, for the page's Reload (Q39).
     let shownDeleted: (() => void) | null = null;
@@ -736,10 +734,11 @@ export function useSourceSession(
           void recorder?.discard();
         } else if (refusalKeepsDrafts(refusal, failedToken))
           void recorder?.snapshot();
-        // Not told as an access change, it may be gone: the file's read
-        // says, and a refused one ends what shows (Epo 2026-11-05, Q644).
-        if (!accessChanged)
-          void qc.invalidateQueries({ queryKey: qk.file(fileId) });
+        // Gone or no longer theirs, an access change (4403) included: the
+        // file's read says, and a refused one ends what shows, saying they
+        // lost access when the file had worked on the page (Epo 2026-11-20,
+        // narrowing Q644).
+        void qc.invalidateQueries({ queryKey: qk.file(fileId) });
         // The page stays until then: a reader as it was, an editor
         // read-only under a strip saying so.
         if (session.access === 'write') {
@@ -1033,8 +1032,7 @@ export function useSourceSession(
           else if (refusal === 'outdated') stale();
           else void refusedAfterAsking(refusal, failedToken);
         },
-        onClose: ({ code }) => {
-          if (code === 4403) accessChanged = true;
+        onClose: () => {
           active.synced = false;
           if (!cancelled) setSlowed(false);
           reconnect.closed(socketOpen(provider));
@@ -1211,7 +1209,6 @@ export function useSourceSession(
           });
         },
         onSynced: ({ state }) => {
-          if (state) accessChanged = false;
           if (state && !cancelled && !active.recovery) {
             active.synced = true;
             setSlowed(false);
@@ -1230,6 +1227,8 @@ export function useSourceSession(
             setStatus(everSynced || active.sequence > 0 ? 'saving' : 'saved');
             if (!everSynced) officeMark('synced');
             everSynced = true;
+            // The page says so if it later loses the file.
+            markItemWorking(true, fileId);
             void show();
             setWorkerClientId(provider?.workerClientId);
             setSynced(true);

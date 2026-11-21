@@ -124,6 +124,9 @@ end-of-file keys, the co-editor timings, the PPTX busy time, the downloads and
 the heap figures are report-only. Its web server (`editor/scripts/office-server.mjs`)
 runs on Linux and Windows. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
+The same fixtures against Google Docs, Sheets and Slides (open, editable,
+memory, scrolling, typing, downloads; a one-off run by hand):
+[`editor/reports/2026-11-21-google-gap.md`](editor/reports/2026-11-21-google-gap.md).
 
 The Office size ladder (`editor/scripts/gen_office_ladder.py`) generates
 fixtures of growing size per format and content shape into the gitignored
@@ -443,6 +446,17 @@ the ingest host, the gold crops through `layout_score.py`, and region agreement
 on mixed and fresh pages (`layout_agree.py` compares two `layout_detect.py`
 records). Its pages and raw records stayed local; the build that ships is
 `layout/quantise.py`.
+
+`extraction/scripts/long_selections.py` runs selections past the 40-page cap
+through the production run: 110 pages of a committed CC BY textbook
+(`parsers/fixtures/budget/waterworks-math.pdf`, units 1 to 4, gold from its
+text layer, its own solutions as the answer file) as one map, in page windows,
+and as one map over the pages' indexed text with copy threads of at most 30
+question-page images; `--exams` runs the same arms on six scanned HKDSE papers
+picked together, and `scan-maps` maps the scanned gold papers from images and
+from their page reads.
+[Long selections](extraction/reports/2026-11-21-long-selections.md) has the
+results.
 
 ### rag
 

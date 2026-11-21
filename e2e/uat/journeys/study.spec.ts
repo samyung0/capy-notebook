@@ -217,8 +217,16 @@ test('study progress: a quiz finished, a set studied and a short review are reco
       await clicked(page, '/api/review/check', m.review_check()),
       200
     );
+    // The pick is tagged Correct, and so is the verdict under the boxes
+    // (Epo 2026-11-18).
     await expect(
-      page.getByText(m.question_ui_result_right(), { exact: true })
+      page.getByRole('button', {
+        exact: true,
+        name: `${m.question_ui_true()} ${m.question_ui_result_right()}`,
+      })
+    ).toBeVisible();
+    await expect(
+      page.getByText(m.question_ui_result_right(), { exact: true }).last()
     ).toBeVisible();
     await page
       .getByRole('button', { exact: true, name: m.action_next() })
@@ -279,9 +287,17 @@ test('study progress: a quiz finished, a set studied and a short review are reco
   // marking item and the call was recorded, charged to the learner.
   const openQuiz = await quiz(run, workspaceId, 'Open quiz', openPart);
   await page.goto(`${run.env.appUrl}/quizzes/${openQuiz}/attempt`);
+  // A long answer is written in the text-and-formulas editor (Epo
+  // 2026-11-16, mock B).
   await page
-    .getByRole('textbox', { exact: true, name: m.question_ui_your_answer() })
-    .fill('The plants keep the carbon in their roots and in the wet soil.');
+    .getByRole('textbox', {
+      exact: true,
+      name: m.question_ui_text_and_formulas(),
+    })
+    .click();
+  await page.keyboard.type(
+    'The plants keep the carbon in their roots and in the wet soil.'
+  );
   assert.equal(
     await clicked(
       page,

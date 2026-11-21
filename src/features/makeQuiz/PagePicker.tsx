@@ -438,7 +438,7 @@ export interface DialogStep {
 
 /**
  * Click the pages with questions, then with answers (Epo 2026-11-02, board X1;
- * 2026-11-05, boards B to E): pages shown large, one click selects one, up to 40 across
+ * 2026-11-05, boards B to E): pages shown large, one click selects one, up to EXTRACTION_PAGES_MAX (30 since Epo 2026-11-21) across
  * a run's files, and pages left unclicked are skipped. A text file goes whole. A step of
  * the Make a quiz dialog, so going back to the files keeps the picks of files left in.
  */

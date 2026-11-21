@@ -2518,6 +2518,7 @@
   "make_quiz_you_have": "你有",
   "make_quiz_enough": "你的点数足够制作前 {count} 道题。",
   "make_quiz_enough_one": "你的点数足够制作第一道题。",
+  "make_quiz_quiz_holds": "一个测验最多容纳 {parts} 个小题，因此只制作前 {count} 道题。",
   "make_quiz_enough_none": "你的点数不足以制作任何题目。",
   "make_quiz_make": "制作测验",
   "make_quiz_make_count": "制作 {count} 道题",

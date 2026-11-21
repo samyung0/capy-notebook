@@ -1814,7 +1814,7 @@ assignment and in the Settings tab's Submissions, as a graded quiz's Points sit
 with its Submission; empty is not graded, whole points 1 to 1000. The form drops
 them when uploads go off (`assignmentBody`), and the store refuses points on a
 graded quiz or on an Assignment without uploads (422, and the
-`assignments_points_kind` check; migration `0189_drop_own_tasks.sql` cleared the
+`assignments_points_kind` check; migration `0190_drop_own_tasks.sql` cleared the
 points, grades and late penalty of those that had them). Graded, the form adds Show
 grades (in Advanced; Settings' Marking and results) and the late penalty, and an
 ungraded one sends Show grades Automatic and no penalty. Its staff enter each
@@ -1927,7 +1927,7 @@ Add task: "they are for self tracking, no one can read the uploaded files for
 general task"; a personal workspace studies by practising, and nobody sets a
 graded quiz for themself). Only a class's owner and editors give out work, from
 the Assignments page's New menu: `POST /api/workspaces/{id}/assignments` refuses
-anyone else, and a personal workspace takes none. Migration `0189_drop_own_tasks.sql` deleted the
+anyone else, and a personal workspace takes none. Migration `0190_drop_own_tasks.sql` deleted the
 tasks people had set themselves and dropped `assignments.own`, so every
 assignment has a workspace again. A personal workspace has no To do: no rail
 row, no Dashboard section, and a link to its `assignments` page goes to Practice

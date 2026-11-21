@@ -5,6 +5,7 @@ import { USE_MSW } from '@/api/auth';
 import { isApiError, qk } from '@/api/client';
 import { getMaterialCollaborationToken } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
+import type { Material } from '@/api/types';
 import {
   isOutdatedBanner,
   type SaveBannerState,
@@ -77,6 +78,7 @@ import {
   renameRefusal,
 } from './renameClient';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
+import { markItemWorking } from './roomRefusals';
 import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
 /* A live item's room (a flashcard set, a quiz's content or keys document;
@@ -454,8 +456,6 @@ export class ItemRoom {
   private readonly pending = new Map<string, number>();
   /** The mode of the eviction notice that came before a close. */
   private eviction: string | null = null;
-  /** Closed for this person's access change (4403), until it syncs again. */
-  private accessChanged = false;
   /** Stops waiting to start again after a first open that failed. */
   private waiting: (() => void) | null = null;
   /** The draft send of never-accepted stored steps (Q319, Q327, Q328). */
@@ -635,13 +635,22 @@ export class ItemRoom {
       first = await (this.options.firstToken?.() ??
         getMaterialCollaborationToken(this.materialId, this.tokenRequest()));
     } catch (error) {
-      // Deleted (410): its edits to copy. Gone or no longer this user's
-      // (404, 403): unavailable for good. Offline or a server error: paused
-      // until it can join (REVIEW5 B1).
-      const refusal = roomRefusal('', error);
+      // Deleted (410): its edits to copy. Read-only now (403
+      // `collaboration-read-only`: a quiz's keys, asked as their editor is
+      // demoted): read-only, joining nothing, as at a read token. Gone or no
+      // longer this user's (404, 403): unavailable for good. Offline or a
+      // server error: paused until it can join (REVIEW5 B1).
+      const refusal = roomRefusal(
+        error instanceof Error ? error.message : '',
+        error
+      );
       if (refusal === 'deleted') {
         this.answerMerge(false);
         await this.deleted();
+      } else if (refusal === 'readOnly') {
+        this.answerMerge(false);
+        this.reconnector.dispose();
+        this.readOnly();
       } else if (refusal === 'notFound' || refusal === 'forbidden') {
         // An early board's edits, waiting ones too, stay to copy: painted
         // ones with the board (`keepEarly`), the rest as stored.
@@ -760,18 +769,27 @@ export class ItemRoom {
           return;
         }
         if (reason.includes('collaboration room moved')) return;
-        // Read-only now (a frozen account, a full owner, a demotion) or a
-        // refusal the client retries: join again with a fresh token.
+        // Read-only now (a frozen account, a full owner, a demotion), as at a
+        // first token (`start`): a quiz's keys, which go to writers alone
+        // (their token refused 403), join nothing more; any other room reads
+        // on, joining again on a read token.
+        if (refusal === 'readOnly') {
+          this.readOnly();
+          if (this.ended) return;
+          if (this.options.document === 'keys') this.reconnector.dispose();
+          else this.rejoin();
+          return;
+        }
+        // A refusal the client retries: join again with a fresh token.
         this.rejoin();
       },
       onClose: ({ code, reason }) => {
         this.delay.disconnected();
         this.set({ slowed: false });
         // This person's access changed, with no notice: a fresh token says
-        // what they have now. A demotion reads on; a removal is refused and
-        // stops at the token, keeping the page (Epo 2026-11-05).
+        // what they have now. A demotion reads on; a removal is refused at
+        // the token, and the page's read decides (Epo 2026-11-20).
         if (code === 4403) {
-          this.accessChanged = true;
           this.set({ stopped: true });
           this.rejoin();
           return;
@@ -820,7 +838,8 @@ export class ItemRoom {
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
-          this.accessChanged = false;
+          // A page showing the item says so if it later loses it.
+          markItemWorking(false, this.materialId);
           if (this.snapshot.offline || this.heldEpisode)
             this.recorder?.connected();
           this.heldEpisode = false;
@@ -1933,13 +1952,16 @@ export class ItemRoom {
       this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
   }
 
-  /** A refusal not told as an access change may mean the item is gone: the
-   * page's read says, and a refused one ends what shows (Epo 2026-11-05, Q644). */
+  /** Refused, an access change (4403) included: the item may be gone or no
+   * longer this person's, so the page's reads say (a quiz's own read too),
+   * and a refused one ends what shows, saying they lost access when the item
+   * had worked on the page (Epo 2026-11-20, narrowing Q644). */
   private refusedAccess() {
-    if (!this.accessChanged)
-      void queryClient.invalidateQueries({
-        queryKey: qk.material(this.materialId),
-      });
+    for (const queryKey of [
+      qk.material(this.materialId),
+      qk.quiz(this.materialId),
+    ])
+      void queryClient.invalidateQueries({ queryKey });
     this.unavailable();
   }
 
@@ -2297,6 +2319,37 @@ export function useItemRoom(
     initialSnapshot
   );
   return { room, snapshot };
+}
+
+/**
+ * Tells the page an item editor's room turned read-only (a demotion, a frozen
+ * account, a full owner) once it could write here: a token on this page gave
+ * it write access. One that opened read-only (lowered while away, its device
+ * copy and the kept workspace read still an editor's) says nothing, as
+ * opening shows no view-only cue (D1). A code (a block this version cannot
+ * edit) always tells. A first token read while the item's read says this
+ * person may edit asks for that read again: lowered in between, the page
+ * learns it from the new read. Returns whether it could write here.
+ */
+export function useReportReadOnly(
+  { access, readOnlyCode }: Pick<ItemRoomSnapshot, 'access' | 'readOnlyCode'>,
+  materialId: string,
+  onReadOnly: ((code?: ReadOnlyCode) => void) | undefined
+) {
+  const wrote = useRef(false);
+  if (access === 'write') wrote.current = true;
+  useEffect(() => {
+    if (access !== 'read' || !onReadOnly) return;
+    if (wrote.current || readOnlyCode) onReadOnly(readOnlyCode ?? undefined);
+    else if (
+      queryClient.getQueryData<Material>(qk.material(materialId))?.capabilities
+        .canEditContent
+    )
+      void queryClient.invalidateQueries({
+        queryKey: qk.material(materialId),
+      });
+  }, [access, readOnlyCode, materialId, onReadOnly]);
+  return wrote.current;
 }
 
 const noSubscribe = () => () => undefined;

@@ -2518,6 +2518,7 @@
   "make_quiz_you_have": "You have",
   "make_quiz_enough": "You have enough for the first {count} questions.",
   "make_quiz_enough_one": "You have enough for the first question.",
+  "make_quiz_quiz_holds": "One quiz holds {parts} parts, so the first {count} questions are made.",
   "make_quiz_enough_none": "You don't have enough credits for any of them.",
   "make_quiz_make": "Make the quiz",
   "make_quiz_make_count": "Make {count} questions",

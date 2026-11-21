@@ -398,6 +398,19 @@ func (s *Store) RetryingReloadInvoices(ctx context.Context, userID string) ([]st
 	return retryingReloadInvoices(ctx, s.pool, userID)
 }
 
+// ReloadInvoicesRetryingOnOtherCards lists the reload invoices Stripe is still
+// retrying on a card other than pmID: saving a card ends the old card's
+// retries, never a retry on itself (Q785 A).
+func (s *Store) ReloadInvoicesRetryingOnOtherCards(ctx context.Context, userID, pmID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT stripe_invoice_id FROM credit_purchases
+		WHERE user_id = $1 AND kind = 'reload' AND status = 'retrying'
+		  AND stripe_invoice_id IS NOT NULL AND reload_pm_id IS DISTINCT FROM $2`, userID, pmID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
 func retryingReloadInvoices(ctx context.Context, q interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 }, userID string,

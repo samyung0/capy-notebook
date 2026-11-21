@@ -4,6 +4,7 @@ import { readRoomSeed } from '@/features/collaboration/deviceCopy';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import { sourceDocOptions } from '@/features/files/sourceProvider';
 import { downloadEditorFile } from '@/features/notes/documentAdapters';
+import type { ExportFormat } from '@/features/notes/export/render';
 import { keysScope, readQuestions } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
 import {
@@ -29,10 +30,12 @@ const EXTENSION = /\.[^.]+$/;
  * (`shownRows`); the rest stay for the next page load's offer. */
 export type Drew = Map<string, ShownDrafts>;
 
-/** A document's rows the toast offered, as stored now: rows written since
- * (the item restored and opened again) are never drawn nor deleted. */
+/** A document's rows a file draws from: the toast's offered, or the open
+ * page's shown. */
 type OfferedRows = (key: string) => Promise<EditDraft[]>;
 
+/** A document's rows the toast offered, as stored now: rows written since
+ * (the item restored and opened again) are never drawn nor deleted. */
 const offeredRows =
   (offered: DeletedDrafts['offered']): OfferedRows =>
   async (key) => {
@@ -108,17 +111,28 @@ export async function canSaveDeletedEdits({
   }
 }
 
+/** Saves the file of the rows the toast offered (`saveFile`). */
+export const saveDeletedEdits = (drafts: DeletedDrafts) =>
+  saveFile(drafts, offeredRows(drafts.offered));
+
+/** Saves the file of the rows the open page shows, as they were when read
+ * (`shownDeletedRows`, by id and seq), a note's as Markdown or Word. */
+export const saveShownEdits = (
+  target: Omit<DeletedDrafts, 'offered'>,
+  shown: Record<string, EditDraft[]>,
+  format?: ExportFormat
+) => saveFile(target, async (key) => shown[key] ?? [], format);
+
 /** Saves the file: "{title} (unsaved edits).{ext}", a file keeping its own
- * extension (none when its name has none). Throws when nothing in the drafts
- * can be drawn. Resolves what it drew; the caller destroys its documents. */
-export async function saveDeletedEdits({
-  file,
-  item,
-  keys,
-  offered,
-}: DeletedDrafts): Promise<Drew> {
+ * extension (none when its name has none); a note as Markdown, or as Word
+ * from its open page's ⋮ (`format`). Throws when nothing in the drafts can be
+ * drawn. Resolves what it drew; the caller destroys its documents. */
+async function saveFile(
+  { file, item, keys }: Omit<DeletedDrafts, 'offered'>,
+  readOffered: OfferedRows,
+  format: ExportFormat = 'markdown'
+): Promise<Drew> {
   const drew: Drew = new Map();
-  const readOffered = offeredRows(offered);
   try {
     const suffix = ` (${m.lost_edits_file()})`;
     if (file) {
@@ -129,7 +143,7 @@ export async function saveDeletedEdits({
       );
       return drew;
     }
-    const made = await materialFile(item, keys, drew, readOffered);
+    const made = await materialFile(item, keys, drew, readOffered, format);
     downloadEditorFile(made.blob, `${item.name}${suffix}.${made.extension}`);
     return drew;
   } catch (error) {
@@ -193,7 +207,8 @@ async function materialFile(
   item: DeletedItem,
   keys: string[],
   drew: Drew,
-  read: OfferedRows
+  read: OfferedRows,
+  format: ExportFormat
 ): Promise<Made> {
   const { answers, content } = materialKeys(keys);
   const rows = content ? await read(content) : [];
@@ -207,7 +222,7 @@ async function materialFile(
       );
       return runExportWorker({
         assetUrls: {},
-        format: 'markdown',
+        format,
         noteUrl: location.origin,
         value: note.value,
       });

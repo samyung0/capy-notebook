@@ -5,6 +5,7 @@ import {
   EXTRACTION_PAGES_MAX,
   EXTRACTION_PAPER_FILES_MAX,
   EXTRACTION_QUESTION_CREDITS,
+  QUIZ_PARTS_MAX,
 } from '@/api/limits.generated';
 import type {
   CreateExtractionReq,
@@ -148,6 +149,21 @@ export function affordableQuestions(total: number, availableCredits: number) {
     total,
     Math.floor(availableCredits / EXTRACTION_QUESTION_CREDITS)
   );
+}
+
+/**
+ * How many of the questions found, from the first, fit one quiz's parts by the map's
+ * part lists, a question with none counting one (Epo 2026-11-21).
+ */
+export function fittingQuestions(
+  questions: readonly Pick<ExtractionFoundQuestion, 'parts'>[]
+) {
+  let parts = 0;
+  for (const [index, question] of questions.entries()) {
+    parts += Math.max(1, question.parts.length);
+    if (parts > QUIZ_PARTS_MAX) return index;
+  }
+  return questions.length;
 }
 
 /** "Page 3 · parts a, b", a question's line in the confirm dialog. */

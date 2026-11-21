@@ -123,9 +123,11 @@ const (
 	// count (Epo 2026-11-15, todo-question-topics.md).
 	QuestionTopics = 5
 	// A Make a quiz run reads at most ExtractionPaperFiles question files and
-	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
-	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
-	ExtractionPages           = 40
+	// ExtractionAnswerFiles answer files (Epo 2026-11-05), and at most ExtractionPages
+	// picked pages across them (Epo 2026-11-21, down from 40): one call carries every
+	// page image, and Cloudflare refuses one over 32. Each saved question costs
+	// ExtractionQuestionCredits.
+	ExtractionPages           = 30
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4

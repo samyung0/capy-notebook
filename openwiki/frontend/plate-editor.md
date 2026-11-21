@@ -1474,9 +1474,80 @@ under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) keep the page, a reader's as it was and
-an editor's read-only under the "You no longer have access" strip; with no 4403
-close before it the page asks for its read, and a refused read shows "This item
-is unavailable" (see [authorization](../authorization-permissions-lifecycles.md)).
+an editor's read-only under the "You no longer have access" strip, and the
+page asks for its read, after a 4403 close too (Epo 2026-11-20, "the page
+should itself refetch and show the 404 error", narrowing Q644): a refused read
+shows "This item is unavailable" (see
+[authorization](../authorization-permissions-lifecycles.md)), a read that
+still answers keeps the strip, and a demotion (a read token) is unchanged.
+A demotion's notice comes first: the role-change notification reads the
+workspace and its open items again at once (`recheckWorkspace`), view-only now,
+while the rooms' 4403 comes 1 to 2.5 s later through the outbox. An item a live
+answer said this person may edit (its read answered a fetch on this page or in
+the 10 s before it opened, `freshAnswer` and `answeredAt`; never its device
+copy, the kept workspace read or a cache write such as a mutation's rollback;
+nor a trashed read, every right off, so one deleted and restored while open
+edits again) drops to view when that read or the workspace's says they may
+not (`canEdit` false; a full payer's storage takes no right and keeps its own
+strip), under the same read-only strip (`MaterialContentBody` in
+`CenterContent.tsx` reports it as its rooms' read token would). Its rooms'
+close and read token after it change nothing more; the view then opens as any
+reader's, a quiz's dropping its keys copy. Without the notice first (none, or a
+late one; UAT 2026-11-20) the rooms say it: a quiz, set or diagram editor
+reports a room turned read-only to the page (`useReportReadOnly`) once a token
+on this page gave it write access, so someone demoted while away opens with no
+view-only cue (D1), their copy's editor paint going quietly to the reader's
+view. A first token that reads while the item's read says they may edit
+(demoted between the two) asks for that read again, which then lowers the page
+as above. A quiz's keys asking a token as the demotion lands, at their first
+(`ItemRoom.start`) or at a rejoin after the 4403, are refused as read-only (403
+`collaboration-read-only`), which reads, joining nothing more, never as lost
+access or a retry into the offline strip; the quiz then reads on its content
+room alone (`useQuizRooms`). A quiz or set lowered here edits again once a read
+answered after it says this person may (Q642 C): raised again (the notice's reads) or its
+payer's storage freed, the page drops its strip and the editor opens anew. A
+note or a diagram stays read-only until a reload, and every kind keeps a
+code's strip (lost access, an unsupported block).
+When the item had worked on that page first (a room of it synced, an
+editor's or a reader's, any kind: notes, quizzes, sets, diagrams, canvases,
+Office and text files; or the page's read answered a fetch showing the item
+live, not trashed, while it showed the item or in the 10 s before it opened,
+such as a hover's preload or the route's loader, whatever the read's stale
+time, so an answer from an earlier visit does not count; never a cache write
+such as `setQueryData` or a restored store: a cache subscription that skips
+manual updates, and `freshAnswer` in `queryClient.ts` over the query cache's
+`onSuccess`; `markItemWorking` in `roomRefusals.ts`, which marks only an item a
+page watches, so an embed's or a card's room marks nothing, and the mark lasts
+while the page shows the item, past a room replaced meanwhile, such as a tab
+hidden for 5 minutes), a read then refusing access (403 or 404,
+`isAccessRefused`; a 410 deleted, 409, 422 or 401 still shows the page's own
+state but toasts nothing, and so does a 404 for an item whose read had shown
+it trashed, its purge being a deletion) also shows an error toast titled "You no longer have
+access" with no body, once per item, under the one id `access-lost` the
+workspace's removal toast has too, and the lists showing the item read again
+(its workspace's Files panel tree, the Files page, Recent, block, canvas,
+Study and Continue lists), since the tree event hiding or unsharing raises
+refetches only the open workspace's file, material, topic and canvas lists,
+and a removed member's page shows the workspace unavailable (Epo 2026-11-20,
+`useAccessLostNotice` in `accessLostNotice.ts`, used by `CenterContent`, a
+canvas's board, the canvas picker and the account Canvas page's quiz or set
+dialog). That holds in either order: the tree event reaches members at commit
+and the room's drain or 4403 comes 1 to 2.5 s later through the outbox, so a
+hidden note's list may drop it first and its header's read (the list no longer
+carrying it) refuse before the room does. A file with no room (a PDF, an image,
+or a viewer who never joins one) hears it from its list alone: its header reads
+the file again once its workspace's files list no longer holds it. A kicked
+canvas's board goes for the unavailable panel and its picker, read again, shows
+another canvas; when the picker's list drops the canvas on screen first, its
+read of it refusing toasts before another canvas shows. A member's shared
+canvas its maker trashed answers that read 410 `item_deleted` (review
+2026-11-20), so the picker keeps it on screen while it asks and once deleted,
+and its board shows what its room says: the deleted strip with Download over
+the unsent strokes, no toast. The picker asks that read afresh each time its
+list drops the canvas on screen, never taking an earlier answer for it. Edits a board shows to copy stay whatever the
+read says. An item simply opened unavailable, a stale copy painted before its
+read refused included, an item opened from the Trash, one deleted, or one whose
+content cannot be decoded, says nothing more.
 The service's not found alone, an item room's or a source's, and a source
 save failing `lostAccess: "not_found"` (a trash only queues the room's
 eviction, so a save may land first) ask a fresh token first (review
@@ -2606,9 +2677,20 @@ shown here to copy until you reload." while this device holds unsent edits to
 it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
 offers or deletes them meanwhile, and dismissing a toast already offering
 them), and says "This item is unavailable" when it holds none or cannot read
-its store. An item counts as shown once its read or its device copy painted
-it, on its workspace's page and on its own (`/materials/:id`, which keeps the
-page mounted instead of its error or Trash view). A note is drawn from its
+its store. A deleted note, quiz, set or diagram never reads as lost access: a
+room that hears of it first (its rejoin's or fresh room's token answering 410
+while the page's read is still out) holds what it showed read-only, with no
+strip and no save status, and reports nothing to the page
+(`ItemRoomSnapshot.deleted`; a note's in `NoteEditorCore`), so the page's read
+alone says what shows; once that read said deleted, the item restored and read
+again opens its editor anew on a fresh room. A not-found from the
+collaboration service alone, which a deleted item says too, asks one fresh
+token: an item room's (`notFoundByRoom`) reports lost access only on a 404 or
+403 and rejoins on a live token or no answer, and a note's, whose editor stays
+read-only, reports it unless that token is a 410. An item counts
+as shown once its read or its device copy painted it, on its workspace's page
+and on its own (`/materials/:id`, which keeps the page mounted instead of its
+error or Trash view). A note is drawn from its
 stored rows alone, as its Download draws it (`deletedNote`): the newer of the
 room document its Yjs rows draw (`deletedDocument`, the newest lineage and
 base group) and its newest saved copy (Q229), its merge view's pieces last,
@@ -2619,14 +2701,29 @@ canvases as their recovery view's (`ItemRecovery.deleted`, drawn the same
 way); a quiz's writer keeps its keys room while a fresh token is asked, so
 edits to its keys alone show beside its questions as last read. While
 deleted, nothing that writes or needs the server stays: the View/Edit
-toggles, a note's Preview and ⋮ item actions (rename, move, share, download,
-delete), a quiz's or set's Practice.
+toggles, a note's Preview, the ⋮ item actions that ask the server (rename,
+move, Shared with members, clone, its usual download, delete), a quiz's or
+set's Practice. The ⋮ keeps Properties, from the item's last read, and
+downloads made from what the page shows (Epo 2026-11-20): a note's Download
+Markdown and Download Word, an Office or text file's Download, each the
+strip's file; other kinds have none there. The deleted strip has Download
+beside Reload for every kind (`DeletedDownload` in `SaveBanner`, Office's in
+its frame, a canvas's on its board's strip): the toast's file
+(`saveShownEdits`) from the rows the page shows (`shownDeletedRows`, matched
+by id and seq as Reload matches them), deleting nothing, so Reload still ends
+them; a file that cannot be made says "Your edits couldn't be downloaded.
+They're kept on this device.". The strip's Download and the ⋮ entries show
+once the room, session or note drawing shows the edits
+(`useShowsDeleted`), before which they would draw nothing. A canvas's board
+menu keeps its Download as image of the board shown, and Office its menu
+bar's Download of the open document.
 
 What shows, what Download writes and what Reload deletes come from one
 drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
 lineage and base, a board's hidden edits from Q33 always a group of their
 own, since they copy the early board with what still showed deleted), and
-Reload or Download deletes the rows of that group as drawn (by id and seq);
+Reload or the toast's Download deletes the rows of that group as drawn (by id
+and seq; the open page's Download deletes none);
 an open session's own document deletes the rows it holds. Rows of another
 group, another tab's lineage, an older base or an unreviewed piece stay and
 come back as the next page load's toast. The toast acts on the rows it

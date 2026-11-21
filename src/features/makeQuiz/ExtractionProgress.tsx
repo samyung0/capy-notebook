@@ -7,7 +7,10 @@ import {
   useConfirmExtraction,
   useExtraction,
 } from '@/api/hooks';
-import { EXTRACTION_QUESTION_CREDITS } from '@/api/limits.generated';
+import {
+  EXTRACTION_QUESTION_CREDITS,
+  QUIZ_PARTS_MAX,
+} from '@/api/limits.generated';
 import type { Extraction, ExtractionFound } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -20,6 +23,7 @@ import {
   affordableQuestions,
   extractionFailure,
   extractionNotice,
+  fittingQuestions,
   foundPagesLabel,
 } from './makeQuiz';
 import type { DialogStep } from './PagePicker';
@@ -42,16 +46,23 @@ function sourceLine({ answerFiles, paperName, paperPages }: ExtractionFound) {
     .join(', ');
 }
 
-/** The questions found and their price, or how many the starter can afford. */
+/**
+ * The questions found and their price, or how many the starter can afford, and how
+ * many fit one quiz.
+ */
 function FoundQuestions({
   affordable,
+  fitting,
   found,
 }: {
   affordable: number;
+  fitting: number;
   found: ExtractionFound;
 }) {
   const total = found.questions.length;
-  const short = affordable < total;
+  // What is offered at most: the questions that fit one quiz.
+  const priced = Math.min(total, fitting);
+  const short = affordable < priced;
   return (
     <div className="flex flex-col gap-4 pb-1">
       <p className="t-meta text-fg-muted">{sourceLine(found)}</p>
@@ -64,7 +75,7 @@ function FoundQuestions({
       )}
       {!short && (
         <ul className="max-h-60 overflow-y-auto border-divider border-y">
-          {found.questions.map((question) => (
+          {found.questions.slice(0, priced).map((question) => (
             <li
               className="grid grid-cols-[48px_minmax(0,1fr)] py-2 text-sm sm:grid-cols-[72px_minmax(0,1fr)]"
               key={`${question.label}:${question.first}`}
@@ -80,16 +91,16 @@ function FoundQuestions({
       <div className="flex flex-col gap-1 text-sm">
         <div className="flex justify-between gap-3">
           <span>
-            {total === 1
+            {priced === 1
               ? m.make_quiz_price_one({ price: EXTRACTION_QUESTION_CREDITS })
               : m.make_quiz_price_line({
-                  count: total,
+                  count: priced,
                   price: EXTRACTION_QUESTION_CREDITS,
                 })}
           </span>
           <strong className="shrink-0 font-semibold">
             {m.make_quiz_price_total({
-              count: total * EXTRACTION_QUESTION_CREDITS,
+              count: priced * EXTRACTION_QUESTION_CREDITS,
             })}
           </strong>
         </div>
@@ -116,6 +127,11 @@ function FoundQuestions({
             : affordable === 1
               ? m.make_quiz_enough_one()
               : m.make_quiz_enough({ count: affordable })}
+        </p>
+      )}
+      {fitting < total && !short && (
+        <p className="text-sm">
+          {m.make_quiz_quiz_holds({ count: fitting, parts: QUIZ_PARTS_MAX })}
         </p>
       )}
     </div>
@@ -203,15 +219,17 @@ export function useRunStep({
     const pending = confirming || cancelling;
     const total = found.questions.length;
     const affordable = affordableQuestions(total, found.availableCredits);
-    const short = affordable < total;
+    const fitting = fittingQuestions(found.questions);
+    const offered = Math.min(affordable, fitting);
+    const short = offered < total;
     const stepError = confirmError ?? cancelError;
     return {
-      action: affordable > 0 && (
+      action: offered > 0 && (
         <Button
           disabled={pending}
           onClick={() =>
             confirm(
-              { questions: affordable },
+              { questions: offered },
               { onSuccess: (next) => onConfirmed(next) }
             )
           }
@@ -220,10 +238,10 @@ export function useRunStep({
           {confirming ? (
             <Spinner />
           ) : short ? (
-            affordable === 1 ? (
+            offered === 1 ? (
               m.make_quiz_make_one()
             ) : (
-              m.make_quiz_make_count({ count: affordable })
+              m.make_quiz_make_count({ count: offered })
             )
           ) : (
             m.make_quiz_make()
@@ -232,7 +250,11 @@ export function useRunStep({
       ),
       body: (
         <>
-          <FoundQuestions affordable={affordable} found={found} />
+          <FoundQuestions
+            affordable={affordable}
+            fitting={fitting}
+            found={found}
+          />
           <FormAlert
             errorId={unexpectedErrorId(stepError)}
             message={

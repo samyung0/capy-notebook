@@ -450,6 +450,65 @@ def test_the_map_reads_its_lines_and_leaves_the_rest():
     ]
 
 
+def test_a_label_the_map_repeats_letters_each_run_of_numbering():
+    def labels(*given: str) -> list[str]:
+        rows = [extraction.MapRow(label, 1, 1, [], []) for label in given]
+        return [row.label for row in extraction.lettered(rows)]
+
+    assert labels("1", "2", "1", "2", "3") == ["A1", "A2", "B1", "B2", "B3"]
+    assert labels("1", "2", "3", "1", "2") == ["A1", "A2", "A3", "B1", "B2"]
+    distinct = [extraction.MapRow(label, 1, 1, [], []) for label in ("1", "2")]
+    assert extraction.lettered(distinct) is distinct
+
+
+async def test_two_papers_numbering_from_1_keep_every_question(monkeypatch):
+    """Two files, each with a question 1 and 2: the map's reply the threads continue
+    names them A1, A2, B1 and B2, and no copy replaces another."""
+    pages = [
+        dataclasses.replace(_page(n), file_name=name)
+        for name in ("a.pdf", "b.pdf")
+        for n in (1, 2)
+    ]
+    items = {label: _mcq(label, ["p", "q"], 0) for label in ("A1", "A2", "B1", "B2")}
+    script = Script(
+        "\n".join([_row("1", 1, 1), _row("2", 2, 2), _row("1", 1, 1), _row("2", 2, 2)]),
+        {
+            "Copy questions A1 to B2 now.": [
+                _tools(
+                    *(
+                        ("record_question", _copy(items[label], n, n))
+                        for label, n in (("A1", 1), ("A2", 2), ("B1", 1), ("B2", 2))
+                    )
+                )
+            ],
+        }
+        | {
+            f"Give the answers to questions {first} to {second} now.": [
+                _tools(
+                    ("record_answers", _answers(items[first])),
+                    ("record_answers", _answers(items[second])),
+                )
+            ]
+            for first, second in (("A1", "A2"), ("B1", "B2"))
+        },
+    )
+    events = await _run(monkeypatch, script, pages)
+
+    copying = next(c for c in script.sent if c["ask"] == "Copy questions A1 to B2 now.")
+    assert copying["messages"][2]["content"] == (
+        "A1 | pages 1-1 | parts none | figures none\n"
+        "A2 | pages 2-2 | parts none | figures none\n"
+        "B1 | pages 1-1 | parts none | figures none\n"
+        "B2 | pages 2-2 | parts none | figures none"
+    )
+    done = events[-1]
+    assert done["report"]["recorded"] == ["A1", "A2", "B1", "B2"]
+    assert [q["parts"][0]["blocks"] for q in done["questions"]] == [
+        _text(f"Question {label}") for label in ("A1", "A2", "B1", "B2")
+    ]
+    assert done["report"]["answersMissing"] == []
+
+
 async def test_a_quiz_filled_while_copying_still_answers_what_it_copied(monkeypatch):
     """40 pages of past papers filled the quiz at 100 parts and left all of them with no
     answers (bench/extraction/reports/2026-11-05-remaining-selections.md)."""
@@ -612,7 +671,7 @@ def test_a_text_paper_counts_its_whole_text_in_the_output_budget():
         return extraction._pages_worth(extraction.Page(1, "a", "x" * chars, None, None))
 
     assert (worth(1), worth(3_856)) == (1, 8)
-    assert worth(extraction.RUN_TEXT_CHARS) == extraction.limits.EXTRACTION_PAGES_MAX
+    assert worth(extraction.RUN_TEXT_CHARS) == extraction.TEXT_RUN_PAGES
 
 
 async def test_prepare_reads_a_text_paper_whole(monkeypatch):

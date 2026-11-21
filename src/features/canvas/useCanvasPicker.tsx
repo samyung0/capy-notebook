@@ -12,7 +12,7 @@ import {
   createCanvas,
   shareCanvas,
 } from '@/api/canvas';
-import { qk } from '@/api/client';
+import { deletedItemOf, qk } from '@/api/client';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import {
   useDeleteMaterial,
@@ -25,6 +25,10 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { CanvasSwitcher } from '@/features/canvas/CanvasSwitcher';
 import { canvasRights } from '@/features/canvas/canvasRights';
+import {
+  isAccessRefused,
+  useAccessLostNotice,
+} from '@/features/collaboration/accessLostNotice';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
@@ -51,10 +55,10 @@ function newTitle(taken: string[]) {
  * person's Trash, which opens read-only from there as a trashed note does,
  * with no Rename, sharing or Delete; Restore brings it back into the list.
  *
- * Nothing tells the other members when a canvas is shared or taken back (as
- * for a hidden file), so the list is read again each time the picker opens
- * and after the person's own change. Sharing asks first, as a file's switch
- * does (Epo 2026-11-16); taking it back does not. */
+ * A canvas shared or taken back raises the workspace's tree event (0189),
+ * which reads the list again, as do the picker opening and the person's own
+ * change. Sharing asks first, as a file's switch does (Epo 2026-11-16);
+ * taking it back does not. */
 export function useCanvasPicker({
   c,
   firstTitle,
@@ -106,14 +110,21 @@ export function useCanvasPicker({
   const unlisted = !!wanted && !listed && hasNextPage;
   const seeking = unlisted && !isFetchNextPageError;
   // Its pages ended without it: it may be in the Trash. Keyed under the
-  // material, so Restore's refresh of an item open from the Trash asks again.
+  // material, so Restore's refresh of an item open from the Trash asks again;
+  // asked afresh each time the list drops it, never answered by an earlier
+  // read (one made while a link's canvas was not yet listed said it was live).
   const asksTrash = !!wanted && !!own && !listed && !hasNextPage;
-  const { data: inTrash, isFetching: askingTrash } = useQuery({
+  const {
+    data: inTrash,
+    error: trashError,
+    isFetching: askingTrash,
+  } = useQuery({
     enabled: asksTrash,
     meta: { errorBoundary: false },
     queryFn: ({ signal }) => canvasById(wanted ?? '', signal),
     queryKey: [...qk.material(wanted ?? ''), 'canvas'],
     retry: false,
+    staleTime: 0,
   });
   const fromTrash: CanvasListItem | undefined =
     asksTrash &&
@@ -133,12 +144,24 @@ export function useCanvasPicker({
   const restored =
     asksTrash && inTrash?.id === wanted && !inTrash.trash ? inTrash.id : null;
   const [relisted, setRelisted] = useState<string | null>(null);
-  const current =
-    listed ??
-    fromTrash ??
-    (unlisted && shown.current?.id === wanted ? shown.current : undefined);
+  // The canvas on screen stays while the Trash is asked about it, and once
+  // deleted (its read answering `item_deleted`), for its board to show what
+  // its room says (Q39), until the person picks another.
+  const stays =
+    shown.current?.id === wanted &&
+    (unlisted || (asksTrash && (askingTrash || !!deletedItemOf(trashError))));
+  const current = listed ?? fromTrash ?? (stays ? shown.current : undefined);
   const trashed = !!fromTrash && current === fromTrash;
   if (current) shown.current = current;
+  // The canvas on screen, watched past its board's unmount. Taken back or its
+  // workspace left, a list read again (its tree event) drops it before its
+  // room's refusal reaches the board: its read refused, it was lost while it
+  // showed, said before another canvas shows (Epo 2026-11-20).
+  const onScreen = shown.current?.id;
+  useAccessLostNotice(false, onScreen, {
+    refused: asksTrash && wanted === onScreen && isAccessRefused(trashError),
+    workspaceId,
+  });
   /** The canvas being deleted: its room's refusal is no news to its board. */
   const deleted = useRef<string | null>(null);
   const { mutateAsync: create } = useMutation({

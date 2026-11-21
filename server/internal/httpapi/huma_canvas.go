@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -132,6 +133,9 @@ type canvasIDInput struct {
 
 // getCanvas reads a canvas the caller holds, or else one they may open from
 // the Trash (getTrashedMaterial's rule): no role, so every capability is off.
+// A trashed one they held otherwise, a member's shared canvas its maker
+// trashed, answers 410 `item_deleted` as a trashed material does (Q41), never
+// the 404 a lost one answers.
 func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, error) {
 	canvas, err := a.s.GetCanvas(ctx, userID(ctx), in.ID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -141,6 +145,10 @@ func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, 
 		}
 	}
 	if err != nil {
+		live := func() error { _, err := a.s.GetCanvas(ctx, userID(ctx), in.ID); return err }
+		if gone := a.deletedError(ctx, agenttools.KindMaterial, in.ID, err, live); gone != nil {
+			return nil, gone
+		}
 		return nil, hErr(err)
 	}
 	return a.canvasResponse(ctx, canvas)
