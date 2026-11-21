@@ -2573,8 +2573,27 @@ viewer's displayed cell text, and uses its current viewport geometry. Matching
 requires a complete unique quote of at least 12 non-whitespace characters; short,
 ambiguous, unsupported and off-page matches open without a highlight. Workbooks
 are bounded to 20 MiB of relevant XML and 20,000 cells; decks to 200 slides.
-No editing engine is loaded just for citation matching. Highlights are transient,
-read-only, and absent in edit mode. Reopening resolves against the saved state.
+No editing engine is loaded just for citation matching. Reopening resolves
+against the saved state.
+
+The editors take the same citation, in the `load` and in `set-citation`, with
+the same rule (`citations.ts`), the same `CITATION_FILL` and the same scroll
+(Q667, landing before the handover per Q799 so a highlight carries through it):
+
+| Format | Match | Mark | Jump |
+| --- | --- | --- | --- |
+| DOCX | every story's paragraphs, a body paragraph (table cells included) marked | `DocxEditorRef.showCitation`: the paragraph's live range over the canvas pages | centred once its pages hold it |
+| XLSX | `liveXlsxCitation`: the workbook search for the quote's longest piece without whitespace or hyphens, then the rule over those current cells | `markedCell` fills the cell | `selectCells` |
+| PPTX | every slide laid out (`layoutSlide`) through `slideCitationItems` | `textMark` fills the text box's lines | `goToSlide`, then centred if a zoomed slide hides it |
+
+Highlights are display only in both modes: nothing reaches the document, its
+undo history or saved state, and the mark is drawn over the editor, not in it.
+The XLSX selection and the PPTX slide move as a click would, so co-editors see
+that cursor move. A highlight stays until the next citation replaces it or none
+clears it, as in View; in an editor it follows its paragraph, cell or text box
+through edits (typing included), and goes when its paragraph or shape does.
+Q802 B (the skeleton until every page is in) is View's; an editor marks the
+quote once its pages hold it.
 
 Google Docs, Sheets and Slides imports export DOCX, XLSX and PPTX respectively;
 Drawings still export PDF. Acquire rejects a source whose current export format

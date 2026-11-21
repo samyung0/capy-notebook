@@ -17,11 +17,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
+  OfficeCitation,
   OfficeLocale,
   OfficeNotice,
   OfficeParagraphPoint,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
+import { CITATION_FILL, uniqueCitation } from './citations';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
 import { DOCX_RIBBON } from './docxRibbon';
@@ -91,6 +93,7 @@ function docxPresence(channel: CursorChannel): CollaborationPresence {
 
 export function DocxEditorHost({
   bytes,
+  citation,
   collaboration,
   colorMode,
   compact,
@@ -114,6 +117,8 @@ export function DocxEditorHost({
   ribbon,
 }: {
   bytes: Uint8Array;
+  /** A chat citation's passage: marked and centred as in View. */
+  citation: OfficeCitation | null;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
   /**
@@ -161,6 +166,15 @@ export function DocxEditorHost({
     writeViewToggle('docxRuler', shown);
   }, []);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
+  // View's rule (citations.ts); the editor marks it once its pages hold it.
+  useEffect(() => {
+    editorRef.current?.showCitation(
+      citation && {
+        color: CITATION_FILL,
+        match: (paragraphs) => uniqueCitation(paragraphs, citation.quote),
+      }
+    );
+  }, [citation]);
   // A font slice failing while editing is a notice, not an error (Q752 B);
   // back online, the editor asks for the failed slices again.
   const fontSlices = useMemo(

@@ -133,6 +133,6 @@ export function slideCitationItems(frame: SlideDisplayList) {
       )
         ? []
         : lines;
-    return [{ rects, text }];
+    return [{ rects, storyId: item.storyId, text }];
   });
 }

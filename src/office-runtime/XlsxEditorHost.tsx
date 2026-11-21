@@ -22,10 +22,12 @@ import {
 } from 'react';
 import type {
   OfficeAnalysis,
+  OfficeCitation,
   OfficeLocale,
   OfficeNotice,
   OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
+import { CITATION_FILL } from './citations';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
@@ -41,6 +43,7 @@ import type {
   OfficeThumbnailer,
 } from './runtimeMenus';
 import { takeKeyboard } from './takeKeyboard';
+import { liveXlsxCitation } from './xlsxCitation';
 import { xlsxIcons } from './xlsxIcons';
 import { runXlsxMenuItem, xlsxEditMenus, xlsxStrings } from './xlsxMenus';
 import {
@@ -89,6 +92,7 @@ function xlsxAwareness(
 
 export function XlsxEditorHost({
   bytes,
+  citation,
   collaboration,
   compact,
   locale,
@@ -111,6 +115,8 @@ export function XlsxEditorHost({
   sending,
 }: {
   bytes: Uint8Array;
+  /** A chat citation's cell: selected and filled as in View. */
+  citation: OfficeCitation | null;
   collaboration: OfficeCollaboration;
   /** Below md: the ribbon is one row, with no zoom (as the PDF toolbar), font
    * picker or size box. */
@@ -212,6 +218,29 @@ export function XlsxEditorHost({
   useEffect(() => {
     if (zoom) onZoomChange(zoom);
   }, [onZoomChange, zoom]);
+  // View's rule on the open workbook's cells, once its grid is painted: the
+  // cell is selected, as View selects it, and filled until the next citation.
+  const [painted, setPainted] = useState(false);
+  const [marked, setMarked] = useState<{
+    sheetId: string;
+    row: number;
+    col: number;
+  } | null>(null);
+  useEffect(() => {
+    setMarked(null);
+    const api = apiRef.current;
+    if (!(citation && painted && api)) return;
+    let cancelled = false;
+    void liveXlsxCitation(api.handle, citation.quote).then((match) => {
+      if (cancelled || !match) return;
+      const cell = { col: match.col, row: match.row };
+      setMarked({ ...cell, sheetId: match.sheetId });
+      void api.selectCells(match.sheet, { anchor: cell, focus: cell });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [citation, painted]);
   useEffect(() => {
     onRenderer(async (kind) => {
       const api = apiRef.current;
@@ -302,10 +331,12 @@ export function XlsxEditorHost({
         i18n={xlsxStrings(locale)}
         icons={xlsxIcons}
         initialZoom={initialZoom}
+        markedCell={marked && { ...marked, color: CITATION_FILL }}
         onCommandStateChange={setCommandState}
         onFirstPaint={() => {
           const info = apiRef.current?.sheetInfo();
           if (info) onAnalysis(analyzeOpenWorkbook({ sheetInfo: () => info }));
+          setPainted(true);
         }}
         onFontError={onFontError}
         onNotice={onNotice}

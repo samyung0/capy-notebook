@@ -1626,6 +1626,67 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
   expect(await position()).toEqual([0, 0]);
 });
 
+// Q667, Q799: the editors mark a citation as View does, display only, so the
+// highlight carries from View into Edit and leaves nothing to undo or save.
+test('a DOCX citation carries from View into Edit, highlighted in view, with nothing to undo', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  await showChatHistory(page);
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('[data-citation-highlight]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const highlight = frame
+    .locator('.docx-editor [data-citation-highlight]')
+    .first();
+  await expect(highlight).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(() =>
+      highlight.evaluate((node) => {
+        const pane = node.closest('.docx-editor__scroll-container');
+        if (!pane) throw new Error('Missing scroll container');
+        const box = node.getBoundingClientRect();
+        const view = pane.getBoundingClientRect();
+        return box.top >= view.top && box.bottom <= view.bottom;
+      })
+    )
+    .toBe(true);
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+});
+
+for (const [format, quote] of [
+  ['xlsx', 'Critical Zones: Our Toxic Environment'],
+  ['pptx', 'UAT_RUN_MARKER'],
+] as const) {
+  test(`a ${format} citation in Edit highlights its passage with nothing to undo`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=edit`);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+    await postToOfficeRuntime(page, {
+      citation: { quote },
+      type: 'set-citation',
+    });
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(
+      frame.locator('[data-citation-highlight]').first()
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+    // No citation, no mark: as in View.
+    await postToOfficeRuntime(page, { citation: null, type: 'set-citation' });
+    await expect(frame.locator('[data-citation-highlight]')).toHaveCount(0);
+  });
+}
+
 // A paused editor is read-only in every pause state; a replaced session is
 // the one the mocks drive.
 for (const [format, text] of [

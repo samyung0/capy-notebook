@@ -355,11 +355,11 @@ export function useOfficeRuntime({
   useEffect(() => {
     if (frameLoaded)
       post({
-        citation: mode === 'view' ? (citation ?? null) : null,
+        citation: citation ?? null,
         type: 'set-citation',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [citation, mode, frameLoaded, post]);
+  }, [citation, frameLoaded, post]);
   const request = useCallback(
     (kind: 'flush' | 'export') =>
       new Promise<ArrayBuffer>((resolve, reject) => {
@@ -572,7 +572,7 @@ export function useOfficeRuntime({
         checkpoint,
         checkpointSeedSHA256:
           mode === 'view' ? viewBytes!.checkpointSeedSHA256 : undefined,
-        citation: mode === 'view' ? citationRef.current : null,
+        citation: citationRef.current,
         collaboration,
         fileName: file.name,
         format,

@@ -15,7 +15,7 @@ Legend: **Y** works and a test shows it; **P** partial (see notes); **N** missin
 
 - Weighted parity, verified: **73%** (P0 83% (21 rows), P1 50% (13 rows), P2 67% (3 rows)). A row scores the mean of its aspects (Y 1, P 0.5, N 0, U 0); rows weigh P0 3, P1 2, P2 1.
 - Weighted parity, claimed: **73%** (P0 83% (21 rows), P1 50% (13 rows), P2 67% (3 rows)). A row scores the mean of its aspects (Y 1, P 0.5, N 0, U 1); rows weigh P0 3, P1 2, P2 1.
-- 37 features, 110 evidence references, all resolving; 1626 fork tests name pptx in their path.
+- 37 features, 110 evidence references, all resolving; 1627 fork tests name pptx in their path.
 
 ## Fidelity against Office
 

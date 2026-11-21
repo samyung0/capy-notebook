@@ -15,7 +15,7 @@ Legend: **Y** works and a test shows it; **P** partial (see notes); **N** missin
 
 - Weighted parity, verified: **77%** (P0 85% (26 rows), P1 67% (23 rows), P2 62% (10 rows)). A row scores the mean of its aspects (Y 1, P 0.5, N 0, U 0); rows weigh P0 3, P1 2, P2 1.
 - Weighted parity, claimed: **77%** (P0 85% (26 rows), P1 67% (23 rows), P2 62% (10 rows)). A row scores the mean of its aspects (Y 1, P 0.5, N 0, U 1); rows weigh P0 3, P1 2, P2 1.
-- 60 features, 180 evidence references, all resolving; 3910 fork tests name docx in their path.
+- 60 features, 180 evidence references, all resolving; 3913 fork tests name docx in their path.
 - Matrix `docx-breaks`: 2452 rows (exact 2422, timing 26, refused 4).
 - Matrix `docx-comments-breaks`: 3012 rows (exact 2706, timing 282, refused 24).
 - Matrix `docx-fields`: 1694 rows (exact 1679, refused 12, timing 3).
