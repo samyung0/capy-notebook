@@ -572,7 +572,7 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   divider between Questions and Mark schemes and answers when there are both, one file's pages on the right, and on phones the same as settings, a list and then a file,
   with Back returning to the list. A lone file needs no list. Every PDF, Word, PowerPoint and
   image file picks pages, answer files too; an image is picked already, and a text file goes
-  whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (40) across
+  whole and counts for none. One click selects a page, up to `EXTRACTION_PAGES_MAX` (30) across
   the files, and Select all takes a whole file up to the cap. The bottom bar holds the total,
   Change files, Cancel (not on phones) and Convert to quiz (Extract questions until Epo 2026-11-11), and sticks on phones. Change
   files goes back and keeps the picks of files left in. Extract waits for answer files still
@@ -585,8 +585,8 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   a toast with Review reopens it when it has found the questions (`extractionEnd.ts`). Then
   the questions found, their price at 4 credits each and what finding them cost, naming any
   answer file left out unread. It offers at most the first questions whose map parts fit one
-  quiz's 150 (`fittingQuestions`, Epo 2026-11-21), lists and prices only those, and says so. With credits short it offers the
-  first questions they afford
+  quiz's 150 (`fittingQuestions`, Epo 2026-11-21), lists and prices only those, and says so.
+  With credits short it offers the first questions they afford
   and Get credits, in a new tab so the run waits and the balance reads again on return.
   Only Cancel ends it, back to the pages with their picks: a stray click, Escape or route
   change doesn't lose the map it paid for.

@@ -6022,12 +6022,8 @@ job. The screens (boards X0a, X0b, X1, X2) are in
 - **Start.** `POST /api/workspaces/{id}/extractions` (workspace editors) takes
   a title, up to `ExtractionPaperFiles` (5) question files as `paper: [{fileId, pages,
   images}]` and up to `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
-  from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (150, Epo
-  2026-11-21; 40 before) across the files, however it is sent. The request body stays
-  bounded at 40 drawn pages at their 1 MB most in base64 (`fieldlimits.ExtractionBody`,
-  `EXTRACTION_BODY_MAX`), about 140 typical drawn pages; the browser leaves out the drawn
-  pages past it, the last picked first and the question files' before the answer files', and
-  says nothing (Epo 2026-11-21). A PDF takes any of its pages, an image page 1, a Word
+  from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (30, Epo 2026-11-21, down from 40: one call carries every page image and Cloudflare refuses one over 32) across
+  the files, however it is sent. A PDF takes any of its pages, an image page 1, a Word
   or PowerPoint file its picked pages as browser-drawn JPEGs (`images`, at most 1 MB and 5 megapixels in Go, then shrunk by `capture.image_jpeg` to `capture_max_edge` like any image to a model), and any other
   indexed file no pages: it goes whole. Every file must be the workspace's and untrashed.
   A question file must be indexed. An answer file still being read is refused, and one that
@@ -6063,7 +6059,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      same scores on the gold figures,
      [`2026-11-10-layout-int8.md`](../bench/extraction/reports/2026-11-10-layout-int8.md)).
      A 429 waits about 2 s and tries again, 4 tries in all; a request has
-     30 s and the run's pages 90 s for every 40 (`PAGES_A_TIMEOUT`). A page whose request fails, stays busy or
+     30 s and all the run's pages 90 s. A page whose request fails, stays busy or
      runs out of time has no regions, and the run goes on. With no
      `CAPY_LAYOUT_URL` no page has regions, so every figure takes the box call.
      The layout service bills nothing. `layout.figure_boxes` turns regions into
@@ -6138,34 +6134,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      dropped most open parts' model answers, so an mcq part sends an empty list, and code refuses an open
      part with none (Epo 2026-11-05). The merged question goes through the validator; what a batch left
      out gets one more call.
-  6. **Long selections** (Epo 2026-11-21,
-     [`2026-11-21-long-selections.md`](../bench/extraction/reports/2026-11-21-long-selections.md)):
-     a selection over `THREAD_IMAGES` (30) page images, answer images included, takes the long
-     route (`long_route`), because Cloudflare refuses a call over 32 images and InferenceNet one
-     over about 109. The map reads every picked page as its indexed text with no image
-     (`SYSTEM_TEXT_ONLY`, `text_page`, at most `PAGE_TEXT_CHARS` a page): a scan's page read and
-     a drawn Word or PowerPoint page's indexed text of the same page number included (`prepare`
-     gives a drawn page its text only in a long run), against "scans only" for this map alone.
-     A scanned answer file goes as its picked pages' page read; a drawn Word or PowerPoint
-     answer file and an image upload stay images, at most half a thread (15) of them, the rest
-     cut. Rows give page numbers alone, so `place_rows` puts each on its file
-     (`Page.file_index`): it stays in the row before's file while that file has its first page,
-     and moves to the next file with that page when its number goes back down and its page
-     doesn't go on, as a new paper's do (a paper numbered on from the file before can still land
-     on the earlier file). When two picked files share a question number `relabelled` names
-     every row by its file's letter and number (A1, B1; a file whose own numbers repeat keeps
-     the map's label after its letter). After the confirm, `thread_groups` cuts the rows in
-     printed order into groups of at most 30 page images (less the answer images left), a Word
-     question taking the page either side as its page breaks are LibreOffice's in the index and
-     the browser's in the image; a question on more pages than that keeps its first pages, and
-     the starter isn't told. Layout runs on those pages only, while the starter confirms. Each
-     group's threads start from `map_message` over its own pages, boxes and answer files with
-     `map_lines`, code's copy of the map's lines, as the reply; copy, solve and the gate of 4
-     are as above. Repairs work out what is missing over the whole run, as above, and ask each
-     question in the thread holding its own row, else the row before it in printed order.
-     `fill_figures` has no map boxes to fill from. A shorter selection keeps the route above
-     exactly.
-  7. A part left with no answer stays as copied (an mcq with `correct: []`, a short part with
+  6. A part left with no answer stays as copied (an mcq with `correct: []`, a short part with
      `accepted: []`, an open part with no marking items) with whatever keys its other parts got, and is
      named in `answersMissing` (Epo 2026-11-05, "allow no answers for questions then"). A part the model sends with every answer field empty is a skip (Epo 2026-11-05, the pages can't give it): it stays as copied and is not asked for again. The
      validator has no key-less form and only extraction changes, so Go splits the run's
@@ -6184,7 +6153,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      only a pair on one line that opens and closes as bold, outside code and math, so
      `x**2`, `(x)**(y)`, `$a^{**}$` and `A**` stay. A word printed between literal `**`
      can't be told from bold and loses them.
-  8. Figures (Epo 2026-11-04). Each figure a copy names gives the numbers of the boxes that
+  7. Figures (Epo 2026-11-04). Each figure a copy names gives the numbers of the boxes that
      hold it, several for a split figure, the part whose text it follows ("" for the stem) and
      a few words on what it shows; a number that is no box, boxes on two pages, a part the
      question lacks, or more than 5 figures on a question (Epo 2026-11-05) go back to the model. Code crops the chosen boxes together, adds an

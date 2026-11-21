@@ -377,15 +377,15 @@ async def run(args) -> dict:
     copy_question = extraction.Run.copy_question
     record_answers = extraction.Run.record_answers
 
-    async def counted_copy(self, item, pages_, *rest):
-        result = await copy_question(self, item, pages_, *rest)
+    async def counted_copy(self, item, pages_):
+        result = await copy_question(self, item, pages_)
         calls[-1]["results"].append(
             ["record", _outcome(result), len(item.get("parts") or [])]
         )
         return result
 
-    async def counted_answers(self, args_, pages_, *rest):
-        result = await record_answers(self, args_, pages_, *rest)
+    async def counted_answers(self, args_, pages_):
+        result = await record_answers(self, args_, pages_)
         calls[-1]["results"].append(
             ["answers", _outcome(result), len(args_.get("parts") or [])]
         )

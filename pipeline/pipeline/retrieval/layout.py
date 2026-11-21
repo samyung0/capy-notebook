@@ -15,7 +15,6 @@ import asyncio
 import base64
 import io
 import logging
-import math
 import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -32,11 +31,8 @@ log = logging.getLogger("capy.retrieval.layout")
 PAGES_IN_FLIGHT = 3
 # One request, its wait in the service's queue included.
 REQUEST_TIMEOUT_S = 30.0
-# Every PAGES_A_TIMEOUT pages of a run get this long, as 40 pages fit 90 s on a full
-# queue (bench/extraction/reports/2026-11-04-layout-capacity.md); what has not answered
-# by then uses the box call.
+# Every page of a run; what has not answered by then uses the box call.
 ALL_PAGES_TIMEOUT_S = 90.0
-PAGES_A_TIMEOUT = 40
 # A 429 is tried again after about 2 s, this many tries in all.
 BUSY_TRIES = 4
 BUSY_WAIT_S = (1.5, 2.5)
@@ -269,9 +265,7 @@ async def read_regions(
 
     try:
         async with (
-            asyncio.timeout(
-                ALL_PAGES_TIMEOUT_S * max(1, math.ceil(len(images) / PAGES_A_TIMEOUT))
-            ),
+            asyncio.timeout(ALL_PAGES_TIMEOUT_S),
             httpx.AsyncClient(timeout=REQUEST_TIMEOUT_S, trust_env=False) as client,
         ):
             await asyncio.gather(*(one(client, i) for i in range(len(images))))

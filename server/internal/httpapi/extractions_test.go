@@ -39,16 +39,16 @@ func TestCheckExtractionRequestHoldsTheRunCaps(t *testing.T) {
 	}
 	ok := apimodel.CreateExtractionReq{
 		Paper: []apimodel.ExtractionFile{
-			{FileID: "p1", Pages: pages(40)}, {FileID: "p2", Pages: pages(40)}, {FileID: "p3", Pages: pages(40)},
+			{FileID: "p1", Pages: pages(10)}, {FileID: "p2", Pages: pages(10)}, {FileID: "p3"},
 			{FileID: "p4"}, {FileID: "p5"},
 		},
-		Answers: []apimodel.ExtractionFile{{FileID: "s1", Pages: pages(30)}, {FileID: "s2"}, {FileID: "s3"}},
+		Answers: []apimodel.ExtractionFile{{FileID: "s1", Pages: pages(10)}, {FileID: "s2"}, {FileID: "s3"}},
 	}
 	if err := checkExtractionRequest(ok); err != nil {
-		t.Fatalf("150 pages in 8 files refused: %v", err)
+		t.Fatalf("30 pages in 8 files refused: %v", err)
 	}
 	for name, req := range map[string]apimodel.CreateExtractionReq{
-		"151 pages": {Paper: paper(pages(120)...), Answers: []apimodel.ExtractionFile{{FileID: "s", Pages: pages(31)}}},
+		"31 pages": {Paper: paper(pages(20)...), Answers: []apimodel.ExtractionFile{{FileID: "s", Pages: pages(11)}}},
 		"6 question files": {Paper: []apimodel.ExtractionFile{
 			{FileID: "1"}, {FileID: "2"}, {FileID: "3"}, {FileID: "4"}, {FileID: "5"}, {FileID: "6"},
 		}},

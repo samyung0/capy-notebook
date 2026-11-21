@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, parseErrorBody } from '@/api/client';
-import {
-  EXTRACTION_BODY_MAX,
-  EXTRACTION_PAGES_MAX,
-  QUIZ_PARTS_MAX,
-} from '@/api/limits.generated';
+import { EXTRACTION_PAGES_MAX, QUIZ_PARTS_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
   affordableQuestions,
@@ -146,28 +142,6 @@ describe('Make a quiz', () => {
       ],
       hidden: false,
       paper: [{ fileId: 'a', pages: [1, 3] }],
-      title: 'Paper',
-    });
-  });
-
-  it('leaves out the drawn pages past the body limit, the last picked first', () => {
-    const image = 'x'.repeat(Math.floor((EXTRACTION_BODY_MAX - 2 ** 20) / 2));
-    const drawn = new Map([
-      ['w:1', image],
-      ['w:2', image],
-      ['w:3', image],
-      ['k:1', 'jpeg'],
-    ]);
-    const selected = new Set(['w:1', 'w:2', 'w:3', 'p:4', 'k:1']);
-    expect(
-      extractionRequest('Paper', ['w', 'p'], ['k'], selected, false, drawn)
-    ).toEqual({
-      answers: [],
-      hidden: false,
-      paper: [
-        { fileId: 'w', images: [image, image], pages: [1, 2] },
-        { fileId: 'p', pages: [4] },
-      ],
       title: 'Paper',
     });
   });

@@ -124,19 +124,13 @@ const (
 	QuestionTopics = 5
 	// A Make a quiz run reads at most ExtractionPaperFiles question files and
 	// ExtractionAnswerFiles answer files (Epo 2026-11-05), and at most ExtractionPages
-	// picked pages across them (Epo 2026-11-21, up from 40: a run past 30 page images
-	// maps from the pages' text and copies in threads). Each saved question costs
+	// picked pages across them (Epo 2026-11-21, down from 40): one call carries every
+	// page image, and Cloudflare refuses one over 32. Each saved question costs
 	// ExtractionQuestionCredits.
-	ExtractionPages           = 150
+	ExtractionPages           = 30
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
-	// A browser-drawn page is a JPEG of at most ExtractionDrawnPage bytes, and a Make
-	// a quiz request's body at most ExtractionBody: 40 of the largest drawn pages in
-	// base64 and 1 MiB for the rest, about 140 drawn pages of a typical 300 KB. The
-	// browser leaves out the drawn pages past it (Epo 2026-11-21).
-	ExtractionDrawnPage = 1 << 20
-	ExtractionBody      = 40*ExtractionDrawnPage*4/3 + 1<<20
 	// A generated quiz reads at most GenerateFiles picked files, as many as a
 	// Make a quiz question paper (Epo 2026-11-14). apimodel.GenerateReq's
 	// maxItems repeats it.

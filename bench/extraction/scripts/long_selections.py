@@ -353,9 +353,6 @@ def install() -> None:
 
     # Measure the extraction past the quiz's part caps; the score applies them.
     limits.QUIZ_PARTS_MAX = limits.QUIZ_OPEN_PARTS_MAX = 100_000
-    # The arms are the routes this bench compared, so production's own long route
-    # (built from them, Epo 2026-11-21) stays off.
-    extraction.THREAD_IMAGES = 100_000
 
     production_messages = prompts.map_messages
 

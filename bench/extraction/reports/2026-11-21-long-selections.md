@@ -1,5 +1,11 @@
 # Make a quiz: selections longer than 40 pages (2026-11-21)
 
+**Outcome (2026-11-21):** the text-map route below was built (789c76a20), reviewed, and taken
+out again the same day. Placing a text map's rows on their files from page numbers alone
+went wrong in new ways with each fix. Epo set a run to at most 30 picked pages instead,
+question and answer pages together, so one call carries every page image and every thread
+sees every page; question files stay at 5.
+
 Epo asked how Make a quiz maps questions and whether a long textbook can be sent whole. Today a run
 reads at most 40 picked pages, because one map call sees every page image and every copy and solve
 call carries that same message. This round measures what happens past the cap: the whole selection

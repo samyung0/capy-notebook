@@ -23,16 +23,6 @@ solve; bench/extraction/reports/2026-11-05-copy-first-structured.md):
    the copy batch holding their questions and give ``record_answers``: taken from the
    answer files or the page when they give them, otherwise worked out.
 
-A selection over THREAD_IMAGES page images, its answer images included, takes the long
-route (Epo 2026-11-21, bench/extraction/reports/2026-11-21-long-selections.md): the map
-reads every page's indexed text and no image, code places its rows on their files and
-letters numbers two files share, layout runs on the pages that hold questions, and each
-group of at most THREAD_IMAGES page images starts its copy and solve threads from the
-map's message over its own pages with code's copy of the map's lines as the reply. A
-scanned answer file goes as its page read there, other answer images keep half a thread,
-a question on more pages than a thread keeps its first pages, and repairs are worked out
-over the whole run.
-
 Every recorded question and answer goes through the Go validator at once and a
 problem goes back to the model. A call that fails is tried once more where it is
 in its own thread; a thread that still fails ends alone. Its copied questions
@@ -117,14 +107,10 @@ FIGURE_PAGE_EDGE = 2_200
 LOCATE_MAX_TOKENS = 1_000
 # Indexed text shown per page.
 PAGE_TEXT_CHARS = 6_000
-# Page images a call carries before a run takes the long route, answer images included,
-# and the most a long route's thread carries (Epo 2026-11-21): Cloudflare, the extraction
-# route's second provider, refuses a call over 32 images.
-THREAD_IMAGES = 30
-# A file with no page view counts one page of output budget per this much text, and
-# at most TEXT_RUN_PAGES pages: the 40 picked pages a run took before the long route
-# (Epo 2026-11-21).
+# A file with no page view counts one page of output budget per this much text.
 TEXT_PAGE_CHARS = 500
+# The most pages a file with no page view counts for: the 40 picked pages a run took
+# before 2026-11-21, kept when the cap fell to 30 (Epo 2026-11-21).
 TEXT_RUN_PAGES = 40
 # The most whole-file and answer text a run sends, about 60 dense pages (Epo
 # 2026-11-05); more is refused rather than cut.
@@ -170,9 +156,6 @@ class Page:
     crop: Callable[[list[float]], Awaitable[tuple[bytes, tuple[int, int]]]] | None
     regions: tuple[layout.Region, ...] = ()
     layer: str = SCAN
-    # Which picked question file, in the selection's order: two files may share a name
-    # and every file has a page 1.
-    file_index: int = 0
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Page:
         # A recorded question's copies share its figures' pages.
@@ -546,12 +529,9 @@ def _box(raw: Any) -> list[float] | None:
     return box if box[0] < box[2] and box[1] < box[3] else None
 
 
-Boxes = dict[int, tuple[Page, layout.Region]]
-
-
-def numbered_boxes(pages: list[Page]) -> Boxes:
+def numbered_boxes(pages: list[Page]) -> dict[int, tuple[Page, layout.Region]]:
     """The boxes figures are picked from, numbered once across the selection."""
-    boxes: Boxes = {}
+    boxes: dict[int, tuple[Page, layout.Region]] = {}
     for page in pages:
         for region in layout.figure_boxes(page.regions):
             boxes[len(boxes) + 1] = (page, region)
@@ -562,7 +542,7 @@ def read_figures(
     raw: Any,
     pages: list[Page],
     part_labels: list[str],
-    boxes: Boxes,
+    boxes: dict[int, tuple[Page, layout.Region]],
 ) -> tuple[list[Figure], str | None]:
     """A call's figures, by box number (cropped from them) or, with no box, by
     page image (for the box call), or the tool-result problem
@@ -872,6 +852,8 @@ class Run:
     """What one extraction holds across its threads."""
 
     validate: Validate
+    # The boxes figures are picked from, by number.
+    boxes: dict[int, tuple[Page, layout.Region]] = field(default_factory=dict)
     recorded: dict[str, Recorded] = field(default_factory=dict)
     # What each question's copy call sent, its keys taken out, and its pages.
     copies: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -942,11 +924,8 @@ class Run:
             "AI-marked parts. Record nothing more."
         )
 
-    async def copy_question(
-        self, item: dict[str, Any], pages: list[Page], boxes: Boxes
-    ) -> str:
-        """Keep one question as copied, with no answers; the tool result line. ``pages``
-        and ``boxes`` are what its thread sees."""
+    async def copy_question(self, item: dict[str, Any], pages: list[Page]) -> str:
+        """Keep one question as copied, with no answers; the tool result line."""
         kept = _keyless(item)
         checked = record(_with_placeholders(kept))
         if not checked.label or not checked.question["parts"]:
@@ -974,7 +953,7 @@ class Run:
             problem = "figures: give [] when it needs none"
         else:
             figures, problem = read_figures(
-                item.get("figures"), pages, checked.part_labels, boxes
+                item.get("figures"), pages, checked.part_labels, self.boxes
             )
         problem = problem or await self.validate(checked.question)
         if problem:
@@ -991,9 +970,7 @@ class Run:
         self.spans[key] = (sent[0], sent[1])
         return f"Question {checked.label}: recorded."
 
-    async def record_answers(
-        self, args: dict[str, Any], pages: list[Page], boxes: Boxes
-    ) -> str:
+    async def record_answers(self, args: dict[str, Any], pages: list[Page]) -> str:
         """Merge one question's answers into its copy; the tool result line."""
         label = str(args.get("label") or "").strip()
         key = label_key(label)
@@ -1051,7 +1028,7 @@ class Run:
             )
         new = record(merged)
         new.figures, problem = read_figures(
-            merged.get("figures"), pages, new.part_labels, boxes
+            merged.get("figures"), pages, new.part_labels, self.boxes
         )
         checked = record(_with_placeholders(merged, skipped))
         problem = problem or await self.validate(checked.question)
@@ -1103,7 +1080,7 @@ class Run:
             "answered": len(self.answered),
         }
 
-    def fill_figures(self, rows: list[MapRow], pages: list[Page], boxes: Boxes) -> None:
+    def fill_figures(self, rows: list[MapRow], pages: list[Page]) -> None:
         """A question the map gives figures and its batch gave none takes the map's
         boxes, one figure a page (28 of 536 bench rows left one out). The boxes go in
         its copy, so its answers keep them."""
@@ -1115,15 +1092,15 @@ class Run:
             # By the page itself: two files both have a page 1.
             by_page: dict[int, list[int]] = {}
             for number in row.figures:
-                if number in boxes:
-                    by_page.setdefault(id(boxes[number][0]), []).append(number)
+                if number in self.boxes:
+                    by_page.setdefault(id(self.boxes[number][0]), []).append(number)
             if not by_page:
                 continue
             items = [
                 {"boxes": numbers, "part": "", "description": ""}
                 for numbers in by_page.values()
             ]
-            figures, problem = read_figures(items, pages, held.part_labels, boxes)
+            figures, problem = read_figures(items, pages, held.part_labels, self.boxes)
             if problem is None:
                 held.figures = figures
                 self.copies[key]["figures"] = items
@@ -1195,15 +1172,20 @@ async def _answer_blocks(answers: list[AnswerFile]) -> list[dict[str, Any]]:
     return blocks
 
 
-async def map_message(
-    pages: list[Page], answers: list[AnswerFile], boxes: Boxes
-) -> list[dict[str, Any]]:
-    """The map call's messages: the pages (a page with no image as its text), the
-    boxes and the answer files, then the ask."""
+async def read_map(
+    pages: list[Page],
+    answers: list[AnswerFile],
+    boxes: dict[int, tuple[Page, layout.Region]],
+    *,
+    model: ModelConfig,
+) -> tuple[list[dict[str, Any]], list[MapRow], int]:
+    """The map call: its messages with its reply, for every thread to continue,
+    its rows, and its output tokens. A reply that calls a tool or is cut off is a
+    failed attempt."""
     with_text = sends_page_text(pages)
     pictured = [p for p in pages if p.image]
     index = {id(p): n for n, p in enumerate(pictured, 1)}
-    return prompts.map_messages(
+    messages = prompts.map_messages(
         [
             (
                 prompts.text_page(p.number, p.file_name, p.text),
@@ -1237,19 +1219,6 @@ async def map_message(
         if with_text
         else prompts.SYSTEM_NO_PAGE_TEXT,
     )
-
-
-async def read_map(
-    pages: list[Page],
-    answers: list[AnswerFile],
-    boxes: Boxes,
-    *,
-    model: ModelConfig,
-) -> tuple[list[dict[str, Any]], list[MapRow], int]:
-    """The map call: its messages with its reply, for every thread to continue,
-    its rows, and its output tokens. A reply that calls a tool or is cut off is a
-    failed attempt."""
-    messages = await map_message(pages, answers, boxes)
     response = await models.complete_response(
         messages,
         model=model,
@@ -1445,7 +1414,7 @@ async def locate_figures(held: list[Recorded], *, model: ModelConfig) -> list[st
 
 def _pages_worth(page: Page) -> int:
     """What a selected page counts for in the run's output budget: a file with no page
-    view counts a page for each TEXT_PAGE_CHARS of its text, up to a whole run's pages. A
+    view counts a page for each TEXT_PAGE_CHARS of its text, up to TEXT_RUN_PAGES. A
     worksheet's page holds about 500 characters (2021 P1 Q1 to Q10: 3,856 on 7 pages) and
     its one copy call wrote 9,400 tokens."""
     if page.image:
@@ -1457,139 +1426,6 @@ def _pages_worth(page: Page) -> int:
 def _credits_out() -> bool:
     state = accounting.current()
     return bool(state and state.credits_exhausted)
-
-
-# ------------------------------------------------- the long route (Epo 2026-11-21)
-
-
-def long_route(pages: list[Page], answers: list[AnswerFile]) -> bool:
-    """Whether a selection's page images, its answer images included, are more than
-    one call carries."""
-    pictured = sum(1 for page in pages if page.image)
-    return pictured + sum(len(file.images) for file in answers) > THREAD_IMAGES
-
-
-def place_rows(rows: list[MapRow], pages: list[Page]) -> list[tuple[int, int] | None]:
-    """Each row's first and last page as indexes into ``pages``, or None when no
-    picked page has its number. A row gives page numbers alone, which several files
-    share, so it stays in the file of the row before while that file has its first
-    page, and moves to the next file with that page when its number goes back down and
-    its page does not go on, as a new paper's do (Epo 2026-11-21); a section that
-    numbers from 1 again further on stays."""
-    out: list[tuple[int, int] | None] = []
-    file = pages[0].file_index if pages else 0
-    before: tuple[int, int] | None = None  # the row before's number and first page
-    for row in rows:
-        number = _number(row.label)
-        candidates = [i for i, page in enumerate(pages) if page.number == row.first]
-        own = [i for i in candidates if pages[i].file_index == file]
-        later = [i for i in candidates if pages[i].file_index > file]
-        new_paper = (
-            before is not None
-            and number is not None
-            and number <= before[0]
-            and row.first <= before[1]
-        )
-        if own and not (new_paper and later):
-            at = own[0]
-        elif later:
-            at = later[0]
-        elif candidates:
-            at = candidates[0]
-        else:
-            out.append(None)
-            continue
-        file = pages[at].file_index
-        end = next(
-            (
-                i
-                for i in range(at, len(pages))
-                if pages[i].file_index == file and pages[i].number == row.last
-            ),
-            at,
-        )
-        out.append((at, end))
-        if number is not None:
-            before = (number, row.first)
-    return out
-
-
-def relabelled(
-    rows: list[MapRow], spans: list[tuple[int, int]], pages: list[Page]
-) -> list[MapRow]:
-    """With a question number two picked files share, every row is its file's letter
-    (A for the first file picked) and its number; a file whose own numbers repeat keeps
-    the map's label after its letter (Epo 2026-11-21: the map labelled six papers each
-    from 1 in one of two bench runs, and a run keeps one question a label)."""
-    files = [pages[span[0]].file_index for span in spans]
-    numbers: dict[int, list[int | None]] = {}
-    for row, file in zip(rows, files):
-        numbers.setdefault(file, []).append(_number(row.label))
-    owners: dict[int, set[int]] = {}
-    for file, own in numbers.items():
-        for number in own:
-            if number is not None:
-                owners.setdefault(number, set()).add(file)
-    if not any(len(files_of) > 1 for files_of in owners.values()):
-        return rows
-    out = []
-    for row, file in zip(rows, files):
-        own = numbers[file]
-        letter = chr(ord("A") + file)
-        repeats = None in own or len(set(own)) < len(own)
-        label = f"{letter}{row.label}" if repeats else f"{letter}{_number(row.label)}"
-        out.append(dataclasses.replace(row, label=label))
-    return out
-
-
-def thread_groups(
-    rows: list[MapRow], spans: list[tuple[int, int]], pages: list[Page], limit: int
-) -> list[tuple[list[MapRow], list[int]]]:
-    """The rows in printed order, grouped while their pages hold at most ``limit``
-    page images, with those pages as indexes into ``pages``. A Word question also takes
-    the page either side: its page numbers are LibreOffice's, the pages the browser's."""
-    groups: list[tuple[list[MapRow], set[int]]] = []
-    for row, (first, last) in zip(rows, spans):
-        if pages[first].file_name.lower().endswith((".docx", ".doc")):
-            same = pages[first].file_index
-            if first > 0 and pages[first - 1].file_index == same:
-                first -= 1
-            if last + 1 < len(pages) and pages[last + 1].file_index == same:
-                last += 1
-        pictured = [i for i in range(first, last + 1) if pages[i].image]
-        if len(pictured) > limit:
-            # Its first pages: a thread never passes its images (Epo 2026-11-21).
-            last = pictured[limit - 1]
-        indexes = set(range(first, last + 1))
-        if (
-            not groups
-            or sum(1 for i in groups[-1][1] | indexes if pages[i].image) > limit
-        ):
-            groups.append(([], set()))
-        groups[-1][0].append(row)
-        groups[-1][1].update(indexes)
-    return [(group, sorted(indexes)) for group, indexes in groups]
-
-
-def map_lines(rows: list[MapRow]) -> str:
-    """Code's copy of the map's lines, the reply a long route's thread starts from.
-    The text map saw no boxes, so no line names one."""
-    return "\n".join(
-        f"{row.label} | pages {row.first}-{row.last} | parts "
-        f"{', '.join(row.parts) or 'none'} | figures none"
-        for row in rows
-    )
-
-
-@dataclass(frozen=True)
-class View:
-    """What a thread sees: its pages and their boxes, the messages it starts from and
-    the map's rows it copies."""
-
-    pages: list[Page]
-    boxes: Boxes
-    base: list[dict[str, Any]]
-    rows: list[MapRow]
 
 
 async def run(
@@ -1605,146 +1441,59 @@ async def run(
     solves; with no starter, as on the bench, ``questions`` after each copy batch (every
     question copied so far, with no answers yet). Then ``done`` with the quiz's questions
     and the report."""
+    found = iter(
+        await layout.read_regions([page.image for page in pages if page.image])
+    )
+    pages = [
+        dataclasses.replace(page, regions=next(found)) if page.image else page
+        for page in pages
+    ]
     current = Run(
         validate=validate,
+        boxes=numbered_boxes(pages),
         output_budget=OUTPUT_PER_PAGE * sum(_pages_worth(page) for page in pages),
     )
-    long = long_route(pages, answers)
-    spans: list[tuple[int, int]] = []
-    regions: asyncio.Task[list[tuple[layout.Region, ...]]] | None = None
-    needed: list[int] = []
-    if long:
-        # A scanned answer file goes as its page read; other answer images keep half a
-        # thread at most, the rest cut (Epo 2026-11-21).
-        room = THREAD_IMAGES // 2
-        cut = []
-        for file in answers:
-            images = () if file.text else file.images[:room]
-            room -= len(images)
-            cut.append(dataclasses.replace(file, images=images))
-        answers = cut
-        thread_limit = THREAD_IMAGES - sum(len(file.images) for file in answers)
-        text_pages = [
-            dataclasses.replace(
-                page,
-                text=page.text[:PAGE_TEXT_CHARS] if page.image else page.text,
-                image=None,
-                crop=None,
-            )
-            for page in pages
-        ]
-        try:
-            _messages, rows, output = await _attempted(
-                functools.partial(read_map, text_pages, answers, {}, model=model)
-            )
-        except EmptyMap:
-            rows, output = [], 0
-        placed_rows = [
-            (row, span) for row, span in zip(rows, place_rows(rows, pages)) if span
-        ]
-        if len(placed_rows) < len(rows):
-            log.warning("%d map rows name no picked page", len(rows) - len(placed_rows))
-        spans = [span for _, span in placed_rows]
-        rows = relabelled([row for row, _ in placed_rows], spans, pages)
-        # Layout reads the pages that hold questions while the starter confirms.
-        needed = sorted(
-            {
-                i
-                for _, indexes in thread_groups(rows, spans, pages, thread_limit)
-                for i in indexes
-                if pages[i].image
-            }
-        )
-        regions = asyncio.create_task(
-            layout.read_regions([pages[i].image for i in needed])
-        )
-        base: list[dict[str, Any]] = []
-        boxes: Boxes = {}
-    else:
-        found = iter(
-            await layout.read_regions([page.image for page in pages if page.image])
-        )
-        pages = [
-            dataclasses.replace(page, regions=next(found)) if page.image else page
-            for page in pages
-        ]
-        boxes = numbered_boxes(pages)
-        try:
-            base, rows, output = await _attempted(
-                functools.partial(read_map, pages, answers, boxes, model=model)
-            )
-        except EmptyMap:
-            base, rows, output = [], [], 0
-    current.output_tokens += output
     try:
-        if confirm and rows:
-            yield {
-                "type": "map",
-                "questions": [
-                    {
-                        "label": row.label,
-                        "first": row.first,
-                        "last": row.last,
-                        "parts": row.parts,
-                    }
-                    for row in rows
-                ],
-            }
-            chosen = await confirm(len(rows))
-            if chosen is None:
-                return
-            # Fewer than the map found: what the starter afforded is all it copies.
-            if chosen < len(rows):
-                rows, spans = rows[:chosen], spans[:chosen]
-                current.only = {label_key(row.label) for row in rows}
-            # Confirming took the credits to pay for it: a map that crossed zero is over.
-            state = accounting.current()
-            if state:
-                state.credits_exhausted = False
-        if regions is None:
-            views = [View(pages, boxes, base, rows)]
-        else:
-            by_index = dict(zip(needed, await regions))
-            pages = [
-                dataclasses.replace(page, regions=by_index[i])
-                if i in by_index
-                else page
-                for i, page in enumerate(pages)
-            ]
-            views = []
-            for group, indexes in thread_groups(rows, spans, pages, thread_limit):
-                group_pages = [pages[i] for i in indexes]
-                group_boxes = numbered_boxes(group_pages)
-                start = await map_message(group_pages, answers, group_boxes)
-                views.append(
-                    View(
-                        group_pages,
-                        group_boxes,
-                        [*start, {"role": "assistant", "content": map_lines(group)}],
-                        group,
-                    )
-                )
-    finally:
-        if regions is not None and not regions.done():
-            regions.cancel()
+        base, rows, output = await _attempted(
+            functools.partial(read_map, pages, answers, current.boxes, model=model)
+        )
+    except EmptyMap:
+        base, rows, output = [], [], 0
+    current.output_tokens += output
+    if confirm and rows:
+        yield {
+            "type": "map",
+            "questions": [
+                {
+                    "label": row.label,
+                    "first": row.first,
+                    "last": row.last,
+                    "parts": row.parts,
+                }
+                for row in rows
+            ],
+        }
+        chosen = await confirm(len(rows))
+        if chosen is None:
+            return
+        # Fewer than the map found: what the starter afforded is all it copies.
+        if chosen < len(rows):
+            rows = rows[:chosen]
+            current.only = {label_key(row.label) for row in rows}
+        # Confirming took the credits to pay for it: a map that crossed zero is over.
+        state = accounting.current()
+        if state:
+            state.credits_exhausted = False
     current.order = {label_key(row.label): n for n, row in enumerate(rows)}
-    batches: list[list[str]] = []
-    # The view each batch's thread sees.
-    view_of: list[int] = []
-    for v, view in enumerate(views):
-        for group in _chunks_of(view.rows, COPY_BATCH):
-            batches.append([row.label for row in group])
-            view_of.append(v)
-    threads: list[list[dict[str, Any]]] = [list(views[v].base) for v in view_of]
+    batches = [[row.label for row in group] for group in _chunks_of(rows, COPY_BATCH)]
+    threads: list[list[dict[str, Any]]] = [list(base) for _ in batches]
     # The thread that copied each question: its solve call continues that one.
     copied_in: dict[str, int] = {}
 
     def copying(index: int) -> Handle:
-        view = views[view_of[index]]
-
         async def handle(name: str, args: dict[str, Any]) -> str:
             if name == "record_question":
-                result = await current.copy_question(args, view.pages, view.boxes)
+                result = await current.copy_question(args, pages)
                 if result.endswith("recorded."):
                     copied_in[label_key(str(args.get("label") or ""))] = index
                 return result
@@ -1777,11 +1526,9 @@ async def run(
                 )
 
     def solving(index: int) -> Handle:
-        view = views[view_of[index]]
-
         async def handle(name: str, args: dict[str, Any]) -> str:
             if name == "record_answers":
-                return await current.record_answers(args, view.pages, view.boxes)
+                return await current.record_answers(args, pages)
             if name == "record_question":
                 label = str(args.get("label") or "").strip()
                 if label_key(label) in current.copies:
@@ -1850,33 +1597,26 @@ async def run(
                     }
             if confirm:
                 yield current.progress()
-        batch_of = {
-            label_key(label): i for i, labels in enumerate(batches) for label in labels
-        }
-
-        def repairing(label: str) -> int:
-            """The batch that asks for a missing question: its own row's, else the
-            row's before it in printed order (Epo 2026-11-21)."""
-            if label_key(label) in batch_of:
-                return batch_of[label_key(label)]
-            number = _number(label) or 0
-            after = next(
-                (n for n, row in enumerate(rows) if (_number(row.label) or 0) > number),
-                len(rows),
-            )
-            return batch_of[label_key(rows[max(after - 1, 0)].label)]
-
         tried: set[str] = set()
         for _ in range(COPY_REPAIR_PASSES):
             missing = [
                 label for label in current.uncopied(rows, pages) if label not in tried
             ]
+            if not missing or current.stopping or not threads:
+                break
             tried.update(missing)
             asks: dict[int, list[list[str]]] = {}
             for labels in _runs_of(missing):
-                asks.setdefault(repairing(labels[0]), []).append(labels)
-            if not asks or current.stopping:
-                break
+                number = _number(labels[0]) or 0
+                index = next(
+                    (
+                        i
+                        for i, batch in enumerate(batches)
+                        if max(_number(label) or 0 for label in batch) >= number
+                    ),
+                    len(batches) - 1,
+                )
+                asks.setdefault(index, []).append(labels)
             repairs = [
                 asyncio.create_task(copy_batch(index, runs))
                 for index, runs in asks.items()
@@ -1892,8 +1632,7 @@ async def run(
                     "type": "questions",
                     "questions": [held.question for held in current.held()],
                 }
-        if not long:
-            current.fill_figures(rows, pages, boxes)
+        current.fill_figures(rows, pages)
         current.in_printed_order()
         if failures and not current.copies:
             raise failures[0]
@@ -2106,8 +1845,7 @@ def _whole_text(name: str, passages: list[dict[str, Any]]) -> str:
 async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
     """An answer file's picked pages as they go: indexed text for a born-digital PDF,
     page images for a scan, an image upload or a Word or PowerPoint file the browser
-    drew; a text file goes whole (Epo 2026-11-05). A scan also carries its picked pages'
-    page read, which the long route sends instead (Epo 2026-11-21)."""
+    drew; a text file goes whole (Epo 2026-11-05)."""
     file_id, name, numbers = file["fileId"], file["name"], file["pages"]
     if file.get("images"):
         return AnswerFile(
@@ -2147,12 +1885,12 @@ async def _answer_file(workspace_id: str, file: dict[str, Any]) -> AnswerFile:
             return AnswerFile(
                 name, _usable_text(name, "\n\n".join(texts[n] for n in numbers))
             )
-        kept = [number for number in numbers if layers[number] != BLANK]
         return AnswerFile(
             name,
-            "\n\n".join(texts[number] for number in kept).strip(),
             images=tuple(
-                (number, functools.partial(render, number)) for number in kept
+                (number, functools.partial(render, number))
+                for number in numbers
+                if layers[number] != BLANK
             ),
         )
     return AnswerFile(name, _whole_text(name, passages))
@@ -2176,23 +1914,18 @@ async def _drawn_crop(jpeg: bytes, box: list[float]) -> tuple[bytes, tuple[int, 
     return piece, size
 
 
-def _drawn_pages(
-    file: dict[str, Any], texts: dict[int, str], file_index: int
-) -> list[Page]:
+def _drawn_pages(file: dict[str, Any]) -> list[Page]:
     """A Word or PowerPoint paper's selected pages, as the browser drew them (Epo
     2026-11-05, "draw those pages on client side"). They go as a scan's do: their page
-    breaks are the browser's, which the indexed text's need not match. The indexed text
-    of the same page number is what a long route's map reads (Epo 2026-11-21); prepare
-    takes it out of a shorter run's."""
+    breaks are the browser's, which the indexed text's need not match."""
     return [
         Page(
             number,
             file["name"],
-            texts.get(number, ""),
+            "",
             functools.partial(_drawn_image, jpeg),
             functools.partial(_drawn_crop, jpeg),
             layer=SCAN,
-            file_index=file_index,
         )
         for number, jpeg in zip(
             file["pages"], (base64.b64decode(image) for image in file["images"])
@@ -2207,10 +1940,9 @@ async def prepare(
     past its file's end, a file with no usable text, or more text than a run reads is
     refused. Go holds the run to its picked pages."""
     pages: list[Page] = []
-    for file_index, file in enumerate(paper):
+    for file in paper:
         if file.get("images"):
-            passages = await store.file_passages(workspace_id, file["fileId"])
-            pages.extend(_drawn_pages(file, page_texts(passages), file_index))
+            pages.extend(_drawn_pages(file))
             continue
         file_id, name, numbers = file["fileId"], file["name"], file["pages"]
         row = await store.file_page_source(workspace_id, file_id)
@@ -2237,7 +1969,6 @@ async def prepare(
                     None,
                     None,
                     layer=BORN_DIGITAL,
-                    file_index=file_index,
                 )
             )
             continue
@@ -2259,22 +1990,11 @@ async def prepare(
                 functools.partial(_render, workspace_id, file_id, number),
                 functools.partial(_crop, workspace_id, file_id, number),
                 layer=layers.get(number, SCAN),
-                file_index=file_index,
             )
             for number in numbers
         )
     files = [await _answer_file(workspace_id, file) for file in answers]
-    # An answer file with page images goes as its text only on the long route.
-    long = long_route(pages, files)
-    if not long:
-        # A drawn page's text is LibreOffice's page, which a short run's repairs
-        # would read as the drawn one's (Epo 2026-11-21).
-        drawn = {n for n, file in enumerate(paper) if file.get("images")}
-        pages = [
-            dataclasses.replace(page, text="") if page.file_index in drawn else page
-            for page in pages
-        ]
-    text = sum(len(file.text) for file in files if long or not file.images) + sum(
+    text = sum(len(file.text) for file in files) + sum(
         len(page.text) for page in pages if not page.image
     )
     if text > RUN_TEXT_CHARS:

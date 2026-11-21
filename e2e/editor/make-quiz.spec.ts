@@ -83,12 +83,12 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   ).toBeVisible();
   await pickPages(page, 2, 3, 4);
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 3, max: 40 }))
+    page.getByText(m.make_quiz_pages_count({ count: 3, max: 30 }))
   ).toBeVisible();
   // A second click skips the page again.
   await pickPages(page, 4);
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
+    page.getByText(m.make_quiz_pages_count({ count: 2, max: 30 }))
   ).toBeVisible();
   // An answer file holds the run until a page of it is picked, and counts.
   await expect(
@@ -102,7 +102,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   ).toBeVisible();
   await pickPages(page, 1);
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 3, max: 40 }))
+    page.getByText(m.make_quiz_pages_count({ count: 3, max: 30 }))
   ).toBeVisible();
   await expect(
     page.getByText(m.make_quiz_question_price({ price: 4 }))
@@ -276,13 +276,13 @@ test('a failed run says so in the panel and goes back to the pages', async ({
   await expect(pageSheet(page, 1)).toBeVisible({ timeout: 30_000 });
 });
 
-test('a run takes at most 40 pages', async ({ page }) => {
+test('a run takes at most 30 pages', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_long');
   await expect(pageSheet(page, 60)).toBeAttached({ timeout: 30_000 });
-  await pickPages(page, ...Array.from({ length: 40 }, (_, i) => i + 1));
+  await pickPages(page, ...Array.from({ length: 30 }, (_, i) => i + 1));
   await expect(page.getByText(m.make_quiz_at_cap())).toBeVisible();
-  await pageSheet(page, 41).click({ force: true });
-  await expect(pageSheet(page, 41)).toHaveAttribute('aria-pressed', 'false');
+  await pageSheet(page, 31).click({ force: true });
+  await expect(pageSheet(page, 31)).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('an uploaded paper is read first, and saved to Files hidden from members', async ({
@@ -514,7 +514,7 @@ for (const [name, width, height] of [
   });
 }
 
-test('several question files share the 40 pages, and the list divides them from the answers', async ({
+test('several question files share the 30 pages, and the list divides them from the answers', async ({
   page,
 }) => {
   await page.goto(
@@ -529,7 +529,7 @@ test('several question files share the 40 pages, and the list divides them from 
   await list.getByRole('button', { name: /Past paper 2024/ }).click();
   await pageSheet(page, 1).click();
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
+    page.getByText(m.make_quiz_pages_count({ count: 2, max: 30 }))
   ).toBeVisible();
 });
 

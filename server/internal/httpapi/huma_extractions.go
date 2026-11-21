@@ -66,7 +66,7 @@ func extractionBodyDeadline(op *huma.Operation) {
 
 func (a *api) registerExtractions(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/extractions", "createExtraction", "Generate",
-		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, fieldlimits.ExtractionBody, a.createExtraction, extractionBodyDeadline)
+		"Start reading the questions on selected pages into a new quiz", http.StatusAccepted, extractionMaxBody, a.createExtraction, extractionBodyDeadline)
 	reg(api, http.MethodGet, "/api/extractions/{id}", "getExtraction", "Generate",
 		"A Make a quiz run its starter began", http.StatusOK, a.getExtraction)
 	reg(api, http.MethodPost, "/api/extractions/{id}/confirm", "confirmExtraction", "Generate",
@@ -131,6 +131,13 @@ func (a *api) extractionLLM(ctx context.Context, userID string) (resolvedLLM, er
 	return out, nil
 }
 
+// A browser-drawn page: at most this many bytes of JPEG, and a request's body holds
+// a run's worth of them in base64.
+const (
+	extractionImageBytes = 1 << 20
+	extractionMaxBody    = fieldlimits.ExtractionPages*extractionImageBytes*4/3 + 1<<20
+)
+
 // extractionFile is a file as the retrieval service reads it.
 type extractionFile struct {
 	FileID string   `json:"fileId"`
@@ -148,7 +155,7 @@ func checkDrawnPages(f store.File, p apimodel.ExtractionFile) error {
 	for i, image := range p.Images {
 		data, err := base64.StdEncoding.DecodeString(image)
 		// The pixels too: a flat page small in bytes can be huge once decoded.
-		if err != nil || len(data) > fieldlimits.ExtractionDrawnPage || imagecheck.Format(data) != "jpeg" ||
+		if err != nil || len(data) > extractionImageBytes || imagecheck.Format(data) != "jpeg" ||
 			imagecheck.CheckSourceImage(bytes.NewReader(data)) != nil {
 			return huma.Error400BadRequest(fmt.Sprintf("%s: page %d's drawn image is not a JPEG of at most 1 MB and 5 megapixels.", f.Name, p.Pages[i]))
 		}

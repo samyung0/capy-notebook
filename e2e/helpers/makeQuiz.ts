@@ -195,7 +195,7 @@ export async function extractPage(page: Page, number: number) {
   await pageSheet(page, number).click();
   await expect(pageSheet(page, number)).toHaveAttribute('aria-pressed', 'true');
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 1, max: 40 }))
+    page.getByText(m.make_quiz_pages_count({ count: 1, max: 30 }))
   ).toBeVisible();
   await page.getByRole('button', { name: m.make_quiz_extract() }).click();
   await expect(page).toHaveURL(/make=run/, { timeout: 60_000 });
