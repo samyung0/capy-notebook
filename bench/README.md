@@ -124,6 +124,9 @@ end-of-file keys, the co-editor timings, the PPTX busy time, the downloads and
 the heap figures are report-only. Its web server (`editor/scripts/office-server.mjs`)
 runs on Linux and Windows. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
+The same fixtures against Google Docs, Sheets and Slides (open, editable,
+memory, scrolling, typing, downloads; a one-off run by hand):
+[`editor/reports/2026-11-21-google-gap.md`](editor/reports/2026-11-21-google-gap.md).
 
 The Office size ladder (`editor/scripts/gen_office_ladder.py`) generates
 fixtures of growing size per format and content shape into the gitignored
