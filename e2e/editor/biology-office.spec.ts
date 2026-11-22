@@ -2014,7 +2014,9 @@ for (const [format, text] of [
       // Find opens and takes typing; Replace stays disabled.
       await runRibbonCommand(page, 'edit', 'find-replace');
       const find = frame.getByLabel('Find text');
-      await find.click();
+      // The dialog focuses its box and selects its text 100 ms after it
+      // opens: keys typed before that are selected and typed over.
+      await expect(find).toBeFocused();
       await page.keyboard.type('Course');
       await expect(find).toHaveValue('Course');
       await expect(
@@ -2243,7 +2245,9 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await page.waitForTimeout(1000);
     await runRibbonCommand(page, 'edit', 'find-replace');
     const find = frame.getByLabel('Find text');
-    await find.click();
+    // Typed once the dialog has focused and selected its box (100 ms after
+    // it opens), which would type over earlier keys.
+    await expect(find).toBeFocused();
     await page.keyboard.type('Cours');
     await capabilities(true);
     await page.waitForTimeout(1000);
