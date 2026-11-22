@@ -1644,6 +1644,21 @@ func (d MaterialDraft) material() (Material, error) {
 	default:
 		return Material{}, fmt.Errorf("%w: unsupported material kind %q", materialdoc.ErrInvalid, d.Kind)
 	}
+	// A draft is new content a server writer made (an agent, Generate, Make a
+	// quiz, the bank page's copy, the starter): at the caps an editor stops
+	// at, with its embedded quizzes and sets.
+	if err := materialdoc.CheckWritten(mt.Content); err != nil {
+		return Material{}, err
+	}
+	for _, embedded := range d.Embedded {
+		content, err := embedded.content()
+		if err != nil {
+			return Material{}, err
+		}
+		if err := materialdoc.CheckWritten(content); err != nil {
+			return Material{}, err
+		}
+	}
 	return mt, nil
 }
 

@@ -404,11 +404,13 @@ pub fn admit_shapes<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, 
                     _ => None,
                 })
                 .unwrap_or(0);
-            let cap = if &*field == "front" {
+            // Twice the face's cap, as two people typing in it at once may
+            // pass that (Epo 2026-11-22); the card dialog stops at the cap.
+            let cap = notes::limits::merged_cap(if &*field == "front" {
                 MAX_FRONT
             } else {
                 MAX_BACK
-            } as u64;
+            }) as u64;
             // UTF-16 units bound characters from above.
             if current + units > cap {
                 growth.over_cap = true;

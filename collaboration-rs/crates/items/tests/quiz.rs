@@ -707,7 +707,7 @@ fn values_past_their_caps_are_refused_at_admission() {
     let questions = fixtures();
     let (question, ordering) = part_of(&questions, "ordering");
     let part = ["questions", question.as_str(), "parts", ordering.as_str()];
-    for marks in [0.0, 2.5, 21.0, 500.0] {
+    for marks in [0.0, 2.5, 41.0, 500.0] {
         refused(
             Kind::Quiz,
             |doc| {
@@ -768,8 +768,19 @@ fn values_past_their_caps_are_refused_at_admission() {
         },
         "whole marks",
     );
+    // A part's marks reach up to twice the cap (Epo 2026-11-22): an AI-marked
+    // part's items merged at once, kept if it turns closed meanwhile.
+    let open_part = ["questions", open_question.as_str(), "parts", open.as_str()];
+    refused(
+        Kind::Quiz,
+        |doc| {
+            map_in(doc, &open_part).insert(&mut doc.transact_mut(), "marks", 41.0);
+        },
+        "whole marks",
+    );
     // At the caps exactly, admitted.
     let (content, _, client, _) = rooms(&questions);
+    map_in(&client, &open_part).insert(&mut client.transact_mut(), "marks", 40.0);
     map_in(
         &client,
         &["questions", &short_question, "parts", &short, "answer"],
@@ -784,7 +795,6 @@ fn values_past_their_caps_are_refused_at_admission() {
     let mut check = validator(Kind::Quiz, &content);
     accepted(&mut check, &content, &client);
     assert!(items::quiz::check_content_caps(&content.transact()).is_ok());
-    let _ = open_question;
 }
 
 /// An mcq's content answer says `multiple` while several options are correct
@@ -1447,7 +1457,7 @@ fn answer_keys_past_their_caps_are_refused() {
             text_in(doc, &["keys", &short, "accepted", &first], "text").insert(
                 &mut doc.transact_mut(),
                 0,
-                &"a".repeat(5_001),
+                &"a".repeat(10_001),
             );
             map_in(doc, &["keys", &short]).insert(&mut doc.transact_mut(), "type", "open");
         },
@@ -1458,7 +1468,7 @@ fn answer_keys_past_their_caps_are_refused() {
         Kind::QuizKeys,
         |doc| {
             let correct = map_in(doc, &["keys", &mcq, "correct"]);
-            for i in 0..101 {
+            for i in 0..201 {
                 correct.insert(&mut doc.transact_mut(), format!("t{i}"), true);
             }
         },
@@ -1470,7 +1480,7 @@ fn answer_keys_past_their_caps_are_refused() {
 fn texts_and_counts_past_their_caps_are_refused() {
     let questions = fixtures();
     let (question, part) = part_of(&questions, "open");
-    // A part text past 12,000 characters.
+    // A part text past twice its 12,000 characters.
     let (content, _, client, _) = rooms(&questions);
     let blocks = map_in(&client, &["questions", &question, "parts", &part, "blocks"]);
     let first = first_key(&blocks, &client);
@@ -1479,17 +1489,17 @@ fn texts_and_counts_past_their_caps_are_refused() {
         &["questions", &question, "parts", &part, "blocks", &first],
         "text",
     );
-    text.insert(&mut client.transact_mut(), 0, &"x".repeat(12_001));
+    text.insert(&mut client.transact_mut(), 0, &"x".repeat(24_001));
     let mut check = validator(Kind::Quiz, &content);
     let (result, _) = admit(&mut check, &content, &diff(&client, &content));
     assert!(
-        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("12000")),
+        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("24000")),
         "{result:?}"
     );
-    // A sixth marking item in the keys.
+    // An eleventh marking item in the keys, past twice the five.
     let (_, keys, _, client_keys) = rooms(&questions);
     let scheme = map_in(&client_keys, &["keys", &part, "markscheme"]);
-    for i in 0..5 {
+    for i in 0..10 {
         let item = scheme.insert(
             &mut client_keys.transact_mut(),
             format!("extra{i}"),
@@ -1949,6 +1959,7 @@ fn a_text_retyped_into_another_entrys_reshuffles_the_readers_list() {
                 .enumerate()
                 .map(|(n, text)| (format!("i{n}"), (*text).to_owned()))
                 .collect(),
+            total: None,
         }]
     };
     let draws = std::cell::Cell::new(0);
@@ -1973,6 +1984,42 @@ fn a_text_retyped_into_another_entrys_reshuffles_the_readers_list() {
     let mut held = lists.all().remove(0).1.items;
     held.sort();
     assert_eq!(held, ["Beta", "Beta", "Delta", "Gamma"]);
+}
+
+/// A part with marking items is worth their total, which two editors' adds
+/// at once may take past the cap (Epo 2026-11-22, "Yes, A everywhere"):
+/// learners never read the keys, so the readers' lists carry it. A marking item two editors' adds merged past the
+/// part's own marks reaches them as the new total. Fails if readers get no
+/// total or keep the part's own marks.
+#[test]
+fn the_readers_lists_carry_a_marked_parts_total() {
+    let questions = fixtures();
+    let (_, keys, _, _) = rooms(&questions);
+    let (_, part) = part_of(&questions, "open");
+    let mut lists = ReaderLists::default();
+    let mut pick = seeded(1);
+    lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+    let first = lists
+        .all()
+        .into_iter()
+        .find(|(id, _)| *id == part)
+        .unwrap()
+        .1;
+    assert_eq!((first.kind.as_str(), first.total), ("open", Some(1)));
+    assert!(first.items.is_empty());
+    let scheme = map_in(&keys, &["keys", &part, "markscheme"]);
+    {
+        let mut txn = keys.transact_mut();
+        let entry = scheme.insert(&mut txn, "m-late", MapPrelim::default());
+        entry.insert(&mut txn, "order", "a9");
+        entry.insert(&mut txn, "text", TextPrelim::new("Names the cause"));
+        entry.insert(&mut txn, "marks", 19.0);
+    }
+    let changed = lists.follow(&quiz::item_parts(&keys.transact()), &mut pick);
+    assert_eq!(
+        quiz::reader_message(false, &changed)["parts"][&part],
+        json!({ "kind": "open", "items": [], "total": 20 })
+    );
 }
 
 /// REVIEW1 S6: the save API writes what differs, so an editor typing into
@@ -2485,27 +2532,27 @@ fn group_values_past_their_caps_are_refused() {
     let group = question["groups"][0]["id"].as_str().unwrap();
     let blocks = ["questions", id, "groups", group, "blocks"];
 
-    // Text past 12,000 characters.
+    // Text past twice its 12,000 characters.
     let (content, _, client, _) = rooms(&questions);
     let first = first_key(&map_in(&client, &blocks), &client);
     text_in(&client, &[&blocks[..], &[first.as_str()]].concat(), "text").insert(
         &mut client.transact_mut(),
         0,
-        &"x".repeat(12_001),
+        &"x".repeat(24_001),
     );
     let mut check = validator(Kind::Quiz, &content);
     let (result, _) = admit(&mut check, &content, &diff(&client, &content));
     assert!(
-        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("12000")),
+        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("24000")),
         "{result:?}"
     );
 
-    // A group's 41st block.
+    // A group's 81st block, past twice the 40.
     let (content, _, client, _) = rooms(&questions);
     {
         let list = map_in(&client, &blocks);
         let mut txn = client.transact_mut();
-        for i in 0..40 {
+        for i in 0..80 {
             let block = list.insert(&mut txn, format!("extra{i}"), MapPrelim::default());
             block.insert(&mut txn, "order", "a5");
             block.insert(&mut txn, "type", "text");
@@ -2519,12 +2566,13 @@ fn group_values_past_their_caps_are_refused() {
         "{result:?}"
     );
 
-    // An eighth group in a question (a group has at least one part).
+    // A fifteenth group in a question, past twice the seven (a group has at
+    // least one part).
     let (content, _, client, _) = rooms(&questions);
     {
         let list = map_in(&client, &blocks[..3]);
         let mut txn = client.transact_mut();
-        for i in 0..7 {
+        for i in 0..14 {
             list.insert(&mut txn, format!("extra{i}"), MapPrelim::default());
         }
     }

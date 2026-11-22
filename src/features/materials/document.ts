@@ -1,4 +1,5 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
+import { mergedCap } from '@/api/mergedCap';
 import type { Question, QuestionBlock } from '@/api/types';
 import {
   isTableViewBlock,
@@ -121,8 +122,10 @@ export const BLOCK_CAPTION_MAX = EMBED_CATALOG.limits.BLOCK_CAPTION_MAX;
 /** Any block's indent (lists, indented paragraphs): the editor stops at it
  * and every validator refuses more (Epo 2026-10-18). */
 export const LIST_INDENT_MAX = EMBED_CATALOG.limits.LIST_INDENT_MAX;
-/** A Mermaid source in UTF-16 units (a string's length), mermaid's own
- * maxTextSize; every layer refuses more (Epo 2026-10-22). */
+/** A Mermaid source in UTF-16 units (a string's length): its editor stops at
+ * it (Epo 2026-10-22); every layer, and the drawing worker's maxTextSize,
+ * takes up to twice it, as two people typing at once may pass it (Epo
+ * 2026-11-22). */
 export const MERMAID_SOURCE_MAX = EMBED_CATALOG.limits.MERMAID_SOURCE_MAX;
 
 export function htmlBytes(html: string): number {
@@ -418,7 +421,8 @@ function validateCustomElement(
       return (
         hasId(element) &&
         typeof element.source === 'string' &&
-        element.source.length <= MERMAID_SOURCE_MAX &&
+        // Two people typing at once may pass the cap, up to twice it.
+        element.source.length <= mergedCap(MERMAID_SOURCE_MAX) &&
         element.children.length === 1 &&
         isElementNode(element.children[0]) &&
         element.children[0].type === 'mermaid_caption'
@@ -541,9 +545,10 @@ export function isMaterialDocument(
     return false;
   const count = (type: string) =>
     (value.value as MaterialValue).filter((node) => node.type === type).length;
+  // Two people inserting at once may pass a count's cap, up to twice it.
   if (
-    count(HTML_EMBED_TYPE) > HTML_EMBED_MAX_COUNT ||
-    count(TABLE_VIEW_TYPE) > TABLE_VIEW_LIMITS.count
+    count(HTML_EMBED_TYPE) > mergedCap(HTML_EMBED_MAX_COUNT) ||
+    count(TABLE_VIEW_TYPE) > mergedCap(TABLE_VIEW_LIMITS.count)
   )
     return false;
   const parts = new Set<string>();

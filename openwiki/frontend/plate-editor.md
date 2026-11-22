@@ -1163,10 +1163,18 @@ at its Save. No merge is refused (Epo 2026-10-18):
 readers draw it repaired, a chart or plot left without series as an empty
 frame and a pie without a positive value through the chart's empty state. The
 editors show a merge's raw block with its issues: a chart's rows past its
-labels and series past the cap, a pie's other series (Remove last series
-shows for it), its negative or missing positive value, no series (Add series
-shows even on a pie), and a graph's rows past the cap or naming a gone point,
-each marked (a plot's Save held until they are fixed). A graph stores no picture (Epo
+labels, a pie's other series (Remove last series shows for it), its negative
+or missing positive value, no series (Add series shows even on a pie), and a
+graph's rows naming a gone point, each marked (a plot's Save held until they
+are fixed). Series and graph rows two editors' adds merged past the cap, or a pasted or
+duplicated figure that held them, are
+no issue (Epo 2026-11-22, "Yes, A everywhere"): readers and editors keep them
+up to twice the cap (`mergedCap`, `src/api/mergedCap.ts`) and each edits as
+any other. An add stops at the cap as the figure reads when written
+(`addChartItem` gives no id, `graphFull` hides the graph's new row), a
+whole-figure write (`writeFigure`) removes only the series and elements its
+read showed, so a pie's other series or a row a read leaves out stays, and
+Remove last column takes the last series on screen. A graph stores no picture (Epo
 2026-11-16): every view, the editor's and readers', draws its elements (repaired)
 with the graph engine (`GraphView`, [embeds](../embeds.md)), so a co-editor's
 change shows as it arrives and nothing is written back. The Rust server writes the same maps on bootstrap and an agent's insert
@@ -1188,8 +1196,11 @@ place rather than in a dialog. `TableViewElement` writes every edit the same
 way a figure's Save does: the pure edit in `edit.ts` runs on the block as the
 editor holds it at that moment and the result goes through one `setNodes` of
 `block`, so only the columns, rows and views it touched change in the room's
-map (an edit that would break `isTableViewBlock` throws; a block a merge left
-past a cap still takes edits). Text, title and number cells write on Enter or
+map (an edit that would break `isTableViewBlock` throws). Lists two people's adds
+merged past a cap (options, columns, rows, views, a row's keys) are kept and
+read up to twice it, as every layer's check takes them (Epo 2026-11-22, "Yes,
+A everywhere", replacing the 2026-11-12 refusal); such a block takes edits as
+any other. Text, title and number cells write on Enter or
 leaving the field, select and date cells from a popover (`SelectEditor`, the
 schedule's `MiniCalendar`), a checkbox on click; a column header opens
 `ColumnMenu`; the title cell's pill opens the record's menu, whose Open (and a
@@ -1217,9 +1228,14 @@ stops the event, so neither Slate's drop nor the block drag reads it. A
 read-only note draws the same component with only its tabs live. The slash
 menu's Table view (searchable by "database") inserts `newTableViewBlock` with
 translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast; the
-`table_view` plugin's `insertNodes` and `insertFragment` leave out table views
-past the cap the same way for block Duplicate and paste (`count.ts`). An edit
-that would pass a cap against the block as it is does nothing. The block's
+`blockCountCaps` plugin's `insertNodes` and `insertFragment` leave out table
+views and interactive blocks past `TABLE_VIEW_MAX_COUNT` and
+`HTML_EMBED_MAX_COUNT` the same way for block Duplicate and paste
+(`blocks/countCaps.ts`, checked on the note as it reads now; a merge of two
+people's inserts may pass a cap, up to twice it, Epo 2026-11-22). A pasted or
+duplicated table view keeps the rows, columns and texts it holds, up to twice
+their caps, as a figure or Mermaid diagram does. An edit
+that would pass a cap against the block as it is when written does nothing. The block's
 fields keep their own undo: the wrapper stops React `input` and native
 `beforeinput` from reaching slate-react (which would run `editor.undo()`), and
 `fieldHistory.ts` holds back Cmd+Z in a field once its text is back to what it
@@ -1276,8 +1292,10 @@ collaboration service's converter builds the same node, reading the agent's
 note as plain Markdown so the snippet keeps every character (the MDX pass a
 paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
 fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
-is refused by name, as is an agent edit that would leave the note with an
-eleventh (`invalid_input`, the collaboration service's whole-note check). Go
+is refused by name, as is an agent edit that would leave the note with more
+than twice the ten (`invalid_input`, the collaboration service's whole-note
+check, which takes up to 20, what two people inserting at once may leave: Epo
+2026-11-22). Go
 `materialdoc`, the collaboration validator and the browser's
 `isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes), `caption` at
 `BLOCK_CAPTION_MAX` (300 characters; Go `materialdoc`, the collaboration
@@ -2557,6 +2575,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   The two 33s met in one merge before either was deployed, so 33 covers both:
   `MIN_MATERIAL` and `MIN_SOURCE` are both 33, and their deploy request names
   "client protocol 32 -> 33, material 31 -> 33, source 32 -> 33".
+  Merges past a cap (Epo 2026-11-22, "Yes, A everywhere": readers, the room
+  and the stores keep a list or text two people's edits merged past its cap,
+  up to twice it, and editors stop at the cap) raised `CLIENT_PROTOCOL` to 34
+  and `MIN_MATERIAL` to 34. A tab from before reads a chart's series and a
+  graph's elements cut to the cap, and its whole-figure write deletes the ones
+  it left out, a peer's merged edits; its validators hide a quiz question a
+  merge took past a cap and its question text fields undo typing in a text
+  over one. The tab from before reloads instead. No source room changed, so
+  `MIN_SOURCE` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request names "client protocol 33 -> 34, material 33 -> 34".
 
 #### When to bump
 
@@ -4152,7 +4180,14 @@ part names. The limits still measure such a group and its images stay in use
 solution, correct | accepted | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
-`accepted` holds at most one sample answer, which the room refuses past.
+`accepted` holds at most one sample answer, which the room refuses past. Every
+writer (`writeSample`, `quiz::sync_sample`) keeps it under the fixed entry key
+`sample` (`SAMPLE_KEY`), so two first sample answers typed at once set one key
+and one of the two wins (Epo 2026-11-22, "then last save wins? if we change the
+question data structure now we need to change the UI as well, dont"; Yjs keeps
+the entry of the client with the higher id), and a removal wins over typing at
+the same moment: the other's first keystrokes are dropped, and later typing
+merges into the one text; an entry under another id is edited in place.
 A block entry holds its fields in both documents (a solution's in the keys
 document). A chart, plot or graph is a map of plain fields, each replaced
 whole (Epo 2026-11-16, D2, D3, D9; client protocol 30): a graph `{order,
@@ -4181,8 +4216,11 @@ document. Readers get them outside Yjs (D3 as revised 2026-10-10: a reader
 copy inside the content document leaked typing order through its tombstones):
 the content room keeps a plain list of texts per part (`items::quiz::
 ReaderLists`) and pushes it over its channels as a stateless `quiz-items`
-message, `{type, full, parts: {<part id>: {kind, items} | null}}`, the whole
-set to a channel that joins (`full`) and the parts that changed otherwise. A
+message, `{type, full, parts: {<part id>: {kind, items, total?} | null}}`, the
+whole set to a channel that joins (`full`) and the parts that changed
+otherwise. A part with marking items is listed too (no items, any kind) with
+`total`, the items' total its learners read as its marks (Epo 2026-11-22,
+"Yes, A everywhere": two editors' adds at once may take it past the cap). A
 part whose entries change as a set is shuffled afresh (a uniform
 permutation); a single text edit keeps the order, and a change of several
 texts at once (a write that reorders and edits at once changes the list's
@@ -4218,14 +4256,28 @@ items, ticks and matching pairs, and each figure field, graph element
 (`notes::questions::figure_caps` on the element alone; its form is the
 validators') and chart value as it arrives (sizes only: an unfinished figure
 is admitted). A figure's maps (graph elements, chart series, labels, names and
-values) count to twice their caps, as a merge may pass a cap and the read
-keeps the first ones; a figure written as one value (the layout before client
-protocol 30) is refused. Nothing past a
-limit is stored (Epo 2026-10-14): the question dialog's inputs stop at each
-limit and its Add buttons at each count, and everything the store's check
-refuses is refused at admission, so a store never discards a room for it. An
-answer turned `open` sends its update to the exact check, which holds its
-accepted texts to `QUIZ_OPEN_ANSWER_MAX`. A list's count
+values) count to twice their caps, as a merge may pass a cap and every read
+keeps them all; a figure written as one value (the layout before client
+protocol 30) is refused. Every count and typed text two people's edits at
+once may merge past its cap (Epo 2026-11-22, "Yes, A everywhere",
+superseding 2026-10-14's "nothing past a limit is stored") is admitted,
+stored and read up to twice the cap: the question dialog's inputs stop at
+each limit and its Add buttons at each count (checked on the question as it
+reads now), a server writer's edit (an agent's, question media, the content
+save API) may not grow one past its cap (`quiz::check_written`, against what
+the room held: a rewrite places entries by their list or section, not by id,
+so each place's n-th largest value may reach the cap or the n-th largest it
+held), past twice it is refused, and everything the store's check
+refuses is refused at admission, so a store never discards a room for it. A
+value past a cap comes three ways: two people's edits merged, a hand-made
+client, and a paste or block Duplicate, which copies a block whole: a pasted
+or duplicated figure, Mermaid diagram or table view keeps what it holds, up to
+twice the cap, while interactive blocks and table views are still guarded by
+count (`blocks/countCaps.ts`). A
+part's marks reach twice `QUESTION_MARKS_MAX` outside the bank, a closed part's
+too, so marks racing a type switch both go in. An answer turned `open` sends
+its update to the exact check, which holds its accepted texts to twice
+`QUIZ_OPEN_ANSWER_MAX`. A list's count
 is bounded like a text's length (held plus added against its cap): only an
 update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
@@ -4274,17 +4326,14 @@ is touched, and on the next frame its element is written if it differs from
 the figure's (at most once a frame however fast it is typed, nothing when
 unchanged; a new one goes last, then to its row's place, counted by the
 figure's elements of the rows above it, a row that cannot draw now included).
-An existing row past what readers draw (`drawnMax`, from `drawnMaxFor`) is not
-written: one whose element is past a quiz or note graph's first 100 in the
-figure, what the repairs keep (counted in the figure, where a refused row holds
-no place, and marked so on its row); a canvas plane draws every element, so
-each of its existing rows is written. A new row's element is not written while
+Every existing row is written: readers draw every element up to twice the cap,
+which two people's adds at once may reach (Epo 2026-11-22), on a quiz graph, a
+note graph and a canvas plane alike. A new row's element is not written while
 the figure already holds 100 (`graphFull`, checked as the figure reads when
 written): it is named with `question_ui_graph_elements_max` and keeps its text.
-While a row waits so, or an edit is held back past a quiz or note graph's first
-100, the writer writes again on each co-editor's change to the figure (its own
-writes are skipped), so a row started before a co-editor filled the last place,
-or an edit to the 101st element, goes in on its own once a delete makes room;
+While a row waits so, the writer writes again on each co-editor's change to the
+figure (its own writes are skipped), so a row started before a co-editor filled
+the last place goes in on its own once a delete makes room;
 `onRefused` hears only a change in what is refused, and a refused row typed back
 to what the figure holds is refused no more. Closing disposes the writer: the
 watch ends and a frame already queued is cancelled, so one still refused when
@@ -5602,10 +5651,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   on two tabs at the same moment, before either holds the other's, merge a plane past
   100; it then draws every element on its card, and in the editor every row, the
   101st on, edits and saves as any with no cap issue on it (Epo 2026-11-22: the cap
-  stops only adding; `drawnMaxFor` gives a plane no row limit for `graphWriter` and
-  the recipe check). A quiz or note graph keeps its rule for merged rows (the graph writer's, above): its readers draw only
-  the first 100, since the Rust and Go validators refuse more and the read repairs
-  keep the first ones. "+ Label" adds a label in
+  stops only adding), as on a quiz or note graph, whose readers and validators also
+  take up to 200 ("Yes, A everywhere"). "+ Label" adds a label in
   the middle of what's in view and selects its text. Hovering a row lights its mark,
   focusing a label row selects only its label (Shift/⌘/Ctrl adds it), focusing any other row
   clears the selection; selected marks light their rows. The answer board has no list button and no

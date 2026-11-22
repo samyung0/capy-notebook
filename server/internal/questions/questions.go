@@ -29,6 +29,21 @@ type Policy struct {
 	// content API set it (materialdoc); agent block writes, bank and quiz
 	// questions and question media do not.
 	Live bool
+	// Written holds a question a server writer makes new (an agent's, a
+	// generated or extracted quiz: materialdoc.CheckWritten) to the caps an
+	// editor stops at: it has no merge to keep.
+	Written bool
+}
+
+// held is a count or text length a live quiz's merges can pass, as the policy
+// takes it (Epo 2026-11-22, "Yes, A everywhere"): twice the cap
+// (fieldlimits.Merged) for quizzes, notes and attempt snapshots; a bank
+// question, which no room merges, and a writer's new one at the cap.
+func (p Policy) held(cap int) int {
+	if p.Bank || p.Written {
+		return cap
+	}
+	return fieldlimits.Merged(cap)
 }
 
 // QuizBankAssetsURL is the bank's public asset base, set once at startup. A
@@ -37,13 +52,13 @@ type Policy struct {
 // workspace. Empty refuses such links.
 var QuizBankAssetsURL string
 
-func tableCells(value any) bool {
-	cells, ok := array(value, 1, fieldlimits.QuestionTableColumns)
+func tableCells(value any, policy Policy) bool {
+	cells, ok := array(value, 1, policy.held(fieldlimits.QuestionTableColumns))
 	if !ok {
 		return false
 	}
 	for _, cell := range cells {
-		if !str(cell, fieldlimits.QuestionText, false) {
+		if !str(cell, policy.held(fieldlimits.QuestionText), false) {
 			return false
 		}
 	}
@@ -195,7 +210,7 @@ func Validate(q map[string]any, policy Policy) error {
 	if err := blocks(q["stem"], policy); err != nil {
 		return err
 	}
-	maxParts, maxItems := fieldlimits.QuizQuestionParts, fieldlimits.QuizMarkscheme
+	maxParts, maxItems := policy.held(fieldlimits.QuizQuestionParts), policy.held(fieldlimits.QuizMarkscheme)
 	if policy.Bank {
 		maxParts, maxItems = fieldlimits.QuestionParts, fieldlimits.QuestionMarkscheme
 	}
@@ -252,12 +267,16 @@ func Validate(q map[string]any, policy Policy) error {
 		if policy.Bank && len(p["solution"].([]any)) == 0 {
 			return fail("bank part requires a solution")
 		}
+		// A part with marking items is worth their total, which two editors'
+		// items merged at once may take past the cap, up to twice it; a part
+		// turned closed meanwhile keeps it, so any part may hold it.
+		maxMarks := policy.held(fieldlimits.QuestionMarks)
 		marks, ok := num(p["marks"])
-		if !ok || marks < 1 || marks > fieldlimits.QuestionMarks || marks != math.Trunc(marks) {
-			return fail(fmt.Sprintf("a part has 1 to %d marks", fieldlimits.QuestionMarks))
+		if !ok || marks < 1 || marks > float64(maxMarks) || marks != math.Trunc(marks) {
+			return fail(fmt.Sprintf("a part has 1 to %d marks", maxMarks))
 		}
 		if open {
-			_, itemMarks, err := markscheme(p["markscheme"], maxItems)
+			_, itemMarks, err := markscheme(p["markscheme"], maxItems, policy.held(fieldlimits.QuestionMarkItem))
 			if err != nil {
 				return err
 			}
@@ -388,9 +407,10 @@ func ValidateAll(qs []map[string]any, policy Policy) error {
 }
 
 func blocks(value any, policy Policy) error {
-	a, ok := array(value, 0, fieldlimits.QuestionBlocks)
+	most := policy.held(fieldlimits.QuestionBlocks)
+	a, ok := array(value, 0, most)
 	if !ok {
-		return fail(fmt.Sprintf("blocks must contain at most %d blocks", fieldlimits.QuestionBlocks))
+		return fail(fmt.Sprintf("blocks must contain at most %d blocks", most))
 	}
 	for _, raw := range a {
 		b, err := obj(raw)
@@ -511,7 +531,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err := keys(b, "type text", ""); err != nil {
 			return err
 		}
-		if !str(b["text"], fieldlimits.QuestionText, true) {
+		if !str(b["text"], policy.held(fieldlimits.QuestionText), true) {
 			return fail("invalid text block")
 		}
 	case "table":
@@ -521,14 +541,14 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if _, ok := b["header"].(bool); !ok {
 			return fail("invalid table header")
 		}
-		rows, ok := array(b["rows"], 1, fieldlimits.QuestionTableRows)
+		rows, ok := array(b["rows"], 1, policy.held(fieldlimits.QuestionTableRows))
 		if !ok {
 			return fail("invalid table rows")
 		}
 		width := -1
 		for _, row := range rows {
-			cells, ok := array(row, 1, fieldlimits.QuestionTableColumns)
-			if !ok || !tableCells(row) {
+			cells, ok := array(row, 1, policy.held(fieldlimits.QuestionTableColumns))
+			if !ok || !tableCells(row, policy) {
 				return fail("invalid table cells")
 			}
 			if width != -1 && len(cells) != width {
@@ -547,7 +567,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			return fail("invalid chart")
 		}
 		// Category labels may be empty (Epo 2026-10-14).
-		labels, ok := array(b["labels"], 1, fieldlimits.QuestionChartLabels)
+		labels, ok := array(b["labels"], 1, policy.held(fieldlimits.QuestionChartLabels))
 		if !ok {
 			return fail("invalid chart labels")
 		}
@@ -564,7 +584,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if g, ok := b["gridlines"]; ok && !enum(g, "normal fine") {
 			return fail("invalid gridlines")
 		}
-		series, ok := array(b["series"], minSeries(policy), fieldlimits.QuestionChartSeries)
+		series, ok := array(b["series"], minSeries(policy), policy.held(fieldlimits.QuestionChartSeries))
 		if !ok {
 			return fail("invalid chart series")
 		}
@@ -616,7 +636,9 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err := keys(b, "type image width height", "description attribution"); err != nil {
 			return err
 		}
-		if err := imageFields(b, policy); err != nil {
+		// An image's description is typed, so two people typing at once may
+		// pass its cap.
+		if err := imageFields(b, policy, policy.held(fieldlimits.QuestionDescription)); err != nil {
 			return err
 		}
 		im, err := obj(b["image"])
@@ -646,7 +668,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err := keys(b, "type board elements width height", "description"); err != nil {
 			return err
 		}
-		if err := imageFields(b, policy); err != nil {
+		if err := imageFields(b, policy, fieldlimits.QuestionDescription); err != nil {
 			return err
 		}
 		for _, key := range []string{"width", "height"} {
@@ -654,7 +676,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 				return fail("invalid graph dimensions")
 			}
 		}
-		if err := graph(b); err != nil {
+		if err := graph(b, policy); err != nil {
 			return err
 		}
 	default:
@@ -672,34 +694,36 @@ func bankBase(policy Policy) string {
 	return QuizBankAssetsURL
 }
 
-func imageFields(b map[string]any, policy Policy) error {
+// imageFields checks an image's or a graph's size and description, which
+// holds at most `description` outside the bank.
+func imageFields(b map[string]any, policy Policy, description int) error {
 	for _, key := range []string{"width", "height"} {
 		n, ok := num(b[key])
 		if !ok || n <= 0 || n > fieldlimits.QuestionImageDimension || n != math.Trunc(n) {
 			return fail("invalid image dimensions")
 		}
 	}
-	if !optionalDescription(b, policy) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
+	if !describedWithin(b, policy, description) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
 		return fail("invalid image description")
 	}
 	return nil
 }
 
-// descriptionMax bounds a figure's description: QuestionDescription in quizzes
-// and notes, the bank's QuestionText.
-func descriptionMax(policy Policy) int {
-	if policy.Bank {
-		return fieldlimits.QuestionText
-	}
-	return fieldlimits.QuestionDescription
+// optionalDescription: a chart's or plot's description, when it has one, is
+// a non-blank text within QuestionDescription (written whole), the bank's
+// QuestionText (optional on every figure, Epo 2026-10-14).
+func optionalDescription(b map[string]any, policy Policy) bool {
+	return describedWithin(b, policy, fieldlimits.QuestionDescription)
 }
 
-// optionalDescription: a figure's description, when it has one, is a
-// non-blank text within descriptionMax (optional on every figure, Epo
-// 2026-10-14).
-func optionalDescription(b map[string]any, policy Policy) bool {
+// describedWithin: a figure's description, when it has one, is a non-blank
+// text within `max`, the bank's QuestionText.
+func describedWithin(b map[string]any, policy Policy, max int) bool {
+	if policy.Bank {
+		max = fieldlimits.QuestionText
+	}
 	v, ok := b["description"]
-	return !ok || str(v, descriptionMax(policy), true)
+	return !ok || str(v, max, true)
 }
 
 func assetURL(value any, base string) bool {
@@ -718,7 +742,7 @@ func assetURL(value any, base string) bool {
 	return u.Scheme == root.Scheme && u.Host == root.Host && !strings.Contains(u.Path, "\\") && strings.HasPrefix(path.Clean(u.Path), strings.TrimRight(path.Clean("/"+root.Path), "/")+"/")
 }
 
-func graph(b map[string]any) error {
+func graph(b map[string]any, policy Policy) error {
 	board, err := obj(b["board"])
 	if err != nil {
 		return err
@@ -739,7 +763,7 @@ func graph(b map[string]any) error {
 	if !optionalBool(board, "polar") {
 		return fail("invalid board flag")
 	}
-	elems, ok := array(b["elements"], 0, fieldlimits.QuestionGraphElements)
+	elems, ok := array(b["elements"], 0, policy.held(fieldlimits.QuestionGraphElements))
 	if !ok {
 		return fail("invalid graph elements")
 	}
@@ -934,9 +958,10 @@ func graph(b map[string]any) error {
 	return nil
 }
 
-// markscheme checks an open part's marking items and returns their texts and
-// marks. Each item carries whole marks, so a harder step can be worth more.
-func markscheme(v any, maxItems int) ([]string, []float64, error) {
+// markscheme checks an open part's marking items (each text at most
+// maxText) and returns their texts and marks. Each item carries whole marks,
+// so a harder step can be worth more.
+func markscheme(v any, maxItems, maxText int) ([]string, []float64, error) {
 	items, ok := array(v, 1, maxItems)
 	if !ok {
 		return nil, nil, fail(fmt.Sprintf("a marking scheme has 1 to %d items", maxItems))
@@ -951,7 +976,7 @@ func markscheme(v any, maxItems int) ([]string, []float64, error) {
 			return nil, nil, err
 		}
 		n, ok := num(item["marks"])
-		if !str(item["text"], fieldlimits.QuestionMarkItem, true) || !ok || n < 1 || n != math.Trunc(n) {
+		if !str(item["text"], maxText, true) || !ok || n < 1 || n != math.Trunc(n) {
 			return nil, nil, fail("a marking item has text and whole marks")
 		}
 		texts[i], marks[i] = item["text"].(string), n
@@ -991,7 +1016,7 @@ func sum(values []float64) float64 {
 
 // MarkItems returns a validated open part's marking item texts and marks.
 func MarkItems(p map[string]any) ([]string, []float64) {
-	texts, marks, _ := markscheme(p["markscheme"], math.MaxInt)
+	texts, marks, _ := markscheme(p["markscheme"], math.MaxInt, math.MaxInt)
 	return texts, marks
 }
 
@@ -1021,9 +1046,21 @@ func itemAwards(p map[string]any, itemMarks []float64) error {
 	return nil
 }
 
-// QuizBounds caps a user quiz's total and open parts; the per-question checks
-// in Validate bound parts per question and marking items per part.
+// QuizBounds caps a user quiz's total and open parts, each up to twice its
+// cap as two editors' adds at once may leave it (Epo 2026-11-22); the
+// per-question checks in Validate bound parts per question and marking items
+// per part.
 func QuizBounds(qs []map[string]any) error {
+	return quizBounds(qs, fieldlimits.Merged)
+}
+
+// QuizCaps is QuizBounds at the caps themselves: what an add (copies from a
+// bank) may bring.
+func QuizCaps(qs []map[string]any) error {
+	return quizBounds(qs, func(cap int) int { return cap })
+}
+
+func quizBounds(qs []map[string]any, bound func(int) int) error {
 	parts, open := 0, 0
 	for _, q := range qs {
 		list, _ := q["parts"].([]any)
@@ -1035,11 +1072,11 @@ func QuizBounds(qs []map[string]any) error {
 			}
 		}
 	}
-	if parts > fieldlimits.QuizParts {
-		return fail(fmt.Sprintf("a quiz has at most %d parts", fieldlimits.QuizParts))
+	if most := bound(fieldlimits.QuizParts); parts > most {
+		return fail(fmt.Sprintf("a quiz has at most %d parts", most))
 	}
-	if open > fieldlimits.QuizOpenParts {
-		return fail(fmt.Sprintf("a quiz has at most %d AI-marked parts", fieldlimits.QuizOpenParts))
+	if most := bound(fieldlimits.QuizOpenParts); open > most {
+		return fail(fmt.Sprintf("a quiz has at most %d AI-marked parts", most))
 	}
 	return nil
 }
@@ -1080,9 +1117,10 @@ func answer(value any, policy Policy) error {
 	if err := keys(a, required, optional); err != nil {
 		return err
 	}
+	answers, text := policy.held(fieldlimits.QuestionAnswers), policy.held(fieldlimits.QuestionText)
 	switch a["type"] {
 	case "mcq", "matching":
-		if !stringsArray(a["options"], 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+		if !stringsArray(a["options"], 1, answers, text) {
 			return fail("invalid options")
 		}
 		count := len(a["options"].([]any))
@@ -1090,7 +1128,7 @@ func answer(value any, policy Policy) error {
 			return fail("choice answers require two options")
 		}
 		if a["type"] == "matching" {
-			pairs, ok := array(a["pairs"], 1, fieldlimits.QuestionAnswers)
+			pairs, ok := array(a["pairs"], 1, answers)
 			if !ok {
 				return fail("invalid pairs")
 			}
@@ -1103,7 +1141,7 @@ func answer(value any, policy Policy) error {
 				if err := keys(p, "left right", ""); err != nil {
 					return err
 				}
-				if !str(p["left"], fieldlimits.QuestionText, true) {
+				if !str(p["left"], text, true) {
 					return fail("invalid matching left item")
 				}
 				left := p["left"].(string)
@@ -1159,17 +1197,17 @@ func answer(value any, policy Policy) error {
 			return fail("invalid gaps")
 		}
 		for _, accepted := range gaps {
-			if !stringsArray(accepted, 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+			if !stringsArray(accepted, 1, answers, text) {
 				return fail("invalid accepted answers for a gap")
 			}
 		}
 	case "short", "open":
-		length, least, most := fieldlimits.QuestionText, 1, fieldlimits.QuestionAnswers
+		length, least, most := text, 1, answers
 		if a["type"] == "open" {
 			// At most one sample answer, and it is optional (Epo 2026-10-15).
 			least, most = 0, 1
 			if !policy.Bank {
-				length = fieldlimits.QuizOpenAnswer
+				length = policy.held(fieldlimits.QuizOpenAnswer)
 			}
 		}
 		if !stringsArray(a["accepted"], least, most, length) {
@@ -1192,7 +1230,7 @@ func answer(value any, policy Policy) error {
 			}
 		}
 	case "ordering":
-		if !stringsArray(a["items"], 2, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+		if !stringsArray(a["items"], 2, answers, text) {
 			return fail("invalid ordering items")
 		}
 	case "drawing":
@@ -1695,8 +1733,10 @@ func blocksText(blocks []any) string {
 }
 
 // RepairFigure is a live chart, plot or graph as readers draw it (Epo
-// 2026-10-17, 2026-10-18): series and graph elements past their cap keep the
-// first ones, a pie or stacked chart its first series; a chart series' values
+// 2026-10-17, 2026-10-18): a chart's series and a graph's elements are all
+// kept up to twice their caps, which two people's adds at once may reach (Epo
+// 2026-11-22), and only a tampered list past that keeps its first ones; a pie
+// or stacked chart keeps its first series; a chart series' values
 // are padded with null or cut to its labels; a line plot's series of fewer
 // than two points is skipped (before the cap); a graph element naming a point
 // that is gone is skipped. A block needing none of it comes back as it is;
@@ -1710,14 +1750,14 @@ func RepairFigure(block map[string]any) map[string]any {
 	var max int
 	switch block["type"] {
 	case "chart":
-		list, max = "series", fieldlimits.QuestionChartSeries
+		list, max = "series", fieldlimits.Merged(fieldlimits.QuestionChartSeries)
 		if kind == "pie" || kind == "stacked" {
 			max = 1
 		}
 	case "plot":
 		list, max = "series", fieldlimits.QuestionPlotSeries
 	case "graph":
-		list, max = "elements", fieldlimits.QuestionGraphElements
+		list, max = "elements", fieldlimits.Merged(fieldlimits.QuestionGraphElements)
 	default:
 		return block
 	}

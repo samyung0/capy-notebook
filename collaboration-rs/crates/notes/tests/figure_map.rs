@@ -639,11 +639,10 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
 }
 
 /// A live chart's series and a graph's elements hold up to twice their cap
-/// (Epo 2026-10-18): a merge to one past the cap goes in and reads the first
-/// ones, one past twice the cap is refused; the room's size measure counts
-/// what the map holds, the entries a read drops included. A plot's series is
-/// one plain value, held to its cap as a writer writes it. Fails with either
-/// reverted.
+/// (Epo 2026-10-18): a merge to one past the cap goes in and reads whole
+/// (Epo 2026-11-22), one past twice the cap is refused; the room's size
+/// measure counts what the map holds. A plot's series is one plain value, held
+/// to its cap as a writer writes it. Fails with either reverted.
 #[test]
 fn a_figure_map_holds_up_to_twice_its_cap_and_counts_as_held() {
     use notes::catalog::{QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX};
@@ -696,16 +695,12 @@ fn a_figure_map_holds_up_to_twice_its_cap_and_counts_as_held() {
             Admission::Accepted,
             "{kind} at its cap and one"
         );
-        let mut stored = projected(&room);
+        let stored = projected(&room);
         assert_eq!(
             stored[0]["block"][key].as_array().unwrap().len(),
-            cap,
-            "{kind}"
+            cap + 1,
+            "{kind} read whole"
         );
-        let mut held = block[key].as_array().unwrap().clone();
-        let start = held.len() as u32;
-        held.extend((start..cap as u32 + 1).map(|n| entry_of(kind, n)));
-        stored[0]["block"][key] = Value::Array(held);
         assert_eq!(
             limits::measure(&room.transact()).unwrap(),
             limits::measure_value(&stored),
@@ -714,6 +709,78 @@ fn a_figure_map_holds_up_to_twice_its_cap_and_counts_as_held() {
         let room = self::room(&[figure(block), paragraph("text")]);
         refused(admit(&room, &grow(&room, 2 * cap + 1)), limits::BAD_VALUE);
     }
+}
+
+/// A whole-figure write is a copy of what a read shows, so it removes only
+/// entries the read showed (Epo 2026-11-22): an element naming a gone point
+/// and a pie's second series, which reads leave out, stay through a write of
+/// the read with another change.
+#[test]
+fn a_whole_figure_write_removes_only_entries_its_read_showed() {
+    let doc = room(&[figure(three_points()), paragraph("text")]);
+    let map = block_map(&doc, 0);
+    let hidden = json!({ "type": "segment", "id": "s9", "points": ["b1", "gone"] });
+    inner(&doc, &map, "elements").insert(
+        &mut doc.transact_mut(),
+        "s9",
+        element_entry(hidden, &order::after(Some("a9"))),
+    );
+    write_graph(&doc, |elements| {
+        elements.retain(|element| element["id"] != "b2")
+    });
+    let elements = inner(&doc, &map, "elements");
+    let txn = doc.transact();
+    assert!(
+        elements.contains_key(&txn, "s9"),
+        "the hidden element stays"
+    );
+    assert!(
+        !elements.contains_key(&txn, "b2"),
+        "the shown one removed goes"
+    );
+    drop(txn);
+
+    let pie = json!({
+        "type": "chart", "kind": "pie", "title": "Share", "labels": ["Jan", "Feb"],
+        "series": [{ "name": "A", "values": [1, 2] }],
+    });
+    let doc = room(&[figure(pie), paragraph("text")]);
+    let map = block_map(&doc, 0);
+    {
+        let (series, names, values) = (
+            inner(&doc, &map, "series"),
+            inner(&doc, &map, "names"),
+            inner(&doc, &map, "values"),
+        );
+        let labels: Vec<String> = axis(&doc, "labels");
+        let mut txn = doc.transact_mut();
+        series.insert(&mut txn, "extra", order::after(Some("z")).as_str());
+        names.insert(&mut txn, "extra", "B");
+        for label in &labels {
+            values.insert(&mut txn, format!("extra/{label}"), 5.0);
+        }
+    }
+    let mut block = {
+        let _txn = doc.transact();
+        figure_map::block(map.as_ref(), "chart").unwrap()
+    };
+    assert_eq!(
+        block["series"].as_array().unwrap().len(),
+        1,
+        "a pie reads one"
+    );
+    block["title"] = json!("Shares");
+    figure_map::sync(&mut doc.transact_mut(), &map, "chart", &block);
+    let txn = doc.transact();
+    assert!(inner(&doc, &map, "series").contains_key(&txn, "extra"));
+    assert!(inner(&doc, &map, "names").contains_key(&txn, "extra"));
+    assert_eq!(
+        inner(&doc, &map, "values")
+            .keys(&txn)
+            .filter(|key| key.starts_with("extra/"))
+            .count(),
+        2
+    );
 }
 
 /// Typing next to a figure stays on the bound with no copy of the room; a

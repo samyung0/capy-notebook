@@ -71,9 +71,14 @@ export function keyedElements<E extends Keyed>(list: E[]) {
  * compared by id, as readers sort: a tie two editors' adds left stays, since
  * re-keying would rewrite the whole entry over a peer's edit) and a moved or
  * new item takes a key between its neighbours (one between tied neighbours
- * re-keys the later tied neighbours); a gone one is deleted. Each entry is
- * written at most once. */
-export function writeElements<E extends Keyed>(map: EntryMap<E>, next: E[]) {
+ * re-keys the later tied neighbours); a gone one is deleted, of those in
+ * `seen` alone when given (the ones the writer's copy was read from: an entry
+ * it never saw stays, Epo 2026-11-22). Each entry is written at most once. */
+export function writeElements<E extends Keyed>(
+  map: EntryMap<E>,
+  next: E[],
+  seen?: ReadonlySet<string>
+) {
   const held = [...map.entries()];
   const stored = new Map<string, ElementEntry<E>>();
   for (const [id, value] of held)
@@ -93,5 +98,6 @@ export function writeElements<E extends Keyed>(map: EntryMap<E>, next: E[]) {
     });
   });
   const kept = new Set(next.map((element) => element.id));
-  for (const [id] of held) if (!kept.has(id)) map.delete(id);
+  for (const [id] of held)
+    if (!(kept.has(id) || (seen && !seen.has(id)))) map.delete(id);
 }

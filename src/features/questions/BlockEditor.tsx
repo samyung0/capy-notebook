@@ -71,8 +71,9 @@ const ChartEditor = memo(function ChartEditor({
   if (block.type !== 'chart') throw new Error('The chart editor needs a chart');
   const single = block.kind === 'pie' || block.kind === 'stacked';
   // A merge of two editors' changes (Epo 2026-10-17) can leave values past
-  // the labels (a draft's) or series past the cap: the table shows them with
-  // their issue, readers the repaired chart.
+  // the labels (a draft's): the table shows them with their issue, readers
+  // the repaired chart. Series past the cap (adds merged at once) are kept
+  // and edit as any other (Epo 2026-11-22).
   // A pie or stacked chart a merge left with another series, a negative or
   // no positive value (Epo 2026-10-18): its first column says which.
   const first = block.series[0]?.values ?? [];
@@ -148,15 +149,6 @@ const ChartEditor = memo(function ChartEditor({
                       className="min-w-20 border border-divider bg-surface-hover-bg"
                       key={seriesIds[i]}
                     >
-                      {i >= limits.QUESTION_CHART_SERIES_MAX && (
-                        <IssueIcon
-                          messages={[
-                            m.question_ui_chart_series_over({
-                              max: limits.QUESTION_CHART_SERIES_MAX,
-                            }),
-                          ]}
-                        />
-                      )}
                       {single && i > 0 && (
                         <IssueIcon messages={[m.question_issue_pie_series()]} />
                       )}
@@ -289,7 +281,8 @@ const ChartEditor = memo(function ChartEditor({
                 <Button
                   disabled={block.series.length <= 1}
                   onClick={() => {
-                    const last = seriesIds.at(-1);
+                    // The last one on screen, not a series the read leaves out.
+                    const last = seriesIds[block.series.length - 1];
                     if (last) binding.removeChartItem('series', last);
                   }}
                   size="sm"

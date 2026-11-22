@@ -80,7 +80,8 @@ func ValidateStoredProvenance(p *Provenance) (string, error) {
 	if (count == 0 && len(p.Questions) == 0) || count > MaxProvenanceBooks {
 		return "invalid_input", errors.New("provenance must name one to 32 sources")
 	}
-	if len(p.Questions) > fieldlimits.QuizParts {
+	// A quiz's questions as two editors' copies at once may leave them.
+	if len(p.Questions) > fieldlimits.Merged(fieldlimits.QuizParts) {
 		return "invalid_input", errors.New("provenance credits too many questions")
 	}
 	license, code, err := validateSources(p.Books, p.Web)

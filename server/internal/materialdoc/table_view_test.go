@@ -67,22 +67,52 @@ func smallTableView() map[string]any {
 	}
 }
 
-// A block at every limit passes, and so do TableViewMaxCount of them in a
-// note; one more is refused.
+// A block at every limit passes, and so do twice TableViewMaxCount of them in
+// a note, as two people inserting at once may pass the count (Epo
+// 2026-11-22); one more is refused.
 func TestTableViewAtItsLimitsPasses(t *testing.T) {
 	if err := validateAs(embeds.Note, reparse(t, []map[string]any{tableViewNode("tv", fullTableView())})); err != nil {
 		t.Fatalf("a table view at its limits is refused: %v", err)
 	}
 	var nodes []map[string]any
-	for i := range embeds.TableViewMaxCount {
+	for i := range 2 * embeds.TableViewMaxCount {
 		nodes = append(nodes, tableViewNode(fmt.Sprintf("tv%d", i), smallTableView()))
 	}
 	if err := validateAs(embeds.Note, reparse(t, nodes)); err != nil {
-		t.Fatalf("%d table views are refused: %v", embeds.TableViewMaxCount, err)
+		t.Fatalf("%d table views are refused: %v", 2*embeds.TableViewMaxCount, err)
 	}
 	nodes = append(nodes, tableViewNode("tv_over", smallTableView()))
 	if err := validateAs(embeds.Note, reparse(t, nodes)); err == nil || !strings.Contains(err.Error(), "table views over") {
-		t.Fatalf("table view %d: %v", embeds.TableViewMaxCount+1, err)
+		t.Fatalf("table view %d: %v", 2*embeds.TableViewMaxCount+1, err)
+	}
+}
+
+// Two people's adds at once may take a list past its cap: columns, rows,
+// views and options pass up to twice theirs (Epo 2026-11-22).
+func TestTableViewListsMergedPastTheirCapsPass(t *testing.T) {
+	block := smallTableView()
+	columns := block["columns"].([]any)
+	options := []any{}
+	for i := range 2 * embeds.TableViewOptionsMax {
+		options = append(options, map[string]any{"id": fmt.Sprintf("o_%d", i), "name": "", "color": "red"})
+	}
+	columns[1].(map[string]any)["options"] = options
+	for i := len(columns); i < 2*embeds.TableViewColumnsMax; i++ {
+		columns = append(columns, map[string]any{"id": fmt.Sprintf("c_%d", i), "name": "", "kind": "text"})
+	}
+	block["columns"] = columns
+	rows := []any{}
+	for i := range 2 * embeds.TableViewRowsMax {
+		rows = append(rows, map[string]any{"id": fmt.Sprintf("r_%d", i)})
+	}
+	block["rows"] = rows
+	views := []any{}
+	for i := range 2 * embeds.TableViewViewsMax {
+		views = append(views, map[string]any{"id": fmt.Sprintf("v_%d", i), "name": "", "kind": "table"})
+	}
+	block["views"] = views
+	if err := validateAs(embeds.Note, reparse(t, []map[string]any{tableViewNode("tv", block)})); err != nil {
+		t.Fatalf("lists at twice their caps are refused: %v", err)
 	}
 }
 
@@ -104,19 +134,32 @@ func TestTableViewKeepsWhatMergesLeave(t *testing.T) {
 
 func TestTableViewRefusesBrokenStructure(t *testing.T) {
 	column := func(block map[string]any, i int) map[string]any { return block["columns"].([]any)[i].(map[string]any) }
-	full := func(key string, extra any) func(map[string]any) {
-		return func(b map[string]any) { b[key] = append(fullTableView()[key].([]any), extra) }
+	// A list one past twice its cap (two people's adds at once reach twice it,
+	// Epo 2026-11-22), after the entries `keep` of the full block.
+	pastTwice := func(key string, keep, limit int, entry func(i int) map[string]any) func(map[string]any) {
+		return func(b map[string]any) {
+			list := append([]any{}, b[key].([]any)[:keep]...)
+			for i := len(list); i <= 2*limit; i++ {
+				list = append(list, entry(i))
+			}
+			b[key] = list
+		}
 	}
 	for name, mutate := range map[string]func(map[string]any){
 		"two title columns": func(b map[string]any) { column(b, 1)["kind"] = "title"; delete(column(b, 1), "options") },
 		"no title column":   func(b map[string]any) { column(b, 0)["kind"] = "text" },
-		"a column too many": full("columns", map[string]any{"id": "c_more", "name": "More", "kind": "text"}),
-		"a row too many":    full("rows", map[string]any{"id": "r_more"}),
-		"a view too many":   full("views", map[string]any{"id": "v_more", "name": "More", "kind": "table"}),
-		"an option too many": func(b map[string]any) {
-			b["columns"] = fullTableView()["columns"]
-			select_ := column(b, 1)
-			select_["options"] = append(select_["options"].([]any), map[string]any{"id": "o_more", "name": "More", "color": "red"})
+		"a column past twice the cap": pastTwice("columns", 1, embeds.TableViewColumnsMax, func(i int) map[string]any {
+			return map[string]any{"id": fmt.Sprintf("c_more%d", i), "name": "More", "kind": "text"}
+		}),
+		"a view past twice the cap": pastTwice("views", 0, embeds.TableViewViewsMax, func(i int) map[string]any {
+			return map[string]any{"id": fmt.Sprintf("v_more%d", i), "name": "More", "kind": "table"}
+		}),
+		"an option past twice the cap": func(b map[string]any) {
+			options := []any{}
+			for i := range 2*embeds.TableViewOptionsMax + 1 {
+				options = append(options, map[string]any{"id": fmt.Sprintf("o_more%d", i), "name": "More", "color": "red"})
+			}
+			column(b, 1)["options"] = options
 		},
 		"a bad column kind": func(b map[string]any) { column(b, 0)["kind"] = "formula" },
 		"a bad view kind":   func(b map[string]any) { b["views"].([]any)[0].(map[string]any)["kind"] = "calendar" },
@@ -156,8 +199,13 @@ func TestTableViewRefusesBrokenStructure(t *testing.T) {
 		"a cells key":    func(b map[string]any) { b["rows"].([]any)[0].(map[string]any)["cells"] = map[string]any{} },
 		"a cell too many": func(b map[string]any) {
 			row := b["rows"].([]any)[0].(map[string]any)
-			for i := range embeds.TableViewColumnsMax {
+			for i := range 2 * embeds.TableViewColumnsMax {
 				row[fmt.Sprintf("c%d", i)] = "x"
+			}
+		},
+		"a row past twice the cap": func(b map[string]any) {
+			for i := range 2 * embeds.TableViewRowsMax {
+				b["rows"] = append(b["rows"].([]any), map[string]any{"id": fmt.Sprintf("r_more%d", i)})
 			}
 		},
 	} {

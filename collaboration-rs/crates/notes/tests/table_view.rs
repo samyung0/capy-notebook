@@ -109,15 +109,31 @@ fn the_store_takes_a_block_at_its_limits_and_what_merges_leave() {
     merged["views"] = json!([]);
     stored(merged).unwrap();
 
-    let mut notes: Vec<Value> = (0..TABLE_VIEW_MAX_COUNT)
+    // Up to twice the count, as two people inserting at once may pass it.
+    let mut notes: Vec<Value> = (0..2 * TABLE_VIEW_MAX_COUNT)
         .map(|i| node(&format!("tv{i}"), small()))
         .collect();
     material::assert_canonical(&notes, "note").unwrap();
     notes.push(node("tv_over", small()));
     assert_eq!(
         material::assert_canonical(&notes, "note").unwrap_err().0,
-        "21 table views over 20"
+        "41 table views over 40"
     );
+    // Each list up to twice its cap.
+    let mut lists = small();
+    let columns = lists["columns"].as_array_mut().unwrap();
+    for i in columns.len()..2 * TABLE_VIEW_COLUMNS_MAX {
+        columns.push(json!({ "id": format!("c_more{i}"), "name": "", "kind": "text" }));
+    }
+    let rows = lists["rows"].as_array_mut().unwrap();
+    for i in rows.len()..2 * TABLE_VIEW_ROWS_MAX {
+        rows.push(json!({ "id": format!("r_more{i}") }));
+    }
+    let views = lists["views"].as_array_mut().unwrap();
+    for i in views.len()..2 * TABLE_VIEW_VIEWS_MAX {
+        views.push(json!({ "id": format!("v_more{i}"), "name": "", "kind": "table" }));
+    }
+    stored(lists).unwrap();
 }
 
 /// The refusals that matter, each with Go's message word for word (what
@@ -134,38 +150,37 @@ fn the_store_refuses_a_broken_block_with_gos_messages() {
             |b| b["columns"][1] = json!({ "id": "c_status", "name": "Status", "kind": "title" }),
             "table view needs exactly one title column".into(),
         ),
+        // Past twice each list's cap, which two people's adds at once may
+        // reach (Epo 2026-11-22).
         (
-            "a column too many",
+            "a column past twice the cap",
             |b| {
-                b["columns"] = full()["columns"].clone();
-                b["columns"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(json!({ "id": "c_more", "name": "More", "kind": "text" }));
+                let columns = b["columns"].as_array_mut().unwrap();
+                for i in columns.len()..=2 * TABLE_VIEW_COLUMNS_MAX {
+                    columns.push(json!({ "id": format!("c_more{i}"), "name": "", "kind": "text" }));
+                }
             },
-            "table view columns must be a list of 1 to 20".into(),
+            "table view columns must be a list of 1 to 40".into(),
         ),
         (
-            "a row too many",
+            "a row past twice the cap",
             |b| {
-                b["rows"] = full()["rows"].clone();
-                b["rows"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(json!({ "id": "r_more" }));
+                let rows = b["rows"].as_array_mut().unwrap();
+                for i in rows.len()..=2 * TABLE_VIEW_ROWS_MAX {
+                    rows.push(json!({ "id": format!("r_more{i}") }));
+                }
             },
-            "table view rows must be a list of 0 to 500".into(),
+            "table view rows must be a list of 0 to 1000".into(),
         ),
         (
-            "a view too many",
+            "a view past twice the cap",
             |b| {
-                b["views"] = full()["views"].clone();
-                b["views"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(json!({ "id": "v_more", "name": "More", "kind": "table" }));
+                let views = b["views"].as_array_mut().unwrap();
+                for i in views.len()..=2 * TABLE_VIEW_VIEWS_MAX {
+                    views.push(json!({ "id": format!("v_more{i}"), "name": "", "kind": "table" }));
+                }
             },
-            "table view views must be a list of 0 to 8".into(),
+            "table view views must be a list of 0 to 16".into(),
         ),
         (
             "an id led by _",
@@ -180,11 +195,11 @@ fn the_store_refuses_a_broken_block_with_gos_messages() {
         (
             "a cell too many",
             |b| {
-                for i in 0..TABLE_VIEW_COLUMNS_MAX {
+                for i in 0..2 * TABLE_VIEW_COLUMNS_MAX {
                     b["rows"][0][format!("c{i}")] = json!("x");
                 }
             },
-            "a table view row holds at most 20 cells".into(),
+            "a table view row holds at most 40 cells".into(),
         ),
         (
             "a bad column kind",
@@ -319,7 +334,7 @@ fn entry(doc: &Doc, list: &ArrayRef, index: u32) -> MapRef {
 /// leaves (a cell of a gone column) included. Two writers each making a
 /// different column the title, valid alone, would leave two title columns:
 /// the later one is refused as it arrives, so the store never sees it. A
-/// 21st table view is refused too.
+/// table view past twice the count is refused too.
 #[test]
 fn admission_merges_entries_and_refuses_what_the_store_would() {
     let value = [node("tv", small())];
@@ -359,14 +374,15 @@ fn admission_merges_entries_and_refuses_what_the_store_would() {
     assert_eq!(block["rows"][0]["c_gone"], "kept");
     material::assert_canonical(&held, "note").unwrap();
 
-    let value: Vec<Value> = (0..TABLE_VIEW_MAX_COUNT)
+    let most = 2 * TABLE_VIEW_MAX_COUNT;
+    let value: Vec<Value> = (0..most)
         .map(|i| node(&format!("tv{i}"), small()))
         .collect();
     let full_room = open(&value);
     let insert = edit(&full_room, 6, |peer| {
         let mut root = Root::new(plate::value(&peer.transact()).unwrap());
         let op = Operation::InsertNode {
-            path: vec![TABLE_VIEW_MAX_COUNT],
+            path: vec![most],
             node: node("tv_over", small()),
         };
         let mut txn = peer.transact_mut();

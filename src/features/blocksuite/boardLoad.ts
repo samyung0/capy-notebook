@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
+import { mergedCap } from '@/api/mergedCap';
 import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
 import { graphElementSchema } from '@/features/questions/validation';
 import {
@@ -82,14 +83,11 @@ const connection = (value: unknown) => {
 const planeElementFits = (element: Fields) =>
   graphElementSchema.safeParse(element).success;
 
-/** How many items the load check takes of a list whose add tools stop at `cap`:
- * twice it, as two people's adds at the same moment merge past the cap (Epo
- * 2026-11-22, "sure A"; a quiz or note figure's maps hold twice theirs too). */
-const mergedCap = (cap: number) => 2 * cap;
-
 /** A keyed list: a map of item id to the item and its order key (Epo 2026-11-16,
  * D10: a plane's elements; 2026-11-22: a chart's bars, labels and lines), up to
- * twice its `cap`, each item as `fits` takes it. */
+ * twice its `cap` (`mergedCap`: two people's adds at the same moment merge past
+ * the cap the add tools stop at, Epo 2026-11-22, "sure A"), each item as `fits`
+ * takes it. */
 function keyedFit(
   value: unknown,
   cap: number,

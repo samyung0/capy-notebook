@@ -34,7 +34,7 @@
 //! the strict validator (D4), so grading and fresh reads see what a Save
 //! would have stored.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -49,6 +49,7 @@ use notes::edit::{DocumentCommand, EditError, EditErrorCode};
 use notes::figure_map::{self, any_json, json_any};
 /// Ids a writer mints (map keys): `[A-Za-z0-9_-]`, at most [MAX_ID] long.
 pub use notes::figure_map::{MAX_ID, valid_id};
+use notes::limits::merged_cap;
 use notes::questions::{self as q, Policy, model_marked};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
@@ -67,8 +68,13 @@ const ANSWER_TYPES: &[&str] = &[
 /// The question block kinds a live quiz holds: the embed catalog's question
 /// blocks (chart, plot, graph) and the plain ones it does not list.
 pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
-/// Whole marks a part or a marking item carries.
+/// Whole marks a marking item carries.
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
+/// Whole marks a part carries: an open part's are its marking items' total,
+/// which two editors' items merged at once may take past the cap, up to twice
+/// it (Epo 2026-11-22); a part turned closed meanwhile keeps it, so any part
+/// may hold it (its editor brings a closed part back to the cap).
+const MAX_PART_MARKS: f64 = merged_cap(q::QUESTION_MARKS_MAX as usize) as f64;
 /// An open part's sample answers: at most one, optional (Epo 2026-10-15).
 const OPEN_ACCEPTED_MAX: usize = 1;
 
@@ -543,6 +549,13 @@ fn held_question_json<C: ReadTxn, K: ReadTxn>(
                 "solution": solution,
             });
             if let Some(markscheme) = markscheme {
+                // A part with marking items is worth their total: the editor
+                // stops adding at a total of QUESTION_MARKS_MAX, two editors'
+                // adds at once may pass it (Epo 2026-11-22, "Yes, A
+                // everywhere"), and the part's own marks fall short of it.
+                if let Some(total) = scheme_total(&markscheme) {
+                    value["marks"] = number(total);
+                }
                 value["markscheme"] = markscheme;
             }
             if let Some(group) = str_at(content, &part.map, "group") {
@@ -581,6 +594,12 @@ fn held_question_json<C: ReadTxn, K: ReadTxn>(
     value
 }
 
+/// The marks a marking scheme's items add up to; none without items.
+fn scheme_total(markscheme: &Value) -> Option<f64> {
+    let items = markscheme.as_array().filter(|items| !items.is_empty())?;
+    Some(items.iter().filter_map(|item| item["marks"].as_f64()).sum())
+}
+
 /// Every question as its documents hold it ([held_question_json]).
 fn held_questions_json<C: ReadTxn, K: ReadTxn>(
     content: &C,
@@ -617,8 +636,8 @@ fn quiz_block(children: Vec<Value>) -> Vec<Value> {
 /// projection drops them; a blank figure description goes, and
 /// a chart series short of its labels takes nulls, an empty value being null
 /// (Epo 2026-10-14). Blank marking items go too, and then the part's marks are
-/// the rest's total capped at QUESTION_MARKS_MAX (Epo 2026-10-15). A room's
-/// table is a grid, so its rows are always even.
+/// the rest's total (Epo 2026-10-15; a part with items is worth their total,
+/// 2026-11-22). A room's table is a grid, so its rows are always even.
 fn without_blanks(mut question: Value) -> Value {
     let blank = |value: &Value| {
         value
@@ -684,7 +703,7 @@ fn without_blanks(mut question: Value) -> Value {
                 items.retain(|item| !blank(&item["text"]));
                 if items.len() != before {
                     let total: f64 = items.iter().filter_map(|item| item["marks"].as_f64()).sum();
-                    part["marks"] = number(total.min(MAX_MARKS));
+                    part["marks"] = number(total);
                 }
             }
         }
@@ -1009,6 +1028,35 @@ fn sync_texts(
     )
 }
 
+/// The fixed entry key of an open part's one sample answer, the same on every
+/// writer (the browser's `SAMPLE_KEY`).
+pub const SAMPLE_KEY: &str = "sample";
+
+/// An open part's one sample answer ([OPEN_ACCEPTED_MAX]) under [SAMPLE_KEY]
+/// (Epo 2026-11-22, "then last save wins? if we change the question data
+/// structure now we need to change the UI as well, dont"): two writers adding
+/// it at once set the same entry and one of the two wins, so the list never
+/// holds two. One held under
+/// another key (seeded content) is changed or removed in place.
+fn sync_sample(txn: &mut TransactionMut, key: &MapRef, sample: Option<&str>) {
+    let list = child_map(txn, key, "accepted");
+    let held = ordered(txn, Some(&list));
+    for entry in held.iter().skip(usize::from(sample.is_some())) {
+        list.remove(txn, &entry.id);
+    }
+    let Some(sample) = sample else { return };
+    let entry = match held.first() {
+        Some(entry) => entry.map.clone(),
+        None => {
+            let entry = list.insert(txn, SAMPLE_KEY, MapPrelim::default());
+            let order = order::rising(&[(SAMPLE_KEY, "")]).remove(0);
+            sync_plain(txn, &entry, "order", Some(order_any(&order)));
+            entry
+        }
+    };
+    sync_text(txn, &entry, "text", sample);
+}
+
 /// A block list holding `blocks` ([sync_entries]): a block is the same as
 /// an entry that reads back as it ([read_block], the room's read), changed
 /// in place while its type stays (a block of another type, or one that
@@ -1260,7 +1308,8 @@ fn sync_answer(
                 sync_plain(keys, &key, "sampleImage", id("image"));
             }
             if kind == "open" {
-                sync_texts(keys, &key, "accepted", "a", &strings(&answer, "accepted"));
+                let accepted = strings(&answer, "accepted");
+                sync_sample(keys, &key, accepted.first().map(String::as_str));
             }
             // Matched by text, as the browser's; the marks follow the ids.
             let items = array_of(part, "markscheme");
@@ -1376,7 +1425,11 @@ fn sync_question(
         );
         sync_plain(content, &entry, "order", Some(order_any(&order)));
         last = Some((id, order));
-        let marks = part.get("marks").and_then(Value::as_f64).map(Any::Number);
+        // An open part's marks are its items' total, which merges may take
+        // past twice the cap; its own marks stop where the room admits them,
+        // and the total past it stays the warning the user tunes.
+        let marks = part.get("marks").and_then(Value::as_f64);
+        let marks = marks.map(|marks| Any::Number(marks.min(MAX_PART_MARKS)));
         sync_plain(content, &entry, "marks", marks);
         let group = part.get("group").and_then(Value::as_str).map(string_any);
         sync_plain(content, &entry, "group", group);
@@ -1449,16 +1502,19 @@ pub fn states_from_value(value: &[Value], client_id: u64) -> (Vec<u8>, Vec<u8>) 
 
 /* ------------------------------------------- the readers' item lists */
 
-/// One matching or ordering part's entries as the keys document holds them:
-/// (entry id, text) in the keys' order.
+/// What readers get of one part's key: a matching or ordering part's
+/// entries as the keys document holds them ((entry id, text) in the keys'
+/// order), and the marks a part with marking items is worth, their total.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ItemsPart {
     pub part: String,
     pub kind: String,
     pub entries: Vec<(String, String)>,
+    pub total: Option<u32>,
 }
 
-/// Every matching and ordering part's entries, by part id.
+/// Every matching and ordering part's entries and every marked part's total,
+/// by part id.
 pub fn item_parts<K: ReadTxn>(keys: &K) -> Vec<ItemsPart> {
     let Some(root) = keys.get_map(KEYS_ROOT) else {
         return Vec::new();
@@ -1469,18 +1525,36 @@ pub fn item_parts<K: ReadTxn>(keys: &K) -> Vec<ItemsPart> {
             let Out::YMap(key) = value else { return None };
             let kind = str_at(keys, &key, "type")?;
             let list = match kind.as_str() {
-                "matching" => "options",
-                "ordering" => "items",
-                _ => return None,
+                "matching" => Some("options"),
+                "ordering" => Some("items"),
+                _ => None,
             };
-            let entries = ordered(keys, map_at(keys, &key, list).as_ref())
-                .iter()
-                .map(|entry| (entry.id.clone(), text_at(keys, &entry.map, "text")))
-                .collect();
+            let scheme = ordered(keys, map_at(keys, &key, "markscheme").as_ref());
+            // A part with marking items is worth their total, which two
+            // editors' adds at once may take past the cap (Epo 2026-11-22,
+            // "Yes, A everywhere"); readers without the keys learn it here.
+            let total = (!scheme.is_empty()).then(|| {
+                scheme
+                    .iter()
+                    .map(|item| num_at(keys, &item.map, "marks").unwrap_or(1.0) as u32)
+                    .sum()
+            });
+            if list.is_none() && total.is_none() {
+                return None;
+            }
+            let entries = list
+                .map(|list| {
+                    ordered(keys, map_at(keys, &key, list).as_ref())
+                        .iter()
+                        .map(|entry| (entry.id.clone(), text_at(keys, &entry.map, "text")))
+                        .collect()
+                })
+                .unwrap_or_default();
             Some(ItemsPart {
                 part: part.to_owned(),
                 kind,
                 entries,
+                total,
             })
         })
         .collect();
@@ -1492,11 +1566,32 @@ pub fn item_parts<K: ReadTxn>(keys: &K) -> Vec<ItemsPart> {
 /// seed it).
 pub type Pick<'a> = &'a mut dyn FnMut(usize) -> usize;
 
-/// One part's list as readers get it: its kind and its texts.
+/// One part's list as readers get it: its kind, its texts (none but a
+/// matching or ordering part's) and its marking items' total.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReaderList {
     pub kind: String,
     pub items: Vec<String>,
+    pub total: Option<u32>,
+}
+
+/// A part's list as the readers hold it: its kind, (entry id, text) in the
+/// readers' order and its total.
+#[derive(Debug)]
+struct HeldList {
+    kind: String,
+    entries: Vec<(String, String)>,
+    total: Option<u32>,
+}
+
+impl HeldList {
+    fn reader(&self) -> ReaderList {
+        ReaderList {
+            kind: self.kind.clone(),
+            items: self.entries.iter().map(|(_, text)| text.clone()).collect(),
+            total: self.total,
+        }
+    }
 }
 
 /// What readers get of matching options and ordering items (D3, revised by
@@ -1511,8 +1606,7 @@ pub struct ReaderList {
 /// one where a single text changed in place keeps its order.
 #[derive(Debug, Default)]
 pub struct ReaderLists {
-    /// Part id to its kind and (entry id, text) in the readers' order.
-    parts: HashMap<String, (String, Vec<(String, String)>)>,
+    parts: HashMap<String, HeldList>,
 }
 
 impl ReaderLists {
@@ -1550,7 +1644,7 @@ impl ReaderLists {
             // (REVIEW2 M2), so that, too, shuffles afresh. So does a text
             // retyped into one another entry shows: two retypes in separate
             // windows would otherwise show a swap (REVIEW3 N1).
-            let in_place = held.is_some_and(|(kind, entries)| {
+            let in_place = held.is_some_and(|HeldList { kind, entries, .. }| {
                 if *kind != part.kind
                     || entries.len() != part.entries.len()
                     || !entries
@@ -1574,7 +1668,7 @@ impl ReaderLists {
                 }
             });
             let next: Vec<(String, String)> = match held {
-                Some((_, entries)) if in_place => entries
+                Some(HeldList { entries, .. }) if in_place => entries
                     .iter()
                     .map(|(id, _)| (id.clone(), texts[id.as_str()].to_owned()))
                     .collect(),
@@ -1586,18 +1680,18 @@ impl ReaderLists {
                     entries
                 }
             };
-            if held.is_some_and(|(kind, entries)| *kind == part.kind && *entries == next) {
+            if held.is_some_and(|held| {
+                held.kind == part.kind && held.entries == next && held.total == part.total
+            }) {
                 continue;
             }
-            changed.push((
-                part.part.clone(),
-                Some(ReaderList {
-                    kind: part.kind.clone(),
-                    items: next.iter().map(|(_, text)| text.clone()).collect(),
-                }),
-            ));
-            self.parts
-                .insert(part.part.clone(), (part.kind.clone(), next));
+            let list = HeldList {
+                kind: part.kind.clone(),
+                entries: next,
+                total: part.total,
+            };
+            changed.push((part.part.clone(), Some(list.reader())));
+            self.parts.insert(part.part.clone(), list);
         }
         changed.sort_by(|a, b| a.0.cmp(&b.0));
         changed
@@ -1608,15 +1702,7 @@ impl ReaderLists {
         let mut out: Vec<(String, ReaderList)> = self
             .parts
             .iter()
-            .map(|(part, (kind, entries))| {
-                (
-                    part.clone(),
-                    ReaderList {
-                        kind: kind.clone(),
-                        items: entries.iter().map(|(_, text)| text.clone()).collect(),
-                    },
-                )
-            })
+            .map(|(part, list)| (part.clone(), list.reader()))
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
@@ -1631,7 +1717,13 @@ pub fn reader_message(full: bool, parts: &[(String, Option<ReaderList>)]) -> Val
         .iter()
         .map(|(part, list)| {
             let value = match list {
-                Some(list) => json!({ "kind": list.kind, "items": list.items }),
+                Some(list) => {
+                    let mut value = json!({ "kind": list.kind, "items": list.items });
+                    if let Some(total) = list.total {
+                        value["total"] = json!(total);
+                    }
+                    value
+                }
                 None => Value::Null,
             };
             (part.clone(), value)
@@ -1704,11 +1796,11 @@ fn a_bool(content: &ItemContent) -> bool {
     matches!(one_any(content), Some(Any::Bool(_)))
 }
 
-/// Whole marks a part or a marking item may carry (the store's caps, REVIEW1
-/// M4: nothing the store refuses gets past admission).
-fn whole_marks(content: &ItemContent) -> bool {
+/// Whole marks up to `max` a part or a marking item may carry (the store's
+/// caps, REVIEW1 M4: nothing the store refuses gets past admission).
+fn whole_marks(content: &ItemContent, max: f64) -> bool {
     matches!(one_any(content), Some(Any::Number(value))
-        if value.fract() == 0.0 && (1.0..=MAX_MARKS).contains(value))
+        if value.fract() == 0.0 && (1.0..=max).contains(value))
 }
 
 /// What one update adds, which texts it types into and which lists it grows.
@@ -1838,7 +1930,7 @@ fn entry_shape(
 ) -> Result<(), String> {
     match (rest, key) {
         ([], Some("order")) if order_key(content) => tally.value(content),
-        ([], Some("marks")) if marks && whole_marks(content) => tally.value(content),
+        ([], Some("marks")) if marks && whole_marks(content, MAX_MARKS) => tally.value(content),
         ([], Some("marks")) if marks => {
             return refuse(format!(
                 "a marking item outside 1 to {MAX_MARKS} whole marks"
@@ -1946,12 +2038,12 @@ fn content_shape(
             tally.value(content);
             Ok(())
         }
-        ([R, _, "parts", _], Some("marks")) if whole_marks(content) => {
+        ([R, _, "parts", _], Some("marks")) if whole_marks(content, MAX_PART_MARKS) => {
             tally.value(content);
             Ok(())
         }
         ([R, _, "parts", _], Some("marks")) => {
-            refuse(format!("a part outside 1 to {MAX_MARKS} whole marks"))
+            refuse(format!("a part outside 1 to {MAX_PART_MARKS} whole marks"))
         }
         ([R, _, "parts", _], Some("blocks" | "answer")) if is_map(content) => {
             tally.structure(16);
@@ -2084,30 +2176,38 @@ fn keys_shape(
     }
 }
 
-/// A text's cap by its path (characters; its UTF-16 length bounds them).
+/// A text's cap by its path (characters; its UTF-16 length bounds them):
+/// twice the text's own, as two people typing in it at once may pass that
+/// (Epo 2026-11-22, "Yes, A everywhere"); the editors stop at the cap.
 fn text_cap(path: &[&str], open_part: bool) -> usize {
-    match path {
+    merged_cap(match path {
         [KEYS_ROOT, _, "markscheme", _, "text"] => q::QUESTION_MARK_ITEM_MAX,
         [KEYS_ROOT, _, "accepted", _, "text"] if open_part => q::QUIZ_OPEN_ANSWER_MAX,
         // An image block's description (a block's only text so named).
         [.., "description"] => q::QUESTION_DESCRIPTION_MAX,
         _ => q::QUESTION_TEXT_MAX,
-    }
+    })
 }
 
-/// A block's own list's cap by its field: a table's axes and cells; a
-/// figure's maps at twice their caps, as a note figure's
-/// (`figure_map::map_cap`).
+/// A block's own list's cap by its field: a table's axes and cells and a
+/// figure's maps (`figure_map::map_cap`), each at twice its cap, as two
+/// people's adds at once may pass that.
 fn block_list_cap(field: &str) -> Option<usize> {
+    let (rows, columns) = (
+        merged_cap(q::QUESTION_TABLE_ROWS_MAX),
+        merged_cap(q::QUESTION_TABLE_COLUMNS_MAX),
+    );
     Some(match field {
-        "rows" => q::QUESTION_TABLE_ROWS_MAX,
-        "columns" => q::QUESTION_TABLE_COLUMNS_MAX,
-        "cells" => q::QUESTION_TABLE_ROWS_MAX * q::QUESTION_TABLE_COLUMNS_MAX,
+        "rows" => rows,
+        "columns" => columns,
+        "cells" => rows * columns,
         _ => return figure_map::map_cap(field),
     })
 }
 
-/// A list's (or table axis's) cap by its path, as the exact check counts it.
+/// A list's (or table axis's) cap by its path, as the exact check counts it:
+/// twice the list's own (a gap's number is its key, so the gaps stop at
+/// theirs).
 fn list_cap(path: &[&str]) -> Option<usize> {
     const R: &str = QUESTIONS_ROOT;
     const K: &str = KEYS_ROOT;
@@ -2121,7 +2221,10 @@ fn list_cap(path: &[&str]) -> Option<usize> {
     if let Some(field) = table {
         return block_list_cap(field);
     }
-    Some(match path {
+    if matches!(path, [K, _, "gaps"]) {
+        return Some(q::QUESTION_ANSWERS_MAX);
+    }
+    Some(merged_cap(match path {
         [R, _, "stem"]
         | [R, _, "groups", _, "blocks"]
         | [R, _, "parts", _, "blocks"]
@@ -2133,9 +2236,9 @@ fn list_cap(path: &[&str]) -> Option<usize> {
         [K] => q::QUIZ_PARTS_MAX * 2,
         [K, _, "accepted" | "options" | "items" | "correct" | "pairs"] => q::QUESTION_ANSWERS_MAX,
         [K, _, "markscheme"] => q::QUIZ_MARKSCHEME_MAX,
-        [K, _, "gaps"] | [K, _, "gaps", _] => q::QUESTION_ANSWERS_MAX,
+        [K, _, "gaps", _] => q::QUESTION_ANSWERS_MAX,
         _ => return None,
-    })
+    }))
 }
 
 /// The map at `path` (keys from a root), when the document holds it.
@@ -2270,8 +2373,8 @@ fn admit<T: ReadTxn>(
     }
     if new_parts > 0 || tally.open > 0 {
         let (parts, open) = part_counts(txn);
-        if parts + new_parts > q::QUIZ_PARTS_MAX as u64
-            || open + tally.open > q::QUIZ_OPEN_PARTS_MAX as u64
+        if parts + new_parts > merged_cap(q::QUIZ_PARTS_MAX) as u64
+            || open + tally.open > merged_cap(q::QUIZ_OPEN_PARTS_MAX) as u64
         {
             tally.growth.over_cap = true;
         }
@@ -2318,27 +2421,113 @@ fn check_count(count: usize, cap: usize, what: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn check_marks(marks: Option<f64>, what: &str) -> Result<(), String> {
+fn check_marks(marks: Option<f64>, max: f64, what: &str) -> Result<(), String> {
     match marks {
         None => Ok(()),
-        Some(marks) if marks.fract() == 0.0 && (1.0..=MAX_MARKS).contains(&marks) => Ok(()),
-        Some(_) => Err(format!("{what} carries 1 to {MAX_MARKS} whole marks")),
+        Some(marks) if marks.fract() == 0.0 && (1.0..=max).contains(&marks) => Ok(()),
+        Some(_) => Err(format!("{what} carries 1 to {max} whole marks")),
     }
 }
 
-fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String> {
+/// A count, typed text or part's marks that two people's edits at once may
+/// take past its cap, up to twice it (Epo 2026-11-22), as the exact check
+/// meets it: where it sits (`at`, ids that stay across edits, with `field`),
+/// what it is, what it holds now and its own cap. A writer's edit may not
+/// grow one past its cap ([check_written]). A writer's rewrite gives an entry
+/// it cannot match its id by place, so a text or a block's list is placed by
+/// its list or section alone and held by rank among that place's values.
+pub struct Measure<'a> {
+    at: &'a str,
+    field: &'a str,
+    what: &'a str,
+    value: usize,
+    cap: usize,
+    unit: &'a str,
+}
+
+impl Measure<'_> {
+    fn key(&self) -> String {
+        format!("{}/{}", self.at, self.field)
+    }
+}
+
+/// Each [Measure] the exact check meets, handed on as it goes.
+type Visit<'v> = &'v mut dyn FnMut(&Measure) -> Result<(), String>;
+
+/// A count up to twice its cap, handed to `visit`.
+fn measure_count(
+    visit: Visit,
+    at: &str,
+    field: &str,
+    what: &str,
+    value: usize,
+    cap: usize,
+) -> Result<(), String> {
+    check_count(value, merged_cap(cap), what)?;
+    visit(&Measure {
+        at,
+        field,
+        what,
+        value,
+        cap,
+        unit: "",
+    })
+}
+
+/// A typed text up to twice its cap, handed to `visit`.
+fn measure_text(
+    visit: Visit,
+    at: &str,
+    field: &str,
+    what: &str,
+    text: &str,
+    cap: usize,
+) -> Result<(), String> {
+    check_text(text, merged_cap(cap), what)?;
+    visit(&Measure {
+        at,
+        field,
+        what,
+        value: chars(text),
+        cap,
+        unit: " characters",
+    })
+}
+
+/// A section's blocks, each typed text and list up to twice its cap (Epo
+/// 2026-11-22); a figure's plain fields at theirs, as they came. `at` names
+/// the section.
+fn check_blocks<T: ReadTxn>(
+    txn: &T,
+    map: Option<&MapRef>,
+    at: &str,
+    visit: Visit,
+) -> Result<(), String> {
     let blocks = ordered(txn, map);
-    check_count(blocks.len(), q::QUESTION_BLOCKS_MAX, "a section")?;
+    measure_count(
+        visit,
+        at,
+        "blocks",
+        "a section",
+        blocks.len(),
+        q::QUESTION_BLOCKS_MAX,
+    )?;
     for block in &blocks {
-        check_text(
+        measure_text(
+            visit,
+            at,
+            "text",
+            "a question text",
             &text_at(txn, &block.map, "text"),
             q::QUESTION_TEXT_MAX,
-            "a question text",
         )?;
-        check_text(
+        measure_text(
+            visit,
+            at,
+            "description",
+            "a description",
             &text_at(txn, &block.map, "description"),
             q::QUESTION_DESCRIPTION_MAX,
-            "a description",
         )?;
         if let Some(meta) = str_at(txn, &block.map, "attribution")
             && meta.encode_utf16().count() > q::QUESTION_METADATA_MAX
@@ -2370,13 +2559,33 @@ fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String>
                 } else {
                     "a figure"
                 };
-                check_count(map.len(txn) as usize, cap, &format!("{owner}'s {field}"))?;
+                let what = format!("{owner}'s {field}");
+                let count = map.len(txn) as usize;
+                check_count(count, cap, &what)?;
+                // The lists an editor adds to; the rest follow them.
+                if matches!(field, "rows" | "columns" | "series" | "labels" | "elements") {
+                    visit(&Measure {
+                        at,
+                        field,
+                        what: &what,
+                        value: count,
+                        cap: cap / 2,
+                        unit: "",
+                    })?;
+                }
             }
         }
         if let Some(cells) = map_at(txn, &block.map, "cells") {
             for (_, value) in cells.iter(txn) {
                 if let Out::YText(text) = value {
-                    check_text(&text.get_string(txn), q::QUESTION_TEXT_MAX, "a table cell")?;
+                    measure_text(
+                        visit,
+                        at,
+                        "cell",
+                        "a table cell",
+                        &text.get_string(txn),
+                        q::QUESTION_TEXT_MAX,
+                    )?;
                 }
             }
         }
@@ -2384,48 +2593,111 @@ fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String>
     Ok(())
 }
 
+/// A list of typed entries: at most twice `cap` entries, each text at most
+/// twice `text_cap` (Epo 2026-11-22). `at` names the list.
+#[allow(clippy::too_many_arguments)]
 fn check_list<T: ReadTxn>(
     txn: &T,
     map: Option<&MapRef>,
     cap: usize,
     text_cap: usize,
     what: &str,
+    at: &str,
+    visit: Visit,
 ) -> Result<(), String> {
     let items = ordered(txn, map);
-    check_count(items.len(), cap, what)?;
+    measure_count(visit, at, "count", what, items.len(), cap)?;
     for item in &items {
-        check_text(&text_at(txn, &item.map, "text"), text_cap, what)?;
+        measure_text(
+            visit,
+            at,
+            "text",
+            what,
+            &text_at(txn, &item.map, "text"),
+            text_cap,
+        )?;
     }
     Ok(())
 }
 
-/// The content document's caps, exactly (the exact check's candidate).
+/// The content document's caps, exactly (the exact check's candidate): each
+/// count and typed text up to twice its cap, as two editors' edits at once may
+/// leave it (Epo 2026-11-22).
 pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
+    walk_content(txn, &mut |_| Ok(()))
+}
+
+/// [check_content_caps], handing each [Measure] to `visit`.
+fn walk_content<T: ReadTxn>(txn: &T, visit: Visit) -> Result<(), String> {
     let root = txn.get_map(QUESTIONS_ROOT);
     let questions = ordered(txn, root.as_ref());
-    check_count(questions.len(), q::QUIZ_PARTS_MAX, "a quiz's questions")?;
+    let question_parts_max = merged_cap(q::QUIZ_QUESTION_PARTS_MAX);
+    check_count(
+        questions.len(),
+        merged_cap(q::QUIZ_PARTS_MAX),
+        "a quiz's questions",
+    )?;
     let (mut parts, mut open) = (0usize, 0usize);
     for question in &questions {
-        check_blocks(txn, map_at(txn, &question.map, "stem").as_ref())?;
+        let at = &question.id;
+        check_blocks(
+            txn,
+            map_at(txn, &question.map, "stem").as_ref(),
+            &format!("{at}/stem"),
+            visit,
+        )?;
         let groups = ordered(txn, map_at(txn, &question.map, "groups").as_ref());
-        check_count(
+        measure_count(
+            visit,
+            at,
+            "groups",
+            "a question's groups",
             groups.len(),
             q::QUIZ_QUESTION_PARTS_MAX,
-            "a question's groups",
         )?;
         for group in &groups {
-            check_blocks(txn, map_at(txn, &group.map, "blocks").as_ref())?;
+            check_blocks(
+                txn,
+                map_at(txn, &group.map, "blocks").as_ref(),
+                &format!("{at}/groups/{}", group.id),
+                visit,
+            )?;
         }
         let question_parts = ordered(txn, map_at(txn, &question.map, "parts").as_ref());
         check_count(
             question_parts.len(),
-            q::QUIZ_QUESTION_PARTS_MAX,
+            question_parts_max,
             "a question's parts",
         )?;
+        visit(&Measure {
+            at,
+            field: "parts",
+            what: "a question's parts",
+            value: question_parts.len(),
+            cap: q::QUIZ_QUESTION_PARTS_MAX,
+            unit: "",
+        })?;
         parts += question_parts.len();
         for part in &question_parts {
-            check_marks(num_at(txn, &part.map, "marks"), "a part")?;
-            check_blocks(txn, map_at(txn, &part.map, "blocks").as_ref())?;
+            let at = &part.id;
+            check_blocks(
+                txn,
+                map_at(txn, &part.map, "blocks").as_ref(),
+                &format!("{at}/blocks"),
+                visit,
+            )?;
+            let marks = num_at(txn, &part.map, "marks");
+            check_marks(marks, MAX_PART_MARKS, "a part")?;
+            if let Some(marks) = marks {
+                visit(&Measure {
+                    at,
+                    field: "marks",
+                    what: "a part",
+                    value: marks as usize,
+                    cap: MAX_MARKS as usize,
+                    unit: " marks",
+                })?;
+            }
             let Some(answer) = map_at(txn, &part.map, "answer") else {
                 continue;
             };
@@ -2442,46 +2714,90 @@ pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
                     q::QUESTION_ANSWERS_MAX,
                     q::QUESTION_TEXT_MAX,
                     "an answer list",
+                    &format!("{at}/{list}"),
+                    visit,
                 )?;
             }
         }
     }
-    check_count(parts, q::QUIZ_PARTS_MAX, "a quiz's parts")?;
-    check_count(open, q::QUIZ_OPEN_PARTS_MAX, "a quiz's AI-marked parts")
+    measure_count(
+        visit,
+        "",
+        "parts",
+        "a quiz's parts",
+        parts,
+        q::QUIZ_PARTS_MAX,
+    )?;
+    measure_count(
+        visit,
+        "",
+        "open",
+        "a quiz's AI-marked parts",
+        open,
+        q::QUIZ_OPEN_PARTS_MAX,
+    )
 }
 
-/// The keys document's caps, exactly.
+/// The keys document's caps, exactly, each up to twice its cap.
 pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
+    walk_keys(txn, &mut |_| Ok(()))
+}
+
+/// [check_keys_caps], handing each [Measure] to `visit`.
+fn walk_keys<T: ReadTxn>(txn: &T, visit: Visit) -> Result<(), String> {
     let Some(root) = txn.get_map(KEYS_ROOT) else {
         return Ok(());
     };
     check_count(
         root.len(txn) as usize,
-        q::QUIZ_PARTS_MAX * 2,
+        merged_cap(q::QUIZ_PARTS_MAX * 2),
         "a quiz's keys",
     )?;
-    for (_, value) in root.iter(txn) {
+    for (part, value) in root.iter(txn) {
         let Out::YMap(key) = value else { continue };
-        check_blocks(txn, map_at(txn, &key, "solution").as_ref())?;
-        let open = str_at(txn, &key, "type").as_deref() == Some("open");
-        let (accepted_count, accepted_cap) = if open {
-            (OPEN_ACCEPTED_MAX, q::QUIZ_OPEN_ANSWER_MAX)
-        } else {
-            (q::QUESTION_ANSWERS_MAX, q::QUESTION_TEXT_MAX)
-        };
-        check_list(
+        check_blocks(
             txn,
-            map_at(txn, &key, "accepted").as_ref(),
-            accepted_count,
-            accepted_cap,
-            "accepted answers",
+            map_at(txn, &key, "solution").as_ref(),
+            &format!("{part}/solution"),
+            visit,
         )?;
+        let open = str_at(txn, &key, "type").as_deref() == Some("open");
+        let accepted = format!("{part}/accepted");
+        if open {
+            // An open part's one sample answer is a single field in its
+            // editor, so its count stays at its cap.
+            let samples = ordered(txn, map_at(txn, &key, "accepted").as_ref());
+            check_count(samples.len(), OPEN_ACCEPTED_MAX, "accepted answers")?;
+            for sample in &samples {
+                measure_text(
+                    visit,
+                    &accepted,
+                    "text",
+                    "accepted answers",
+                    &text_at(txn, &sample.map, "text"),
+                    q::QUIZ_OPEN_ANSWER_MAX,
+                )?;
+            }
+        } else {
+            check_list(
+                txn,
+                map_at(txn, &key, "accepted").as_ref(),
+                q::QUESTION_ANSWERS_MAX,
+                q::QUESTION_TEXT_MAX,
+                "accepted answers",
+                &accepted,
+                visit,
+            )?;
+        }
         for list in ["correct", "pairs"] {
             if let Some(map) = map_at(txn, &key, list) {
-                check_count(
+                measure_count(
+                    visit,
+                    &format!("{part}/{list}"),
+                    "count",
+                    "an answer list",
                     map.len(txn) as usize,
                     q::QUESTION_ANSWERS_MAX,
-                    "an answer list",
                 )?;
             }
         }
@@ -2492,17 +2808,30 @@ pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
                 q::QUESTION_ANSWERS_MAX,
                 q::QUESTION_TEXT_MAX,
                 "an answer list",
+                &format!("{part}/{list}"),
+                visit,
             )?;
         }
+        let scheme_at = format!("{part}/markscheme");
         let scheme = ordered(txn, map_at(txn, &key, "markscheme").as_ref());
-        check_count(scheme.len(), q::QUIZ_MARKSCHEME_MAX, "a marking scheme")?;
+        measure_count(
+            visit,
+            &scheme_at,
+            "count",
+            "a marking scheme",
+            scheme.len(),
+            q::QUIZ_MARKSCHEME_MAX,
+        )?;
         for item in &scheme {
-            check_text(
+            measure_text(
+                visit,
+                &scheme_at,
+                "text",
+                "a marking item",
                 &text_at(txn, &item.map, "text"),
                 q::QUESTION_MARK_ITEM_MAX,
-                "a marking item",
             )?;
-            check_marks(num_at(txn, &item.map, "marks"), "a marking item")?;
+            check_marks(num_at(txn, &item.map, "marks"), MAX_MARKS, "a marking item")?;
         }
         if let Some(gaps) = map_at(txn, &key, "gaps") {
             check_count(
@@ -2510,7 +2839,7 @@ pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
                 q::QUESTION_ANSWERS_MAX,
                 "a part's gaps",
             )?;
-            for (_, list) in gaps.iter(txn) {
+            for (gap, list) in gaps.iter(txn) {
                 if let Out::YMap(list) = list {
                     check_list(
                         txn,
@@ -2518,9 +2847,98 @@ pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
                         q::QUESTION_ANSWERS_MAX,
                         q::QUESTION_TEXT_MAX,
                         "a gap's accepted answers",
+                        &format!("{part}/gaps/{gap}"),
+                        visit,
                     )?;
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// What each count, typed text and part's marks a document holds now, by
+/// where it sits, each place's values largest first: a writer's edit is
+/// checked against it ([check_written]).
+pub type Held = HashMap<String, Vec<usize>>;
+
+/// The [Held] measures of a quiz's content and keys documents. A part's held
+/// marks are the more of its own and its marking items' total, which reads
+/// report (`held_question_json`) and a writer may send back as they are.
+pub fn held<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> (Held, Held) {
+    let collect = |walk: &dyn Fn(Visit) -> Result<(), String>| {
+        let mut held = Held::new();
+        // A document already past twice a cap holds what it holds.
+        let _ = walk(&mut |measure: &Measure| {
+            held.entry(measure.key()).or_default().push(measure.value);
+            Ok(())
+        });
+        for values in held.values_mut() {
+            values.sort_unstable_by(|a, b| b.cmp(a));
+        }
+        held
+    };
+    let mut content_held = collect(&|visit| walk_content(content, visit));
+    let keys_held = collect(&|visit| walk_keys(keys, visit));
+    if let Some(root) = keys.get_map(KEYS_ROOT) {
+        for (part, value) in root.iter(keys) {
+            let Out::YMap(key) = value else { continue };
+            // An item with no marks reads as worth 1, as every reader takes it.
+            let total: f64 = ordered(keys, map_at(keys, &key, "markscheme").as_ref())
+                .iter()
+                .map(|item| num_at(keys, &item.map, "marks").unwrap_or(1.0))
+                .sum();
+            let marks = content_held.entry(format!("{part}/marks")).or_default();
+            match marks.first_mut() {
+                Some(own) => *own = (*own).max(total as usize),
+                None => marks.push(total as usize),
+            }
+        }
+    }
+    (content_held, keys_held)
+}
+
+/// A server writer's edit (an agent's, question media, the content save API)
+/// on a quiz's content and keys documents, against what they held before
+/// ([held]): every count and text within twice its cap, and none grown past
+/// its cap, as an editor stops there (Epo 2026-11-22, "Yes, A everywhere");
+/// one a merge already took past it may stay or shrink.
+pub fn check_written<C: ReadTxn, K: ReadTxn>(
+    content: &C,
+    keys: &K,
+    (content_held, keys_held): &(Held, Held),
+) -> Result<(), String> {
+    within(content_held, &|visit| walk_content(content, visit))?;
+    within(keys_held, &|visit| walk_keys(keys, visit))
+}
+
+/// Each place's values within their cap or held by rank: its n-th largest
+/// no larger than the cap or the place's n-th largest before. A trimmed text
+/// a block moved past still goes in, and neither a sibling grown towards a
+/// long one nor a new long entry beside it does.
+fn within(held: &Held, walk: &dyn Fn(Visit) -> Result<(), String>) -> Result<(), String> {
+    // Place -> (the refusal, the cap, its values now).
+    let mut now: BTreeMap<String, (String, usize, Vec<usize>)> = BTreeMap::new();
+    walk(&mut |measure: &Measure| {
+        let place = now.entry(measure.key()).or_insert_with(|| {
+            let refusal = format!(
+                "{} holds at most {}{}",
+                measure.what, measure.cap, measure.unit
+            );
+            (refusal, measure.cap, Vec::new())
+        });
+        place.2.push(measure.value);
+        Ok(())
+    })?;
+    for (place, (refusal, cap, mut values)) in now {
+        values.sort_unstable_by(|a, b| b.cmp(a));
+        let before = held.get(&place).map_or(&[][..], Vec::as_slice);
+        let over = values
+            .iter()
+            .enumerate()
+            .any(|(rank, value)| *value > cap.max(before.get(rank).copied().unwrap_or(0)));
+        if over {
+            return Err(refusal);
         }
     }
     Ok(())

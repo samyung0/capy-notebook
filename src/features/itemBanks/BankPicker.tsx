@@ -23,7 +23,7 @@ import { TwoWaySwitch } from '@/components/ui/TwoWaySwitch';
 import { userToast } from '@/components/ui/userToast';
 import { collectSelectionPages } from '@/features/files/useFileSelection';
 import { questionMarks } from '@/features/questions/types';
-import { quizBounds } from '@/features/questions/validation';
+import { quizCapsIssue, quizCounts } from '@/features/questions/validation';
 import { questionSummary } from '@/features/quizzes/QuizSplit';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -216,12 +216,11 @@ function useBankPicks({
     (sum, item) => sum + questionMarks(item.question),
     0
   );
-  let tooLarge: string | undefined;
-  try {
-    quizBounds([...existing, ...picked.items.map((item) => item.question)]);
-  } catch (error) {
-    tooLarge = (error as Error).message;
-  }
+  // The picks add to the quiz: past its caps, none goes.
+  const tooLarge = quizCapsIssue(
+    quizCounts(existing),
+    quizCounts([...existing, ...picked.items.map((item) => item.question)])
+  );
   const note =
     picked.items.length === 0 ? null : tooLarge ? (
       <span className="text-tint-error-fg">{tooLarge}</span>
