@@ -751,6 +751,32 @@ it('accepts a reader place in each format and nothing else', () => {
   ).toBe(true);
 });
 
+// Q608 A, Office protocol 15: View says where its reader is too, naming an
+// XLSX sheet by name, and every place carries its frame's zoom.
+it("accepts View's reader place by sheet name and a place's zoom", () => {
+  expect(OFFICE_PROTOCOL_VERSION).toBe(15);
+  const view = {
+    anchor: { col: 1, row: 3 },
+    format: 'xlsx',
+    head: { col: 1, row: 3 },
+    sheetName: 'Summary',
+    zoom: 1.5,
+  };
+  expect(isOfficePosition(view)).toBe(true);
+  expect(isOfficePosition({ format: 'pptx', slide: 2, zoom: 'fit' })).toBe(
+    true
+  );
+  expect(
+    isOfficeRuntimeMessage({
+      id: 'p1',
+      position: view,
+      revision: 1,
+      type: 'position',
+      version: OFFICE_PROTOCOL_VERSION,
+    })
+  ).toBe(true);
+});
+
 it('accepts bounded citation changes without a document reload', () => {
   const message = {
     citation: { page: 2, quote: 'Source passage about wetlands' },

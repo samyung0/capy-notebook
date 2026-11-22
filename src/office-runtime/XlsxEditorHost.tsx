@@ -11,6 +11,7 @@ import {
   type XlsxCommandState,
   XlsxEditor,
   type XlsxEditorApi,
+  type XlsxEditorProps,
 } from '@betteroffice/xlsx-react';
 import {
   type PointerEvent,
@@ -22,10 +23,12 @@ import {
 } from 'react';
 import type {
   OfficeAnalysis,
+  OfficeCitation,
   OfficeLocale,
   OfficeNotice,
   OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
+import { CITATION_FILL, uniqueCitation } from './citations';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
@@ -41,6 +44,7 @@ import type {
   OfficeThumbnailer,
 } from './runtimeMenus';
 import { takeKeyboard } from './takeKeyboard';
+import { liveXlsxCitation } from './xlsxCitation';
 import { xlsxIcons } from './xlsxIcons';
 import { runXlsxMenuItem, xlsxEditMenus, xlsxStrings } from './xlsxMenus';
 import {
@@ -89,6 +93,7 @@ function xlsxAwareness(
 
 export function XlsxEditorHost({
   bytes,
+  citation,
   collaboration,
   compact,
   locale,
@@ -111,6 +116,8 @@ export function XlsxEditorHost({
   sending,
 }: {
   bytes: Uint8Array;
+  /** A chat citation's cell: selected and filled as in View. */
+  citation: OfficeCitation | null;
   collaboration: OfficeCollaboration;
   /** Below md: the ribbon is one row, with no zoom (as the PDF toolbar), font
    * picker or size box. */
@@ -188,7 +195,8 @@ export function XlsxEditorHost({
     });
   }, [commandState, locale, onMenus]);
   useEffect(() => () => onMenus(null), [onMenus]);
-  // A room swap (Epo 2026-10-22): the sheet, by id, and its selected cells.
+  // A room swap (Epo 2026-10-22): the sheet, by id (by name from View), and
+  // its selected cells, at the zoom first where it is one of the levels.
   useEffect(() => {
     onPositioner({
       read: () => {
@@ -198,7 +206,13 @@ export function XlsxEditorHost({
       show: (position) => {
         const api = apiRef.current;
         if (!api || position.format !== 'xlsx') return;
-        const sheet = api.sheetInfo()?.sheetIds.indexOf(position.sheet) ?? -1;
+        if (typeof position.zoom === 'number')
+          runXlsxMenuItem(`zoom:${Math.round(position.zoom * 100)}`, api);
+        const info = api.sheetInfo();
+        const sheet =
+          ('sheet' in position
+            ? info?.sheetIds.indexOf(position.sheet)
+            : info?.sheetNames.indexOf(position.sheetName)) ?? -1;
         if (sheet >= 0)
           void api.selectCells(sheet, {
             anchor: position.anchor,
@@ -212,6 +226,31 @@ export function XlsxEditorHost({
   useEffect(() => {
     if (zoom) onZoomChange(zoom);
   }, [onZoomChange, zoom]);
+  // View's rule on the open workbook's cells, once its grid is painted: the
+  // editor scrolls to the cell and fills it without selecting it (Q810 B),
+  // switching to its sheet as a tab click does (Q812 B), while the cell still
+  // holds the quote (Q809 A), until the next citation.
+  const [painted, setPainted] = useState(false);
+  const [marked, setMarked] = useState<XlsxEditorProps['markedCell']>(null);
+  useEffect(() => {
+    setMarked(null);
+    const api = apiRef.current;
+    if (!(citation && painted && api)) return;
+    let cancelled = false;
+    void liveXlsxCitation(api.handle, citation.quote).then((match) => {
+      if (cancelled || !match) return;
+      setMarked({
+        col: match.col,
+        color: CITATION_FILL,
+        holds: (text) => !!uniqueCitation([{ text }], citation.quote),
+        row: match.row,
+        sheetId: match.sheetId,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [citation, painted]);
   useEffect(() => {
     onRenderer(async (kind) => {
       const api = apiRef.current;
@@ -302,10 +341,12 @@ export function XlsxEditorHost({
         i18n={xlsxStrings(locale)}
         icons={xlsxIcons}
         initialZoom={initialZoom}
+        markedCell={marked}
         onCommandStateChange={setCommandState}
         onFirstPaint={() => {
           const info = apiRef.current?.sheetInfo();
           if (info) onAnalysis(analyzeOpenWorkbook({ sheetInfo: () => info }));
+          setPainted(true);
         }}
         onFontError={onFontError}
         onNotice={onNotice}

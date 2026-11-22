@@ -10,7 +10,7 @@ import {
 import type { ExportFormat } from '@/features/notes/export/render';
 import { trackDownload } from '@/features/workspace/sourceTransfers';
 import { isSourceText, officeFormatOf } from './fileUtils';
-import { takeSourceOpen } from './sourceOpen';
+import { readSourceView } from './sourceOpen';
 import { applySavedSource, savedSourceUpdate } from './sourceState';
 
 /** Download from an item menu (Epo 2026-10-27/28): a file's latest saved
@@ -43,8 +43,9 @@ async function fileBlob(
   // The session carries saved edits while they are ahead of the published
   // file, or while a publication waits to become the editing base: every
   // saved edit is stored against the session's base, so they merge over it
-  // whenever present. With none, the base is the published file.
-  const { base, session } = await takeSourceOpen(file.id, 'view');
+  // whenever present. With none, the base is the published file. The
+  // session is read afresh, never the one the route read at open.
+  const { base, session } = await readSourceView(file.id);
   const bytes = await base;
   const saved = savedSourceUpdate(session);
   if (!saved) return new Blob([bytes]);

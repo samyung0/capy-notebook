@@ -99,6 +99,38 @@ export async function saveOffice(page: Page, format: OfficeFormat) {
   await page.getByRole('menuitem', { name: /^Save/ }).click();
 }
 
+/** Asks the Office frame on screen where its reader is, or with `position`
+ * shows it that place first, as the host's room swap does; resolves with the
+ * frame's `position` answer. */
+export function officePosition(page: Page, position?: unknown) {
+  return page.evaluate(
+    ([place, version]) =>
+      new Promise<unknown>((resolve, reject) => {
+        const iframe = document.querySelector<HTMLIFrameElement>(
+          '[data-office-view="live"] iframe'
+        );
+        if (!iframe?.contentWindow) {
+          reject(new Error('Missing Office runtime'));
+          return;
+        }
+        const id = crypto.randomUUID();
+        const answer = (event: MessageEvent) => {
+          if (event.data?.type !== 'position' || event.data.id !== id) return;
+          window.removeEventListener('message', answer);
+          resolve(event.data.position);
+        };
+        window.addEventListener('message', answer);
+        iframe.contentWindow.postMessage(
+          place === undefined
+            ? { id, type: 'position-request', version }
+            : { id, position: place, type: 'set-position', version },
+          new URL(iframe.src).origin
+        );
+      }),
+    [position, OFFICE_PROTOCOL_VERSION] as const
+  );
+}
+
 /** Posts a host message to the page's Office runtime at the current protocol
  * version, as Capy's host does. */
 export function postToOfficeRuntime(

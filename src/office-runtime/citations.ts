@@ -8,6 +8,20 @@ import type { OfficeCitation } from '@/features/files/officeProtocol';
 
 export type CitationRect = { x: number; y: number; w: number; h: number };
 export const CITATION_FILL = 'rgba(255, 196, 0, 0.3)';
+/** What the citation rule may join across, so no search piece holds it. */
+const QUOTE_BREAK = /[\s\u00ad-]+/;
+
+/** The quote's longest piece without whitespace or hyphens: every text the
+ * rule matches holds it (bar a space or a compatibility character inside it),
+ * so an editor's text search finds the candidates with it. */
+export function quoteProbe(quote: string): string {
+  return quote
+    .split(QUOTE_BREAK)
+    .reduce(
+      (longest, piece) => (piece.length > longest.length ? piece : longest),
+      ''
+    );
+}
 
 function normalized(text: string): string {
   return text
@@ -133,6 +147,6 @@ export function slideCitationItems(frame: SlideDisplayList) {
       )
         ? []
         : lines;
-    return [{ rects, text }];
+    return [{ rects, storyId: item.storyId, text }];
   });
 }

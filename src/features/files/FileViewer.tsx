@@ -60,7 +60,11 @@ import {
   SHEET_EXTS,
   TEXT_EXTS,
 } from './fileUtils';
-import type { OfficeCitation, OfficeFormat } from './officeProtocol';
+import type {
+  OfficeCitation,
+  OfficeFormat,
+  OfficeZoom,
+} from './officeProtocol';
 import { officeSwapPlaces } from './officeSwapPlaces';
 import { SourceTextView } from './SourceTextView';
 import { officeRuntimeKey } from './useOfficeRuntime';
@@ -410,8 +414,10 @@ function OfficeSwap({ format, ...props }: OfficeFileProps) {
   const generations =
     building === null ? [views.shown] : [views.shown, building];
   // The tab goes with the swap; a tab picked while the next view builds stays
-  // behind (a paused view, a few seconds).
+  // behind (a paused view, a few seconds). The zoom goes too, and one picked
+  // meanwhile follows with the reader's place.
   const ribbonTab = useRef<string | null>(null);
+  const zoom = useRef<OfficeZoom | undefined>(undefined);
   return (
     <div className="relative h-full">
       {generations.map((generation) => {
@@ -436,6 +442,7 @@ function OfficeSwap({ format, ...props }: OfficeFileProps) {
                   void places.replaced(generation, tabHidden() || onPhone()),
                 onSettled: () => void places.settled(generation),
                 ribbonTab,
+                zoom,
               }}
             />
           </OfficeSlot>

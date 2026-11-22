@@ -4,7 +4,6 @@ import {
   type DisplayPage,
   rasterizeDisplayPage,
 } from '@betteroffice/docx/layout/render';
-import type { DocxPageSize } from '@betteroffice/docx/viewer';
 import {
   DOCX_PAGES_PRESENTED_EVENT,
   DocxDisplayListViewer,
@@ -25,6 +24,7 @@ import type {
   DocxViewport,
 } from './DocxViewer.worker';
 import { docxT, downloadMenu, printItem } from './docxMenus';
+import { textLayerSelection, topParagraph } from './docxPlace';
 import { takeDocxViewerWorker } from './docxViewerWorker';
 import {
   type OfficeFace,
@@ -35,6 +35,7 @@ import {
 import {
   canvasPage,
   type OfficeMenuReporter,
+  type OfficePositioner,
   type OfficeRenderer,
 } from './runtimeMenus';
 import { readViewToggle, writeViewToggle } from './viewToggles';
@@ -57,24 +58,26 @@ type Layout = {
   sliced: SlicedOfficeFace[];
 };
 
-/** The pages so far with every page's size, and what this batch paints with
- * that none before did. */
+/** The pages so far with the widest page of the document, and what this
+ * batch paints with that none before did. */
 type Arrival = {
   faces: OfficeFace[];
   pages: DisplayPage[];
-  sizes: DocxPageSize[];
   sliced: SlicedOfficeFace[];
+  width: number;
 };
 
 /** Lays `bytes` out in a viewer worker of its own, as pages or, with
- * `reading`, as one column that wide, the pages `viewport` shows first. Each
- * batch of pages goes to `onPages` as it comes; the promise resolves with the
- * whole layout. The worker goes as soon as it is done, so the parser and
- * engine memory are released during ordinary reading. */
+ * `reading`, as one column that wide, the pages `viewport` shows first, or
+ * with `whole` every page before any (Q823 A). Each batch of pages goes to
+ * `onPages` as it comes; the promise resolves with the whole layout. The
+ * worker goes as soon as it is done, so the parser and engine memory are
+ * released during ordinary reading. */
 function layOut(
   bytes: Uint8Array,
   reading: Reading | null,
   viewport: DocxViewport,
+  whole: boolean,
   onPages?: (arrival: Arrival) => void
 ) {
   let cancel = () => {};
@@ -96,12 +99,10 @@ function layOut(
       reject(new Error('The DOCX layout was cancelled'));
     };
     const pages: DisplayPage[] = [];
-    let sizes: DocxPageSize[] = [];
     const faces: OfficeFace[] = [];
     const sliced = new Map<string, SlicedOfficeFace>();
     worker.onmessage = ({ data }: MessageEvent<DocxViewerWorkerResponse>) => {
       if (data.type === 'pages') {
-        sizes = data.sizes ?? sizes;
         for (const page of data.pages) pages[page.pageIndex] = page;
         faces.push(...data.faces);
         const changed = data.sliced.map(({ bytes, families, id }) => {
@@ -113,8 +114,8 @@ function layOut(
         onPages?.({
           faces: data.faces,
           pages: [...pages],
-          sizes,
           sliced: changed,
+          width: data.width,
         });
         return;
       }
@@ -129,7 +130,7 @@ function layOut(
         });
     };
     const transferable = bytes.slice().buffer;
-    worker.postMessage({ bytes: transferable, reading, viewport }, [
+    worker.postMessage({ bytes: transferable, reading, viewport, whole }, [
       transferable,
     ]);
   });
@@ -175,6 +176,7 @@ export function DocxViewer({
   onError,
   onMenus,
   onPainted,
+  onPositioner,
   onRenderer,
   onZoomChange,
 }: {
@@ -189,23 +191,25 @@ export function DocxViewer({
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
-  /** The first pages are painted, before the rest are in: the page count is
-   * known from the layout. */
+  /** The first pages are painted, before the rest are in, then again as
+   * more come: the page count so far. */
   onPainted: (analysis: OfficeAnalysis) => void;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  // The layout shown: its pages so far, the sizes of those to come, whether
-  // all are in, the whole layout's promise and what deletes the sliced faces
-  // registered for it (one function per layout).
+  // The layout shown: its pages so far (more come as they are laid out),
+  // whether all are in, the widest page of the document, the whole layout's
+  // promise and what deletes the sliced faces registered for it (one
+  // function per layout).
   const [shown, setShown] = useState<{
     complete: boolean;
     displayList: DisplayList;
     id: number;
-    pending: DocxPageSize[];
     release: () => void;
     whole: Promise<DisplayList>;
+    width: number;
   } | null>(null);
   const displayList = shown?.displayList ?? null;
   const release = shown?.release;
@@ -223,6 +227,11 @@ export function DocxViewer({
     () => onZoomChange(zoom === 'fit' ? 'fit' : zoom / 100),
     [onZoomChange, zoom]
   );
+  // Whether this file opened from a citation, for the layouts it starts.
+  const citedRef = useRef(citation);
+  useEffect(() => {
+    citedRef.current = citation;
+  }, [citation]);
   // View › Page layout, one choice per person for every DOCX file.
   const [pageLayout, setPageLayout] = useState(() =>
     readViewToggle('docxPageLayout')
@@ -307,7 +316,8 @@ export function DocxViewer({
       let printed = await whole;
       let release = () => {};
       if (reading) {
-        const layout = await layOut(bytes, null, frameViewport(1)).promise;
+        const layout = await layOut(bytes, null, frameViewport(1), true)
+          .promise;
         await registerOfficeFaces(layout.faces);
         release = await registerSlicedFaces(layout.sliced);
         printed = layout.displayList;
@@ -360,7 +370,9 @@ export function DocxViewer({
       frameViewport(
         reading ? 1 : zoomRef.current === 'fit' ? 'fit' : zoomRef.current / 100
       ),
-      ({ faces, pages, sizes, sliced }) => {
+      // A cited open waits for every page, so it lays them all out first.
+      citedRef.current !== null,
+      ({ faces, pages, sliced, width }) => {
         arrived = arrived.then(async () => {
           // Paint with the faces the worker measured, under their Office
           // names, from the bytes it fetched.
@@ -382,9 +394,9 @@ export function DocxViewer({
             complete: false,
             displayList: { pages },
             id,
-            pending: sizes.slice(pages.length),
             release,
             whole,
+            width,
           });
         });
         // Awaited by `whole`, which reports a failure.
@@ -420,6 +432,29 @@ export function DocxViewer({
     };
   }, [bytes, onError, reading, readingWidth]);
 
+  // Where the reader is, for the editor after View (Q608 A): the scroll
+  // offset, the body paragraph at the top and the text layer's selection.
+  const pagesRef = useRef<readonly DisplayPage[]>([]);
+  pagesRef.current = displayList?.pages ?? [];
+  useEffect(() => {
+    onPositioner({
+      read: () => {
+        const area = hostRef.current;
+        if (!area) return null;
+        return {
+          format: 'docx',
+          scrollTop: Math.round(area.scrollTop),
+          selection: textLayerSelection(
+            area.ownerDocument.getSelection(),
+            pagesRef.current
+          ),
+          top: topParagraph(area),
+        };
+      },
+    });
+    return () => onPositioner(null);
+  }, [onPositioner]);
+
   // The layout whose first pages have been presented: a fitted first open
   // settles its level after the commit that mounts them.
   const [paintedId, setPaintedId] = useState(0);
@@ -436,19 +471,15 @@ export function DocxViewer({
       host.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, presented);
   }, [layoutId]);
 
-  // The first pages are painted; ready once every page is in too. A file
-  // opened from a citation sends no early paint: the host keeps its skeleton
-  // until every page is in and the quote is found (Q802 B).
-  const citedRef = useRef(citation);
-  useEffect(() => {
-    citedRef.current = citation;
-  }, [citation]);
-  const allPages =
-    (displayList?.pages.length ?? 0) + (shown?.pending.length ?? 0);
+  // The first pages are painted, and the page count grows as more come;
+  // ready once every page is in. A file opened from a citation sends no
+  // early paint: the host keeps its skeleton until every page is in and the
+  // quote is found (Q802 B).
+  const pagesSoFar = displayList?.pages.length ?? 0;
   useEffect(() => {
     if (painted && !citedRef.current)
-      onPainted({ format: 'docx', pageCount: allPages });
-  }, [allPages, onPainted, painted]);
+      onPainted({ format: 'docx', pageCount: pagesSoFar });
+  }, [onPainted, pagesSoFar, painted]);
   const pageCount = complete ? (displayList?.pages.length ?? 0) : 0;
   useEffect(() => {
     if (painted && complete) onAnalysis({ format: 'docx', pageCount });
@@ -501,8 +532,8 @@ export function DocxViewer({
       <DocxDisplayListViewer
         displayList={displayList}
         flush={reading}
+        morePages={shown && !complete ? { width: shown.width } : undefined}
         onZoomChange={(level) => setZoom(Math.round(level * 100))}
-        pendingPages={shown?.pending}
         pinchZoom={compact && !reading}
         zoom={reading ? 1 : zoom === 'fit' ? 'fit' : zoom / 100}
       />
