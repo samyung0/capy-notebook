@@ -128,9 +128,10 @@ Per file it reports:
   a viewer sends once its first pages, grid or slide (pictures included) are
   painted, with the runtime's own `timings` (`loadMs` frame start to `load`,
   `paintMs` `load` to that paint; `OfficeReadyTimings`): `ready` for XLSX and
-  PPTX, `painted` for DOCX, whose View paints its first pages before the rest
-  are in. DOCX also reports the click to `ready`, every page in, as
-  `open.allPagesMs` (report-only). Its `openFirstPaintMs` budget still comes
+  PPTX, the first `painted` for DOCX, whose View paints its first pages before
+  the rest are in (and sends `painted` again as its page count grows). DOCX
+  also reports the click to `ready`, every page in, as `open.allPagesMs`
+  (report-only), and its page count from `ready`. Its `openFirstPaintMs` budget still comes
   from medians measured to `ready`, until recalibrated from three CI runs
   (Q804 A);
 - View to Edit: the mode toggle click to the edit frame's `ready`, its first

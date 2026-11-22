@@ -54,11 +54,11 @@ vi.mock('./docxViewerWorker', () => ({
         send({
           faces: [],
           pages: [],
-          sizes: [],
           sliced: [
             { bytes: new ArrayBuffer(1), families: [{ family }], id: family },
           ],
           type: 'pages',
+          width: 816,
         });
         send({ marks: {}, type: 'ready' });
       },
@@ -68,20 +68,17 @@ vi.mock('./docxViewerWorker', () => ({
   },
 }));
 // What the viewer was last given to draw.
-const drawn: { pages: number; pending: number }[] = [];
+const drawn: { more: number | undefined; pages: number }[] = [];
 vi.mock('@betteroffice/docx-react', () => ({
   DOCX_PAGES_PRESENTED_EVENT: 'docx-pages-presented',
   DocxDisplayListViewer: ({
     displayList,
-    pendingPages,
+    morePages,
   }: {
     displayList: { pages: unknown[] };
-    pendingPages?: unknown[];
+    morePages?: { width: number };
   }) => {
-    drawn.push({
-      pages: displayList.pages.length,
-      pending: pendingPages?.length ?? 0,
-    });
+    drawn.push({ more: morePages?.width, pages: displayList.pages.length });
     return null;
   },
 }));
@@ -141,7 +138,7 @@ function viewer(
   );
 }
 
-// Pages [from, to) of a five-page layout; the first batch carries every size.
+// Pages [from, to) of a five-page layout, whose widest page is wider.
 const size = { height: 1056, width: 816 };
 const sendPages = (from: number, to: number) =>
   workers[0]?.send({
@@ -152,9 +149,12 @@ const sendPages = (from: number, to: number) =>
       primitives: [],
       width: size.width,
     })),
+    // The sizes of every page a C6 worker sent with its first pages: the
+    // count follows the pages that came, not these.
     sizes: from === 0 ? Array.from({ length: 5 }, () => size) : undefined,
     sliced: [],
     type: 'pages',
+    width: 1056,
   });
 const sendReady = () => workers[0]?.send({ marks: {}, type: 'ready' });
 // The viewer's first pages on screen.
@@ -199,33 +199,44 @@ it('deletes the faces of an open cancelled while they loaded', async () => {
   expect(families()).toEqual([]);
 });
 
-it('draws the first pages before the rest are in, holding their space', async () => {
+// Q801 B: the pages, the scroll height with them, grow as they come; the
+// widest page of the document holds the fit until every page is in.
+it('draws the pages as they come, fitting the widest page to come until every page is in', async () => {
   const root = await open();
   await act(async () => sendPages(0, 2));
   await settle();
-  expect(drawn.at(-1)).toEqual({ pages: 2, pending: 3 });
+  expect(drawn.at(-1)).toEqual({ more: 1056, pages: 2 });
 
   await act(async () => sendPages(2, 5));
   await settle();
-  expect(drawn.at(-1)).toEqual({ pages: 5, pending: 0 });
+  expect(drawn.at(-1)).toEqual({ more: 1056, pages: 5 });
+
+  await act(async () => sendReady());
+  await settle();
+  expect(drawn.at(-1)).toEqual({ more: undefined, pages: 5 });
   await act(async () => root.unmount());
 });
 
-it('reports the first pages painted before every page is in, then the analysis', async () => {
+it('reports the first pages painted with the page count so far, growing as more come, then the analysis', async () => {
   const onAnalysis = vi.fn();
   const onPainted = vi.fn();
   const root = await open({ onAnalysis, onPainted });
   await act(async () => sendPages(0, 2));
   await settle();
   await act(async () => present());
-  expect(onPainted).toHaveBeenCalledWith({ format: 'docx', pageCount: 5 });
+  expect(onPainted).toHaveBeenLastCalledWith({ format: 'docx', pageCount: 2 });
+
+  await act(async () => sendPages(2, 4));
+  await settle();
+  expect(onPainted).toHaveBeenLastCalledWith({ format: 'docx', pageCount: 4 });
   expect(onAnalysis).not.toHaveBeenCalled();
 
   await act(async () => {
-    sendPages(2, 5);
+    sendPages(4, 5);
     sendReady();
   });
   await settle();
+  expect(onPainted).toHaveBeenLastCalledWith({ format: 'docx', pageCount: 5 });
   expect(onAnalysis).toHaveBeenCalledWith({ format: 'docx', pageCount: 5 });
   await act(async () => root.unmount());
 });

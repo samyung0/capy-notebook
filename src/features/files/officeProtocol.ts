@@ -369,8 +369,8 @@ export type OfficeRuntimeMessage =
       timings?: OfficeReadyTimings;
     }
   /**
-   * DOCX View painted its first pages, before the rest are in (`ready`); the
-   * page count is known from the layout.
+   * DOCX View painted its first pages, before the rest are in (`ready`), and
+   * again as more come: the page count so far (Q801 B).
    */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;

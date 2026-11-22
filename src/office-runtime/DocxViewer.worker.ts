@@ -42,8 +42,8 @@ export type DocxViewerWorkerResponse =
       /** In order, each at its `pageIndex`: a page sent again replaces the
        * one before. */
       pages: DisplayPage[];
-      /** Every page's size, with the first pages. */
-      sizes?: DocxPageSize[];
+      /** The widest page of the whole document, known before its pages are. */
+      width: number;
       /** Sliced faces whose outlines (`bytes`) or painted families grew. */
       sliced: (Omit<SlicedOfficeFace, 'bytes'> & { bytes?: ArrayBuffer })[];
       type: 'pages';
@@ -69,11 +69,16 @@ const wasmStart = epochNow();
 const wasm = initWasm().then(epochNow);
 wasm.catch(() => {});
 
-/** How many pages the viewport shows at the top, plus one. */
-function firstPages(sizes: readonly DocxPageSize[], viewport: DocxViewport) {
+/** How many pages the viewport shows at the top, plus one, from the sizes of
+ * the pages laid out so far and the widest page of the document. */
+function firstPages(
+  sizes: readonly DocxPageSize[],
+  width: number,
+  viewport: DocxViewport
+) {
   const zoom =
     viewport.zoom === 'fit'
-      ? Math.min(1, viewport.width / Math.max(...sizes.map((s) => s.width)))
+      ? Math.min(1, viewport.width / width)
       : viewport.zoom;
   let shown = 0;
   for (let top = 0; shown < sizes.length && top < viewport.height; shown++)
@@ -84,7 +89,6 @@ function firstPages(sizes: readonly DocxPageSize[], viewport: DocxViewport) {
 self.onmessage = (event: MessageEvent<Request>) => {
   const { bytes, reading, viewport } = event.data;
   const marks: Record<string, number> = { 'worker:open-start': epochNow() };
-  let sizes: DocxPageSize[] | undefined;
   // What the batches so far sent: whole faces by family, weight and style,
   // and each sliced face's painted families.
   const sentFaces = new Set<string>();
@@ -94,12 +98,13 @@ self.onmessage = (event: MessageEvent<Request>) => {
   >();
   const painted = new Set<string>();
   const progressive = {
-    firstPages(all: readonly DocxPageSize[]) {
-      marks['worker:layout-end'] = epochNow();
-      sizes = [...all];
-      return firstPages(all, viewport);
+    firstPages(sizes: readonly DocxPageSize[], width: number) {
+      // The layout of the first pages, or of every page when the body
+      // can't be cut after them.
+      marks['worker:first-layout-end'] = epochNow();
+      return firstPages(sizes, width, viewport);
     },
-    onPages({ pages, slicedFaces }: DocxViewerPages) {
+    onPages({ pages, slicedFaces, width }: DocxViewerPages) {
       // A missing face would leave the fallback layout: fail instead.
       if (fontFailure) throw fontFailure;
       for (const family of paintedFamilies(pages)) painted.add(family);
@@ -129,14 +134,13 @@ self.onmessage = (event: MessageEvent<Request>) => {
         {
           faces,
           pages,
-          sizes,
           sliced: changed,
           type: 'pages',
+          width,
         } satisfies DocxViewerWorkerResponse,
         // Outlines come in a new buffer each time.
         changed.flatMap(({ bytes }) => (bytes ? [bytes] : []))
       );
-      sizes = undefined;
     },
   };
   void openDocumentViewer(
