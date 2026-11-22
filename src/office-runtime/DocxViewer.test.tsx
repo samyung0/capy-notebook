@@ -10,9 +10,11 @@ getLocale();
 const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'
 );
-// A frame wide enough for page layout, and its font set.
+// A frame wide enough for page layout unless a test narrows it, and its
+// font set.
+let frameWidth = 1280;
 Object.defineProperty(document.documentElement, 'clientWidth', {
-  value: 1280,
+  get: () => frameWidth,
 });
 const fonts = new Set<FakeFontFace>();
 Object.assign(document, {
@@ -36,7 +38,8 @@ class FakeFontFace {
 }
 vi.stubGlobal('FontFace', FakeFontFace);
 
-// Each layout's viewer worker, answered by the test.
+// Each layout's viewer worker, answered by the test, and what each was asked.
+const requests: unknown[] = [];
 const workers: {
   answer: (family: string) => void;
   send: (data: unknown) => void;
@@ -45,7 +48,7 @@ vi.mock('./docxViewerWorker', () => ({
   takeDocxViewerWorker: () => {
     const worker = {
       onmessage: null as ((event: { data: unknown }) => void) | null,
-      postMessage: () => {},
+      postMessage: (request: unknown) => requests.push(request),
       terminate: () => {},
     };
     const send = (data: unknown) => worker.onmessage?.({ data });
@@ -103,6 +106,8 @@ const { createRoot } = await import('react-dom/client');
 const { DocxViewer } = await import('./DocxViewer');
 
 afterEach(() => {
+  frameWidth = 1280;
+  requests.length = 0;
   fonts.clear();
   loads.length = 0;
   workers.length = 0;
@@ -203,6 +208,7 @@ it('deletes the faces of an open cancelled while they loaded', async () => {
 // widest page of the document holds the fit until every page is in.
 it('draws the pages as they come, fitting the widest page to come until every page is in', async () => {
   const root = await open();
+  expect(requests).toMatchObject([{ reading: null, whole: false }]);
   await act(async () => sendPages(0, 2));
   await settle();
   expect(drawn.at(-1)).toEqual({ more: 1056, pages: 2 });
@@ -250,6 +256,8 @@ it('sends a cited open no early paint: it is ready once every page is in', async
     onAnalysis,
     onPainted,
   });
+  // Q823 A: it waits for every page, so the worker lays them all out first.
+  expect(requests).toMatchObject([{ whole: true }]);
   await act(async () => sendPages(0, 2));
   await settle();
   await act(async () => present());
@@ -286,5 +294,42 @@ it('prints every page, waiting for those still to come', async () => {
   await settle();
   await printing;
   expect(printed).toHaveLength(5);
+  await act(async () => root.unmount());
+});
+
+// Q823 A: a print of the reading layout lays the pages out whole first.
+it('prints a reading layout from pages laid out whole', async () => {
+  frameWidth = 360;
+  let renderer: OfficeRenderer | null = null;
+  const root = await open({
+    onRenderer: (value) => {
+      renderer = value;
+    },
+  });
+  expect(requests).toMatchObject([{ reading: { width: 360 }, whole: false }]);
+  await act(async () => {
+    sendPages(0, 5);
+    sendReady();
+  });
+  await settle();
+  const printing = renderer!('print');
+  await settle();
+  expect(requests[1]).toMatchObject({ reading: null, whole: true });
+
+  await act(async () => {
+    workers[1]?.send({
+      faces: [],
+      pages: Array.from({ length: 3 }, (_, pageIndex) => ({
+        ...size,
+        pageIndex,
+        primitives: [],
+      })),
+      sliced: [],
+      type: 'pages',
+      width: size.width,
+    });
+    workers[1]?.send({ marks: {}, type: 'ready' });
+  });
+  expect(await printing).toHaveLength(3);
   await act(async () => root.unmount());
 });

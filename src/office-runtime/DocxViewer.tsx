@@ -66,14 +66,16 @@ type Arrival = {
 };
 
 /** Lays `bytes` out in a viewer worker of its own, as pages or, with
- * `reading`, as one column that wide, the pages `viewport` shows first. Each
- * batch of pages goes to `onPages` as it comes; the promise resolves with the
- * whole layout. The worker goes as soon as it is done, so the parser and
- * engine memory are released during ordinary reading. */
+ * `reading`, as one column that wide, the pages `viewport` shows first, or
+ * with `whole` every page before any (Q823 A). Each batch of pages goes to
+ * `onPages` as it comes; the promise resolves with the whole layout. The
+ * worker goes as soon as it is done, so the parser and engine memory are
+ * released during ordinary reading. */
 function layOut(
   bytes: Uint8Array,
   reading: Reading | null,
   viewport: DocxViewport,
+  whole: boolean,
   onPages?: (arrival: Arrival) => void
 ) {
   let cancel = () => {};
@@ -126,7 +128,7 @@ function layOut(
         });
     };
     const transferable = bytes.slice().buffer;
-    worker.postMessage({ bytes: transferable, reading, viewport }, [
+    worker.postMessage({ bytes: transferable, reading, viewport, whole }, [
       transferable,
     ]);
   });
@@ -221,6 +223,11 @@ export function DocxViewer({
     () => onZoomChange(zoom === 'fit' ? 'fit' : zoom / 100),
     [onZoomChange, zoom]
   );
+  // Whether this file opened from a citation, for the layouts it starts.
+  const citedRef = useRef(citation);
+  useEffect(() => {
+    citedRef.current = citation;
+  }, [citation]);
   // View › Page layout, one choice per person for every DOCX file.
   const [pageLayout, setPageLayout] = useState(() =>
     readViewToggle('docxPageLayout')
@@ -305,7 +312,8 @@ export function DocxViewer({
       let printed = await whole;
       let release = () => {};
       if (reading) {
-        const layout = await layOut(bytes, null, frameViewport(1)).promise;
+        const layout = await layOut(bytes, null, frameViewport(1), true)
+          .promise;
         await registerOfficeFaces(layout.faces);
         release = await registerSlicedFaces(layout.sliced);
         printed = layout.displayList;
@@ -358,6 +366,8 @@ export function DocxViewer({
       frameViewport(
         reading ? 1 : zoomRef.current === 'fit' ? 'fit' : zoomRef.current / 100
       ),
+      // A cited open waits for every page, so it lays them all out first.
+      citedRef.current !== null,
       ({ faces, pages, sliced, width }) => {
         arrived = arrived.then(async () => {
           // Paint with the faces the worker measured, under their Office
@@ -438,10 +448,6 @@ export function DocxViewer({
   // ready once every page is in. A file opened from a citation sends no
   // early paint: the host keeps its skeleton until every page is in and the
   // quote is found (Q802 B).
-  const citedRef = useRef(citation);
-  useEffect(() => {
-    citedRef.current = citation;
-  }, [citation]);
   const pagesSoFar = displayList?.pages.length ?? 0;
   useEffect(() => {
     if (painted && !citedRef.current)

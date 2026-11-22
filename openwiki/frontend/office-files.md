@@ -248,7 +248,7 @@ pages), `ready` and `collaboration-ready`. The frame marks `runtime-boot`,
 (DOCX view, the first pages' faces) and `fonts:faces` (PPTX view); the DOCX
 viewer worker posts `wasm:docx-view:start`/`:end`, `worker:open-start`,
 `worker:first-layout-end` (the first pages laid out, or every page when the
-body can't be cut after them), `worker:first-pages` and `worker:open-end` back
+body is laid out whole first), `worker:first-pages` and `worker:open-end` back
 with its last message, and the frame marks them at the worker's times.
 
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
@@ -268,11 +268,15 @@ frame shows at the top plus one, never ending inside a keep-with-next chain,
 next to a section break or inside a section with columns, and keeps those
 pages (`layout_document_with_regions_first_pages` in docx-edit, used only by
 the viewer). Their page-count (NUMPAGES) fields show the file's saved count.
-A body too short for that, or holding a section break inside a content
-control or a shape wrapped on an inside or outside margin, is laid out whole
-first instead. The viewer builds and posts those pages, then lays out the
-whole body and builds the rest eight at a time, each batch once its sliced
-faces hold its outlines; a first page the whole layout draws otherwise (the
+A short file, under 40,000 characters of body text (where the first pages
+came no sooner, about 25 pages of the bench's mixed text; Q822 A), a body too
+short for that cut, one in columns from where it would be cut to its end, or
+one holding a section break inside a content control or a shape wrapped on
+an inside or outside margin, is laid out whole first instead; so are a file
+opened from a citation and the pages a reading layout prints, which wait for
+every page anyway (Q823 A). The viewer builds and posts those pages, then
+lays out the whole body and builds the rest eight at a time, each batch once
+its sliced faces hold its outlines; a first page the whole layout draws otherwise (the
 real page count in its page-count fields) is posted again. The frame draws
 each batch as it comes, so the page count and the scroll height grow until
 every page is in, the fit taking the widest page of the whole document from

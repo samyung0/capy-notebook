@@ -29,11 +29,14 @@ export type DocxViewport = {
   zoom: number | 'fit';
 };
 
-/** One layout per worker: pages, or with `reading` one column that wide. */
+/** One layout per worker: pages, or with `reading` one column that wide.
+ * `whole` lays the whole body out before any page, for an open that waits
+ * for every page (a citation, a print). */
 type Request = {
   bytes: ArrayBuffer;
   reading: { padding: number; width: number } | null;
   viewport: DocxViewport;
+  whole: boolean;
 };
 export type DocxViewerWorkerResponse =
   | {
@@ -87,7 +90,7 @@ function firstPages(
 }
 
 self.onmessage = (event: MessageEvent<Request>) => {
-  const { bytes, reading, viewport } = event.data;
+  const { bytes, reading, viewport, whole } = event.data;
   const marks: Record<string, number> = { 'worker:open-start': epochNow() };
   // What the batches so far sent: whole faces by family, weight and style,
   // and each sliced face's painted families.
@@ -99,8 +102,8 @@ self.onmessage = (event: MessageEvent<Request>) => {
   const painted = new Set<string>();
   const progressive = {
     firstPages(sizes: readonly DocxPageSize[], width: number) {
-      // The layout of the first pages, or of every page when the body
-      // can't be cut after them.
+      // The layout of the first pages, or of every page when the body is
+      // laid out whole first.
       marks['worker:first-layout-end'] = epochNow();
       return firstPages(sizes, width, viewport);
     },
@@ -142,6 +145,7 @@ self.onmessage = (event: MessageEvent<Request>) => {
         changed.flatMap(({ bytes }) => (bytes ? [bytes] : []))
       );
     },
+    whole,
   };
   void openDocumentViewer(
     new Uint8Array(bytes),
