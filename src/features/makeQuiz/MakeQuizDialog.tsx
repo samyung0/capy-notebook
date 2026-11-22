@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
+import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { InputTitle } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -308,7 +309,7 @@ export function MakeQuizDialog({
   onShowPages,
   onStarted,
   runId,
-  step: stepName,
+  step: routeStep,
   tabs,
   workspaceId,
   workspaceName,
@@ -379,7 +380,6 @@ export function MakeQuizDialog({
   const [answers, setAnswers] = useState<Picked[]>(() =>
     fromFiles(initial.answers)
   );
-  const onPages = stepName === 'pages';
   // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11). A
   // reload on a later step starts from the default again.
   // Hide the quiz starts on wherever the dialog opens, Practice's Add
@@ -521,7 +521,7 @@ export function MakeQuizDialog({
     paper: paper.flatMap((row) => row.fileId ?? []),
   };
   const pages = usePageStep({
-    active: onPages,
+    active: routeStep === 'pages',
     answers: choice.answers,
     file,
     hidden,
@@ -532,6 +532,10 @@ export function MakeQuizDialog({
     paper: choice.paper,
     workspaceId,
   });
+  // Every file read whole: nothing to pick, so the files step stands in for
+  // the pages (Epo 2026-11-21), and its Continue does what theirs would.
+  const stepName = routeStep === 'pages' && pages.noPages ? 'files' : routeStep;
+  const onPages = stepName === 'pages';
   const run = useRunStep({
     onBack: choice.paper.length > 0 ? onRunBack : onClose,
     onConfirmed: (next) => onConfirmed(next, choice),
@@ -642,6 +646,8 @@ export function MakeQuizDialog({
             </div>
           )}
         </div>
+        {/* A refused run, when Continue started it in place of the pages. */}
+        {pages.noPages && pages.alert}
       </div>
     </>
   );
@@ -689,10 +695,13 @@ export function MakeQuizDialog({
                 <span className="max-sm:ml-auto sm:contents">
                   <Button
                     // A graded quiz's files read here, not in the upload panel.
-                    disabled={!canContinue || (graded && !allRead)}
+                    disabled={
+                      !canContinue || (graded && !allRead) || pages.pending
+                    }
                     onClick={() => {
                       if (allRead) {
-                        onShowPages(choice);
+                        if (pages.noPages) pages.proceed();
+                        else onShowPages(choice);
                         return;
                       }
                       // Still reading, which may take a while: the panel follows
@@ -708,7 +717,7 @@ export function MakeQuizDialog({
                     type="button"
                     variant="accent"
                   >
-                    {m.action_continue()}
+                    {pages.pending ? <Spinner /> : m.action_continue()}
                   </Button>
                 </span>
               </>

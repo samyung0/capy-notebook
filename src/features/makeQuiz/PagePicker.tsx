@@ -394,21 +394,6 @@ function OfficeDrawing({
   );
 }
 
-/** A text file's tile: no pages, the run reads all of it. */
-function WholeFileTile({ file }: { file: SourceFile }) {
-  return (
-    <div
-      className="flex flex-col items-center justify-center gap-3 rounded-[3px] border border-[#dcdfdf] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.08)]"
-      style={{ aspectRatio: SHEET_RATIO }}
-    >
-      <FileIcon className="size-11 shrink-0" name={fileIconName(file)} />
-      <span className="wrap-anywhere text-center font-semibold text-sm">
-        {file.name}
-      </span>
-    </div>
-  );
-}
-
 type TabKind = 'pages' | 'reading' | 'unread' | 'whole';
 
 function tabKind(file: SourceFile): TabKind {
@@ -417,8 +402,23 @@ function tabKind(file: SourceFile): TabKind {
   return isWholeFile(file) ? 'whole' : 'pages';
 }
 
+/** A file the pages step lists: a text file is read whole, with nothing to
+ * pick, so it isn't (Epo 2026-11-21). */
+const choosesPages = (file: SourceFile) => tabKind(file) !== 'whole';
+
 const FILE_EXTENSION = /\.[^.]+$/;
 const fileTitle = (name: string) => name.replace(FILE_EXTENSION, '');
+
+/** The pages step: what it puts in the dialog, and its button's work for a
+ * run whose files are all read whole, which skips the step (Epo 2026-11-21). */
+export interface PageStep extends DialogStep {
+  /** Its FormAlert, for the files step to show when the step is skipped. */
+  alert: React.ReactNode;
+  /** Every chosen file is read whole: nothing to pick. */
+  noPages: boolean;
+  pending: boolean;
+  proceed: () => void;
+}
 
 /** What a step of the Make a quiz dialog puts in it. */
 export interface DialogStep {
@@ -439,8 +439,9 @@ export interface DialogStep {
 /**
  * Click the pages with questions, then with answers (Epo 2026-11-02, board X1;
  * 2026-11-05, boards B to E): pages shown large, one click selects one, up to EXTRACTION_PAGES_MAX (30 since Epo 2026-11-21) across
- * a run's files, and pages left unclicked are skipped. A text file goes whole. A step of
- * the Make a quiz dialog, so going back to the files keeps the picks of files left in.
+ * a run's files, and pages left unclicked are skipped. A text file goes whole and
+ * isn't listed. A step of the Make a quiz dialog, so going back to the files keeps
+ * the picks of files left in.
  */
 export function usePageStep({
   active,
@@ -469,7 +470,7 @@ export function usePageStep({
   onStarted: (runId: string) => void;
   paper: string[];
   workspaceId: string;
-}): DialogStep {
+}): PageStep {
   const phone = useIsPhone();
   const { data: files } = useFiles(workspaceId, { errorBoundary: false });
   const { data: materials } = useMaterials(workspaceId, {
@@ -527,6 +528,11 @@ export function usePageStep({
   const paperFiles = rows.filter((row) => paper.includes(row.id));
   const first = paperFiles[0];
   const answerFiles = rows.filter((row) => !paper.includes(row.id));
+  // What the step lists and shows; the run still reads the rest whole.
+  const listedRows = rows.filter(choosesPages);
+  const listedPaper = listedRows.filter((row) => paper.includes(row.id));
+  const listedAnswers = listedRows.filter((row) => !paper.includes(row.id));
+  const noPages = !!files && rows.length > 0 && listedRows.length === 0;
   // An image is its one page, picked until unclicked.
   const imagesPicked = useRef(new Set<string>());
   useEffect(() => {
@@ -558,11 +564,11 @@ export function usePageStep({
   );
   // A lone file needs no list, and a phone's list is the whole page until a file is
   // picked, as in Workspace settings.
-  const listed = rows.length > 1;
-  const onList = phone && listed && !rows.some((row) => row.id === file);
+  const listed = listedRows.length > 1;
+  const onList = phone && listed && !listedRows.some((row) => row.id === file);
   const current = onList
     ? undefined
-    : (rows.find((row) => row.id === file) ?? first);
+    : (listedRows.find((row) => row.id === file) ?? listedRows[0]);
   const kind = current && tabKind(current);
   const activeCount = current ? counts[current.id] : undefined;
   const activePicked = current ? pickedPages(selected, current.id).length : 0;
@@ -574,7 +580,6 @@ export function usePageStep({
   if (current && pagesShown.current) shown.add(current.id);
   const fileCount = (file: SourceFile) => {
     const tab = tabKind(file);
-    if (tab === 'whole') return m.make_quiz_tab_whole();
     if (tab === 'unread') return m.make_quiz_tab_unread();
     if (tab === 'reading') return m.make_quiz_reading_pages();
     const count = pickedPages(selected, file.id).length;
@@ -639,12 +644,59 @@ export function usePageStep({
     </button>
   );
   const sectionHead = (label: string) =>
-    answerFiles.length > 0 && (
+    listedAnswers.length > 0 && (
       <p className="t-meta px-2 pt-1 pb-0.5 font-semibold text-fg-muted">
         {label}
       </p>
     );
+  const alert = (
+    <FormAlert
+      errorId={unexpectedErrorId(error)}
+      message={
+        error
+          ? (extractionRefusal(error) ?? errorCopy(error, m.source_try_again()))
+          : null
+      }
+    />
+  );
+  // Extract, or Next to New graded quiz's Settings; the files step's Continue
+  // when every file is read whole.
+  const proceed = () => {
+    if (!first) return;
+    const title = quizTitleFrom(
+      first.name,
+      (materials ?? []).map((row) => row.title)
+    );
+    const request = extractionRequest(
+      title,
+      paperFiles.map((row) => row.id),
+      answerFiles.map((row) => row.id),
+      selected,
+      hidden,
+      drawn
+    );
+    if (!onNext) {
+      start(request, { onSuccess: (run) => onStarted(run.id) });
+      return;
+    }
+    // Its questions are read before the graded quiz goes out.
+    onNext({
+      draft: true,
+      name: title,
+      send: (gradedQuiz) =>
+        startAsync({ ...request, gradedQuiz }).then(
+          (run) => onStarted(run.id),
+          (failed: unknown) => {
+            throw new CopyError(
+              extractionRefusal(failed) ??
+                errorCopy(failed, m.source_try_again())
+            );
+          }
+        ),
+    });
+  };
   return {
+    alert,
     body: gone ? (
       <div className="flex flex-col gap-3 pb-1">
         <p className="t-meta text-fg-muted">{m.make_quiz_file_gone()}</p>
@@ -668,12 +720,12 @@ export function usePageStep({
               className="flex shrink-0 flex-col gap-1 sm:w-56 sm:overflow-y-auto sm:border-divider sm:border-r sm:pr-3"
             >
               {sectionHead(m.make_quiz_section_questions())}
-              {paperFiles.map(fileRow)}
-              {answerFiles.length > 0 && (
+              {listedPaper.map(fileRow)}
+              {listedAnswers.length > 0 && (
                 <>
                   <hr className="my-2 border-divider" />
                   {sectionHead(m.make_quiz_section_answers())}
-                  {answerFiles.map(fileRow)}
+                  {listedAnswers.map(fileRow)}
                 </>
               )}
             </nav>
@@ -691,12 +743,10 @@ export function usePageStep({
                 <p className="t-meta min-w-0 flex-1 basis-40 truncate text-fg-muted">
                   {[
                     current?.name,
-                    kind === 'whole'
-                      ? m.make_quiz_whole_note({ max: EXTRACTION_PAGES_MAX })
-                      : activeCount &&
-                        (activeCount === 1
-                          ? m.make_quiz_one_page()
-                          : m.source_pages({ count: activeCount })),
+                    activeCount &&
+                      (activeCount === 1
+                        ? m.make_quiz_one_page()
+                        : m.source_pages({ count: activeCount })),
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -723,7 +773,7 @@ export function usePageStep({
                   </CheckRow>
                 )}
               </div>
-              {rows
+              {listedRows
                 .filter((row) => shown.has(row.id))
                 .map((row) => {
                   const tab = tabKind(row);
@@ -738,9 +788,7 @@ export function usePageStep({
                       key={row.id}
                       role="group"
                     >
-                      {tab === 'whole' ? (
-                        <WholeFileTile file={row} />
-                      ) : tab === 'unread' ? (
+                      {tab === 'unread' ? (
                         <p className="t-meta col-span-full text-center text-fg-muted">
                           {m.make_quiz_unread_note()}
                         </p>
@@ -776,16 +824,9 @@ export function usePageStep({
             </div>
           )}
         </div>
-        <div className="border-divider border-t bg-overlay pt-3 max-sm:sticky max-sm:bottom-0 max-sm:-mx-4 max-sm:px-4 max-sm:pb-[max(env(safe-area-inset-bottom),12px)] sm:mt-0 sm:pt-4">
-          <FormAlert
-            errorId={unexpectedErrorId(error)}
-            message={
-              error
-                ? (extractionRefusal(error) ??
-                  errorCopy(error, m.source_try_again()))
-                : null
-            }
-          />
+        {/* No divider above it (Epo 2026-11-21). */}
+        <div className="bg-overlay pt-3 max-sm:sticky max-sm:bottom-0 max-sm:-mx-4 max-sm:px-4 max-sm:pb-[max(env(safe-area-inset-bottom),12px)] sm:mt-0 sm:pt-4">
+          {alert}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {counter}
             <div className="ml-auto flex items-center gap-1">
@@ -802,40 +843,7 @@ export function usePageStep({
               </span>
               <Button
                 disabled={!!unpicked || answersReading || drawing || isPending}
-                onClick={() => {
-                  if (!first) return;
-                  const title = quizTitleFrom(
-                    first.name,
-                    (materials ?? []).map((row) => row.title)
-                  );
-                  const request = extractionRequest(
-                    title,
-                    paperFiles.map((row) => row.id),
-                    answerFiles.map((row) => row.id),
-                    selected,
-                    hidden,
-                    drawn
-                  );
-                  if (!onNext) {
-                    start(request, { onSuccess: (run) => onStarted(run.id) });
-                    return;
-                  }
-                  // Its questions are read before the graded quiz goes out.
-                  onNext({
-                    draft: true,
-                    name: title,
-                    send: (gradedQuiz) =>
-                      startAsync({ ...request, gradedQuiz }).then(
-                        (run) => onStarted(run.id),
-                        (failed: unknown) => {
-                          throw new CopyError(
-                            extractionRefusal(failed) ??
-                              errorCopy(failed, m.source_try_again())
-                          );
-                        }
-                      ),
-                  });
-                }}
+                onClick={proceed}
                 type="button"
               >
                 {isPending ? (
@@ -853,17 +861,13 @@ export function usePageStep({
     ),
     closable: false,
     framed: !gone,
+    noPages,
     // Phones: from one file's pages to the list, from the list to the files.
     onBack: onList || !listed ? onChangeFiles : () => onFile(undefined),
-    title: onList
-      ? m.make_quiz_choose_pages()
-      : kind === 'whole'
-        ? m.make_quiz_whole_title()
-        : kind === 'unread'
-          ? m.make_quiz_unread_title()
-          : current && !paper.includes(current.id)
-            ? m.make_quiz_answers_title()
-            : m.make_quiz_pages_title(),
+    pending: isPending,
+    proceed,
+    // One title for the step (Epo 2026-11-21).
+    title: m.make_quiz_pages_step_title(),
     width: 1040,
   };
 }

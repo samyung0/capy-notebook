@@ -69,7 +69,21 @@ vi.mock('@/components/ui/Popover', () => ({
   PopoverContent: pass,
   PopoverTrigger: pass,
 }));
-vi.mock('@/components/ui/Switch', () => ({ Switch: () => null }));
+vi.mock('@/components/ui/Switch', () => ({
+  Switch: (props: {
+    'aria-label'?: string;
+    checked?: boolean;
+    disabled?: boolean;
+  }) => (
+    <button
+      aria-checked={props.checked}
+      aria-label={props['aria-label']}
+      disabled={props.disabled}
+      role="switch"
+      type="button"
+    />
+  ),
+}));
 vi.mock('./NoAnswersWarning', () => ({ NoAnswersWarning: () => null }));
 // A quiz's questions as members would get them: 2 marks and 3.
 vi.mock('@/features/quizzes/liveQuizReads', () => ({
@@ -199,6 +213,12 @@ it("starts New graded quiz's Settings on the pick's name, and sends the pick wit
       ?.getAttribute('value')
   ).toBe('Osmosis practice');
   expect(host.textContent).toContain(m.assignment_create_draft());
+  // Epo 2026-11-21: Draft only says so, held on.
+  const draft = host.querySelector(
+    `[aria-label="${m.assignment_switch_draft()}"]`
+  );
+  expect(draft?.getAttribute('aria-checked')).toBe('true');
+  expect(draft?.hasAttribute('disabled')).toBe(true);
   await type(m.assignment_field_due(), '2026-11-27T09:00');
   await submitForm();
   expect(save).not.toHaveBeenCalled();

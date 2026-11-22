@@ -97,7 +97,7 @@ export async function makeQuizFromPanel(page: Page, timeout = 60_000) {
     .click({ timeout });
   await expect(page).toHaveURL(/make=pages/);
   await expect(
-    page.getByRole('heading', { name: m.make_quiz_pages_title() })
+    page.getByRole('heading', { name: m.make_quiz_pages_step_title() })
   ).toBeVisible();
   const paper = new URL(page.url()).searchParams.get('paper');
   if (!paper) throw new Error('The pages step names no paper');

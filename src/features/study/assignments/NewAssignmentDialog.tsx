@@ -149,6 +149,8 @@ export function useAssignmentForm({
   const file = !!source?.file;
   const quizId = source?.quizId;
   const beforeFile = useRef<Partial<AssignmentFormReq>>({});
+  // Draft only before a pick whose questions are read first held it on.
+  const beforeDraft = useRef(false);
   const prefilled = useRef('');
   const [sending, setSending] = useState(false);
   const kind = watch('kind');
@@ -199,6 +201,14 @@ export function useAssignmentForm({
         setValue('totalMarks', undefined);
       }
     }
+    // Questions made or read for it are read before it goes out: Draft only
+    // shows on, and held (Epo 2026-11-21).
+    if (!!next.draft !== !!source?.draft) {
+      if (next.draft) {
+        beforeDraft.current = getValues('draft');
+        setValue('draft', true);
+      } else setValue('draft', beforeDraft.current);
+    }
     clearErrors();
     setSource(next);
   };
@@ -246,15 +256,14 @@ export function useAssignmentForm({
       type="submit"
       variant="accent"
     >
-      {graded
-        ? sending
-          ? (source?.busyLabel ?? <Spinner />)
-          : source?.draft
-            ? m.assignment_create_draft()
-            : m.assignment_create()
+      {/* As Draft only says (Epo 2026-11-21). */}
+      {graded && sending
+        ? (source?.busyLabel ?? <Spinner />)
         : existing
           ? m.action_save()
-          : m.assignment_create()}
+          : draft
+            ? m.assignment_create_draft()
+            : m.assignment_create()}
     </Button>
   );
   const form = {
@@ -331,18 +340,11 @@ export function useAssignmentForm({
         ) : (
           <AssignToField control={control} workspaceId={workspaceId} />
         )}
+        {/* Attempts is in Advanced (Epo 2026-11-21). */}
         {kind === 'marked' && (
-          <>
-            <Field label={m.assignment_field_attempts()}>
-              <AttemptsSelect control={control} />
-              {attempts > 1 && (
-                <span className="t-meta text-fg-muted">
-                  {m.assignment_highest_counts()}
-                </span>
-              )}
-            </Field>
+          <div className="sm:col-span-2">
             <AssignToField control={control} workspaceId={workspaceId} />
-          </>
+          </div>
         )}
       </div>
       {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
@@ -419,6 +421,17 @@ export function useAssignmentForm({
         >
           {kind === 'marked' && (
             <>
+              <div className="flex flex-col gap-1">
+                <div className="flex min-h-8 items-center justify-between gap-4">
+                  <InputTitle>{m.assignment_field_attempts()}</InputTitle>
+                  <AttemptsSelect control={control} layout="row" />
+                </div>
+                {attempts > 1 && (
+                  <span className="t-meta text-fg-muted">
+                    {m.assignment_highest_counts()}
+                  </span>
+                )}
+              </div>
               <div className="flex min-h-8 items-center justify-between gap-4">
                 <InputTitle>{m.assignment_field_grades()}</InputTitle>
                 <GradesSelect control={control} layout="row" />
@@ -456,6 +469,7 @@ export function useAssignmentForm({
           {hasDraft && (
             <SwitchRow
               control={control}
+              disabled={!!source?.draft}
               label={m.assignment_switch_draft()}
               name="draft"
             />

@@ -154,12 +154,20 @@ it('names the penalty on late work', () => {
 });
 
 it('opens Advanced only for what a saved assignment holds there', () => {
-  const plain = { draft: false, latePenaltyPct: 0, noLate: false };
+  const plain = {
+    attempts: 1,
+    draft: false,
+    kind: 'marked' as const,
+    latePenaltyPct: 0,
+    noLate: false,
+  };
   expect(advancedStartsOpen()).toBe(false);
   expect(advancedStartsOpen(plain)).toBe(false);
   expect(advancedStartsOpen({ ...plain, draft: true })).toBe(true);
   expect(advancedStartsOpen({ ...plain, noLate: true })).toBe(true);
   expect(advancedStartsOpen({ ...plain, latePenaltyPct: 20 })).toBe(true);
+  // Epo 2026-11-21: a graded quiz's Attempts is in Advanced.
+  expect(advancedStartsOpen({ ...plain, attempts: 2 })).toBe(true);
 });
 
 it('counts the questions a room holds that the quiz does not project', () => {

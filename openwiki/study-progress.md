@@ -1375,12 +1375,14 @@ date only, and the penalty on marks or a grade only (the store refuses anything
 else, `checkLatePolicy`), so with no due date Advanced holds Draft only.
 
 Advanced (Epo 2026-11-04, `Accordion` in `src/components/ui/Accordion.tsx`) is an accordion holding the policy
-and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded quiz's Show
+and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded quiz's
+Attempts (Epo 2026-11-21, from beside Assign to, which now takes the row), Show
 grades and Show answers sit at its top (Epo 2026-11-12, back in it 2026-11-20 after
-two days on the form). It starts closed unless a
+two days on the form). Its selects are the shared row select, 144px on phones and
+224px from sm, so no value is cut off there (Epo 2026-11-21). It starts closed unless a
 saved assignment holds something other than the defaults there, a draft, No late
-submissions or a penalty (`advancedStartsOpen`, Claude's pick), Shuffle, or grades or
-answers other than Automatic and After assignment close. Opening it never
+submissions or a penalty (`advancedStartsOpen`, Claude's pick), more than one attempt,
+Shuffle, or grades or answers other than Automatic and After assignment close. Opening it never
 scrolls the dialog (Epo 2026-11-20); rows it opens below the fold are scrolled to
 by hand. Editing a published assignment has no Draft only, and one with no due date
 has no Advanced at all.
@@ -1995,8 +1997,9 @@ marks as members would get them (`useQuizFileQuestions`, the stored questions
 followed live, those with answers), loaded when it is picked. Show grades and
 Show answers are at the top of Advanced (Epo 2026-11-20). Create
 sends the pick with the settings in one request (The owned quiz) and a failure
-shows above the footer; Existing file and From question bank say Create,
-Generate, Extract and Create blank say Create draft. Back returns to the pick
+shows above the footer. The button follows Draft only, Create or Create draft
+(Epo 2026-11-21): Generate, Extract and Create blank make a draft, to be read
+before it goes out, so for them Draft only shows on and can't be turned off. Back returns to the pick
 (on a phone, the header's back arrow). Extract's pages and run stay in the
 dialog's own state, with no Hide the quiz switch, and its run shows once
 Create starts it. Cancel leaves nothing behind. A member profile's Assign quiz

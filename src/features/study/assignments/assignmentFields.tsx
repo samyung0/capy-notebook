@@ -92,10 +92,13 @@ export function Field({
 
 export function SwitchRow({
   control,
+  disabled,
   label,
   name,
 }: {
   control: Control<AssignmentFormReq>;
+  /** Held as it is, as Draft only is for questions read before they go out. */
+  disabled?: boolean;
   label: string;
   name: 'allowUploads' | 'draft' | 'noLate' | 'shuffle';
 }) {
@@ -110,6 +113,7 @@ export function SwitchRow({
             aria-label={label}
             checked={!!field.value}
             className="data-checked:bg-solid-accent-1"
+            disabled={disabled}
             onCheckedChange={field.onChange}
           />
         </div>
@@ -636,7 +640,10 @@ export function TimeLimitSelect({ control }: Controlled) {
   );
 }
 
-export function AttemptsSelect({ control }: Controlled) {
+export function AttemptsSelect({
+  control,
+  layout,
+}: Controlled & { layout?: 'row' }) {
   return (
     <Controller
       control={control}
@@ -646,7 +653,10 @@ export function AttemptsSelect({ control }: Controlled) {
           onValueChange={(value) => field.onChange(Number(value))}
           value={String(field.value)}
         >
-          <SelectTrigger aria-label={m.assignment_field_attempts()}>
+          <SelectTrigger
+            aria-label={m.assignment_field_attempts()}
+            layout={layout}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

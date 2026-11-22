@@ -138,10 +138,17 @@ export const isGraded = ({
 /** Advanced starts closed, unless a saved assignment holds something other than
  * its defaults there, so nothing is hidden by surprise. */
 export const advancedStartsOpen = (
-  existing?: Pick<Assignment, 'draft' | 'latePenaltyPct' | 'noLate'>
+  existing?: Pick<
+    Assignment,
+    'attempts' | 'draft' | 'kind' | 'latePenaltyPct' | 'noLate'
+  >
 ) =>
   !!existing &&
-  (existing.draft || existing.noLate || existing.latePenaltyPct > 0);
+  (existing.draft ||
+    existing.noLate ||
+    existing.latePenaltyPct > 0 ||
+    // Attempts is in Advanced (Epo 2026-11-21).
+    (existing.kind === 'marked' && existing.attempts > 1));
 
 const pastDue = (dueAt: string | undefined, now: number) =>
   !!dueAt && Date.parse(dueAt) <= now;

@@ -81,7 +81,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await dialog(page).getByRole('button', { name: m.action_continue() }).click();
 
   await expect(
-    page.getByRole('heading', { name: m.make_quiz_pages_title() })
+    page.getByRole('heading', { name: m.make_quiz_pages_step_title() })
   ).toBeVisible();
   await pickPages(page, 2, 3, 4);
   await expect(
@@ -99,9 +99,10 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await dialog(page)
     .getByRole('button', { name: /mark scheme/ })
     .click();
+  // One title for the step: the list marks the file on show.
   await expect(
-    page.getByRole('heading', { name: m.make_quiz_answers_title() })
-  ).toBeVisible();
+    dialog(page).getByRole('button', { name: /mark scheme/ })
+  ).toHaveAttribute('aria-current', 'page');
   await pickPages(page, 1);
   await expect(
     page.getByText(m.make_quiz_pages_selected({ count: 3, max: 30 }))
