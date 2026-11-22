@@ -1,10 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { fileQuery, meQuery, workspaceQuery } from '@/api/hooks';
 import { AccountState } from '@/api/types';
-import {
-  parseDocumentModeSearch,
-  readDocumentMode,
-} from '@/features/materials/openItem';
 import { officeFormatOf } from './fileUtils';
 import { prefetchSourceOpen } from './sourceOpen';
 
@@ -18,48 +14,45 @@ const VIEW_CHUNKS = {
 interface RouteLoad {
   /** Aborted once the route's match is left. */
   abortController: AbortController;
-  location: { search: Record<string, unknown> };
   /** A hover's preload, not a navigation. */
   preload: boolean;
 }
 
 /**
  * Starts an Office file's open from its route, as soon as GET /files/{id}
- * says it is one: the view's code, and the session and bytes (Edit: the
- * session and room token) for the mode it opens in (the URL's, else the
- * saved one, Edit only for an editor), so neither waits for the page to
- * render. The view takes them when it mounts (`takeSourceOpen`); a file a
- * view already shows starts nothing (`prefetchSourceOpen`). A hover's
- * preload stops at the file row, and a route left before the rows arrive
- * starts no open.
+ * says it is one: the view's code, the View read and, for an editor, the edit
+ * session and room token beside it (Q608 A), whichever mode the view then
+ * shows, so none waits for the page to render. The view and the editor take
+ * their parts when they mount (`takeSourceOpen`); a file a view already shows
+ * starts nothing (`prefetchSourceOpen`). A hover's preload stops at the file
+ * row, and a route left before the rows arrive starts no open.
  */
 export function prefetchOfficeFile(
   qc: QueryClient,
   fileId: string,
-  { abortController: { signal }, location, preload }: RouteLoad
+  { abortController: { signal }, preload }: RouteLoad
 ) {
   if (preload) return;
-  const requested = parseDocumentModeSearch(location.search).mode;
   void (async () => {
     const file = await qc.ensureQueryData(fileQuery(fileId));
     const format = file.hasBytes ? officeFormatOf(file) : null;
     if (!format) return;
     void VIEW_CHUNKS[format]();
-    // The view mounts once the capability that picks its mode is known. A
+    // The view mounts once the capability that decides Edit is known. A
     // standalone file (no workspace) is its owner's, who edits it unless
-    // their account is frozen (Epo 2026-10-27).
+    // their account is frozen (Epo 2026-10-27); one opened from the Trash
+    // takes no edits.
     if (file.workspaceId)
       void qc.prefetchQuery(workspaceQuery(file.workspaceId));
-    const mode = requested ?? readDocumentMode({ id: fileId, kind: 'file' });
     const canEdit =
-      mode === 'edit' &&
+      !file.trash &&
       (file.workspaceId
         ? (await qc.ensureQueryData(workspaceQuery(file.workspaceId)))
             .capabilities.canEditContent
         : (await qc.ensureQueryData(meQuery())).account?.state !==
           AccountState.over_quota_frozen);
     if (signal.aborted) return;
-    prefetchSourceOpen(fileId, canEdit ? 'edit' : 'view');
+    prefetchSourceOpen(fileId, canEdit);
   })().catch(() => {
     // The view reads them itself and reports what fails.
   });

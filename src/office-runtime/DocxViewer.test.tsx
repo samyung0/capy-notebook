@@ -2,7 +2,7 @@ import { parseHTML } from 'linkedom';
 import type { ComponentProps } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { getLocale } from '@/i18n';
-import type { OfficeRenderer } from './runtimeMenus';
+import type { OfficePositioner, OfficeRenderer } from './runtimeMenus';
 
 // The locale resolves before a window exists, then linkedom's document goes
 // in before react-dom/client loads (as FileViewer.test.tsx).
@@ -134,6 +134,7 @@ function viewer(
       onError={noop}
       onMenus={noop}
       onPainted={noop}
+      onPositioner={noop}
       onRenderer={noop}
       onZoomChange={noop}
       {...props}
@@ -276,4 +277,81 @@ it('prints every page, waiting for those still to come', async () => {
   await printing;
   expect(printed).toHaveLength(5);
   await act(async () => root.unmount());
+});
+
+// Q608 A: View says where its reader is for the editor that follows it, as
+// the editor's own positioner does: by body paragraph id, offsets counted
+// from the paragraph's first fragment (here on the page before).
+it('reads the scroll offset, the body paragraph at the top and the text-layer selection by paragraph id and offset', async () => {
+  let positioner: OfficePositioner | null = null;
+  const root = await open({
+    onPositioner: (value) => {
+      positioner = value;
+    },
+  });
+  const text = (
+    docStart: number,
+    fromLine: number,
+    fragmentDocStart: number
+  ) => ({
+    docStart,
+    fragmentDocStart,
+    fromLine,
+    kind: 'text',
+    paraId: 'P1',
+  });
+  await act(async () =>
+    workers[0]?.send({
+      faces: [],
+      pages: [
+        { ...size, pageIndex: 0, primitives: [text(11, 0, 10)] },
+        { ...size, pageIndex: 1, primitives: [text(40, 3, 40)] },
+      ],
+      sizes: [size, size],
+      sliced: [],
+      type: 'pages',
+    })
+  );
+  await settle();
+  // The text layer the mocked viewer would draw: P1's first line on page 0,
+  // its fourth on page 1, at the top of the scroll box.
+  const host = document.querySelector<HTMLElement>('.docx-runtime-viewer')!;
+  host.innerHTML = [0, 1]
+    .map(
+      (page) =>
+        `<div class="layout-page-mirror" data-page-index="${page}"><div class="layout-page-content"><div class="layout-paragraph" data-para-id="P1" data-from-line="${page ? 3 : 0}"><span class="layout-run-text" data-doc-start="${page ? 40 : 11}" data-doc-end="${page ? 45 : 16}">${page ? 'world' : 'Hello'}</span></div></div></div>`
+    )
+    .join('');
+  Object.defineProperty(host, 'scrollTop', { value: 1500.4 });
+  const rect = (top: number, height: number) => () => ({
+    bottom: top + height,
+    height,
+    top,
+  });
+  host.getBoundingClientRect = rect(0, 800) as never;
+  const [first, second] = host.querySelectorAll<HTMLElement>('[data-para-id]');
+  first!.getBoundingClientRect = rect(-900, 400) as never;
+  second!.getBoundingClientRect = rect(-20, 300) as never;
+  const [hello, world] = host.querySelectorAll('.layout-run-text');
+  Object.assign(document, {
+    getSelection: () => ({
+      anchorNode: world!.firstChild,
+      anchorOffset: 2,
+      focusNode: hello!.firstChild,
+      focusOffset: 1,
+    }),
+  });
+  expect(positioner!.read()).toEqual({
+    format: 'docx',
+    scrollTop: 1500,
+    // Text starts one past the paragraph's opening (10): "wo|rld" at 42.
+    selection: {
+      anchor: { offset: 31, paraId: 'P1', story: 'body' },
+      head: { offset: 1, paraId: 'P1', story: 'body' },
+    },
+    top: { line: 3, offset: -20, paraId: 'P1' },
+  });
+  Reflect.deleteProperty(document, 'getSelection');
+  await act(async () => root.unmount());
+  expect(positioner).toBeNull();
 });

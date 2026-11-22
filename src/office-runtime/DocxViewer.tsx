@@ -25,6 +25,7 @@ import type {
   DocxViewport,
 } from './DocxViewer.worker';
 import { docxT, downloadMenu, printItem } from './docxMenus';
+import { textLayerSelection, topParagraph } from './docxPlace';
 import { takeDocxViewerWorker } from './docxViewerWorker';
 import {
   type OfficeFace,
@@ -35,6 +36,7 @@ import {
 import {
   canvasPage,
   type OfficeMenuReporter,
+  type OfficePositioner,
   type OfficeRenderer,
 } from './runtimeMenus';
 import { readViewToggle, writeViewToggle } from './viewToggles';
@@ -175,6 +177,7 @@ export function DocxViewer({
   onError,
   onMenus,
   onPainted,
+  onPositioner,
   onRenderer,
   onZoomChange,
 }: {
@@ -192,6 +195,7 @@ export function DocxViewer({
   /** The first pages are painted, before the rest are in: the page count is
    * known from the layout. */
   onPainted: (analysis: OfficeAnalysis) => void;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
 }) {
@@ -419,6 +423,29 @@ export function DocxViewer({
       if (!showed) release();
     };
   }, [bytes, onError, reading, readingWidth]);
+
+  // Where the reader is, for the editor after View (Q608 A): the scroll
+  // offset, the body paragraph at the top and the text layer's selection.
+  const pagesRef = useRef<readonly DisplayPage[]>([]);
+  pagesRef.current = displayList?.pages ?? [];
+  useEffect(() => {
+    onPositioner({
+      read: () => {
+        const area = hostRef.current;
+        if (!area) return null;
+        return {
+          format: 'docx',
+          scrollTop: Math.round(area.scrollTop),
+          selection: textLayerSelection(
+            area.ownerDocument.getSelection(),
+            pagesRef.current
+          ),
+          top: topParagraph(area),
+        };
+      },
+    });
+    return () => onPositioner(null);
+  }, [onPositioner]);
 
   // The layout whose first pages have been presented: a fitted first open
   // settles its level after the commit that mounts them.

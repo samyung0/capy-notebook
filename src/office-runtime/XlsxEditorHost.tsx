@@ -188,7 +188,8 @@ export function XlsxEditorHost({
     });
   }, [commandState, locale, onMenus]);
   useEffect(() => () => onMenus(null), [onMenus]);
-  // A room swap (Epo 2026-10-22): the sheet, by id, and its selected cells.
+  // A room swap (Epo 2026-10-22): the sheet, by id (by name from View), and
+  // its selected cells, at the zoom first where it is one of the levels.
   useEffect(() => {
     onPositioner({
       read: () => {
@@ -198,7 +199,13 @@ export function XlsxEditorHost({
       show: (position) => {
         const api = apiRef.current;
         if (!api || position.format !== 'xlsx') return;
-        const sheet = api.sheetInfo()?.sheetIds.indexOf(position.sheet) ?? -1;
+        if (typeof position.zoom === 'number')
+          runXlsxMenuItem(`zoom:${Math.round(position.zoom * 100)}`, api);
+        const info = api.sheetInfo();
+        const sheet =
+          ('sheet' in position
+            ? info?.sheetIds.indexOf(position.sheet)
+            : info?.sheetNames.indexOf(position.sheetName)) ?? -1;
         if (sheet >= 0)
           void api.selectCells(sheet, {
             anchor: position.anchor,

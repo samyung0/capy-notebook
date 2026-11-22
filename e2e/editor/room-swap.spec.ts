@@ -4,7 +4,10 @@ import {
   officeEditMenu,
   officeFrame,
   officeMenu,
+  officeTab,
+  ribbonZoom,
   saveOffice,
+  zoomInRibbon,
 } from '../helpers/office';
 import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
@@ -889,3 +892,30 @@ test('a newer PPTX epoch swaps the editor at the same slide', async ({
   });
   await expect(slide(2)).toHaveAttribute('aria-current', 'page');
 });
+
+// The zoom is kept while the file stays open (Epo 2026-10-06), a swap's next
+// editor included.
+for (const format of ['docx', 'xlsx', 'pptx'] as const)
+  test(`a newer ${format} epoch swaps the editor at the same zoom`, async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const fileId = `bio-office-${format}`;
+    await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+    await saveOffice(page, format);
+    await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+    const shows = (level: string) =>
+      format === 'xlsx'
+        ? expect(ribbonZoom(page, format)).toHaveValue(level)
+        : expect(ribbonZoom(page, format)).toContainText(level);
+    await zoomInRibbon(page, format, '150%');
+    await shows('150%');
+    await newEpoch(page, fileId);
+    await expect(page.locator('[data-office-view="replaced"]')).toBeVisible();
+    await expect(page.locator('[data-office-view="replaced"]')).toHaveCount(0, {
+      timeout: 120_000,
+    });
+    await officeTab(page, 'view').click();
+    await shows('150%');
+  });

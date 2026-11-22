@@ -4,6 +4,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import {
   officeEditMenu,
   officeMenu,
+  officePosition,
   officeTab,
   postToOfficeRuntime,
   ribbonCommand,
@@ -897,6 +898,123 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     if (format !== 'xlsx') await scaled(true, 2);
   });
 }
+
+// Q608 A: View says where its reader is as the editor names it, so the editor
+// after View can open there at View's zoom: the DOCX selection by paragraph id
+// and offset (a click in View's text reads as the same click in the
+// editor), the XLSX sheet by name and its cell, the slide. The editor's
+// `set-position` applies the zoom first.
+for (const format of ['docx', 'xlsx', 'pptx'] as const)
+  test(`${format} View's reader place and zoom are the editor's`, async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=view`);
+    const frame = page.frameLocator('[data-office-view="live"] iframe');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 120_000,
+    });
+    await officeMenu(page, format, 'View').click();
+    await page.getByRole('menuitem', { name: 'Zoom' }).click();
+    await page
+      .getByRole('menuitemcheckbox', { exact: true, name: '150%' })
+      .click();
+    const nameBox = frame.getByRole('textbox', {
+      name: m.files_office_spreadsheet_name_box(),
+    });
+    // DOCX: a point in a glyph inside a body paragraph's text on page 1 (its
+    // left quarter, so the caret goes before it), by its place on the page,
+    // so the editor's same point can be clicked.
+    let point: { x: number; y: number } | null = null;
+    if (format === 'docx') {
+      await page.waitForTimeout(1000);
+      point = await frame.locator('.docx-runtime-viewer').evaluate((area) => {
+        const canvas = area.querySelector('canvas[data-page-index="0"]');
+        const box = canvas?.getBoundingClientRect();
+        if (!box) return null;
+        for (const run of area.querySelectorAll<HTMLElement>(
+          '.canvas-page-mirror--selectable .layout-page-content [data-para-id] .layout-run-text[data-doc-start]'
+        )) {
+          const rect = run.getBoundingClientRect();
+          if (
+            run.closest('[role="cell"]') ||
+            !run.textContent?.trim() ||
+            !run.previousElementSibling?.textContent?.trim() ||
+            // In the top half, so the editor's ribbon leaves it on screen.
+            rect.top < box.top ||
+            rect.bottom > window.innerHeight / 2
+          )
+            continue;
+          return {
+            x: rect.left + rect.width / 4 - box.left,
+            y: rect.top + rect.height / 2 - box.top,
+          };
+        }
+        return null;
+      });
+      expect(point).not.toBeNull();
+    }
+    const pageBox = async () =>
+      (await frame
+        .locator('canvas[data-page-index="0"]')
+        .first()
+        .boundingBox())!;
+    if (format === 'docx') {
+      const box = await pageBox();
+      await page.mouse.click(box.x + point!.x, box.y + point!.y);
+    } else if (format === 'xlsx') {
+      await frame.getByRole('tab', { name: 'Summary' }).click();
+      await nameBox.fill('c4');
+      await nameBox.press('Enter');
+      await expect(nameBox).toHaveValue('C4');
+    } else await frame.locator('aside button').nth(2).click();
+    const view = (await officePosition(page)) as Record<string, unknown>;
+    expect(view.zoom).toBe(1.5);
+    if (format === 'xlsx')
+      expect(view).toMatchObject({
+        anchor: { col: 2, row: 3 },
+        head: { col: 2, row: 3 },
+        sheetName: 'Summary',
+      });
+    if (format === 'pptx') expect(view).toMatchObject({ slide: 3 });
+
+    await page.getByRole('button', { name: m.material_mode() }).click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+    if (format === 'docx') {
+      // The same point clicked in the editor, at the same zoom.
+      await expect(
+        frame.locator(
+          '.docx-editor__scroll-container canvas[data-page-index="0"]'
+        )
+      ).toBeVisible({ timeout: 120_000 });
+      await page.waitForTimeout(1000);
+      const box = await pageBox();
+      await page.mouse.click(box.x + point!.x, box.y + point!.y);
+      const edit = (await officePosition(page)) as Record<string, unknown>;
+      expect(edit.selection).toEqual(view.selection);
+      expect(view.selection).not.toBeNull();
+    }
+    // Back at 100%, the editor goes to View's place and zoom.
+    await zoomInRibbon(page, format, '100%');
+    const shown = (await officePosition(page, view)) as Record<string, unknown>;
+    if (format === 'xlsx')
+      await expect(ribbonZoom(page, format)).toHaveValue('150%');
+    else await expect(ribbonZoom(page, format)).toContainText('150%');
+    if (format === 'docx') expect(shown.selection).toEqual(view.selection);
+    if (format === 'xlsx') {
+      await expect(frame.getByRole('tab', { name: 'Summary' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await expect(nameBox).toHaveValue('C4');
+    }
+    if (format === 'pptx')
+      await expect(frame.locator('aside button').nth(2)).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+  });
 
 test.describe('DOCX on a phone', () => {
   // Touch, so a pinch reaches the runtime frame as touches.

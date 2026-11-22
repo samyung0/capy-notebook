@@ -33,7 +33,11 @@ import { PptxImageCache } from './pptxImageCache';
 import { pptxStrings, pptxT, presentAction, viewerMenus } from './pptxMenus';
 import { renderSlides } from './pptxRender';
 import { runtimeEngines } from './prewarm';
-import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import type {
+  OfficeMenuReporter,
+  OfficePositioner,
+  OfficeRenderer,
+} from './runtimeMenus';
 import { TablerIcon } from './TablerIcon';
 import { notes } from './tablerGlyphs';
 import {
@@ -54,6 +58,7 @@ export function PptxViewer({
   onError,
   onMenus,
   onAskPresenter,
+  onPositioner,
   onPresentingChange,
   onRenderer,
   onZoomChange,
@@ -70,6 +75,7 @@ export function PptxViewer({
   onMenus: OfficeMenuReporter;
   /** Asks Capy for Presenter view's notes window, from a click in the show. */
   onAskPresenter: () => void;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onPresentingChange: (presenting: boolean) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
@@ -163,6 +169,13 @@ export function PptxViewer({
     });
     return () => onRenderer(null);
   }, [onRenderer, slides]);
+  // Where the reader is, for the editor after View (Q608 A): the slide.
+  useEffect(() => {
+    onPositioner({
+      read: () => ({ format: 'pptx', slide: slideIndexRef.current + 1 }),
+    });
+    return () => onPositioner(null);
+  }, [onPositioner]);
   const frame = slides?.[slideIndex]?.frame ?? null;
   const accessibleItems = useMemo(
     () => (frame ? slideA11yItems(frame) : []),

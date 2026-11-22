@@ -86,7 +86,7 @@ describe('opening a source from its route', () => {
 
   it('hands the view the session and bytes the route started, reading each once', async () => {
     get.mockResolvedValue(SESSION);
-    prefetchSourceOpen('f_view', 'view');
+    prefetchSourceOpen('f_view', false);
     const open = await takeSourceOpen('f_view', 'view');
     expect(open.session).toBe(SESSION);
     expect(await open.base).toEqual(new Uint8Array([1, 2, 3]));
@@ -127,9 +127,9 @@ describe('opening a source from its route', () => {
 
   it('keeps one started open: a quick switch aborts the earlier download', async () => {
     get.mockResolvedValue(SESSION);
-    prefetchSourceOpen('f_first', 'view');
+    prefetchSourceOpen('f_first', false);
     await vi.waitFor(() => expect(fetches).toHaveLength(1));
-    prefetchSourceOpen('f_second', 'view');
+    prefetchSourceOpen('f_second', false);
     expect(fetches[0]?.signal?.aborted).toBe(true);
     await takeSourceOpen('f_second', 'view');
     expect(get).toHaveBeenCalledTimes(2);
@@ -147,7 +147,7 @@ describe('opening a source from its route', () => {
           void session.promise.then(resolve);
         })
     );
-    prefetchSourceOpen('f_idle', 'view');
+    prefetchSourceOpen('f_idle', false);
     const [, init] = get.mock.calls[0] as [string, RequestInit];
     const signal = init.signal!;
     vi.advanceTimersByTime(30_000);
@@ -162,10 +162,10 @@ describe('opening a source from its route', () => {
   it('starts nothing for a file a view already shows, nor for another mode it was not started in', async () => {
     get.mockResolvedValue(SESSION);
     const release = holdSource('f_shown');
-    prefetchSourceOpen('f_shown', 'view');
+    prefetchSourceOpen('f_shown', false);
     expect(get).not.toHaveBeenCalled();
     release();
-    prefetchSourceOpen('f_shown', 'view');
+    prefetchSourceOpen('f_shown', false);
     expect(get).toHaveBeenCalledOnce();
     // Edit does not take a view's open.
     post.mockResolvedValue(TOKEN);
@@ -176,21 +176,95 @@ describe('opening a source from its route', () => {
     );
   });
 
-  it('drops the route open of the other mode when the view takes the file', async () => {
+  // Q608 A: an editor's open starts the View read, the edit session and the
+  // room token together; both sessions name one base, downloaded once, and
+  // each part goes to its own taker.
+  it("starts an editor's View read, edit session and token together, downloading their base once", async () => {
     get.mockResolvedValue(SESSION);
     post.mockResolvedValue(TOKEN);
-    // The route guessed Edit; the view mounts in View.
-    prefetchSourceOpen('f_guess', 'edit');
+    prefetchSourceOpen('f_both', true);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(get.mock.calls.map(([path]) => path).sort()).toEqual([
+      '/files/f_both/source-session',
+      '/files/f_both/source-session?view=true',
+    ]);
+    expect(post).toHaveBeenCalledOnce();
+    const view = await takeSourceOpen('f_both', 'view');
+    const edit = await takeSourceOpen('f_both', 'edit');
+    expect(edit.credentials).toBe(TOKEN);
+    expect(await view.base).toBe(await edit.base);
+    expect(fetches).toHaveLength(1);
+    // Neither taker read again.
+    expect(get).toHaveBeenCalledTimes(2);
+    // One open, marked (and its earlier marks cleared) once.
+    expect(
+      performance
+        .getEntriesByName('capy:office:open', 'mark')
+        .map((mark) => (mark as PerformanceMark).detail)
+    ).toEqual([{ modes: 'view,edit' }]);
+  });
+
+  it('keeps the edit part when View is taken, and its base download while a part needs it', async () => {
+    get.mockResolvedValue(SESSION);
+    post.mockResolvedValue(TOKEN);
+    prefetchSourceOpen('f_part', true);
+    const viewer = new AbortController();
+    const view = await takeSourceOpen('f_part', 'view', viewer.signal);
+    await view.base;
+    // The edit part waits for the editor; it was not dropped with the take.
+    const edit = await takeSourceOpen('f_part', 'edit');
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(await edit.base).toBe(await view.base);
+    // A part dropped (another account) leaves the download the other still
+    // waits on.
+    prefetchSourceOpen('f_dropped', true);
+    const taker = takeSourceOpen('f_dropped', 'view');
+    dropSourceOpens();
+    await (await taker).base;
+    expect(fetches.at(-1)?.signal?.aborted).toBe(false);
+  });
+
+  // Q818 A: the View read made at open goes once Edit takes its part, so the
+  // room turning read-only (or a reopen in View) shows what was saved since.
+  it('reads View afresh after Edit took its part', async () => {
+    get.mockResolvedValue(SESSION);
+    post.mockResolvedValue(TOKEN);
+    prefetchSourceOpen('f_stale', true);
+    const edit = await takeSourceOpen('f_stale', 'edit');
+    const savedSince = { ...SESSION, checkpoint: 2 };
+    get.mockResolvedValue(savedSince);
+    const view = await takeSourceOpen('f_stale', 'view');
+    expect(view.session).toBe(savedSince);
+    // Edit's download went on.
+    await edit.base;
+    expect(fetches[0]?.signal?.aborted).toBe(false);
+  });
+
+  // Q818 A: leaving a file opened in View before Edit took its part stops
+  // that part, so the download they shared stops at unmount; a quick reopen
+  // downloads the base once.
+  it('stops the edit part and its download when the file is left before Edit', async () => {
+    get.mockResolvedValue(SESSION);
+    post.mockResolvedValue(TOKEN);
+    prefetchSourceOpen('f_left', true);
+    const release = holdSource('f_left');
+    const viewer = new AbortController();
+    void takeSourceOpen('f_left', 'view', viewer.signal);
     await vi.waitFor(() => expect(fetches).toHaveLength(1));
-    await (await takeSourceOpen('f_guess', 'view')).base;
+    viewer.abort();
+    release();
     expect(fetches[0]?.signal?.aborted).toBe(true);
-    expect(fetches).toHaveLength(2);
+    prefetchSourceOpen('f_left', true);
+    const again = holdSource('f_left');
+    await (await takeSourceOpen('f_left', 'view')).base;
+    expect(fetches.filter(({ signal }) => !signal?.aborted)).toHaveLength(1);
+    again();
   });
 
   it("drops the previous account's started open when another account signs in", async () => {
     get.mockResolvedValue(SESSION);
     post.mockResolvedValue(TOKEN);
-    prefetchSourceOpen('f_account', 'edit');
+    prefetchSourceOpen('f_account', true);
     await vi.waitFor(() => expect(fetches).toHaveLength(1));
     dropSourceOpens();
     expect(fetches[0]?.signal?.aborted).toBe(true);

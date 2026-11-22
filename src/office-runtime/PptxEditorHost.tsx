@@ -211,7 +211,7 @@ export function PptxEditorHost({
     });
     return () => onRenderer(null);
   }, [commandState, onRenderer]);
-  // A room swap (Epo 2026-10-22): the slide on screen.
+  // A room swap (Epo 2026-10-22): the slide on screen, at the zoom first.
   useEffect(() => {
     onPositioner({
       read: () =>
@@ -219,8 +219,11 @@ export function PptxEditorHost({
           ? { format: 'pptx', slide: commandState.slideIndex + 1 }
           : null,
       show: (position) => {
-        if (position.format === 'pptx')
-          apiRef.current?.goToSlide(position.slide);
+        const api = apiRef.current;
+        if (!api || position.format !== 'pptx') return;
+        if (position.zoom !== undefined)
+          api.runCommand('view.zoom', String(position.zoom));
+        api.goToSlide(position.slide);
       },
     });
     return () => onPositioner(null);

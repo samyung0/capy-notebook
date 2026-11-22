@@ -945,9 +945,10 @@ Download (Epo 2026-10-27/28, `src/features/files/downloadItem.ts`). Every
 item menu that has Clone to… (the Files page's file and block rows, the
 workspace file tree, the open item's header) offers Download after it, to
 anyone who can read the item. A file downloads its latest saved state under
-its own name: an Office or text file reads view mode's source session and
-merges the saved edits it carries over its base in the browser (text from its
-saved state, Office through view mode's export worker, `exportCheckpoint`;
+its own name: an Office or text file reads view mode's source session (its
+own read, never the one an open started; Q818 A) and merges the saved edits
+it carries over its base in the browser (text from its saved state, Office
+through view mode's export worker, `exportCheckpoint`;
 measured in `bench/editor/reports/2026-10-28-office-browser-export.md`). The
 session carries them while they are ahead of the published file and while a
 publication waits to become the editing base, when every saved edit is still

@@ -24,6 +24,7 @@ import type {
 } from '@/features/files/officeProtocol';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
+import { BODY_PARAGRAPH, topParagraph } from './docxPlace';
 import { DOCX_RIBBON } from './docxRibbon';
 import { fontSliceErrors } from './fontSliceErrors';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
@@ -241,7 +242,14 @@ export function DocxEditorHost({
         const paged = editorRef.current?.getEditorRef();
         const area = document.querySelector<HTMLElement>(SCROLL_BOX);
         if (!(paged && area) || position.format !== 'docx') return;
-        const { selection, top } = position;
+        const { selection, top, zoom } = position;
+        // The zoom first, so the place below is found on pages at their size;
+        // a fitted zoom is only the editor's own at open (the ref sets levels).
+        const editor = editorRef.current;
+        if (typeof zoom === 'number' && editor && editor.getZoom() !== zoom) {
+          editor.setZoom(zoom);
+          await frames(2);
+        }
         const anchor =
           selection && paged.yrsLocToDisplayPosition(selection.anchor);
         const head = selection && paged.yrsLocToDisplayPosition(selection.head);
@@ -351,29 +359,6 @@ export function DocxEditorHost({
 const RIBBON_CONTEXTS = { picture: 'imageWrap', table: 'tableMore' };
 
 const SCROLL_BOX = '.docx-editor__scroll-container';
-/** Body paragraphs in the page mirrors (headers and footers repeat theirs on
- * every page), split ones by fragment. */
-const BODY_PARAGRAPH = '.layout-page-content [data-para-id]';
-
-/** The first body paragraph fragment showing at the box's top, and how far
- * below the top edge it starts; mirrors run in document order. */
-function topParagraph(area: HTMLElement) {
-  const edge = area.getBoundingClientRect().top;
-  for (const fragment of area.querySelectorAll<HTMLElement>(BODY_PARAGRAPH)) {
-    const rect = fragment.getBoundingClientRect();
-    const paraId = fragment.dataset.paraId;
-    if (rect.height > 0 && rect.bottom > edge && paraId)
-      return {
-        line:
-          fragment.dataset.fromLine === undefined
-            ? null
-            : Number(fragment.dataset.fromLine),
-        offset: rect.top - edge,
-        paraId,
-      };
-  }
-  return null;
-}
 
 const frames = (count: number) =>
   new Promise<void>((resolve) => {

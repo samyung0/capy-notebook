@@ -256,6 +256,13 @@ function OfficeRuntime() {
     },
     []
   );
+  // Where the reader is, at the zoom last reported, which the next frame
+  // applies first.
+  const readPosition = () => {
+    const position = positionerRef.current?.read() ?? null;
+    const zoom = zoomSentRef.current;
+    return position && zoom !== undefined ? { ...position, zoom } : position;
+  };
   const reportThumbnailer = useCallback(
     (thumbnailer: OfficeThumbnailer | null, scope?: OfficeCaptureScope) => {
       thumbnailerRef.current = thumbnailer;
@@ -661,18 +668,18 @@ function OfficeRuntime() {
       if (message.type === 'position-request' && revisionRef.current !== null) {
         post({
           id: message.id,
-          position: positionerRef.current?.read() ?? null,
+          position: readPosition(),
           revision: revisionRef.current,
           type: 'position',
         });
         return;
       }
       if (message.type === 'set-position') {
-        await positionerRef.current?.show(message.position);
+        await positionerRef.current?.show?.(message.position);
         if (revisionRef.current !== null)
           post({
             id: message.id,
-            position: positionerRef.current?.read() ?? null,
+            position: readPosition(),
             revision: revisionRef.current,
             type: 'position',
           });
@@ -1045,6 +1052,7 @@ function OfficeRuntime() {
             onError={reportError}
             onMenus={reportMenus}
             onPainted={reportPainted}
+            onPositioner={reportPositioner}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}
           />
@@ -1058,6 +1066,7 @@ function OfficeRuntime() {
             onError={reportError}
             onFontError={reportFontFailure}
             onMenus={reportMenus}
+            onPositioner={reportPositioner}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}
           />
@@ -1072,6 +1081,7 @@ function OfficeRuntime() {
             onAskPresenter={askPresenter}
             onError={reportError}
             onMenus={reportMenus}
+            onPositioner={reportPositioner}
             onPresentingChange={reportPresenting}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}

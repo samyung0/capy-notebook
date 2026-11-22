@@ -167,22 +167,28 @@ the `outdated` save strip, and its drafts stay for the reloaded page
 - **Route.** The workspace and `/files/{id}` routes' loaders start the open
   as soon as `GET /files/{id}` says the file is DOCX, XLSX or PPTX: the view's
   code (`DocxView`/`SheetView`/`PptxView`), the workspace read whose
-  capability picks the mode, and the source session for the mode it opens in
-  (the URL's, else the saved one; Edit only for an editor): View reads
-  `source-session?view=true`, Edit reads the editing session and the room
-  token together. The base bytes start as soon as the session names them. A
-  hover's preload stops at the file row, and a route left before the rows
-  arrive (its loader's abort signal) starts no open. One started open waits
-  at a time: a quick switch to another file aborts the earlier one (its
-  download included), and one nobody takes within 30 s is dropped. A file a
-  mounted view already shows starts nothing (the loader runs again on every
-  search change).
+  capability decides Edit, and the sessions, whichever mode the view then
+  shows (Q608 A): the View read (`source-session?view=true`) for everyone
+  and, for an editor (not from the Trash), the editing session and the room
+  token beside it, all started together. The base bytes start as soon as a
+  session names them, once per base SHA-256 for both sessions; that download
+  stops only once both parts have. A hover's preload stops at the file row,
+  and a route left before the rows arrive (its loader's abort signal) starts
+  no open. One started open waits at a time: a quick switch to another file
+  aborts the earlier one (its download included), and a part nobody takes
+  within 30 s is dropped. A file a mounted view already shows starts nothing
+  (the loader runs again on every search change); leaving it before Edit
+  took its part drops that part, so their shared download stops at unmount
+  and a quick reopen downloads the base once (Q818 A).
 - **View.** `FileViewer` mounts an Office view without `GET /files/{id}/links`
   (only the published file's link, which no Office view uses), once the
-  workspace capability is known. The view takes the started open
-  (`takeSourceOpen`), or starts its own; an open the route started for the
-  file in the other mode (it guessed Edit, the view opens in View) is
-  dropped, so the file never downloads twice in parallel.
+  workspace capability is known. The view takes the started open's part for
+  the mode it shows (`takeSourceOpen`), or starts its own. A View take
+  leaves the edit part for Edit pressed within the 30 s, so the file never
+  downloads twice in parallel; an Edit take drops the View read made at open,
+  so a later View (the room turning read-only, a reopen) reads the saved
+  state afresh. Download reads its own View session (`readSourceView`), never
+  the route's (Q818 A).
 - **Frame.** The runtime frame's URL names the format and the mode it opened
   in (`runtimeFrameUrl`), fixed for the frame's life (a changed `src` would
   reload it; the maintenance pause's drop to View keeps the frame opened for
@@ -491,8 +497,19 @@ by `position` once the editor is there, which the swap waits for): DOCX the
 scroll offset, the first body paragraph showing at the top by `w14:paraId`
 (its fragment by first line, from the page mirrors' `data-para-id`) with its
 distance below the top edge, and the selection by paragraph id and offset;
-XLSX the sheet by id and the selected cells; PPTX the slide. Yrs positions are
-not used, since the new epoch has new ones. BetterOffice going read-only and
+XLSX the sheet by id and the selected cells; PPTX the slide. Every answer
+carries the frame's zoom (Office protocol 15), which an editor's `set-position`
+applies first (DOCX levels, not a fit; XLSX's listed levels; PPTX any), and
+the next view opens at the zoom the view on screen was at, which `OfficeSwap`
+keeps beside the ribbon tab (the 2026-10-06 zoom line). Viewers answer too,
+for the editor after View (Q608 A): DOCX View with the same scroll offset and
+top paragraph, its text-layer selection by body paragraph id and offset (View
+lays out the editor engine's seeded state, so a run's positions are the
+editor's: the offset counts from one past the paragraph's first fragment's
+start; notes, headers, table cells and text boxes give no selection), XLSX
+View the sheet by name (its sheet ids follow the opened file's order, not the
+room's) and the selected cell, PPTX View the slide. Yrs positions are not
+used, since the new epoch has new ones. BetterOffice going read-only and
 a document's first frame never move the view (Epo 2026-10-22; fork
 `layoutPassOrigin`, `shouldScrollCaretIntoView`): a layout pass nobody
 scheduled is laid out as a peer's and a session's first caret pass never

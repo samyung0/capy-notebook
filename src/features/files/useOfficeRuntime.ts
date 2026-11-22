@@ -78,6 +78,8 @@ export interface OfficeSwap {
   onSettled: () => void;
   /** The tab the view on screen has open: the next view opens on it. */
   ribbonTab: { current: string | null };
+  /** The zoom the view on screen is at: the next view opens at it. */
+  zoom: { current: OfficeZoom | undefined };
 }
 
 /** Both answer where the reader is once the frame says (null: no answer). */
@@ -264,8 +266,9 @@ export function useOfficeRuntime({
   modeRef.current = mode;
   const revisionRef = useRef(revision);
   // The zoom the file was last shown at, kept (not stored) while it stays
-  // open: the next frame, for View or Edit or after a reload, opens at it.
-  const zoomRef = useRef<OfficeZoom | undefined>(undefined);
+  // open: the next frame, for View or Edit, after a reload or a swap, opens
+  // at it.
+  const zoomRef = useRef<OfficeZoom | undefined>(swap?.zoom.current);
   const [notices] = useState(() =>
     officeNotices((title) => userToast({ title, variant: 'warning' }))
   );
@@ -775,7 +778,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'zoom') {
-        zoomRef.current = message.zoom;
+        keepZoom(message.zoom, zoomRef, swapRef.current);
         return;
       }
       if (message.type === 'open-presenter') {
@@ -1386,6 +1389,21 @@ export function renderLimit(
     waiting?.delete(start);
     clearTimeout(timer);
   };
+}
+
+/**
+ * A frame's zoom: kept for this view's next frame and, from the view on
+ * screen, for the next view a room swap opens, as the 2026-10-06 zoom line
+ * keeps it while the file stays open; a view building hidden hasn't been
+ * seen.
+ */
+export function keepZoom(
+  zoom: OfficeZoom,
+  kept: { current: OfficeZoom | undefined },
+  swap: Pick<OfficeSwap, 'building' | 'zoom'> | undefined
+) {
+  kept.current = zoom;
+  if (swap && !swap.building) swap.zoom.current = zoom;
 }
 
 /**
