@@ -221,7 +221,8 @@ export function XlsxEditorHost({
   }, [onZoomChange, zoom]);
   // View's rule on the open workbook's cells, once its grid is painted: the
   // editor scrolls to the cell and fills it without selecting it (Q810 B),
-  // while the cell still holds the quote (Q809 A), until the next citation.
+  // switching to its sheet as a tab click does (Q812 B), while the cell still
+  // holds the quote (Q809 A), until the next citation.
   const [painted, setPainted] = useState(false);
   const [marked, setMarked] = useState<XlsxEditorProps['markedCell']>(null);
   useEffect(() => {

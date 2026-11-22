@@ -1776,6 +1776,29 @@ for (const [format, quote] of [
   });
 }
 
+// Q812 B: a cell on another sheet switches the editor there, as a tab click
+// does (the switch's own selection, A1), then marks the cell unselected.
+test('an XLSX citation on another sheet switches to it in Edit and marks the cell unselected', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const tab = frame.getByRole('tab', { name: 'Faculty Database' });
+  await expect(tab).toHaveAttribute('aria-selected', 'false');
+  await postToOfficeRuntime(page, {
+    citation: { quote: 'Mathematics, Statistics, Risk Management' },
+    type: 'set-citation',
+  });
+  await expect(tab).toHaveAttribute('aria-selected', 'true', {
+    timeout: 30_000,
+  });
+  await expect(frame.locator('[data-citation-highlight]')).toBeVisible();
+  await expect(frame.getByTestId('xlsx-name-box')).toHaveValue('A1');
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+});
+
 // A paused editor is read-only in every pause state; a replaced session is
 // the one the mocks drive.
 for (const [format, text] of [

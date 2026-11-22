@@ -2590,8 +2590,9 @@ Highlights are display only in both modes: nothing reaches the document, its
 undo history or saved state, and the mark is drawn over the editor, not in it.
 DOCX and XLSX leave the user's selection, presence and any open cell draft as
 they were; PPTX moves to the cited slide, which co-editors see. A cell on
-another sheet is marked and scrolled to once its sheet is opened: the editor
-does not switch sheets for it, since a switch moves the selection. A highlight
+another sheet switches the editor to that sheet as a tab click does (Q812 B:
+presence moves there, an open cell draft commits, the sheet's own selection),
+then the cell is marked and scrolled to, unselected. A highlight
 stays until the next citation replaces it or none clears it, as in View, and
 only while the paragraph, cell or text box it marks still holds the quote
 (Q809 A): checked with the same rule on every change to it (DOCX each layout,
