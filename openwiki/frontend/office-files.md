@@ -253,8 +253,9 @@ pages), `ready` and `collaboration-ready`. The frame marks `runtime-boot`,
 `xlsx-view`, and `xlsx-edit-fetch` for the cache warm-up), `fonts:start`/`:end`
 (DOCX view, the first pages' faces) and `fonts:faces` (PPTX view); the DOCX
 viewer worker posts `wasm:docx-view:start`/`:end`, `worker:open-start`,
-`worker:layout-end`, `worker:first-pages` and `worker:open-end` back with its
-last message, and the frame marks them at the worker's times.
+`worker:first-layout-end` (the first pages laid out, or every page when the
+body is laid out whole first), `worker:first-pages` and `worker:open-end` back
+with its last message, and the frame marks them at the worker's times.
 
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
 WASM omits editing, collaboration, undo, and save machinery; the DOCX viewer
@@ -265,19 +266,37 @@ as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
 The DOCX viewer builds that list from the engine's typed state, parsing the
 display extras once, with measured text as the editor's joined glyph runs, and
-shows it progressively (C6, Q790 A): after the layout, which sizes every page,
-it builds and posts the pages the frame shows at the top plus one, then the
-rest eight at a time, each batch once its sliced faces hold its outlines; the
-frame draws each batch as it comes and holds the space of the pages still to
-come, so the scroll height is final from the first paint, and a file over 12
-pages is windowed from it (Q804 A). A batch's outline chunks load while the
-next batch builds; batches still arrive in order. A later page's list
+shows it progressively (C6, Q790 A; Q801 B). It first lays out only the
+body's first pages, as Google Docs does: the engine measures the body in
+growing prefixes, with the whole body's floating zones so each block measures
+as in the whole pass, until a prefix paginates two pages past the pages the
+frame shows at the top plus one, never ending inside a keep-with-next chain,
+next to a section break or inside a section with columns, and keeps those
+pages (`layout_document_with_regions_first_pages` in docx-edit, used only by
+the viewer). Their page-count (NUMPAGES) fields show the file's saved count.
+A short file, under 40,000 characters of body text (where the first pages
+came no sooner, about 25 pages of the bench's mixed text; Q822 A), a body too
+short for that cut, one in columns from where it would be cut to its end, or
+one holding a section break inside a content control or a shape wrapped on
+an inside or outside margin, is laid out whole first instead; so are a file
+opened from a citation and the pages a reading layout prints, which wait for
+every page anyway (Q823 A). The viewer builds and posts those pages, then
+lays out the whole body and builds the rest eight at a time, each batch once
+its sliced faces hold its outlines; a first page the whole layout draws otherwise (the
+real page count in its page-count fields) is posted again. The frame draws
+each batch as it comes, so the page count and the scroll height grow until
+every page is in, the fit taking the widest page of the whole document from
+the first paint, and the pages are windowed from the first paint while more
+are to come (Q804 A), then from 12 pages. A batch's outline chunks load while
+the next batch builds; batches still arrive in order. A later page's list
 marker that names a sliced face after an earlier page's family re-sends that
 earlier page, so the final pages equal a whole build's; the mirror keeps
 that page's elements and updates the changed attributes in place (Q803 B).
-The frame posts `painted` at the first paint and `ready` once every page is
-in; print and a citation's highlight wait for every page, and the host's
-minute for a Print clicked before then counts from `ready` (Q804 A). A file
+The frame posts `painted` at the first paint and again as the page count
+grows (the host marks the first and shows the count so far), and `ready`
+once every page is in; print and a citation's highlight wait for every
+page, and the host's minute for a Print clicked before then counts from
+`ready` (Q804 A). A file
 opened from a citation posts no `painted`: the host keeps its skeleton until
 `ready` and the file opens at the quote (Q802 B). The worker frees its WASM
 after the last batch and goes.

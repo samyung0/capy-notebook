@@ -278,6 +278,9 @@ export function useOfficeRuntime({
   // that (a face failing as the file opens): a later save never clears that
   // failure's error (Q781 A).
   const frameOpen = useRef<'opening' | 'ready' | 'failed'>('opening');
+  // DOCX View's first `painted` since the frame initialized: it comes again
+  // as the page count grows, marked once.
+  const paintedMarked = useRef(false);
   // Renders asked of a view before every page is in: their time limit starts
   // at `ready` (Q804 A).
   const readyWaiters = useRef(new Set<() => void>());
@@ -743,6 +746,7 @@ export function useOfficeRuntime({
         officeMark('runtime-initialized');
         notices.frame();
         frameOpen.current = 'opening';
+        paintedMarked.current = false;
         setReplicaReady(false);
         setMenus(null);
         bannerSent.current = '';
@@ -839,9 +843,10 @@ export function useOfficeRuntime({
         return;
       }
       // DOCX View's first pages are up: the skeleton goes and the page count
-      // shows before the rest are in (`ready`).
+      // shows before the rest are in (`ready`), growing as they come.
       if (message.type === 'painted') {
-        officeMark('painted');
+        if (!paintedMarked.current) officeMark('painted');
+        paintedMarked.current = true;
         setAnalysis(message.analysis);
         return;
       }

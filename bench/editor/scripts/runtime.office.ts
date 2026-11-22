@@ -416,14 +416,16 @@ async function clickUntil(
     { polling: 50, timeout: 240_000 }
   );
   return page.evaluate(
-    (kinds) =>
-      kinds.map((kind) => {
+    ({ counts, kinds }) =>
+      kinds.map((kind, index) => {
         const { clicks, messages } = window.__officeBench;
-        const last = messages.filter((m) => m.type === kind).at(-1)!;
-        const analysis = last.analysis;
+        // The first since the click: DOCX View sends `painted` again as its
+        // page count grows.
+        const first = messages.filter((m) => m.type === kind)[counts[index]]!;
+        const analysis = first.analysis;
         return {
-          ms: Math.round(last.at - clicks.at(-1)!),
-          runtime: last.timings ?? null,
+          ms: Math.round(first.at - clicks.at(-1)!),
+          runtime: first.timings ?? null,
           // Pages, sheets or slides.
           units: analysis
             ? analysis.format === 'docx'
@@ -434,7 +436,7 @@ async function clickUntil(
             : null,
         };
       }),
-    types
+    { counts: before, kinds: types }
   );
 }
 
@@ -792,7 +794,8 @@ async function openFile(page: Page, fixture: { format: string; id: string }) {
     fixture.format === 'docx' ? ['painted', 'ready'] : ['ready'],
     () => link.click()
   );
-  return { ...painted, allPagesMs: ready.ms };
+  // The page count at first paint is the first screen's; every page's is ready's.
+  return { ...painted, allPagesMs: ready.ms, units: ready.units };
 }
 
 async function openInView(
