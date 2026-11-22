@@ -1,11 +1,10 @@
-//! Where each new struct of a writer's update lands in a keyed document (an
-//! item document, a canvas's board): the keys from the root down to its
-//! container, the types along that path, and its own key (a map entry) or
-//! none (an item of a sequence, the characters of a text). Item and board
-//! admissions check every new struct's place against the document's shape.
+//! Where each new struct of a writer's update lands in an item document: the
+//! keys from the root down to its container, and its own key (a map entry)
+//! or none (an item of a sequence, the characters of a text). The admit
+//! checks every new struct's place against the document's shape.
 //!
 //! Cost: each struct resolves once, and each container's path once (both
-//! memoized), every step counted ([crate::steps]). A struct that names no
+//! memoized), every step counted (`ydoc::steps`). A struct that names no
 //! parent takes its origin's (or right origin's) place, as Yjs does; a
 //! pasted run chains each struct to the one before it, so the memo keeps
 //! that linear.
@@ -17,19 +16,15 @@ use yrs::block::{Item, ItemContent, UpdateParent};
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::{ID, ReadTxn, StateVector};
 
-use crate::Incoming;
-use crate::steps::{Walk, step};
+use ydoc::Incoming;
+use ydoc::steps::{Walk, step};
 
 /// A new struct's place: `path` is its container's keys from the root name
-/// down; `holders` the item of each type below the root along it (one fewer
-/// than `path`, the last the struct's own container), held by the room or
-/// new in the update; `key` is its own map key (none inside a sequence or
-/// text).
+/// down; `key` is its own map key (none inside a sequence or text).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Place {
     At {
         path: Vec<Arc<str>>,
-        holders: Vec<ID>,
         key: Option<Arc<str>>,
     },
     /// Yjs drops it: its parent or a neighbour was garbage-collected.
@@ -42,16 +37,12 @@ pub enum Place {
 /// The most types an update may create inside one another.
 pub const MAX_NEW_DEPTH: usize = 16;
 
-/// A container's keys from the root down and the item of each type below
-/// the root.
-type Path = (Vec<Arc<str>>, Vec<ID>);
-
 pub struct Locator<'a, T: ReadTxn> {
     txn: &'a T,
     incoming: &'a Incoming<'a>,
     state: StateVector,
     places: HashMap<ID, Place>,
-    branches: HashMap<BranchID, Option<Path>>,
+    branches: HashMap<BranchID, Option<Vec<Arc<str>>>>,
 }
 
 impl<'a, T: ReadTxn> Locator<'a, T> {
@@ -71,13 +62,12 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
 
     /// The keys from the root to a type the room holds; none when a step on
     /// the way sits in a sequence (no shape nests a type there).
-    fn branch_path(&mut self, branch: BranchPtr) -> Option<Path> {
+    fn branch_path(&mut self, branch: BranchPtr) -> Option<Vec<Arc<str>>> {
         let id = branch.id();
         if let Some(known) = self.branches.get(&id) {
             return known.clone();
         }
         let mut keys: Vec<Arc<str>> = Vec::new();
-        let mut holders: Vec<ID> = Vec::new();
         let mut current = branch;
         let found = loop {
             step(Walk::Holders);
@@ -86,8 +76,7 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
                     BranchID::Root(name) => {
                         keys.push(name);
                         keys.reverse();
-                        holders.reverse();
-                        break Some((keys, holders));
+                        break Some(keys);
                     }
                     BranchID::Nested(_) => break None,
                 },
@@ -96,7 +85,6 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
                         break None;
                     };
                     keys.push(key);
-                    holders.push(*item.id());
                     match item.parent_branch() {
                         Some(parent) => current = parent,
                         None => break None,
@@ -108,34 +96,23 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
         found
     }
 
-    /// The place of a struct the room holds (one an update deletes).
-    pub fn held_place(&mut self, item: &Item) -> Place {
-        let Some(branch) = item.parent_branch() else {
-            return Place::Unknown;
-        };
-        match self.branch_path(branch) {
-            Some((path, holders)) => Place::At {
-                path,
-                holders,
-                key: item.parent_sub().cloned(),
-            },
-            None => Place::Unknown,
-        }
-    }
-
     /// The place of a new struct of the update.
     pub fn place(&mut self, start: &'a Item) -> Place {
         // Place an item that overlaps the room's held clock, or sits next to a
         // collected unit, where yrs integrates it (phase 0 review).
         match self.incoming.landing(self.txn.store(), &self.state, start) {
-            crate::Landing::Gone => return Place::Gone,
-            crate::Landing::At(id) => {
+            ydoc::Landing::Gone => return Place::Gone,
+            ydoc::Landing::At(id) => {
                 let Some(held) = self.txn.store().get_item(&id) else {
                     return Place::Unknown;
                 };
-                return self.held_place(&held);
+                let (sub, branch) = (held.parent_sub().cloned(), held.parent_branch());
+                return match branch.and_then(|branch| self.branch_path(branch)) {
+                    Some(path) => Place::At { path, key: sub },
+                    None => Place::Unknown,
+                };
             }
-            crate::Landing::Chain => {}
+            ydoc::Landing::Chain => {}
         }
         self.place_at(start, 0)
     }
@@ -173,7 +150,6 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
                 UpdateParent::Root(name) => {
                     break Place::At {
                         path: vec![name.clone()],
-                        holders: Vec::new(),
                         key,
                     };
                 }
@@ -186,7 +162,7 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
                             ItemContent::Deleted(_) => Place::Gone,
                             ItemContent::Type(branch) => {
                                 match self.branch_path(BranchPtr::from(branch.as_ref())) {
-                                    Some((path, holders)) => Place::At { path, holders, key },
+                                    Some(path) => Place::At { path, key },
                                     None => Place::Unknown,
                                 }
                             }
@@ -203,12 +179,10 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
                     match self.place_at(holder, depth + 1) {
                         Place::At {
                             mut path,
-                            mut holders,
                             key: Some(holder_key),
                         } => {
                             path.push(holder_key);
-                            holders.push(*holder.id());
-                            break Place::At { path, holders, key };
+                            break Place::At { path, key };
                         }
                         Place::Gone => break Place::Gone,
                         _ => break Place::Unknown,
@@ -223,7 +197,16 @@ impl<'a, T: ReadTxn> Locator<'a, T> {
                         let Some(held) = self.txn.store().get_item(&sibling) else {
                             break Place::Gone;
                         };
-                        break self.held_place(&held);
+                        let Some(parent) = held.parent_branch() else {
+                            break Place::Unknown;
+                        };
+                        break match self.branch_path(parent) {
+                            Some(path) => Place::At {
+                                path,
+                                key: held.parent_sub().cloned(),
+                            },
+                            None => Place::Unknown,
+                        };
                     }
                     match self.incoming.item_at(&sibling) {
                         Some(next) => item = next,

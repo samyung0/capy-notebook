@@ -17,13 +17,14 @@ import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
 
 /* The board's rules (Epo 2026-11-22, "sure A then"): what each stored canvas
  * element and block may hold, key by key, read from its Y map as stored (never
- * `toJSON()`), so a string where a text belongs is told apart. The canvas room
- * refuses an update that breaks them with the same rules
- * (collaboration-rs/crates/board/src/rules.rs); boardRules.parity.test.ts keeps
- * the two alike. Relations two people's honest edits can break together (a mind
- * map's nodes against the canvas, a group's children, a connector's ends, the
- * block tree's links) are not here (Epo 2026-11-22, "but A seems simpler, do
- * A"); a child's kind under its parent is (`childFits`). */
+ * `toJSON()`), so a string where a text belongs is told apart. Every board is
+ * read through them as it opens and as peers write to it (boardLoad.ts); the
+ * canvas room checks no content (Epo 2026-11-22). boardRules.corpus.test.ts runs
+ * them over what BlockSuite's own code writes. Relations two people's honest
+ * edits can break together (a mind map's nodes against the canvas, a group's
+ * children, a connector's ends, the block tree's links) are not here (Epo
+ * 2026-11-22, "but A seems simpler, do A"); a child's kind under its parent is
+ * (`childFits`). */
 
 /** A question's answer board or the workspace canvas: each holds what the board
  * catalog lists for it (Epo 2026-11-09). */
@@ -59,7 +60,7 @@ export function holds(board: BoardKind) {
 export type Fields = Record<string, unknown>;
 
 /** BlockSuite's enums the rules read, as its own (`@blocksuite/affine/model`;
- * boardRules.parity.test.ts holds them equal), kept here so the preview reads a
+ * boardRules.corpus.test.ts holds them equal), kept here so the preview reads a
  * board without loading BlockSuite. */
 export const ENUMS = {
   connectorMode: [0, 1, 2],
@@ -100,7 +101,7 @@ export const ENUMS = {
 
 /** An element's or block's id, and a key of the lists keyed by id. */
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const isId = (value: unknown) =>
+const isId = (value: unknown) =>
   typeof value === 'string' && ID.test(value) && value !== '__proto__';
 
 /** A Yjs plain value (Any), as stored: no `__proto__` key anywhere (Yjs's Any
@@ -316,7 +317,7 @@ const nested = (fields: Record<string, Field>): Rule => {
 /** How many items the rules take of a list whose add tools stop at `cap`: twice
  * it, as two people's adds at the same moment merge past the cap (Epo
  * 2026-11-22, "sure A"; a quiz or note figure's maps hold twice theirs too). */
-export const mergedCap = (cap: number) => 2 * cap;
+const mergedCap = (cap: number) => 2 * cap;
 
 /** A keyed list: a map of item id to the item and its order key (Epo 2026-11-16,
  * D10: a plane's elements; 2026-11-22: a chart's bars, labels and lines), up to
@@ -776,108 +777,4 @@ export function childFits(
     isString(flavour) &&
     (holds(board).parents.get(flavour)?.includes(above) ?? false)
   );
-}
-
-/** The blocks and canvas elements a change made, wrote in or removed: blocks by
- * id, elements by id with their canvas block's. */
-export type Touched = { blocks: Set<string>; elements: Map<string, string> };
-
-/** The keys from the blocks root down to `type`; null outside it. */
-/** A type a transaction changed, as Yjs keys them. */
-type Changed =
-  Y.Transaction['changed'] extends Map<infer T, unknown> ? T : never;
-
-function pathOf(type: Changed) {
-  const path: (string | null)[] = [];
-  let at = type;
-  while (at._item) {
-    path.unshift(at._item.parentSub);
-    at = at._item.parent as Changed;
-  }
-  return at === at.doc?.share.get('blocks') ? path : null;
-}
-
-/** What a transaction touched on a board. */
-export function touchedBy({ changed }: Y.Transaction): Touched {
-  const touched: Touched = { blocks: new Set(), elements: new Map() };
-  const named = (keys: Set<string | null>) =>
-    [...keys].filter((key) => key !== null);
-  for (const [type, keys] of changed) {
-    const path = pathOf(type);
-    if (!path) continue;
-    if (!path.length) {
-      for (const key of named(keys)) touched.blocks.add(key);
-      continue;
-    }
-    const [block, holder, value, element] = path;
-    if (block === null) continue;
-    touched.blocks.add(block);
-    if (holder !== 'prop:elements' || value !== 'value') continue;
-    if (path.length === 3)
-      for (const key of named(keys)) touched.elements.set(key, block);
-    else if (element !== null) touched.elements.set(element, block);
-  }
-  return touched;
-}
-
-const childrenOf = (block: unknown) => {
-  const children = block instanceof Y.Map ? block.get('sys:children') : null;
-  return children instanceof Y.Array
-    ? children.toArray().filter((child) => isString(child))
-    : [];
-};
-const canvasIn = (blocks: Y.Map<unknown>, holder: string) => {
-  const block = blocks.get(holder);
-  const native = block instanceof Y.Map ? block.get('prop:elements') : null;
-  const canvas = native instanceof Y.Map ? native.get('value') : null;
-  return canvas instanceof Y.Map ? canvas : null;
-};
-
-/** Why the canvas room refuses a change from `before` to `after` that touched
- * `touched`, or null when it takes it: it leaves a block or element it touched
- * breaking the rules that fitted them before (or a new one), or puts a block
- * under a parent its flavour may not have, or deletes the page or the canvas. */
-export function boardChangeRefusal(
-  before: Y.Doc,
-  after: Y.Doc,
-  { blocks, elements }: Touched,
-  board: BoardKind
-) {
-  const was = before.getMap<unknown>('blocks');
-  const now = after.getMap<unknown>('blocks');
-  for (const id of blocks) {
-    const block = now.get(id);
-    const old = was.get(id);
-    if (block === undefined) {
-      const flavour = old instanceof Y.Map ? old.get('sys:flavour') : null;
-      if (flavour === 'affine:page' || flavour === 'affine:surface')
-        return `the update deletes the board's ${flavour}`;
-      continue;
-    }
-    if (!(block instanceof Y.Map)) return `block ${id} is no map`;
-    if (
-      !blockFits(id, block, board) &&
-      !(old instanceof Y.Map && !blockFits(id, old, board))
-    )
-      return `block ${id} breaks its flavour's rules`;
-    const held = new Set(childrenOf(old));
-    for (const child of childrenOf(block)) {
-      const below = now.get(child);
-      if (held.has(child) || !(below instanceof Y.Map)) continue;
-      if (!childFits(block, below, board))
-        return `block ${child} sits under a parent its flavour may not have`;
-    }
-  }
-  for (const [id, holder] of elements) {
-    const element = canvasIn(now, holder)?.get(id);
-    if (element === undefined) continue;
-    if (!(element instanceof Y.Map)) return `element ${id} is no map`;
-    const old = canvasIn(was, holder)?.get(id);
-    if (
-      !elementFits(id, element, board) &&
-      !(old instanceof Y.Map && !elementFits(id, old, board))
-    )
-      return `element ${id} breaks its type's rules`;
-  }
-  return null;
 }

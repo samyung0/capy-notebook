@@ -92,8 +92,9 @@ function withoutPlaceholders(blocks: BlockSnapshot[]): BlockSnapshot[] {
 }
 
 /** The clipboard's middleware that keeps a block's placeholder out of copies: what
- * it stands for is another build's or person's, which this board never writes back
- * (the room refuses a flavour it doesn't hold). It leaves them out of what a copy
+ * it stands for is another build's or person's, which this board never writes (a
+ * paste of one would reach the room and every peer before `keepToCatalog` took it
+ * out again). It leaves them out of what a copy
  * in a note's text exports, and out of whatever a paste or Duplicate puts down (the
  * canvas's own copy serializes without the clipboard's middlewares). An element's
  * placeholder the canvas's copy leaves out itself (vendor local change 74). */

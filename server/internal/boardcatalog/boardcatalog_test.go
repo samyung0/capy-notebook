@@ -11,22 +11,18 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/boardcatalog"
 )
 
-func TestGeneratedFilesAreCurrent(t *testing.T) {
-	ts, err := boardcatalog.TypeScript()
+func TestGeneratedFileIsCurrent(t *testing.T) {
+	want, err := boardcatalog.TypeScript()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for path, want := range map[string][]byte{
-		boardcatalog.TypeScriptPath: ts,
-		boardcatalog.RustPath:       boardcatalog.Rust(),
-	} {
-		got, err := os.ReadFile(filepath.Join("..", "..", "..", filepath.FromSlash(path)))
-		if err != nil {
-			t.Fatalf("read %s: %v (run pnpm gen:openapi)", path, err)
-		}
-		if !bytes.Equal(bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n")), want) {
-			t.Errorf("%s is stale; run pnpm gen:openapi", path)
-		}
+	path := filepath.Join("..", "..", "..", filepath.FromSlash(boardcatalog.TypeScriptPath))
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v (run pnpm gen:openapi)", boardcatalog.TypeScriptPath, err)
+	}
+	if !bytes.Equal(bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n")), want) {
+		t.Errorf("%s is stale; run pnpm gen:openapi", boardcatalog.TypeScriptPath)
 	}
 }
 

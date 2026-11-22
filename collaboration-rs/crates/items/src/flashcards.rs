@@ -18,8 +18,8 @@ use notes::edit::{DocumentCommand, EditError, EditErrorCode};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
 
+use crate::locate::{Locator, Place};
 use crate::{Growth, order};
-use ydoc::locate::{Locator, Place};
 
 pub const ROOT: &str = "cards";
 /// The projected `flashcards` block's id (one block per set document).
@@ -335,7 +335,7 @@ pub fn admit_shapes<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, 
         let (path, key) = match locator.place(item) {
             Place::Gone => continue,
             Place::Unknown => return refuse("a struct outside its shape"),
-            Place::At { path, key, .. } => (path, key),
+            Place::At { path, key } => (path, key),
         };
         let path: Vec<&str> = path.iter().map(|k| &**k).collect();
         match (path.as_slice(), key.as_deref()) {

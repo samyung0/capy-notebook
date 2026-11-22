@@ -11,7 +11,6 @@ license = "UNLICENSED"
 publish = false
 
 [workspace.dependencies]
-board = { path = "crates/board" }
 items = { path = "crates/items" }
 notes = { path = "crates/notes" }
 sources = { path = "crates/sources" }

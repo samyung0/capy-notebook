@@ -35,7 +35,7 @@ func main() {
 	agentTools := flag.String("agent-tools", "", "optional generated agent-tool contract JSON path")
 	officeLimits := flag.String("office-limits", "", "the Office engine's limits.json, required with -agent-tools")
 	embedCatalog := flag.String("embeds", "", "optional repository root to write the embed catalog's JSON, TypeScript and Rust files under")
-	boardCatalog := flag.String("board", "", "optional repository root to write the board catalog's TypeScript and Rust files under")
+	boardCatalog := flag.String("board", "", "optional repository root to write the board catalog's TypeScript file under")
 	flag.Parse()
 
 	spec, err := httpapi.SpecYAML()
@@ -87,7 +87,11 @@ func main() {
 		}
 	}
 	if *boardCatalog != "" {
-		if err := writeBoard(*boardCatalog); err != nil {
+		ts, err := boardcatalog.TypeScript()
+		if err == nil {
+			err = writeAtomic(filepath.Join(*boardCatalog, filepath.FromSlash(boardcatalog.TypeScriptPath)), ts)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "board catalog:", err)
 			os.Exit(1)
 		}
@@ -114,23 +118,6 @@ func writeEmbeds(root string) error {
 		embeds.JSONPath:       jsonFile,
 		embeds.TypeScriptPath: ts,
 		embeds.RustPath:       embeds.Rust(),
-	} {
-		if err := writeAtomic(filepath.Join(root, filepath.FromSlash(path)), data); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// writeBoard writes the board catalog's TypeScript and Rust files under root.
-func writeBoard(root string) error {
-	ts, err := boardcatalog.TypeScript()
-	if err != nil {
-		return err
-	}
-	for path, data := range map[string][]byte{
-		boardcatalog.TypeScriptPath: ts,
-		boardcatalog.RustPath:       boardcatalog.Rust(),
 	} {
 		if err := writeAtomic(filepath.Join(root, filepath.FromSlash(path)), data); err != nil {
 			return err

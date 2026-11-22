@@ -1,13 +1,18 @@
 # Canvas room content check: cost on recorded editor sessions (2026-11-22)
 
-The canvas room now checks every update against the board's rules
-(`board::admit_shapes`, Epo 2026-11-22 "sure A then"; openwiki/frontend/plate-editor.md,
-"What the room admits"). This measures what that check adds to an update's admission,
-on updates a real editor sent.
+**The check this measured was dropped the same day** (Epo 2026-11-22: "maybe drop the
+cnvas content check if its not that useful"): the canvas room checks no board content,
+and every viewer reads it by the board's rules (`boardRules.ts`) instead. The report is
+kept as the record behind that decision; the crate, its replay test and the session
+fixture are in commit 4156cf7f3 (`collaboration-rs/crates/board`, never landed).
+
+The check (`board::admit_shapes`) refused any update that left content breaking the
+board's rules. This measures what it added to an update's admission, on updates a real
+editor sent.
 
 ## Input
 
-`collaboration-rs/crates/board/tests/fixtures/editor-sessions.json.gz`: 4 sessions,
+`collaboration-rs/crates/board/tests/fixtures/editor-sessions.json.gz` (at 4156cf7f3): 4 sessions,
 7,524 updates, written by the growth bench
 (`bench/collaboration/scripts/board-growth.growth.ts`) with
 `GROWTH_SESSIONS=1 GROWTH_MINUTES=10` and the tests "a mixed hour", "adding then

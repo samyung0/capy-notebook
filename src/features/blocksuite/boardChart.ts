@@ -455,7 +455,7 @@ export function niceAxis(top: number) {
 }
 
 /** The axis that shows `top`: the first line of `axisStep` at or above it, or a
- * nice axis to it where that line would be past AXIS_MAX (which the room refuses)
+ * nice axis to it where that line would be past AXIS_MAX (which the board's rules refuse)
  * or past AXIS_LINES_MAX lines. */
 export function axisAbove(top: number, axisStep: number) {
   const axisMax = Number(

@@ -1093,50 +1093,6 @@ test('a canvas whose room is at its cap keeps the stroke it refused for copying,
   await expect.poll(() => drawn(page)).toEqual(['brush']);
 });
 
-test('an edit that breaks the board rules is refused by the room, and the unsent edits open read-only for copying', async ({
-  page,
-}) => {
-  test.slow();
-  await page.goto(SCENARIO_PAGE);
-  await boardShown(page);
-  await drawStroke(page);
-  await expect.poll(() => drawn(page)).toEqual(['brush']);
-  await expect(status(page)).toHaveAttribute('data-save-state', 'saved');
-  await keep(page);
-
-  // A shape with a key no shape has, as a tampered client sends: the room
-  // refuses it on entry (boardRules.ts) and the tab keeps it read-only.
-  await page.evaluate(async (canvasId) => {
-    const modulePath = '/src/mocks/collaboration.ts';
-    const { mockTamperBoard } = (await import(modulePath)) as Collaboration;
-    mockTamperBoard(canvasId);
-  }, SCENARIO);
-  await expect(
-    page.getByRole('alert').filter({
-      hasText:
-        "Your latest changes couldn't be saved. They're shown read-only to copy until you reload.",
-    })
-  ).toBeVisible();
-  await expect(strip(page)).toContainText('Copy anything you need');
-  await page.waitForFunction(
-    () => (window as Shown).__board && !(window as Shown).__board?.kept
-  );
-  await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
-  // The copy holds the stroke: the tab took its own shape back out as soon as it
-  // was added, as the board's catalog guard does (boardKeep.ts), after it went.
-  await expect.poll(() => drawn(page)).toEqual(['brush']);
-
-  // Opened afresh (Reload, confirmed), the room holds the stroke alone.
-  await strip(page).getByRole('button', { name: 'Reload' }).click();
-  await page
-    .getByRole('dialog', { name: 'Discard these edits and reload?' })
-    .getByRole('button', { name: 'Reload' })
-    .click();
-  await expect(strip(page)).toHaveCount(0);
-  await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
-  await expect.poll(() => drawn(page)).toEqual(['brush']);
-});
-
 /** Opens the scenario canvas, draws a stroke, and leaves it, which writes
  * its copy; `unclean`: its socket drops first, so no Leave goes and the room
  * keeps its client id. */

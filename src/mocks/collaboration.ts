@@ -16,11 +16,6 @@ import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { Material } from '@/api/types';
 import {
-  boardChangeRefusal,
-  type Touched,
-  touchedBy,
-} from '@/features/blocksuite/boardRules';
-import {
   encodeCaret,
   readBoardPresence,
 } from '@/features/canvas/boardPresence';
@@ -99,14 +94,13 @@ interface Participant {
   };
   onPresence?: (connections: PresenceConnection[]) => void;
   /** A board room refused this participant's update, which never reached
-   * it: sent on a read channel, breaking the board's rules (`reason` says
-   * which), taking the board over its cap, or writing under a client id its
-   * person holds no claim to. */
-  onRefused?: (why: BoardRefusal, reason?: string) => void;
+   * it: sent on a read channel, taking the board over its cap, or writing
+   * under a client id its person holds no claim to. */
+  onRefused?: (why: BoardRefusal) => void;
   origin: object;
 }
 
-type BoardRefusal = 'invalid' | 'read-only' | 'size' | 'unassigned';
+type BoardRefusal = 'read-only' | 'size' | 'unassigned';
 
 export type MockIdentity = Omit<PresenceConnection, 'clients'>;
 
@@ -2172,10 +2166,8 @@ function admitsBoardUpdate(
   participant: Participant,
   update: Uint8Array
 ) {
-  const refuse = (why: BoardRefusal, reason?: string) => {
-    // What the probe took stays out of the room.
-    dropBoardProbe(room);
-    queueMicrotask(() => participant.onRefused?.(why, reason));
+  const refuse = (why: BoardRefusal) => {
+    queueMicrotask(() => participant.onRefused?.(why));
     return false;
   };
   if (!update.byteLength) return true;
@@ -2183,52 +2175,9 @@ function admitsBoardUpdate(
   const { ids } = participant;
   const written = ids ? writtenClients(room.document, update) : [];
   if (written.some((client) => !ids?.owns(client))) return refuse('unassigned');
-  const broken = boardRulesRefusal(room, update);
-  if (broken) return refuse('invalid', broken);
   if (!fitsBoard(room, update)) return refuse('size');
   ids?.wrote(written);
   return true;
-}
-
-/** Each board room's state copied, following it, to try an update on before
- * the room takes it (the service's trial copy). */
-const boardProbes = new WeakMap<Room, { doc: Y.Doc; stop: () => void }>();
-function boardProbe(room: Room) {
-  let probe = boardProbes.get(room);
-  if (!probe) {
-    const doc = new Y.Doc();
-    Y.applyUpdate(doc, Y.encodeStateAsUpdate(room.document));
-    const follow = (update: Uint8Array) => Y.applyUpdate(doc, update);
-    room.document.on('update', follow);
-    probe = {
-      doc,
-      stop: () => {
-        room.document.off('update', follow);
-        doc.destroy();
-      },
-    };
-    boardProbes.set(room, probe);
-  }
-  return probe.doc;
-}
-function dropBoardProbe(room: Room) {
-  boardProbes.get(room)?.stop();
-  boardProbes.delete(room);
-}
-
-/** The service's content check (`board::admit_shapes`, Epo 2026-11-22 "sure A
- * then"): why the room refuses `update` for the board's rules
- * (boardRules.ts), or null. */
-function boardRulesRefusal(room: Room, update: Uint8Array) {
-  const probe = boardProbe(room);
-  let touched: Touched = { blocks: new Set(), elements: new Map() };
-  const read = (transaction: Y.Transaction) => {
-    touched = touchedBy(transaction);
-  };
-  probe.on('afterTransaction', read);
-  Y.applyUpdate(probe, update);
-  probe.off('afterTransaction', read);
-  return boardChangeRefusal(room.document, probe, touched, 'workspace');
 }
 
 /** The client ids `update` adds structs under past what `doc` holds
@@ -2521,7 +2470,7 @@ class MockBoardProvider implements ItemProvider {
           },
         },
         onPresence: viewer ? undefined : this.config.onPresence,
-        onRefused: (why, reason) => this.refusedUpdate(why, reason),
+        onRefused: (why) => this.refusedUpdate(why),
         origin: this,
       });
       this.config.document.on('update', this.sent);
@@ -2580,22 +2529,8 @@ class MockBoardProvider implements ItemProvider {
     return false;
   }
 
-  private refusedUpdate(why: BoardRefusal, reason?: string) {
+  private refusedUpdate(why: BoardRefusal) {
     if (!this.leave) return;
-    if (why === 'invalid') {
-      // `Admitted::Refused`: the room's refused-on-entry payload, and this
-      // channel closed with the rule's reason (room.rs `refuse`).
-      this.config.onStateless?.({
-        payload: JSON.stringify({
-          code: 'invalid_document',
-          materialId: this.materialId,
-          room: this.config.name,
-          type: 'document-rejected',
-        }),
-      });
-      this.close(0, reason ?? 'board update refused');
-      return;
-    }
     if (why === 'unassigned') {
       // The browser keeps them to re-apply under an assigned id (Epo
       // 2026-10-24): `foreign_update_refused`.
@@ -2700,27 +2635,6 @@ class MockBoardProvider implements ItemProvider {
     if (ids.length) this.receipt(ids);
   }
 
-  /** Draws a shape with a key no shape has on the tab's own board, as a
-   * tampered client would (`mockTamperBoard`): it goes to the room as any
-   * edit of the tab's does. */
-  tamper() {
-    const shape = new Y.Map<unknown>(
-      Object.entries({
-        capyTampered: true,
-        id: 'tampered',
-        index: 'a0',
-        rotate: 0,
-        seed: 1,
-        shapeStyle: 'General',
-        shapeType: 'rect',
-        strokeColor: '#000000',
-        type: 'shape',
-        xywh: '[0,0,100,100]',
-      })
-    );
-    boardCanvas(this.config.document).set('tampered', shape);
-  }
-
   wake() {}
 
   private drop() {
@@ -2757,18 +2671,6 @@ function openBoard(materialId: string) {
   return room;
 }
 
-/** A board document's canvas elements by id, as its surface block keeps them. */
-function boardCanvas(document: Y.Doc) {
-  for (const block of document.getMap<unknown>('blocks').values()) {
-    if (!(block instanceof Y.Map)) continue;
-    if (block.get('sys:flavour') !== 'affine:surface') continue;
-    const elements: unknown = block.get('prop:elements');
-    const value = elements instanceof Y.Map ? elements.get('value') : null;
-    if (value instanceof Y.Map) return value as Y.Map<Y.Map<unknown>>;
-  }
-  throw new Error('The board room holds no canvas');
-}
-
 /** Another person on a canvas, headless (e2e): its own document and presence
  * in the canvas's mock room, to draw and set awareness as a peer would. With
  * an `identity` the room's presence names them, so their marks are drawn. */
@@ -2782,7 +2684,17 @@ export function mockBoardPeer(materialId: string, identity?: MockIdentity) {
     identity,
     origin: {},
   });
-  const canvas = () => boardCanvas(document);
+  /** The canvas's elements by id, as the board's surface block keeps them. */
+  const canvas = () => {
+    for (const block of document.getMap<unknown>('blocks').values()) {
+      if (!(block instanceof Y.Map)) continue;
+      if (block.get('sys:flavour') !== 'affine:surface') continue;
+      const elements: unknown = block.get('prop:elements');
+      const value = elements instanceof Y.Map ? elements.get('value') : null;
+      if (value instanceof Y.Map) return value as Y.Map<Y.Map<unknown>>;
+    }
+    throw new Error('The board room holds no canvas');
+  };
   return {
     /** Draws a canvas element with these fields under `id` (`type`, `xywh`,
      * `index`…, as the board stores one). */
@@ -2881,24 +2793,16 @@ export function mockRevokeBoard(materialId: string) {
 }
 
 /** Fills a canvas's open room to the edge of its cap (e2e), as a peer's
- * drawing would: one small shape whose comment marks, a field no editor here
- * draws, hold the bytes. The next stroke anyone draws is refused for size. */
+ * drawing would: one element no editor reads, which a board keeps and draws
+ * as a placeholder. The next stroke anyone draws is refused for size. */
 export function mockFillBoard(materialId: string) {
   const room = openBoard(materialId);
   const peer = mockBoardPeer(materialId);
   const held = Y.encodeStateAsUpdate(room.document).byteLength;
-  // A mark's entry takes 10 bytes: a 9-character key and `true`.
-  const marks = Math.floor((BOARD_MAX - held - 400) / 10);
   peer.add('filler', {
-    comments: Object.fromEntries(
-      Array.from({ length: marks }, (_, i) => [
-        `c${String(i).padStart(7, '0')}`,
-        true,
-      ])
-    ),
     index: 'a0',
-    shapeType: 'rect',
-    type: 'shape',
+    pad: 'x'.repeat(BOARD_MAX - held - 300),
+    type: 'capy:filler',
     xywh: '[0,-400,40,40]',
   });
   peer.leave();
@@ -3036,12 +2940,6 @@ export function mockBoardStoreFails(materialId: string, failing: boolean) {
 export function mockBoardAtCap(materialId: string, atCap: boolean) {
   if (atCap) cappedBoards.add(materialId);
   else cappedBoards.delete(materialId);
-}
-
-/** The mock user's tab sends an element that breaks its type's rules (e2e):
- * the room refuses it on entry, as it refuses a tampered client's. */
-export function mockTamperBoard(materialId: string) {
-  boardTab(materialId).tamper();
 }
 
 /** Whether the canvas's open mock room has stored every update it took (e2e:

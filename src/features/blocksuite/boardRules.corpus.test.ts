@@ -1,5 +1,3 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { ImageStoreExtension } from '@blocksuite/affine/blocks/image/store';
 import { ListStoreExtension } from '@blocksuite/affine/blocks/list/store';
 import { setNotesInline } from '@blocksuite/affine/blocks/note';
@@ -46,7 +44,7 @@ import type {
 } from '@blocksuite/affine/std/gfx';
 import { type Store, Text } from '@blocksuite/affine/store';
 import { MemoryBlobSource } from '@blocksuite/affine/sync';
-import { afterAll, expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
@@ -71,72 +69,19 @@ import { boardFirstState } from './boardFirstState';
 import { PICTURE_FLAVOUR, PictureStoreExtension } from './boardPicture';
 // The plane's and formula's modules register their element types.
 import './boardFormula';
+import { checkSavedBoard, storedElementFits } from './boardLoad';
 import type { PlaneElementModel } from './boardPlane';
-import {
-  blockFits,
-  boardChangeRefusal,
-  childFits,
-  ENUMS,
-  elementFits,
-  type Touched,
-  touchedBy,
-} from './boardRules';
+import { ENUMS } from './boardRules';
 import { unknownStore } from './boardUnknown';
 import { openRoomStore } from './roomStore';
 
-/* The board's rules, the browser's and the canvas room's (Epo 2026-11-22,
- * "sure A then"), on one corpus: what BlockSuite's own model code writes for
- * every element type and block flavour, each card at its limits, keyed lists at
- * twice their cap, and one refusal per rule kind. Each case is a run of
- * updates from the canvas's first state, as an editor sends them; the room
- * (collaboration-rs/crates/board/tests/parity.rs) admits every one but the last,
- * and the last only when it `fits`. Written to ts.json with PARITY_WRITE=1;
- * randomness is seeded so the file is stable. */
-
-const seeded = vi.hoisted(() => {
-  const real = {
-    random: Math.random,
-    values: globalThis.crypto.getRandomValues.bind(globalThis.crypto),
-  };
-  let seed = 0;
-  // mulberry32
-  const next = () => {
-    seed = (seed + 0x6d_2b_79_f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-  Math.random = next;
-  globalThis.crypto.getRandomValues = <T extends ArrayBufferView | null>(
-    array: T
-  ) => {
-    if (array) {
-      const bytes = new Uint8Array(
-        array.buffer,
-        array.byteOffset,
-        array.byteLength
-      );
-      for (let i = 0; i < bytes.length; i++)
-        bytes[i] = Math.floor(next() * 256);
-    }
-    return array;
-  };
-  return {
-    reset: () => {
-      seed = 0;
-    },
-    restore: () => {
-      Math.random = real.random;
-      globalThis.crypto.getRandomValues = real.values;
-    },
-  };
-});
-afterAll(seeded.restore);
-
-const dir = resolve(
-  import.meta.dirname,
-  '../../../collaboration-rs/crates/board/tests/parity'
-);
+/* The board's rules (boardRules.ts) on one corpus, read as a board reads them
+ * (boardLoad.ts): what BlockSuite's own model code writes for every element type
+ * and block flavour, each card at its limits, keyed lists at twice their cap, and
+ * one broken write per rule kind. Each case is a run of updates from the canvas's
+ * first state, as an editor sends them: the board shows everything after every one
+ * but the last, and after the last only when it `fits` (else it draws a
+ * placeholder). */
 
 const stores = new StoreExtensionManager([
   RootStoreExtension,
@@ -174,7 +119,7 @@ function openTab() {
     awareness: new Awareness(doc),
     blobs: { main: new MemoryBlobSource() },
     doc,
-    id: 'cv_parity',
+    id: 'cv_corpus',
     storeExtensions: [...stores.get('store'), ...unknownStore('workspace')],
   });
   const surface = store.getModelsByFlavour(
@@ -184,22 +129,18 @@ function openTab() {
 }
 type Tab = ReturnType<typeof openTab>;
 
-/** The writers a case's steps use: a tab's BlockSuite store, sending each
- * write as it lands (`editor`) or all of them as one update from the room's
- * state vector, as a tab sends what the room lacks after a reconnect (`sync`,
- * which returns it); or a plain document (a tampered client) holding the first
- * `upTo` updates. */
+/** The writers a case's steps use: a tab's BlockSuite store (`editor`), or a
+ * plain document (another build or a tampered client) holding the first `upTo`
+ * updates (`raw`). */
 type Steps = {
   editor: (write: (tab: Tab) => void) => Promise<void>;
-  sync: (write: (tab: Tab) => void) => Promise<Uint8Array>;
   raw: (write: (doc: Y.Doc) => void, upTo?: number) => void;
 };
 type Case = { fits: boolean; name: string; steps: (s: Steps) => Promise<void> };
 
 const settled = () => new Promise((done) => setTimeout(done, 0));
 
-/** A case's updates, each what one step wrote (merged, as the room's window
- * merges a tab's). */
+/** A case's updates, each what one step wrote, merged. */
 async function updatesOf({ steps }: Case) {
   const updates: Uint8Array[] = [];
   let tab: Tab | undefined;
@@ -239,91 +180,29 @@ async function updatesOf({ steps }: Case) {
       write(doc);
       done();
     },
-    sync: async (write) => {
-      const current = caughtUp();
-      const room = Y.encodeStateVector(current.doc);
-      write(current);
-      await settled();
-      const update = Y.encodeStateAsUpdate(current.doc, room);
-      updates.push(update);
-      return update;
-    },
   });
   tab?.dispose();
   return updates;
 }
 
-/** Whether a board fits the rules whole: every block and element, and every
- * child link that was not in `before`. */
-function boardFits(after: Y.Doc, before: Y.Doc) {
-  const blocks = after.getMap<unknown>('blocks');
-  const was = before.getMap<unknown>('blocks');
-  const linked = (block: unknown) => {
-    const children = block instanceof Y.Map ? block.get('sys:children') : null;
-    return children instanceof Y.Array ? children.toArray() : [];
-  };
-  for (const [id, block] of blocks.entries()) {
-    if (!(block instanceof Y.Map && blockFits(id, block, 'workspace')))
-      return false;
-    const held = new Set(linked(was.get(id)));
-    for (const child of linked(block)) {
-      const below = blocks.get(child as string);
-      if (
-        !held.has(child) &&
-        below instanceof Y.Map &&
-        !childFits(block, below, 'workspace')
-      )
-        return false;
-    }
-  }
-  const canvas = (
-    (blocks.get('surface') as Y.Map<unknown>).get(
-      'prop:elements'
-    ) as Y.Map<unknown>
-  ).get('value') as Y.Map<unknown>;
-  return [...canvas.entries()].every(
-    ([id, element]) =>
-      element instanceof Y.Map && elementFits(id, element, 'workspace')
+/** Whether a board opens with nothing drawn as a placeholder: its load check
+ * (`checkSavedBoard`: every block and element, the block tree, each mind map's
+ * nodes) finds no misfit, and every element is read for real as it is live. */
+function boardFits(board: Y.Doc) {
+  if (checkSavedBoard(Y.encodeStateAsUpdate(board), 'workspace').misfits.length)
+    return false;
+  return [...canvasOf(board).entries()].every(([id, element]) =>
+    storedElementFits(id, element, 'workspace')
   );
 }
-
-/** A shape's three moves, as the cases below make them. */
-const MOVES = [10, 20, 30].map((x) => `[${x},0,100,100]`);
-/** An update that carries the moves' run of values at `xywh` (one struct of
- * more than one of them), as its case says it does. */
-function holdingRun(update: Uint8Array) {
-  const run = Y.decodeUpdate(update).structs.some(
-    (struct) =>
-      struct instanceof Y.Item &&
-      struct.content instanceof Y.ContentAny &&
-      struct.content.arr.length > 1 &&
-      struct.content.arr.every((value) => MOVES.includes(value))
-  );
-  if (!run) throw new Error('the update carries no run of values');
-}
-
-const copyOf = (doc: Y.Doc) => {
-  const copy = new Y.Doc();
-  Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc), ROOM);
-  return copy;
-};
 
 /** Each update applied in turn from the first state: whether the board fits
- * after it, by the whole board and by the mock room's admission. */
+ * after it. */
 function verdicts(updates: Uint8Array[]) {
-  const room = firstState();
+  const board = firstState();
   return updates.map((update) => {
-    const before = copyOf(room);
-    let touched: Touched = { blocks: new Set(), elements: new Map() };
-    const read = (transaction: Y.Transaction) => {
-      touched = touchedBy(transaction);
-    };
-    room.once('afterTransaction', read);
-    Y.applyUpdate(room, update, ROOM);
-    return {
-      admitted: boardChangeRefusal(before, room, touched, 'workspace') === null,
-      fits: boardFits(room, before),
-    };
+    Y.applyUpdate(board, update, ROOM);
+    return boardFits(board);
   });
 }
 
@@ -550,7 +429,7 @@ const writes = (name: string, steps: Case['steps']): Case => ({
   name,
   steps,
 });
-const refuses = (name: string, steps: Case['steps']): Case => ({
+const misfits = (name: string, steps: Case['steps']): Case => ({
   fits: false,
   name,
   steps,
@@ -870,45 +749,6 @@ const CASES: Case[] = [
       store.undo();
     });
   }),
-  // A key a tab overwrote while its history keeps the values: Yjs merges them
-  // into one struct, which a reconnect's update carries as it is.
-  writes('a shape moved three times, sent as one update', async (s) => {
-    await s.editor(({ surface }) => {
-      addShape(surface);
-    });
-    holdingRun(
-      await s.sync(({ surface }) => {
-        const { id } = surface.elementModels[0];
-        for (const xywh of MOVES) surface.updateElement(id, { xywh });
-      })
-    );
-  }),
-  writes('a shape moved three times and deleted, as one update', async (s) => {
-    await s.editor(({ surface }) => {
-      addShape(surface);
-    });
-    holdingRun(
-      await s.sync(({ surface }) => {
-        const { id } = surface.elementModels[0];
-        for (const xywh of MOVES) surface.updateElement(id, { xywh });
-        surface.deleteElement(id);
-      })
-    );
-  }),
-  writes('a shape moved three times in one transaction', async (s) => {
-    await s.editor(({ surface }) => {
-      addShape(surface);
-    });
-    holdingRun(
-      await s.sync(({ store, surface }) => {
-        const { id } = surface.elementModels[0];
-        store.transact(() => {
-          for (const xywh of MOVES) surface.updateElement(id, { xywh });
-        });
-      })
-    );
-  }),
-
   // Blocks, as the store writes them.
   writes(
     'a note with a paragraph typed in, a heading and a to-do',
@@ -1064,7 +904,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a GIF link one past its longest', async (s) => {
+  misfits('a GIF link one past its longest', async (s) => {
     await s.editor((tab) => {
       addCard(tab, PICTURE_FLAVOUR, {
         kind: 'klipy',
@@ -1073,7 +913,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses("a picture's label one past its longest", async (s) => {
+  misfits("a picture's label one past its longest", async (s) => {
     await s.editor((tab) => {
       addCard(tab, PICTURE_FLAVOUR, {
         kind: 'emoji',
@@ -1090,7 +930,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a link one past its longest', async (s) => {
+  misfits('a link one past its longest', async (s) => {
     await s.editor((tab) => {
       addCard(tab, 'affine:embed-capy-link', {
         url: address(BOARD_CATALOG.limits.LINK_URL_MAX + 1),
@@ -1098,7 +938,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a link to a script', async (s) => {
+  misfits('a link to a script', async (s) => {
     await s.editor((tab) => {
       addCard(tab, 'affine:embed-capy-link', {
         url: 'javascript:alert(1)',
@@ -1106,7 +946,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses("a link whose video id isn't one", async (s) => {
+  misfits("a link whose video id isn't one", async (s) => {
     await s.editor((tab) => {
       addCard(tab, 'affine:embed-capy-link', {
         url: 'https://youtu.be/dQw4w9WgXcQ',
@@ -1123,7 +963,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses("a material card's title one past its longest", async (s) => {
+  misfits("a material card's title one past its longest", async (s) => {
     await s.editor((tab) => {
       addCard(tab, 'affine:embed-capy-material', {
         kind: 'quiz',
@@ -1132,7 +972,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a material card with no id', async (s) => {
+  misfits('a material card with no id', async (s) => {
     await s.editor((tab) => {
       addCard(tab, 'affine:embed-capy-material', {
         kind: 'quiz',
@@ -1150,7 +990,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a formula one past its longest', async (s) => {
+  misfits('a formula one past its longest', async (s) => {
     await s.editor(({ surface }) => {
       surface.addElement({
         latex: 'x'.repeat(LATEX_MAX + 1),
@@ -1159,7 +999,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses("a bar's label one past its longest", async (s) => {
+  misfits("a bar's label one past its longest", async (s) => {
     await s.editor((tab) => {
       const id = addChart(tab.surface, 'bar') as string;
       writeChart(tab, id, 'bars', [
@@ -1167,7 +1007,7 @@ const CASES: Case[] = [
       ]);
     });
   }),
-  refuses("a pie label's size past the largest", async (s) => {
+  misfits("a pie label's size past the largest", async (s) => {
     await s.editor((tab) => {
       const id = addChart(tab.surface, 'pie') as string;
       writeChart(tab, id, 'labels', [
@@ -1204,7 +1044,7 @@ const CASES: Case[] = [
     s.raw(adds('a'), 1);
     s.raw(adds('b'), 1);
   }),
-  refuses('one bar past twice the cap', async (s) => {
+  misfits('one bar past twice the cap', async (s) => {
     await s.editor((tab) => {
       addChart(tab.surface, 'bar');
     });
@@ -1239,7 +1079,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('one pie label past twice the cap', async (s) => {
+  misfits('one pie label past twice the cap', async (s) => {
     await s.editor((tab) => {
       addChart(tab.surface, 'pie');
     });
@@ -1255,7 +1095,7 @@ const CASES: Case[] = [
       );
     });
   }),
-  refuses('one pie line past twice the cap', async (s) => {
+  misfits('one pie line past twice the cap', async (s) => {
     await s.editor((tab) => {
       addChart(tab.surface, 'pie');
     });
@@ -1277,7 +1117,7 @@ const CASES: Case[] = [
       );
     });
   }),
-  refuses('one plane element past twice the cap', async (s) => {
+  misfits('one plane element past twice the cap', async (s) => {
     await s.editor((tab) => {
       addPlane(tab.surface);
     });
@@ -1289,7 +1129,7 @@ const CASES: Case[] = [
     });
   }),
 
-  // What another tab sends whole, which the refusals below each change once.
+  // What another tab sends whole, which the misfits below each change once.
   writes('a shape as another tab sends it', async (s) => {
     s.raw((doc) => putElement(doc, 'a', SHAPE));
   }),
@@ -1312,9 +1152,9 @@ const CASES: Case[] = [
       })
     );
   }),
-  // A mind map's nodes against the canvas are relations two people's honest
-  // edits can break together: not the room's (Epo 2026-11-22, "do A").
-  writes('a mind map whose node is not on the canvas', async (s) => {
+  // Two people's honest edits can break a mind map's nodes together: the board
+  // draws it as a placeholder.
+  misfits('a mind map whose node is not on the canvas', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         children: mapOf({ gone: { index: 'a0' } }),
@@ -1383,12 +1223,12 @@ const CASES: Case[] = [
     );
   }),
 
-  // One refusal per rule kind, each from a tampered client.
-  refuses('a shape with no shape type', async (s) => {
+  // One misfit per rule kind, each from a tampered client.
+  misfits('a shape with no shape type', async (s) => {
     const { shapeType: _, ...shape } = SHAPE;
     s.raw((doc) => putElement(doc, 'a', shape));
   }),
-  refuses(
+  misfits(
     'a colour with dark and light, one no string, though its normal is',
     async (s) => {
       s.raw((doc) =>
@@ -1399,13 +1239,13 @@ const CASES: Case[] = [
       );
     }
   ),
-  refuses('a bar whose fill is no colour', async (s) => {
+  misfits('a bar whose fill is no colour', async (s) => {
     s.raw((doc) => putBars(doc, { ...bar('mon'), fill: 7 }));
   }),
-  refuses('a bigint where a number belongs (a bar value)', async (s) => {
+  misfits('a bigint where a number belongs (a bar value)', async (s) => {
     s.raw((doc) => putBars(doc, { ...bar('mon'), value: BigInt(3) }));
   }),
-  refuses('a paragraph type holding `undefined`', async (s) => {
+  misfits('a paragraph type holding `undefined`', async (s) => {
     s.raw((doc) => {
       putBlock(doc, 'note', 'page', {
         'prop:xywh': '[0,0,10,10]',
@@ -1417,31 +1257,31 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a note whose edgeless map has no style', async (s) => {
+  misfits('a note whose edgeless map has no style', async (s) => {
     s.raw((doc) =>
       putNote(doc, { 'prop:edgeless': mapOf({ collapse: false }) })
     );
   }),
-  refuses('a number that is not one (strokeWidth)', async (s) => {
+  misfits('a number that is not one (strokeWidth)', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, strokeWidth: 'thick' }));
   }),
-  refuses('a colour that is not one', async (s) => {
+  misfits('a colour that is not one', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', { ...SHAPE, strokeColor: { dark: '#fff' } })
     );
   }),
-  refuses('a place that is not one', async (s) => {
+  misfits('a place that is not one', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, xywh: '[0,0,100]' }));
   }),
-  refuses('a padding that is no pair', async (s) => {
+  misfits('a padding that is no pair', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, padding: [10] }));
   }),
-  refuses('points that are not points', async (s) => {
+  misfits('points that are not points', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', { points: [[1]], type: 'brush', xywh: '[0,0,1,1]' })
     );
   }),
-  refuses("a connector's end on nothing", async (s) => {
+  misfits("a connector's end on nothing", async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         mode: 2,
@@ -1451,7 +1291,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses("a connector's label box that is no box", async (s) => {
+  misfits("a connector's label box that is no box", async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         labelXYWH: [0, 0, 16],
@@ -1462,7 +1302,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses("a connector's label style missing its font", async (s) => {
+  misfits("a connector's label style missing its font", async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         labelStyle: {
@@ -1479,7 +1319,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a shadow that is not one', async (s) => {
+  misfits('a shadow that is not one', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         ...SHAPE,
@@ -1487,10 +1327,10 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a shape type BlockSuite has not', async (s) => {
+  misfits('a shape type BlockSuite has not', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, shapeType: 'star' }));
   }),
-  refuses('a connector mode BlockSuite has not', async (s) => {
+  misfits('a connector mode BlockSuite has not', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         mode: 3,
@@ -1500,28 +1340,28 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a boolean that is not one', async (s) => {
+  misfits('a boolean that is not one', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, filled: 'yes' }));
   }),
-  refuses('an element type the board does not hold', async (s) => {
+  misfits('an element type the board does not hold', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', { type: 'hologram', xywh: '[0,0,1,1]' })
     );
   }),
-  refuses('a key no element type has', async (s) => {
+  misfits('a key no element type has', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, tilt: 3 }));
   }),
-  refuses('an element missing its place', async (s) => {
+  misfits('an element missing its place', async (s) => {
     const { xywh: _, ...unplaced } = SHAPE;
     s.raw((doc) => putElement(doc, 'a', unplaced));
   }),
-  refuses('a map write that deletes a required key', async (s) => {
+  misfits('a map write that deletes a required key', async (s) => {
     await s.editor(({ surface }) => {
       addShape(surface);
     });
     s.raw((doc) => elementIn(doc, 'shape').element.delete('xywh'));
   }),
-  refuses('a string where a text belongs', async (s) => {
+  misfits('a string where a text belongs', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         text: 'Prophase',
@@ -1530,10 +1370,10 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a map where a plain value belongs', async (s) => {
+  misfits('a map where a plain value belongs', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, xywh: mapOf({ x: 0 }) }));
   }),
-  refuses('an array where a map belongs', async (s) => {
+  misfits('an array where a map belongs', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         children: new Y.Array(),
@@ -1542,12 +1382,12 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('bytes, which are no plain value', async (s) => {
+  misfits('bytes, which are no plain value', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', { ...SHAPE, fontFamily: new Uint8Array([1]) })
     );
   }),
-  refuses('bytes inside a plain value (a connector end)', async (s) => {
+  misfits('bytes inside a plain value (a connector end)', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         mode: 2,
@@ -1557,14 +1397,14 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a text holding an embed', async (s) => {
+  misfits('a text holding an embed', async (s) => {
     s.raw((doc) => {
       const text = new Y.Text();
       putElement(doc, 'a', { ...SHAPE, text });
       text.insertEmbed(0, { image: 'x' });
     });
   }),
-  refuses('a text format holding a `__proto__` key', async (s) => {
+  misfits('a text format holding a `__proto__` key', async (s) => {
     s.raw((doc) => {
       const text = new Y.Text();
       putElement(doc, 'a', { ...SHAPE, text });
@@ -1574,7 +1414,7 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('a `__proto__` key inside a plain value', async (s) => {
+  misfits('a `__proto__` key inside a plain value', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         ...SHAPE,
@@ -1584,18 +1424,18 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('an element keyed `__proto__`', async (s) => {
+  misfits('an element keyed `__proto__`', async (s) => {
     s.raw((doc) => putElement(doc, '__proto__', SHAPE));
   }),
-  refuses('an element whose id is not its key', async (s) => {
+  misfits('an element whose id is not its key', async (s) => {
     s.raw((doc) =>
       canvasOf(doc).set('a', mapOf({ ...SHAPE, id: 'b' }) as Y.Map<unknown>)
     );
   }),
-  refuses('an element entry that is no map', async (s) => {
+  misfits('an element entry that is no map', async (s) => {
     s.raw((doc) => canvasOf(doc).set('a', 7 as unknown as Y.Map<unknown>));
   }),
-  refuses('a group child that is not `true`', async (s) => {
+  misfits('a group child that is not `true`', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         children: mapOf({ b: 1 }),
@@ -1604,7 +1444,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a mind map node with no order', async (s) => {
+  misfits('a mind map node with no order', async (s) => {
     s.raw((doc) =>
       putElement(doc, 'a', {
         children: mapOf({ b: { parent: 'c' } }),
@@ -1614,7 +1454,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a plane element no graph holds', async (s) => {
+  misfits('a plane element no graph holds', async (s) => {
     await s.editor((tab) => {
       addPlane(tab.surface);
     });
@@ -1628,7 +1468,7 @@ const CASES: Case[] = [
       )
     );
   }),
-  refuses(
+  misfits(
     'a plane element with a key no graph has, holding `undefined`',
     async (s) => {
       await s.editor((tab) => {
@@ -1642,7 +1482,7 @@ const CASES: Case[] = [
       );
     }
   ),
-  refuses('a keyed entry whose element is not its key', async (s) => {
+  misfits('a keyed entry whose element is not its key', async (s) => {
     await s.editor((tab) => {
       addChart(tab.surface, 'bar');
     });
@@ -1653,7 +1493,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a block flavour the board does not hold', async (s) => {
+  misfits('a block flavour the board does not hold', async (s) => {
     s.raw((doc) =>
       putBlock(doc, 'card', 'surface', {
         'prop:index': 'a1',
@@ -1662,7 +1502,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses(
+  misfits(
     'a block under the wrong parent (a paragraph on the page)',
     async (s) => {
       s.raw((doc) =>
@@ -1673,7 +1513,7 @@ const CASES: Case[] = [
       );
     }
   ),
-  refuses('a picture whose kind and ref disagree', async (s) => {
+  misfits('a picture whose kind and ref disagree', async (s) => {
     await s.editor((tab) => {
       addCard(tab, PICTURE_FLAVOUR, {
         kind: 'emoji',
@@ -1682,12 +1522,12 @@ const CASES: Case[] = [
       });
     });
   }),
-  refuses('an emoji not in the list', async (s) => {
+  misfits('an emoji not in the list', async (s) => {
     await s.editor((tab) => {
       addCard(tab, PICTURE_FLAVOUR, { kind: 'emoji', label: '', ref: '1f4a9' });
     });
   }),
-  refuses('a card missing its turn', async (s) => {
+  misfits('a card missing its turn', async (s) => {
     s.raw((doc) =>
       putBlock(doc, 'pic', 'surface', {
         'prop:kind': 'emoji',
@@ -1698,7 +1538,7 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses("a block's children kept as a plain list", async (s) => {
+  misfits("a block's children kept as a plain list", async (s) => {
     s.raw((doc) =>
       doc.getMap<Y.Map<unknown>>('blocks').set(
         'note',
@@ -1710,7 +1550,7 @@ const CASES: Case[] = [
       )
     );
   }),
-  refuses('a block whose sys:id is not its key', async (s) => {
+  misfits('a block whose sys:id is not its key', async (s) => {
     s.raw((doc) =>
       putBlock(doc, 'note', 'page', {
         'prop:xywh': '[0,0,10,10]',
@@ -1719,19 +1559,19 @@ const CASES: Case[] = [
       })
     );
   }),
-  refuses('a note background map holding dark alone', async (s) => {
+  misfits('a note background map holding dark alone', async (s) => {
     s.raw((doc) =>
       putNote(doc, { 'prop:background': mapOf({ dark: '#000' }) })
     );
   }),
-  refuses('a note background map with a key no colour has', async (s) => {
+  misfits('a note background map with a key no colour has', async (s) => {
     s.raw((doc) =>
       putNote(doc, {
         'prop:background': mapOf({ dark: '#000', light: '#fff', tint: '#888' }),
       })
     );
   }),
-  refuses("a note's border style BlockSuite has not", async (s) => {
+  misfits("a note's border style BlockSuite has not", async (s) => {
     await s.editor(({ store }) => {
       addNote(store);
     });
@@ -1741,7 +1581,7 @@ const CASES: Case[] = [
       edgeless.get('style')?.set('borderStyle', 'wavy');
     });
   }),
-  refuses('a paragraph type BlockSuite has not', async (s) => {
+  misfits('a paragraph type BlockSuite has not', async (s) => {
     await s.editor(({ store }) => {
       store.addBlock(
         'affine:paragraph',
@@ -1753,7 +1593,7 @@ const CASES: Case[] = [
       blockIn(doc, 'affine:paragraph').block.set('prop:type', 'h7')
     );
   }),
-  refuses("a page's title as a string", async (s) => {
+  misfits("a page's title as a string", async (s) => {
     s.raw((doc) =>
       blockIn(doc, 'affine:page').block.set('prop:title', 'Board')
     );
@@ -1790,9 +1630,6 @@ const BLOCKSUITE_ENUMS: Partial<
   textVerticalAlign: values(TextVerticalAlign),
 };
 
-const hex = (bytes: Uint8Array) =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-
 it("holds BlockSuite's own enums", () => {
   for (const [name, list] of Object.entries(BLOCKSUITE_ENUMS))
     expect(sorted(ENUMS[name as keyof typeof ENUMS]), name).toEqual(
@@ -1800,33 +1637,12 @@ it("holds BlockSuite's own enums", () => {
     );
 });
 
-it('keeps the corpus the canvas room reads current, every case as it means', async () => {
-  seeded.reset();
-  const cases: { fits: boolean; name: string; updates: string[] }[] = [];
-  for (const each of CASES) {
-    const updates = await updatesOf(each);
-    expect(updates.length, each.name).toBeGreaterThan(0);
-    const results = verdicts(updates);
-    const last = results.at(-1);
-    for (const earlier of results.slice(0, -1))
-      expect(earlier, `${each.name}: an earlier update`).toEqual({
-        admitted: true,
-        fits: true,
-      });
-    expect(last, each.name).toEqual({ admitted: each.fits, fits: each.fits });
-    cases.push({ fits: each.fits, name: each.name, updates: updates.map(hex) });
-  }
-  const enums = Object.fromEntries(
-    Object.entries(ENUMS).map(([name, list]) => [name, sorted(list)])
-  );
-  const file = resolve(dir, 'ts.json');
-  if (process.env.PARITY_WRITE) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(file, `${JSON.stringify({ cases, enums }, null, 2)}\n`);
-  }
-  // Read as JSON: a formatter's layout of the file is no change.
-  expect(
-    JSON.parse(readFileSync(file, 'utf8')),
-    'ts.json is stale: rerun with PARITY_WRITE=1'
-  ).toEqual({ cases, enums });
-});
+for (const each of CASES)
+  it(`${each.fits ? 'fits' : 'misfits'} ${each.name}`, async () => {
+    const results = verdicts(await updatesOf(each));
+    expect(results.length).toBeGreaterThan(0);
+    expect(results).toEqual([
+      ...results.slice(0, -1).map(() => true),
+      each.fits,
+    ]);
+  });

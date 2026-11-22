@@ -470,19 +470,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "board"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "flate2",
- "notes",
- "serde_json",
- "url",
- "ydoc",
- "yrs",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3045,7 +3032,6 @@ dependencies = [
  "base64 0.22.1",
  "betteroffice-docx-edit",
  "betteroffice-pptx-edit",
- "board",
  "bytes",
  "deadpool-postgres",
  "flate2",

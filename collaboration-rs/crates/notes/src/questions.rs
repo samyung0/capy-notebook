@@ -410,44 +410,9 @@ struct GraphElement {
 }
 
 /// One graph element as a writer writes it (a live figure's entry,
-/// `figure_map::check_entry`; a canvas plane's, `board::rules`).
-pub fn graph_element_shape(value: &Value) -> Check {
+/// `figure_map::check_entry`).
+pub(crate) fn graph_element_shape(value: &Value) -> Check {
     graph_element(value).map(|_| ())
-}
-
-/// Each graph element type's keys: required, then optional (the browser's
-/// `strictObject` per type).
-fn graph_keys(kind: &str) -> Option<(&'static [&'static str], &'static [&'static str])> {
-    Some(match kind {
-        "expression" => (&["id", "latex", "type"], &["dash", "hidden"]),
-        "point" => (&["coords", "id", "type"], &["hidden", "name"]),
-        "line" => (&["id", "points", "type"], &["dash", "hidden"]),
-        "segment" => (
-            &["id", "points", "type"],
-            &["ticks", "arrow", "dash", "hidden"],
-        ),
-        "circle" => (&["center", "id", "radius", "type"], &["dash", "hidden"]),
-        "text" => (&["coords", "id", "text", "type"], &["hidden", "size"]),
-        "angle" => (&["id", "points", "type"], &["hidden", "label"]),
-        "arc" => (&["center", "id", "points", "type"], &["dash", "hidden"]),
-        "sector" => (
-            &["center", "id", "points", "type"],
-            &["shade", "dash", "hidden"],
-        ),
-        "polygon" => (&["id", "points", "type"], &["shade", "dash", "hidden"]),
-        "polyline" => (&["coords", "id", "type"], &["arrow", "dash", "hidden"]),
-        "curve" => (&["coords", "id", "type"], &["dash", "handles", "hidden"]),
-        "ellipse" => (&["center", "id", "radii", "type"], &["dash", "hidden"]),
-        "formula" => (&["coords", "id", "latex", "type"], &["hidden", "size"]),
-        _ => return None,
-    })
-}
-
-/// Whether a graph element of type `kind` may leave `key` unset: a canvas
-/// plane's stored element may hold `undefined` there and nowhere else
-/// (`board::rules::plane_element_fits`).
-pub fn graph_element_optional(kind: &str, key: &str) -> bool {
-    graph_keys(kind).is_some_and(|(_, optional)| optional.contains(&key))
 }
 
 fn graph_element(value: &Value) -> Result<GraphElement, String> {
@@ -456,19 +421,17 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
     let mut points = Vec::new();
     let mut center = None;
-    let Some((required, optional_keys)) = graph_keys(kind) else {
-        return fail(format!("{what}: invalid type"));
-    };
-    strict(map, what, required, optional_keys)?;
     let kind: &'static str = match kind {
         // A formula row's LaTeX as typed (Epo 2026-11-18): browsers read what
         // it draws, so no grammar is checked here.
         "expression" => {
+            strict(map, what, &["id", "latex", "type"], &["dash", "hidden"])?;
             latex(map, QUESTION_GRAPH_EXPRESSION_MAX, what)?;
             style(map, what)?;
             "expression"
         }
         "point" => {
+            strict(map, what, &["coords", "id", "type"], &["hidden", "name"])?;
             coords(&map["coords"], what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
             optional(map, "name", |v| graph_name(v, what))?;
@@ -476,6 +439,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         }
         "line" | "segment" => {
             let segment = kind == "segment";
+            let extra: &[&str] = if segment {
+                &["ticks", "arrow", "dash", "hidden"]
+            } else {
+                &["dash", "hidden"]
+            };
+            strict(map, what, &["id", "points", "type"], extra)?;
             for p in array(&map["points"], what, 2, 2)? {
                 points.push(identifier(p, what)?);
             }
@@ -494,6 +463,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             if segment { "segment" } else { "line" }
         }
         "circle" => {
+            strict(
+                map,
+                what,
+                &["center", "id", "radius", "type"],
+                &["dash", "hidden"],
+            )?;
             center = Some(identifier(&map["center"], what)?);
             if number(&map["radius"], what)? <= 0.0 {
                 return fail(format!("{what}: radius must be positive"));
@@ -502,6 +477,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             "circle"
         }
         "text" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "text", "type"],
+                &["hidden", "size"],
+            )?;
             coords(&map["coords"], what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
             optional(map, "size", |v| text_size(v, what))?;
@@ -515,6 +496,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             "text"
         }
         "angle" => {
+            strict(map, what, &["id", "points", "type"], &["hidden", "label"])?;
             optional(map, "hidden", |v| boolean(v, what))?;
             optional(map, "label", |v| graph_name(v, what))?;
             for p in array(&map["points"], what, 3, 3)? {
@@ -524,6 +506,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         }
         "arc" | "sector" => {
             let sector = kind == "sector";
+            let extra: &[&str] = if sector {
+                &["shade", "dash", "hidden"]
+            } else {
+                &["dash", "hidden"]
+            };
+            strict(map, what, &["center", "id", "points", "type"], extra)?;
             center = Some(identifier(&map["center"], what)?);
             for p in array(&map["points"], what, 2, 2)? {
                 points.push(identifier(p, what)?);
@@ -535,6 +523,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             if sector { "sector" } else { "arc" }
         }
         "polygon" => {
+            strict(
+                map,
+                what,
+                &["id", "points", "type"],
+                &["shade", "dash", "hidden"],
+            )?;
             for p in array(&map["points"], what, 3, QUESTION_GRAPH_POLYGON_MAX)? {
                 points.push(identifier(p, what)?);
             }
@@ -544,6 +538,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         }
         // The free marks hold their own coordinates (Epo 2026-11-16, D1).
         "polyline" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "type"],
+                &["arrow", "dash", "hidden"],
+            )?;
             path_points(&map["coords"], what)?;
             optional(map, "arrow", |v| boolean(v, what))?;
             style(map, what)?;
@@ -551,6 +551,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         }
         // Optional [in, out] Bézier handles, a pair for each point.
         "curve" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "type"],
+                &["dash", "handles", "hidden"],
+            )?;
             let count = path_points(&map["coords"], what)?;
             optional(map, "handles", |v| {
                 for pair in array(v, what, count, count)? {
@@ -564,6 +570,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             "curve"
         }
         "ellipse" => {
+            strict(
+                map,
+                what,
+                &["center", "id", "radii", "type"],
+                &["dash", "hidden"],
+            )?;
             coords(&map["center"], what)?;
             coords(&map["radii"], what)?;
             style(map, what)?;
@@ -571,6 +583,12 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
         }
         // LaTeX centred on its point (D6).
         "formula" => {
+            strict(
+                map,
+                what,
+                &["coords", "id", "latex", "type"],
+                &["hidden", "size"],
+            )?;
             coords(&map["coords"], what)?;
             latex(map, QUESTION_GRAPH_LATEX_MAX, what)?;
             optional(map, "hidden", |v| boolean(v, what))?;

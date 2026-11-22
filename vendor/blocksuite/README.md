@@ -826,11 +826,11 @@ Outside this directory, for BlockSuite:
 
 74. A canvas copy, Duplicate or Alt-drag clone carries no placeholder element
     (`affine/blocks/root` `edgeless/utils/clone-utils.ts` `serializeElement`, marked
-    `Capy (local change 74)`; Epo 2026-11-22, the canvas room's content check). An
-    `UnknownElementModel` (local change 62: a type this build has no model for, or a
-    known type the board's rules don't read) stands for another build's or person's
-    element, and its copy is that element's map as it is: pasted, a known type was
-    written whole and the canvas room refused it, which leaves the session read-only;
+    `Capy (local change 74)`; 2026-11-22). An `UnknownElementModel` (local change 62:
+    a type this build has no model for, or a known type the board's rules don't
+    read) stands for another build's or person's element, and its copy is that
+    element's map as it is: pasted, a known type's map was written whole and reached
+    every peer before the board took its own misfit add out again (`keepToCatalog`);
     an unknown type threw `Invalid element type` part way through the paste. Both
     serializers (`prepareClipboardData` for copy and cut, `prepareCloneData` for
     Duplicate and Alt-drag) now leave it out, and a block's placeholder on the canvas

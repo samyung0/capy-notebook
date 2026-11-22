@@ -5662,7 +5662,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   step the student types (Fit, in the menu, takes the top to the first line above the
   tallest bar, and typing a bar past the top lifts it the same way; neither passes
   `AXIS_MAX` or 100 lines, falling back to a rounder step, `axisAbove` in `boardChart.ts`,
-  since the canvas room refuses an axis past its limit). The wheel or a pinch zooms the value axis: its top moves, the step
+  since the board's rules draw a chart past its limits as a placeholder). The wheel or a pinch zooms the value axis: its top moves, the step
   following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
   written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
   value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
@@ -5939,17 +5939,14 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
     `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
     `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
-    `boardData.ts` come from it. `-board` also writes the Rust copy,
-    `collaboration-rs/crates/board/src/catalog.rs`, with the picture emoji list
-    (`emoji`, read by `boardPictureData.ts` too), for the canvas room's check below.
-    A question's saved board is opaque bytes to the server.
-  - **The board's rules** (Epo 2026-11-22, "sure A then"): one rule set,
-    `src/features/blocksuite/boardRules.ts` in the browser and
-    `collaboration-rs/crates/board/src/rules.rs` in the canvas room, held together by
-    parity cases (`boardRules.parity.test.ts` writes
-    `collaboration-rs/crates/board/tests/parity/ts.json` with `PARITY_WRITE=1`, updates
-    made through BlockSuite's own model code, and `crates/board/tests/parity.rs` admits
-    each and asserts the same verdict and the same enum lists). An element or block is
+    `boardData.ts` come from it, as does the picture emoji list (`emoji`, read by
+    `boardPictureData.ts`). The server keeps a saved board as opaque bytes and
+    checks no canvas room's content (below), so the browser is the only reader.
+  - **The board's rules** (2026-11-22): `src/features/blocksuite/boardRules.ts`, read by
+    the load check, the live board's placeholders, the preview and `keepToCatalog`. A
+    corpus test (`boardRules.corpus.test.ts`) builds what every tool, editor and paste
+    writes through BlockSuite's own model code and holds it fitting, and one broken case
+    per rule not. An element or block is
     read from its own Y.Map's entries, never `toJSON()`, so a string where a Y.Text
     belongs is told apart: keys are strict per element type and block flavour (only
     the fields BlockSuite or the card stores), each value of its kind (colours, places,
@@ -5963,11 +5960,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     as string runs with plain-valued formats (no embeds or nested types; a reference or
     footnote format is an object), keyed lists up to twice their caps, ids of
     `[A-Za-z0-9_-]{1,128}` and never `__proto__` (nor a `__proto__` key inside a plain
-    value). A block's children each of a flavour that may sit under it. Not checked
-    against each other, since two people's honest edits can break them together (Epo
-    2026-11-22, "but A seems simpler, do A"): a mind map's nodes against the canvas,
-    a group's or connector's ends existing, the tree's other links; the browser
-    reports those as before.
+    value; a run of overwritten values at one key is read by its last). The tree and a
+    mind map's nodes are checked as before (the load check's tree, `mindmapNodesFit`).
+    What breaks the rules is drawn as "This block cannot be shown" and never removed
+    unless it is the tab's own add (Epo 2026-11-18); the canvas room checks none of it
+    (Epo 2026-11-22, "maybe drop the cnvas content check if its not that useful").
   - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
     once, so a mounted board also drops what its catalog leaves out whatever adds it
     (a paste, a duplicate, later a peer): `keepToCatalog` in `boardKeep.ts` deletes
@@ -5981,10 +5978,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     copy exports and a paste or Duplicate imports (`placeholdersLeftOut` in
     `boardUnknown.ts`), and BlockSuite's canvas copy and clone leave out placeholder
     elements, stand-in cards and groups left empty (vendor local change 74), a group
-    keeping only the children copied with it. On the workspace canvas the provider sends
-    each update as it is made, so a misfit add that is still a tab's own (only a crafted
-    clipboard makes one) is refused by the room before `keepToCatalog` removes it, and
-    goes the refused-edit way. Emoji, GIFs and cards copy, paste and duplicate on
+    keeping only the children copied with it. Emoji, GIFs and cards copy, paste and duplicate on
     the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
     re-adds only a block the load check would take (`embedFits`, the same check), since
     any page can write the clipboard. Their renderers check again what they use: a link
@@ -6046,9 +6040,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       30 to 31 ([the gate](#client-protocol-and-the-release-nudge)). The build's
       contract adds a rule the code does not hold: from here a change to the board
       catalog (`server/internal/boardcatalog`) raises both together.
-    - **What the room admits.** Admission bounds what an update may cost and, since
-      2026-11-22 (Epo, "sure A then", superseding the server half of 2026-11-18's
-      "reject nothing"), what it leaves on the board. After the checks every material room makes (the 4 MiB sync message,
+    - **What the room admits.** A board has no rule on what its content is (Epo
+      2026-11-18, "reject nothing"; a content check built 2026-11-22 was dropped the
+      same day, Epo: "maybe drop the cnvas content check if its not that useful"):
+      admission bounds what an update may cost, never its shape. After the checks every material room makes (the 4 MiB sync message,
       the token, the client-id rule, the marker root), `admit_board` takes an update
       that:
       - the room can place (`ydoc::inspect_bounded`): no struct or deleted range
@@ -6056,7 +6051,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
         build: two 11-byte GC structs wrapped a client's clock in a release build and
         left a stored document that no longer loaded; note, flashcard and source
         rooms took the same input and refuse it now);
-      - nests no type more than 64 deep below the root (`board::DEPTH`; the editor's
+      - nests no type more than 64 deep below the root (`BOARD_DEPTH`; the editor's
         deepest is 5). yrs deletes nested types by recursion, and a chain of 8,000
         maps with one deletion of its top overflowed a worker's 2 MiB stack, which
         aborts the process;
@@ -6068,34 +6063,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
         build (the builder's measurements, 2026-11-18); an update's own size is not
         counted (100,000 map entries took 144 ms there).
         Only a board counts splits; the other rooms inspect as before;
-      - writes only the `blocks` root (`board::ROOT`) besides the room's own
+      - writes only the `blocks` root (`BOARD_ROOT`) besides the room's own
         contributor markers;
-      - keeps the board's rules (`board::admit_shapes`, after the root check and
-        before sizing; an update that tells the room nothing new is not checked):
-        each element or block it creates, or writes or deletes anything in, is read
-        once over its direct keys as the update leaves it (from the trial copy when
-        admission made one, else from the room's value overlaid with the update's
-        writes, exact for a small edit, whose writes at one key must chain as
-        `Map.set` writes them: "a map key written twice from one place") and checked
-        whole; each new item inside it (text, a list or children entry, a note's
-        nested map) by its own rule; each keyed list it adds to counted to twice its
-        cap. The page and the canvas, the canvas's `prop:elements` holder, `sys:flavour`,
-        `sys:children` and an element's `type` and `id` are never written again or
-        deleted; an element or block written over a live one (an erase and its undo
-        sent together, two people undoing the same erase) keeps its type or flavour; a
-        map write never has a right origin, and may carry a run of values (Yjs merges a
-        client's overwritten values at one key when its history keeps them, as offline
-        moves sent in one update do), of which the key holds the last. Something
-        that already misfits (stored before a rule changed) is not held to the whole
-        rule: each key an update writes on it keeps that key's rule, and one of a kind
-        the board doesn't hold takes only the placeholder's keys (a move or turn). Cost
-        is linear in the update, the touched entities' keys, the keyed lists it adds to
-        and the room items its delete ranges cover (a reconnect repeats its whole delete
-        set; that walk counts toward `MAX_WORK`, past which the update is refused),
-        counted (`Walk::Board`), never a copy of the room. Known and left
-        open: a child id listed before its block exists, then the block made with a
-        flavour that may not sit there, is not refused (it would need a parent lookup
-        per new block); the browser draws it as a placeholder;
       - keeps the state within `CANVAS_BOARD_MAX`, 4 MiB (Epo 2026-11-18), the largest
         sync message the server takes (`NOTE_MAX_SYNC_BYTES`). The validator keeps an
         upper bound of the state's bytes; while the bound plus the most the update
@@ -6109,17 +6078,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
 
       A refusal closes that writer's channel alone. One for size reaches the tab as
       `document-rejected` with `document_size_exceeded` and
-      `limits.maxContentBytes` the cap; one for the board's rules as
-      `document-rejected` with `invalid_document`, and the tab's unsent edits open
-      read-only for copying (`item_edits_refused`), so nothing drawn is deleted
-      without being offered back. The mock room (`src/mocks/collaboration.ts`) tries
-      each update on a probe copy and refuses, with the same message, one that leaves
-      an element or block it touched breaking the rules that fitted them before, a
-      child under a parent its flavour may not have, or the page or canvas deleted
-      (`boardChangeRefusal` in `boardRules.ts`); it has none of the room's checks on an
-      update's structs (right origins, writes at one key, identity keys), so it is
-      looser on crafted input only. `mockTamperBoard` sends a broken shape from a tab
-      for the e2e. A store never refuses a board for size, and a
+      `limits.maxContentBytes` the cap. A store never refuses a board for size, and a
       board has no repairs, sessions, held deletions, collection, late merge, index
       request or agent path: an agent inspect or edit, a replace-block command and the
       live read of a loaded board answer 409 `unsupported_operation`, unreported
@@ -6129,10 +6088,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       MB (the second Rust review's probe), and note, item and source rooms are still exposed to the split stall and the
       depth abort a board now refuses (follow-ups for Epo, the second Rust review).
     - **Unknown content is kept (Epo 2026-11-18, "reject nothing, dont just delete
-      stuff without user acknowledgement", mock A, Artifact FFzLp8Zwcen678YfTEn88s;
-      its server half superseded 2026-11-22 by the room's check above).**
-      Nothing a peer or the stored state brought is removed for its shape in the
-      browser, merge results included. What a tab cannot read (a block or canvas
+      stuff without user acknowledgement", mock A, Artifact FFzLp8Zwcen678YfTEn88s).**
+      Nothing a peer or the stored state brought is refused or removed for its shape,
+      on the server or in the browser. What a tab cannot read (a block or canvas
       element of a kind this build does not know, or a known one that fails the
       board's checks) stays in the document as it is and is drawn as a placeholder: a
       dashed outline with "This block cannot be shown", the words a note's unknown

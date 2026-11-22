@@ -53,8 +53,8 @@ use notes::questions::{self as q, Policy, model_marked};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
 
+use crate::locate::{Locator, Place};
 use crate::{Growth, order};
-use ydoc::locate::{Locator, Place};
 
 pub const QUESTIONS_ROOT: &str = "questions";
 pub const KEYS_ROOT: &str = "keys";
@@ -2233,7 +2233,7 @@ fn admit<T: ReadTxn>(
         let (path, key) = match locator.place(item) {
             Place::Gone => continue,
             Place::Unknown => return refuse("a struct outside its shape"),
-            Place::At { path, key, .. } => (path, key),
+            Place::At { path, key } => (path, key),
         };
         let keys: Vec<&str> = path.iter().map(|k| &**k).collect();
         shape(&keys, key.as_deref(), content, &path, &mut tally)?;

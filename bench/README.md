@@ -219,12 +219,8 @@ with its undo history, a second document sent every update (what a room
 holds), and the copy the save stores. It reports bytes per action, and per
 minute at the pace assumed for each kind, into the gitignored
 `collaboration/.results/board-growth.jsonl`; `GROWTH_BASE_URL` measures a dev
-server already running on another checkout. With `GROWTH_SESSIONS` set it also
-writes every update each passing test's board sent to the canvas room's replay
-fixture (`collaboration-rs/crates/board/tests/fixtures/editor-sessions.json.gz`,
-admitted update by update in `crates/board/tests/replay.rs`), and
-`GROWTH_MINUTES` shortens the mixed hour so that file stays small. It is the
-input for the canvas room's size cap
+server already running on another checkout, and `GROWTH_MINUTES` shortens the
+mixed hour for a quick run. It is the input for the canvas room's size cap
 ([2026-11-18 report](collaboration/reports/2026-11-18-board-live-growth.md), its
 record in `collaboration/reports/2026-11-18-mac-m1/board-growth.jsonl`).
 

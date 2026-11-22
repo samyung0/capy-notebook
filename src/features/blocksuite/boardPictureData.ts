@@ -9,7 +9,7 @@ export type PictureKind = 'emoji' | 'klipy';
 
 /** The emoji Misc offers: Noto Animated Emoji (Google, CC BY 4.0, credited on the
  * Credits page), resized to 96 px (moving) and 64 px (still) in public/emoji/noto. The
- * board catalog lists them, so the canvas room checks a picture against the same list. */
+ * board catalog lists them, so the board's rules and the picture tool read one list. */
 export const EMOJI = BOARD_CATALOG.emoji;
 
 /** An emoji's character, for its label. */
