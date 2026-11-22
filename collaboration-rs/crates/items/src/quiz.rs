@@ -920,28 +920,36 @@ fn sync_entries<I: PartialEq>(
     let same = |h: usize, w: usize| reads[h].as_ref() == Some(&items[w]);
     let places = moved(held.len(), items.len(), same)
         .unwrap_or_else(|| figure_map::align_places(held.len(), items.len(), same));
-    let offered: Vec<String> = places
+    // Each slot's id first (fresh ones in slot order), so order keys compare
+    // ties by id as readers sort.
+    let reused: Vec<Option<usize>> = items
         .iter()
-        .map(|at| at.map_or_else(String::new, |h| held[h].order.clone()))
+        .zip(&places)
+        .map(|(item, at)| at.filter(|&h| fits(reads[h].as_ref(), item)))
         .collect();
-    let mut ids = Vec::with_capacity(items.len());
     let mut n = 0;
+    let ids: Vec<String> = reused
+        .iter()
+        .map(|at| match at {
+            Some(h) => held[*h].id.clone(),
+            None => fresh_id(txn, list, prefix, &mut n),
+        })
+        .collect();
+    let offered: Vec<(&str, &str)> = ids
+        .iter()
+        .zip(&places)
+        .map(|(id, at)| (id.as_str(), at.map_or("", |h| held[h].order.as_str())))
+        .collect();
     let orders = order::rising(&offered);
     for (w, (item, order)) in items.iter().zip(orders).enumerate() {
-        let kept = places[w].filter(|&h| fits(reads[h].as_ref(), item));
-        let (id, entry) = match kept {
-            Some(h) => (held[h].id.clone(), held[h].map.clone()),
-            None => {
-                let id = fresh_id(txn, list, prefix, &mut n);
-                let entry = list.insert(txn, id.clone(), MapPrelim::default());
-                (id, entry)
-            }
+        let entry = match reused[w] {
+            Some(h) => held[h].map.clone(),
+            None => list.insert(txn, ids[w].clone(), MapPrelim::default()),
         };
         sync_plain(txn, &entry, "order", Some(order_any(&order)));
-        if kept.is_none_or(|h| !same(h, w)) {
+        if reused[w].is_none_or(|h| !same(h, w)) {
             fill(txn, &entry, item);
         }
-        ids.push(id);
     }
     // Last, so a fresh id never takes one this write let go.
     let kept: HashSet<&str> = ids.iter().map(String::as_str).collect();
@@ -1356,13 +1364,18 @@ fn sync_question(
         parts_map.remove(content, &id);
         key_root.remove(keys, &id);
     }
-    let mut last: Option<String> = None;
+    let mut last: Option<(&str, String)> = None;
     for part in parts {
-        let entry = child_map(content, &parts_map, str_of(part, "id"));
+        let id = str_of(part, "id");
+        let entry = child_map(content, &parts_map, id);
         let held = str_at(content, &entry, "order");
-        let order = figure_map::next_order(held.as_deref(), last.as_deref());
+        let order = figure_map::next_order(
+            id,
+            held.as_deref(),
+            last.as_ref().map(|(id, order)| (*id, order.as_str())),
+        );
         sync_plain(content, &entry, "order", Some(order_any(&order)));
-        last = Some(order);
+        last = Some((id, order));
         let marks = part.get("marks").and_then(Value::as_f64).map(Any::Number);
         sync_plain(content, &entry, "marks", marks);
         let group = part.get("group").and_then(Value::as_str).map(string_any);

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { validateGraphRecipe } from './graph';
+import { QUESTION_GRAPH_ELEMENTS_MAX } from '@/api/limits.generated';
+import { drawnMaxFor, validateGraphRecipe } from './graph';
 import type { GraphBlock } from './types';
 
 // Epo 2026-11-18: a formula row is stored as typed, unchecked for grammar.
@@ -14,7 +15,9 @@ it('takes formula rows as typed, an equation in x and y included', () => {
     type: 'graph',
     width: 320,
   };
-  expect(() => validateGraphRecipe(graph)).not.toThrow();
+  expect(() =>
+    validateGraphRecipe(graph, QUESTION_GRAPH_ELEMENTS_MAX)
+  ).not.toThrow();
 });
 
 it('takes the free marks and styles the canvas plane draws', () => {
@@ -65,5 +68,12 @@ it('takes the free marks and styles the canvas plane draws', () => {
     type: 'graph',
     width: 320,
   };
-  expect(() => validateGraphRecipe(graph)).not.toThrow();
+  expect(() =>
+    validateGraphRecipe(graph, QUESTION_GRAPH_ELEMENTS_MAX)
+  ).not.toThrow();
+});
+
+it('lets a canvas plane write every row, and a quiz or note graph the first up to the cap', () => {
+  expect(drawnMaxFor(true)).toBe(Number.POSITIVE_INFINITY);
+  expect(drawnMaxFor(false)).toBe(QUESTION_GRAPH_ELEMENTS_MAX);
 });

@@ -17,10 +17,11 @@ use notes::limits::{self, Admission, Refusal, Validator};
 use notes::slate::{Operation, Root};
 use notes::{figure_map, material, order, plate, questions, slate_yjs};
 use serde_json::{Value, json};
+use std::sync::{Arc, Mutex};
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Array, ArrayPrelim, ArrayRef, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, Text, Transact,
-    Update, Xml, XmlTextRef,
+    Any, Array, ArrayPrelim, ArrayRef, Doc, Map, MapPrelim, MapRef, Observable, Out, ReadTxn, Text,
+    Transact, Update, Xml, XmlTextRef,
 };
 
 /// A figure map's own map under `key` (a graph's board or elements, a
@@ -324,6 +325,85 @@ fn a_server_write_moving_an_element_keeps_the_other_keys() {
     }
     assert_ne!(order_of(&room, &ids[0]), held[0]);
     assert_eq!(projected(&room), [figure(next)]);
+}
+
+fn point(id: &str, x: i64) -> Value {
+    json!({ "type": "point", "id": id, "coords": [x, 0] })
+}
+
+fn three_points() -> Value {
+    json!({
+        "type": "graph", "board": { "bbox": [-5, 5, 5, -5], "axis": true, "grid": true },
+        "elements": [point("b1", 1), point("b2", 2), point("b3", 3)],
+        "width": 320, "height": 190,
+    })
+}
+
+/// Writes `doc`'s graph as its own block read back with `change` made to the
+/// elements, as an editor's save does; the element ids the write touched.
+fn write_graph(doc: &Doc, change: impl FnOnce(&mut Vec<Value>)) -> Vec<String> {
+    let map = block_map(doc, 0);
+    let mut block = {
+        let _txn = doc.transact();
+        figure_map::block(map.as_ref(), "graph").unwrap()
+    };
+    change(block["elements"].as_array_mut().unwrap());
+    let touched = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&touched);
+    let elements = inner(doc, &map, "elements");
+    let subscription = elements.observe(move |txn, event| {
+        let keys = event.keys(txn).keys().map(|key| key.to_string());
+        record.lock().unwrap().extend(keys);
+    });
+    figure_map::sync(&mut doc.transact_mut(), &map, "graph", &block);
+    drop(subscription);
+    let mut touched = touched.lock().unwrap().clone();
+    touched.sort();
+    touched
+}
+
+fn element<'v>(elements: &'v mut [Value], id: &str) -> &'v mut Value {
+    elements
+        .iter_mut()
+        .find(|element| element["id"] == id)
+        .unwrap()
+}
+
+/// Two writers add an element each at once, so both take one order key (a
+/// tie, read by id); then one changes `b1` while the other renames `b4`. The
+/// tie already reads in order, so the first write touches `b1` alone and
+/// both edits survive whichever client id wins a concurrent entry write
+/// (re-keying `b4` rewrote its whole entry over the rename).
+#[test]
+fn a_tie_two_adds_left_keeps_a_peer_edit() {
+    let state = slate_yjs::state_from_value(&[figure(three_points())], 9);
+    for (first, second) in [(1, 2), (2, 1)] {
+        let (a, b) = (common::doc(&state, first), common::doc(&state, second));
+        let exchange = || {
+            let (to_b, to_a) = (edit_since(&a, &b), edit_since(&b, &a));
+            common::apply(&b, &to_b);
+            common::apply(&a, &to_a);
+        };
+        write_graph(&a, |elements| elements.push(point("b4", 4)));
+        write_graph(&b, |elements| elements.push(point("b5", 5)));
+        exchange();
+        let touched = write_graph(&a, |elements| {
+            element(elements, "b1")["coords"] = json!([10, 0]);
+        });
+        write_graph(&b, |elements| {
+            element(elements, "b4")["name"] = json!("Four");
+        });
+        exchange();
+        let mut merged = three_points();
+        let elements = merged["elements"].as_array_mut().unwrap();
+        elements[0]["coords"] = json!([10, 0]);
+        elements.push(json!({ "type": "point", "id": "b4", "coords": [4, 0], "name": "Four" }));
+        elements.push(point("b5", 5));
+        let ids = format!("client ids {first}, {second}");
+        assert_eq!(projected(&a), [figure(merged.clone())], "{ids}");
+        assert_eq!(projected(&b), [figure(merged)], "{ids}");
+        assert_eq!(touched, ["b1"], "{ids}");
+    }
 }
 
 /// A merge the validators would refuse (one writer removes a point while

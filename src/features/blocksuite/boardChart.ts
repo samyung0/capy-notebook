@@ -19,7 +19,16 @@ import {
   GfxElementModelView,
   GfxPrimitiveElementModel,
   GfxViewInteractionExtension,
+  observe,
 } from '@blocksuite/affine/std/gfx';
+import * as Y from 'yjs';
+import {
+  type ElementEntry,
+  type Keyed,
+  keyedElements,
+  readElements,
+  writeElements,
+} from '@/features/graph/keyed';
 import type { Frame } from '@/features/graph/model';
 import {
   BAR_SHARE,
@@ -31,11 +40,12 @@ import {
   type ChartKind,
   cardPaper,
   filledSlices,
+  LABELS_MAX,
   onScreen,
   type Paper,
   type PieLabel,
+  type PieSpoke,
   pieCircle,
-  type SliceFill,
 } from './boardData';
 import { ticks } from './boardGeometry';
 
@@ -99,7 +109,7 @@ export function drawChart(
     ctx.stroke();
   } else {
     const { cx, cy, r } = pieCircle(frame, pads);
-    for (const { fill, from, to } of filledSlices(chart)) {
+    for (const { fill, from, to } of filledSlices(chart.spokes)) {
       // The canvas measures from 3 o'clock, the pie from 12.
       const at = (degrees: number) => ((degrees - 90) * Math.PI) / 180;
       ctx.fillStyle = resolve(fill);
@@ -114,10 +124,10 @@ export function drawChart(
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    for (const spoke of chart.spokes) {
+    for (const { angle } of chart.spokes) {
       ctx.beginPath();
       ctx.moveTo(cx, cy);
-      ctx.lineTo(...onScreen(cx, cy, r, spoke));
+      ctx.lineTo(...onScreen(cx, cy, r, angle));
       ctx.stroke();
     }
     ctx.fillStyle = paper.text;
@@ -133,21 +143,110 @@ export function drawChart(
   ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
 }
 
+/** A chart's lists, each stored as the plane's elements are (Epo 2026-11-22): one
+ * entry per item id, the item and its order key, so changes to different bars,
+ * labels or lines merge (D10). A pie line's entry carries its slice's fill. */
+const LISTS = ['bars', 'labels', 'spokes'] as const;
+type ListKey = (typeof LISTS)[number];
+type Lists = Pick<ChartData, ListKey>;
+type Entries<E extends Keyed> = Y.Map<ElementEntry<E>>;
+
+/** What one write changes: lists in full, as they should read, and the axis. */
+export type ChartChange = Partial<
+  Lists & Pick<ChartData, 'axisMax' | 'axisStep'>
+>;
+
+/** A change inside a list reaches no field, so the chart says so itself: the
+ * renderer and an open editor draw again. */
+const observeList =
+  (key: ListKey) =>
+  (
+    event: Y.YEvent<Y.Map<unknown>> | null,
+    chart: ChartElementModel,
+    transaction: Y.Transaction | null
+  ) => {
+    chart.forgetList(key);
+    if (!(event && transaction)) return;
+    chart.surface.elementUpdated.next({
+      id: chart.id,
+      local: transaction.local,
+      oldValues: {},
+      props: { [key]: chart[key] },
+    });
+  };
+
 export class ChartElementModel extends GfxPrimitiveElementModel<{
   axisMax: number;
   axisStep: number;
-  bars: ChartBar[];
-  fills?: SliceFill[];
+  bars: Entries<ChartBar>;
   index: string;
   kind: ChartKind;
-  labels: PieLabel[];
+  labels: Entries<PieLabel>;
   rotate: number;
   seed: number;
-  spokes: number[];
+  spokes: Entries<PieSpoke>;
   xywh: SerializedXYWH;
 }> {
   get type() {
     return 'chart';
+  }
+
+  /** A pasted or new card's lists, plain (`keyedElements`) or as the clipboard
+   * serialized them, become the stored maps, as the plane's elements do. */
+  static propsToY(props: Record<string, unknown>) {
+    for (const key of LISTS) {
+      const value = props[key];
+      if (!value || value instanceof Y.Map) continue;
+      const entries = new Y.Map<unknown>();
+      for (const [id, entry] of Object.entries(
+        value as Record<string, unknown>
+      ))
+        entries.set(id, entry);
+      props[key] = entries;
+    }
+    return props;
+  }
+
+  /** Each list in order, read once per change to its map. */
+  readonly #lists: Partial<Lists> = {};
+  get barList() {
+    this.#lists.bars ??= readElements(this.bars.entries());
+    return this.#lists.bars;
+  }
+  get labelList() {
+    this.#lists.labels ??= readElements(this.labels.entries());
+    return this.#lists.labels;
+  }
+  get spokeList() {
+    this.#lists.spokes ??= readElements(this.spokes.entries());
+    return this.#lists.spokes;
+  }
+  forgetList(key: ListKey) {
+    delete this.#lists[key];
+  }
+  /** The chart as it's drawn. */
+  get data(): ChartData {
+    const { axisMax, axisStep, kind } = this;
+    return {
+      axisMax,
+      axisStep,
+      bars: this.barList,
+      kind,
+      labels: this.labelList,
+      spokes: this.spokeList,
+    };
+  }
+  /** Makes the chart hold `change` in one transaction, one undo step: each list
+   * given writes only its items that changed. */
+  write(change: ChartChange) {
+    const { axisMax, axisStep, bars, labels, spokes } = change;
+    this.surface.store.transact(() => {
+      if (bars) writeElements(this.bars, bars);
+      if (labels) writeElements(this.labels, labels);
+      if (spokes) writeElements(this.spokes, spokes);
+      if (axisMax !== undefined) this.axisMax = axisMax;
+      if (axisStep !== undefined) this.axisStep = axisStep;
+    });
   }
 
   /** A turned card (Epo 2026-11-13) answers by its turned corners, as a formula's. */
@@ -189,25 +288,23 @@ export class ChartElementModel extends GfxPrimitiveElementModel<{
   @field()
   accessor axisStep = 2;
 
+  @observe(observeList('bars'))
   @field()
-  accessor bars: ChartBar[] = [];
-
-  @field()
-  /** Absent on a chart saved before pies had fills: a field's default only applies
-   * to a new chart. */
-  accessor fills: SliceFill[] | undefined = [];
+  accessor bars: Entries<ChartBar> = new Y.Map();
 
   @field()
   accessor kind: ChartKind = 'bar';
 
+  @observe(observeList('labels'))
   @field()
-  accessor labels: PieLabel[] = [];
+  accessor labels: Entries<PieLabel> = new Y.Map();
 
   @field(0)
   accessor rotate = 0;
 
+  @observe(observeList('spokes'))
   @field()
-  accessor spokes: number[] = [];
+  accessor spokes: Entries<PieSpoke> = new Y.Map();
 
   @field()
   accessor xywh: SerializedXYWH = '[0,0,16,16]';
@@ -233,7 +330,7 @@ const chartRenderer: ElementRenderer<ChartElementModel> = (
   drawChart(
     ctx,
     { h, w, x: 0, y: 0 },
-    model,
+    model.data,
     (color) => renderer.getColorValue(color, 'transparent', true),
     cardPaper(renderer.getColorScheme())
   );
@@ -275,15 +372,83 @@ export const chartExtensions = [
   chartInteraction,
 ];
 
+/** A pie's first line, at 12 o'clock, as a new one starts and Clear all leaves it.
+ * Its id is the same on every pie, so two Clear alls at once, or one crossing a
+ * peer's turn or fill of that line, leave one line (Epo 2026-11-22). */
+export const FIRST_SPOKE = 'first';
+export const firstSpokes = (kind: ChartKind): PieSpoke[] =>
+  kind === 'pie' ? [{ angle: 0, id: FIRST_SPOKE }] : [];
+
+/** Clear all: no bars or labels, and a pie back to its first line. */
+export const cleared = (kind: ChartKind): ChartChange => ({
+  bars: [],
+  labels: [],
+  spokes: firstSpokes(kind),
+});
+
+/** `list` with `item` added at the end, or null at `max` or past it. An add checks
+ * the list as it reads when written, so a bar a peer added mid-drag counts; only adds
+ * merged from the same moment pass the cap, which the load check takes up to twice. */
+export const appended = <T>(list: T[], item: T, max: number) =>
+  list.length < max ? [...list, item] : null;
+
+/** Where a pie label's text field opened, on a label (its id) or at a new place, and
+ * the text it opened with. */
+export type LabelDraft = Pick<PieLabel, 'angle' | 'reach' | 'text'> & {
+  id?: string;
+};
+
+/** The pie labels once a text field closes, or null for no change. Only text changed
+ * from what the field opened with is written, so closing an untouched field keeps a
+ * peer's rename. An existing label takes only the text, onto it as it reads now, so a
+ * peer's move or resize stays and a label a peer erased stays erased; no text removes
+ * it. A new label goes where the field opened, under the cap. */
+export function typedLabels(
+  labels: PieLabel[],
+  { angle, id, reach, text: opened }: LabelDraft,
+  text: string
+): PieLabel[] | null {
+  if (text === opened) return null;
+  if (!id)
+    return appended(
+      labels,
+      { angle, id: crypto.randomUUID(), reach, text },
+      LABELS_MAX
+    );
+  if (!labels.some((one) => one.id === id)) return null;
+  return text
+    ? labels.map((one) => (one.id === id ? { ...one, text } : one))
+    : labels.filter((one) => one.id !== id);
+}
+
+/** The bars once the label field of bar `id` closes, or null for no change: only text
+ * changed from what the field `opened` with is written, onto the bar as it reads now. */
+export function typedBars(
+  bars: ChartBar[],
+  id: string,
+  opened: string,
+  text: string
+): ChartBar[] | null {
+  if (text === opened || !bars.some((bar) => bar.id === id)) return null;
+  return bars.map((bar) => (bar.id === id ? { ...bar, label: text } : bar));
+}
+
+/** The bars once a drag lifts, against the chart as it read `before` it: a bar the
+ * drag took to 0 goes. One at 0 before stays (typed as 0 in the data pane), held
+ * along at 0 or moved up and back down to 0. */
+export function liftedBars(before: ChartBar[], after: ChartBar[]) {
+  const was = new Map(before.map(({ id, value }) => [id, value]));
+  return after.filter(({ id, value }) => value || was.get(id) === 0);
+}
+
 export function addChart(gfx: GfxController, box: Bound, kind: ChartKind) {
   return gfx.surface?.addElement({
     axisMax: 10,
     axisStep: 2,
-    bars: [],
+    bars: keyedElements<ChartBar>([]),
     kind,
-    labels: [],
-    // A pie starts from 12 o'clock.
-    spokes: kind === 'pie' ? [0] : [],
+    labels: keyedElements<PieLabel>([]),
+    spokes: keyedElements(firstSpokes(kind)),
     type: 'chart',
     xywh: box.serialize(),
   });

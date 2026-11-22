@@ -7,7 +7,7 @@ import {
 } from '@/features/questions/graphSyntax';
 import { fromBase64 } from './base64';
 import {
-  planeElements,
+  keyedMap,
   SAVED,
   withCanvasBlock,
   withElement,
@@ -28,6 +28,21 @@ const reason = (update: Uint8Array) => {
     return error instanceof BoardLoadError ? error.reason : String(error);
   }
 };
+
+/** A chart card as the board saves it, its bars, labels and lines keyed by id,
+ * with `fields` in place of an empty bar chart's. */
+const chart = (fields: Record<string, unknown>) =>
+  withElement({
+    axisMax: 10,
+    axisStep: 2,
+    bars: new Y.Map(),
+    kind: 'bar',
+    labels: new Y.Map(),
+    spokes: new Y.Map(),
+    type: 'chart',
+    xywh: '[0,0,9,9]',
+    ...fields,
+  });
 
 /** A topic and one idea, as the workspace canvas's mind map saves them. */
 const MIND_MAP = [
@@ -66,7 +81,7 @@ describe('checkSavedBoard', () => {
     expect(
       reason(
         withElement({
-          elements: planeElements([
+          elements: keyedMap([
             { coords: [1, 1], id: 'f', latex: 'x^2', type: 'formula' },
             // Sized by their frames' corners.
             { coords: [2, 2], id: 'g', latex: 'y', size: 30, type: 'formula' },
@@ -119,20 +134,66 @@ describe('checkSavedBoard', () => {
     expect(
       reason(withElement({ latex: 7, type: 'formula', xywh: '[0,0,9,9]' }))
     ).toBe('formula latex');
+  });
+
+  it("checks a chart's bars, labels and lines keyed by id (Epo 2026-11-22)", () => {
+    const bar = (id: string) => ({
+      fill: '#1e96eb',
+      id,
+      label: 'Mon',
+      value: 1,
+    });
+    expect(reason(chart({ bars: keyedMap([bar('a'), bar('b')]) }))).toBeNull();
     expect(
       reason(
-        withElement({
-          axisMax: 10,
-          axisStep: 2,
-          bars: Array.from({ length: 25 }, () => ({ label: '', value: 1 })),
-          kind: 'bar',
-          labels: [],
-          spokes: [],
-          type: 'chart',
-          xywh: '[0,0,9,9]',
+        chart({
+          kind: 'pie',
+          labels: keyedMap([
+            { angle: 30, id: 'l', reach: 0.6, size: 14, text: 'Walk' },
+          ]),
+          spokes: keyedMap([
+            { angle: 0, fill: { dark: '#fff', light: '#000' }, id: 's' },
+            { angle: 90, id: 't' },
+          ]),
         })
       )
+    ).toBeNull();
+    // Up to twice each cap, as adds merged from the same moment leave a list
+    // (Epo 2026-11-22, "sure A"): 24 bars, 60 labels and 60 lines.
+    const bars = (count: number) =>
+      keyedMap(Array.from({ length: count }, (_, i) => bar(`b${i}`)));
+    expect(reason(chart({ bars: bars(25) }))).toBeNull();
+    expect(reason(chart({ bars: bars(48) }))).toBeNull();
+    expect(reason(chart({ bars: bars(49) }))).toBe('chart fields');
+    const labels = (count: number) =>
+      keyedMap(
+        Array.from({ length: count }, (_, i) => ({
+          angle: i,
+          id: `l${i}`,
+          reach: 0.5,
+          text: 'A',
+        }))
+      );
+    const spokes = (count: number) =>
+      keyedMap(
+        Array.from({ length: count }, (_, i) => ({ angle: i, id: `s${i}` }))
+      );
+    expect(reason(chart({ kind: 'pie', labels: labels(120) }))).toBeNull();
+    expect(reason(chart({ kind: 'pie', labels: labels(121) }))).toBe(
+      'chart fields'
+    );
+    expect(reason(chart({ kind: 'pie', spokes: spokes(120) }))).toBeNull();
+    expect(reason(chart({ kind: 'pie', spokes: spokes(121) }))).toBe(
+      'chart fields'
+    );
+    expect(
+      reason(chart({ spokes: keyedMap([{ angle: 0, fill: 7, id: 's' }]) }))
     ).toBe('chart fields');
+    // A key that isn't its item's id, and a list kept as a plain array.
+    const misnamed = new Y.Map<unknown>();
+    misnamed.set('a', { element: bar('b'), order: 'a0' });
+    expect(reason(chart({ bars: misnamed }))).toBe('chart fields');
+    expect(reason(chart({ bars: [bar('a')] }))).toBe('chart fields');
   });
 
   it("holds every row the graph dialog takes, typed in a plane's list", () => {
@@ -163,7 +224,7 @@ describe('checkSavedBoard', () => {
     expect(
       reason(
         withElement({
-          elements: planeElements(elements),
+          elements: keyedMap(elements),
           ppu: 30,
           type: 'plane',
           x0: -5,
@@ -174,10 +235,10 @@ describe('checkSavedBoard', () => {
     ).toBeNull();
   });
 
-  it('holds up to 100 elements on a plane, as every graph', () => {
+  it("holds up to twice a graph's 100 elements on a plane, as adds merged from the same moment leave it (Epo 2026-11-22)", () => {
     const plane = (count: number) =>
       withElement({
-        elements: planeElements(
+        elements: keyedMap(
           Array.from({ length: count }, (_, i) => ({
             coords: [i, 0] as [number, number],
             id: `p${i}`,
@@ -190,8 +251,9 @@ describe('checkSavedBoard', () => {
         xywh: '[0,0,300,200]',
         y0: 5,
       });
-    expect(reason(plane(100))).toBeNull();
-    expect(reason(plane(101))).toBe('plane fields');
+    expect(reason(plane(101))).toBeNull();
+    expect(reason(plane(200))).toBeNull();
+    expect(reason(plane(201))).toBe('plane fields');
   });
 
   it('holds what the catalog lists for each board', () => {

@@ -2739,6 +2739,14 @@ export function mockBoardPeer(materialId: string, identity?: MockIdentity) {
     /** The canvas's elements as the peer holds them, by id. */
     elements: () =>
       canvas().toJSON() as Record<string, Record<string, unknown>>,
+    /** Sets one entry of the element `id`'s keyed list `field` (a chart's
+     * `bars`, a plane's `elements`), as a peer's editor writes one item. */
+    entry: (id: string, field: string, key: string, value: unknown) => {
+      const list = canvas().get(id)?.get(field);
+      if (!(list instanceof Y.Map))
+        throw new Error(`The board room's ${id} holds no list ${field}`);
+      list.set(key, value);
+    },
     /** Pastes an image block `id` whose file is stored as `sourceId`, as a
      * peer's tab adds one. */
     image: (id: string, sourceId: string) => {
