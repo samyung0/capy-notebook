@@ -17,7 +17,7 @@ import {
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
-import { keyBetween, keysBetween } from '@/lib/orderKey';
+import { keyBetween } from '@/lib/orderKey';
 import { Rng } from '@/lib/rng';
 import {
   blockKey,
@@ -439,11 +439,17 @@ export function readLearnerQuestions(
 
 type ListItem = { text: string; set?: (entry: YMap) => void };
 
+/** A list's entries by id, as `reorder` takes them. */
+const entriesOf = (map: YMap) =>
+  new Map(ordered(map).map(({ entry, id }) => [id, entry]));
+
 /** Writes `next` into an ordered list of `{order, text}` entries with the
  * fewest changes, assuming one editor action (an edit, an insert, a removal,
  * a move): the common head and tail stay; a middle that is a permutation of
  * the current one only reorders; otherwise texts change in place and the rest
- * is inserted or removed. Returns the entry ids in the new order. */
+ * is inserted or removed, new entries keyed by `reorder` over the whole list
+ * (so one lands even between two editors' appends holding one key). Returns
+ * the entry ids in the new order. */
 function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
   const current = ordered(map).map((item) => ({
     ...item,
@@ -484,7 +490,7 @@ function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
       ...moved,
       ...ids.slice(ids.length - tail),
     ];
-    reorder(new Map(current.map((item) => [item.id, item.entry])), order);
+    reorder(entriesOf(map), order);
     next.forEach((item, i) => {
       const entry = mapAt(map, order[i]);
       if (entry) item.set?.(entry);
@@ -494,19 +500,9 @@ function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
   const shared = Math.min(was.length, will.length);
   for (let i = 0; i < shared; i++) setText(was[i].entry, 'text', will[i].text);
   for (const removed of was.slice(shared)) map.delete(removed.id);
-  const added = will.slice(shared);
-  const after =
-    shared > 0
-      ? was[shared - 1].order
-      : head > 0
-        ? current[head - 1].order
-        : null;
-  const before = tail > 0 ? (current.at(-tail)?.order ?? null) : null;
-  const orders = keysBetween(after, before, added.length);
-  const addedIds = added.map((item, i) => {
+  const addedIds = will.slice(shared).map((item) => {
     const id = uid(prefix);
     const entry = new Y.Map<unknown>();
-    entry.set('order', orders[i]);
     entry.set('text', new Y.Text(item.text));
     map.set(id, entry);
     return id;
@@ -516,6 +512,7 @@ function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
     ...addedIds,
     ...ids.slice(ids.length - tail),
   ];
+  if (addedIds.length > 0) reorder(entriesOf(map), order);
   next.forEach((item, i) => {
     const entry = mapAt(map, order[i]);
     if (entry) item.set?.(entry);
@@ -523,13 +520,13 @@ function writeList(map: YMap, next: ListItem[], prefix: string): string[] {
   return order;
 }
 
-/** A new block under a fresh id: put in place first, so the table writer
- * reads back the rows and columns it adds. Its key. */
-function insertBlock(map: YMap, block: QuestionBlock, order: string) {
+/** A new block under a fresh id, with no order yet (the caller's `reorder`
+ * keys it): put in place first, so the table writer reads back the rows and
+ * columns it adds. Its key. */
+function insertBlock(map: YMap, block: QuestionBlock) {
   const key = uid('block');
   const entry = new Y.Map<unknown>();
   map.set(key, entry);
-  entry.set('order', order);
   entry.set('type', block.type);
   writeBlockFields(entry, block);
   return key;
@@ -627,7 +624,8 @@ const blockJson = (block: QuestionBlock) =>
       : value
   );
 
-/** Writes a block list with the fewest changes (same rule as `writeList`). */
+/** Writes a block list with the fewest changes (same rule as `writeList`); a
+ * block whose type changed is a new entry, keyed with the added ones. */
 function writeBlocks(map: YMap, next: QuestionBlock[]) {
   const held = ordered(map).map((item) => ({
     ...item,
@@ -671,7 +669,7 @@ function writeBlocks(map: YMap, next: QuestionBlock[]) {
       return pool.splice(at, 1)[0].id;
     });
     const ids = current.map((item) => item.id);
-    reorder(new Map(current.map((item) => [item.id, item.entry])), [
+    reorder(entriesOf(map), [
       ...ids.slice(0, head),
       ...moved,
       ...ids.slice(ids.length - tail),
@@ -679,27 +677,25 @@ function writeBlocks(map: YMap, next: QuestionBlock[]) {
     return;
   }
   const shared = Math.min(was.length, will.length);
-  for (let i = 0; i < shared; i++) {
-    const item = was[i];
-    if (item.block?.type === will[i].type)
+  const kept = was.slice(0, shared).map((item, i) => {
+    if (item.block?.type === will[i].type) {
       writeBlockFields(item.entry, will[i]);
-    else {
-      map.delete(item.id);
-      insertBlock(map, will[i], item.order);
+      return item.id;
     }
-  }
-  for (const removed of was.slice(shared)) map.delete(removed.id);
-  const added = will.slice(shared);
-  const after =
-    shared > 0
-      ? was[shared - 1].order
-      : head > 0
-        ? current[head - 1].order
-        : null;
-  const before = tail > 0 ? (current.at(-tail)?.order ?? null) : null;
-  keysBetween(after, before, added.length).forEach((order, i) => {
-    insertBlock(map, added[i], order);
+    // Another type starts over as a new entry.
+    map.delete(item.id);
+    return insertBlock(map, will[i]);
   });
+  for (const removed of was.slice(shared)) map.delete(removed.id);
+  const added = will.slice(shared).map((block) => insertBlock(map, block));
+  if (added.length === 0 && kept.every((id, i) => id === was[i].id)) return;
+  const ids = current.map((item) => item.id);
+  reorder(entriesOf(map), [
+    ...ids.slice(0, head),
+    ...kept,
+    ...added,
+    ...ids.slice(ids.length - tail),
+  ]);
 }
 
 /** A map of ticks by option id holding exactly `ids`' (undefined: none). */
@@ -880,17 +876,15 @@ export function writeQuestion(
     const existing = new Map(
       ordered(parts).map((item) => [item.id, item.entry])
     );
-    let last: string | null = null;
     for (const part of next.parts) {
       let map = existing.get(part.id);
       if (!map) {
+        // Keyed by the reorder below.
         map = new Y.Map<unknown>();
-        map.set('order', keyBetween(last, null));
         map.set('blocks', new Y.Map<unknown>());
         parts.set(part.id, map);
         existing.set(part.id, map);
       }
-      last = plain<string>(map, 'order') ?? last;
       setPlain(map, 'marks', part.marks);
       setPlain(map, 'group', part.group);
       writeBlocks(child(map, 'blocks'), part.blocks);
@@ -938,13 +932,23 @@ export function moveQuestion(
   origin: unknown = LOCAL_EDIT
 ) {
   const questions = questionsScope(content) as YMap;
-  const current = ordered(questions).filter((item) => item.id !== id);
-  const target = Math.max(0, Math.min(index, current.length));
-  const order = keyBetween(
-    current[target - 1]?.order ?? null,
-    current[target]?.order ?? null
-  );
-  content.transact(() => mapAt(questions, id)?.set('order', order), origin);
+  const entry = mapAt(questions, id);
+  if (!entry) return;
+  const others = ordered(questions).filter((item) => item.id !== id);
+  const target = Math.max(0, Math.min(index, others.length));
+  const lower = others[target - 1]?.order ?? null;
+  const upper = others[target]?.order ?? null;
+  content.transact(() => {
+    // Only the moved entry takes a key, so a co-editor's move of a neighbour
+    // survives; neighbours holding one key (two editors' adds) need `reorder`.
+    if (lower === null || upper === null || lower < upper) {
+      entry.set('order', keyBetween(lower, upper));
+      return;
+    }
+    const ids = others.map((item) => item.id);
+    ids.splice(target, 0, id);
+    reorder(entriesOf(questions), ids);
+  }, origin);
 }
 
 /** Writes new questions in after the one at `index` (-1: first), in the order
@@ -980,18 +984,17 @@ export function figureRoom(docs: QuizDocs): FigureRoom & { docs: QuizDocs } {
     insert: (place, block) => {
       const { doc, map } = sectionMap(docs, place.question, place.section);
       if (!map) return null;
-      const held = ordered(map);
-      const found = held.findIndex((item) => item.id === place.after);
-      const at = found >= 0 ? found + 1 : Math.min(place.index, held.length);
-      const lower = held[at - 1]?.order ?? null;
-      const upper =
-        held.slice(at).find((item) => lower === null || item.order > lower)
-          ?.order ?? null;
-      let key: string | null = null;
-      doc.transact(() => {
-        key = insertBlock(map, block, keyBetween(lower, upper));
+      const ids = ordered(map).map((item) => item.id);
+      const found = place.after ? ids.indexOf(place.after) : -1;
+      const at = found >= 0 ? found + 1 : Math.min(place.index, ids.length);
+      // Keyed by `reorder` over the section, so it lands at `at` even between
+      // blocks holding one key.
+      return doc.transact(() => {
+        const key = insertBlock(map, block);
+        ids.splice(at, 0, key);
+        reorder(entriesOf(map), ids);
+        return key;
       }, LOCAL_EDIT);
-      return key;
     },
     key: blockKey,
     remove,
