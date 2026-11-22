@@ -11,11 +11,13 @@ import {
 import type { Question, QuestionBlock } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
+import { ordered } from './liveMaps';
 import {
   applyReaderMessage,
   insertQuestions,
   itemParts,
   keysScope,
+  moveQuestion,
   questionsScope,
   readLearnerQuestions,
   readQuestions,
@@ -610,4 +612,104 @@ it("undoes a group's removal whole", () => {
   expect(readQuestions(content, keys)[0]).not.toHaveProperty('groups');
   undo.undo();
   expect(readQuestions(content, keys)[0]).toEqual(fixture);
+});
+
+/* Two editors adding at the end at once give their entries one order key (a
+   tie, read by id); a move or an insert between the two still lands there. */
+function editors() {
+  const a = quiz();
+  const b = { content: copy(a.content), keys: copy(a.keys) };
+  const sync = () => {
+    for (const doc of ['content', 'keys'] as const) {
+      merge(a[doc], b[doc]);
+      merge(b[doc], a[doc]);
+    }
+  };
+  return { a, b, sync };
+}
+
+/** The order keys of the last two entries in the list at `path`. */
+function lastOrders(doc: Y.Doc, [root, ...path]: string[]) {
+  let map = doc.getMap<unknown>(root);
+  for (const key of path) map = map.get(key) as Y.Map<unknown>;
+  return ordered(map)
+    .slice(-2)
+    .map((entry) => entry.order);
+}
+
+it('moves a question down one place re-keying only that question', () => {
+  const { content } = quiz();
+  const orders = () =>
+    ordered(questionsScope(content) as Y.Map<unknown>).map(({ id, order }) => ({
+      id,
+      order,
+    }));
+  const [moved, ...others] = orders();
+  moveQuestion(content, moved.id, 1);
+  const now = orders();
+  expect(now[1].id).toBe(moved.id);
+  expect(now.filter(({ id }) => id !== moved.id)).toEqual(others);
+});
+
+it('moves a question between two that two editors added at once', () => {
+  const { a, b, sync } = editors();
+  writeQuestion(a.content, a.keys, exampleQuestion('tie-a'));
+  writeQuestion(b.content, b.keys, exampleQuestion('tie-b'));
+  sync();
+  const tied = lastOrders(a.content, ['questions']);
+  expect(tied).toHaveLength(2);
+  expect(tied[0]).toBe(tied[1]);
+  const [moved, ...rest] = questions.map((question) => question.id);
+  moveQuestion(a.content, moved, rest.length + 1);
+  expect(
+    readQuestions(a.content, a.keys).map((question) => question.id)
+  ).toEqual([...rest, 'tie-a', moved, 'tie-b']);
+});
+
+it('writes an option between two that two editors appended at once', () => {
+  const { a, b, sync } = editors();
+  const withOptions = (...options: string[]) => {
+    const next = structuredClone(questions[0]);
+    const answer = next.parts[0].answer;
+    if (answer.type !== 'mcq') throw new Error('mcq fixture');
+    answer.options.push(...options);
+    return next;
+  };
+  writeQuestion(a.content, a.keys, withOptions('Golgi'));
+  writeQuestion(b.content, b.keys, withOptions('Vacuole'));
+  sync();
+  const { id, parts } = questions[0];
+  const path = ['questions', id, 'parts', parts[0].id, 'answer', 'options'];
+  const tied = lastOrders(a.content, path);
+  expect(tied).toHaveLength(2);
+  expect(tied[0]).toBe(tied[1]);
+  const answer = readQuestions(a.content, a.keys)[0].parts[0].answer;
+  if (answer.type !== 'mcq') throw new Error('mcq fixture');
+  const [first, second] = answer.options.slice(-2);
+  const next = withOptions(first, 'Lysosome', second);
+  writeQuestion(a.content, a.keys, next);
+  expect(readQuestions(a.content, a.keys)[0]).toEqual(next);
+});
+
+it('writes a block between, or in place of, one of two stem blocks added at once', () => {
+  const { a, b, sync } = editors();
+  const withStem = (...stem: QuestionBlock[]) => ({ ...questions[0], stem });
+  writeQuestion(a.content, a.keys, withStem({ text: 'From A', type: 'text' }));
+  writeQuestion(b.content, b.keys, withStem({ text: 'From B', type: 'text' }));
+  sync();
+  const path = ['questions', questions[0].id, 'stem'];
+  const tied = lastOrders(a.content, path);
+  expect(tied).toHaveLength(2);
+  expect(tied[0]).toBe(tied[1]);
+  const [first, second] = readQuestions(a.content, a.keys)[0].stem;
+  const between = withStem(first, { text: 'Between', type: 'text' }, second);
+  writeQuestion(a.content, a.keys, between);
+  expect(readQuestions(a.content, a.keys)[0]).toEqual(between);
+  // Another type for the first starts a new entry, still read first.
+  const replaced = withStem(
+    { header: false, rows: [['x']], type: 'table' },
+    second
+  );
+  writeQuestion(b.content, b.keys, replaced);
+  expect(readQuestions(b.content, b.keys)[0]).toEqual(replaced);
 });
