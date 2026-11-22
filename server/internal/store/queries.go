@@ -1631,7 +1631,13 @@ func (d MaterialDraft) material() (Material, error) {
 		if strings.TrimSpace(materialdoc.IncomingMermaidSource(d.Content)) == "" {
 			return Material{}, ErrEmptyMaterial
 		}
-		mt.Content = d.Content
+		// A generator's ```mermaid fence becomes its document here, as the
+		// insert would make it, so the written check below reads its source.
+		content, err := materialdoc.FromLegacyMarkdown(string(d.Kind), d.Content)
+		if err != nil {
+			return Material{}, err
+		}
+		mt.Content = content
 	case "note":
 		text, err := materialdoc.ExtractNoteText(d.Content)
 		if err != nil {
