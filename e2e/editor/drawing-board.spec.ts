@@ -584,8 +584,9 @@ test('undo inside the plane stops at what was done there', async ({ page }) => {
     .toBeCloseTo(1, 1);
 
   // Out again, undo carries on into the canvas; the board's ☰ menu stays open through
-  // Undo and Redo.
+  // Undo and Redo. The key waits for the editor to be gone, or it lands in it.
   await page.keyboard.press('Escape');
+  await expect(planeEditor(page)).toHaveCount(0);
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(() => marks(page)).toBe(0);
   const boardMenu = page.locator('.capy-board-menu');
@@ -853,18 +854,21 @@ test('in a chart, Select moves several bars, or several lines, together', async 
         gfx: {
           layer: {
             canvasElements: {
-              bars: { value: number }[];
-              spokes: number[];
+              barList: { value: number }[];
+              spokeList: { angle: number }[];
               type: string;
             }[];
           };
         };
       };
-      const { bars = [], spokes = [] } =
+      const { barList = [], spokeList = [] } =
         root.gfx.layer.canvasElements.findLast(
           ({ type }) => type === 'chart'
         ) ?? {};
-      return { spokes, values: bars.map(({ value }) => value) };
+      return {
+        spokes: spokeList.map(({ angle }) => angle),
+        values: barList.map(({ value }) => value),
+      };
     });
   const toolbar = page.locator('affine-toolbar-widget');
   const select = page.getByRole('button', { name: 'Select' });
@@ -1219,25 +1223,25 @@ test('bar and pie charts are their own cards, with no coordinates', async ({
           layer: {
             canvasElements: {
               axisMax: number;
-              bars: { label: string; value: number }[];
-              labels: { reach: number; text: string }[];
-              spokes: number[];
+              barList: { label: string; value: number }[];
+              labelList: { reach: number; text: string }[];
+              spokeList: unknown[];
               type: string;
             }[];
           };
         };
       };
-      const { axisMax, bars, labels, spokes } =
+      const { axisMax, barList, labelList, spokeList } =
         root.gfx.layer.canvasElements.findLast(
           ({ type }) => type === 'chart'
         ) ?? {};
       return {
         axisMax,
-        labels: labels?.map(({ text }) => text),
-        reaches: labels?.map(({ reach }) => reach),
-        spokes: spokes?.length,
-        values: bars?.map(({ value }) => value),
-        words: bars?.map(({ label }) => label),
+        labels: labelList?.map(({ text }) => text),
+        reaches: labelList?.map(({ reach }) => reach),
+        spokes: spokeList?.length,
+        values: barList?.map(({ value }) => value),
+        words: barList?.map(({ label }) => label),
       };
     });
   const charts = (kind: 'bar' | 'pie') =>
@@ -2156,9 +2160,9 @@ test("a chart's data pane on the workspace canvas types bars and slices", async 
           layer: {
             canvasElements: {
               axisMax?: number;
-              bars?: { label: string; value: number }[];
-              labels?: { text: string }[];
-              spokes?: number[];
+              barList?: { label: string; value: number }[];
+              labelList?: { text: string }[];
+              spokeList?: { angle: number }[];
               type: string;
             }[];
           };
@@ -2169,9 +2173,9 @@ test("a chart's data pane on the workspace canvas types bars and slices", async 
         .at(-1);
       return {
         axisMax: found?.axisMax,
-        bars: found?.bars ?? [],
-        labels: (found?.labels ?? []).map(({ text }) => text),
-        spokes: found?.spokes ?? [],
+        bars: found?.barList ?? [],
+        labels: (found?.labelList ?? []).map(({ text }) => text),
+        spokes: (found?.spokeList ?? []).map(({ angle }) => angle),
       };
     });
   const toolbar = page.locator('affine-toolbar-widget');
@@ -2914,26 +2918,35 @@ test('a preview draws every kind on the board from its data, framed as the image
       type: 'formula',
       xywh: `[${x + 300},${y + h + 40},200,60]`,
     });
+    // A chart's lists keyed by id, each item with its order key (Epo 2026-11-22).
+    const keyed = (items: { id: string }[]) =>
+      Object.fromEntries(
+        items.map((element, i) => [element.id, { element, order: `a${i}` }])
+      );
     add({
       axisMax: 10,
       axisStep: 2,
-      bars: [
+      bars: keyed([
         { fill: '#4dabf7', id: '1', label: 'A', value: 4 },
         { fill: '#ff8787', id: '2', label: 'B', value: 7 },
-      ],
+      ]),
       kind: 'bar',
-      labels: [],
-      spokes: [],
+      labels: {},
+      spokes: {},
       type: 'chart',
       xywh: `[${x},${y + h + 160},360,240]`,
     });
     add({
       axisMax: 10,
       axisStep: 2,
-      bars: [],
+      bars: {},
       kind: 'pie',
-      labels: [],
-      spokes: [0, 120, 200],
+      labels: {},
+      spokes: keyed([
+        { angle: 0, id: 's1' },
+        { angle: 120, fill: '#ffd43b', id: 's2' },
+        { angle: 200, id: 's3' },
+      ]),
       type: 'chart',
       xywh: `[${x + 400},${y + h + 160},240,240]`,
     });
@@ -2971,6 +2984,7 @@ test('a preview draws every kind on the board from its data, framed as the image
     '\\frac{1}{2}mv^2',
     'fill="#4dabf7"', // a bar
     '<circle', // the pie
+    'fill="#ffd43b"', // its filled slice
     'Energy is kept',
   ])
     expect(preview).toContain(part);
