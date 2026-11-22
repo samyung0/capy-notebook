@@ -391,6 +391,8 @@ button {
   width: 100%;
   height: 100%;
   overflow: auto;
+  /* Pages arriving in the space held for them never move the reader. */
+  overflow-anchor: none;
 }
 
 /* As the editor lays pages out: centred when they fit, otherwise from the left

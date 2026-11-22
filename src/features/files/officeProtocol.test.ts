@@ -573,6 +573,18 @@ describe('office host protocol', () => {
     );
   });
 
+  it("accepts DOCX View's first paint with its timings", () => {
+    expect(
+      isOfficeRuntimeMessage({
+        analysis: { format: 'docx', pageCount: 481 },
+        revision: 1,
+        timings: { loadMs: 120, paintMs: 640 },
+        type: 'painted',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(true);
+  });
+
   it('tells a runtime from another protocol version apart from a malformed message', () => {
     expect(isOutdatedOfficeRuntime({ type: 'initialized', version: 5 })).toBe(
       true

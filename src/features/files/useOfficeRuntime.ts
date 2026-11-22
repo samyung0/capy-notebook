@@ -275,6 +275,9 @@ export function useOfficeRuntime({
   // that (a face failing as the file opens): a later save never clears that
   // failure's error (Q781 A).
   const frameOpen = useRef<'opening' | 'ready' | 'failed'>('opening');
+  // Renders asked of a view before every page is in: their time limit starts
+  // at `ready` (Q804 A).
+  const readyWaiters = useRef(new Set<() => void>());
   // The frame whose editor failed to render (Q687): its strip offers Reload.
   const [crashedFrame, setCrashedFrame] = useState<number | null>(null);
   // The source document the frame was loaded with: a frame still showing an
@@ -832,9 +835,18 @@ export function useOfficeRuntime({
         renderRequests.current.delete(message.id);
         return;
       }
+      // DOCX View's first pages are up: the skeleton goes and the page count
+      // shows before the rest are in (`ready`).
+      if (message.type === 'painted') {
+        officeMark('painted');
+        setAnalysis(message.analysis);
+        return;
+      }
       if (message.type === 'ready') {
         officeMark('ready');
         if (frameOpen.current === 'opening') frameOpen.current = 'ready';
+        for (const start of readyWaiters.current) start();
+        readyWaiters.current.clear();
         setAnalysis(message.analysis);
         // Edit frames report ready too (for their timings); their errors stay.
         if (modeRef.current === 'view') {
@@ -941,17 +953,22 @@ export function useOfficeRuntime({
     (kind: 'print' | 'png' | 'thumbnail') =>
       new Promise<Rendered>((resolve, reject) => {
         const id = crypto.randomUUID();
-        const timeout = setTimeout(() => {
-          renderRequests.current.delete(id);
-          reject(new Error(m.error_generic_body()));
-        }, 60_000);
+        const clear = renderLimit(
+          () => {
+            renderRequests.current.delete(id);
+            reject(new Error(m.error_generic_body()));
+          },
+          modeRef.current === 'view' && frameOpen.current === 'opening'
+            ? readyWaiters.current
+            : null
+        );
         renderRequests.current.set(id, {
           reject: (error) => {
-            clearTimeout(timeout);
+            clear();
             reject(error);
           },
           resolve: (rendered) => {
-            clearTimeout(timeout);
+            clear();
             resolve(rendered);
           },
         });
@@ -1348,6 +1365,27 @@ export function frameRequestLimit(expire: () => void) {
   };
   arm();
   return () => clearTimeout(timer);
+}
+
+/**
+ * A render's limit (60 s), for a frame that never answers. A view asked
+ * before every page is in prints once they are, so `waiting` (started at
+ * `ready`) holds the minute until then (Q804 A). Returns what clears it.
+ */
+export function renderLimit(
+  expire: () => void,
+  waiting: Set<() => void> | null
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const start = () => {
+    timer = setTimeout(expire, 60_000);
+  };
+  if (waiting) waiting.add(start);
+  else start();
+  return () => {
+    waiting?.delete(start);
+    clearTimeout(timer);
+  };
 }
 
 /**

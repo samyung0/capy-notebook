@@ -364,9 +364,20 @@ export type OfficeRuntimeMessage =
       revision: number;
       /**
        * Sent once the first pages, grid or slide are painted, by every viewer
-       * and editor.
+       * and editor; DOCX View sends it once every page is in as well.
        */
       timings?: OfficeReadyTimings;
+    }
+  /**
+   * DOCX View painted its first pages, before the rest are in (`ready`); the
+   * page count is known from the layout.
+   */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'painted';
+      analysis: OfficeAnalysis;
+      revision: number;
+      timings: OfficeReadyTimings;
     }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -671,6 +682,10 @@ export function isOfficeRuntimeMessage(
     ((candidate.type === 'ready' &&
       isOfficeAnalysis((candidate as { analysis?: unknown }).analysis) &&
       isReadyTimings((candidate as { timings?: unknown }).timings)) ||
+      (candidate.type === 'painted' &&
+        isOfficeAnalysis((candidate as { analysis?: unknown }).analysis) &&
+        (candidate as { timings?: unknown }).timings !== undefined &&
+        isReadyTimings((candidate as { timings?: unknown }).timings)) ||
       (candidate.type === 'mode' &&
         ['edit', 'view'].includes(
           String((candidate as { mode?: unknown }).mode)

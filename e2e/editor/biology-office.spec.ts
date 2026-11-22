@@ -376,7 +376,11 @@ test('DOCX view mode selects and copies text from its text layer', async ({
   await copy();
   await expect.poll(clipboard).toBe('交流學習團活動計劃書');
 
-  // Select all takes the whole document, far pages included.
+  // Select all takes the whole document, far pages included, once they are
+  // in: View draws its first pages before the rest (C6).
+  await expect(
+    mirrors.filter({ hasText: '並且在回港後，本會會向保險公司索償。' })
+  ).toHaveCount(1, { timeout: 60_000 });
   await page.keyboard.press('ControlOrMeta+a');
   await copy();
   await expect

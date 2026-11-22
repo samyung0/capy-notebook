@@ -846,12 +846,24 @@ function OfficeRuntime() {
   const reportAnalysis = useCallback(
     (analysis: OfficeAnalysis) => {
       if (runtimeRevision === undefined) return;
-      // Every caller reports once its first paint is done, so the timings end there.
+      // Every caller reports once its first paint is done (DOCX View once
+      // every page is in too), so the timings end there.
       const timings = {
         loadMs: Math.round(loadedAtRef.current),
         paintMs: Math.round(performance.now() - loadedAtRef.current),
       };
       post({ analysis, revision: runtimeRevision, timings, type: 'ready' });
+    },
+    [runtimeRevision]
+  );
+  const reportPainted = useCallback(
+    (analysis: OfficeAnalysis) => {
+      if (runtimeRevision === undefined) return;
+      const timings = {
+        loadMs: Math.round(loadedAtRef.current),
+        paintMs: Math.round(performance.now() - loadedAtRef.current),
+      };
+      post({ analysis, revision: runtimeRevision, timings, type: 'painted' });
     },
     [runtimeRevision]
   );
@@ -1032,6 +1044,7 @@ function OfficeRuntime() {
             onAnalysis={reportAnalysis}
             onError={reportError}
             onMenus={reportMenus}
+            onPainted={reportPainted}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}
           />
