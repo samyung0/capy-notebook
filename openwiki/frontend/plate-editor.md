@@ -2565,6 +2565,14 @@ design, option d), and the nudge's release file on 2026-10-17.
   34 and `MIN_SOURCE` to 34, so source tabs from before them (protocol 33)
   reload; `MIN_MATERIAL` stays 33. Their deploy request names "client protocol
   33 -> 34, source 33 -> 34".
+  The Q801 pin (bda081c71: DOCX View lays out the first screen of pages
+  before the rest, the page count and scroll height growing as pages come,
+  and `painted` sent again as the count grows; short files, bodies all in
+  columns, cited opens and prints lay out whole) raised `CLIENT_PROTOCOL` to
+  35 and `MIN_SOURCE` to 35, so source tabs on the older pin (protocol 34)
+  reload; `MIN_MATERIAL` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 15 (the
+  runtime messages keep their shape). Its deploy request names "client
+  protocol 34 -> 35, source 34 -> 35".
 
 #### When to bump
 
