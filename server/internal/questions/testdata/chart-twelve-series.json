@@ -1,6 +1,6 @@
 {
-  "name": "chart-seven-series-rejected",
-  "valid": false,
+  "name": "chart-twelve-series",
+  "valid": true,
   "policy": {},
   "question": {
     "id": "q1",
@@ -37,6 +37,26 @@
           },
           {
             "name": "6",
+            "values": [1, 2, 3]
+          },
+          {
+            "name": "7",
+            "values": [1, 2, 3]
+          },
+          {
+            "name": "8",
+            "values": [1, 2, 3]
+          },
+          {
+            "name": "9",
+            "values": [1, 2, 3]
+          },
+          {
+            "name": "10",
+            "values": [1, 2, 3]
+          },
+          {
+            "name": "11",
             "values": [1, 2, 3]
           }
         ]

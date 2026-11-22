@@ -1800,7 +1800,11 @@ function docOf(name: string): Y.Doc {
  * (D3 as revised 2026-10-10), as the service keeps them: per quiz, part id to
  * its kind and (entry id, text) in the readers' order. A set change shuffles
  * afresh; a text change keeps the order. */
-type HeldList = { entries: { id: string; text: string }[]; kind: string };
+type HeldList = {
+  entries: { id: string; text: string }[];
+  kind: string;
+  total?: number;
+};
 const readerLists = new Map<string, Map<string, HeldList>>();
 const readers = new Map<string, Set<MockItemProvider>>();
 
@@ -1815,7 +1819,8 @@ function shuffled<T>(items: T[]): T[] {
 
 const asList = (held: HeldList): ReaderList => ({
   items: held.entries.map((entry) => entry.text),
-  kind: held.kind as ReaderList['kind'],
+  kind: held.kind,
+  ...(held.total === undefined ? {} : { total: held.total }),
 });
 
 /** Follows the keys document; returns the parts whose list changed. */
@@ -1845,6 +1850,7 @@ function followReaderLists(contentName: string) {
           }))
         : shuffled(part.entries),
       kind: part.kind,
+      ...(part.total === undefined ? {} : { total: part.total }),
     };
     if (JSON.stringify(next) === JSON.stringify(current)) continue;
     held.set(part.part, next);

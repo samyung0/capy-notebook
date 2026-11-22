@@ -14,6 +14,8 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Map, Value};
 
+use crate::limits::merged_cap;
+
 // The question bounds every validator shares, from the embed catalog
 // (Go `fieldlimits.QuestionBounds`).
 pub use crate::catalog::{
@@ -66,6 +68,14 @@ impl Policy {
     /// same links a stored question keeps.
     pub fn hosted(&self, url: &str) -> bool {
         hosted_asset(js_trim(url), self.figure_host())
+    }
+
+    /// A count or text length a live quiz's merges can pass, as this policy
+    /// takes it (Epo 2026-11-22, "Yes, A everywhere"): twice the cap
+    /// ([merged_cap]) for quizzes, notes and attempt snapshots; the bank's
+    /// questions, which no room merges, at the cap.
+    pub fn held(&self, cap: usize) -> usize {
+        if self.bank { cap } else { merged_cap(cap) }
     }
 }
 
@@ -146,8 +156,9 @@ fn present<'a>(map: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
     map.get(key)
 }
 
-/// `text`: trimmed, non-empty, at most QUESTION_TEXT_MAX code points.
-fn text(value: &Value, what: &str) -> Result<String, String> {
+/// `text`: trimmed, non-empty, at most `max` code points (QUESTION_TEXT_MAX,
+/// a live quiz's twice it: `Policy::held`).
+fn text(value: &Value, what: &str, max: usize) -> Result<String, String> {
     let Some(raw) = value.as_str() else {
         return fail(format!("{what}: expected a string"));
     };
@@ -155,7 +166,7 @@ fn text(value: &Value, what: &str) -> Result<String, String> {
     if utf16_len(trimmed) < 1 {
         return fail(format!("{what}: too short"));
     }
-    if code_points(trimmed) > QUESTION_TEXT_MAX {
+    if code_points(trimmed) > max {
         return fail(format!("{what}: Text is too long."));
     }
     Ok(trimmed.to_owned())
@@ -274,11 +285,12 @@ fn array<'a>(value: &'a Value, what: &str, min: usize, max: usize) -> Result<&'a
     Ok(items)
 }
 
-/// `list`: 1..=QUESTION_ANSWERS_MAX texts.
-fn list(value: &Value, what: &str, min: usize) -> Result<Vec<String>, String> {
-    array(value, what, min, QUESTION_ANSWERS_MAX)?
+/// `list`: 1..=QUESTION_ANSWERS_MAX texts (a live quiz's twice it).
+fn list(value: &Value, what: &str, min: usize, policy: &Policy) -> Result<Vec<String>, String> {
+    let max = policy.held(QUESTION_TEXT_MAX);
+    array(value, what, min, policy.held(QUESTION_ANSWERS_MAX))?
         .iter()
-        .map(|item| text(item, what))
+        .map(|item| text(item, what, max))
         .collect()
 }
 
@@ -389,10 +401,17 @@ pub struct Block {
 
 impl Block {
     /// The description within its bound: QUESTION_DESCRIPTION_MAX in
-    /// quizzes and notes, the bank's QUESTION_TEXT_MAX (`block` checked).
+    /// quizzes and notes (an image's typed one up to twice it, as two
+    /// people typing at once may pass it; a figure's is written whole), the
+    /// bank's QUESTION_TEXT_MAX (`block` checked).
     pub fn description_fits(&self, bank: bool) -> Check {
+        let max = if self.kind == "image" {
+            merged_cap(QUESTION_DESCRIPTION_MAX)
+        } else {
+            QUESTION_DESCRIPTION_MAX
+        };
         match &self.description {
-            Some(description) if !bank && code_points(description) > QUESTION_DESCRIPTION_MAX => {
+            Some(description) if !bank && code_points(description) > max => {
                 fail("block: Text is too long.")
             }
             _ => Ok(()),
@@ -486,7 +505,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             coords(&map["coords"], what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
             optional(map, "size", |v| text_size(v, what))?;
-            text(&map["text"], what)?;
+            text(&map["text"], what, QUESTION_TEXT_MAX)?;
             if map["text"]
                 .as_str()
                 .is_some_and(|raw| code_points(raw) > QUESTION_GRAPH_LABEL_MAX)
@@ -608,7 +627,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
 
 /// A formula row's or a formula's LaTeX: not blank, within the cap.
 fn latex(map: &Map<String, Value>, cap: usize, what: &str) -> Check {
-    text(&map["latex"], what)?;
+    text(&map["latex"], what, QUESTION_TEXT_MAX)?;
     if map["latex"]
         .as_str()
         .is_some_and(|raw| code_points(raw) > cap)
@@ -620,15 +639,21 @@ fn latex(map: &Map<String, Value>, cap: usize, what: &str) -> Check {
 
 /// A figure's optional description: a non-blank text when present (optional
 /// on every figure, Epo 2026-10-14).
-fn optional_description(map: &Map<String, Value>, what: &str) -> Result<Option<String>, String> {
+fn optional_description(
+    map: &Map<String, Value>,
+    what: &str,
+    policy: &Policy,
+) -> Result<Option<String>, String> {
     present(map, "description")
-        .map(|v| text(v, what))
+        .map(|v| text(v, what, policy.held(QUESTION_TEXT_MAX)))
         .transpose()
 }
 
-/// `questionBlockSchema`.
+/// `questionBlockSchema` outside the bank: its lists and texts up to twice
+/// their caps, as a live quiz's or note's merges may leave them (Epo
+/// 2026-11-22).
 pub fn block(value: &Value) -> Result<Block, String> {
-    block_in(value, false)
+    block_in(value, false, &Policy::default())
 }
 
 /// A live figure's block as a room holds it once repaired
@@ -640,17 +665,18 @@ pub fn block(value: &Value) -> Result<Block, String> {
 /// is narrower than Go's `Policy.Live` (a pie's extra series, a line's
 /// one-point series): never pass it a raw one.
 pub fn live_block(value: &Value) -> Result<Block, String> {
-    block_in(value, true)
+    block_in(value, true, &Policy::default())
 }
 
-fn block_in(value: &Value, live: bool) -> Result<Block, String> {
+fn block_in(value: &Value, live: bool, policy: &Policy) -> Result<Block, String> {
     let what = "block";
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
+    let held = |cap| policy.held(cap);
     match kind {
         "text" => {
             strict(map, what, &["text", "type"], &[])?;
-            let text = text(&map["text"], what)?;
+            let text = text(&map["text"], what, held(QUESTION_TEXT_MAX))?;
             Ok(Block {
                 kind: "text".into(),
                 text: Some(text),
@@ -661,13 +687,13 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
         "table" => {
             strict(map, what, &["header", "rows", "type"], &[])?;
             boolean(&map["header"], what)?;
-            let rows = array(&map["rows"], what, 1, QUESTION_TABLE_ROWS_MAX)?;
+            let rows = array(&map["rows"], what, 1, held(QUESTION_TABLE_ROWS_MAX))?;
             let mut widths = Vec::new();
             for row in rows {
-                let cells = array(row, what, 1, QUESTION_TABLE_COLUMNS_MAX)?;
+                let cells = array(row, what, 1, held(QUESTION_TABLE_COLUMNS_MAX))?;
                 for cell in cells {
                     match cell.as_str() {
-                        Some(cell) if code_points(cell) <= QUESTION_TEXT_MAX => {}
+                        Some(cell) if code_points(cell) <= held(QUESTION_TEXT_MAX) => {}
                         _ => return fail(format!("{what}: invalid cell")),
                     }
                 }
@@ -698,7 +724,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 what,
                 &["bar", "hbar", "line", "area", "pie", "stacked"],
             )?;
-            let labels = array(&map["labels"], what, 1, QUESTION_CHART_LABELS_MAX)?;
+            let labels = array(&map["labels"], what, 1, held(QUESTION_CHART_LABELS_MAX))?;
             for entry in labels {
                 label(entry, what)?;
             }
@@ -706,14 +732,19 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 &map["series"],
                 what,
                 usize::from(!live),
-                QUESTION_CHART_SERIES_MAX,
+                held(QUESTION_CHART_SERIES_MAX),
             )?;
             let mut values_of = Vec::new();
             for entry in series {
                 let entry_map = object(entry, what)?;
                 strict(entry_map, what, &["name", "values"], &[])?;
                 chart_text(&entry_map["name"], QUESTION_CHART_SERIES_NAME_MAX, what)?;
-                let values = array(&entry_map["values"], what, 1, QUESTION_CHART_LABELS_MAX)?;
+                let values = array(
+                    &entry_map["values"],
+                    what,
+                    1,
+                    held(QUESTION_CHART_LABELS_MAX),
+                )?;
                 // null is an empty cell, drawn as nothing (Epo 2026-10-14).
                 let mut numbers = Vec::new();
                 for value in values {
@@ -750,7 +781,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 kind: "chart".into(),
                 text: None,
                 image: None,
-                description: optional_description(map, what)?,
+                description: optional_description(map, what, policy)?,
             })
         }
         "plot" => {
@@ -814,7 +845,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 kind: "plot".into(),
                 text: None,
                 image: None,
-                description: optional_description(map, what)?,
+                description: optional_description(map, what, policy)?,
             })
         }
         "image" => {
@@ -827,7 +858,7 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
             let image = figure(&map["image"])?;
             image_size(map, what)?;
             optional(map, "attribution", |v| meta(v, what))?;
-            let description = optional_description(map, what)?;
+            let description = optional_description(map, what, policy)?;
             Ok(Block {
                 kind: "image".into(),
                 text: None,
@@ -851,13 +882,14 @@ fn block_in(value: &Value, live: bool) -> Result<Block, String> {
                 .map(|v| number(v, what))
                 .collect::<Result<_, _>>()?;
             boolean(&board["grid"], what)?;
-            let elements: Vec<_> = array(&map["elements"], what, 0, QUESTION_GRAPH_ELEMENTS_MAX)?
-                .iter()
-                .map(graph_element)
-                .collect::<Result<_, _>>()?;
+            let elements: Vec<_> =
+                array(&map["elements"], what, 0, held(QUESTION_GRAPH_ELEMENTS_MAX))?
+                    .iter()
+                    .map(graph_element)
+                    .collect::<Result<_, _>>()?;
             image_size(map, what)?;
             graph_size(map, what)?;
-            let description = optional_description(map, what)?;
+            let description = optional_description(map, what, policy)?;
             let (left, top, right, bottom) = (bbox[0], bbox[1], bbox[2], bbox[3]);
             if left >= right || bottom >= top {
                 return fail("Graph bounds must have positive width and height.");
@@ -988,9 +1020,11 @@ fn objects(items: &[Value]) -> impl Iterator<Item = &Map<String, Value>> {
 }
 
 /// A chart's, plot's or graph's sizes only: every text, list and image within
-/// its cap. A live quiz keeps an unfinished figure (an empty title, no labels
-/// yet), so nothing here asks for a field or a value's form; `block` does
-/// that for a finished one. `value` is the block without its `type`.
+/// its cap (a chart's labels and series and a graph's elements, which merge
+/// entry by entry, within twice theirs). A live quiz keeps an unfinished
+/// figure (an empty title, no labels yet), so nothing here asks for a field
+/// or a value's form; `block` does that for a finished one. `value` is the
+/// block without its `type`.
 pub fn figure_caps(kind: &str, value: &Value) -> Check {
     let what = kind;
     let Some(map) = value.as_object() else {
@@ -1002,7 +1036,8 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
             for key in ["title", "xTitle", "yTitle"] {
                 cap_chars(map, key, QUESTION_CHART_TITLE_MAX, what)?;
             }
-            for label in cap_list(map.get("labels"), QUESTION_CHART_LABELS_MAX, what)? {
+            let labels = merged_cap(QUESTION_CHART_LABELS_MAX);
+            for label in cap_list(map.get("labels"), labels, what)? {
                 if label
                     .as_str()
                     .is_some_and(|raw| code_points(raw) > QUESTION_CHART_LABEL_MAX)
@@ -1012,11 +1047,11 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
             }
             for series in objects(cap_list(
                 map.get("series"),
-                QUESTION_CHART_SERIES_MAX,
+                merged_cap(QUESTION_CHART_SERIES_MAX),
                 what,
             )?) {
                 cap_chars(series, "name", QUESTION_CHART_SERIES_NAME_MAX, what)?;
-                cap_list(series.get("values"), QUESTION_CHART_LABELS_MAX, what)?;
+                cap_list(series.get("values"), labels, what)?;
             }
         }
         "plot" => {
@@ -1038,7 +1073,7 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
             cap_description(map, what)?;
             for element in objects(cap_list(
                 map.get("elements"),
-                QUESTION_GRAPH_ELEMENTS_MAX,
+                merged_cap(QUESTION_GRAPH_ELEMENTS_MAX),
                 what,
             )?) {
                 cap_meta(element, "name", what)?;
@@ -1062,15 +1097,18 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
 /// A live chart, plot or graph as its merges are read (Epo 2026-10-17,
 /// 2026-10-18): two editors' changes to one figure merge entry by entry,
 /// which can leave what neither wrote and the validators refuse; the type
-/// wins on read and no merge is refused. Series and graph elements past their
-/// cap keep the first ones in document order, a pie or stacked chart its
-/// first series; a chart series' values are padded with empty cells (null)
-/// or cut to its labels; a line plot's series with fewer than two points is
-/// skipped (before the cap); a graph element naming a point that is gone is
-/// skipped (only points are referenced, so one pass). A chart or plot left
-/// without series, and a pie or stacked chart without a positive total, stay
-/// as they are and draw empty ([live_block] takes them). A block needing none
-/// of it is left as it is; anything else stays for the validators. The
+/// wins on read and no merge is refused. A chart's series and a graph's
+/// elements are all kept up to twice their caps, which two people's adds at
+/// once may reach (or a pasted or duplicated figure hold) and admission
+/// bounds (Epo 2026-11-22), and only a hand-made list past that keeps its
+/// first ones in document order; a pie or stacked
+/// chart keeps its first series; a chart series' values are padded with empty
+/// cells (null) or cut to its labels; a line plot's series with fewer than two
+/// points is skipped (before the cap); a graph element naming a point that is
+/// gone is skipped (only points are referenced, so one pass). A chart or plot
+/// left without series, and a pie or stacked chart without a positive total,
+/// stay as they are and draw empty ([live_block] takes them). A block needing
+/// none of it is left as it is; anything else stays for the validators. The
 /// browser's `repairFigureBlock` is the same.
 pub fn repair_figure(block: &mut Value) {
     let Some(map) = block.as_object_mut() else {
@@ -1079,9 +1117,9 @@ pub fn repair_figure(block: &mut Value) {
     let kind = map.get("kind").and_then(Value::as_str);
     let (list, cap) = match map.get("type").and_then(Value::as_str) {
         Some("chart") if matches!(kind, Some("pie" | "stacked")) => ("series", 1),
-        Some("chart") => ("series", QUESTION_CHART_SERIES_MAX),
+        Some("chart") => ("series", merged_cap(QUESTION_CHART_SERIES_MAX)),
         Some("plot") => ("series", QUESTION_PLOT_SERIES_MAX),
-        Some("graph") => ("elements", QUESTION_GRAPH_ELEMENTS_MAX),
+        Some("graph") => ("elements", merged_cap(QUESTION_GRAPH_ELEMENTS_MAX)),
         _ => return,
     };
     let line = map.get("type").and_then(Value::as_str) == Some("plot") && kind != Some("scatter");
@@ -1167,8 +1205,9 @@ impl Answer {
 }
 
 /// `answerSchema`.
-fn answer(value: &Value) -> Result<Answer, String> {
+fn answer(value: &Value, policy: &Policy) -> Result<Answer, String> {
     let what = "answer";
+    let answers = policy.held(QUESTION_ANSWERS_MAX);
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
     match kind {
@@ -1188,11 +1227,11 @@ fn answer(value: &Value) -> Result<Answer, String> {
             if shuffle.is_some_and(|v| v != &Value::Bool(true)) {
                 return fail(format!("{what}: shuffle must be true"));
             }
-            let correct: Vec<f64> = array(&map["correct"], what, 1, QUESTION_ANSWERS_MAX)?
+            let correct: Vec<f64> = array(&map["correct"], what, 1, answers)?
                 .iter()
                 .map(|v| index(v, what))
                 .collect::<Result<_, _>>()?;
-            let options = list(&map["options"], what, 2)?;
+            let options = list(&map["options"], what, 2, policy)?;
             let distinct: HashSet<u64> = correct.iter().map(|n| *n as u64).collect();
             // One or more distinct correct options (Epo 2026-10-15).
             if distinct.len() != correct.len() || correct.iter().any(|n| *n >= options.len() as f64)
@@ -1201,7 +1240,7 @@ fn answer(value: &Value) -> Result<Answer, String> {
             }
             // Sorted, distinct option indices, only with shuffle.
             if let Some(locked) = present(map, "locked") {
-                let locked: Vec<f64> = array(locked, what, 1, QUESTION_ANSWERS_MAX)?
+                let locked: Vec<f64> = array(locked, what, 1, answers)?
                     .iter()
                     .map(|v| index(v, what))
                     .collect::<Result<_, _>>()?;
@@ -1221,7 +1260,7 @@ fn answer(value: &Value) -> Result<Answer, String> {
         }
         "short" => {
             strict(map, what, &["accepted", "type"], &["unit"])?;
-            let accepted = list(&map["accepted"], what, 1)?;
+            let accepted = list(&map["accepted"], what, 1, policy)?;
             let unit = match present(map, "unit") {
                 Some(unit) => {
                     let Some(raw) = unit.as_str() else {
@@ -1242,13 +1281,13 @@ fn answer(value: &Value) -> Result<Answer, String> {
         }
         "matching" => {
             strict(map, what, &["options", "pairs", "type"], &[])?;
-            let options = list(&map["options"], what, 1)?;
-            let pairs = array(&map["pairs"], what, 1, QUESTION_ANSWERS_MAX)?;
+            let options = list(&map["options"], what, 1, policy)?;
+            let pairs = array(&map["pairs"], what, 1, answers)?;
             let mut rights = Vec::new();
             for pair in pairs {
                 let pair = object(pair, what)?;
                 strict(pair, what, &["left", "right"], &[])?;
-                text(&pair["left"], what)?;
+                text(&pair["left"], what, policy.held(QUESTION_TEXT_MAX))?;
                 rights.push(index(&pair["right"], what)?);
             }
             if rights.iter().any(|r| *r >= options.len() as f64) {
@@ -1258,14 +1297,16 @@ fn answer(value: &Value) -> Result<Answer, String> {
         }
         "ordering" => {
             strict(map, what, &["items", "type"], &[])?;
-            list(&map["items"], what, 2)?;
+            list(&map["items"], what, 2, policy)?;
             Ok(Answer::of(kind))
         }
         "gaps" => {
             strict(map, what, &["accepted", "type"], &[])?;
+            // As many as the text numbers (a gap's number is its key, which
+            // two editors cannot both add past the cap).
             let lists = array(&map["accepted"], what, 1, QUESTION_ANSWERS_MAX)?;
             for item in lists {
-                list(item, what, 1)?;
+                list(item, what, 1, policy)?;
             }
             Ok(Answer {
                 gaps: lists.len(),
@@ -1277,7 +1318,7 @@ fn answer(value: &Value) -> Result<Answer, String> {
             // At most one sample answer, and it is optional (Epo 2026-10-15).
             let accepted = array(&map["accepted"], what, 0, 1)?
                 .iter()
-                .map(|item| text(item, what))
+                .map(|item| text(item, what, policy.held(QUESTION_TEXT_MAX)))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Answer {
                 open_accepted: accepted,
@@ -1308,14 +1349,14 @@ fn answer(value: &Value) -> Result<Answer, String> {
     }
 }
 
-fn block_list(value: &Value, min: usize) -> Result<Vec<Block>, String> {
-    array(value, "blocks", min, QUESTION_BLOCKS_MAX)?
+fn block_list(value: &Value, min: usize, policy: &Policy) -> Result<Vec<Block>, String> {
+    array(value, "blocks", min, policy.held(QUESTION_BLOCKS_MAX))?
         .iter()
-        .map(block)
+        .map(|block| block_in(block, false, policy))
         .collect()
 }
 
-fn part(value: &Value) -> Result<Part, String> {
+fn part(value: &Value, policy: &Policy) -> Result<Part, String> {
     let what = "part";
     let map = object(value, what)?;
     strict(
@@ -1333,7 +1374,7 @@ fn part(value: &Value) -> Result<Part, String> {
         gaps,
         open_accepted,
         drawn_sample,
-    } = answer(&map["answer"])?;
+    } = answer(&map["answer"], policy)?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
             let n = number(v, what)?;
@@ -1344,7 +1385,7 @@ fn part(value: &Value) -> Result<Part, String> {
         }
         None => None,
     };
-    let blocks = block_list(&map["blocks"], 1)?;
+    let blocks = block_list(&map["blocks"], 1, policy)?;
     let id = identifier(&map["id"], what)?;
     let item_awards = match present(map, "itemAwards") {
         Some(v) => Some(
@@ -1356,9 +1397,6 @@ fn part(value: &Value) -> Result<Part, String> {
         None => None,
     };
     let marks = integer(&map["marks"], what)?;
-    if !(1.0..=QUESTION_MARKS_MAX).contains(&marks) {
-        return fail(format!("{what}: marks out of range"));
-    }
     let markscheme = match present(map, "markscheme") {
         Some(v) => {
             let mut items = Vec::new();
@@ -1373,7 +1411,7 @@ fn part(value: &Value) -> Result<Part, String> {
                     return fail(format!("{what}: marking item text must be a string"));
                 };
                 let trimmed = js_trim(raw);
-                if trimmed.is_empty() || utf16_len(trimmed) > QUESTION_MARK_ITEM_MAX {
+                if trimmed.is_empty() || utf16_len(trimmed) > policy.held(QUESTION_MARK_ITEM_MAX) {
                     return fail(format!("{what}: invalid marking item text"));
                 }
                 items.push(marks);
@@ -1382,7 +1420,14 @@ fn part(value: &Value) -> Result<Part, String> {
         }
         None => None,
     };
-    let solution = block_list(&map["solution"], 0)?;
+    // A part's marks are its marking items' total where it has them, which two
+    // editors' items merged at once may take past the cap, up to twice it; a
+    // part turned closed meanwhile keeps it, so any part may hold it.
+    let max_marks = policy.held(QUESTION_MARKS_MAX as usize) as f64;
+    if !(1.0..=max_marks).contains(&marks) {
+        return fail(format!("{what}: marks out of range"));
+    }
+    let solution = block_list(&map["solution"], 0, policy)?;
     Ok(Part {
         id,
         group,
@@ -1406,13 +1451,13 @@ struct Group {
     blocks: Vec<Block>,
 }
 
-fn group(value: &Value) -> Result<Group, String> {
+fn group(value: &Value, policy: &Policy) -> Result<Group, String> {
     let what = "group";
     let map = object(value, what)?;
     strict(map, what, &["blocks", "id"], &[])?;
     Ok(Group {
         id: identifier(&map["id"], what)?,
-        blocks: block_list(&map["blocks"], 0)?,
+        blocks: block_list(&map["blocks"], 0, policy)?,
     })
 }
 
@@ -1561,13 +1606,13 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     })?;
     let parts: Vec<Part> = array(&map["parts"], what, 1, QUESTION_PARTS_MAX)?
         .iter()
-        .map(part)
+        .map(|value| part(value, policy))
         .collect::<Result<_, _>>()?;
-    let stem = block_list(&map["stem"], 0)?;
+    let stem = block_list(&map["stem"], 0, policy)?;
     let groups = match present(map, "groups") {
         Some(groups) => array(groups, what, 0, QUESTION_PARTS_MAX)?
             .iter()
-            .map(group)
+            .map(|value| group(value, policy))
             .collect::<Result<Vec<_>, _>>()?,
         None => Vec::new(),
     };
@@ -1633,27 +1678,24 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         if policy.bank && part.solution.is_empty() {
             return fail("Bank questions need a worked solution for every part.");
         }
-        if !policy.bank && marks.len() > QUIZ_MARKSCHEME_MAX {
-            return fail(format!(
-                "A part has at most {QUIZ_MARKSCHEME_MAX} marking items."
-            ));
+        // A quiz's caps as its merges may leave them: up to twice each.
+        let items = merged_cap(QUIZ_MARKSCHEME_MAX);
+        if !policy.bank && marks.len() > items {
+            return fail(format!("A part has at most {items} marking items."));
         }
+        let length = merged_cap(QUIZ_OPEN_ANSWER_MAX);
         if !policy.bank
             && part.answer == "open"
-            && part
-                .open_accepted
-                .iter()
-                .any(|t| code_points(t) > QUIZ_OPEN_ANSWER_MAX)
+            && part.open_accepted.iter().any(|t| code_points(t) > length)
         {
             return fail(format!(
-                "Sample answers are limited to {QUIZ_OPEN_ANSWER_MAX} characters."
+                "Sample answers are limited to {length} characters."
             ));
         }
     }
-    if !policy.bank && parts.len() > QUIZ_QUESTION_PARTS_MAX {
-        return fail(format!(
-            "A question has at most {QUIZ_QUESTION_PARTS_MAX} parts."
-        ));
+    let most = merged_cap(QUIZ_QUESTION_PARTS_MAX);
+    if !policy.bank && parts.len() > most {
+        return fail(format!("A question has at most {most} parts."));
     }
     for block in stem
         .iter()
@@ -1702,15 +1744,16 @@ fn js_number_string(digits: &str) -> String {
     }
 }
 
-/// `assertQuizBounds`: one attempt's open parts fit one grading request.
+/// `assertQuizBounds`: one attempt's open parts fit one grading request; a
+/// quiz's parts and AI-marked parts up to twice their caps, as two editors'
+/// adds at once may leave them (Epo 2026-11-22).
 pub fn assert_quiz_bounds(parts: usize, open_parts: usize) -> Check {
-    if parts > QUIZ_PARTS_MAX {
-        return fail(format!("A quiz has at most {QUIZ_PARTS_MAX} parts."));
+    let (most, open) = (merged_cap(QUIZ_PARTS_MAX), merged_cap(QUIZ_OPEN_PARTS_MAX));
+    if parts > most {
+        return fail(format!("A quiz has at most {most} parts."));
     }
-    if open_parts > QUIZ_OPEN_PARTS_MAX {
-        return fail(format!(
-            "A quiz has at most {QUIZ_OPEN_PARTS_MAX} AI-marked parts."
-        ));
+    if open_parts > open {
+        return fail(format!("A quiz has at most {open} AI-marked parts."));
     }
     Ok(())
 }

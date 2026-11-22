@@ -207,6 +207,15 @@ var QuestionBounds = map[string]int{
 	"QUESTION_TOPICS_MAX":            QuestionTopics,
 }
 
+// Merged is what readers and validators take of a count or a text length
+// that two people's edits at the same moment can merge past (Epo 2026-11-22,
+// "Yes, A everywhere"): twice its cap. Editors stop at the cap itself; a
+// value past it comes from a merge, a hand-made client, or a paste or
+// Duplicate of a block holding one. Past twice it is refused. The
+// collaboration server's `limits::merged_cap` and the browser's `mergedCap`
+// are the same.
+func Merged(cap int) int { return 2 * cap }
+
 // QuestionBoundNames lists QuestionBounds' names in order, for generated files.
 func QuestionBoundNames() []string {
 	names := make([]string, 0, len(QuestionBounds))

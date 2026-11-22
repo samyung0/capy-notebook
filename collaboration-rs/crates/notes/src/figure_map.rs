@@ -29,6 +29,7 @@ use yrs::types::TypeRef;
 use yrs::{Any, Map as _, MapPrelim, MapRef, Out, TransactionMut};
 
 use crate::json::{self, Unencodable};
+use crate::limits::merged_cap;
 use crate::order;
 use crate::questions as q;
 
@@ -427,9 +428,24 @@ pub fn align_axis(
     count: usize,
     same: impl Fn(&TransactionMut, usize, usize) -> bool,
     prefix: &str,
+    drop: impl FnMut(&mut TransactionMut, &str),
+) -> Vec<String> {
+    align_shown(txn, map, usize::MAX, count, same, prefix, drop)
+}
+
+/// [align_axis] over the axis's first `shown` ids only, what a read shows: the
+/// ids past them stay as they are.
+fn align_shown(
+    txn: &mut TransactionMut,
+    map: &MapRef,
+    shown: usize,
+    count: usize,
+    same: impl Fn(&TransactionMut, usize, usize) -> bool,
+    prefix: &str,
     mut drop: impl FnMut(&mut TransactionMut, &str),
 ) -> Vec<String> {
-    let held = ordered_pairs(map.as_ref());
+    let mut held = ordered_pairs(map.as_ref());
+    held.truncate(shown);
     if held.len() == count {
         return held.into_iter().map(|(id, _)| id).collect();
     }
@@ -482,9 +498,13 @@ fn array_of<'v>(value: &'v Value, key: &str) -> &'v [Value] {
 /// differs: its plain fields, a graph's board fields and elements by id, a
 /// chart's series and labels as a table's rows and columns ([align_axis])
 /// with their names and values. Nothing is written whole, so another writer's
-/// change to another field, element or value meanwhile survives. The map's
-/// `type` (and a quiz entry's `order`) are its container's.
+/// change to another field, element or value meanwhile survives. `block` is a
+/// writer's copy of what a read shows ([read]), so only an entry the read
+/// shows goes when `block` lacks it: one the read leaves out (a pie's extra
+/// series, an element naming a point that is gone) stays (Epo 2026-11-22).
+/// The map's `type` (and a quiz entry's `order`) are its container's.
 pub fn sync(txn: &mut TransactionMut, map: &MapRef, kind: &str, block: &Value) {
+    let shown = read(map.as_ref(), kind);
     let maps = maps(kind);
     let empty = Map::new();
     let fields = block.as_object().unwrap_or(&empty);
@@ -508,16 +528,33 @@ pub fn sync(txn: &mut TransactionMut, map: &MapRef, kind: &str, block: &Value) {
             }
             remove_keys(txn, &board, |key| wanted.contains_key(key));
             let elements = child_map(txn, map, "elements");
-            sync_elements(txn, &elements, array_of(block, "elements"));
+            let shown: Option<HashSet<&str>> = shown.as_ref().map(|shown| {
+                array_of(shown, "elements")
+                    .iter()
+                    .filter_map(|element| element.get("id")?.as_str())
+                    .collect()
+            });
+            sync_elements(txn, &elements, array_of(block, "elements"), shown.as_ref());
         }
-        "chart" => sync_chart(txn, map, block),
+        "chart" => {
+            let series = shown
+                .as_ref()
+                .map_or(usize::MAX, |shown| array_of(shown, "series").len());
+            sync_chart(txn, map, block, series);
+        }
         _ => {}
     }
 }
 
 /// A graph's elements as `elements`, by id: an equal one keeps its entry, a
-/// changed or moved one is set again, a gone one goes.
-fn sync_elements(txn: &mut TransactionMut, map: &MapRef, elements: &[Value]) {
+/// changed or moved one is set again, a gone one the read showed (`shown`;
+/// none: every one) goes.
+fn sync_elements(
+    txn: &mut TransactionMut,
+    map: &MapRef,
+    elements: &[Value],
+    shown: Option<&HashSet<&str>>,
+) {
     let held: HashMap<String, (String, Any)> = element_entries(map.as_ref())
         .into_iter()
         .map(|(id, order, element)| (id, (order, element)))
@@ -550,13 +587,17 @@ fn sync_elements(txn: &mut TransactionMut, map: &MapRef, elements: &[Value]) {
         }
         kept.insert(id.to_owned());
     }
-    remove_keys(txn, map, |id| kept.contains(id));
+    remove_keys(txn, map, |id| {
+        kept.contains(id) || shown.is_some_and(|shown| !shown.contains(id))
+    });
 }
 
 /// A chart's labels and series as a table's columns and rows, aligned by
 /// [align_axis] as the browser's `writeChart` does (labels first, then
-/// series), their names, and each value (none for an empty cell).
-fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
+/// series), their names, and each value (none for an empty cell). Only the
+/// first `shown` series, the ones a read shows, take part: the rest stay with
+/// their names and values.
+fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value, shown: usize) {
     let labels = array_of(block, "labels");
     let series = array_of(block, "series");
     let label_map = child_map(txn, map, "labels");
@@ -569,7 +610,8 @@ fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
             .map(|(id, _)| id)
             .collect()
     };
-    let held_series = ids(&series_map);
+    let mut held_series = ids(&series_map);
+    let hidden: Vec<String> = held_series.split_off(shown.min(held_series.len()));
     let held_labels = ids(&label_map);
     let name = |txn: &TransactionMut, id: &str| match names.get(txn, id) {
         Some(Out::Any(Any::String(name))) => name.to_string(),
@@ -601,9 +643,10 @@ fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
             names.remove(txn, id);
         },
     );
-    let series_ids = align_axis(
+    let series_ids = align_shown(
         txn,
         &series_map,
+        shown,
         series.len(),
         |txn, h, w| {
             name(txn, &held_series[h]) == str_of(&series[w], "name")
@@ -633,6 +676,12 @@ fn sync_chart(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
             let value = cells.get(l).and_then(Value::as_f64).map(Any::Number);
             sync_plain(txn, &values, &key, value);
             kept.insert(key);
+        }
+    }
+    for id in &hidden {
+        named.insert(id.clone());
+        for label in &label_ids {
+            kept.insert(format!("{id}/{label}"));
         }
     }
     remove_keys(txn, &names, |id| named.contains(id));
@@ -675,19 +724,20 @@ fn finite(value: &Any) -> bool {
 }
 
 /// The entries one of a figure's maps holds at most: a chart's series,
-/// labels, names and values and a graph's elements at twice their caps, as a
-/// merge may pass a cap and its read keeps the first ones (Epo 2026-10-18).
+/// labels, names and values and a graph's elements at twice their caps, as
+/// two people's adds at once may pass a cap and every read keeps them all
+/// (Epo 2026-10-18, 2026-11-22).
 pub fn map_cap(key: &str) -> Option<usize> {
     let (series, labels) = (
-        2 * q::QUESTION_CHART_SERIES_MAX,
-        2 * q::QUESTION_CHART_LABELS_MAX,
+        merged_cap(q::QUESTION_CHART_SERIES_MAX),
+        merged_cap(q::QUESTION_CHART_LABELS_MAX),
     );
     Some(match key {
         "series" => series,
         "labels" => labels,
         "names" => series + labels,
         "values" => series * labels,
-        "elements" => 2 * q::QUESTION_GRAPH_ELEMENTS_MAX,
+        "elements" => merged_cap(q::QUESTION_GRAPH_ELEMENTS_MAX),
         _ => return None,
     })
 }

@@ -73,12 +73,7 @@ import { useTheme } from '@/theme/theme';
 import { CommitField, Field, FieldInput, SelectField } from './editorFields';
 import { type FigureBinding, useBoundFigure } from './figureBinding';
 import { GraphRowField } from './GraphRowField';
-import {
-  drawnMaxFor,
-  GraphError,
-  graphFull,
-  validateGraphRecipe,
-} from './graph';
+import { GraphError, graphFull, validateGraphRecipe } from './graph';
 import {
   buildElements,
   type GraphRow,
@@ -196,11 +191,9 @@ export const GraphEditor = memo(function GraphEditor({
   const [refused, setRefused] = useState<ReadonlyMap<string, string>>(
     () => new Map()
   );
-  // What readers draw: every element of a canvas plane, so each of its rows
-  // edits and saves; a quiz or note graph's first ones up to the cap, so rows
-  // past it say so and are not written. Either adds nothing at the cap
-  // (`graphFull`, here and in the writer).
-  const drawnMax = drawnMaxFor(Boolean(plane));
+  // Every row edits and saves, however many the figure holds (every reader
+  // keeps up to twice the cap); nothing is added at the cap (`graphFull`,
+  // here and in the writer).
   const [writer] = useState(() =>
     graphWriter(
       binding,
@@ -208,8 +201,7 @@ export const GraphEditor = memo(function GraphEditor({
         elements: current.current.elements,
         keys: current.current.rows.map((row) => row.key),
       }),
-      setRefused,
-      drawnMax
+      setRefused
     )
   );
   // What this session did, for Fit to size on leaving: it fits once a mark or
@@ -299,23 +291,10 @@ export const GraphEditor = memo(function GraphEditor({
   const [, setToolsSeen] = useState(0);
   // A tool turned away at the cap: the cap's issue shows while it is full.
   const [capped, setCapped] = useState(false);
-  // Elements past what readers draw (two editors' adds merged past a quiz or
-  // note graph's cap), counted in the figure as readers count them: each row
-  // says so until the graph is back within it.
-  const errors = useMemo(() => {
-    const over = block.elements.slice(drawnMax);
-    if (!(over.length || refused.size)) return rowErrors;
-    const out = new Map([...refused, ...rowErrors]);
-    for (const { id } of over)
-      if (!out.has(id))
-        out.set(
-          id,
-          m.question_ui_graph_elements_max({
-            max: limits.QUESTION_GRAPH_ELEMENTS_MAX,
-          })
-        );
-    return out;
-  }, [block.elements, drawnMax, refused, rowErrors]);
+  const errors = useMemo(
+    () => (refused.size ? new Map([...refused, ...rowErrors]) : rowErrors),
+    [refused, rowErrors]
+  );
   // Issues read like the question dialog's (Epo 2026-10-15): the first one
   // above the editor, a warning icon on each affected row and on Advanced.
   const advancedIssues = plane ? [] : boardIssues(drawn);
@@ -330,15 +309,14 @@ export const GraphEditor = memo(function GraphEditor({
               height: limits.QUESTION_GRAPH_DIMENSION_MIN,
               width: limits.QUESTION_GRAPH_DIMENSION_MIN,
             }
-          : drawn,
-        drawnMax
+          : drawn
       );
       return null;
     } catch (error) {
       if (!(error instanceof GraphError)) throw error;
       return error.message;
     }
-  }, [drawn, drawnMax, plane]);
+  }, [drawn, plane]);
   // Each row is one element: a full graph offers no new row.
   const full = graphFull(rows.length);
   if (capped && !full) setCapped(false);

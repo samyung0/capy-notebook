@@ -12,8 +12,8 @@ use notes::edit::DocumentCommand;
 use serde_json::{Value, json};
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Doc, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim, TextRef,
-    Transact, Update, WriteTxn,
+    Any, Doc, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim,
+    TextRef, Transact, Update, WriteTxn,
 };
 
 fn set_value(cards: &[(&str, &str, &str)]) -> Vec<Value> {
@@ -60,6 +60,18 @@ fn face(doc: &Doc, id: &str, field: &str) -> TextRef {
         Some(Out::YText(text)) => text,
         _ => panic!("no {field} on {id}"),
     }
+}
+
+/// Another client's copy of `doc`.
+fn copy_of(doc: &Doc, client: u64) -> Doc {
+    let copy = Doc::with_options(ydoc::doc_options(client));
+    let state = doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(&state).unwrap())
+        .unwrap();
+    copy
 }
 
 /// What `client` holds that `room` lacks, as the client would send it.
@@ -290,24 +302,44 @@ fn shapes_no_editor_writes_are_refused() {
 }
 
 #[test]
-fn a_back_past_its_cap_is_refused_at_once_or_bit_by_bit() {
-    // One update past the cap.
+fn a_back_past_twice_its_cap_is_refused_at_once_or_bit_by_bit() {
+    // One update past twice the cap (Epo 2026-11-22).
     refused(
         |doc| {
-            face(doc, "c1", "back").insert(&mut doc.transact_mut(), 0, &"é".repeat(1000));
+            face(doc, "c1", "back").insert(&mut doc.transact_mut(), 0, &"é".repeat(2001));
         },
-        "a flashcard back holds at most 1000 characters",
+        "a flashcard back holds at most 2000 characters",
     );
-    // Up to the cap in one update, past it in the next: the bound sends the
-    // second to the exact check, which refuses it.
+    // Up to twice the cap in one update, past it in the next: the bound sends
+    // the second to the exact check, which refuses it.
     let (room_doc, client) = room(&set_value(&[("c1", "Front", "")]));
     let mut check = validator(&room_doc);
-    face(&client, "c1", "back").insert(&mut client.transact_mut(), 0, &"a".repeat(1000));
+    face(&client, "c1", "back").insert(&mut client.transact_mut(), 0, &"a".repeat(2000));
     let (result, _) = admit(&mut check, &room_doc, &diff(&client, &room_doc));
     assert_eq!(result.unwrap(), Admission::Accepted);
     face(&client, "c1", "back").insert(&mut client.transact_mut(), 0, "b");
     let (result, _) = admit(&mut check, &room_doc, &diff(&client, &room_doc));
-    assert!(result.unwrap_err().to_string().contains("at most 1000"));
+    assert!(result.unwrap_err().to_string().contains("at most 2000"));
+}
+
+#[test]
+fn a_front_two_people_type_past_its_cap_at_once_is_kept_whole() {
+    let (room_doc, _) = room(&set_value(&[(
+        "c1",
+        &"f".repeat(flashcards::MAX_FRONT - 1),
+        "Back",
+    )]));
+    let mut check = validator(&room_doc);
+    let a = copy_of(&room_doc, 7);
+    let b = copy_of(&room_doc, 8);
+    face(&a, "c1", "front").insert(&mut a.transact_mut(), 0, "aa");
+    face(&b, "c1", "front").insert(&mut b.transact_mut(), 0, "bb");
+    for client in [&a, &b] {
+        let (result, _) = admit(&mut check, &room_doc, &diff(client, &room_doc));
+        assert_eq!(result.unwrap(), Admission::Accepted);
+    }
+    let front = face(&room_doc, "c1", "front").get_string(&room_doc.transact());
+    assert_eq!(front.chars().count(), flashcards::MAX_FRONT + 3);
 }
 
 #[test]

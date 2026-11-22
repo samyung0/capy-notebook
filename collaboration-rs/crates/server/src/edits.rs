@@ -876,9 +876,15 @@ type QuizChanged = (EditOutcome, Option<(Captured, Captured)>);
 /// A server write of a quiz (an agent edit, an Undo, the save API): `edit`
 /// runs on both documents; caps hold for each and the limits for both
 /// together (REVIEW1 S3); the projection is the complete questions.
+///
+/// A writer's edit (`writer`: an agent's, the content save API; not an Undo,
+/// which puts back what was there) grows no count or text past its cap, as an
+/// editor stops there; one a merge took past it may stay or shrink (Epo
+/// 2026-11-22, "Yes, A everywhere").
 fn compute_quiz(
     content: &Scratch,
     keys: &Scratch,
+    writer: bool,
     edit: impl FnOnce(&yrs::Doc, &yrs::Doc) -> Result<QuizChanged, DocumentError>,
 ) -> Result<Computed, DocumentError> {
     let measure = || {
@@ -891,6 +897,7 @@ fn compute_quiz(
         )
     };
     let previous = measure();
+    let held = writer.then(|| items::quiz::held(&content.doc.transact(), &keys.doc.transact()));
     let (outcome, changes) = edit(&content.doc, &keys.doc)?;
     let Some((content_items, keys_items)) = changes else {
         return Ok(Computed {
@@ -908,6 +915,10 @@ fn compute_quiz(
         (items::Kind::QuizKeys, &keys.doc),
     ] {
         kind.check_caps(&doc.transact())
+            .map_err(|error| DocumentError::edit("invalid_input", &error))?;
+    }
+    if let Some(held) = &held {
+        items::quiz::check_written(&content.doc.transact(), &keys.doc.transact(), held)
             .map_err(|error| DocumentError::edit("invalid_input", &error))?;
     }
     let metrics = measure();
@@ -1009,7 +1020,7 @@ fn compute(
                         &items::Kind::QuizKeys.document_value(&keys.doc.transact()),
                     ],
                 );
-                let mut computed = compute_quiz(&scratch, &keys, |content, keys| {
+                let mut computed = compute_quiz(&scratch, &keys, true, |content, keys| {
                     quiz_commands(content, keys, &commands)
                 })?;
                 if cost > ydoc::MAX_UPDATE_BYTES {
@@ -1017,7 +1028,7 @@ fn compute(
                 }
                 computed
             }
-            Change::Undo(updates) => compute_quiz(&scratch, &keys, |content, keys| {
+            Change::Undo(updates) => compute_quiz(&scratch, &keys, false, |content, keys| {
                 let mut changes = (Captured::default(), Captured::default());
                 for (doc, update) in updates {
                     let (target, slot) = match doc {
@@ -1038,6 +1049,7 @@ fn compute(
     let model = Model::of(&kind);
     let before = model.document_value(&doc.transact()).map_err(unknown)?;
     let previous = notes::limits::measure_value(&before);
+    let writer = matches!(change, Change::Commands(_));
     // Every edit's Undo payload is built here, from its working copy, whether
     // or not a room is loaded (Epo 2026-10-22), when its estimate fits the
     // update cap; an Undo's Redo payload always.
@@ -1111,6 +1123,10 @@ fn compute(
         );
         DocumentError::edit("invalid_input", error.to_string())
     })?;
+    if writer {
+        notes::material::check_written(&before, &document, &outcome.rewrites)
+            .map_err(|error| DocumentError::edit("invalid_input", error.to_string()))?;
+    }
     let metrics = notes::limits::measure_value(&document);
     if let Some(code) = notes::limits::limit_code(&metrics)
         && !notes::limits::recovers(&metrics, Some(&previous))
@@ -2379,7 +2395,7 @@ fn replace_on(
             assigned,
         )?;
         let questions = items::quiz::block_questions(&command.replacement_block)?;
-        let computed = compute_quiz(&scratch, &keys, |content, keys| {
+        let computed = compute_quiz(&scratch, &keys, true, |content, keys| {
             let mut content_txn = content.transact_mut();
             let mut keys_txn = keys.transact_mut();
             items::quiz::set_questions(&mut content_txn, &mut keys_txn, &questions)
@@ -2394,7 +2410,8 @@ fn replace_on(
     }
     let doc = &scratch.doc;
     let model = Model::of(&kind);
-    let previous = notes::limits::measure_value(&model.document_value(&doc.transact())?);
+    let before = model.document_value(&doc.transact())?;
+    let previous = notes::limits::measure_value(&before);
     match model {
         Model::Note => {
             let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
@@ -2418,6 +2435,8 @@ fn replace_on(
     let value = model.value(&doc.transact())?;
     let document = model.document_value(&doc.transact())?;
     notes::material::assert_canonical(&document, &kind).map_err(|error| error.0)?;
+    notes::material::check_written(&before, &document, &Default::default())
+        .map_err(|error| error.0)?;
     let metrics = notes::limits::measure_value(&document);
     if let Some(code) = notes::limits::limit_code(&metrics)
         && !notes::limits::recovers(&metrics, Some(&previous))
@@ -2744,6 +2763,196 @@ mod tests {
         );
     }
 
+    /// A note edit stops at a count's cap, as an editor does: an 11th
+    /// interactive block is refused naming the cap, while a note a merge
+    /// already took past it (12) takes an edit that leaves the count as it
+    /// is, and the whole-note check refuses past twice the cap. Fails if
+    /// server writes may grow a count past its cap again, or refuse a note a
+    /// merge left past it.
+    #[test]
+    fn a_note_edit_grows_no_count_past_its_cap() {
+        let embed = |id: &str| json!({ "type": "html_embed", "id": id, "html": "<p>x</p>", "children": [{ "text": "" }] });
+        let edit = |held: usize, block: serde_json::Value| {
+            let value: Vec<_> = (0..held).map(|i| embed(&format!("e{i}"))).collect();
+            compute(
+                Model::Note.state_from_value(&value),
+                Vec::new(),
+                None,
+                "note".into(),
+                Change::Commands(vec![notes::edit::DocumentCommand::InsertBlock {
+                    after_block_id: Some("e0".into()),
+                    blocks: vec![block],
+                }]),
+                None,
+                &HashSet::new(),
+                false,
+            )
+        };
+        let paragraph = json!({ "type": "p", "id": "p1", "children": [{ "text": "more" }] });
+        assert!(edit(12, paragraph).is_ok());
+        for (held, message) in [
+            (
+                12,
+                "invalid material document: 13 interactive blocks over 10",
+            ),
+            (
+                20,
+                "invalid material document: 21 interactive blocks over 20",
+            ),
+        ] {
+            let refusal = edit(held, embed("new")).err();
+            assert!(
+                matches!(&refusal, Some(DocumentError::Edit { code, message: sent, .. })
+                    if code == "invalid_input" && sent == message),
+                "{refusal:?}"
+            );
+        }
+    }
+
+    /// An agent's replace_block rewriting a chart a merge took past its
+    /// series cap keeps the series it held: the replacement takes a new id,
+    /// and its caps compare with the block it replaced. Fails if the rewrite
+    /// is compared with nothing (refused as "8 chart series over 6"), or may
+    /// add a series past what the block held.
+    #[test]
+    fn a_replaced_block_keeps_what_the_block_it_rewrites_held() {
+        let chart = |id: &str, title: &str, series: usize| {
+            json!({
+                "type": "chart", "id": id, "children": [{ "text": "" }],
+                "block": {
+                    "type": "chart", "kind": "bar", "title": title, "labels": ["Jan", "Feb"],
+                    "series": (0..series).map(|n| json!({ "name": format!("S{n}"), "values": [1, 2] })).collect::<Vec<_>>(),
+                },
+            })
+        };
+        let replace = |series: usize| {
+            let value = [
+                json!({ "type": "p", "id": "p1", "children": [{ "text": "Intro" }] }),
+                chart("c1", "Sales", 8),
+            ];
+            compute(
+                Model::Note.state_from_value(&value),
+                Vec::new(),
+                None,
+                "note".into(),
+                Change::Commands(vec![notes::edit::DocumentCommand::ReplaceBlock {
+                    block_id: "c1".into(),
+                    expected_text: String::new(),
+                    blocks: vec![chart("c2", "Sales by month", series)],
+                }]),
+                None,
+                &HashSet::new(),
+                false,
+            )
+        };
+        let kept = replace(8).map(|computed| computed.value);
+        assert!(
+            kept.as_ref()
+                .is_ok_and(|value| value[1]["block"]["series"].as_array().unwrap().len() == 8),
+            "{kept:?}"
+        );
+        let refusal = replace(9).err();
+        assert!(
+            matches!(&refusal, Some(DocumentError::Edit { code, message, .. })
+                if code == "invalid_input"
+                    && message == "invalid material document: 9 chart series over 6"),
+            "{refusal:?}"
+        );
+    }
+
+    /// An agent's replace_card holds a face to its cap against what the card
+    /// held: a front two people's typing took to 250 characters may be cut to
+    /// 240, while a front at the cap may not grow. Fails if the card's held
+    /// face is not what the edit is compared with.
+    #[test]
+    fn a_replaced_card_face_is_held_to_what_the_card_held() {
+        let replace = |held: usize, front: usize| {
+            let face =
+                |kind: &str, text: String| json!({ "type": kind, "children": [{ "text": text }] });
+            let value = [json!({
+                "type": "flashcards", "id": "set", "children": [{
+                    "type": "flashcard", "id": "c1",
+                    "children": [face("flashcard_front", "f".repeat(held)), face("flashcard_back", "b".into())],
+                }],
+            })];
+            compute(
+                Model::of("flashcards").state_from_value(&value),
+                Vec::new(),
+                None,
+                "flashcards".into(),
+                Change::Commands(vec![notes::edit::DocumentCommand::ReplaceCard {
+                    card_id: "c1".into(),
+                    front: Some("f".repeat(front)),
+                    back: None,
+                    expected_front: Some("f".repeat(held)),
+                    expected_back: None,
+                }]),
+                None,
+                &HashSet::new(),
+                false,
+            )
+        };
+        let cap = notes::catalog::CARD_FRONT_MAX;
+        assert!(replace(cap + 50, cap + 40).is_ok());
+        let refusal = replace(cap, cap + 1).err();
+        assert!(
+            matches!(&refusal, Some(DocumentError::Edit { code, message, .. })
+                if code == "invalid_input"
+                    && message == &format!("invalid material document: {} flashcard front characters over {cap}", cap + 1)),
+            "{refusal:?}"
+        );
+    }
+
+    /// A quiz edit by a writer (an agent's) stops at a list's cap, as the
+    /// editor does, and keeps a list a merge took past it: replacing the
+    /// question with one more option than the cap is refused, the same
+    /// question re-sent unchanged once a merge left it past the cap is not.
+    /// Fails if server quiz writes may grow a list past its cap again.
+    #[test]
+    fn a_quiz_writer_grows_no_list_past_its_cap() {
+        let question = |options: usize| {
+            json!({
+                "type": "quiz_question", "id": "q1", "children": [{ "text": "" }],
+                "question": {
+                    "id": "q1", "labels": "letters", "layout": "paper", "stem": [],
+                    "parts": [{
+                        "id": "q1-p", "marks": 1, "solution": [],
+                        "blocks": [{ "type": "text", "text": "Pick" }],
+                        "answer": {
+                            "type": "mcq",
+                            "options": (0..options).map(|i| format!("o{i}")).collect::<Vec<_>>(),
+                            "correct": [0],
+                        },
+                    }],
+                },
+            })
+        };
+        let cap = notes::catalog::QUESTION_ANSWERS_MAX;
+        let replace = |held: usize, sent: usize| {
+            let value = [json!({ "type": "quiz", "id": "quiz", "children": [question(held)] })];
+            let (content, keys) = items::quiz::states_from_value(&value, 0);
+            let content = Scratch::new(&content, &[], None, &HashSet::new()).unwrap();
+            let keys = Scratch::new(&keys, &[], None, &HashSet::new()).unwrap();
+            let command = notes::edit::DocumentCommand::ReplaceChild {
+                parent_type: "quiz".into(),
+                node_id: "q1".into(),
+                node: question(sent),
+            };
+            compute_quiz(&content, &keys, true, |content, keys| {
+                super::quiz_commands(content, keys, &[command])
+            })
+        };
+        let refusal = replace(cap, cap + 1).err();
+        assert!(
+            matches!(&refusal, Some(DocumentError::Edit { code, message, .. })
+                if code == "invalid_input"
+                    && message == &format!("an answer list holds at most {cap}")),
+            "{refusal:?}"
+        );
+        assert!(replace(cap + 2, cap + 2).is_ok());
+        assert!(replace(cap + 2, cap + 1).is_ok());
+    }
+
     /// A note an agent edit empties gets one empty paragraph in the edit's
     /// own transaction (Epo 2026-10-21), so no editor sees it empty and its
     /// Undo takes the paragraph out with the edit; a diagram left without
@@ -2813,7 +3022,7 @@ mod tests {
             let (content, keys) = items::quiz::states_from_value(&value, 0);
             let content = Scratch::new(&content, &[], None, &HashSet::new()).unwrap();
             let keys = Scratch::new(&keys, &[], None, &HashSet::new()).unwrap();
-            compute_quiz(&content, &keys, |_, _| {
+            compute_quiz(&content, &keys, true, |_, _| {
                 Ok((
                     notes::edit::EditOutcome::default(),
                     Some(Default::default()),
@@ -2853,7 +3062,7 @@ mod tests {
             parent_type: "quiz".into(),
             node_id: "q2".into(),
         };
-        let computed = compute_quiz(&content, &keys, |content, keys| {
+        let computed = compute_quiz(&content, &keys, true, |content, keys| {
             super::quiz_commands(content, keys, &[remove])
         })
         .unwrap();

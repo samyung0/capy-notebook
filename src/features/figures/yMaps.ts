@@ -107,15 +107,18 @@ export function reorder(entries: Map<string, YMap>, ids: string[]) {
 /** An axis (id -> order key: a table's rows or columns, a chart's series or
  * labels) brought to `count` entries as one editor action leaves it, aligned
  * by `alignPlaces`: the ids it drops go (`drop` clears what they held), new
- * ones come in between their neighbours. The ids, in order. */
+ * ones come in between their neighbours. Only its first `shown` ids, what a
+ * read shows, take part; the ids past them stay as they are. The ids, in
+ * order. */
 export function alignAxis(
   map: YMap,
   count: number,
   same: (held: number, wanted: number) => boolean,
   prefix: string,
-  drop: (id: string) => void
+  drop: (id: string) => void,
+  shown = Number.POSITIVE_INFINITY
 ): string[] {
-  const ids = orderedKeys(map);
+  const ids = orderedKeys(map).slice(0, shown);
   if (ids.length === count) return ids;
   const places = alignPlaces(ids.length, count, same);
   const kept = new Set(places);

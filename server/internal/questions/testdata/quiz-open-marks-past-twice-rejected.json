@@ -1,0 +1,43 @@
+{
+  "name": "quiz-open-marks-past-twice-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": ["alpha"]
+        },
+        "marks": 41,
+        "markscheme": [
+          {
+            "text": "Point 1",
+            "marks": 20
+          },
+          {
+            "text": "Point 2",
+            "marks": 21
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

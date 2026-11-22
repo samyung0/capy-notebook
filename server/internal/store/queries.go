@@ -1631,7 +1631,13 @@ func (d MaterialDraft) material() (Material, error) {
 		if strings.TrimSpace(materialdoc.IncomingMermaidSource(d.Content)) == "" {
 			return Material{}, ErrEmptyMaterial
 		}
-		mt.Content = d.Content
+		// A generator's ```mermaid fence becomes its document here, as the
+		// insert would make it, so the written check below reads its source.
+		content, err := materialdoc.FromLegacyMarkdown(string(d.Kind), d.Content)
+		if err != nil {
+			return Material{}, err
+		}
+		mt.Content = content
 	case "note":
 		text, err := materialdoc.ExtractNoteText(d.Content)
 		if err != nil {
@@ -1643,6 +1649,21 @@ func (d MaterialDraft) material() (Material, error) {
 		mt.Content = d.Content
 	default:
 		return Material{}, fmt.Errorf("%w: unsupported material kind %q", materialdoc.ErrInvalid, d.Kind)
+	}
+	// A draft is new content a server writer made (an agent, Generate, Make a
+	// quiz, the bank page's copy, the starter): at the caps an editor stops
+	// at, with its embedded quizzes and sets.
+	if err := materialdoc.CheckWritten(mt.Content); err != nil {
+		return Material{}, err
+	}
+	for _, embedded := range d.Embedded {
+		content, err := embedded.content()
+		if err != nil {
+			return Material{}, err
+		}
+		if err := materialdoc.CheckWritten(content); err != nil {
+			return Material{}, err
+		}
 	}
 	return mt, nil
 }

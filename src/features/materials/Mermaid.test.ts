@@ -105,11 +105,12 @@ it('skips a render that is no longer wanted when its turn comes', async () => {
   await expect(render).rejects.toBe(SUPERSEDED);
 });
 
-// A source past the catalog's cap is refused before any render (Epo
-// 2026-10-22), with its own message.
-it('refuses a source over MERMAID_SOURCE_MAX without drawing it', async () => {
+// A source past twice the catalog's cap (what two people typing at once may
+// reach, Epo 2026-11-22) is refused before any render (Epo 2026-10-22), with
+// its own message.
+it('refuses a source over twice MERMAID_SOURCE_MAX without drawing it', async () => {
   await expect(
-    renderMermaid(`graph TD\n${'A'.repeat(MERMAID_SOURCE_MAX)}`)
+    renderMermaid(`graph TD\n${'A'.repeat(2 * MERMAID_SOURCE_MAX)}`)
   ).rejects.toMatchObject({ reason: 'tooLong' });
 });
 

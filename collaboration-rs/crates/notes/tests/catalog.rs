@@ -565,14 +565,18 @@ fn admission_checks_placement_values_and_the_embed_count() {
         node["id"] = json!(format!("h{n}"));
         node
     };
-    let nine = self::room(&(0..9).map(embed).collect::<Vec<_>>());
-    let tenth = insert(&nine, vec![embed(9)]);
-    assert!(admit(&nine, &tenth).is_ok());
-    nine.transact_mut()
-        .apply_update(Update::decode_v1(&tenth).unwrap())
+    // Up to twice the cap, as two people inserting at once may pass it (Epo
+    // 2026-11-22); one more is refused.
+    let most = limits::merged_cap(notes::catalog::HTML_EMBED_MAX_COUNT);
+    let below = self::room(&(0..most - 1).map(embed).collect::<Vec<_>>());
+    let last = insert(&below, vec![embed(most - 1)]);
+    assert!(admit(&below, &last).is_ok());
+    below
+        .transact_mut()
+        .apply_update(Update::decode_v1(&last).unwrap())
         .unwrap();
     assert!(refused_as(
-        admit(&nine, &insert(&nine, vec![embed(10)])),
+        admit(&below, &insert(&below, vec![embed(most)])),
         limits::TOO_MANY_EMBEDS
     ));
 

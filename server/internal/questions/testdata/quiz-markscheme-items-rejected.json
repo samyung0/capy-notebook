@@ -23,14 +23,52 @@
           "type": "open",
           "accepted": ["alpha"]
         },
-        "marks": 6,
+        "marks": 11,
         "markscheme": [
-          { "text": "Point 1", "marks": 1 },
-          { "text": "Point 2", "marks": 1 },
-          { "text": "Point 3", "marks": 1 },
-          { "text": "Point 4", "marks": 1 },
-          { "text": "Point 5", "marks": 1 },
-          { "text": "Point 6", "marks": 1 }
+          {
+            "text": "Point 1",
+            "marks": 1
+          },
+          {
+            "text": "Point 2",
+            "marks": 1
+          },
+          {
+            "text": "Point 3",
+            "marks": 1
+          },
+          {
+            "text": "Point 4",
+            "marks": 1
+          },
+          {
+            "text": "Point 5",
+            "marks": 1
+          },
+          {
+            "text": "Point 6",
+            "marks": 1
+          },
+          {
+            "text": "Point 7",
+            "marks": 1
+          },
+          {
+            "text": "Point 8",
+            "marks": 1
+          },
+          {
+            "text": "Point 9",
+            "marks": 1
+          },
+          {
+            "text": "Point 10",
+            "marks": 1
+          },
+          {
+            "text": "Point 11",
+            "marks": 1
+          }
         ],
         "solution": []
       }

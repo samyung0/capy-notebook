@@ -1,3 +1,7 @@
+import {
+  QUESTION_CHART_LABELS_MAX,
+  QUESTION_CHART_SERIES_MAX,
+} from '@/api/limits.generated';
 import { alignPlaces } from '@/features/figures/align';
 import type { FigureBlock } from '@/features/quizzes/liveFigures';
 import { sameJson } from '@/lib/sameJson';
@@ -121,6 +125,12 @@ export function localFigureBinding(
     addChartItem: (axis, index, name) => {
       let id: string | null = null;
       chart((block, current) => {
+        // At the cap, checked on the chart as it reads now, none goes.
+        const full =
+          axis === 'series'
+            ? block.series.length >= QUESTION_CHART_SERIES_MAX
+            : block.labels.length >= QUESTION_CHART_LABELS_MAX;
+        if (full) return current;
         const added = handle(axis === 'series' ? 's' : 'l');
         id = added;
         if (axis === 'series') {

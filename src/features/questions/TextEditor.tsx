@@ -19,6 +19,7 @@ import {
 } from 'platejs/react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { passesCap } from '@/api/mergedCap';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
@@ -465,8 +466,17 @@ export function TextEditor({
           editor={editor}
           onValueChange={({ value: next }) => {
             const text = valueToMathText(next, gapStart);
-            if (maxLength !== undefined && textLength(text) > maxLength) {
-              // Past the cap the server refuses the text: the edit goes back.
+            if (
+              maxLength !== undefined &&
+              passesCap(
+                textLength(text),
+                textLength(accepted.current),
+                maxLength
+              )
+            ) {
+              // An edit that takes the text past the cap goes back. A text two
+              // people's typing merged past it (kept up to twice it, Epo
+              // 2026-11-22) still takes edits that do not lengthen it.
               editor.tf.setValue(mathTextToValue(accepted.current, { gaps }));
               editor.tf.select(editor.api.end([]));
               return;

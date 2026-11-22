@@ -8,7 +8,11 @@ import {
   exampleQuestion,
   exampleQuestions,
 } from '@/features/questions/questionFixtures';
-import type { Question, QuestionBlock } from '@/features/questions/types';
+import type {
+  LearnerQuestion,
+  Question,
+  QuestionBlock,
+} from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { ordered } from './liveMaps';
@@ -21,6 +25,7 @@ import {
   questionsScope,
   readLearnerQuestions,
   readQuestions,
+  SAMPLE_KEY,
   seedQuiz,
   writeQuestion,
 } from './liveQuiz';
@@ -368,6 +373,123 @@ it('applies pushed lists: a full one replaces, a partial one changes named parts
   ]);
   lists = applyReaderMessage(lists, { full: true, parts: { m: matching } });
   expect([...lists.keys()]).toEqual(['m']);
+});
+
+it("keeps one sample answer when two editors type an open part's first at once", () => {
+  // Epo 2026-11-22: "then last save wins? if we change the question data
+  // structure now we need to change the UI as well, dont".
+  const open = exampleQuestions[6];
+  const bare: Question = {
+    ...open,
+    parts: [{ ...open.parts[0], answer: { accepted: [], type: 'open' } }],
+  };
+  const content = new Y.Doc();
+  const keys = new Y.Doc();
+  seedQuiz(content, keys, [bare]);
+  const copy = (doc: Y.Doc, client: number) => {
+    const made = new Y.Doc();
+    made.clientID = client;
+    Y.applyUpdate(made, Y.encodeStateAsUpdate(doc));
+    return made;
+  };
+  const editors = [1, 2].map((n) => ({
+    content: copy(content, 10 + n),
+    keys: copy(keys, 20 + n),
+  }));
+  const sampleOf = (editor: (typeof editors)[number]) => {
+    const answer = readQuestions(editor.content, editor.keys)[0].parts[0]
+      .answer;
+    return answer.type === 'open' ? answer.accepted : [];
+  };
+  const type = (editor: (typeof editors)[number], sample: string) =>
+    writeQuestion(editor.content, editor.keys, {
+      ...bare,
+      parts: [
+        { ...bare.parts[0], answer: { accepted: [sample], type: 'open' } },
+      ],
+    });
+  type(editors[0], 'Folds');
+  type(editors[1], 'Cristae');
+  const sync = () => {
+    const [a, b] = editors.map((editor) => Y.encodeStateAsUpdate(editor.keys));
+    Y.applyUpdate(editors[0].keys, b);
+    Y.applyUpdate(editors[1].keys, a);
+  };
+  sync();
+  const [kept] = sampleOf(editors[0]);
+  expect(sampleOf(editors[0])).toHaveLength(1);
+  expect(sampleOf(editors[1])).toEqual([kept]);
+  const accepted = keysScope(editors[0].keys)
+    .get(bare.parts[0].id)
+    ?.get('accepted');
+  if (!(accepted instanceof Y.Map)) throw new Error('no accepted list');
+  expect([...accepted.keys()]).toEqual([SAMPLE_KEY]);
+  const merged = readQuestions(editors[0].content, editors[0].keys)[0];
+  expect(validateQuestion(merged)).toEqual(merged);
+  // From then on both type into the one text.
+  type(editors[0], `${kept} add`);
+  type(editors[1], `More ${kept}`);
+  sync();
+  expect(sampleOf(editors[0])).toEqual([`More ${kept} add`]);
+  expect(sampleOf(editors[1])).toEqual([`More ${kept} add`]);
+});
+
+it("gives learners a marked part's total from the pushed lists", () => {
+  const { content, keys } = quiz();
+  const part = 'example-7-part';
+  // A second editor's marking item merged in: the part's own marks stay 1.
+  const scheme = keysScope(keys).get(part)?.get('markscheme') as Y.Map<
+    Y.Map<unknown>
+  >;
+  const item = new Y.Map<unknown>();
+  item.set('order', 'a9');
+  item.set('text', new Y.Text('Names the cristae.'));
+  item.set('marks', 19);
+  scheme.set('m-late', item);
+  const pushed = itemParts(keys).find((entry) => entry.part === part);
+  expect(pushed).toEqual({ entries: [], kind: 'open', part, total: 20 });
+  const lists = applyReaderMessage(new Map(), {
+    full: true,
+    parts: { [part]: { items: [], kind: 'open', total: 20 } },
+  });
+  const marks = (read: LearnerQuestion[]) =>
+    read.find((question) => question.parts[0].id === part)?.parts[0].marks;
+  expect(marks(readLearnerQuestions(content))).toBe(1);
+  expect(marks(readLearnerQuestions(content, lists))).toBe(20);
+});
+
+it('writes a part worth more than twice the cap with its own marks at 40', () => {
+  const { content, keys } = quiz();
+  const part = 'example-7-part';
+  // Two editors' adds at once left items worth 15 + 15 + 15.
+  const scheme = keysScope(keys).get(part)?.get('markscheme');
+  if (!(scheme instanceof Y.Map)) throw new Error('no marking items');
+  scheme.clear();
+  for (const [at, id] of ['m1', 'm2', 'm3'].entries()) {
+    const item = new Y.Map<unknown>();
+    item.set('order', `a${at}`);
+    item.set('text', new Y.Text(`Point ${id}.`));
+    item.set('marks', 15);
+    scheme.set(id, item);
+  }
+  const read = readQuestions(content, keys).find(
+    (question) => question.parts[0].id === part
+  );
+  if (!read) throw new Error('no question');
+  expect(read.parts[0].marks).toBe(45);
+  // A stem edit sends the read marks back: the room admits own marks up to
+  // 40, so 40 is written and the part still reads as the items' total.
+  writeQuestion(content, keys, {
+    ...read,
+    stem: [{ text: 'Read the passage.', type: 'text' }],
+  });
+  const parts = questionsScope(content).get(read.id)?.get('parts');
+  const entry = parts instanceof Y.Map ? parts.get(part) : undefined;
+  expect(entry instanceof Y.Map && entry.get('marks')).toBe(40);
+  expect(
+    readQuestions(content, keys).find((question) => question.id === read.id)
+      ?.parts[0].marks
+  ).toBe(45);
 });
 
 /* The live quiz against the embed catalog (openwiki/embeds.md): every
