@@ -357,12 +357,18 @@ fn fresh_id(txn: &TransactionMut, map: &MapRef, prefix: &str, n: &mut usize) -> 
     }
 }
 
-/// An order key after `last` for an entry whose key is `held`: the held one
-/// while it still sorts after `last`.
-pub fn next_order(held: Option<&str>, last: Option<&str>) -> String {
+/// An order key after `last` (the previous entry's `(id, order)`) for entry
+/// `id`, whose key is `held`: the held one while `(order, id)` still sorts
+/// after `last`'s, as readers sort, so a tie already in order stays.
+pub fn next_order(id: &str, held: Option<&str>, last: Option<(&str, &str)>) -> String {
     match held {
-        Some(held) if !held.is_empty() && last.is_none_or(|last| last < held) => held.to_owned(),
-        _ => order::after(last),
+        Some(held)
+            if !held.is_empty()
+                && last.is_none_or(|(last_id, last)| (last, last_id) < (held, id)) =>
+        {
+            held.to_owned()
+        }
+        _ => order::after(last.map(|(_, last)| last)),
     }
 }
 
@@ -448,13 +454,14 @@ pub fn align_axis(
             None => fresh_id(txn, map, prefix, &mut n),
         })
         .collect();
-    let orders: Vec<String> = places
+    let offered: Vec<(&str, &str)> = next
         .iter()
-        .map(|at| at.map_or_else(String::new, |at| held[at].1.clone()))
+        .zip(&places)
+        .map(|(id, at)| (id.as_str(), at.map_or("", |at| held[at].1.as_str())))
         .collect();
-    for ((id, order), was) in next.iter().zip(order::rising(&orders)).zip(&orders) {
-        if order != *was {
-            map.insert(txn, id.as_str(), string_any(&order));
+    for (&(id, was), order) in offered.iter().zip(order::rising(&offered)) {
+        if order != was {
+            map.insert(txn, id, string_any(&order));
         }
     }
     next
@@ -519,16 +526,13 @@ fn sync_elements(txn: &mut TransactionMut, map: &MapRef, elements: &[Value]) {
         .iter()
         .filter_map(|element| Some((element.get("id")?.as_str()?, element)))
         .collect();
-    // Held keys stay wherever the wanted order lets them, as the browser's
-    // `writeElements` keeps them.
+    // Held keys stay wherever the wanted order lets them, ties compared by
+    // id, as the browser's `writeElements` keeps them: re-keying an entry
+    // rewrites its element too, over a peer's concurrent edit.
     let orders = order::rising(
         &wanted
             .iter()
-            .map(|(id, _)| {
-                held.get(*id)
-                    .map(|(order, _)| order.clone())
-                    .unwrap_or_default()
-            })
+            .map(|&(id, _)| (id, held.get(id).map_or("", |(order, _)| order.as_str())))
             .collect::<Vec<_>>(),
     );
     let mut kept = HashSet::new();

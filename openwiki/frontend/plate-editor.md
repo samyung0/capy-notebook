@@ -1093,14 +1093,20 @@ inside a figure. One reader, one diffing writer and the one-entry writes serve
 both rooms (`src/features/figures/figureMap.ts`, its Y.Map helpers in
 `figures/yMaps.ts`; `quizzes/liveFigures.ts` re-exports them). A graph's
 element entries have one writer wherever they are held, quiz, note and the
-canvas plane alike (`writeElements` in `src/features/graph/keyed.ts`, D10;
-the one-entry `setElement` and `moveElement` go through it too): an element
+canvas plane alike, and so do a canvas chart's bars, pie labels and pie
+lines (`writeElements` in `src/features/graph/keyed.ts`, for any item with
+an id; D10, Epo 2026-11-22; the one-entry `setElement` and `moveElement` go
+through it too): an element
 alike its stored one (the same object, or equal JSON, as a note's Slate value
 hands fresh objects) keeps its entry, and order keys come from `risingOrders`
 (`src/lib/orderKey.ts`), which keeps every held key that still rises in the
-wanted order (the longest such run), so appending re-keys nothing held and a
-moved element alone takes a key between its neighbours; each entry is written
-at most once. A chart's series and labels are aligned by `alignPlaces`
+wanted order (the longest such run), comparing `(order key, id)` as readers
+sort, so appending re-keys nothing held, a tie two editors' adds left stays
+(re-keying it would rewrite the whole entry over a peer's edit), a moved
+element alone takes a key between its neighbours, a new element placed
+between tied neighbours re-keys the later tied neighbours, and each gap is
+placed the same way between its neighbours, so a held key inside it stays;
+each entry is written at most once. A chart's series and labels are aligned by `alignPlaces`
 (`figures/align.ts`, used by `alignAxis`). One Rust
 module (`collaboration-rs/crates/notes/src/figure_map.rs`) reads, writes and
 admits them for notes and `items::quiz`. Two editors' changes to different
@@ -2537,13 +2543,27 @@ design, option d), and the nudge's release file on 2026-10-17.
   `MIN_SOURCE` to 33, so source tabs on the older pin (protocol 32) reload;
   `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
   request names "client protocol 32 -> 33, source 32 -> 33".
+  Keyed chart lists (Epo 2026-11-22: a canvas chart's `bars`, `labels` and
+  `spokes` are maps of id to `{element, order}`, and `fills` is gone, each
+  line carrying its slice's fill) raised `CLIENT_PROTOCOL` to 33 and
+  `MIN_MATERIAL` to 33: the same keys changed shape, and each build's load
+  check refuses the other's, so a tab from before and a newer tab on one canvas
+  would each show the other's charts as "cannot be shown". The tab from before
+  reloads instead. A chart already stored in the old shape draws as that
+  placeholder on a workspace canvas; on a question board (a drawing answer)
+  `checkSavedBoard` throws on it, so a saved answer or a device draft holding
+  one fails to open. Both are accepted, since there is no production data (no
+  shim).
+  The two 33s met in one merge before either was deployed, so 33 covers both:
+  `MIN_MATERIAL` and `MIN_SOURCE` are both 33, and their deploy request names
+  "client protocol 32 -> 33, material 31 -> 33, source 32 -> 33".
   The first Q608 landing and the Q667 pin land together (Office protocol 15:
   every reader place carries its frame's zoom, viewers answer
   `position-request`, and an XLSX place may name its sheet by name; pin
   eb7d8b4f7: chat citations are highlighted inside the DOCX, XLSX and PPTX
   editors). They raised `OFFICE_PROTOCOL_VERSION` to 15, `CLIENT_PROTOCOL` to
   34 and `MIN_SOURCE` to 34, so source tabs from before them (protocol 33)
-  reload; `MIN_MATERIAL` stays 31. Their deploy request names "client protocol
+  reload; `MIN_MATERIAL` stays 33. Their deploy request names "client protocol
   33 -> 34, source 33 -> 34".
 
 #### When to bump
@@ -4262,7 +4282,22 @@ is touched, and on the next frame its element is written if it differs from
 the figure's (at most once a frame however fast it is typed, nothing when
 unchanged; a new one goes last, then to its row's place, counted by the
 figure's elements of the rows above it, a row that cannot draw now included).
-A row that does not
+An existing row past what readers draw (`drawnMax`, from `drawnMaxFor`) is not
+written: one whose element is past a quiz or note graph's first 100 in the
+figure, what the repairs keep (counted in the figure, where a refused row holds
+no place, and marked so on its row); a canvas plane draws every element, so
+each of its existing rows is written. A new row's element is not written while
+the figure already holds 100 (`graphFull`, checked as the figure reads when
+written): it is named with `question_ui_graph_elements_max` and keeps its text.
+While a row waits so, or an edit is held back past a quiz or note graph's first
+100, the writer writes again on each co-editor's change to the figure (its own
+writes are skipped), so a row started before a co-editor filled the last place,
+or an edit to the 101st element, goes in on its own once a delete makes room;
+`onRefused` hears only a change in what is refused, and a refused row typed back
+to what the figure holds is refused no more. Closing disposes the writer: the
+watch ends and a frame already queued is cancelled, so one still refused when
+the dialog closes is dropped with its text, as a row never drawable is: nothing
+reaches the room and nothing asks first. A row that does not
 parse or names a point that is not there is not written: it keeps its text
 and issue while the dialog is open, and when the dialog closes the room keeps
 the element's last drawable form (none for a row never drawable). A co-editor's
@@ -5375,9 +5410,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   deletes only the entries that changed, keeping every held order key that can stay
   (`risingOrders`), so two
   people drawing on one plane would merge mark by mark once the canvas has a room. A
-  plane holds at most 100 elements, as every graph, its labels up to 60 characters and
-  a curve up to 100 points, where its tool finishes it (the question bounds
-  `QUESTION_GRAPH_*`, D7); the load check runs the graph model's one element check
+  plane takes at most 100 elements from its tools, as every graph, its labels up to 60
+  characters and a curve up to 100 points, where its tool finishes it (the question
+  bounds `QUESTION_GRAPH_*`, D7); the load check takes up to twice the 100 elements
+  (`mergedCap` in `boardLoad.ts`, Epo 2026-11-22, "sure A"), as two people's adds at
+  the same moment merge a plane past its cap, and runs the graph model's one element check
   (`graphElementSchema`, the same as quiz and note graphs and Go and Rust) on each
   element of a kind the plane makes (`PLANE_KINDS`); a board saved with the old
   `marks` list fails it (no production data, no shim). A card is a picture on the canvas: Select moves it, the frame's knob
@@ -5561,14 +5598,57 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   icon with its reason and keeps its text, unwritten, until it can; Escape puts it back
   as it was. Moving a named point drags what's built on it; erasing it (Erase, Delete)
   takes what's built on it too, while deleting its row in the list leaves those rows
-  with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) a tool or a new row
-  is refused with `drawing_board_plane_full` on the new row's icon. "+ Label" adds a label in
+  with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) or more (`graphFull`
+  in `questions/graph.ts`) the list shows no new row, "+ Label" is disabled and a
+  tool's new mark is turned away, the issue line above the editor then reading
+  `question_ui_graph_elements_max` while the plane stays full. Every add is checked
+  against the plane as it reads when written (`graphWriter`): a row started under the
+  cap whose last place a co-editor's add took meanwhile is not written, its icon
+  carrying that message and its text kept, and goes in on its own once a delete makes
+  room; one still refused when the editor closes is dropped with its text, with no
+  prompt. So only adds written
+  on two tabs at the same moment, before either holds the other's, merge a plane past
+  100; it then draws every element on its card, and in the editor every row, the
+  101st on, edits and saves as any with no cap issue on it (Epo 2026-11-22: the cap
+  stops only adding; `drawnMaxFor` gives a plane no row limit for `graphWriter` and
+  the recipe check). A quiz or note graph keeps its rule for merged rows (the graph writer's, above): its readers draw only
+  the first 100, since the Rust and Go validators refuse more and the read repairs
+  keep the first ones. "+ Label" adds a label in
   the middle of what's in view and selects its text. Hovering a row lights its mark,
   focusing a label row selects only its label (Shift/⌘/Ctrl adds it), focusing any other row
   clears the selection; selected marks light their rows. The answer board has no list button and no
   functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
-  kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
+  kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either:
+  `axisMax`, `axisStep`, `kind`, `rotate` and `xywh` as plain fields, and `bars`
+  (`ChartBar`: `id`, `label`, `value`, `fill`), `labels` (pie labels) and `spokes` (pie
+  lines: `id`, `angle`, and `fill`, the fill of the slice that starts at the line,
+  clockwise) each a `Y.Map` of id to `{ element, order }`, as the plane keeps its elements
+  (Epo 2026-11-22, "Yes, fix it"): `propsToY` turns a new or pasted card's plain entries
+  into the maps, an `@observe` per list tells the renderer and an open editor to draw
+  again on a change inside it (a peer's too), reads are cached per list (`barList`,
+  `labelList`, `spokeList`), and `write` sets lists and the axis in one transaction, one
+  undo step, each list through `writeElements`. Changes to different bars, labels or lines
+  merge; two changes to the same item at once keep one; two people adding at once keep
+  both. The editor builds every write from the lists as they read then, and a gesture
+  follows its bar, line or label by id, so a peer's add, removal or turn mid-drag lands
+  nowhere wrong; the bar being drawn in the free place after the last has the id `''`
+  until it is written. An add checks the cap against the list as it reads when written
+  (`appended` in `boardChart.ts`), so a bar a peer added mid-drag counts and the add
+  does nothing at the cap or past it; two adds merged from the very same moment can
+  still pass it, and the load check takes each list up to twice its cap for that (Epo
+  2026-11-22, "sure A"): a chart merged past the cap opens and edits as any, the editor
+  giving each bar its place and no free one (`barSlots`, `setsBar` in `boardData.ts`).
+  Closing a label's text field writes nothing unless the
+  text differs from what the field opened with, so closing an untouched field keeps a
+  peer's rename; a changed text goes onto the bar or pie label as it reads then
+  (`typedBars`, `typedLabels`), so a peer's move or resize stays and a label a peer
+  erased stays erased; only a new pie label takes the place where the field opened. A
+  pie's first line has one id on every pie (`FIRST_SPOKE`), which a new pie,
+  Clear all and "+ Slice" on a pie with no line all use, so two Clear alls at once, or
+  one crossing a peer's turn or fill of that line, leave one line. The load check (`boardLoad.ts`) takes each map as it takes a
+  plane's: every key its item's id, at most twice `BARS_MAX`, `LABELS_MAX` and
+  `SPOKES_MAX` items (48, 120 and 120, `mergedCap`), finite values and angles, and a line's `fill` a board colour. They
   move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
@@ -5580,7 +5660,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
   line, whose chip shows the sector it closes, from the line before it clockwise;
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
-  under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
+  under it the picked fill (the `fill` of the line the slice starts at; erasing that
   line drops it, No fill clears it). A label goes where it's clicked, kept as an angle and
   a share of the radius (`reach`), so it stays put as the card resizes. Select
   (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
@@ -5591,7 +5671,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   alone wears the board's selection frame, and dragging a corner sizes it (`size`, as a
   plane label's). One of several
   chosen items takes the others of its kind along: bars up or down by as much (none
-  below 0, one taken to 0 goes), lines round by as far, labels by as far across. After
+  below 0; a bar the drag takes to 0 goes, judged against the values before it
+  (`liftedBars`), so one typed as 0 in the data pane stays, held along or not),
+  lines round by as far, labels by as far across. After
   one label the tool goes back to Select, as on the plane.
 - **A chart's data pane** (Epo 2026-11-13, B1 and P1, workspace canvases only): the
   plane list's button, card and phone sheet (`.capy-plane-list`, its own session
@@ -5599,8 +5681,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   axis right of the button (dropping to the second row under 460 px). A bar's row is
   its fill swatch, label and value; a value past the axis's top raises the top to the
   next numbered line (or a fresh axis past 100 lines), and "+ Bar" adds one a step
-  tall with the caret in its label. A pie's row per slice (`slicesOf`, clockwise
-  from each line) is its swatch, name and share in % with its degrees: the name is the
+  tall with the caret in its label. A pie's row per slice (`slicesOf` in `boardData.ts`,
+  clockwise from each line, the row going by that line's id) is its swatch, name and
+  share in % with its degrees: the name is the
   first label inside the pie within the slice (typing one adds it at the slice's middle,
   reach 0.62; emptied it goes), and a share typed moves the slice's closing line in
   whole degrees, the slices after it keeping their sizes and the last taking up the

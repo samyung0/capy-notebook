@@ -774,6 +774,112 @@ test("a tab cut off from the room keeps drawing, and both people's drawing is th
   await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
 });
 
+type Bar = { label: string; value: number };
+/** The chart's bars as `[label, value]`, in order: this tab's, and the other
+ * person's from their copy of the room (each bar keyed by id with an order key,
+ * Epo 2026-11-22). */
+const tabBars = (page: Page) =>
+  page.evaluate(() => {
+    const root = document.querySelector('affine-edgeless-root') as unknown as {
+      gfx: {
+        layer: { canvasElements: { barList?: Bar[]; type: string }[] };
+      };
+    };
+    const chart = root.gfx.layer.canvasElements.find(
+      ({ type }) => type === 'chart'
+    );
+    return chart?.barList?.map(({ label, value }) => [label, value]) ?? null;
+  });
+const peerBars = (page: Page) =>
+  page.evaluate(() => {
+    const chart = Object.values((window as Shown).peer?.elements() ?? {}).find(
+      ({ type }) => type === 'chart'
+    );
+    const entries = Object.values(
+      (chart?.bars ?? {}) as Record<string, { element: Bar; order: string }>
+    );
+    return entries
+      .sort((a, b) => (a.order < b.order ? -1 : 1))
+      .map(({ element: { label, value } }) => [label, value]);
+  });
+
+test('a tab cut off from the room and another person change different bars of one chart, and both changes are there once it is back', async ({
+  page,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  // A bar chart from Misc, dropped beside its panel, with three bars typed in
+  // its data pane.
+  await page.locator('capy-misc-button').click();
+  await page.locator('capy-misc-panel .tile[data-kind="bar"]').first().click();
+  const board = await page.locator('affine-edgeless-root').boundingBox();
+  if (!board) throw new Error('no board');
+  const drop = [board.x + board.width * 0.25, board.y + board.height * 0.4];
+  await page.mouse.move(drop[0], drop[1], { steps: 6 });
+  await page.mouse.click(drop[0], drop[1]);
+  await page
+    .locator('affine-toolbar-widget')
+    .getByLabel('Edit the chart')
+    .click();
+  const pane = page.locator('.capy-plane-list');
+  for (const day of ['Mon', 'Tue', 'Wed']) {
+    await pane.getByRole('button', { name: 'Bar' }).click();
+    await page.keyboard.type(day);
+    await page.keyboard.press('Enter');
+  }
+  await expect
+    .poll(() => tabBars(page))
+    .toEqual([
+      ['Mon', 2],
+      ['Tue', 2],
+      ['Wed', 2],
+    ]);
+  await joinPeer(page, CANVAS);
+  await expect.poll(() => peerBars(page)).toHaveLength(3);
+
+  await socket(page, CANVAS, false);
+  // Each changes a bar without the other: this tab the first bar's value,
+  // the other person the third bar's label.
+  await pane.getByRole('textbox', { name: 'Value' }).first().fill('7');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => {
+    const peer = (window as Shown).peer;
+    const [id, chart] =
+      Object.entries(peer?.elements() ?? {}).find(
+        ([, element]) => element.type === 'chart'
+      ) ?? [];
+    const entries = Object.entries(
+      (chart?.bars ?? {}) as Record<string, { element: Bar; order: string }>
+    ).sort(([, a], [, b]) => (a.order < b.order ? -1 : 1));
+    const [key, entry] = entries[2];
+    if (!(peer && id)) throw new Error('no chart');
+    peer.entry(id, 'bars', key, {
+      ...entry,
+      element: { ...entry.element, label: 'Thu' },
+    });
+  });
+  await expect
+    .poll(() => tabBars(page))
+    .toEqual([
+      ['Mon', 7],
+      ['Tue', 2],
+      ['Wed', 2],
+    ]);
+
+  await socket(page, CANVAS, true);
+  const both = [
+    ['Mon', 7],
+    ['Tue', 2],
+    ['Thu', 2],
+  ];
+  await expect.poll(() => tabBars(page)).toEqual(both);
+  await expect.poll(() => peerBars(page)).toEqual(both);
+  // The open editor drew the other person's change: its row reads it.
+  await expect(
+    pane.getByRole('textbox', { name: 'Type a label' }).nth(2)
+  ).toHaveValue('Thu');
+});
+
 // A canvas this device keeps no copy of: under the mocks a plain canvas keeps
 // none (deviceCopy.ts); one with a copy paints it offline (the scenario
 // canvas's test below).

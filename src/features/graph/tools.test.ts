@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as limits from '@/api/limits.generated';
+import { graphFull } from '@/features/questions/graph';
 import type { GraphElement, Vec } from './model';
 import {
   type Formula,
@@ -249,6 +250,20 @@ describe('drawing tools', () => {
     tools.pick('point');
     click(px(1, 1));
     expect(state.elements).toEqual([]);
+    expect(state.refused).toBe(1);
+  });
+
+  it('adds nothing to a canvas plane two adds merged past the cap (Epo 2026-11-22)', () => {
+    const many: GraphElement[] = Array.from(
+      { length: limits.QUESTION_GRAPH_ELEMENTS_MAX + 1 },
+      (_, i) => ({ coords: [i, -100], id: `P${i}`, type: 'point' })
+    );
+    const { click, state, tools } = setup(many, {
+      full: graphFull(many.length),
+    });
+    tools.pick('point');
+    click(px(1, 1));
+    expect(state.elements).toBe(many);
     expect(state.refused).toBe(1);
   });
 });

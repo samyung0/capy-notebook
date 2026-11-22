@@ -1,6 +1,6 @@
 /* Order keys for live item lists (live-items DESIGN.md 1.1): the base-62
  * strings of fractional-indexing 3.2.0's generateKeyBetween (CC0), ported so
- * the browser and the collaboration server (collaboration-rs/crates/items/
+ * the browser and the collaboration server (collaboration-rs/crates/notes/
  * src/order.rs, which checks every key a writer sends) agree. A move sets a
  * new key between the neighbours instead of deleting and inserting, so an
  * edit inside the moved entry survives. */
@@ -116,41 +116,70 @@ export function keysBetween(
   return out;
 }
 
-/** Order keys for entries wanted in the given order, from the keys they hold
- * ('' for one with none yet). The most held keys that already rise in that
- * order stay (the longest rising run), so an untouched entry keeps its key and
- * entries appended after held ones re-key nothing; every other entry (a moved
- * or a new one) takes a key between its neighbours. */
-export function risingOrders(held: string[]): string[] {
+type Held = { id: string; order: string };
+
+/** Order keys for entries wanted in the given order, from each entry's id and
+ * the key it holds ('' for one with none yet). Held keys are compared with
+ * ties broken by id, as readers sort, and the most that already rise in that
+ * order stay (the longest rising run): an untouched entry keeps its key, a tie
+ * two editors' adds left that reads in the wanted order stays, and entries
+ * appended after held ones re-key nothing. Every other entry (a moved or a new
+ * one) takes a key between its neighbours; one placed between tied
+ * neighbours, where no key fits, re-keys the later tied neighbours with it. */
+export function risingOrders(held: readonly Held[]): string[] {
+  return placed(held, null, null);
+}
+
+/** Whether `order` is a key strictly between `lower` and `upper` (null: the
+ * start or the end). */
+const within = (order: string, lower: string | null, upper: string | null) =>
+  order !== '' &&
+  (lower === null || order > lower) &&
+  (upper === null || order < upper);
+
+/** `risingOrders` for entries placed between `lower` and `upper`: only a held
+ * key inside them can stay, and each gap between kept entries is placed the
+ * same way between its neighbours, so a held key inside a gap stays too. */
+function placed(
+  held: readonly Held[],
+  lower: string | null,
+  upper: string | null
+): string[] {
+  const below = (a: number, b: number) =>
+    held[a].order < held[b].order ||
+    (held[a].order === held[b].order && held[a].id < held[b].id);
   // Longest strictly rising subsequence (patience sorting): `tails[n]` is the
   // entry ending the best run of length n + 1 so far, `previous` links runs.
   const tails: number[] = [];
   const previous = held.map(() => -1);
-  held.forEach((order, i) => {
-    if (order === '') return;
+  held.forEach(({ order }, i) => {
+    if (!within(order, lower, upper)) return;
     let low = 0;
     let high = tails.length;
     while (low < high) {
       const mid = (low + high) >> 1;
-      if (held[tails[mid]] < order) low = mid + 1;
+      if (below(tails[mid], i)) low = mid + 1;
       else high = mid;
     }
     if (low > 0) previous[i] = tails[low - 1];
     tails[low] = i;
   });
+  // Nothing to keep: every entry takes a new key (this ends the recursion,
+  // since a gap is smaller than the list that kept an entry).
+  if (tails.length === 0) return keysBetween(lower, upper, held.length);
   const kept = new Set<number>();
   for (let i = tails.at(-1) ?? -1; i >= 0; i = previous[i]) kept.add(i);
-  const orders = [...held];
+  const orders = held.map(({ order }) => order);
   for (let i = 0; i < orders.length; i++) {
     if (kept.has(i)) continue;
+    // The entry before a gap is a kept one holding its own key; kept entries
+    // tied with it join the gap, so the gap ends at a greater key.
+    const after = i > 0 ? orders[i - 1] : lower;
     let end = i;
-    while (end < orders.length && !kept.has(end)) end++;
-    const keys = keysBetween(
-      i > 0 ? orders[i - 1] : null,
-      end < orders.length ? orders[end] : null,
-      end - i
-    );
-    keys.forEach((key, k) => {
+    while (end < orders.length && (!kept.has(end) || orders[end] === after))
+      end++;
+    const before = end < orders.length ? orders[end] : upper;
+    placed(held.slice(i, end), after, before).forEach((key, k) => {
       orders[i + k] = key;
     });
     i = end;

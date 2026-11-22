@@ -378,9 +378,12 @@ export function addChartItem(
   const items = child(map, axis);
   const ids = orderedKeys(items);
   ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id);
-  const held = ids.map((key) => (items.get(key) as string | undefined) ?? '');
+  const held = ids.map((key) => ({
+    id: key,
+    order: (items.get(key) as string | undefined) ?? '',
+  }));
   risingOrders(held).forEach((order, i) => {
-    if (order !== held[i]) items.set(ids[i], order);
+    if (order !== held[i].order) items.set(ids[i], order);
   });
   child(map, 'names').set(id, name);
   return id;

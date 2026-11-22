@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { QUESTION_GRAPH_ELEMENTS_MAX } from '@/api/limits.generated';
 import type { FigureBinding } from '@/features/questions/figureBinding';
 import {
   buildElements,
@@ -118,6 +119,7 @@ function dialog(binding: FigureBinding) {
       keys: rows.map((row) => row.key),
     }),
     () => {},
+    QUESTION_GRAPH_ELEMENTS_MAX,
     frames
   );
   return {

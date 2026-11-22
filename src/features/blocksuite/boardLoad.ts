@@ -6,6 +6,7 @@ import {
   AXIS_MAX,
   BARS_MAX,
   ELEMENTS_MAX,
+  isColour,
   isTextSize,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
@@ -81,24 +82,47 @@ const connection = (value: unknown) => {
 const planeElementFits = (element: Fields) =>
   graphElementSchema.safeParse(element).success;
 
-/** A plane's elements: a map of element id to the element and its order key (Epo
- * 2026-11-16, D10), at most ELEMENTS_MAX of them. */
-function planeElementsFit(elements: unknown) {
-  if (!elements || typeof elements !== 'object' || Array.isArray(elements))
-    return false;
-  const entries = Object.entries(elements as Record<string, Fields>);
+/** How many items the load check takes of a list whose add tools stop at `cap`:
+ * twice it, as two people's adds at the same moment merge past the cap (Epo
+ * 2026-11-22, "sure A"; a quiz or note figure's maps hold twice theirs too). */
+const mergedCap = (cap: number) => 2 * cap;
+
+/** A keyed list: a map of item id to the item and its order key (Epo 2026-11-16,
+ * D10: a plane's elements; 2026-11-22: a chart's bars, labels and lines), up to
+ * twice its `cap`, each item as `fits` takes it. */
+function keyedFit(
+  value: unknown,
+  cap: number,
+  fits: (item: Fields) => boolean
+) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const entries = Object.entries(value as Record<string, Fields>);
   return (
-    entries.length <= ELEMENTS_MAX &&
+    entries.length <= mergedCap(cap) &&
     entries.every(
       ([id, entry]) =>
         typeof entry?.order === 'string' &&
         typeof entry.element === 'object' &&
         entry.element !== null &&
         (entry.element as Fields).id === id &&
-        planeElementFits(entry.element as Fields)
+        fits(entry.element as Fields)
     )
   );
 }
+
+const barFits = (bar: Fields) =>
+  finite(bar.value) &&
+  typeof bar.label === 'string' &&
+  bar.label.length <= LABEL_LENGTH_MAX;
+const pieLabelFits = (label: Fields) =>
+  typeof label.text === 'string' &&
+  label.text.length <= LABEL_LENGTH_MAX &&
+  finite(label.angle) &&
+  finite(label.reach) &&
+  isTextSize(label.size);
+/** A pie line, with the fill of the slice it starts. */
+const spokeFits = (spoke: Fields) =>
+  finite(spoke.angle) && (spoke.fill === undefined || isColour(spoke.fill));
 
 /** The checks a card's own renderer relies on. */
 function elementProblem(
@@ -139,11 +163,11 @@ function elementProblem(
       finite(fields.y0) &&
       (fields.polar === undefined || typeof fields.polar === 'boolean') &&
       (fields.rotate === undefined || finite(fields.rotate)) &&
-      planeElementsFit(fields.elements)
+      keyedFit(fields.elements, ELEMENTS_MAX, planeElementFits)
       ? null
       : 'plane fields';
   if (type === 'chart') {
-    const { axisMax, axisStep, bars, fills, kind, labels, spokes } = fields;
+    const { axisMax, axisStep, bars, kind, labels, spokes } = fields;
     const fine =
       (kind === 'bar' || kind === 'pie') &&
       (fields.rotate === undefined || finite(fields.rotate)) &&
@@ -152,27 +176,9 @@ function elementProblem(
       (axisMax as number) <= AXIS_MAX &&
       finite(axisStep) &&
       (axisStep as number) > 0 &&
-      listUpTo(bars, BARS_MAX) &&
-      listUpTo(spokes, SPOKES_MAX) &&
-      (spokes as unknown[]).every(finite) &&
-      (fills === undefined ||
-        (listUpTo(fills, SPOKES_MAX) &&
-          (fills as Fields[]).every((slice) => finite(slice?.from)))) &&
-      listUpTo(labels, LABELS_MAX) &&
-      (labels as Fields[]).every(
-        (label) =>
-          typeof label?.text === 'string' &&
-          label.text.length <= LABEL_LENGTH_MAX &&
-          finite(label.angle) &&
-          finite(label.reach) &&
-          isTextSize(label.size)
-      ) &&
-      (bars as Fields[]).every(
-        (bar) =>
-          finite(bar?.value) &&
-          typeof bar.label === 'string' &&
-          bar.label.length <= LABEL_LENGTH_MAX
-      );
+      keyedFit(bars, BARS_MAX, barFits) &&
+      keyedFit(labels, LABELS_MAX, pieLabelFits) &&
+      keyedFit(spokes, SPOKES_MAX, spokeFits);
     return fine ? null : 'chart fields';
   }
   return null;
