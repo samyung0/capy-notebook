@@ -9,6 +9,7 @@ import {
   type PptxCommandState,
   PptxEditor,
   type PptxEditorApi,
+  type PptxEditorProps,
   type RibbonControls,
 } from '@betteroffice/pptx-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -165,12 +166,10 @@ export function PptxEditorHost({
     if (zoom) onZoomChange(zoom === 'fit' ? 'fit' : Number(zoom));
   }, [onZoomChange, zoom]);
   // View's rule over every slide's text boxes, once the deck is painted: its
-  // slide is shown and its lines marked until the next citation.
+  // slide is shown and its lines marked until the next citation. ponytail:
+  // every slide laid out per citation, as View lays them out at open.
   const [painted, setPainted] = useState(false);
-  const [textMark, setTextMark] = useState<{
-    color: string;
-    storyId: string;
-  } | null>(null);
+  const [textMark, setTextMark] = useState<PptxEditorProps['textMark']>(null);
   useEffect(() => {
     setTextMark(null);
     const api = apiRef.current;
@@ -185,9 +184,15 @@ export function PptxEditorHost({
       );
       const match = uniqueCitation(items, citation.quote);
       if (!(match?.rects.length && match.storyId)) return;
+      // The slide changes, leaving the focus where it is (Q811 A).
       api.goToSlide(match.slide + 1);
-      // A new object per citation: its slide scrolls to it once more.
-      setTextMark({ color: CITATION_FILL, storyId: match.storyId });
+      // A new object per citation: its slide scrolls to it once more. Its
+      // lines show while the box still holds the quote (Q809 A).
+      setTextMark({
+        color: CITATION_FILL,
+        holds: (text) => !!uniqueCitation([{ text }], citation.quote),
+        storyId: match.storyId,
+      });
     } catch {
       /* Best-effort navigation must not fail the editor. */
     }

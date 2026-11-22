@@ -11,6 +11,7 @@ import {
   type XlsxCommandState,
   XlsxEditor,
   type XlsxEditorApi,
+  type XlsxEditorProps,
 } from '@betteroffice/xlsx-react';
 import {
   type PointerEvent,
@@ -27,7 +28,7 @@ import type {
   OfficeNotice,
   OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
-import { CITATION_FILL } from './citations';
+import { CITATION_FILL, uniqueCitation } from './citations';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
   OfficeCollaboration,
@@ -219,13 +220,10 @@ export function XlsxEditorHost({
     if (zoom) onZoomChange(zoom);
   }, [onZoomChange, zoom]);
   // View's rule on the open workbook's cells, once its grid is painted: the
-  // cell is selected, as View selects it, and filled until the next citation.
+  // editor scrolls to the cell and fills it without selecting it (Q810 B),
+  // while the cell still holds the quote (Q809 A), until the next citation.
   const [painted, setPainted] = useState(false);
-  const [marked, setMarked] = useState<{
-    sheetId: string;
-    row: number;
-    col: number;
-  } | null>(null);
+  const [marked, setMarked] = useState<XlsxEditorProps['markedCell']>(null);
   useEffect(() => {
     setMarked(null);
     const api = apiRef.current;
@@ -233,9 +231,13 @@ export function XlsxEditorHost({
     let cancelled = false;
     void liveXlsxCitation(api.handle, citation.quote).then((match) => {
       if (cancelled || !match) return;
-      const cell = { col: match.col, row: match.row };
-      setMarked({ ...cell, sheetId: match.sheetId });
-      void api.selectCells(match.sheet, { anchor: cell, focus: cell });
+      setMarked({
+        col: match.col,
+        color: CITATION_FILL,
+        holds: (text) => !!uniqueCitation([{ text }], citation.quote),
+        row: match.row,
+        sheetId: match.sheetId,
+      });
     });
     return () => {
       cancelled = true;
@@ -331,7 +333,7 @@ export function XlsxEditorHost({
         i18n={xlsxStrings(locale)}
         icons={xlsxIcons}
         initialZoom={initialZoom}
-        markedCell={marked && { ...marked, color: CITATION_FILL }}
+        markedCell={marked}
         onCommandStateChange={setCommandState}
         onFirstPaint={() => {
           const info = apiRef.current?.sheetInfo();

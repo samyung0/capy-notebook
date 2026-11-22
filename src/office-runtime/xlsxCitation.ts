@@ -1,14 +1,12 @@
 import type { WorkbookViewerHandle } from '@betteroffice/xlsx/viewer';
 import type { XlsxEditorApi } from '@betteroffice/xlsx-react';
 import { strFromU8, unzipSync } from 'fflate';
-import { uniqueCitation } from './citations';
+import { quoteProbe, uniqueCitation } from './citations';
 
 const RELEVANT_PART =
   /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|worksheets\/[^/]+\.xml)$/;
 const WORKSHEET_PART = /^xl\/worksheets\/[^/]+\.xml$/;
 const CELL_ADDRESS = /^([A-Z]{1,3})([1-9][0-9]{0,6})$/;
-/** What the citation rule may join across, so no search piece holds it. */
-const QUOTE_BREAK = /[\s\u00ad-]+/;
 
 export type CellCitation = {
   sheet: number;
@@ -105,12 +103,7 @@ export async function liveXlsxCitation(
   handle: Pick<XlsxEditorApi['handle'], 'searchText'>,
   quote: string
 ): Promise<(CellCitation & { sheetId: string }) | null> {
-  const probe = quote
-    .split(QUOTE_BREAK)
-    .reduce(
-      (longest, piece) => (piece.length > longest.length ? piece : longest),
-      ''
-    );
+  const probe = quoteProbe(quote);
   if (!probe) return null;
   try {
     const cells = await handle.searchText(probe, { limit: 20_000 });

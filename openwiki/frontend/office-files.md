@@ -2582,18 +2582,22 @@ the same rule (`citations.ts`), the same `CITATION_FILL` and the same scroll
 
 | Format | Match | Mark | Jump |
 | --- | --- | --- | --- |
-| DOCX | every story's paragraphs, a body paragraph (table cells included) marked | `DocxEditorRef.showCitation`: the paragraph's live range over the canvas pages | centred once its pages hold it |
-| XLSX | `liveXlsxCitation`: the workbook search for the quote's longest piece without whitespace or hyphens, then the rule over those current cells | `markedCell` fills the cell | `selectCells` |
-| PPTX | every slide laid out (`layoutSlide`) through `slideCitationItems` | `textMark` fills the text box's lines | `goToSlide`, then centred if a zoomed slide hides it |
+| DOCX | the rule over the paragraphs the engine's `searchText` finds with the quote's longest piece (`quoteProbe`), picked once outside render; a body paragraph (table cells included) marked | `DocxEditorRef.showCitation`: the paragraph's live range over the canvas pages | centred once the pages are presented, again if the fitted zoom settles before the reader moves (Q811 A) |
+| XLSX | `liveXlsxCitation`: the workbook search for `quoteProbe`, then the rule over those current cells | `markedCell` fills the cell | the editor scrolls to it with View's 100 px of context, selecting nothing (Q810 B) |
+| PPTX | every slide laid out (`layoutSlide`) through `slideCitationItems` | `textMark` fills the text box's lines | `goToSlide` without taking the focus, then centred if a zoomed slide hides it |
 
 Highlights are display only in both modes: nothing reaches the document, its
 undo history or saved state, and the mark is drawn over the editor, not in it.
-The XLSX selection and the PPTX slide move as a click would, so co-editors see
-that cursor move. A highlight stays until the next citation replaces it or none
-clears it, as in View; in an editor it follows its paragraph, cell or text box
-through edits (typing included), and goes when its paragraph or shape does.
-Q802 B (the skeleton until every page is in) is View's; an editor marks the
-quote once its pages hold it.
+DOCX and XLSX leave the user's selection, presence and any open cell draft as
+they were; PPTX moves to the cited slide, which co-editors see. A cell on
+another sheet is marked and scrolled to once its sheet is opened: the editor
+does not switch sheets for it, since a switch moves the selection. A highlight
+stays until the next citation replaces it or none clears it, as in View, and
+only while the paragraph, cell or text box it marks still holds the quote
+(Q809 A): checked with the same rule on every change to it (DOCX each layout,
+XLSX each drawn frame, PPTX each slide frame), never moved to follow the text,
+so a row inserted above, a sort, a replaced or joined paragraph or a deleted
+sheet takes it away. Q802 B (the skeleton until every page is in) is View's.
 
 Google Docs, Sheets and Slides imports export DOCX, XLSX and PPTX respectively;
 Drawings still export PDF. Acquire rejects a source whose current export format

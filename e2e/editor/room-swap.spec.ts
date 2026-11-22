@@ -6,6 +6,7 @@ import {
   officeMenu,
   saveOffice,
 } from '../helpers/office';
+import { showChatHistory } from '../helpers/panelView';
 import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
@@ -753,6 +754,39 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   await expect(
     page.getByRole('menuitem', { name: /^Save/ })
   ).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+// Q667: the host gives the next room's editor the citation on screen (its
+// load and set-citation), so a highlight shown in Edit carries through a swap.
+test('a DOCX citation shown in Edit carries through a newer epoch', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await page.goto('/workspaces/ws_bio');
+  await showChatHistory(page);
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+  await expect(
+    officeFrame(page).locator('[data-citation-highlight]').first()
+  ).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+  const live = page.frameLocator('[data-office-view="live"] iframe');
+  const highlight = live.locator('.docx-editor [data-citation-highlight]');
+  await expect(highlight.first()).toBeVisible({ timeout: 60_000 });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  const old = await page
+    .locator('[data-office-view="live"] iframe')
+    .elementHandle();
+
+  await newEpoch(page, DOCX);
+  await expect(page.locator('[data-office-view="next"] iframe')).toBeAttached();
+  await expect(page.locator('[data-office-view="replaced"]')).toHaveCount(0, {
+    timeout: 120_000,
+  });
+  expect(await old?.evaluate((node) => node.isConnected)).toBe(false);
+  await expect(officeEditMenu(page)).toBeVisible();
+  await expect(highlight.first()).toBeAttached({ timeout: 60_000 });
 });
 
 /** A newer epoch for an open source file, as a base handoff announces it;

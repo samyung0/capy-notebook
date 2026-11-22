@@ -23,7 +23,7 @@ import type {
   OfficeParagraphPoint,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
-import { CITATION_FILL, uniqueCitation } from './citations';
+import { CITATION_FILL, quoteProbe, uniqueCitation } from './citations';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
 import { DOCX_RIBBON } from './docxRibbon';
@@ -166,12 +166,15 @@ export function DocxEditorHost({
     writeViewToggle('docxRuler', shown);
   }, []);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
-  // View's rule (citations.ts); the editor marks it once its pages hold it.
+  // View's rule (citations.ts) over the paragraphs the engine's search finds
+  // with the quote's longest piece; marked once the pages are presented, and
+  // only while its paragraph still holds the quote (Q809 A, Q811 A).
   useEffect(() => {
     editorRef.current?.showCitation(
       citation && {
         color: CITATION_FILL,
         match: (paragraphs) => uniqueCitation(paragraphs, citation.quote),
+        probe: quoteProbe(citation.quote),
       }
     );
   }, [citation]);
