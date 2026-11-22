@@ -9,17 +9,20 @@ import {
   type PptxCommandState,
   PptxEditor,
   type PptxEditorApi,
+  type PptxEditorProps,
   type RibbonControls,
 } from '@betteroffice/pptx-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PaneLoading } from '@/components/ui/feedback';
 import type {
   OfficeAnalysis,
+  OfficeCitation,
   OfficeLocale,
   OfficeNotice,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
+import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
 import { runtimeNotesWindow } from './notesWindow';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
 import type {
@@ -80,6 +83,7 @@ function pptxPresence(channel: CursorChannel): PptxPresence {
 
 export function PptxEditorHost({
   bytes,
+  citation,
   collaboration,
   compact,
   onExporter,
@@ -105,6 +109,8 @@ export function PptxEditorHost({
   ribbon,
 }: {
   bytes: Uint8Array;
+  /** A chat citation's text: its slide shown and its lines marked as in View. */
+  citation: OfficeCitation | null;
   collaboration: OfficeCollaboration;
   /** Below md: the ribbon is one row, with no zoom (as the PDF toolbar), font
    * picker or size box. */
@@ -159,6 +165,38 @@ export function PptxEditorHost({
   useEffect(() => {
     if (zoom) onZoomChange(zoom === 'fit' ? 'fit' : Number(zoom));
   }, [onZoomChange, zoom]);
+  // View's rule over every slide's text boxes, once the deck is painted: its
+  // slide is shown and its lines marked until the next citation. ponytail:
+  // every slide laid out per citation, as View lays them out at open.
+  const [painted, setPainted] = useState(false);
+  const [textMark, setTextMark] = useState<PptxEditorProps['textMark']>(null);
+  useEffect(() => {
+    setTextMark(null);
+    const api = apiRef.current;
+    if (!(citation && painted && api)) return;
+    try {
+      const { handle } = api;
+      const items = handle.snapshot().slides.flatMap((_, slide) =>
+        slideCitationItems(handle.layoutSlide(slide)).map((item) => ({
+          ...item,
+          slide,
+        }))
+      );
+      const match = uniqueCitation(items, citation.quote);
+      if (!(match?.rects.length && match.storyId)) return;
+      // The slide changes, leaving the focus where it is (Q811 A).
+      api.goToSlide(match.slide + 1);
+      // A new object per citation: its slide scrolls to it once more. Its
+      // lines show while the box still holds the quote (Q809 A).
+      setTextMark({
+        color: CITATION_FILL,
+        holds: (text) => !!uniqueCitation([{ text }], citation.quote),
+        storyId: match.storyId,
+      });
+    } catch {
+      /* Best-effort navigation must not fail the editor. */
+    }
+  }, [citation, painted]);
   // The header's menus and Present run the editor's commands; Insert › Image
   // arrives with the file Capy's picker chose.
   useEffect(() => {
@@ -330,9 +368,10 @@ export function PptxEditorHost({
             : onError(error)
         }
         // The deck the editor already holds: no second snapshot from the engine.
-        onFirstPaint={(snapshot) =>
-          onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }))
-        }
+        onFirstPaint={(snapshot) => {
+          onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }));
+          setPainted(true);
+        }}
         onPendingChange={onPendingChange}
         onPresenterNotesSizeChange={(size) => {
           writeNotesSize(size);
@@ -361,6 +400,7 @@ export function PptxEditorHost({
         singleRowToolbar
         // Below desktop the slide strip goes under the slide, as in view.
         stripBelow={narrow}
+        textMark={textMark}
       />
     </div>
   );

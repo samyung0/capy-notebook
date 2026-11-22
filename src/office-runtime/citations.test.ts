@@ -163,4 +163,41 @@ describe('native citation matching', () => {
     box.overflow = true;
     expect(uniqueCitation(slideCitationItems(frame), quote)?.rects).toEqual([]);
   });
+  it('names the matched slide text box by its story, which the editor marks', () => {
+    const frame = {
+      contractVersion: 1,
+      height: 600,
+      primitives: [
+        {
+          anchor: 'top',
+          h: 100,
+          kind: 'textBox',
+          lines: [],
+          objectId: 1,
+          paragraphs: [
+            {
+              level: 0,
+              runs: [
+                {
+                  color: '#000',
+                  fontFamily: 'Arial',
+                  fontSizePt: 12,
+                  text: 'A slide line long enough to cite',
+                },
+              ],
+            },
+          ],
+          storyId: 'story-7',
+          w: 300,
+          x: 20,
+          y: 40,
+        },
+      ],
+      width: 800,
+    } as SlideDisplayList;
+    expect(
+      uniqueCitation(slideCitationItems(frame), 'slide line long enough')
+        ?.storyId
+    ).toBe('story-7');
+  });
 });

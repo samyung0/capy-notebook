@@ -582,7 +582,7 @@ function OfficeRuntime() {
         pausedRef.current = pausedFor(canEditRef.current ?? message.canEdit);
         setReadOnly(pausedRef.current);
         setMode(nextMode);
-        setCitation(nextMode === 'view' ? (message.citation ?? null) : null);
+        setCitation(message.citation ?? null);
         const bytes =
           nextMode === 'view' && message.checkpoint
             ? await exportCheckpoint(
@@ -963,6 +963,7 @@ function OfficeRuntime() {
           file.format === 'docx' ? (
             <DocxEditorHost
               bytes={file.bytes}
+              citation={citation}
               collaboration={collaboration}
               colorMode={dark ? 'dark' : 'light'}
               compact={compact}
@@ -989,6 +990,7 @@ function OfficeRuntime() {
             <EditorCrash onCrash={reportCrash}>
               <XlsxEditorHost
                 bytes={file.bytes}
+                citation={citation}
                 collaboration={collaboration}
                 compact={compact}
                 fileName={file.fileName}
@@ -1015,6 +1017,7 @@ function OfficeRuntime() {
             <EditorCrash onCrash={reportCrash}>
               <PptxEditorHost
                 bytes={file.bytes}
+                citation={citation}
                 collaboration={collaboration}
                 compact={compact}
                 fileName={file.fileName}

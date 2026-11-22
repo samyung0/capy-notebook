@@ -17,11 +17,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
+  OfficeCitation,
   OfficeLocale,
   OfficeNotice,
   OfficeParagraphPoint,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
+import { CITATION_FILL, quoteProbe, uniqueCitation } from './citations';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
 import { BODY_PARAGRAPH, topParagraph } from './docxPlace';
@@ -92,6 +94,7 @@ function docxPresence(channel: CursorChannel): CollaborationPresence {
 
 export function DocxEditorHost({
   bytes,
+  citation,
   collaboration,
   colorMode,
   compact,
@@ -115,6 +118,8 @@ export function DocxEditorHost({
   ribbon,
 }: {
   bytes: Uint8Array;
+  /** A chat citation's passage: marked and centred as in View. */
+  citation: OfficeCitation | null;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
   /**
@@ -162,6 +167,18 @@ export function DocxEditorHost({
     writeViewToggle('docxRuler', shown);
   }, []);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
+  // View's rule (citations.ts) over the paragraphs the engine's search finds
+  // with the quote's longest piece; marked once the pages are presented, and
+  // only while its paragraph still holds the quote (Q809 A, Q811 A).
+  useEffect(() => {
+    editorRef.current?.showCitation(
+      citation && {
+        color: CITATION_FILL,
+        match: (paragraphs) => uniqueCitation(paragraphs, citation.quote),
+        probe: quoteProbe(citation.quote),
+      }
+    );
+  }, [citation]);
   // A font slice failing while editing is a notice, not an error (Q752 B);
   // back online, the editor asks for the failed slices again.
   const fontSlices = useMemo(

@@ -1297,6 +1297,45 @@ test.describe('DOCX on a phone', () => {
     closeTo(await highlightOnPage(frame), expected);
   });
 
+  // Q811 A: the editor's centring waits for its pages and their fitted zoom.
+  test('a chat citation carries into Edit fitted, with its passage in view', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    await page.goto('/workspaces/ws_bio?view=chats');
+    await page
+      .getByRole('button', { name: 'Answer: Office citation' })
+      .click({ timeout: 60_000 });
+    await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(
+      frame.locator('[data-citation-highlight]').first()
+    ).toBeAttached({ timeout: 120_000 });
+    await editMode(page);
+    await fitted(frame);
+    const highlight = frame
+      .locator('.docx-editor [data-citation-highlight]')
+      .first();
+    await expect
+      .poll(
+        () =>
+          highlight.evaluate((node) => {
+            const pane = node.closest<HTMLElement>(
+              '.docx-editor__scroll-container'
+            );
+            if (!pane) throw new Error('Missing scroll container');
+            const box = node.getBoundingClientRect();
+            const view = pane.getBoundingClientRect();
+            return {
+              sideways: pane.scrollWidth - pane.clientWidth,
+              visible: box.top >= view.top && box.bottom <= view.bottom,
+            };
+          }),
+        { timeout: 60_000 }
+      )
+      .toEqual({ sideways: 0, visible: true });
+  });
+
   test('a DOCX with comments opens fitted below md with its comments sidebar closed and no sideways scroll, and at md with it open', async ({
     context,
     page,
@@ -1746,6 +1785,140 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
   await page.setViewportSize({ height: 790, width: 1270 });
   await page.waitForTimeout(1500);
   expect(await position()).toEqual([0, 0]);
+});
+
+// Q667, Q799: the editors mark a citation as View does, display only, so the
+// highlight carries from View into Edit and leaves nothing to undo or save.
+// Q809 A: it stays on its paragraph through other typing and goes once the
+// paragraph no longer holds the quote.
+test('a DOCX citation carries from View into Edit, highlighted in view, with nothing to undo, until its paragraph is replaced', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  await showChatHistory(page);
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('[data-citation-highlight]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const highlight = frame
+    .locator('.docx-editor [data-citation-highlight]')
+    .first();
+  await expect(highlight).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(() =>
+      highlight.evaluate((node) => {
+        const pane = node.closest('.docx-editor__scroll-container');
+        if (!pane) throw new Error('Missing scroll container');
+        const box = node.getBoundingClientRect();
+        const view = pane.getBoundingClientRect();
+        return box.top >= view.top && box.bottom <= view.bottom;
+      })
+    )
+    .toBe(true);
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+
+  // Its paragraph replaced (a triple click near the line's start, left of
+  // the chat window over the page): the quote is gone, and so is the mark.
+  const box = await highlight.boundingBox();
+  if (!box) throw new Error('Missing highlight');
+  await page.mouse.click(box.x + 8, box.y + box.height / 2, { clickCount: 3 });
+  await page.keyboard.type('X');
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeEnabled();
+  await expect(frame.locator('[data-citation-highlight]')).toHaveCount(0);
+});
+
+// The host's set-citation reaching an editor already open: the open file's
+// row in Files drops the citation target while the file stays open in Edit,
+// and the host's null citation clears the editor's highlight in that frame.
+test('the host clears a DOCX citation in the editor already open', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  await showChatHistory(page);
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('[data-citation-highlight]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const highlight = frame.locator('.docx-editor [data-citation-highlight]');
+  await expect(highlight.first()).toBeVisible({ timeout: 60_000 });
+  const editor = await page
+    .locator('iframe[src*="office-runtime"]')
+    .elementHandle();
+  await showPanelView(page, m.workspace_tab_files());
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=bio-office-docx"]')
+    .click();
+  await expect(highlight).toHaveCount(0, { timeout: 30_000 });
+  expect(
+    await page
+      .locator('iframe[src*="office-runtime"]')
+      .evaluate((node, before) => node === before, editor)
+  ).toBe(true);
+  await expect(officeEditMenu(page)).toBeVisible();
+});
+
+for (const [format, quote] of [
+  ['xlsx', 'Critical Zones: Our Toxic Environment'],
+  ['pptx', 'UAT_RUN_MARKER'],
+] as const) {
+  test(`a ${format} citation in Edit highlights its passage with nothing to undo`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=edit`);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    // XLSX (Q810 B): the cell is marked, not selected.
+    const nameBox = frame.getByTestId('xlsx-name-box');
+    const selected = format === 'xlsx' ? await nameBox.inputValue() : null;
+    await postToOfficeRuntime(page, {
+      citation: { quote },
+      type: 'set-citation',
+    });
+    await expect(
+      frame.locator('[data-citation-highlight]').first()
+    ).toBeVisible({ timeout: 30_000 });
+    if (selected !== null) await expect(nameBox).toHaveValue(selected);
+    await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+    // No citation, no mark: as in View.
+    await postToOfficeRuntime(page, { citation: null, type: 'set-citation' });
+    await expect(frame.locator('[data-citation-highlight]')).toHaveCount(0);
+  });
+}
+
+// Q812 B: a cell on another sheet switches the editor there, as a tab click
+// does (the switch's own selection, A1), then marks the cell unselected.
+test('an XLSX citation on another sheet switches to it in Edit and marks the cell unselected', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const tab = frame.getByRole('tab', { name: 'Faculty Database' });
+  await expect(tab).toHaveAttribute('aria-selected', 'false');
+  await postToOfficeRuntime(page, {
+    citation: { quote: 'Mathematics, Statistics, Risk Management' },
+    type: 'set-citation',
+  });
+  await expect(tab).toHaveAttribute('aria-selected', 'true', {
+    timeout: 30_000,
+  });
+  await expect(frame.locator('[data-citation-highlight]')).toBeVisible();
+  await expect(frame.getByTestId('xlsx-name-box')).toHaveValue('A1');
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
 });
 
 // A paused editor is read-only in every pause state; a replaced session is
