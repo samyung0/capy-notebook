@@ -119,28 +119,20 @@ async function listed(actor: Actor, workspaceId: string) {
 }
 
 /**
- * The next collaboration token the page's own client gets at `path`: `read`
- * is a 201 read token, `refused` a 404. `asked` tells an editor's request (its
- * own access) from a View's read channel (`{access: 'read'}`); `either` takes
- * whichever comes.
+ * The next 201 read token the page's own client gets at `path`. `own` takes
+ * only an editor's request (its own access, not a View's `{access: 'read'}`
+ * channel); `either` takes whichever comes.
  */
-function browserToken(
-  page: Page,
-  path: string,
-  asked: 'own' | 'read' | 'either',
-  outcome: 'read' | 'refused'
-) {
+function browserReadToken(page: Page, path: string, asked: 'own' | 'either') {
   return page.waitForResponse(
     async (response) => {
       const request = response.request();
       if (
         request.method() !== 'POST' ||
         new URL(response.url()).pathname !== path ||
-        (asked !== 'either' &&
-          (request.postData() ?? '').includes('"read"') !== (asked === 'read'))
+        (asked === 'own' && (request.postData() ?? '').includes('"read"'))
       )
         return false;
-      if (outcome === 'refused') return response.status() === 404;
       return (
         response.status() === 201 &&
         object(await response.json()).access === 'read'
@@ -407,8 +399,8 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   // first (Q618), else on its own read-channel ask, when the workspace's
   // re-read turns the page view-only first. The member still reads but cannot
   // write.
-  const noteReadOnly = browserToken(member.page, noteToken, 'either', 'read');
-  const officeReadOnly = browserToken(office.page, fileToken, 'own', 'read');
+  const noteReadOnly = browserReadToken(member.page, noteToken, 'either');
+  const officeReadOnly = browserReadToken(office.page, fileToken, 'own');
   expect(await changeMember(run, workspaceId, member, 'viewer')).toBe(204);
   await Promise.all([noteReadOnly, officeReadOnly]);
   for (const page of [member.page, office.page])
@@ -480,11 +472,26 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   await api(typist, noteToken, 'POST', undefined, 404);
   await api(typist, `/api/materials/${noteId}`, 'GET', undefined, 404);
 
-  // 4. Removed: the open View's room closes and its rejoin is refused; every
+  // 4. Removed while viewing: the View's room closes and its read-channel
+  // rejoin is refused, or the removal notice reads the workspace again first
+  // and the page turns private before the View asks (whichever lands first,
+  // as for the typist), with one "You no longer have access" toast. Every
   // read, token and write answers the non-disclosing 404.
-  const viewRefused = browserToken(member.page, noteToken, 'read', 'refused');
   expect(await changeMember(run, workspaceId, member, 'remove')).toBe(204);
-  await viewRefused;
+  const viewKicked = member.page
+    .getByRole('alert')
+    .filter({ hasText: m.editor_access_lost() });
+  await expect(viewKicked).toBeVisible({ timeout: 120_000 });
+  await expect(
+    member.page
+      .getByText(m.error_not_found_title())
+      .or(member.page.getByText(m.error_private_title()))
+      .first()
+  ).toBeVisible();
+  await expect(viewKicked).toHaveCount(1);
+  await expect(member.page.getByText(memberLine, { exact: true })).toHaveCount(
+    0
+  );
   expect(await membership(run, workspaceId, member.id)).toEqual([]);
   const refused: Array<[string, string, unknown?]> = [
     ['GET', `/api/workspaces/${workspaceId}`],
