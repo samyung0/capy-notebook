@@ -4689,7 +4689,12 @@ reason (2026-10-14): a create by someone who lost the editor role is refused
 as `lifecycle_rejected`, a note edit whose converted blocks fail the document
 check as `invalid_input` naming the rule, as does one whose whole result fails
 the collaboration service's note check (an eleventh interactive block across
-the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source edit whose checkpoint would
+the note: a writer's edit grows no count or typed text past its cap, though a
+note two people's inserts merged past one keeps it, Epo 2026-11-22;
+`compute` and `notes::material::check_written` in
+`collaboration-rs/crates/server/src/edits.rs`, quizzes by
+`items::quiz::check_written`; a new material, generated or extracted quiz
+is held to the caps by Go's `materialdoc.CheckWritten`), a source edit whose checkpoint would
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
 `update_size_exceeded`) reach it as sentences (`store.limitMessages`). An

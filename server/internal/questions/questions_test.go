@@ -136,12 +136,20 @@ func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
 		return qs
 	}
 	// 150 parts, 120 multiple-choice among them (Epo 2026-11-08), up to 100 of
-	// them AI-marked.
-	if err := QuizBounds(many(150, 100)); err != nil {
+	// them AI-marked: an add (QuizCaps) stops there.
+	if err := QuizCaps(many(150, 100)); err != nil {
 		t.Fatalf("150 parts, 100 AI-marked, rejected: %v", err)
 	}
-	if QuizBounds(many(151, 0)) == nil {
-		t.Fatal("accepted 151 parts")
+	if QuizCaps(many(151, 0)) == nil || QuizCaps(many(101, 101)) == nil {
+		t.Fatal("an add past the caps accepted")
+	}
+	// A stored quiz holds up to twice each, as two editors' adds at once may
+	// leave it (Epo 2026-11-22).
+	if err := QuizBounds(many(300, 200)); err != nil {
+		t.Fatalf("300 parts, 200 AI-marked, rejected: %v", err)
+	}
+	if QuizBounds(many(301, 0)) == nil || QuizBounds(many(201, 201)) == nil {
+		t.Fatal("a quiz past twice the caps accepted")
 	}
 }
 

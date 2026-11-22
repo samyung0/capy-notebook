@@ -44,6 +44,23 @@ it('keeps the text, blanks as plain lines, turned away from Fill in the blanks',
   ]);
 });
 
+// Two editors' marking items merged an open part to 26 marks (Epo
+// 2026-11-22); turned closed, it carries the 20 a closed part may.
+it('holds marks merged past the cap to it when an open part turns closed', () => {
+  const [first] = blankQuestion().parts;
+  const open = {
+    ...first,
+    answer: { accepted: [], type: 'open' as const },
+    marks: 26,
+    markscheme: [
+      { marks: 13, text: 'One' },
+      { marks: 13, text: 'Two' },
+    ],
+  };
+  expect(withAnswer(open, { accepted: ['a'], type: 'short' }).marks).toBe(20);
+  expect(withAnswer(open, { accepted: [['a']], type: 'gaps' }).marks).toBe(20);
+});
+
 // A co-editor added text B above while the chart's dialog was open: Save
 // replaces the chart, not text A now at its old place.
 it('saves a figure where it is now, never over another block', () => {

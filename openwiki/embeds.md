@@ -87,7 +87,7 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   width, a table's `colSizes` and `marginLeft`, an indent that is not a
   number, a `listStyleType` holding `;` or a control character (a text mark
   holding one is refused as `MARK_VALUE`, Epo Q380), an interactive block's html size and caption, a figure's `block`, a
-  Mermaid source, past `MERMAID_SOURCE_MAX` too); an eleventh interactive block (counted on the copy when
+  Mermaid source, past twice `MERMAID_SOURCE_MAX` too); a 21st interactive block, past twice the ten (counted on the copy when
   an update makes one); or an element left without a key it requires
   (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block
   needs and a media block's `assetId`, which the media check reads). The
@@ -185,12 +185,14 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   `BLOCK_CAPTION_MAX` (an interactive block's caption),
   `MERMAID_SOURCE_MAX` (a Mermaid source, 50,000 UTF-16 units, mermaid's own
   `maxTextSize`; Epo 2026-10-22: the note dialog and the diagram file's editor
-  refuse an edit past it, `renderMermaid` refuses to draw a longer source, the
-  browser's document check, Go's `validateDiagram` and the store's
-  `validate_diagram` refuse a longer one, and room admission refuses an
-  update that takes one past it, measured on a copy of the room only when the
-  source's held length plus what the update types into it is over the cap,
-  `LONG_SOURCE`),
+  refuse an edit past it. A typed source two people's typing at once took past
+  it, or a pasted or duplicated diagram that held one, is kept up to twice it (Epo 2026-11-22, "Yes, A everywhere"): mermaid's
+  `maxTextSize` is set to twice, so `renderMermaid` draws it, and the browser's
+  document check, Go's `validateDiagram`, the store's `validate_diagram` and
+  room admission take up to twice and refuse a longer one, admission measured
+  on a copy of the room only when the source's held length plus what the
+  update types into it is over the cap, `LONG_SOURCE`; a plain source string,
+  written whole, stays held to the cap),
   `MEDIA_WIDTH_MIN`/`MAX`, `LIST_INDENT_MAX` (any block's indent, a number
   up to 8: the
   editor's Tab stops there; Go's validator, `createMaterialDocument`, the
@@ -344,8 +346,9 @@ is in [plate-editor](frontend/plate-editor.md) (Mermaid and figures).
   still applies them as Node took them, so later steps compare.
 - **Repair on read.** A merge can leave what neither writer wrote and the
   validators refuse. The type wins on read and no merge is refused (Epo
-  2026-10-17, 2026-10-18): series and graph elements past their cap keep the
-  first ones in document order, and a pie or stacked chart its first series;
+  2026-10-17, 2026-10-18): series and graph elements are kept up to twice
+  their cap, which two people's adds at once may reach (Epo 2026-11-22), and
+  only a list past that keeps the first ones in document order, and a pie or stacked chart keeps its first series;
   a chart series' values are padded with empty cells (null) or cut to its
   labels; a line plot's series with fewer than two points is skipped (before
   the cap); a graph element naming a point that is gone is skipped (only
@@ -367,8 +370,7 @@ is in [plate-editor](frontend/plate-editor.md) (Mermaid and figures).
   the content API stores what it sends, so the index text (Go's
   `figureIndexText`, Rust's `index_text`) repairs what it reads, as it is
   drawn. Editors show the raw block with its issues, so the user fixes
-  them: the chart's rows past its labels, series and graph rows past the cap,
-  graph rows naming a gone point, a pie's other series ("one series only"), a
+  them: the chart's rows past its labels, graph rows naming a gone point, a pie's other series ("one series only"), a
   pie's negative or missing positive value, no series ("Add a series"), a
   line plot's one-point series ("each series needs two points"; the plot
   editor shows what `blockIssues` names).
@@ -453,8 +455,10 @@ replaced whole. Every layer follows one spec; the browser's shared model is
   `^[A-Za-z0-9][A-Za-z0-9_-]*$` (so `__proto__` never passes) unique in
   their list, no column id `id`, a row's `id` plus at most
   `TABLE_VIEW_COLUMNS_MAX` cell keys, zero views allowed (two peers can
-  delete the last two at once), exactly one `title` column, the `TABLE_VIEW_*` counts and
-  lengths, cell values a string, a finite number within
+  delete the last two at once), exactly one `title` column, the `TABLE_VIEW_*`
+  counts and lengths (a list's count up to twice its cap, what two people's
+  adds at once may leave, Epo 2026-11-22; editors add only below the cap,
+  `edit.ts`), cell values a string, a finite number within
   `TABLE_VIEW_NUMBER_MAX` or a boolean, the listed kinds, colours and sort
   directions, closed key sets, and at most `TABLE_VIEW_MAX_COUNT` per note
   (`createMaterialDocument`). What merges leave is not refused: a cell of a
@@ -484,7 +488,7 @@ replaced whole. Every layer follows one spec; the browser's shared model is
   admission keep the writers' rules: admission reads the block whole on a
   copy of the room when an update writes into its map (`BAD_VALUE`, so a
   merge that would leave two title columns loses the later writer's update)
-  and refuses a 21st block (`TOO_MANY_TABLE_VIEWS`). Go's
+  and refuses a 41st block, past twice the 20 (`TOO_MANY_TABLE_VIEWS`). Go's
   `tableViewIndexText` and `notes::table_view::text` give the index text
   byte for byte as `tableViewText` (golden fixture
   `testdata/index_text/table-views.json`, made by it), text sorted by code

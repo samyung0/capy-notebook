@@ -28,12 +28,10 @@ const animationFrames: Frames = {
  * refuses too, named to `onRefused`. A new row's element waits the same way,
  * named with the cap, while the figure already holds the cap: a co-editor may
  * have filled the last place since the row was started (as a chart's
- * `appended`, Epo 2026-11-22). An edit to an existing element past the
- * figure's first `drawnMax` is held back the same way: a quiz or note graph's
- * readers draw only its first elements up to the cap (the repairs keep those),
- * while a canvas plane draws every one, so each of its existing rows edits.
- * While a row waits so, each co-editor's change to the figure writes again, so
- * it goes in once a delete makes room. `dispose` ends all of it as the editor
+ * `appended`, Epo 2026-11-22). Every existing row edits, however many the
+ * figure holds: every reader keeps up to twice the cap. While a row waits so,
+ * each co-editor's change to the figure writes again, so it goes in once a
+ * delete makes room. `dispose` ends all of it as the editor
  * closes: nothing waiting is written after.
  */
 export function graphWriter(
@@ -41,13 +39,10 @@ export function graphWriter(
   /** The rows now: their keys in order and the elements the drawable ones give. */
   local: () => { elements: readonly GraphElement[]; keys: readonly string[] },
   onRefused: (refused: ReadonlyMap<string, string>) => void,
-  drawnMax: number,
   frames: Frames = animationFrames
 ) {
   const typing = new Set<string>();
   const refused = new Map<string, string>();
-  /** Edits held back past what readers draw, as the last flush found them. */
-  const heldBack = new Set<string>();
   let frame = 0;
   let closed = false;
   /** While `flush` writes: its own writes make no room, so the watch skips them. */
@@ -67,7 +62,7 @@ export function graphWriter(
   let unwatch: (() => void) | null = null;
   const watch = () => {
     if (closed) return;
-    const waiting = refused.size > 0 || heldBack.size > 0;
+    const waiting = refused.size > 0;
     if (waiting && !unwatch)
       unwatch = binding.subscribe(() => {
         if (!(closed || writing)) frame ||= frames.request(flush);
@@ -87,22 +82,15 @@ export function graphWriter(
     );
     const { elements, keys } = local();
     const drawn = new Map(elements.map((element) => [element.id, element]));
-    // Elements readers do not draw (past a quiz or note graph's cap), counted
-    // in the figure, where a refused row holds no place.
-    const unread = new Set(
-      figure.block.elements.slice(drawnMax).map(({ id }) => id)
-    );
     // How many of the figure's elements come before the row: a row that
     // cannot draw now still holds its place by the element the figure keeps.
     let placed = 0;
-    heldBack.clear();
     writing = true;
     try {
       for (const key of keys) {
         const element = drawn.get(key);
         const there = held.get(key);
-        if (!element || (there && unread.has(key))) {
-          if (element && there && typing.has(key)) heldBack.add(key);
+        if (!element) {
           if (there) placed++;
           continue;
         }
@@ -157,7 +145,6 @@ export function graphWriter(
     remove(key: string) {
       typing.delete(key);
       refused.delete(key);
-      heldBack.delete(key);
       tell();
       watch();
       binding.deleteElement(key);

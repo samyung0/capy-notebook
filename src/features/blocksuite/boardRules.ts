@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
+import { mergedCap } from '@/api/mergedCap';
 import { YOUTUBE_ID } from '@/features/materials/youtubeUrl';
 import { graphElementSchema } from '@/features/questions/validation';
 import {
@@ -313,11 +314,6 @@ const nested = (fields: Record<string, Field>): Rule => {
   const rules = table(fields);
   return (value) => value.kind === 'map' && tableFits(value.value, rules);
 };
-
-/** How many items the rules take of a list whose add tools stop at `cap`: twice
- * it, as two people's adds at the same moment merge past the cap (Epo
- * 2026-11-22, "sure A"; a quiz or note figure's maps hold twice theirs too). */
-const mergedCap = (cap: number) => 2 * cap;
 
 /** A keyed list: a map of item id to the item and its order key (Epo 2026-11-16,
  * D10: a plane's elements; 2026-11-22: a chart's bars, labels and lines), up to

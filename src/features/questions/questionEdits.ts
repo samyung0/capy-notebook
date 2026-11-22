@@ -1,3 +1,4 @@
+import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import type { FigureBinding } from './figureBinding';
 import { localFigureBinding } from './localFigureBinding';
@@ -37,6 +38,7 @@ function gapsAnswer(part: QuestionPart): QuestionPart {
     },
     blocks,
     itemAwards: undefined,
+    marks: Math.min(part.marks, QUESTION_MARKS_MAX),
     markscheme: undefined,
   };
 }
@@ -53,7 +55,8 @@ function withoutGaps(blocks: QuestionBlock[]): QuestionBlock[] {
 }
 
 /** Open and drawing answers carry a marking scheme worth the part's marks;
- * closed ones drop it. Turned away from blanks, the text keeps its words. */
+ * closed ones drop it, and with it marks merged items took past the cap.
+ * Turned away from blanks, the text keeps its words. */
 export function withAnswer(
   part: QuestionPart,
   answer: QuestionAnswer
@@ -73,7 +76,14 @@ export function withAnswer(
           { marks: part.marks, text: m.question_default_marking_point() },
         ],
       }
-    : { ...part, answer, blocks, itemAwards: undefined, markscheme: undefined };
+    : {
+        ...part,
+        answer,
+        blocks,
+        itemAwards: undefined,
+        marks: Math.min(part.marks, QUESTION_MARKS_MAX),
+        markscheme: undefined,
+      };
 }
 
 /** A plot has no editor, so it is never added empty. */

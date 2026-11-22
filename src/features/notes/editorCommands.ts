@@ -4,6 +4,7 @@ import type { IconName } from '@/components/ui/Icon';
 import type { Question } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
+import { atBlockCap, toastBlockCap } from './blocks/countCaps';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import { openOnMount } from './blocks/openFigure';
 import { customBlockNode } from './blocks/shared';
@@ -14,8 +15,7 @@ import { insertMediaPlaceholder } from './insertMediaPlaceholder';
 import { insertInlineEquation } from './mathInsert';
 import type { EditorCommandGroup, EditorWidgetId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
-import { tableViewCount, toastTableViewCap } from './tableView/count';
-import { newTableViewBlock, TABLE_VIEW_LIMITS } from './tableView/model';
+import { newTableViewBlock, TABLE_VIEW_TYPE } from './tableView/model';
 import { insertYouTubeEmbed } from './youtube';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
@@ -346,8 +346,8 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     run: (editor) => {
       if (insideContainer(editor)) return;
-      if (tableViewCount(editor.children) >= TABLE_VIEW_LIMITS.count) {
-        toastTableViewCap();
+      if (atBlockCap(editor.children, TABLE_VIEW_TYPE)) {
+        toastBlockCap(TABLE_VIEW_TYPE);
         return;
       }
       insertEditorNode(editor, {

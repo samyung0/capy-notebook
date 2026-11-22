@@ -154,13 +154,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 35;
+pub const CLIENT_PROTOCOL: u32 = 37;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
-pub const MIN_MATERIAL: u32 = 33;
+pub const MIN_MATERIAL: u32 = 37;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 35;
+pub const MIN_SOURCE: u32 = 36;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -494,15 +494,16 @@ mod tests {
         assert!(outdated(CLIENT_PROTOCOL + 1, Some(CLIENT_PROTOCOL)));
     }
 
-    /// A canvas chart keeps its bars, labels and lines keyed by id since
-    /// protocol 33 (Epo 2026-11-22). Each build's load check refuses the
-    /// other's shape, so a tab from before (32) and a newer tab would each
-    /// show the other's charts as "cannot be shown"; material rooms refuse
-    /// the older tab as outdated and it reloads.
+    /// Since protocol 37 (Epo 2026-11-22, "Yes, A everywhere") readers keep
+    /// lists and texts two people's edits merged past a cap, up to twice it.
+    /// A tab from before (36) reads a figure cut to the cap and its
+    /// whole-figure write deletes what it did not read, so material rooms
+    /// refuse it as outdated and it reloads; source rooms keep 36.
     #[test]
-    fn a_material_tab_from_before_keyed_chart_lists_is_outdated() {
-        assert!(outdated(MIN_MATERIAL, Some(32)));
-        assert!(!outdated(MIN_MATERIAL, Some(33)));
+    fn a_material_tab_from_before_merged_caps_is_outdated() {
+        assert!(outdated(MIN_MATERIAL, Some(36)));
+        assert!(!outdated(MIN_MATERIAL, Some(37)));
+        assert!(!outdated(MIN_SOURCE, Some(36)));
     }
 
     #[test]

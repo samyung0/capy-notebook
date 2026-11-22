@@ -1,3 +1,5 @@
+import { EMBED_CATALOG } from '@/api/embeds.generated';
+import { mergedCap } from '@/api/mergedCap';
 import type { MermaidFont, MermaidPreset } from './mermaidPresets';
 import {
   MERMAID_SECURITY,
@@ -97,6 +99,9 @@ export async function drawMermaid(
     // come out the same each time, so a source draws one SVG and the
     // geometry check compares.
     handDrawnSeed: 1,
+    // A source two people typed past the cap at once draws, up to twice it
+    // (Epo 2026-11-22); mermaid's own default is the cap.
+    maxTextSize: mergedCap(EMBED_CATALOG.limits.MERMAID_SOURCE_MAX),
     themeCSS: `${preset.config.themeCSS ?? ''}\n${TSPAN_BASELINE}`,
     ...MERMAID_SECURITY,
   });

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
@@ -119,12 +120,20 @@ func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 	if text, err := ExtractIndexText(encoded, nil); err != nil || text != "intro" {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
+	// Up to twice the count, as two people inserting at once may pass it (Epo
+	// 2026-11-22).
+	for i := HTMLEmbedMaxCount; i < 2*HTMLEmbedMaxCount; i++ {
+		doc.Value = append(doc.Value, embed(fmt.Sprintf("e%d", i), "<p>x</p>"))
+	}
+	if err := Validate(doc); err != nil {
+		t.Fatalf("twice the count of blocks: %v", err)
+	}
 	for name, value := range map[string][]map[string]any{
-		"eleventh block": append(doc.Value, embed("e10", "<p>x</p>")),
-		"oversized html": {embed("e0", strings.Repeat("x", HTMLEmbedMaxBytes+1))},
-		"long caption":   {{"type": HTMLEmbedType, "id": "e0", "html": "", "caption": strings.Repeat("c", embeds.BlockCaptionMax+1), "children": []any{textLeaf("")}}},
-		"nested block":   {{"type": "callout", "id": "c", "children": []any{embed("e0", "")}}},
-		"extra field":    {{"type": HTMLEmbedType, "id": "e0", "html": "", "src": "https://x", "children": []any{textLeaf("")}}},
+		"one past twice the count": append(doc.Value, embed("e_over", "<p>x</p>")),
+		"oversized html":           {embed("e0", strings.Repeat("x", HTMLEmbedMaxBytes+1))},
+		"long caption":             {{"type": HTMLEmbedType, "id": "e0", "html": "", "caption": strings.Repeat("c", embeds.BlockCaptionMax+1), "children": []any{textLeaf("")}}},
+		"nested block":             {{"type": "callout", "id": "c", "children": []any{embed("e0", "")}}},
+		"extra field":              {{"type": HTMLEmbedType, "id": "e0", "html": "", "src": "https://x", "children": []any{textLeaf("")}}},
 	} {
 		if err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: value}); err == nil {
 			t.Errorf("%s accepted", name)
@@ -143,6 +152,61 @@ func TestBlockIndentStopsAtTheCatalogMax(t *testing.T) {
 	}
 	if err := Validate(item(embeds.ListIndentMax + 1)); err == nil {
 		t.Fatalf("indent %d accepted", embeds.ListIndentMax+1)
+	}
+}
+
+// A document a server writer makes new (an agent's material, a generated or
+// extracted quiz) stops at each cap an editor stops at, though a stored one
+// holds up to twice it (Epo 2026-11-22, "Yes, A everywhere"). Fails if a
+// writer's new content may pass a cap again.
+func TestCheckWrittenHoldsNewContentToTheCaps(t *testing.T) {
+	part := func(n int) string {
+		return fmt.Sprintf(`{"id":"p%d","blocks":[{"type":"text","text":"Answer?"}],"answer":{"type":"short","accepted":["alpha"]},"marks":1,"solution":[]}`, n)
+	}
+	quiz := func(parts int) string {
+		list := make([]string, parts)
+		for i := range list {
+			list[i] = part(i)
+		}
+		raw, err := QuizDocument(json.RawMessage(`[{"id":"q1","stem":[],"parts":[`+strings.Join(list, ",")+`],"layout":"paper","labels":"letters"}]`), nil)
+		if err != nil {
+			t.Fatalf("%d parts: %v", parts, err)
+		}
+		return raw
+	}
+	if err := CheckWritten(quiz(fieldlimits.QuizQuestionParts)); err != nil {
+		t.Fatalf("parts at the cap: %v", err)
+	}
+	if err := CheckWritten(quiz(fieldlimits.QuizQuestionParts + 1)); err == nil {
+		t.Fatal("a writer's question past the parts cap was accepted")
+	}
+	embed := func(id string) map[string]any {
+		return map[string]any{"type": HTMLEmbedType, "id": id, "html": "<p>x</p>", "children": []any{textLeaf("")}}
+	}
+	note := func(embeds int) string {
+		doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{ParagraphNode("intro")}}
+		for i := range embeds {
+			doc.Value = append(doc.Value, embed(fmt.Sprintf("e%d", i)))
+		}
+		raw, err := Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	if err := CheckWritten(note(HTMLEmbedMaxCount)); err != nil {
+		t.Fatalf("interactive blocks at the cap: %v", err)
+	}
+	if err := CheckWritten(note(HTMLEmbedMaxCount + 1)); err == nil ||
+		!strings.Contains(err.Error(), "11 interactive blocks over 10") {
+		t.Fatalf("an eleventh interactive block: %v", err)
+	}
+	diagram, err := MermaidDocument("flowchart LR\n"+strings.Repeat("x", embeds.MermaidSourceMax), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckWritten(diagram); err == nil || !strings.Contains(err.Error(), "diagram source characters") {
+		t.Fatalf("a writer's diagram source past the cap: %v", err)
 	}
 }
 
@@ -526,25 +590,36 @@ func TestFlashcardImagesAreFoundRewrittenAndChecked(t *testing.T) {
 		t.Fatalf("cloned set is invalid: %v", err)
 	}
 
-	long := Card{ID: "c", Front: "f", Back: strings.Repeat("é", MaxCardBackRunes+1)}
+	// A stored set holds a face up to twice its cap, as two people typing in it
+	// at once may pass the cap (Epo 2026-11-22); a writer stops at the cap.
+	for _, back := range []int{MaxCardBackRunes + 1, 2 * MaxCardBackRunes} {
+		set, err := FlashcardsDocument([]Card{{ID: "c", Front: "f", Back: strings.Repeat("é", back)}})
+		if err != nil {
+			t.Fatalf("a %d-rune back: %v", back, err)
+		}
+		if err := ValidateKind(set, "flashcards"); err != nil {
+			t.Fatalf("a %d-rune back was refused: %v", back, err)
+		}
+	}
+	long := Card{ID: "c", Front: "f", Back: strings.Repeat("é", 2*MaxCardBackRunes+1)}
 	if _, err := FlashcardsDocument([]Card{long}); err == nil {
-		t.Fatal("a back over the limit was accepted")
-	}
-	atLimit, err := FlashcardsDocument([]Card{{ID: "c", Front: "f", Back: strings.Repeat("é", MaxCardBackRunes)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateKind(atLimit, "flashcards"); err != nil {
-		t.Fatalf("a back at the limit was refused: %v", err)
+		t.Fatal("a back over twice the limit was accepted")
 	}
 	// The front is capped too, at 200 runes (security regression: a stored
 	// set Go cannot project breaks the material for everyone).
-	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", MaxCardFrontRunes+1), Back: "b"}}); err == nil ||
-		!strings.Contains(err.Error(), "a flashcard front holds at most 200 characters") {
-		t.Fatalf("a front over the limit: %v", err)
+	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", 2*MaxCardFrontRunes+1), Back: "b"}}); err == nil ||
+		!strings.Contains(err.Error(), "a flashcard front holds at most 400 characters") {
+		t.Fatalf("a front over twice the limit: %v", err)
 	}
-	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", MaxCardFrontRunes), Back: "b"}}); err != nil {
-		t.Fatalf("a front at the limit was refused: %v", err)
+	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", 2*MaxCardFrontRunes), Back: "b"}}); err != nil {
+		t.Fatalf("a front at twice the limit was refused: %v", err)
+	}
+	if err := ValidateCardText(strings.Repeat("é", MaxCardFrontRunes+1), "b"); err == nil ||
+		!strings.Contains(err.Error(), "a flashcard front holds at most 200 characters") {
+		t.Fatalf("a writer's front over the limit: %v", err)
+	}
+	if err := ValidateCardText("f", strings.Repeat("é", MaxCardBackRunes)); err != nil {
+		t.Fatalf("a writer's back at the limit: %v", err)
 	}
 	badImage := strings.Replace(raw, `"assetId":"asset-ready"`, `"assetId":"asset-ready","url":"https://x"`, 1)
 	if err := ValidateKind(badImage, "flashcards"); err == nil {
@@ -552,10 +627,11 @@ func TestFlashcardImagesAreFoundRewrittenAndChecked(t *testing.T) {
 	}
 }
 
-// A Mermaid source stops at the catalog's MermaidSourceMax UTF-16 units (Epo
-// 2026-10-22), as the browser and the collaboration server check; an astral
-// character counts two. Security regression: an unbounded source costs every
-// reader's browser a render that never ends.
+// A Mermaid source stops at twice the catalog's MermaidSourceMax UTF-16 units
+// (Epo 2026-10-22; twice, as two people typing at once may pass the cap the
+// editor stops at, Epo 2026-11-22), as the browser and the collaboration
+// server check; an astral character counts two. Security regression: an
+// unbounded source costs every reader's browser a render that never ends.
 func TestMermaidSourceStopsAtTheCatalogMax(t *testing.T) {
 	diagram := func(source string) Envelope {
 		return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
@@ -563,12 +639,16 @@ func TestMermaidSourceStopsAtTheCatalogMax(t *testing.T) {
 			"children": []any{textElement("mermaid_caption", "")},
 		}}}
 	}
-	full := "flowchart LR\n" + strings.Repeat("x", embeds.MermaidSourceMax-len("flowchart LR\n")-2) + "😀"
-	if err := Validate(diagram(full)); err != nil {
-		t.Fatalf("source at the cap: %v", err)
+	most := 2 * embeds.MermaidSourceMax
+	if err := Validate(diagram(strings.Repeat("x", embeds.MermaidSourceMax+1))); err != nil {
+		t.Fatalf("source past the cap: %v", err)
 	}
-	if err := Validate(diagram(full + "x")); err == nil || !strings.Contains(err.Error(), "over 50000 characters") {
-		t.Fatalf("source over the cap: %v", err)
+	full := "flowchart LR\n" + strings.Repeat("x", most-len("flowchart LR\n")-2) + "😀"
+	if err := Validate(diagram(full)); err != nil {
+		t.Fatalf("source at twice the cap: %v", err)
+	}
+	if err := Validate(diagram(full + "x")); err == nil || !strings.Contains(err.Error(), "over 100000 characters") {
+		t.Fatalf("source over twice the cap: %v", err)
 	}
 	if _, err := FromLegacyMarkdown("diagram", "```mermaid\n"+full+"x\n```"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("generated diagram over the cap: %v", err)

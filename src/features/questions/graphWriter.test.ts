@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { QUESTION_GRAPH_ELEMENTS_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import type { FigureBinding } from './figureBinding';
-import { drawnMaxFor, graphFull } from './graph';
+import { graphFull } from './graph';
 import { type Frames, graphWriter } from './graphWriter';
 import { localFigureBinding } from './localFigureBinding';
 import type { GraphBlock, GraphElement } from './types';
@@ -20,9 +20,8 @@ const graph: GraphBlock = {
   width: 400,
 };
 
-/** A writer over a draft graph, its frames run by hand, counting writes; it
- * writes the first `drawnMax` rows, a quiz or note graph's cap unless given. */
-function setup(start: GraphElement[], drawnMax = QUESTION_GRAPH_ELEMENTS_MAX) {
+/** A writer over a draft graph, its frames run by hand, counting writes. */
+function setup(start: GraphElement[]) {
   const binding = localFigureBinding(
     { ...graph, elements: start },
     {
@@ -77,7 +76,6 @@ function setup(start: GraphElement[], drawnMax = QUESTION_GRAPH_ELEMENTS_MAX) {
       keys: local.keys ?? local.elements.map((element) => element.id),
     }),
     refused,
-    drawnMax,
     frames
   );
   const frame = () => {
@@ -111,7 +109,7 @@ function refusedAtCap() {
     { length: QUESTION_GRAPH_ELEMENTS_MAX - 1 },
     (_, i) => point(`P${i}`, i)
   );
-  const t = setup(start, drawnMaxFor(false));
+  const t = setup(start);
   t.binding.setElement(point('peer', 50));
   t.local.keys = [...start.map(({ id }) => id), 'peer', 'R'];
   t.local.elements = [...start, point('peer', 50), point('R', -1)];
@@ -191,15 +189,12 @@ it('writes what waits for its frame when the dialog closes', () => {
   expect(elements()).toEqual(local.elements);
 });
 
-it('on a canvas plane two adds merged past the cap, row 101 edits and saves, and adding a row does nothing', () => {
+it('on a graph two adds merged past the cap, row 101 edits and saves, and adding a row does nothing', () => {
   const many = Array.from({ length: QUESTION_GRAPH_ELEMENTS_MAX + 1 }, (_, i) =>
     point(`P${i}`, i)
   );
-  // A canvas plane writes every row (Epo 2026-11-22).
-  const { calls, elements, frame, local, refused, writer } = setup(
-    many,
-    Number.POSITIVE_INFINITY
-  );
+  // Every surface writes every row (Epo 2026-11-22).
+  const { calls, elements, frame, local, refused, writer } = setup(many);
   local.elements = many.map((one) =>
     one.id === 'P100' ? point('P100', -3) : one
   );
@@ -225,61 +220,52 @@ it('on a canvas plane two adds merged past the cap, row 101 edits and saves, and
   );
 });
 
-for (const [what, canvasPlane] of [
-  ['a canvas plane', true],
-  ['a quiz graph', false],
-] as const)
-  it(`on ${what}, a row started under the cap waits once a co-editor fills the last place, keeping its text`, () => {
-    const start = Array.from(
-      { length: QUESTION_GRAPH_ELEMENTS_MAX - 1 },
-      (_, i) => point(`P${i}`, i)
-    );
-    const { binding, calls, elements, frame, local, refused, writer } = setup(
-      start,
-      drawnMaxFor(canvasPlane)
-    );
-    // The 100th row is typed ("y=", no element yet) as a co-editor adds the
-    // 100th element; then the row draws.
-    local.keys = [...start.map(({ id }) => id), 'R'];
-    writer.touch(['R']);
-    frame();
-    binding.setElement(point('peer', 50));
-    local.keys = [...local.keys, 'peer'];
-    local.elements = [...start, point('R', -1), point('peer', 50)];
-    writer.touch(['R']);
-    frame();
-    expect(elements()).toHaveLength(QUESTION_GRAPH_ELEMENTS_MAX);
-    expect(calls).not.toHaveBeenCalledWith('set', 'R');
-    expect(refused).toHaveBeenLastCalledWith(
-      new Map([
-        [
-          'R',
-          m.question_ui_graph_elements_max({
-            max: QUESTION_GRAPH_ELEMENTS_MAX,
-          }),
-        ],
-      ])
-    );
-    expect(writer.typing('R')).toBe(true);
-    // A co-editor's delete makes room: R goes in on its own, on the next frame.
-    binding.deleteElement('P0');
-    local.keys = local.keys.slice(1);
-    local.elements = local.elements.slice(1);
-    frame();
-    expect(elements().map(({ id }) => id)).toContain('R');
-    expect(elements()).toHaveLength(QUESTION_GRAPH_ELEMENTS_MAX);
-    expect(refused).toHaveBeenLastCalledWith(new Map());
-  });
-
-it("on a quiz graph, a row refused at the cap leaves a co-editor's 100th element editable", () => {
+it('a row started under the cap waits once a co-editor fills the last place, keeping its text', () => {
   const start = Array.from(
     { length: QUESTION_GRAPH_ELEMENTS_MAX - 1 },
     (_, i) => point(`P${i}`, i)
   );
-  const { binding, elements, frame, local, writer } = setup(
-    start,
-    drawnMaxFor(false)
+  const { binding, calls, elements, frame, local, refused, writer } =
+    setup(start);
+  // The 100th row is typed ("y=", no element yet) as a co-editor adds the
+  // 100th element; then the row draws.
+  local.keys = [...start.map(({ id }) => id), 'R'];
+  writer.touch(['R']);
+  frame();
+  binding.setElement(point('peer', 50));
+  local.keys = [...local.keys, 'peer'];
+  local.elements = [...start, point('R', -1), point('peer', 50)];
+  writer.touch(['R']);
+  frame();
+  expect(elements()).toHaveLength(QUESTION_GRAPH_ELEMENTS_MAX);
+  expect(calls).not.toHaveBeenCalledWith('set', 'R');
+  expect(refused).toHaveBeenLastCalledWith(
+    new Map([
+      [
+        'R',
+        m.question_ui_graph_elements_max({
+          max: QUESTION_GRAPH_ELEMENTS_MAX,
+        }),
+      ],
+    ])
   );
+  expect(writer.typing('R')).toBe(true);
+  // A co-editor's delete makes room: R goes in on its own, on the next frame.
+  binding.deleteElement('P0');
+  local.keys = local.keys.slice(1);
+  local.elements = local.elements.slice(1);
+  frame();
+  expect(elements().map(({ id }) => id)).toContain('R');
+  expect(elements()).toHaveLength(QUESTION_GRAPH_ELEMENTS_MAX);
+  expect(refused).toHaveBeenLastCalledWith(new Map());
+});
+
+it("a row refused at the cap leaves a co-editor's 100th element editable", () => {
+  const start = Array.from(
+    { length: QUESTION_GRAPH_ELEMENTS_MAX - 1 },
+    (_, i) => point(`P${i}`, i)
+  );
+  const { binding, elements, frame, local, writer } = setup(start);
   // R is typed last, a co-editor adds the 100th element below it, R is
   // refused: readers draw the co-editor's element, the figure's 100th.
   local.keys = [...start.map(({ id }) => id), 'R'];
@@ -340,25 +326,6 @@ it('a row refused, then typed back to what the figure holds, is refused no more'
   t.frame();
   expect(t.refused).toHaveBeenLastCalledWith(new Map());
   expect(t.writer.typing('T')).toBe(false);
-  expect(t.watching()).toBe(0);
-});
-
-it("on a quiz graph merged past the cap, an edit to its 101st element goes in once a co-editor's delete brings it back to 100", () => {
-  const many = Array.from({ length: QUESTION_GRAPH_ELEMENTS_MAX + 1 }, (_, i) =>
-    point(`P${i}`, i)
-  );
-  const t = setup(many, drawnMaxFor(false));
-  t.local.elements = many.map((one) =>
-    one.id === 'P100' ? point('P100', -3) : one
-  );
-  t.writer.touch(['P100']);
-  t.frame();
-  expect(t.calls).not.toHaveBeenCalledWith('set', 'P100');
-  expect(t.watching()).toBe(1);
-  t.binding.deleteElement('P0');
-  t.local.elements = t.local.elements.slice(1);
-  t.frame();
-  expect(t.elements().at(-1)).toEqual(point('P100', -3));
   expect(t.watching()).toBe(0);
 });
 

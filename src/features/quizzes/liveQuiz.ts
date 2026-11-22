@@ -1,4 +1,6 @@
 import * as Y from 'yjs';
+import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
+import { mergedCap } from '@/api/mergedCap';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import { repairGroups } from '@/features/questions/groups';
 import type { FigureAt, FigureRoom } from '@/features/questions/questionEdits';
@@ -7,14 +9,21 @@ import {
   type LearnerAnswer,
   type LearnerQuestion,
   type MarkItem,
+  modelMarked,
   multipleAnswers,
   type Question,
   type QuestionAnswer,
   type QuestionBlock,
   type QuestionGroup,
   type QuestionPart,
+  schemeMarks,
   shuffledOrder,
 } from '@/features/questions/types';
+import {
+  type QuizCounts,
+  quizCapsIssue,
+  quizCounts,
+} from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { uid } from '@/lib/id';
 import { keyBetween } from '@/lib/orderKey';
@@ -314,7 +323,12 @@ export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
             answer,
             blocks: readBlocks(mapAt(part, 'blocks')),
             id: partId,
-            marks: plain<number>(part, 'marks') ?? 1,
+            // A part with marking items is worth their total, however two
+            // editors' items merged (Epo 2026-11-22, "Yes, A everywhere");
+            // the Rust projection's `held_question_json` reads it the same.
+            marks: markscheme?.length
+              ? schemeMarks(markscheme)
+              : (plain<number>(part, 'marks') ?? 1),
             solution: readBlocks(mapAt(key, 'solution')),
             ...groupOf(part),
             ...(markscheme ? { markscheme } : {}),
@@ -328,11 +342,13 @@ export function readQuestions(content: Y.Doc, keys: Y.Doc | null): Question[] {
   });
 }
 
-/** A part's matching options or ordering items as readers get them: a plain
- * shuffled list the content room pushes over its channels, never in Yjs. */
+/** What readers get of a part's key: its matching options or ordering
+ * items, a plain shuffled list the content room pushes over its channels,
+ * never in Yjs (none for other kinds), and its marking items' total. */
 export interface ReaderList {
   items: string[];
-  kind: 'matching' | 'ordering';
+  kind: string;
+  total?: number;
 }
 export type ReaderLists = ReadonlyMap<string, ReaderList>;
 const NO_LISTS: ReaderLists = new Map();
@@ -357,7 +373,7 @@ export function readLearnerQuestions(
   lists: ReaderLists = NO_LISTS,
   { quizId = '', shown }: { quizId?: string; shown?: ShownOrders } = {}
 ): LearnerQuestion[] {
-  const items = (partId: string, kind: ReaderList['kind']) => {
+  const items = (partId: string, kind: 'matching' | 'ordering') => {
     const list = lists.get(partId);
     return list?.kind === kind ? list.items : [];
   };
@@ -424,7 +440,10 @@ export function readLearnerQuestions(
             answer: learner,
             blocks,
             id: partId,
-            marks: plain<number>(part, 'marks') ?? 1,
+            // A part with marking items is worth their total, which the
+            // room's lists carry (`readQuestions` reads the keys).
+            marks:
+              lists.get(partId)?.total ?? plain<number>(part, 'marks') ?? 1,
             ...groupOf(part),
           };
         }
@@ -748,6 +767,33 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
   return ids;
 }
 
+/** The fixed entry key of an open part's one sample answer, the same on
+ * every writer (Rust `SAMPLE_KEY`). */
+export const SAMPLE_KEY = 'sample';
+
+/** An open part's one sample answer (`OPEN_ACCEPTED_MAX`, one) under
+ * `SAMPLE_KEY` (Epo 2026-11-22, "then last save wins? if we change the
+ * question data structure now we need to change the UI as well, dont"): two
+ * editors adding it at once set the same entry and one of the two wins (the
+ * higher client id), the other's first keystrokes dropped, then both type
+ * into it; a removal wins over typing at the same moment. One held under another
+ * key (seeded content) is changed or removed in place. */
+function writeSample(key: YMap, sample: string | undefined) {
+  const list = child(key, 'accepted');
+  const held = ordered(list);
+  for (const { id } of held.slice(sample === undefined ? 0 : 1))
+    list.delete(id);
+  if (sample === undefined) return;
+  if (held[0]) {
+    setText(held[0].entry, 'text', sample);
+    return;
+  }
+  const entry = new Y.Map<unknown>();
+  entry.set('text', new Y.Text(sample));
+  list.set(SAMPLE_KEY, entry);
+  reorder(entriesOf(list), [SAMPLE_KEY]);
+}
+
 function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
   writeBlocks(child(key, 'solution'), part.solution);
   const answer = part.answer;
@@ -775,7 +821,7 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
     case 'open':
     case 'drawing':
       if (answer.type === 'open') {
-        list('accepted', answer.accepted, 'acc');
+        writeSample(key, answer.accepted[0]);
       } else {
         setPlain(key, 'sampleBoard', answer.sample?.board);
         setPlain(key, 'sampleImage', answer.sample?.image);
@@ -885,7 +931,14 @@ export function writeQuestion(
         parts.set(part.id, map);
         existing.set(part.id, map);
       }
-      setPlain(map, 'marks', part.marks);
+      // A part reads as its marking items' total, which merges may take past
+      // twice the cap; its own marks stop there, as the room admits them, and
+      // the total past it stays the warning the user tunes (Epo 2026-10-14).
+      setPlain(
+        map,
+        'marks',
+        Math.min(part.marks, mergedCap(QUESTION_MARKS_MAX))
+      );
       setPlain(map, 'group', part.group);
       writeBlocks(child(map, 'blocks'), part.blocks);
       ids.set(part.id, writeContentAnswer(map, part.answer));
@@ -907,6 +960,52 @@ export function writeQuestion(
       writeKeys(key, part, ids.get(part.id) ?? { left: [], options: [] });
     }
   }, origin);
+}
+
+/** A question entry's parts and AI-marked parts as held: counted from the
+ * document, a cheap check on each write. */
+function heldCounts(entry: unknown): QuizCounts {
+  const counts = { open: 0, parts: 0 };
+  if (!(entry instanceof Y.Map)) return counts;
+  mapAt(entry as YMap, 'parts')?.forEach((part) => {
+    if (!(part instanceof Y.Map)) return;
+    counts.parts++;
+    const type = plain<QuestionAnswer['type']>(
+      mapAt(part as YMap, 'answer'),
+      'type'
+    );
+    if (type && modelMarked(type)) counts.open++;
+  });
+  return counts;
+}
+
+/** `writeQuestion` from an editor, checked against the quiz as it reads now
+ * (`quizCapsIssue`): a write adding a part or an AI-marked part past the
+ * quiz's caps does not go. Its message, or null once written. */
+export function editQuestion(
+  content: Y.Doc,
+  keys: Y.Doc,
+  next: Question
+): string | null {
+  const questions = questionsScope(content) as YMap;
+  const held = heldCounts(questions.get(next.id));
+  const mine = quizCounts([next]);
+  // Typing adds no part, so most writes skip counting the quiz.
+  if (mine.parts > held.parts || mine.open > held.open) {
+    const now = { open: 0, parts: 0 };
+    questions.forEach((entry) => {
+      const counts = heldCounts(entry);
+      now.open += counts.open;
+      now.parts += counts.parts;
+    });
+    const issue = quizCapsIssue(now, {
+      open: now.open - held.open + mine.open,
+      parts: now.parts - held.parts + mine.parts,
+    });
+    if (issue) return issue;
+  }
+  writeQuestion(content, keys, next);
+  return null;
 }
 
 /** Removes a question from both documents. */
@@ -1019,23 +1118,33 @@ export function figureRoom(docs: QuizDocs): FigureRoom & { docs: QuizDocs } {
 /* ------------------------------------------- what the server follows */
 
 /** Every matching and ordering part's entries in the keys document (id and
- * text, in the keys' order): what the content room's lists follow. The MSW
- * stand-in and tests use it. */
+ * text, in the keys' order) and every marked part's total: what the content
+ * room's lists follow (Rust `item_parts`). The MSW stand-in and tests use
+ * it. */
 export function itemParts(keys: Y.Doc) {
   const out: {
     entries: { id: string; text: string }[];
-    kind: ReaderList['kind'];
+    kind: string;
     part: string;
+    total?: number;
   }[] = [];
   keysScope(keys).forEach((key, part) => {
     const kind = plain<string>(key, 'type');
-    if (kind !== 'matching' && kind !== 'ordering') return;
+    if (!kind) return;
+    const list =
+      kind === 'matching' ? 'options' : kind === 'ordering' ? 'items' : null;
+    const scheme = readMarkscheme(key);
+    if (!list && !scheme.length) return;
     out.push({
-      entries: ordered(
-        mapAt(key, kind === 'matching' ? 'options' : 'items')
-      ).map((item) => ({ id: item.id, text: text(item.entry, 'text') })),
+      entries: list
+        ? ordered(mapAt(key, list)).map((item) => ({
+            id: item.id,
+            text: text(item.entry, 'text'),
+          }))
+        : [],
       kind,
       part,
+      ...(scheme.length ? { total: schemeMarks(scheme) } : {}),
     });
   });
   return out;

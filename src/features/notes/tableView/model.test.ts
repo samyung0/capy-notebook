@@ -99,20 +99,47 @@ describe('isTableViewBlock', () => {
     expect(isTableViewBlock(block)).toBe(true);
   });
 
+  // Epo 2026-11-22: two people's adds at once may take a list past its cap,
+  // which every reader takes up to twice it.
+  it('takes lists merged past their caps, up to twice them', () => {
+    const block = tracker();
+    for (let i = block.columns.length; i < 2 * TABLE_VIEW_LIMITS.columns; i++)
+      block.columns.push({ id: `c${i}`, kind: 'text', name: '' });
+    for (let i = block.rows.length; i < 2 * TABLE_VIEW_LIMITS.rows; i++)
+      block.rows.push({ id: `r${i}` });
+    for (let i = block.views.length; i < 2 * TABLE_VIEW_LIMITS.views; i++)
+      block.views.push({ id: `v${i}`, kind: 'table', name: '' });
+    const select = block.columns.find((column) => column.kind === 'select');
+    if (!select) throw new Error('the tracker has a select column');
+    select.options = Array.from(
+      { length: 2 * TABLE_VIEW_LIMITS.options },
+      (_, i) => ({ color: 'red' as const, id: `o${i}`, name: '' })
+    );
+    block.rows[0] = Object.fromEntries([
+      ['id', 'r_full'],
+      ...block.columns.slice(1).map(({ id }) => [id, 'x']),
+    ]) as (typeof block.rows)[number];
+    expect(isTableViewBlock(block)).toBe(true);
+    block.views.push({ id: 'v_more', kind: 'table', name: '' });
+    expect(isTableViewBlock(block)).toBe(false);
+  });
+
   it.each<[string, (block: TableViewBlock) => unknown]>([
     ['two title columns', (b) => b.columns.push(column('title'))],
     ['no title column', (b) => b.columns.splice(1, 1)],
+    // Past twice the caps two people's adds at once may reach (Epo
+    // 2026-11-22).
     [
       'too many columns',
       (b) => {
-        for (let i = b.columns.length; i <= TABLE_VIEW_LIMITS.columns; i++)
+        for (let i = b.columns.length; i <= 2 * TABLE_VIEW_LIMITS.columns; i++)
           b.columns.push({ id: `c${i}`, kind: 'text', name: '' });
       },
     ],
     [
       'too many rows',
       (b) => {
-        for (let i = b.rows.length; i <= TABLE_VIEW_LIMITS.rows; i++)
+        for (let i = b.rows.length; i <= 2 * TABLE_VIEW_LIMITS.rows; i++)
           b.rows.push({ id: `r${i}` });
       },
     ],

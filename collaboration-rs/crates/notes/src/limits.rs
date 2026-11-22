@@ -26,6 +26,16 @@ pub const MAX_DEPTH: u32 = 16;
 /// level, and a writer's update can nest far deeper).
 pub const DEPTH_CEILING: u32 = 1024;
 
+/// What readers, stores and admission take of a count or a text length that
+/// two people's edits at the same moment can merge past (Epo 2026-11-22, "Yes,
+/// A everywhere"): twice its cap. Editors stop at the cap itself; a value past
+/// it comes from a merge, a hand-made client, or a paste or Duplicate of a
+/// block holding one. Past twice it is refused. Go's `fieldlimits.Merged` and
+/// the browser's `mergedCap` are the same.
+pub const fn merged_cap(cap: usize) -> usize {
+    2 * cap
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Metrics {
@@ -882,12 +892,13 @@ fn plain_content<T: ReadTxn>(
     shape.exact = !figures.is_empty();
     media.extend(figures);
     // A source whose held length plus what the update types stays within
-    // the cap needs no copy (deletions only shorten it): one length read.
+    // twice the cap needs no copy (deletions only shorten it): one length
+    // read.
     shape.sources = typed_into
         .into_iter()
         .filter(|(source, typed)| {
             let held = held_branch(txn, source).map_or(0, |branch| branch.content_len());
-            u64::from(held) + typed > catalog::MERMAID_SOURCE_MAX as u64
+            u64::from(held) + typed > merged_cap(catalog::MERMAID_SOURCE_MAX) as u64
         })
         .map(|(source, _)| source)
         .collect();
@@ -895,18 +906,19 @@ fn plain_content<T: ReadTxn>(
     Ok(media)
 }
 
-/// [Refusal::Content] for a Mermaid source past `MERMAID_SOURCE_MAX`.
-pub const LONG_SOURCE: &str = "a Mermaid source over its length cap";
+/// [Refusal::Content] for a Mermaid source past twice `MERMAID_SOURCE_MAX`.
+pub const LONG_SOURCE: &str = "a Mermaid source over twice its length cap";
 
 /// The Mermaid sources [plain_content] named, measured in `candidate` (the
-/// room with the update applied) in UTF-16 units, the doc's offset kind.
+/// room with the update applied) in UTF-16 units, the doc's offset kind: two
+/// people typing at once may pass the cap, up to twice it ([merged_cap]).
 fn sources_fit(candidate: &yrs::Doc, sources: &HashSet<BranchID>) -> Result<(), Refusal> {
     use yrs::Transact;
     let txn = candidate.transact();
     for id in sources {
         if id.get_branch(&txn).is_some_and(|branch| {
             !branch.item().is_some_and(|item| item.is_deleted())
-                && branch.content_len() as usize > catalog::MERMAID_SOURCE_MAX
+                && branch.content_len() as usize > merged_cap(catalog::MERMAID_SOURCE_MAX)
         }) {
             return Err(Refusal::Content(LONG_SOURCE));
         }
@@ -1484,9 +1496,10 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
                 .map_err(ProjectionError::from)?
                 .unwrap_or(Value::Null);
             // A table view's block is read as held (no repair) and takes the
-            // writers' structural rules whole (Epo 2026-11-12): a merge that
-            // would leave two title columns or a list past its cap is refused
-            // here, as this update arrives.
+            // writers' structural rules whole: a merge that would leave two
+            // title columns is refused here, as this update arrives, and its
+            // lists hold up to twice their caps (Epo 2026-11-22, superseding
+            // the 2026-11-12 refusal of a list merged past its cap).
             if kind == crate::table_view::TYPE {
                 if crate::table_view::block(&block).is_err() {
                     return Err(Refusal::Content(BAD_VALUE));
@@ -1516,19 +1529,20 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
             return Err(Refusal::Content(UNEXPECTED_KEY));
         }
         // An interactive block or a table view made: the document's top
-        // level holds at most `HTML_EMBED_MAX_COUNT` and
-        // `TABLE_VIEW_MAX_COUNT`, each counted once on the copy.
+        // level holds at most twice `HTML_EMBED_MAX_COUNT` and
+        // `TABLE_VIEW_MAX_COUNT` (two people inserting at once may pass the
+        // cap the editor stops at), each counted once on the copy.
         for (counted, counted_kind, max, refusal) in [
             (
                 &mut embeds_counted,
                 crate::material::HTML_EMBED_TYPE,
-                catalog::HTML_EMBED_MAX_COUNT,
+                merged_cap(catalog::HTML_EMBED_MAX_COUNT),
                 TOO_MANY_EMBEDS,
             ),
             (
                 &mut table_views_counted,
                 crate::table_view::TYPE,
-                catalog::TABLE_VIEW_MAX_COUNT,
+                merged_cap(catalog::TABLE_VIEW_MAX_COUNT),
                 TOO_MANY_TABLE_VIEWS,
             ),
         ] {

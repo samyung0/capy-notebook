@@ -1429,6 +1429,7 @@
   "table_view_insert_below": "Insert below",
   "table_view_delete_record": "Delete record",
   "table_view_at_count": "A note holds at most {count} table views.",
+  "html_embed_at_count": "A note holds at most {count} interactive blocks.",
   "table_view_name": "Name",
   "table_view_status": "Status",
   "table_view_not_yet": "Not yet",

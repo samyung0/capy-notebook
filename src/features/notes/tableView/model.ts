@@ -1,4 +1,5 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
+import { mergedCap } from '@/api/mergedCap';
 import type {
   MaterialElement,
   MaterialText,
@@ -159,7 +160,7 @@ function isColumn(value: unknown): value is TableViewColumn {
   if (value.kind !== 'select') return value.options === undefined;
   return (
     Array.isArray(value.options) &&
-    value.options.length <= TABLE_VIEW_LIMITS.options &&
+    value.options.length <= mergedCap(TABLE_VIEW_LIMITS.options) &&
     value.options.every(isOption) &&
     uniqueIds(value.options as SelectOption[])
   );
@@ -169,7 +170,7 @@ function isRow(value: unknown): value is TableViewRow {
   if (!(isRecord(value) && isId(value.id))) return false;
   const keys = Object.keys(value).filter((key) => key !== ROW_ID);
   return (
-    keys.length <= TABLE_VIEW_LIMITS.columns &&
+    keys.length <= mergedCap(TABLE_VIEW_LIMITS.columns) &&
     keys.every((key) => isId(key) && isCell(value[key]))
   );
 }
@@ -199,7 +200,9 @@ function isView(value: unknown): value is TableViewView {
 
 /** The structural rules every writer keeps (the spec's "What a writer must
  * keep"): what merges leave behind (a cell of a deleted column, a value that
- * no longer fits) still passes. */
+ * no longer fits, a list two people's adds at once took past its cap, up to
+ * twice it: Epo 2026-11-22) still passes. Editors add only below the caps
+ * (`edit.ts`). */
 export function isTableViewBlock(value: unknown): value is TableViewBlock {
   if (
     !(isRecord(value) && hasOnly(value, ['title', 'columns', 'rows', 'views']))
@@ -211,7 +214,7 @@ export function isTableViewBlock(value: unknown): value is TableViewBlock {
     !(
       Array.isArray(columns) &&
       columns.length >= 1 &&
-      columns.length <= TABLE_VIEW_LIMITS.columns &&
+      columns.length <= mergedCap(TABLE_VIEW_LIMITS.columns) &&
       columns.every(isColumn) &&
       uniqueIds(columns) &&
       columns.filter((column) => column.kind === 'title').length === 1
@@ -221,7 +224,7 @@ export function isTableViewBlock(value: unknown): value is TableViewBlock {
   if (
     !(
       Array.isArray(rows) &&
-      rows.length <= TABLE_VIEW_LIMITS.rows &&
+      rows.length <= mergedCap(TABLE_VIEW_LIMITS.rows) &&
       rows.every(isRow) &&
       uniqueIds(rows)
     )
@@ -230,7 +233,7 @@ export function isTableViewBlock(value: unknown): value is TableViewBlock {
   return (
     Array.isArray(views) &&
     // None is fine (revision 2.3): two peers can delete the last two at once.
-    views.length <= TABLE_VIEW_LIMITS.views &&
+    views.length <= mergedCap(TABLE_VIEW_LIMITS.views) &&
     views.every(isView) &&
     uniqueIds(views)
   );

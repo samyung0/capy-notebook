@@ -1429,6 +1429,7 @@
   "table_view_insert_below": "在下方插入",
   "table_view_delete_record": "删除记录",
   "table_view_at_count": "一篇笔记最多包含 {count} 个表格视图。",
+  "html_embed_at_count": "一篇笔记最多包含 {count} 个交互块。",
   "table_view_name": "名称",
   "table_view_status": "状态",
   "table_view_not_yet": "未开始",

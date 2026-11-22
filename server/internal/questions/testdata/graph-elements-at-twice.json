@@ -1,0 +1,1042 @@
+{
+  "name": "graph-elements-at-twice",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "p0",
+            "coords": [-5, -5]
+          },
+          {
+            "type": "point",
+            "id": "p1",
+            "coords": [-4, -5]
+          },
+          {
+            "type": "point",
+            "id": "p2",
+            "coords": [-3, -5]
+          },
+          {
+            "type": "point",
+            "id": "p3",
+            "coords": [-2, -5]
+          },
+          {
+            "type": "point",
+            "id": "p4",
+            "coords": [-1, -5]
+          },
+          {
+            "type": "point",
+            "id": "p5",
+            "coords": [0, -5]
+          },
+          {
+            "type": "point",
+            "id": "p6",
+            "coords": [1, -5]
+          },
+          {
+            "type": "point",
+            "id": "p7",
+            "coords": [2, -5]
+          },
+          {
+            "type": "point",
+            "id": "p8",
+            "coords": [3, -5]
+          },
+          {
+            "type": "point",
+            "id": "p9",
+            "coords": [4, -5]
+          },
+          {
+            "type": "point",
+            "id": "p10",
+            "coords": [5, -5]
+          },
+          {
+            "type": "point",
+            "id": "p11",
+            "coords": [-5, -4]
+          },
+          {
+            "type": "point",
+            "id": "p12",
+            "coords": [-4, -4]
+          },
+          {
+            "type": "point",
+            "id": "p13",
+            "coords": [-3, -4]
+          },
+          {
+            "type": "point",
+            "id": "p14",
+            "coords": [-2, -4]
+          },
+          {
+            "type": "point",
+            "id": "p15",
+            "coords": [-1, -4]
+          },
+          {
+            "type": "point",
+            "id": "p16",
+            "coords": [0, -4]
+          },
+          {
+            "type": "point",
+            "id": "p17",
+            "coords": [1, -4]
+          },
+          {
+            "type": "point",
+            "id": "p18",
+            "coords": [2, -4]
+          },
+          {
+            "type": "point",
+            "id": "p19",
+            "coords": [3, -4]
+          },
+          {
+            "type": "point",
+            "id": "p20",
+            "coords": [4, -4]
+          },
+          {
+            "type": "point",
+            "id": "p21",
+            "coords": [5, -4]
+          },
+          {
+            "type": "point",
+            "id": "p22",
+            "coords": [-5, -3]
+          },
+          {
+            "type": "point",
+            "id": "p23",
+            "coords": [-4, -3]
+          },
+          {
+            "type": "point",
+            "id": "p24",
+            "coords": [-3, -3]
+          },
+          {
+            "type": "point",
+            "id": "p25",
+            "coords": [-2, -3]
+          },
+          {
+            "type": "point",
+            "id": "p26",
+            "coords": [-1, -3]
+          },
+          {
+            "type": "point",
+            "id": "p27",
+            "coords": [0, -3]
+          },
+          {
+            "type": "point",
+            "id": "p28",
+            "coords": [1, -3]
+          },
+          {
+            "type": "point",
+            "id": "p29",
+            "coords": [2, -3]
+          },
+          {
+            "type": "point",
+            "id": "p30",
+            "coords": [3, -3]
+          },
+          {
+            "type": "point",
+            "id": "p31",
+            "coords": [4, -3]
+          },
+          {
+            "type": "point",
+            "id": "p32",
+            "coords": [5, -3]
+          },
+          {
+            "type": "point",
+            "id": "p33",
+            "coords": [-5, -2]
+          },
+          {
+            "type": "point",
+            "id": "p34",
+            "coords": [-4, -2]
+          },
+          {
+            "type": "point",
+            "id": "p35",
+            "coords": [-3, -2]
+          },
+          {
+            "type": "point",
+            "id": "p36",
+            "coords": [-2, -2]
+          },
+          {
+            "type": "point",
+            "id": "p37",
+            "coords": [-1, -2]
+          },
+          {
+            "type": "point",
+            "id": "p38",
+            "coords": [0, -2]
+          },
+          {
+            "type": "point",
+            "id": "p39",
+            "coords": [1, -2]
+          },
+          {
+            "type": "point",
+            "id": "p40",
+            "coords": [2, -2]
+          },
+          {
+            "type": "point",
+            "id": "p41",
+            "coords": [3, -2]
+          },
+          {
+            "type": "point",
+            "id": "p42",
+            "coords": [4, -2]
+          },
+          {
+            "type": "point",
+            "id": "p43",
+            "coords": [5, -2]
+          },
+          {
+            "type": "point",
+            "id": "p44",
+            "coords": [-5, -1]
+          },
+          {
+            "type": "point",
+            "id": "p45",
+            "coords": [-4, -1]
+          },
+          {
+            "type": "point",
+            "id": "p46",
+            "coords": [-3, -1]
+          },
+          {
+            "type": "point",
+            "id": "p47",
+            "coords": [-2, -1]
+          },
+          {
+            "type": "point",
+            "id": "p48",
+            "coords": [-1, -1]
+          },
+          {
+            "type": "point",
+            "id": "p49",
+            "coords": [0, -1]
+          },
+          {
+            "type": "point",
+            "id": "p50",
+            "coords": [1, -1]
+          },
+          {
+            "type": "point",
+            "id": "p51",
+            "coords": [2, -1]
+          },
+          {
+            "type": "point",
+            "id": "p52",
+            "coords": [3, -1]
+          },
+          {
+            "type": "point",
+            "id": "p53",
+            "coords": [4, -1]
+          },
+          {
+            "type": "point",
+            "id": "p54",
+            "coords": [5, -1]
+          },
+          {
+            "type": "point",
+            "id": "p55",
+            "coords": [-5, 0]
+          },
+          {
+            "type": "point",
+            "id": "p56",
+            "coords": [-4, 0]
+          },
+          {
+            "type": "point",
+            "id": "p57",
+            "coords": [-3, 0]
+          },
+          {
+            "type": "point",
+            "id": "p58",
+            "coords": [-2, 0]
+          },
+          {
+            "type": "point",
+            "id": "p59",
+            "coords": [-1, 0]
+          },
+          {
+            "type": "point",
+            "id": "p60",
+            "coords": [0, 0]
+          },
+          {
+            "type": "point",
+            "id": "p61",
+            "coords": [1, 0]
+          },
+          {
+            "type": "point",
+            "id": "p62",
+            "coords": [2, 0]
+          },
+          {
+            "type": "point",
+            "id": "p63",
+            "coords": [3, 0]
+          },
+          {
+            "type": "point",
+            "id": "p64",
+            "coords": [4, 0]
+          },
+          {
+            "type": "point",
+            "id": "p65",
+            "coords": [5, 0]
+          },
+          {
+            "type": "point",
+            "id": "p66",
+            "coords": [-5, 1]
+          },
+          {
+            "type": "point",
+            "id": "p67",
+            "coords": [-4, 1]
+          },
+          {
+            "type": "point",
+            "id": "p68",
+            "coords": [-3, 1]
+          },
+          {
+            "type": "point",
+            "id": "p69",
+            "coords": [-2, 1]
+          },
+          {
+            "type": "point",
+            "id": "p70",
+            "coords": [-1, 1]
+          },
+          {
+            "type": "point",
+            "id": "p71",
+            "coords": [0, 1]
+          },
+          {
+            "type": "point",
+            "id": "p72",
+            "coords": [1, 1]
+          },
+          {
+            "type": "point",
+            "id": "p73",
+            "coords": [2, 1]
+          },
+          {
+            "type": "point",
+            "id": "p74",
+            "coords": [3, 1]
+          },
+          {
+            "type": "point",
+            "id": "p75",
+            "coords": [4, 1]
+          },
+          {
+            "type": "point",
+            "id": "p76",
+            "coords": [5, 1]
+          },
+          {
+            "type": "point",
+            "id": "p77",
+            "coords": [-5, 2]
+          },
+          {
+            "type": "point",
+            "id": "p78",
+            "coords": [-4, 2]
+          },
+          {
+            "type": "point",
+            "id": "p79",
+            "coords": [-3, 2]
+          },
+          {
+            "type": "point",
+            "id": "p80",
+            "coords": [-2, 2]
+          },
+          {
+            "type": "point",
+            "id": "p81",
+            "coords": [-1, 2]
+          },
+          {
+            "type": "point",
+            "id": "p82",
+            "coords": [0, 2]
+          },
+          {
+            "type": "point",
+            "id": "p83",
+            "coords": [1, 2]
+          },
+          {
+            "type": "point",
+            "id": "p84",
+            "coords": [2, 2]
+          },
+          {
+            "type": "point",
+            "id": "p85",
+            "coords": [3, 2]
+          },
+          {
+            "type": "point",
+            "id": "p86",
+            "coords": [4, 2]
+          },
+          {
+            "type": "point",
+            "id": "p87",
+            "coords": [5, 2]
+          },
+          {
+            "type": "point",
+            "id": "p88",
+            "coords": [-5, 3]
+          },
+          {
+            "type": "point",
+            "id": "p89",
+            "coords": [-4, 3]
+          },
+          {
+            "type": "point",
+            "id": "p90",
+            "coords": [-3, 3]
+          },
+          {
+            "type": "point",
+            "id": "p91",
+            "coords": [-2, 3]
+          },
+          {
+            "type": "point",
+            "id": "p92",
+            "coords": [-1, 3]
+          },
+          {
+            "type": "point",
+            "id": "p93",
+            "coords": [0, 3]
+          },
+          {
+            "type": "point",
+            "id": "p94",
+            "coords": [1, 3]
+          },
+          {
+            "type": "point",
+            "id": "p95",
+            "coords": [2, 3]
+          },
+          {
+            "type": "point",
+            "id": "p96",
+            "coords": [3, 3]
+          },
+          {
+            "type": "point",
+            "id": "p97",
+            "coords": [4, 3]
+          },
+          {
+            "type": "point",
+            "id": "p98",
+            "coords": [5, 3]
+          },
+          {
+            "type": "point",
+            "id": "p99",
+            "coords": [-5, 4]
+          },
+          {
+            "type": "point",
+            "id": "p100",
+            "coords": [-4, 4]
+          },
+          {
+            "type": "point",
+            "id": "p101",
+            "coords": [-3, 4]
+          },
+          {
+            "type": "point",
+            "id": "p102",
+            "coords": [-2, 4]
+          },
+          {
+            "type": "point",
+            "id": "p103",
+            "coords": [-1, 4]
+          },
+          {
+            "type": "point",
+            "id": "p104",
+            "coords": [0, 4]
+          },
+          {
+            "type": "point",
+            "id": "p105",
+            "coords": [1, 4]
+          },
+          {
+            "type": "point",
+            "id": "p106",
+            "coords": [2, 4]
+          },
+          {
+            "type": "point",
+            "id": "p107",
+            "coords": [3, 4]
+          },
+          {
+            "type": "point",
+            "id": "p108",
+            "coords": [4, 4]
+          },
+          {
+            "type": "point",
+            "id": "p109",
+            "coords": [5, 4]
+          },
+          {
+            "type": "point",
+            "id": "p110",
+            "coords": [-5, 5]
+          },
+          {
+            "type": "point",
+            "id": "p111",
+            "coords": [-4, 5]
+          },
+          {
+            "type": "point",
+            "id": "p112",
+            "coords": [-3, 5]
+          },
+          {
+            "type": "point",
+            "id": "p113",
+            "coords": [-2, 5]
+          },
+          {
+            "type": "point",
+            "id": "p114",
+            "coords": [-1, 5]
+          },
+          {
+            "type": "point",
+            "id": "p115",
+            "coords": [0, 5]
+          },
+          {
+            "type": "point",
+            "id": "p116",
+            "coords": [1, 5]
+          },
+          {
+            "type": "point",
+            "id": "p117",
+            "coords": [2, 5]
+          },
+          {
+            "type": "point",
+            "id": "p118",
+            "coords": [3, 5]
+          },
+          {
+            "type": "point",
+            "id": "p119",
+            "coords": [4, 5]
+          },
+          {
+            "type": "point",
+            "id": "p120",
+            "coords": [5, 5]
+          },
+          {
+            "type": "point",
+            "id": "p121",
+            "coords": [-5, -5]
+          },
+          {
+            "type": "point",
+            "id": "p122",
+            "coords": [-4, -5]
+          },
+          {
+            "type": "point",
+            "id": "p123",
+            "coords": [-3, -5]
+          },
+          {
+            "type": "point",
+            "id": "p124",
+            "coords": [-2, -5]
+          },
+          {
+            "type": "point",
+            "id": "p125",
+            "coords": [-1, -5]
+          },
+          {
+            "type": "point",
+            "id": "p126",
+            "coords": [0, -5]
+          },
+          {
+            "type": "point",
+            "id": "p127",
+            "coords": [1, -5]
+          },
+          {
+            "type": "point",
+            "id": "p128",
+            "coords": [2, -5]
+          },
+          {
+            "type": "point",
+            "id": "p129",
+            "coords": [3, -5]
+          },
+          {
+            "type": "point",
+            "id": "p130",
+            "coords": [4, -5]
+          },
+          {
+            "type": "point",
+            "id": "p131",
+            "coords": [5, -5]
+          },
+          {
+            "type": "point",
+            "id": "p132",
+            "coords": [-5, -4]
+          },
+          {
+            "type": "point",
+            "id": "p133",
+            "coords": [-4, -4]
+          },
+          {
+            "type": "point",
+            "id": "p134",
+            "coords": [-3, -4]
+          },
+          {
+            "type": "point",
+            "id": "p135",
+            "coords": [-2, -4]
+          },
+          {
+            "type": "point",
+            "id": "p136",
+            "coords": [-1, -4]
+          },
+          {
+            "type": "point",
+            "id": "p137",
+            "coords": [0, -4]
+          },
+          {
+            "type": "point",
+            "id": "p138",
+            "coords": [1, -4]
+          },
+          {
+            "type": "point",
+            "id": "p139",
+            "coords": [2, -4]
+          },
+          {
+            "type": "point",
+            "id": "p140",
+            "coords": [3, -4]
+          },
+          {
+            "type": "point",
+            "id": "p141",
+            "coords": [4, -4]
+          },
+          {
+            "type": "point",
+            "id": "p142",
+            "coords": [5, -4]
+          },
+          {
+            "type": "point",
+            "id": "p143",
+            "coords": [-5, -3]
+          },
+          {
+            "type": "point",
+            "id": "p144",
+            "coords": [-4, -3]
+          },
+          {
+            "type": "point",
+            "id": "p145",
+            "coords": [-3, -3]
+          },
+          {
+            "type": "point",
+            "id": "p146",
+            "coords": [-2, -3]
+          },
+          {
+            "type": "point",
+            "id": "p147",
+            "coords": [-1, -3]
+          },
+          {
+            "type": "point",
+            "id": "p148",
+            "coords": [0, -3]
+          },
+          {
+            "type": "point",
+            "id": "p149",
+            "coords": [1, -3]
+          },
+          {
+            "type": "point",
+            "id": "p150",
+            "coords": [2, -3]
+          },
+          {
+            "type": "point",
+            "id": "p151",
+            "coords": [3, -3]
+          },
+          {
+            "type": "point",
+            "id": "p152",
+            "coords": [4, -3]
+          },
+          {
+            "type": "point",
+            "id": "p153",
+            "coords": [5, -3]
+          },
+          {
+            "type": "point",
+            "id": "p154",
+            "coords": [-5, -2]
+          },
+          {
+            "type": "point",
+            "id": "p155",
+            "coords": [-4, -2]
+          },
+          {
+            "type": "point",
+            "id": "p156",
+            "coords": [-3, -2]
+          },
+          {
+            "type": "point",
+            "id": "p157",
+            "coords": [-2, -2]
+          },
+          {
+            "type": "point",
+            "id": "p158",
+            "coords": [-1, -2]
+          },
+          {
+            "type": "point",
+            "id": "p159",
+            "coords": [0, -2]
+          },
+          {
+            "type": "point",
+            "id": "p160",
+            "coords": [1, -2]
+          },
+          {
+            "type": "point",
+            "id": "p161",
+            "coords": [2, -2]
+          },
+          {
+            "type": "point",
+            "id": "p162",
+            "coords": [3, -2]
+          },
+          {
+            "type": "point",
+            "id": "p163",
+            "coords": [4, -2]
+          },
+          {
+            "type": "point",
+            "id": "p164",
+            "coords": [5, -2]
+          },
+          {
+            "type": "point",
+            "id": "p165",
+            "coords": [-5, -1]
+          },
+          {
+            "type": "point",
+            "id": "p166",
+            "coords": [-4, -1]
+          },
+          {
+            "type": "point",
+            "id": "p167",
+            "coords": [-3, -1]
+          },
+          {
+            "type": "point",
+            "id": "p168",
+            "coords": [-2, -1]
+          },
+          {
+            "type": "point",
+            "id": "p169",
+            "coords": [-1, -1]
+          },
+          {
+            "type": "point",
+            "id": "p170",
+            "coords": [0, -1]
+          },
+          {
+            "type": "point",
+            "id": "p171",
+            "coords": [1, -1]
+          },
+          {
+            "type": "point",
+            "id": "p172",
+            "coords": [2, -1]
+          },
+          {
+            "type": "point",
+            "id": "p173",
+            "coords": [3, -1]
+          },
+          {
+            "type": "point",
+            "id": "p174",
+            "coords": [4, -1]
+          },
+          {
+            "type": "point",
+            "id": "p175",
+            "coords": [5, -1]
+          },
+          {
+            "type": "point",
+            "id": "p176",
+            "coords": [-5, 0]
+          },
+          {
+            "type": "point",
+            "id": "p177",
+            "coords": [-4, 0]
+          },
+          {
+            "type": "point",
+            "id": "p178",
+            "coords": [-3, 0]
+          },
+          {
+            "type": "point",
+            "id": "p179",
+            "coords": [-2, 0]
+          },
+          {
+            "type": "point",
+            "id": "p180",
+            "coords": [-1, 0]
+          },
+          {
+            "type": "point",
+            "id": "p181",
+            "coords": [0, 0]
+          },
+          {
+            "type": "point",
+            "id": "p182",
+            "coords": [1, 0]
+          },
+          {
+            "type": "point",
+            "id": "p183",
+            "coords": [2, 0]
+          },
+          {
+            "type": "point",
+            "id": "p184",
+            "coords": [3, 0]
+          },
+          {
+            "type": "point",
+            "id": "p185",
+            "coords": [4, 0]
+          },
+          {
+            "type": "point",
+            "id": "p186",
+            "coords": [5, 0]
+          },
+          {
+            "type": "point",
+            "id": "p187",
+            "coords": [-5, 1]
+          },
+          {
+            "type": "point",
+            "id": "p188",
+            "coords": [-4, 1]
+          },
+          {
+            "type": "point",
+            "id": "p189",
+            "coords": [-3, 1]
+          },
+          {
+            "type": "point",
+            "id": "p190",
+            "coords": [-2, 1]
+          },
+          {
+            "type": "point",
+            "id": "p191",
+            "coords": [-1, 1]
+          },
+          {
+            "type": "point",
+            "id": "p192",
+            "coords": [0, 1]
+          },
+          {
+            "type": "point",
+            "id": "p193",
+            "coords": [1, 1]
+          },
+          {
+            "type": "point",
+            "id": "p194",
+            "coords": [2, 1]
+          },
+          {
+            "type": "point",
+            "id": "p195",
+            "coords": [3, 1]
+          },
+          {
+            "type": "point",
+            "id": "p196",
+            "coords": [4, 1]
+          },
+          {
+            "type": "point",
+            "id": "p197",
+            "coords": [5, 1]
+          },
+          {
+            "type": "point",
+            "id": "p198",
+            "coords": [-5, 2]
+          },
+          {
+            "type": "point",
+            "id": "p199",
+            "coords": [-4, 2]
+          }
+        ],
+        "width": 480,
+        "height": 360,
+        "description": "A graph at twice its element cap"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

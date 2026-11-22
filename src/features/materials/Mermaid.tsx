@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { mergedCap } from '@/api/mergedCap';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -390,7 +391,7 @@ export function renderMermaid(
   const hit = recall(key, wanted);
   if (hit) return hit;
   const wants = [wanted];
-  if (code.length > MERMAID_SOURCE_MAX) {
+  if (code.length > mergedCap(MERMAID_SOURCE_MAX)) {
     const promise = Promise.reject(new MermaidReasonError('tooLong'));
     return remember(key, { promise, settled: false, size: 0, wants }, code);
   }
@@ -608,6 +609,7 @@ export function MermaidSwatch({
 export function mermaidFailureMessage(failure: MermaidFailure) {
   switch (failure.reason) {
     case 'tooLong':
+      // The editor's cap, the bound a user can act on.
       return m.mermaid_too_long({ max: MERMAID_SOURCE_MAX.toLocaleString() });
     case 'edges':
       return m.mermaid_too_many_edges({ max: MERMAID_EDGES_MAX });

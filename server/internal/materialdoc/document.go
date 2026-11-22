@@ -103,22 +103,35 @@ type CardImage struct {
 	AssetID string `json:"assetId"`
 }
 
-// A card's front and back caps (fieldlimits), in runes; the card save API,
-// the agent tools and the collaboration server carry the same limits.
+// A card's front and back caps (fieldlimits), in runes: the card dialog, the
+// agent's card commands and the item create API stop at them; a stored set
+// holds up to twice them, as two people typing in one face at once may pass a
+// cap (Epo 2026-11-22), and the collaboration server stores the same.
 const (
 	MaxCardFrontRunes = fieldlimits.CardFront
 	MaxCardBackRunes  = fieldlimits.CardBack
 )
 
-// ValidateCardText checks a card's front and back against the stored caps,
-// for callers that build a card from text (the agent's card commands and
-// generated sets) to refuse it with a clear error before the document check.
+// ValidateCardText checks a card a writer builds from text (the agent's card
+// commands, generated sets, the create API) against the caps, to refuse it
+// with a clear error before the document check.
 func ValidateCardText(front, back string) error {
-	if utf8.RuneCountInString(front) > MaxCardFrontRunes {
-		return fmt.Errorf("a flashcard front holds at most %d characters", MaxCardFrontRunes)
+	return cardTextWithin(front, back, MaxCardFrontRunes, MaxCardBackRunes)
+}
+
+// ValidateHeldCardText checks a card side a writer rewrites against twice the
+// caps, what a stored set holds; the collaboration server holds the rewrite
+// to the cap against what the card held.
+func ValidateHeldCardText(front, back string) error {
+	return cardTextWithin(front, back, fieldlimits.Merged(MaxCardFrontRunes), fieldlimits.Merged(MaxCardBackRunes))
+}
+
+func cardTextWithin(front, back string, frontMax, backMax int) error {
+	if utf8.RuneCountInString(front) > frontMax {
+		return fmt.Errorf("a flashcard front holds at most %d characters", frontMax)
 	}
-	if utf8.RuneCountInString(back) > MaxCardBackRunes {
-		return fmt.Errorf("a flashcard back holds at most %d characters", MaxCardBackRunes)
+	if utf8.RuneCountInString(back) > backMax {
+		return fmt.Errorf("a flashcard back holds at most %d characters", backMax)
 	}
 	return nil
 }
@@ -347,11 +360,12 @@ func validate(doc Envelope, live bool) error {
 			tableViews++
 		}
 	}
-	if interactive > HTMLEmbedMaxCount {
-		return fmt.Errorf("%w: %d interactive blocks over %d", ErrInvalid, interactive, HTMLEmbedMaxCount)
+	// Two people inserting at once may pass a count's cap, up to twice it.
+	if most := fieldlimits.Merged(HTMLEmbedMaxCount); interactive > most {
+		return fmt.Errorf("%w: %d interactive blocks over %d", ErrInvalid, interactive, most)
 	}
-	if tableViews > embeds.TableViewMaxCount {
-		return fmt.Errorf("%w: %d table views over %d", ErrInvalid, tableViews, embeds.TableViewMaxCount)
+	if most := fieldlimits.Merged(embeds.TableViewMaxCount); tableViews > most {
+		return fmt.Errorf("%w: %d table views over %d", ErrInvalid, tableViews, most)
 	}
 	var all []map[string]any
 	var collect func(map[string]any)
@@ -1037,7 +1051,8 @@ func validateFlashcard(node map[string]any) error {
 		children[1].(map[string]any)["type"] != "flashcard_back" {
 		return errors.New("flashcard children must be front then back")
 	}
-	if err := ValidateCardText(nodeText(children[0].(map[string]any)), nodeText(children[1].(map[string]any))); err != nil {
+	front, back := nodeText(children[0].(map[string]any)), nodeText(children[1].(map[string]any))
+	if err := ValidateHeldCardText(front, back); err != nil {
 		return err
 	}
 	if raw, ok := node["image"]; ok {
@@ -1061,9 +1076,10 @@ func validateDiagram(node map[string]any) error {
 	if !ok {
 		return errors.New("source must be a string")
 	}
-	// UTF-16 units, as the browser counts it (Epo 2026-10-22).
-	if utf16Len(source) > embeds.MermaidSourceMax {
-		return fmt.Errorf("diagram source is over %d characters", embeds.MermaidSourceMax)
+	// UTF-16 units, as the browser counts it (Epo 2026-10-22), up to twice
+	// the cap two people typing at once may pass (Epo 2026-11-22).
+	if most := fieldlimits.Merged(embeds.MermaidSourceMax); utf16Len(source) > most {
+		return fmt.Errorf("diagram source is over %d characters", most)
 	}
 	children := node["children"].([]any)
 	if len(children) != 1 || children[0].(map[string]any)["type"] != "mermaid_caption" {
@@ -1160,10 +1176,118 @@ func QuizDocument(questions json.RawMessage, timeLimit *int) (string, error) {
 }
 
 func quizQuestionNode(question map[string]any) (map[string]any, error) {
-	if err := questions.Validate(question, questions.Policy{}); err != nil {
+	return quizQuestionNodeWith(question, questions.Policy{})
+}
+
+func quizQuestionNodeWith(question map[string]any, policy questions.Policy) (map[string]any, error) {
+	if err := questions.Validate(question, policy); err != nil {
 		return nil, err
 	}
 	return quizNodeOf(question), nil
+}
+
+// CheckWritten holds a document a server writer makes new (an agent's
+// material, a generated or extracted quiz, the starter) to the caps an editor
+// stops at (Epo 2026-11-22, "Yes, A everywhere"): a stored document takes up
+// to twice a count or text two people's edits at once may pass (Validate),
+// and a new one has no merge to keep. The collaboration server holds a
+// writer's edit of a stored document the same way, against what it held
+// (`check_written`). raw passed Parse or ParseWrite.
+func CheckWritten(raw string) error {
+	doc, err := decode(raw)
+	if err != nil {
+		return err
+	}
+	if err := checkWritten(doc.Value); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	return nil
+}
+
+func checkWritten(value []map[string]any) error {
+	interactive, tableViews := 0, 0
+	var quiz []map[string]any
+	over := func(count, cap int, what string) error {
+		if count > cap {
+			return fmt.Errorf("%d %s over %d", count, what, cap)
+		}
+		return nil
+	}
+	var walk func(node map[string]any) error
+	walk = func(node map[string]any) error {
+		block, _ := node["block"].(map[string]any)
+		length := func(key string) int {
+			list, _ := block[key].([]any)
+			return len(list)
+		}
+		switch node["type"] {
+		case HTMLEmbedType:
+			interactive++
+		case TableViewType:
+			tableViews++
+			for _, list := range []struct {
+				key  string
+				cap  int
+				what string
+			}{
+				{"columns", embeds.TableViewColumnsMax, "table view columns"},
+				{"rows", embeds.TableViewRowsMax, "table view rows"},
+				{"views", embeds.TableViewViewsMax, "views in a table view"},
+			} {
+				if err := over(length(list.key), list.cap, list.what); err != nil {
+					return err
+				}
+			}
+			columns, _ := block["columns"].([]any)
+			for _, raw := range columns {
+				column, _ := raw.(map[string]any)
+				options, _ := column["options"].([]any)
+				if err := over(len(options), embeds.TableViewOptionsMax, "column options"); err != nil {
+					return err
+				}
+			}
+		case "mermaid":
+			source, _ := node["source"].(string)
+			if err := over(utf16Len(source), embeds.MermaidSourceMax, "diagram source characters"); err != nil {
+				return err
+			}
+		case "chart", "plot", "graph":
+			if err := questions.ValidateBlock(block, questions.Policy{Written: true}); err != nil {
+				return err
+			}
+		case "quiz_question":
+			question, _ := node["question"].(map[string]any)
+			if err := questions.Validate(question, questions.Policy{Written: true}); err != nil {
+				return err
+			}
+			quiz = append(quiz, question)
+		case "flashcard":
+			faces := children(node)
+			if len(faces) == 2 {
+				if err := ValidateCardText(nodeText(faces[0]), nodeText(faces[1])); err != nil {
+					return err
+				}
+			}
+		}
+		for _, child := range children(node) {
+			if err := walk(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, node := range value {
+		if err := walk(node); err != nil {
+			return err
+		}
+	}
+	if err := over(interactive, HTMLEmbedMaxCount, "interactive blocks"); err != nil {
+		return err
+	}
+	if err := over(tableViews, embeds.TableViewMaxCount, "table views"); err != nil {
+		return err
+	}
+	return questions.QuizCaps(quiz)
 }
 
 func quizNodeOf(question map[string]any) map[string]any {
@@ -1177,8 +1301,8 @@ type IncompleteQuestion struct {
 	Node  map[string]any
 }
 
-// SplitIncomplete separates questions QuizDocument takes from those it refuses,
-// for Make a quiz alone: a room holds a question with parts still to answer and
+// SplitIncomplete separates questions QuizDocument takes at the caps an editor
+// stops at (CheckWritten) from those it refuses, for Make a quiz alone: a room holds a question with parts still to answer and
 // projects only the complete ones (D4, Epo 2026-11-05).
 func SplitIncomplete(raw json.RawMessage) (json.RawMessage, []IncompleteQuestion, error) {
 	values, err := decodeArray(raw)
@@ -1197,7 +1321,7 @@ func SplitIncomplete(raw json.RawMessage) (json.RawMessage, []IncompleteQuestion
 		if strings.TrimSpace(id) == "" {
 			return nil, nil, fmt.Errorf("%w: questions[%d].id is required", ErrInvalid, i)
 		}
-		if _, err := quizQuestionNode(question); err == nil {
+		if _, err := quizQuestionNodeWith(question, questions.Policy{Written: true}); err == nil {
 			complete = append(complete, question)
 		} else {
 			incomplete = append(incomplete, IncompleteQuestion{After: after, Node: quizNodeOf(question)})
