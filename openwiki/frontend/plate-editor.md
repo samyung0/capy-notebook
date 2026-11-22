@@ -1724,8 +1724,25 @@ walk carries over a run of them when a nested item follows, so the figure's
 photo's binary, a format mark, a type) goes whole; one over the server's cap
 is never sent: the room stops and closes (`collaboration-update-too-large`)
 and joins again only when remounted, keeping the edit in the document and its
-drafts, instead of looping on timeouts. The room provider sends each piece as
-its own SYNC message, acknowledged on its own. The tab's socket paces SYNC
+drafts, instead of looping on timeouts. The room provider sends an update's
+pieces as one group: each its own SYNC message of type `PIECE` (3, after
+y-sync's three), naming what was cut (step 2 or update), its place and the
+group's count (`pieceMessage`, `sync::PIECE`); an update of one piece goes as
+before. The room keeps a group's pieces on their channel and admits them as
+one update after the last (`Room::on_piece`): peers, the store and the
+writer's ACK see nothing of a group before, then one broadcast of all of it
+and one ACK counting every piece, or nothing at all when a piece is refused
+(its writer refused as for any refused update). A channel that ends
+mid-group (a dropped socket, a Leave, a rejoin after a timeout) leaves
+nothing applied, and its next step 2 carries the edit again; a piece out of
+its group's order (the one before it dropped in a timeout) drops the group
+the same way. A group gathers at most what one sync message carries in a
+note room (`NOTE_MAX_SYNC_BYTES`, 4 MiB) and a source room's state cap
+(`Room::group_cap`): the piece past it is refused as an update over that cap
+(a note's `malformed update`, a source's state-size refusal), before
+anything of the group is read. One group is one admission: its work budget
+and limits apply to the whole. Draft sends stay one request per piece (Epo
+2026-10-18, below). The tab's socket paces SYNC
 and awareness frames under the same allowance (`allowance.ts`, mirroring the
 defaults; a load generator's own socket has its own): a frame waits while the
 allowance is spent, and every frame sent
@@ -1738,7 +1755,7 @@ can still go over, and then the user is in a timeout.
 **Held back.** While the tab holds back messages, every editor (notes,
 items, DOCX, PPTX, XLSX and text) takes no input: frames wait in the socket
 for the allowance, a split update's pieces wait for the server's
-acknowledgement of the last, a draft send waits for the allowance, or the
+acknowledgement of their group, a draft send waits for the allowance, or the
 user is in a timeout (`held.ts`). `CollaborationHold` wraps the note
 editor and its toolbar, the quiz form, the flashcards editor, a live Mermaid
 diagram and the text editor: its content is `inert` and `aria-busy`, with a
@@ -2585,6 +2602,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   over one. The tab from before reloads instead. No source room changed, so
   `MIN_SOURCE` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
   request names "client protocol 33 -> 34, material 33 -> 34".
+  Groups of pieces (2026-11-22, a wrong behaviour with no product decision:
+  a room admitted an action's pieces one by one, so a later piece refused
+  left the earlier ones with peers and in the store) add SYNC type 3,
+  `PIECE` (see **Update allowance and pieces** under
+  [Connection lifetime and refusals](#connection-lifetime-and-refusals)),
+  in both families. A server before it refuses a piece as a malformed sync
+  message, and a tab before it sends its pieces as plain updates the room
+  admits one by one, the partial actions again. It raises `CLIENT_PROTOCOL`
+  by one and both minimums to it, `OFFICE_PROTOCOL_VERSION` staying 14; the
+  branch still reads 34, 34 and 33, and the numbers are set when it lands.
 
 #### When to bump
 
@@ -4245,8 +4272,16 @@ attempts` projects a lagging room first, D9) and fresh reads see what a Save
 would have stored. The projection also names every editor asset either
 document references (`assetIds`), so an image in an incomplete question stays
 in use. The two documents count together against the material's limits: each
-room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
-projection over a limit unless it shrank. Admission checks structure, value
+loaded room keeps its document's bound in `App::quiz_bounds` (`QuizBounds`),
+reads the other room's there when it admits an update, and takes its own new
+bound against the other's as it stands then, under one lock, so two writers
+growing both documents at once never pass a limit the two share. The second
+to take its growth is refused with the size limit, as one writer past it is,
+and the first keeps its edit; before this, each room read the other's bound
+from a message a flush late, both were admitted, and the stores refused both
+documents and reset both rooms. An unloaded room's bound is the store's (read
+at load, and after a server edit). The store checks with the same bound, and
+Go refuses a quiz projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
 units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank

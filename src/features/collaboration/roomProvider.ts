@@ -14,6 +14,7 @@ import {
   type Message,
   MessageKind,
   message,
+  pieceMessage,
   Reader,
   readClosed,
   readSync,
@@ -631,7 +632,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   }
 
   /** An update or step 2 reply, in pieces of at most 2 MiB in order
-   * (Epo 2026-10-18), each acknowledged on its own. */
+   * (Epo 2026-10-18). The room admits a group's pieces as one update after
+   * the last, or none of them (`pieceMessage`), and acknowledges them all
+   * then; each counts as unsynced until it does. */
   private sendUpdate(
     kind: typeof SyncKind.Step2 | typeof SyncKind.Update,
     update: Uint8Array
@@ -652,10 +655,15 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       kind === SyncKind.Step2 ? this.reportedVersion : this.storedVersion;
     at = Math.min(at, this.unsentAt ?? at);
     this.unsentAt = null;
-    for (const piece of pieces) {
+    for (const [index, piece] of pieces.entries()) {
       this.sent += 1;
       this.setUnsynced(this.unsyncedChanges + 1);
-      this.send(MessageKind.Sync, syncMessage(kind, piece));
+      this.send(
+        MessageKind.Sync,
+        pieces.length > 1
+          ? pieceMessage(kind, index, pieces.length, piece)
+          : syncMessage(kind, piece)
+      );
     }
     if (carries) this.inFlight.push({ at, upTo: this.sent });
     if (pieces.length > 1 || this.lastPiece !== null)

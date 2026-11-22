@@ -774,6 +774,7 @@ pub(crate) mod tests {
             handoff: Default::default(),
             source_joins: Default::default(),
             markdown: None,
+            quiz_bounds: Default::default(),
         })
     }
 

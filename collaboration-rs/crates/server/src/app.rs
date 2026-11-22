@@ -302,6 +302,64 @@ pub struct App {
     pub source_joins: Mutex<HashMap<(u64, u64), (String, Instant)>>,
     /// The agent markdown converter, when its bundle is configured.
     pub markdown: Option<notes::markdown::Converter>,
+    /// Each loaded quiz room's bound on its document (`QuizBounds`).
+    pub quiz_bounds: QuizBounds,
+}
+
+/// A quiz's two documents count together against the material's limits
+/// (REVIEW1 S3). Each loaded quiz room keeps its document's bound here,
+/// under its room name, and a room admitting growth takes its new bound
+/// against the other room's as it stands, under this one lock: two writers
+/// growing both documents at once never pass the limits the two share, as
+/// they did when each room read the other's bound from a message a flush
+/// late. The in-place collection runs one process per database, so both
+/// rooms of a quiz are loaded in it.
+#[derive(Default)]
+pub struct QuizBounds(Mutex<HashMap<String, notes::limits::Metrics>>);
+
+impl QuizBounds {
+    fn bounds(&self) -> std::sync::MutexGuard<'_, HashMap<String, notes::limits::Metrics>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub fn get(&self, room: &str) -> Option<notes::limits::Metrics> {
+        self.bounds().get(room).copied()
+    }
+
+    pub fn set(&self, room: &str, bound: notes::limits::Metrics) {
+        self.bounds().insert(room.to_owned(), bound);
+    }
+
+    pub fn forget(&self, room: &str) {
+        self.bounds().remove(room);
+    }
+
+    /// `own`, `room`'s bound with an update admitted, is taken unless with
+    /// the other room's (`peer`'s, else `unloaded`: what was last read of
+    /// it) it passes a limit and the update grew it past `before`, its
+    /// previous bound (none: unknown, taken as grown). Refused: the limit
+    /// and the two documents' metrics together.
+    pub fn take(
+        &self,
+        room: &str,
+        peer: &str,
+        own: notes::limits::Metrics,
+        before: Option<notes::limits::Metrics>,
+        unloaded: Option<notes::limits::Metrics>,
+    ) -> Result<(), (notes::limits::LimitCode, notes::limits::Metrics)> {
+        let mut bounds = self.bounds();
+        let other = bounds.get(peer).copied().or(unloaded);
+        let combined = items::combine(&own, other.as_ref());
+        if let Some(code) = notes::limits::limit_code(&combined)
+            && before.is_none_or(|before| !notes::limits::recovers(&own, Some(&before)))
+        {
+            return Err((code, combined));
+        }
+        bounds.insert(room.to_owned(), own);
+        Ok(())
+    }
 }
 
 /// Every collaboration process's id and its last heartbeat (Unix ms), kept

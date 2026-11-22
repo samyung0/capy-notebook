@@ -1,6 +1,7 @@
 //! capy-sync 1 (DESIGN.md 1.3): `varuint channel` `u8 type` `varuint length`
 //! `payload`, several messages per WebSocket frame. Payloads of SYNC and
-//! AWARENESS are y-sync v1 and y-protocols awareness messages unchanged.
+//! AWARENESS are y-sync v1 and y-protocols awareness messages unchanged, but
+//! for SYNC's pieces of a step 2 or update cut in pieces (`sync::PIECE`).
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -282,20 +283,50 @@ pub fn ack(count: u64) -> Vec<u8> {
     out
 }
 
-/// y-sync v1 message types inside SYNC.
+/// y-sync v1 message types inside SYNC, and capy's pieces.
 pub mod sync {
     use super::{FrameError, read_var, write_var};
 
     pub const STEP1: u64 = 0;
     pub const STEP2: u64 = 1;
     pub const UPDATE: u64 = 2;
+    /// One piece of a step 2 or update the browser cut in pieces
+    /// (`splitUpdate`): a room admits a group's pieces as one update after
+    /// its last, or none of them.
+    pub const PIECE: u64 = 3;
 
-    /// A SYNC payload: its y-sync type and its body (a state vector for step
-    /// 1, an update otherwise).
+    /// A [PIECE]'s body: the kind of what was cut (step 2 or update), the
+    /// piece's place in its group and the group's count, then the piece.
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct Piece<'a> {
+        pub kind: u64,
+        pub index: u64,
+        pub count: u64,
+        pub update: &'a [u8],
+    }
+
+    /// A [PIECE]'s body, or none when it names no step 2 or update, a group
+    /// of fewer than two pieces or a place outside it.
+    pub fn piece(body: &[u8]) -> Option<Piece<'_>> {
+        let mut at = 0;
+        let kind = read_var(body, &mut at).ok()?;
+        let index = read_var(body, &mut at).ok()?;
+        let count = read_var(body, &mut at).ok()?;
+        let fits = matches!(kind, STEP2 | UPDATE) && count >= 2 && index < count;
+        fits.then(|| Piece {
+            kind,
+            index,
+            count,
+            update: &body[at..],
+        })
+    }
+
+    /// A SYNC payload: its type and its body (a state vector for step 1, an
+    /// update for step 2 and update, a [Piece] for a piece).
     pub fn decode(payload: &[u8]) -> Result<(u64, &[u8]), FrameError> {
         let mut at = 0;
         let kind = read_var(payload, &mut at)?;
-        if kind > UPDATE {
+        if kind > PIECE {
             return Err(FrameError::Payload);
         }
         let len = usize::try_from(read_var(payload, &mut at)?).map_err(|_| FrameError::Payload)?;
@@ -395,6 +426,43 @@ mod tests {
         assert_eq!(
             decode_text(&messages[2].payload).unwrap(),
             "{\"type\":\"x\"}"
+        );
+    }
+
+    #[test]
+    fn a_piece_names_its_kind_place_and_group() {
+        let mut body = Vec::new();
+        for value in [sync::STEP2, 1, 3] {
+            write_var(&mut body, value);
+        }
+        body.extend_from_slice(b"update");
+        let payload = sync::encode(sync::PIECE, &body);
+        let (kind, decoded) = sync::decode(&payload).unwrap();
+        assert_eq!(kind, sync::PIECE);
+        assert_eq!(
+            sync::piece(decoded),
+            Some(sync::Piece {
+                kind: sync::STEP2,
+                index: 1,
+                count: 3,
+                update: b"update",
+            })
+        );
+        // A step 1, a group of one or a place past the group is no piece.
+        for (kind, index, count) in [
+            (sync::STEP1, 0, 2),
+            (sync::UPDATE, 0, 1),
+            (sync::UPDATE, 2, 2),
+        ] {
+            let mut body = Vec::new();
+            for value in [kind, index, count] {
+                write_var(&mut body, value);
+            }
+            assert_eq!(sync::piece(&body), None, "{kind} {index} {count}");
+        }
+        assert_eq!(
+            sync::decode(&sync::encode(sync::PIECE + 1, b"")),
+            Err(FrameError::Payload)
         );
     }
 

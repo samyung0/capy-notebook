@@ -1138,29 +1138,46 @@ async function syncedRoom(
   return { ...room, server };
 }
 
-/** The SYNC frames `sent` applied to `server` in order: their kinds, the
- * largest piece, and after how many something was pending. */
+/** The SYNC frames `sent` applied to `server` in order: whether they are the
+ * pieces of one group in order, the kinds they were cut from, the largest
+ * piece, and after how many something was pending. */
 function applyPieces(server: Y.Doc, sent: Message[]) {
   const kinds = new Set<number>();
+  let grouped = true;
   let largest = 0;
   let pending = 0;
-  for (const { payload } of sent) {
+  for (const [at, { payload }] of sent.entries()) {
     const sync = readSync(payload);
-    kinds.add(sync.kind);
-    largest = Math.max(largest, sync.body.byteLength);
-    Y.applyUpdate(server, sync.body);
+    const reader = new Reader(sync.body);
+    const [kind, index, count] = [
+      reader.varUint(),
+      reader.varUint(),
+      reader.varUint(),
+    ];
+    const piece = sync.body.subarray(reader.at);
+    grouped &&=
+      sync.kind === SyncKind.Piece && index === at && count === sent.length;
+    kinds.add(kind);
+    largest = Math.max(largest, piece.byteLength);
+    Y.applyUpdate(server, piece);
     if (server.store.pendingStructs) pending += 1;
   }
-  return { kinds: [...kinds], pending, small: largest <= PIECE_BYTES };
+  return {
+    grouped,
+    kinds: [...kinds],
+    pending,
+    small: largest <= PIECE_BYTES,
+  };
 }
 
-it('sends an update over 2 MiB in ordered pieces and holds the tab back until the last is acknowledged', async () => {
+it('sends an update over 2 MiB as one group of ordered pieces and holds the tab back until the room acknowledges it', async () => {
   const { document, join, provider, server, socket } = await syncedRoom();
   const long = 'x'.repeat(5 * 1024 * 1024);
   document.getText('content').insert(0, long);
   const pieces = socket.take(MessageKind.Sync);
   expect(pieces.length).toBeGreaterThan(2);
   expect(applyPieces(server, pieces)).toEqual({
+    grouped: true,
     kinds: [SyncKind.Update],
     pending: 0,
     small: true,
@@ -1168,19 +1185,83 @@ it('sends an update over 2 MiB in ordered pieces and holds the tab back until th
   expect(server.getText('content').toString()).toBe(long);
   expect(isHeld()).toBe(true);
   expect(provider.unsyncedChanges).toBe(pieces.length);
-  // Each piece is acknowledged on its own; the hold ends with the last.
+  // The room admits the group after its last piece and acknowledges every
+  // piece at once.
   socket.deliver(
     message(
       join.channel,
       MessageKind.Ack,
-      new Writer().varUint(pieces.length - 1).done()
+      new Writer().varUint(pieces.length).done()
     )
   );
-  expect(isHeld()).toBe(true);
-  socket.deliver(
-    message(join.channel, MessageKind.Ack, new Writer().varUint(1).done())
-  );
   expect(isHeld()).toBe(false);
+  expect(provider.unsyncedChanges).toBe(0);
+});
+
+// A group is in flight until the room acknowledges all of it (an earlier
+// update's ACK keeps it so), then admitted, and unsent until a second
+// store's notice after that ACK (review r1 H1), as a single update is.
+// Fails if an ACK short of the group releases the tab or counts it admitted.
+it('counts a group in flight until the room acknowledges all of it, then admitted', async () => {
+  const { document, join, provider, socket } = await synced();
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  document.getText('content').insert(0, 'a');
+  document.getText('content').insert(1, 'b'.repeat(5 * 1024 * 1024));
+  const group = socket.take(MessageKind.Sync).length - 1;
+  expect(group).toBeGreaterThan(2);
+  expect(provider.unsyncedChanges).toBe(group + 1);
+  // The single update's ACK and a store that may lack both.
+  socket.deliver(ack(channel, 1), stored(channel, 6), stored(channel, 7));
+  expect(provider.unsyncedChanges).toBe(group);
+  expect(isHeld()).toBe(true);
+  expect(provider.reportedVersion).toBe(5);
+  socket.deliver(ack(channel, group));
+  expect(provider.unsyncedChanges).toBe(0);
+  expect(isHeld()).toBe(false);
+  // Admitted at 7: unsent until a second store after it.
+  socket.deliver(stored(channel, 8));
+  expect(provider.reportedVersion).toBe(5);
+  socket.deliver(stored(channel, 9));
+  expect(provider.reportedVersion).toBe(9);
+});
+
+// A writer gone mid-group (the socket dropped before the room acknowledged
+// it) leaves nothing in the room; its next step 2 carries the whole edit
+// again, as a group of its own. Fails if the drop forgets the group's edit.
+it('resends a group cut short by a dropped socket in its next step 2', async () => {
+  const { document, join, provider, socket } = await synced();
+  socket.deliver(stored(join.channel, 5), ack(join.channel, 1));
+  const long = 'c'.repeat(3 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  expect(socket.take(MessageKind.Sync).length).toBeGreaterThan(1);
+  vi.useFakeTimers();
+  socket.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(isHeld()).toBe(false);
+  expect(provider.reportedVersion).toBe(5);
+  const again = FakeSocket.instances.at(-1) as FakeSocket;
+  expect(again).not.toBe(socket);
+  again.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [join2] = again.take(MessageKind.Join);
+  const server = new Y.Doc();
+  again.deliver(
+    message(join2.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join2.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  const [, ...pieces] = again.take(MessageKind.Sync);
+  expect(applyPieces(server, pieces)).toMatchObject({
+    grouped: true,
+    kinds: [SyncKind.Step2],
+  });
+  expect(server.getText('content').toString()).toBe(long);
+  expect(provider.unsyncedChanges).toBe(pieces.length);
+  provider.destroy();
 });
 
 it('answers a resync with its step 2 in pieces', async () => {
@@ -1200,6 +1281,7 @@ it('answers a resync with its step 2 in pieces', async () => {
   expect(readSync(step1.payload).kind).toBe(SyncKind.Step1);
   expect(pieces.length).toBeGreaterThan(2);
   expect(applyPieces(server, pieces)).toEqual({
+    grouped: true,
     kinds: [SyncKind.Step2],
     pending: 0,
     small: true,

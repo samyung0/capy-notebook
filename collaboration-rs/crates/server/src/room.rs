@@ -36,9 +36,10 @@ const MAX_PENDING_CHECKPOINTS: usize = 64;
 const MAX_CHECKPOINT_ID: usize = 128;
 /// Consecutive unplaceable step 2 replies before a channel closes.
 pub const MAX_UNPLACED_STEPS: u32 = 2;
-/// The largest sync message a note room takes: twice the 2 MiB of unsaved
-/// edits an offline editor may hold, so its reconnect always fits (Epo,
-/// 2026-10-08). Source rooms take whole states up to the frame cap.
+/// The largest sync message a note room takes, and the most one group of
+/// pieces gathers there: twice the 2 MiB of unsaved edits an offline editor
+/// may hold, so its reconnect always fits (Epo, 2026-10-08). Source rooms
+/// take whole states up to the frame cap, and groups up to their state cap.
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness state a room keeps and relays (Epo 2026-10-28): a
 /// note's caret is ~24 B, its largest state with the app's ids (100 uploads,
@@ -186,11 +187,8 @@ pub enum RoomCmd {
     /// A quiz's keys room to its content room: the matching and ordering
     /// entries the readers' lists follow (D3 as revised 2026-10-10).
     Items(Vec<items::quiz::ItemsPart>),
-    /// A quiz room loaded: the other one sends its entries and metrics again.
+    /// A quiz room loaded: the other one sends its entries again.
     PeerLoaded,
-    /// The other document's metrics: a quiz's two documents count together
-    /// against the material's limits (REVIEW1 S3).
-    PeerMetrics(notes::limits::Metrics),
     /// A server edit changed the other document while its room was not
     /// loaded: read it from the store.
     PeerReload,
@@ -469,8 +467,10 @@ struct Member {
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
     unplaced: u32,
-    /// Update and step 2 messages handled since the last ACK.
+    /// Update and step 2 messages handled since the last ACK, pieces each.
     acks: u64,
+    /// The pieces of a step 2 or update it sent so far (`on_piece`).
+    group: Option<Group>,
     /// Its step 1 and awareness query waiting for its user's open budget.
     opening: Option<Opening>,
     /// The room answered its step 1: it holds the room's state, so it hears
@@ -479,6 +479,16 @@ struct Member {
     /// The stored version it last named (its JOIN's, then each `ack`): a
     /// session made at its first write starts there (review r1 L1).
     version: i64,
+}
+
+/// A step 2 or update its client cut in pieces (`sync::PIECE`), gathered
+/// until the last: nothing of it is applied, stored or broadcast before, and
+/// nothing at all when a piece is refused or the channel ends first.
+struct Group {
+    step2: bool,
+    count: u64,
+    pieces: Vec<Vec<u8>>,
+    bytes: usize,
 }
 
 /// A member's latest step 1 and awareness query while they wait on its
@@ -526,8 +536,9 @@ struct Note {
     /// A quiz content room: the lists readers get, pushed over every channel
     /// as `quiz-items` (none: not read yet).
     reader: Option<items::quiz::ReaderLists>,
-    /// A quiz room: the metrics last sent to the other document's room.
-    metrics_sent: Option<notes::limits::Metrics>,
+    /// A quiz room's `peer` is the other document's bound as last read (the
+    /// store's, or its room's before it unloaded), which a loaded room's in
+    /// `App::quiz_bounds` stands in for.
     validator: crate::model::RoomValidator,
     /// The stored document is one the store would refuse, or a quiz either
     /// of whose documents holds a block kind its rooms do not admit
@@ -966,7 +977,6 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 doc: doc_kind,
                 items_sent: None,
                 reader,
-                metrics_sent: None,
                 durable_metrics: Some(metrics),
                 stored_version,
                 projected_version,
@@ -1226,7 +1236,13 @@ async fn run(
         .stats
         .log_bytes
         .fetch_add(log_bytes.max(0) as u64, Ordering::Relaxed);
-    if matches!(&room.kind, Kindly::Note(note) if note.model.quiz()) {
+    if let Kindly::Note(note) = &room.kind
+        && note.model.quiz()
+    {
+        // Measured exactly by the load: the other room reads it from now.
+        if let Some(bound) = note.validator.bound() {
+            room.app.quiz_bounds.set(&room.name, bound);
+        }
         room.send_peer(RoomCmd::PeerLoaded);
         room.schedule_flush();
     }
@@ -1261,6 +1277,8 @@ impl Room {
                 let id = self.id;
                 let removed = self.app.rooms.remove_if(&self.name, id, || rx.is_empty());
                 if removed {
+                    // Before a next life of the room can load and set its own.
+                    self.app.quiz_bounds.forget(&self.name);
                     rx.close();
                     // Joins that slipped in after the lookup fail and look up again.
                     while let Ok(command) = rx.try_recv() {
@@ -1603,14 +1621,8 @@ impl Room {
             RoomCmd::PeerLoaded => {
                 if let Kindly::Note(note) = &mut self.kind {
                     note.items_sent = None;
-                    note.metrics_sent = None;
                 }
                 self.schedule_flush();
-            }
-            RoomCmd::PeerMetrics(metrics) => {
-                if let Kindly::Note(note) = &mut self.kind {
-                    note.validator.set_peer(metrics);
-                }
             }
             RoomCmd::PeerReload => self.reload_peer(),
             RoomCmd::PeerStored(metrics, parts) => {
@@ -2118,16 +2130,61 @@ impl Room {
     /// The other document's room of a quiz (`keys:` for `material:`, and
     /// back), when it is loaded here.
     fn peer(&self) -> Option<crate::app::RoomHandle> {
+        self.app.rooms.get(&self.peer_name()?)
+    }
+
+    /// The other document's room name of a note room (one only a quiz has).
+    fn peer_name(&self) -> Option<String> {
         let Kindly::Note(note) = &self.kind else {
             return None;
         };
-        let name = match note.doc {
+        Some(match note.doc {
             note_store::Doc::Content => format!("keys:{}:schema:{}", note.material_id, note.schema),
             note_store::Doc::Keys => {
                 format!("material:{}:schema:{}", note.material_id, note.schema)
             }
+        })
+    }
+
+    /// A quiz room's other document's bound as it stands: its loaded room's
+    /// (`App::quiz_bounds`), else as last read.
+    fn peer_bound(&self) -> Option<notes::limits::Metrics> {
+        let Kindly::Note(note) = &self.kind else {
+            return None;
         };
-        self.app.rooms.get(&name)
+        if !note.model.quiz() {
+            return None;
+        }
+        let loaded = self
+            .peer_name()
+            .and_then(|peer| self.app.quiz_bounds.get(&peer));
+        loaded.or(note.validator.peer())
+    }
+
+    /// A quiz room's admitted update: its document's new bound is taken
+    /// against the other document's as it stands now (`QuizBounds::take`).
+    /// Growth past a limit the two share is refused, though the bound this
+    /// room read before admitting let it in (the other room took growth
+    /// meanwhile), and the validator, which counted it, measures afresh.
+    fn take_quiz_bound(
+        &mut self,
+        before: Option<notes::limits::Metrics>,
+    ) -> Result<(), (notes::limits::LimitCode, notes::limits::Metrics)> {
+        let Some(peer) = self.peer_name() else {
+            return Ok(());
+        };
+        let Kindly::Note(note) = &mut self.kind else {
+            return Ok(());
+        };
+        let Some(own) = note.validator.bound().filter(|_| note.model.quiz()) else {
+            return Ok(());
+        };
+        let taken =
+            (self.app.quiz_bounds).take(&self.name, &peer, own, before, note.validator.peer());
+        if taken.is_err() {
+            note.validator.invalidate();
+        }
+        taken
     }
 
     fn send_peer(&self, cmd: RoomCmd) {
@@ -2138,42 +2195,26 @@ impl Room {
         }
     }
 
-    /// Once per flush window at most: a quiz room sends the other room its
-    /// metrics when they changed, and a keys room its matching and ordering
-    /// entries.
+    /// Once per flush window at most: a quiz's keys room sends the content
+    /// room its matching and ordering entries when they changed (the two
+    /// documents' bounds meet in `App::quiz_bounds`).
     fn send_to_peer(&mut self) {
-        if !matches!(&self.kind, Kindly::Note(note) if note.model.quiz()) {
+        if !matches!(&self.kind, Kindly::Note(note)
+            if note.model.quiz() && note.doc == note_store::Doc::Keys)
+        {
             return;
         }
         let Some(peer) = self.peer() else {
             return;
         };
-        let parts = match &self.kind {
-            Kindly::Note(note) if note.doc == note_store::Doc::Keys => {
-                Some(items::quiz::item_parts(&self.doc.transact()))
-            }
-            _ => None,
-        };
+        let parts = items::quiz::item_parts(&self.doc.transact());
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
-        let mut commands = Vec::new();
-        let metrics = note.validator.bound();
-        if metrics.is_some() && metrics != note.metrics_sent {
-            note.metrics_sent = metrics;
-            commands.extend(metrics.map(RoomCmd::PeerMetrics));
-        }
-        if let Some(parts) = parts
-            && note.items_sent.as_ref() != Some(&parts)
-        {
+        if note.items_sent.as_ref() != Some(&parts) {
             note.items_sent = Some(parts.clone());
-            commands.push(RoomCmd::Items(parts));
-        }
-        if !commands.is_empty() {
             tokio::spawn(async move {
-                for command in commands {
-                    let _ = peer.tx.send(command).await;
-                }
+                let _ = peer.tx.send(RoomCmd::Items(parts)).await;
             });
         }
     }
@@ -2862,6 +2903,7 @@ impl Room {
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
+                group: None,
                 opening: None,
                 synced: false,
                 version: 0,
@@ -3157,10 +3199,101 @@ impl Room {
         if body == IT_PANIC_UPDATE {
             panic!("integration test panic");
         }
-        self.on_update(key, body, kind == sync::STEP2);
+        if kind == sync::PIECE {
+            self.on_piece(key, body);
+            return;
+        }
+        self.on_update(key, body, kind == sync::STEP2, 1);
     }
 
-    fn on_update(&mut self, key: MemberKey, bytes: &[u8], step2: bool) {
+    /// A piece of a step 2 or update its client cut in pieces: kept on its
+    /// channel until the group's last, which admits them as one update, so
+    /// peers and the store get all of it or nothing. A piece out of its
+    /// group's order (the one before it was dropped in a timeout, after which
+    /// the channel joins again and its step 2 carries everything) drops the
+    /// group. A group past [Room::group_cap] is refused like an update past
+    /// the room's cap.
+    fn on_piece(&mut self, key: MemberKey, body: &[u8]) {
+        let Some(piece) = sync::piece(body) else {
+            self.refuse(key, &[], "malformed sync message");
+            return;
+        };
+        let cap = self.group_cap();
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        let step2 = piece.kind == sync::STEP2;
+        if piece.index == 0 {
+            member.group = Some(Group {
+                step2,
+                count: piece.count,
+                pieces: Vec::new(),
+                bytes: 0,
+            });
+        }
+        let next = member.group.as_ref().is_some_and(|group| {
+            group.step2 == step2
+                && group.count == piece.count
+                && group.pieces.len() as u64 == piece.index
+        });
+        let Some(group) = member.group.as_mut().filter(|_| next) else {
+            member.group = None;
+            return;
+        };
+        group.bytes += piece.update.len();
+        if group.bytes > cap {
+            let bytes = group.bytes;
+            member.group = None;
+            self.group_too_large(key, bytes);
+            return;
+        }
+        group.pieces.push(piece.update.to_vec());
+        if (group.pieces.len() as u64) < group.count {
+            return;
+        }
+        let Some(group) = member.group.take() else {
+            return;
+        };
+        let merged = tokio::task::block_in_place(|| yrs::merge_updates_v1(&group.pieces));
+        match merged {
+            Ok(update) => self.on_update(key, &update, group.step2, group.count),
+            Err(_) => self.refuse(key, &[], "malformed update"),
+        }
+    }
+
+    /// The most one group of pieces may gather: what one sync message may
+    /// carry in a note room, a source room's state cap (a source room takes
+    /// whole states).
+    fn group_cap(&self) -> usize {
+        match &self.kind {
+            Kindly::Note(_) => NOTE_MAX_SYNC_BYTES,
+            Kindly::Source(source) => usize::try_from(source.state_cap).unwrap_or(usize::MAX),
+        }
+    }
+
+    /// A group past [Room::group_cap], refused as an update past the room's
+    /// cap: a note room's as a sync message over its cap, a source room's as
+    /// one past its state cap.
+    fn group_too_large(&mut self, key: MemberKey, bytes: usize) {
+        if matches!(self.kind, Kindly::Note(_)) {
+            self.refuse(key, &[], "malformed update");
+            return;
+        }
+        let Some(context) = self.members.get(&key).map(|member| member.context.clone()) else {
+            return;
+        };
+        let refusal = sources::Refusal::StateBytes;
+        if let Outcome::Refused {
+            payloads, reason, ..
+        } = self.source_update_refused(Some(key), &context, &refusal, bytes)
+        {
+            self.refuse(key, &payloads, &reason);
+        }
+    }
+
+    /// `pieces`: the messages it came in (a group's, or 1), each of which
+    /// the client counts until acknowledged.
+    fn on_update(&mut self, key: MemberKey, bytes: &[u8], step2: bool, pieces: u64) {
         let Some(member) = self.members.get(&key) else {
             return;
         };
@@ -3168,9 +3301,14 @@ impl Room {
         self.in_step2 = step2;
         let outcome = self.admit_update(Some(key), &context, read_only, bytes, None, &[]);
         self.in_step2 = false;
+        // Admission acknowledged one message; a group's others go with it.
+        let rest = pieces.saturating_sub(1);
         match outcome {
-            Outcome::Admitted => {}
-            Outcome::Unheld => self.resync(key, step2, &context),
+            Outcome::Admitted => self.acked_more(key, rest),
+            Outcome::Unheld => {
+                self.resync(key, step2, &context);
+                self.acked_more(key, rest);
+            }
             // Q443: the tab goes late, as for a late JOIN, and merges its
             // unsent edits into a new session.
             Outcome::Refused {
@@ -3371,6 +3509,18 @@ impl Room {
                     > sources::admission_cap(source.state_cap)
             }
         };
+        // A quiz document counts with the other one's bound as it stands, and
+        // its growth is taken against it again once admitted.
+        let peer = self.peer_bound();
+        let before = match &mut self.kind {
+            Kindly::Note(note) => {
+                if let Some(peer) = peer {
+                    note.validator.set_peer(peer);
+                }
+                note.validator.bound()
+            }
+            Kindly::Source(_) => None,
+        };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => {
                 match note
@@ -3399,10 +3549,16 @@ impl Room {
                 }
             }
         };
-        let verdict = if heavy {
+        let verdict = match if heavy {
             tokio::task::block_in_place(admit)
         } else {
             admit()
+        } {
+            Verdict::Accept => match self.take_quiz_bound(before) {
+                Ok(()) => Verdict::Accept,
+                Err((code, metrics)) => Verdict::Limit(code, metrics),
+            },
+            verdict => verdict,
         };
         match verdict {
             Verdict::Unheld => return Err(Outcome::Unheld),
@@ -3763,8 +3919,14 @@ impl Room {
     }
 
     fn acked(&mut self, key: MemberKey) {
-        if let Some(member) = self.members.get_mut(&key) {
-            member.acks += 1;
+        self.acked_more(key, 1);
+    }
+
+    fn acked_more(&mut self, key: MemberKey, count: u64) {
+        if count > 0
+            && let Some(member) = self.members.get_mut(&key)
+        {
+            member.acks += count;
             self.schedule_flush();
         }
     }
@@ -4336,7 +4498,7 @@ impl Room {
         let doc = self.doc.clone();
         let (kind, model) = (note.kind.clone(), note.model);
         let previous = note.durable_metrics;
-        let peer = note.validator.peer();
+        let peer = self.peer_bound();
         tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
             .await
             .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())))

@@ -22,8 +22,8 @@ export const MessageKind = {
 } as const;
 export type MessageKind = (typeof MessageKind)[keyof typeof MessageKind];
 
-/** y-sync v1 message types inside SYNC. */
-export const SyncKind = { Step1: 0, Step2: 1, Update: 2 } as const;
+/** y-sync v1 message types inside SYNC, and a piece (`pieceMessage`). */
+export const SyncKind = { Piece: 3, Step1: 0, Step2: 1, Update: 2 } as const;
 
 export interface Message {
   channel: number;
@@ -170,6 +170,25 @@ export function readSync(payload: Uint8Array) {
   const reader = new Reader(payload);
   const kind = reader.varUint();
   return { body: reader.varBytes(), kind };
+}
+
+/** A SYNC payload carrying piece `index` of the `count` a step 2 or update
+ * was cut in (`splitUpdate`): the room keeps a group's pieces and admits
+ * them as one update after the last, or none of them (`sync::PIECE` in
+ * collaboration-rs/crates/server/src/protocol.rs). */
+export function pieceMessage(
+  kind: typeof SyncKind.Step2 | typeof SyncKind.Update,
+  index: number,
+  count: number,
+  piece: Uint8Array
+) {
+  const head = new Writer().varUint(kind).varUint(index).varUint(count).done();
+  return new Writer()
+    .varUint(SyncKind.Piece)
+    .varUint(head.length + piece.length)
+    .raw(head)
+    .raw(piece)
+    .done();
 }
 
 /**
