@@ -345,6 +345,12 @@ the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
 sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
+Since the Q813 and Q814 pin (2026-11-22) the DOCX editor's resident worker
+does every layout and the page adopts it, where the page used to lay each
+pass out as well, and a pass over an unchanged input (a web-font load) is
+skipped (Q813 A, Q814 A, Q824 A). The DOCX medians above were measured
+before it.
+
 Heap and download figures stay report-only: they go to the results JSON
 (`budget.heap`, `budget.downloads`, and `budget: "report-only"` in the heap and
 co-editor cases), the job summary

@@ -2573,6 +2573,14 @@ design, option d), and the nudge's release file on 2026-10-17.
   reload; `MIN_MATERIAL` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 15 (the
   runtime messages keep their shape). Its deploy request names "client
   protocol 34 -> 35, source 34 -> 35".
+  The Q813 and Q814 pin (ccb90cc2d: the DOCX editor's worker lays out every
+  pass and the page adopts its layout, the table-of-contents pass and a
+  failed worker laying out on the page; a pass over an unchanged input, such
+  as a web-font load, is skipped in the worker and in the page's engine)
+  raised `CLIENT_PROTOCOL` to 36 and `MIN_SOURCE` to 36, so source tabs on the
+  older pin (protocol 35) reload; `MIN_MATERIAL` stays 33 and
+  `OFFICE_PROTOCOL_VERSION` stays 15 (the runtime messages keep their shape).
+  Its deploy request names "client protocol 35 -> 36, source 35 -> 36".
 
 #### When to bump
 

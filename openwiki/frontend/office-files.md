@@ -326,8 +326,15 @@ editor's signal is `docx-pages-presented`, the XLSX and PPTX editors'
 `onFirstPaint`, once per opened file. An edit frame's `ready` leaves the host's
 error state alone.
 
-The DOCX editor lays pages out in a resident engine worker. A peer's update
-reaches the worker as it arrives; after the main thread's next layout the
+The DOCX editor lays pages out in a resident engine worker. Since the Q813
+and Q814 pin the worker does every layout: the page records each pass and
+adopts the worker's layout for its own readers (page indicator, comment
+anchors), which may lag through a long run of fast edits until a pause; a
+table of contents, which reads its pages at once, and every pass after the
+worker failed lay out on the page. A pass over an unchanged input, such as a
+web-font load, is skipped, in the worker and in the page's engine (Q813 A,
+Q814 A, Q824 A). A peer's update
+reaches the worker as it arrives; after the page's next pass the
 worker lays the updates out as it lays out a keystroke (changed paragraphs
 re-measured, changed pages rebuilt) and answers with a delta of the changed
 pages. Frame requests run one at a time and a burst costs one request in flight
