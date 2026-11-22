@@ -2531,6 +2531,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   to 32, so source tabs on the older pin (protocols 30 and 31) reload;
   `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
   request names "client protocol 31 -> 32, source 30 -> 32".
+  The C6 and Q789 pin (bbbde1d4e: DOCX View hands over its first pages before
+  the rest are laid out, the DOCX editor's per-key reads touch only the
+  paragraphs and stories that changed) raised `CLIENT_PROTOCOL` to 33 and
+  `MIN_SOURCE` to 33, so source tabs on the older pin (protocol 32) reload;
+  `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request names "client protocol 32 -> 33, source 32 -> 33".
 
 #### When to bump
 
