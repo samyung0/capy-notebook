@@ -2537,12 +2537,14 @@ design, option d), and the nudge's release file on 2026-10-17.
   `MIN_SOURCE` to 33, so source tabs on the older pin (protocol 32) reload;
   `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
   request names "client protocol 32 -> 33, source 32 -> 33".
-  The first Q608 landing (Office protocol 15: every reader place carries its
-  frame's zoom, viewers answer `position-request`, and an XLSX place may name
-  its sheet by name) raised `OFFICE_PROTOCOL_VERSION` to 15, `CLIENT_PROTOCOL`
-  to 33 and `MIN_SOURCE` to 33, so source tabs from before it reload;
-  `MIN_MATERIAL` stays 31. Its deploy request names "client protocol 32 -> 33,
-  source 32 -> 33".
+  The first Q608 landing and the Q667 pin land together (Office protocol 15:
+  every reader place carries its frame's zoom, viewers answer
+  `position-request`, and an XLSX place may name its sheet by name; pin
+  eb7d8b4f7: chat citations are highlighted inside the DOCX, XLSX and PPTX
+  editors). They raised `OFFICE_PROTOCOL_VERSION` to 15, `CLIENT_PROTOCOL` to
+  34 and `MIN_SOURCE` to 34, so source tabs from before them (protocol 33)
+  reload; `MIN_MATERIAL` stays 31. Their deploy request names "client protocol
+  33 -> 34, source 33 -> 34".
 
 #### When to bump
 
