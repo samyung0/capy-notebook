@@ -7,6 +7,7 @@ import {
   BlockViewExtension,
   FlavourExtension,
   GfxBlockComponent,
+  LifeCycleWatcher,
 } from '@blocksuite/affine/std';
 import {
   type GfxViewInteractionConfig,
@@ -19,7 +20,12 @@ import { html, nothing } from 'lit';
 import { styleMap } from 'lit/directives/style-map.js';
 import { literal } from 'lit/static-html.js';
 import { m } from '@/i18n';
-import { UNKNOWN_BLOCK, UNKNOWN_CARD, UnknownCardModel } from './boardUnknown';
+import {
+  placeholdersLeftOut,
+  UNKNOWN_BLOCK,
+  UNKNOWN_CARD,
+  UnknownCardModel,
+} from './boardUnknown';
 
 /* The placeholder a board draws for what it can't read (Epo 2026-11-18, mock A): the
  * notes' notice in a dashed outline at the element's own place and size, or the
@@ -124,7 +130,18 @@ const frame: GfxViewInteractionConfig = {
   },
 };
 
+/** The clipboard's placeholder middleware, set with the editor: before BlockSuite's
+ * clipboard sets its own as it mounts, so those read snapshots without them. */
+class PlaceholdersLeftOut extends LifeCycleWatcher {
+  static override readonly key = 'capy-placeholders-left-out';
+
+  override created() {
+    this.std.clipboard.use(placeholdersLeftOut);
+  }
+}
+
 export const unknownViews: ExtensionType[] = [
+  PlaceholdersLeftOut,
   FlavourExtension(UNKNOWN_BLOCK),
   FlavourExtension(UNKNOWN_CARD),
   BlockViewExtension(UNKNOWN_BLOCK, literal`capy-unknown-block`),

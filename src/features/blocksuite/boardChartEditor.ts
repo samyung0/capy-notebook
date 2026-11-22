@@ -22,7 +22,9 @@ import {
 import { alongDrag, ERASER_SIZE } from '@/features/graph/tools';
 import { m } from '@/i18n';
 import {
+  AXIS_LINES_MAX,
   appended,
+  axisAbove,
   type ChartChange,
   type ChartElementModel,
   cleared,
@@ -30,6 +32,7 @@ import {
   FIRST_SPOKE,
   type LabelDraft,
   liftedBars,
+  niceAxis,
   setChartEditor,
   typedBars,
   typedLabels,
@@ -72,13 +75,10 @@ const PIXELS_TO_LABEL = 30;
 const PIXELS_TO_DRAG = 4;
 const BLUE = '#1e96eb';
 const HALO = 'rgba(30, 150, 235, 0.18)';
-/** Most numbered lines the axis takes. */
-const AXIS_LINES_MAX = 100;
 /** The smallest axis top zooming in reaches. */
 const AXIS_MIN = 1e-3;
 /** A zoom is written, one undo step, once it has rested this long. */
 const ZOOM_SETTLE_MS = 300;
-const NICE_STEPS = [1, 2, 2.5, 5, 10];
 /** The data pane open or closed, as last chosen this session; until then open on a
  * wide screen (Epo 2026-11-13, B1 and P1, as the plane's list). */
 let listChoice: boolean | null = null;
@@ -101,20 +101,6 @@ const inSlice = ({ from, size }: Slice, angle: number) =>
   (((angle - from) % 360) + 360) % 360 < size;
 /** A slice's size as a share, to a tenth of a percent. */
 const shareOf = ({ size }: Slice) => Math.round((size / 3.6) * 10) / 10;
-
-/** An axis to a top, about five numbered lines in 1, 2, 2.5 or 5 steps. */
-function niceAxis(top: number) {
-  const rough = top / 5;
-  const power = 10 ** Math.floor(Math.log10(rough));
-  const axisStep =
-    (NICE_STEPS.find((step) => step * power >= rough) ?? 10) * power;
-  return {
-    axisMax: Number(
-      (Math.ceil(top / axisStep - 1e-9) * axisStep).toPrecision(12)
-    ),
-    axisStep: Number(axisStep.toPrecision(12)),
-  };
-}
 
 /** A bar or pie chart, filling the board for editing. Each change is written at once,
  * one undo step, from the chart as it is then (a peer's changes merged in), and
@@ -828,9 +814,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** The axis ends at the first numbered line above the tallest bar. */
   const fitAxis = () => {
     const tallest = Math.max(...model.barList.map(({ value }) => value), 0);
-    const axisMax =
-      Math.max(Math.ceil(tallest / model.axisStep), 1) * model.axisStep;
-    if (axisMax !== model.axisMax) update({ axisMax });
+    const fitted = axisAbove(tallest, model.axisStep);
+    if (fitted.axisMax !== model.axisMax || fitted.axisStep !== model.axisStep)
+      update(fitted);
   };
 
   const axis = () => zoom ?? model;
@@ -1182,13 +1168,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return;
     }
     let { axisMax, axisStep } = model;
-    if (value > axisMax) {
-      const lifted = Number(
-        (Math.ceil(value / axisStep - 1e-9) * axisStep).toPrecision(12)
-      );
-      if (lifted / axisStep <= AXIS_LINES_MAX) axisMax = lifted;
-      else ({ axisMax, axisStep } = niceAxis(value));
-    }
+    if (value > axisMax) ({ axisMax, axisStep } = axisAbove(value, axisStep));
     update({
       axisMax,
       axisStep,

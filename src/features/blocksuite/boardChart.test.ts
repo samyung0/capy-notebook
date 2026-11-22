@@ -9,6 +9,7 @@ import * as Y from 'yjs';
 import { keyedElements } from '@/features/graph/keyed';
 import {
   appended,
+  axisAbove,
   ChartElementModel,
   cleared,
   FIRST_SPOKE,
@@ -17,7 +18,7 @@ import {
   typedBars,
   typedLabels,
 } from './boardChart';
-import { BARS_MAX, filledSlices, LABELS_MAX } from './boardData';
+import { AXIS_MAX, BARS_MAX, filledSlices, LABELS_MAX } from './boardData';
 import { boardFirstState } from './boardFirstState';
 import { unknownStore } from './boardUnknown';
 import { openRoomStore } from './roomStore';
@@ -368,4 +369,15 @@ it("two Clear alls at once, or one crossing a peer's turn of the first line, lea
   for (const chart of crossing.charts)
     expect(chart.spokeList).toEqual([{ angle: 30, id: FIRST_SPOKE }]);
   crossing.dispose();
+});
+
+it("lifts a chart's axis to the line above a value, never past AXIS_MAX", () => {
+  expect(axisAbove(7, 2)).toEqual({ axisMax: 8, axisStep: 2 });
+  // A step that doesn't divide AXIS_MAX: Fit, or a bar of 9.5e8 typed, would
+  // have lifted the top to 1.2e9 (review 2026-11-22); a nice axis instead.
+  expect(AXIS_MAX).toBe(1e9);
+  expect(axisAbove(9.5e8, 3e8)).toEqual({ axisMax: 1e9, axisStep: 2e8 });
+  expect(axisAbove(AXIS_MAX, 3e8)).toEqual({ axisMax: 1e9, axisStep: 2e8 });
+  // More lines than the axis takes: a nice axis too.
+  expect(axisAbove(500, 1)).toEqual({ axisMax: 500, axisStep: 100 });
 });

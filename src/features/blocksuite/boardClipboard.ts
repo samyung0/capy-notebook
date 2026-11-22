@@ -1,6 +1,6 @@
 import { EdgelessClipboardConfig } from '@blocksuite/affine/blocks/surface';
 import type { BlockSnapshot } from '@blocksuite/affine/store';
-import { embedFits } from './boardLoad';
+import { embedFits } from './boardRules';
 
 /** Copy, paste and Duplicate for one of the workspace canvas's own blocks: the block
  * again with these props at its new place (Epo 2026-11-09). BlockSuite skips a block

@@ -2609,6 +2609,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   over one. The tab from before reloads instead. No source room changed, so
   `MIN_SOURCE` stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy
   request names "client protocol 36 -> 37, material 33 -> 37".
+  The board rules in the browser (Epo 2026-11-22, B: every viewer reads a
+  canvas by one strict rule set, `boardRules.ts`, and draws what breaks it as
+  "This block cannot be shown"; the room-side content check was dropped)
+  raised `CLIENT_PROTOCOL` to 38 and `MIN_MATERIAL` to 38. The board catalog
+  changed (the emoji list; images under a paragraph, list or image in a
+  note), and a tab from before draws content the rules refuse, such as a
+  chart axis top past `AXIS_MAX`, where a new tab shows the placeholder. The
+  tab from before reloads instead. No source room changed, so `MIN_SOURCE`
+  stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
+  "client protocol 37 -> 38, material 37 -> 38".
 
 #### When to bump
 
@@ -5478,7 +5488,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   plane takes at most 100 elements from its tools, as every graph, its labels up to 60
   characters and a curve up to 100 points, where its tool finishes it (the question
   bounds `QUESTION_GRAPH_*`, D7); the load check takes up to twice the 100 elements
-  (`mergedCap` in `boardLoad.ts`, Epo 2026-11-22, "sure A"), as two people's adds at
+  (`mergedCap` in `boardRules.ts`, Epo 2026-11-22, "sure A"), as two people's adds at
   the same moment merge a plane past its cap, and runs the graph model's one element check
   (`graphElementSchema`, the same as quiz and note graphs and Go and Rust) on each
   element of a kind the plane makes (`PLANE_KINDS`); a board saved with the old
@@ -5709,13 +5719,15 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   erased stays erased; only a new pie label takes the place where the field opened. A
   pie's first line has one id on every pie (`FIRST_SPOKE`), which a new pie,
   Clear all and "+ Slice" on a pie with no line all use, so two Clear alls at once, or
-  one crossing a peer's turn or fill of that line, leave one line. The load check (`boardLoad.ts`) takes each map as it takes a
+  one crossing a peer's turn or fill of that line, leave one line. The load check (`boardRules.ts`) takes each map as it takes a
   plane's: every key its item's id, at most twice `BARS_MAX`, `LABELS_MAX` and
   `SPOKES_MAX` items (48, 120 and 120, `mergedCap`), finite values and angles, and a line's `fill` a board colour. They
   move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
-  tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
+  tallest bar, and typing a bar past the top lifts it the same way; neither passes
+  `AXIS_MAX` or 100 lines, falling back to a rounder step, `axisAbove` in `boardChart.ts`,
+  since the board's rules draw a chart past its limits as a placeholder). The wheel or a pinch zooms the value axis: its top moves, the step
   following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
   written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
   value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
@@ -5804,7 +5816,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
     line from it); highlighter strokes from the pen menu are rounded the same way. The
     answer flow refuses past Epo's 250 KB on Done.
-  - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
+  - `saved` is checked before anything mounts (`boardLoad.ts`, by the board's rules in
+    `boardRules.ts`, below), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
     only the blocks and elements the **board catalog** lists for that board (the pen
     menu's highlighter included, which the preview draws as a see-through stroke), each
@@ -5991,19 +6004,46 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
     `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
     `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
-    `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
-    the browser is the only reader for now.
+    `boardData.ts` come from it, as does the picture emoji list (`emoji`, read by
+    `boardPictureData.ts`). The server keeps a saved board as opaque bytes and
+    checks no canvas room's content (below), so the browser is the only reader.
+  - **The board's rules** (2026-11-22): `src/features/blocksuite/boardRules.ts`, read by
+    the load check, the live board's placeholders, the preview and `keepToCatalog`. A
+    corpus test (`boardRules.corpus.test.ts`) builds what every tool, editor and paste
+    writes through BlockSuite's own model code and holds it fitting, and one broken case
+    per rule not. An element or block is
+    read from its own Y.Map's entries, never `toJSON()`, so a string where a Y.Text
+    belongs is told apart: keys are strict per element type and block flavour (only
+    the fields BlockSuite or the card stores), each value of its kind (colours, places,
+    finite numbers, BlockSuite's enums, points, connector ends, label styles, a note's
+    nested `edgeless` and colour maps; a colour with both `dark` and `light` holds strings
+    in both), required fields present (a place on everything that stores one, a shape's
+    `shapeType`, a connector's ends and mode, a group's children and title, a mind map's
+    children, style and layout, a text element's text, a note's `edgeless.style`, each
+    card's own), a block prop holding `undefined` only where BlockSuite's default is
+    `undefined` (loading fills only absent props), text
+    as string runs with plain-valued formats (no embeds or nested types; a reference or
+    footnote format is an object), keyed lists up to twice their caps, ids of
+    `[A-Za-z0-9_-]{1,128}` and never `__proto__` (nor a `__proto__` key inside a plain
+    value; a run of overwritten values at one key is read by its last). The tree and a
+    mind map's nodes are checked as before (the load check's tree, `mindmapNodesFit`).
+    What breaks the rules is drawn as "This block cannot be shown" and never removed
+    unless it is the tab's own add (Epo 2026-11-18); the canvas room checks none of it
+    (Epo 2026-11-22, "maybe drop the cnvas content check if its not that useful").
   - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
     once, so a mounted board also drops what its catalog leaves out whatever adds it
-    (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
-    such an element or block right after it lands, and any element the load check's
-    per-element and mind map checks would refuse (`addedElementFits`), so a mind map copied from the
+    (a paste, a duplicate, later a peer): `keepToCatalog` in `boardKeep.ts` deletes
+    such an element or block right after it lands, and any element the board's rules
+    and the mind map's node check would refuse (`storedElementFits`), so a mind map copied from the
     workspace canvas and pasted into an answer goes with its node shapes, as does a capy
-    embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
+    embed. A saved mind map's nodes are checked too (`mindmapNodesFit`): each a shape on
     the canvas no other mind map or group holds, under a parent among its own nodes,
-    one root, no cycle, layout 0–2. A board whose JSON would hide a key (`__proto__`,
-    which Yjs's `toJSON` turns into the object's prototype while BlockSuite still loads
-    the entry) is refused. Emoji, GIFs and cards copy, paste and duplicate on
+    one root, no cycle. A person's copy, paste or Duplicate never carries a placeholder:
+    a clipboard middleware drops `capy:unknown` and `capy:unknown-card` blocks from what a
+    copy exports and a paste or Duplicate imports (`placeholdersLeftOut` in
+    `boardUnknown.ts`), and BlockSuite's canvas copy and clone leave out placeholder
+    elements, stand-in cards and groups left empty (vendor local change 74), a group
+    keeping only the children copied with it. Emoji, GIFs and cards copy, paste and duplicate on
     the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
     re-adds only a block the load check would take (`embedFits`, the same check), since
     any page can write the clipboard. Their renderers check again what they use: a link
@@ -6066,8 +6106,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       contract adds a rule the code does not hold: from here a change to the board
       catalog (`server/internal/boardcatalog`) raises both together.
     - **What the room admits.** A board has no rule on what its content is (Epo
-      2026-11-18, "reject nothing"): admission bounds what an update may cost, never
-      its shape. After the checks every material room makes (the 4 MiB sync message,
+      2026-11-18, "reject nothing"; a content check built 2026-11-22 was dropped the
+      same day, Epo: "maybe drop the cnvas content check if its not that useful"):
+      admission bounds what an update may cost, never its shape. After the checks every material room makes (the 4 MiB sync message,
       the token, the client-id rule, the marker root), `admit_board` takes an update
       that:
       - the room can place (`ydoc::inspect_bounded`): no struct or deleted range

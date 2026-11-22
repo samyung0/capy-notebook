@@ -155,6 +155,7 @@ it('draws a connector saved before the board placed it, between its ends', () =>
           xywh: '[900,0,100,50]',
         },
         {
+          mode: 2,
           source: { id: 'box', position: [0.5, 1] },
           stroke: '#1971c2',
           target: { position: [950, 300] },
@@ -234,10 +235,15 @@ function withNote(
     blocks.set(id, map);
     return map;
   };
+  // BlockSuite keeps a block's objects as maps.
+  const edgeless = new Y.Map<unknown>();
+  const styles = new Y.Map<unknown>();
+  for (const [key, value] of Object.entries(style)) styles.set(key, value);
+  edgeless.set('style', styles);
   const note = block('note', 'affine:note', {
     background,
     displayMode: 'both',
-    edgeless: { style },
+    edgeless,
     index: 'a1',
     xywh: '[0,0,200,40]',
     ...props,
@@ -297,7 +303,7 @@ it("draws a quiz drawing's far label nearer and a canvas's where it is", () => {
       fontSize: 24,
       id: 'far',
       index: 'z9',
-      text: 'Far',
+      text: new Y.Text('Far'),
       type: 'text',
       xywh: '[3000,0,80,30]',
     })

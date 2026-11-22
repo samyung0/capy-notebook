@@ -3,9 +3,10 @@ import * as Y from 'yjs';
 import { type Keyed, keyedElements } from '@/features/graph/keyed';
 import { fromBase64 } from './base64';
 
-// A board saved from the dev route: one page, its canvas and an empty plane card.
+// A board saved from the dev route: one page, its canvas and an empty plane card,
+// its elements keyed by id.
 export const SAVED =
-  'AgGQ5Lr6DAAnAI+enrQJCwhlbGVtZW50cwEXj56etAkAJwEGYmxvY2tzCkw0UTFaSC1HQTQBKACPnp60CQALc3lzOmZsYXZvdXIBdwthZmZpbmU6cGFnZScAj56etAkADHN5czpjaGlsZHJlbgAnAI+enrQJAApwcm9wOnRpdGxlAicBBmJsb2NrcwprWi1XOGxlTS00ASgAj56etAkEC3N5czpmbGF2b3VyAXcOYWZmaW5lOnN1cmZhY2UnAI+enrQJBAxzeXM6Y2hpbGRyZW4AJwCPnp60CQQNcHJvcDplbGVtZW50cwEoAI+enrQJBwR0eXBlAXccJGJsb2Nrc3VpdGU6aW50ZXJuYWw6bmF0aXZlJCcAj56etAkHBXZhbHVlAQgAj56etAkCAXcKa1otVzhsZU0tNCcAj56etAkJCktjYldQeWR1OVcBKACPnp60CQsFaW5kZXgBdwJhMCgAj56etAkLBHNlZWQBfY790+QMKACPnp60CQsDZml0AXghAI+enrQJCwVtYXJrcwEoAI+enrQJCwNwcHUBfSkoAI+enrQJCwZyb3RhdGUBfQAoAI+enrQJCwJ4MAF9QSgAj56etAkLBHh5d2gBdw1bMCwwLDgyMCw1MjBdKACPnp60CQsCeTABe0AhwY+cGPnCKACPnp60CQsEdHlwZQF3BXBsYW5lKACPnp60CQsCaWQBdwpLY2JXUHlkdTlXAY+enrQJAQ8B';
+  'ARePnp60CQAnAQZibG9ja3MKTDRRMVpILUdBNAEoAI+enrQJAAtzeXM6Zmxhdm91cgF3C2FmZmluZTpwYWdlJwCPnp60CQAMc3lzOmNoaWxkcmVuAAgAj56etAkCAXcKa1otVzhsZU0tNCcAj56etAkACnByb3A6dGl0bGUCJwEGYmxvY2tzCmtaLVc4bGVNLTQBKACPnp60CQULc3lzOmZsYXZvdXIBdw5hZmZpbmU6c3VyZmFjZScAj56etAkFDHN5czpjaGlsZHJlbgAnAI+enrQJBQ1wcm9wOmVsZW1lbnRzASgAj56etAkIBHR5cGUBdxwkYmxvY2tzdWl0ZTppbnRlcm5hbDpuYXRpdmUkJwCPnp60CQgFdmFsdWUBJwCPnp60CQoKS2NiV1B5ZHU5VwEnAI+enrQJCwhlbGVtZW50cwEoAI+enrQJCwVpbmRleAF3AmEwKACPnp60CQsEc2VlZAF9jv3T5AwoAI+enrQJCwNmaXQBeCgAj56etAkLA3BwdQF9KSgAj56etAkLBnJvdGF0ZQF9ACgAj56etAkLAngwAX1BKACPnp60CQsEeHl3aAF3DVswLDAsODIwLDUyMF0oAI+enrQJCwJ5MAF7QCHBj5wY+cIoAI+enrQJCwR0eXBlAXcFcGxhbmUoAI+enrQJCwJpZAF3CktjYldQeWR1OVcA';
 
 /** A keyed list as a card stores it (a plane's elements, a chart's bars, labels and
  * lines): a map of id to item and order key. */
@@ -16,7 +17,8 @@ export function keyedMap<E extends Keyed>(list: E[]) {
   return map;
 }
 
-/** The saved board with more canvas elements. */
+/** The saved board with more canvas elements, each with its `id` (its key) as
+ * BlockSuite writes one. */
 export function withElements(...list: Record<string, unknown>[]) {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, fromBase64(SAVED));
@@ -26,9 +28,11 @@ export function withElements(...list: Record<string, unknown>[]) {
   const native = surface?.get('prop:elements') as Y.Map<unknown>;
   const elements = native.get('value') as Y.Map<unknown>;
   for (const [i, fields] of list.entries()) {
+    const id = String(fields.id ?? `extra${i}`);
     const element = new Y.Map<unknown>();
-    for (const [key, value] of Object.entries(fields)) element.set(key, value);
-    elements.set(String(fields.id ?? `extra${i}`), element);
+    for (const [key, value] of Object.entries({ ...fields, id }))
+      element.set(key, value);
+    elements.set(id, element);
   }
   return Y.encodeStateAsUpdate(doc);
 }

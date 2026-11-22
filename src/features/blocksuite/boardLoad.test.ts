@@ -13,12 +13,8 @@ import {
   withElement,
   withElements,
 } from './boardFixture';
-import {
-  addedElementFits,
-  BoardLoadError,
-  checkSavedBoard,
-  embedFits,
-} from './boardLoad';
+import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import { embedFits } from './boardRules';
 
 const reason = (update: Uint8Array) => {
   try {
@@ -44,20 +40,31 @@ const chart = (fields: Record<string, unknown>) =>
     ...fields,
   });
 
-/** A topic and one idea, as the workspace canvas's mind map saves them. */
-const MIND_MAP = [
-  { id: 'topic', type: 'shape', xywh: '[0,0,120,40]' },
-  { id: 'idea', type: 'shape', xywh: '[200,0,120,40]' },
-  {
-    children: {
-      idea: { index: 'a0', parent: 'topic' },
-      topic: { index: 'a0' },
-    },
-    layoutType: 0,
-    style: 1,
-    type: 'mindmap',
-  },
-];
+const mapOf = (entries: Record<string, unknown>) => {
+  const map = new Y.Map<unknown>();
+  for (const [key, value] of Object.entries(entries)) map.set(key, value);
+  return map;
+};
+
+/** A topic and one idea, as the workspace canvas's mind map saves them, with
+ * `children` in place of its nodes. */
+const mindMap = (
+  children: Record<string, unknown> = {
+    idea: { index: 'a0', parent: 'topic' },
+    topic: { index: 'a0' },
+  }
+) =>
+  withElements(
+    { id: 'topic', shapeType: 'rect', type: 'shape', xywh: '[0,0,120,40]' },
+    { id: 'idea', shapeType: 'rect', type: 'shape', xywh: '[200,0,120,40]' },
+    {
+      children: mapOf(children),
+      id: 'map',
+      layoutType: 0,
+      style: 1,
+      type: 'mindmap',
+    }
+  );
 
 describe('checkSavedBoard', () => {
   it('opens what the board saved', () => {
@@ -69,6 +76,7 @@ describe('checkSavedBoard', () => {
     expect(
       reason(
         withElement({
+          mode: 2,
           source: { id: 'KcbWPydu9W' },
           target: { position: [40, 60] },
           type: 'connector',
@@ -76,7 +84,13 @@ describe('checkSavedBoard', () => {
       )
     ).toBeNull();
     expect(
-      reason(withElement({ children: new Y.Map(), type: 'group' }))
+      reason(
+        withElement({
+          children: new Y.Map(),
+          title: new Y.Text(),
+          type: 'group',
+        })
+      )
     ).toBeNull();
     expect(
       reason(
@@ -133,7 +147,7 @@ describe('checkSavedBoard', () => {
     );
     expect(
       reason(withElement({ latex: 7, type: 'formula', xywh: '[0,0,9,9]' }))
-    ).toBe('formula latex');
+    ).toBe('formula fields');
   });
 
   it("checks a chart's bars, labels and lines keyed by id (Epo 2026-11-22)", () => {
@@ -257,18 +271,14 @@ describe('checkSavedBoard', () => {
   });
 
   it('holds what the catalog lists for each board', () => {
-    const mindmap = withElements(...MIND_MAP);
-    expect(() => checkSavedBoard(mindmap, 'workspace')).not.toThrow();
-    expect(reason(mindmap)).toBe('element type mindmap');
+    expect(checkSavedBoard(mindMap(), 'workspace').misfits).toEqual([]);
+    expect(reason(mindMap())).toBe('element type mindmap');
   });
 
   it("checks a mind map's nodes against the canvas", () => {
     // A canvas opens and says what doesn't fit (Epo 2026-11-18).
     const nodes = (children: Record<string, unknown>) =>
-      checkSavedBoard(
-        withElements(MIND_MAP[0], MIND_MAP[1], { ...MIND_MAP[2], children }),
-        'workspace'
-      ).misfits[0] ?? null;
+      checkSavedBoard(mindMap(children), 'workspace').misfits[0] ?? null;
     expect(
       nodes({ idea: { index: 'a0', parent: 'topic' }, topic: { index: 'a0' } })
     ).toBeNull();
@@ -287,37 +297,14 @@ describe('checkSavedBoard', () => {
     ).toBe('mindmap nodes');
   });
 
-  it('refuses a board whose JSON would hide an element', () => {
+  it('refuses an element keyed `__proto__`, which JSON would hide', () => {
     const hidden = withElements({
       id: '__proto__',
-      latex: 'x'.repeat(5000),
+      latex: 'x',
       type: 'formula',
       xywh: '[0,0,9,9]',
     });
-    expect(reason(hidden)).toBe('hidden key');
-  });
-
-  it('takes an added element only as the load check would', () => {
-    const kinds = new Set(['shape', 'mindmap', 'chart']);
-    const [topic, idea, map] = MIND_MAP;
-    const all = { idea, map, topic } as Record<string, Record<string, unknown>>;
-    expect(addedElementFits('map', all, kinds)).toBe(true);
-    expect(
-      addedElementFits(
-        'map',
-        {
-          ...all,
-          map: {
-            ...map,
-            children: {
-              idea: { index: 'a0', parent: 'topic' },
-              topic: { index: 'a0', parent: 'idea' },
-            },
-          },
-        },
-        kinds
-      )
-    ).toBe(false);
+    expect(reason(hidden)).toBe('formula fields');
   });
 
   it('takes a pasted emoji, GIF or card only as the load check would', () => {
