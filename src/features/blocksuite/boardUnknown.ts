@@ -6,18 +6,15 @@ import {
 import {
   BlockModel,
   BlockSchemaExtension,
+  type BlockSnapshot,
   BlockStandInExtension,
   defineBlockSchema,
   type ExtensionType,
+  type TransformerMiddleware,
 } from '@blocksuite/affine/store';
 import type * as Y from 'yjs';
-import {
-  type BoardKind,
-  holds,
-  isPlace,
-  storedBlockFits,
-  storedElementFits,
-} from './boardLoad';
+import { storedBlockFits, storedElementFits } from './boardLoad';
+import { type BoardKind, isPlace } from './boardRules';
 
 /* What a board can't read (a peer's or a newer version's block or canvas element, one
  * past a limit) is never refused or taken out: it stays in the document as it is and
@@ -65,12 +62,11 @@ function hasPlace(block: Y.Map<unknown>) {
 /** A board's store extensions for what it can't read: a stored block or element that
  * doesn't fit the board's catalog is read as a placeholder. */
 export function unknownStore(board: BoardKind): ExtensionType[] {
-  const { elements, parents } = holds(board);
   return [
     BlockSchemaExtension(UnknownBlockSchema),
     BlockSchemaExtension(UnknownCardSchema),
     BlockStandInExtension((block, known) => {
-      if (known && storedBlockFits(block, parents)) return known;
+      if (known && storedBlockFits(block, board)) return known;
       return hasPlace(block) ? UnknownCardSchema : UnknownBlockSchema;
     }),
     {
@@ -78,9 +74,46 @@ export function unknownStore(board: BoardKind): ExtensionType[] {
         di.addImpl(
           ElementReadableIdentifier,
           () => (id: string, element: Y.Map<unknown>) =>
-            storedElementFits(id, element, elements)
+            storedElementFits(id, element, board)
         );
       },
     },
   ];
 }
+
+const PLACEHOLDERS = new Set([UNKNOWN_BLOCK, UNKNOWN_CARD]);
+
+/** Blocks without the placeholders among them or anywhere below. */
+function withoutPlaceholders(blocks: BlockSnapshot[]): BlockSnapshot[] {
+  const kept = blocks.filter(({ flavour }) => !PLACEHOLDERS.has(flavour));
+  for (const block of kept)
+    block.children = withoutPlaceholders(block.children);
+  return kept;
+}
+
+/** The clipboard's middleware that keeps a block's placeholder out of copies: what
+ * it stands for is another build's or person's, which this board never writes back
+ * (the room refuses a flavour it doesn't hold). It leaves them out of what a copy
+ * in a note's text exports, and out of whatever a paste or Duplicate puts down (the
+ * canvas's own copy serializes without the clipboard's middlewares). An element's
+ * placeholder the canvas's copy leaves out itself (vendor local change 74). */
+export const placeholdersLeftOut: TransformerMiddleware = ({ slots }) => {
+  const exported = slots.afterExport.subscribe((payload) => {
+    if (payload.type === 'slice')
+      payload.snapshot.content = withoutPlaceholders(payload.snapshot.content);
+  });
+  const imported = slots.beforeImport.subscribe((payload) => {
+    // A slice's whole tree: a pasted note's children may become its blocks.
+    if (payload.type === 'slice')
+      payload.snapshot.content = withoutPlaceholders(payload.snapshot.content);
+    // Each block of a tree gets its own call, its children after it.
+    else if (payload.type === 'block')
+      payload.snapshot.children = payload.snapshot.children.filter(
+        ({ flavour }) => !PLACEHOLDERS.has(flavour)
+      );
+  });
+  return () => {
+    exported.unsubscribe();
+    imported.unsubscribe();
+  };
+};

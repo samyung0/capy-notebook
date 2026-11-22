@@ -3,7 +3,7 @@
 //! a flashcard room places an incoming item that overlaps its held clock where
 //! yrs integrates it — after the writer's own unit just before the held clock.
 //! A ContentAny in that place is non-text in a card face and is refused there.
-//! Fails if `ydoc::Incoming::landing` (used by `items::locate`) is reverted.
+//! Fails if `ydoc::Incoming::landing` (used by `ydoc::locate`) is reverted.
 
 use items::flashcards;
 use serde_json::{Value, json};

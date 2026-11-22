@@ -119,7 +119,6 @@ import {
   klipyMedia,
   klipyShared,
 } from './boardKlipy';
-import type { BoardKind } from './boardLoad';
 import { addPicture } from './boardPicture';
 import {
   EMOJI,
@@ -135,6 +134,7 @@ import {
   PLANE_HOME_PPU,
   type PlaneElementModel,
 } from './boardPlane';
+import type { BoardKind } from './boardRules';
 
 type Vec = [number, number];
 

@@ -4,24 +4,29 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/boardcatalog"
 )
 
-func TestGeneratedFileIsCurrent(t *testing.T) {
-	want, err := boardcatalog.TypeScript()
+func TestGeneratedFilesAreCurrent(t *testing.T) {
+	ts, err := boardcatalog.TypeScript()
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join("..", "..", "..", filepath.FromSlash(boardcatalog.TypeScriptPath))
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v (run pnpm gen:openapi)", boardcatalog.TypeScriptPath, err)
-	}
-	if !bytes.Equal(bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n")), want) {
-		t.Errorf("%s is stale; run pnpm gen:openapi", boardcatalog.TypeScriptPath)
+	for path, want := range map[string][]byte{
+		boardcatalog.TypeScriptPath: ts,
+		boardcatalog.RustPath:       boardcatalog.Rust(),
+	} {
+		got, err := os.ReadFile(filepath.Join("..", "..", "..", filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatalf("read %s: %v (run pnpm gen:openapi)", path, err)
+		}
+		if !bytes.Equal(bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n")), want) {
+			t.Errorf("%s is stale; run pnpm gen:openapi", path)
+		}
 	}
 }
 
@@ -53,4 +58,13 @@ func TestCatalogIsConsistent(t *testing.T) {
 			}
 		}
 	}
+	// Each emoji is written as its code points, lowercase hex joined by "_" (the
+	// names of its files under public/emoji/noto; the files are not checked).
+	for _, code := range c.Emoji {
+		if !emojiCode.MatchString(code) {
+			t.Errorf("emoji %q is not code points", code)
+		}
+	}
 }
+
+var emojiCode = regexp.MustCompile(`^[0-9a-f]{4,5}(_[0-9a-f]{4,5})*$`)

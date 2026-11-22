@@ -18352,13 +18352,14 @@ async fn share_canvas(env: &Env, material: &str, shared: bool) {
 }
 
 /// Adds a block to a board as BlockSuite does: a map under its id in the
-/// `blocks` root, its flavour and properties plain values.
+/// `blocks` root, its flavour, its children and properties plain values.
 fn draw_block(doc: &Doc, id: &str, flavour: &str, props: &[(&str, &str)]) {
     use yrs::Map as _;
     let blocks = doc.get_or_insert_map("blocks");
     let mut txn = doc.transact_mut();
     let block = blocks.insert(&mut txn, id, yrs::MapPrelim::default());
     block.insert(&mut txn, "sys:flavour", flavour);
+    block.insert(&mut txn, "sys:children", yrs::ArrayPrelim::default());
     for (key, value) in props {
         block.insert(&mut txn, *key, *value);
     }
@@ -18373,7 +18374,7 @@ fn forged_block(from: &Doc, client: u64, id: &str) -> Vec<u8> {
     doc.transact_mut()
         .apply_update(Update::decode_v1(&state).expect("state"))
         .expect("apply");
-    draw_block(&doc, id, "affine:note", &[]);
+    draw_block(&doc, id, "affine:image", &[]);
     doc.transact()
         .encode_state_as_update_v1(&from.transact().state_vector())
 }
@@ -18475,8 +18476,8 @@ async fn two_board_writers_converge() {
     share_canvas(&env, &shared.material, true).await;
     let mut a = Client::at_board(server.port, &shared.room, &shared.creator).await;
     let mut b = Client::at_board(server.port, &shared.room, &shared.editor).await;
-    a.draw("a1", "affine:note", &[]).await;
-    b.draw("b1", "affine:note", &[]).await;
+    a.draw("a1", "affine:image", &[]).await;
+    b.draw("b1", "affine:image", &[]).await;
     a.until(6).await.expect("ack");
     b.until(6).await.expect("ack");
     let both = ["a1", "b1", "page", "surface"];
@@ -18500,9 +18501,9 @@ async fn a_board_over_its_cap_refuses_its_writer_and_still_takes_deletions() {
     let mut b = Client::at_board(server.port, &room, &user).await;
     a.draw(
         "big",
-        "affine:note",
+        "affine:image",
         &[(
-            "prop:text",
+            "prop:caption",
             &"x".repeat(notes::catalog::CANVAS_BOARD_MAX - 200_000),
         )],
     )
@@ -18514,8 +18515,8 @@ async fn a_board_over_its_cap_refuses_its_writer_and_still_takes_deletions() {
     );
     b.draw(
         "over",
-        "affine:note",
-        &[("prop:text", &"x".repeat(300_000))],
+        "affine:image",
+        &[("prop:caption", &"x".repeat(300_000))],
     )
     .await;
     let (notice, reason) = b.rejected().await;
@@ -18547,8 +18548,8 @@ async fn a_board_over_its_cap_refuses_its_writer_and_still_takes_deletions() {
     a.until(6).await.expect("the deletion's ack");
     a.draw(
         "fits",
-        "affine:note",
-        &[("prop:text", &"x".repeat(300_000))],
+        "affine:image",
+        &[("prop:caption", &"x".repeat(300_000))],
     )
     .await;
     a.until(6).await.expect("ack");
@@ -18575,6 +18576,8 @@ async fn a_board_refuses_an_update_that_is_slow_to_place() {
         let made = {
             let mut txn = doc.transact_mut();
             let block = blocks.insert(&mut txn, "note", yrs::MapPrelim::default());
+            block.insert(&mut txn, "sys:flavour", "affine:paragraph");
+            block.insert(&mut txn, "sys:children", yrs::ArrayPrelim::default());
             block.insert(&mut txn, "prop:text", yrs::TextPrelim::new(""))
         };
         for _ in 0..tombstones {
@@ -18638,6 +18641,25 @@ async fn a_board_refuses_structs_under_a_foreign_client_id() {
         assert_eq!(notice["code"], "unassigned", "{client}: {notice}");
         assert!(reason.contains("client id"), "{client}: {reason}");
     }
+    let reader = Client::at_board(server.port, &room, &user).await;
+    assert_eq!(reader.board_blocks(), ["page", "surface"]);
+}
+
+/// The board's rules hold on entry (Epo 2026-11-22, "sure A then"): an
+/// update breaking one (a block of a flavour the board does not hold) is
+/// refused with `invalid_document` and the rule as its reason, only its
+/// writer's channel closes, and the board is what it was. Fails if a
+/// tampered block enters a canvas.
+#[tokio::test]
+async fn a_board_refuses_an_update_that_breaks_its_rules() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer.draw("c1", "affine:code", &[]).await;
+    let (notice, reason) = writer.rejected().await;
+    assert_eq!(notice["code"], "invalid_document", "{notice}");
+    assert!(reason.contains("the board does not hold"), "{reason}");
     let reader = Client::at_board(server.port, &room, &user).await;
     assert_eq!(reader.board_blocks(), ["page", "surface"]);
 }
@@ -18716,6 +18738,8 @@ async fn a_board_refuses_deletions_that_split_one_text_over_and_over() {
         let blocks = doc.get_or_insert_map("blocks");
         let mut txn = doc.transact_mut();
         let block = blocks.insert(&mut txn, "note", yrs::MapPrelim::default());
+        block.insert(&mut txn, "sys:flavour", "affine:paragraph");
+        block.insert(&mut txn, "sys:children", yrs::ArrayPrelim::default());
         block.insert(
             &mut txn,
             "prop:text",
@@ -18741,7 +18765,7 @@ async fn a_board_refuses_deletions_that_split_one_text_over_and_over() {
     assert_eq!(notice["code"], "invalid_document", "{notice}");
     assert!(reason.contains("steps to place"), "{reason}");
     let mut next = Client::at_board(server.port, &room, &user).await;
-    next.draw("n1", "affine:note", &[]).await;
+    next.draw("n1", "affine:image", &[]).await;
     next.until(6).await.expect("ack");
 }
 
@@ -18754,7 +18778,7 @@ async fn a_read_channel_that_writes_to_a_board_is_closed() {
     let mut reader = Client::open(server.port).await;
     assert_eq!(reader.joined(&room, &token(&room, &user, "read")).await, 0);
     assert!(reader.settle(|c| c.board_blocks().len() == 2).await);
-    reader.draw("r1", "affine:note", &[]).await;
+    reader.draw("r1", "affine:image", &[]).await;
     let closed = reader.until(4).await.expect("closed");
     assert!(String::from_utf8_lossy(&closed).contains("read-only"));
     let other = Client::at_board(server.port, &room, &user).await;
@@ -18772,7 +18796,7 @@ async fn a_board_stores_folds_unloads_and_reopens_the_same() {
     let drawn = {
         let mut writer = Client::at_board(server.port, &room, &user).await;
         writer
-            .draw("n1", "affine:note", &[("prop:text", "kept")])
+            .draw("n1", "affine:image", &[("prop:caption", "kept")])
             .await;
         writer.until(6).await.expect("ack");
         writer
@@ -18836,9 +18860,9 @@ async fn projections() -> (String, Projections) {
 
 /// What a board room sends Go at a projection (contract section 3): the
 /// canvas's one `canvas_board` block, its `version` the stored version
-/// projected (`yjsVersion`), and the assets its blocks name, whatever their
-/// flavour (board review 3.5), each once and in byte order, with no
-/// `assetIds` beside the content. Fails if the content does not change with
+/// projected (`yjsVersion`), and the assets its blocks name (any flavour's
+/// in a stored board, board review 3.5: `model.rs`'s test), each once and in
+/// byte order, with no `assetIds` beside the content. Fails if the content does not change with
 /// each projection, or an asset a block names is left out for Go to prune.
 #[tokio::test]
 async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
@@ -18857,13 +18881,7 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
         draw_block(doc, "i2", "affine:image", &[("prop:sourceId", "asset_a")]);
         draw_block(doc, "i3", "affine:image", &[("prop:sourceId", "asset_b")]);
         draw_block(doc, "i4", "affine:image", &[("prop:sourceId", "not an id")]);
-        draw_block(doc, "n1", "affine:note", &[("prop:text", "asset_text")]);
-        draw_block(
-            doc,
-            "f1",
-            "affine:later",
-            &[("prop:sourceId", "asset_later")],
-        );
+        draw_block(doc, "n1", "affine:image", &[("prop:caption", "asset_text")]);
     });
     writer.send(5, &sync(2, &drawn)).await;
     writer.until(6).await.expect("ack");
@@ -18878,10 +18896,7 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
             "content": { "schemaVersion": 1, "value": [{
                 "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
                 "version": version,
-                "images": [
-                    { "assetId": "asset_a" }, { "assetId": "asset_b" },
-                    { "assetId": "asset_later" },
-                ],
+                "images": [{ "assetId": "asset_a" }, { "assetId": "asset_b" }],
             }] },
         }))
     );

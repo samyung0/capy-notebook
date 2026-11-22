@@ -93,6 +93,24 @@ const stroke = {
   xywh: '[0,0,10,10]',
 };
 
+/** A shape whose font name alone is past a board's cap: it fits the board's
+ * rules, not its size. */
+const tooBig = {
+  fontFamily: 'x'.repeat(BOARD_CATALOG.limits.CANVAS_BOARD_MAX + 1),
+  shapeType: 'rect',
+  type: 'shape',
+  xywh: '[0,0,10,10]',
+};
+
+/** An element of the tab's own, written as the board writes one, its id its
+ * key. */
+function draw(document: Y.Doc, id: string, fields: Record<string, unknown>) {
+  const element = new Y.Map<unknown>();
+  for (const [key, value] of Object.entries({ ...fields, id }))
+    element.set(key, value);
+  drawn(document).set(id, element);
+}
+
 /** The canvas's elements in a tab's document, by id. */
 function drawn(document: Y.Doc) {
   const surface = document.getMap<Y.Map<unknown>>('blocks').get('surface');
@@ -126,9 +144,7 @@ it("sends a tab's stroke to its peer and answers a checkpoint request with its r
   const id = canvas('editor');
   const { document, heard, provider } = await tab(id);
   const peer = mockBoardPeer(id);
-  const element = new Y.Map<unknown>();
-  for (const [key, value] of Object.entries(stroke)) element.set(key, value);
-  drawn(document).set('own-stroke', element);
+  draw(document, 'own-stroke', stroke);
   expect(peer.elements()['own-stroke']).toMatchObject({ type: 'brush' });
   provider.sendStateless(
     JSON.stringify({ id: 'request-1', type: 'checkpoint-request' })
@@ -179,9 +195,7 @@ it('rejects the update that takes a board over its cap, for its writer alone', a
   const id = canvas('editor');
   const { document, heard, provider } = await tab(id);
   const peer = mockBoardPeer(id);
-  const big = new Y.Map<unknown>();
-  big.set('text', 'x'.repeat(BOARD_CATALOG.limits.CANVAS_BOARD_MAX + 1));
-  drawn(document).set('too-big', big);
+  draw(document, 'too-big', tooBig);
   await vi.waitFor(() =>
     expect(heard.stateless).toContainEqual(
       expect.objectContaining({
@@ -195,6 +209,40 @@ it('rejects the update that takes a board over its cap, for its writer alone', a
   // The peer draws on.
   peer.add('after', stroke);
   expect(Object.keys(peer.elements())).toEqual(['after']);
+  peer.leave();
+  provider.destroy();
+});
+
+// As the service checks every update against the board's rules (Epo
+// 2026-11-22, "sure A then"): refused on entry, `invalid_document`.
+it("refuses the update that breaks the board's rules, for its writer alone", async () => {
+  const id = canvas('editor');
+  const { document, heard, provider } = await tab(id);
+  const peer = mockBoardPeer(id);
+  // A text element's text kept as a string, where a text belongs.
+  draw(document, 'loose-text', {
+    text: 'Prophase',
+    type: 'text',
+    xywh: '[0,0,9,9]',
+  });
+  await vi.waitFor(() =>
+    expect(heard.stateless).toContainEqual({
+      code: 'invalid_document',
+      materialId: id,
+      room: `material:${id}:schema:1`,
+      type: 'document-rejected',
+    })
+  );
+  expect(heard.closed).toEqual([
+    { code: 0, reason: "element loose-text breaks its type's rules" },
+  ]);
+  expect(peer.elements()).toEqual({});
+  // A peer's stroke goes on, and its broken one stays out of the room.
+  peer.add('after', stroke);
+  peer.add('broken', { ...stroke, points: 'none' });
+  const other = mockBoardPeer(id);
+  expect(Object.keys(other.elements())).toEqual(['after']);
+  other.leave();
   peer.leave();
   provider.destroy();
 });
@@ -261,13 +309,6 @@ it('relays a presence state a board lists and drops any other', async () => {
   provider.destroy();
 });
 
-/** A stroke of the tab's own, written as the board writes one. */
-function draw(document: Y.Doc, id: string, fields: Record<string, unknown>) {
-  const element = new Y.Map<unknown>();
-  for (const [key, value] of Object.entries(fields)) element.set(key, value);
-  drawn(document).set(id, element);
-}
-
 it('keeps what a tab and its peer drew while the tab was cut off, once it is back', async () => {
   const id = canvas('editor');
   const { document, heard, provider } = await tab(id);
@@ -298,9 +339,7 @@ it('admits what a join brings as any update: nothing past the cap', async () => 
   const { document, heard, provider } = await tab(id);
   const peer = mockBoardPeer(id);
   mockBoardSocket(id, false);
-  draw(document, 'too-big', {
-    text: 'x'.repeat(BOARD_CATALOG.limits.CANVAS_BOARD_MAX + 1),
-  });
+  draw(document, 'too-big', tooBig);
   mockBoardSocket(id, true);
   await vi.waitFor(() =>
     expect(heard.stateless).toContainEqual(

@@ -14,6 +14,10 @@ import { defineConfig, devices } from '@playwright/test';
  * - GROWTH_BASE_URL  a dev server that is already running, to measure another
  *   checkout than this one (a commit while the tree is being edited); none is
  *   started.
+ * - GROWTH_MINUTES   the mixed hour's minutes (default 60).
+ * - GROWTH_SESSIONS  set: every passing test's updates go to the canvas room's
+ *   replay fixture (collaboration-rs/crates/board/tests/fixtures/
+ *   editor-sessions.json.gz).
  */
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));

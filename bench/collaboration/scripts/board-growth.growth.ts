@@ -1,4 +1,5 @@
-import { appendFile, mkdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -22,6 +23,12 @@ import * as Y from 'yjs';
  * A phase's per-minute figure is its per-action figure at the pace assumed for
  * it below; change the pace and the figure scales. Each record is printed and
  * appended to bench/collaboration/.results/board-growth.jsonl.
+ *
+ * With GROWTH_SESSIONS set, every update each passing test's board sent, from
+ * the board's first state, is written to the canvas room's replay fixture
+ * (SESSIONS) as `{"sessions": [{"name", "updates": [base64…]}]}`: the room
+ * admits each (collaboration-rs/crates/board/tests/replay.rs).
+ * GROWTH_MINUTES shortens the mixed hour (60 minutes).
  */
 
 /** Pointer moves in a stroke: two thirds of a second at 60 moves a second. */
@@ -53,7 +60,11 @@ const SETTLE_MS = 400;
  * fourth edits its note first, and every tenth deletes its shape and note and
  * starts a new plane. That is about 14 gestures and 45 keys a minute.
  */
-const MIXED = { minutes: 60, strokes: 8, typed: 40 };
+const MIXED = {
+  minutes: Number(process.env.GROWTH_MINUTES ?? 60),
+  strokes: 8,
+  typed: 40,
+};
 
 type Vec = readonly [number, number];
 type Box = { h: number; w: number; x: number; y: number };
@@ -106,8 +117,8 @@ declare global {
       snapshot(): string;
       stats(): { marks: number };
     };
-    /** The board's updates since the last measure. */
-    __growthUpdates: Uint8Array[];
+    /** The board's updates since the last call, base64. */
+    __growthSent(): string[];
   }
 }
 
@@ -128,14 +139,27 @@ type Board = {
   at(x: number, y: number): Vec;
   page: Page;
   room: Y.Doc;
+  /** Every update the board sent, base64, from its first state (SESSIONS). */
+  sent: string[];
   updateBytes: number;
   updates: number;
 };
 
-const resultsDir = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '.results'
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+const resultsDir = path.join(scriptsDir, '..', '.results');
+const repo = path.join(scriptsDir, '..', '..', '..');
+
+/** The canvas room's replay fixture, written with GROWTH_SESSIONS set. */
+const SESSIONS = path.join(
+  repo,
+  'collaboration-rs/crates/board/tests/fixtures/editor-sessions.json.gz'
+);
+const sessions: { name: string; updates: string[] }[] = [];
+/** The board of the test that runs now, for its session. */
+let current: Board | null = null;
+/** The state every board's room starts from (the service's and the mocks'). */
+const FIRST_STATE = readFileSync(
+  path.join(repo, 'collaboration-rs/crates/server/fixtures/board-first-state.bin')
 );
 
 async function record(entry: object) {
@@ -162,42 +186,78 @@ async function openBoard(page: Page): Promise<Board> {
     .poll(() => rootOf(page).evaluate((root: Root) => root.gfx.viewport.zoom))
     .toBe(1);
   const start = await rootOf(page).evaluate((root: Root) => {
-    window.__growthUpdates = [];
-    root.std.store.spaceDoc.on('update', (update) =>
-      window.__growthUpdates.push(update)
-    );
+    const updates: Uint8Array[] = [];
+    root.std.store.spaceDoc.on('update', (update) => updates.push(update));
+    window.__growthSent = () =>
+      updates.splice(0).map((bytes) => {
+        let text = '';
+        for (let i = 0; i < bytes.length; i += 32_768)
+          text += String.fromCharCode(...bytes.subarray(i, i + 32_768));
+        return btoa(text);
+      });
     return window.__board?.snapshot() ?? '';
   });
   const room = new Y.Doc();
   Y.applyUpdate(room, Buffer.from(start, 'base64'));
+  // What the board wrote as it opened, past the first state, went to its room
+  // as an update too.
+  const first = new Y.Doc();
+  Y.applyUpdate(first, FIRST_STATE);
+  const opened = Y.encodeStateAsUpdate(room, Y.encodeStateVector(first));
+  const wrote =
+    Y.encodeStateVector(room).join() !== Y.encodeStateVector(first).join();
   const box = await page.locator('.capy-board').boundingBox();
   if (!box) throw new Error('no board');
-  return {
+  current = {
     at: (x, y) => [box.x + x, box.y + y],
     page,
     room,
+    sent: wrote ? [Buffer.from(opened).toString('base64')] : [],
     updateBytes: 0,
     updates: 0,
   };
+  return current;
+}
+
+if (process.env.GROWTH_SESSIONS) {
+  // A passing test's session, checked to replay onto the first state.
+  test.afterEach(async ({ page }, testInfo) => {
+    const board = current;
+    current = null;
+    if (!board || testInfo.status !== testInfo.expectedStatus) return;
+    const last = await page.evaluate(() => window.__growthSent());
+    board.sent.push(...last);
+    for (const update of last)
+      Y.applyUpdate(board.room, Buffer.from(update, 'base64'));
+    const replayed = new Y.Doc();
+    Y.applyUpdate(replayed, FIRST_STATE);
+    for (const update of board.sent)
+      Y.applyUpdate(replayed, Buffer.from(update, 'base64'));
+    expect(replayed.store.pendingStructs).toBeNull();
+    expect(Y.encodeStateVector(replayed)).toEqual(
+      Y.encodeStateVector(board.room)
+    );
+    sessions.push({ name: testInfo.title, updates: board.sent });
+  });
+  test.afterAll(async () => {
+    if (!sessions.length) return;
+    await mkdir(path.dirname(SESSIONS), { recursive: true });
+    await writeFile(SESSIONS, gzipSync(JSON.stringify({ sessions })));
+  });
 }
 
 async function measure(board: Board): Promise<Sizes> {
   await board.page.waitForTimeout(SETTLE_MS);
   const read = await board.page.evaluate(() => {
-    const base64 = (bytes: Uint8Array) => {
-      let text = '';
-      for (let i = 0; i < bytes.length; i += 32_768)
-        text += String.fromCharCode(...bytes.subarray(i, i + 32_768));
-      return btoa(text);
-    };
     const handle = window.__board;
     if (!handle) throw new Error('no board');
     return {
       cleaned: handle.save({ finish: false }).doc,
       live: handle.snapshot(),
-      updates: window.__growthUpdates.splice(0).map(base64),
+      updates: window.__growthSent(),
     };
   });
+  board.sent.push(...read.updates);
   for (const update of read.updates) {
     const bytes = Buffer.from(update, 'base64');
     board.updates += 1;
@@ -469,7 +529,7 @@ async function openPlane(page: Page, id: string) {
     root.gfx.viewport.setCenter(x + w / 2, y + h / 2);
   }, id);
   await page.mouse.dblclick(...middle(await boxOf(page, id)));
-  const editor = page.locator('.capy-plane-editor');
+  const editor = page.locator('.capy-graph-editor');
   await editor.waitFor();
   const list = editor.getByRole('button', { name: 'Objects' });
   if ((await list.getAttribute('aria-pressed')) === 'true') await list.click();
@@ -483,7 +543,7 @@ async function openPlane(page: Page, id: string) {
 
 async function closePlane(page: Page) {
   await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(page.locator('.capy-graph-editor')).toHaveCount(0);
 }
 
 const planeTool = (page: Page, name: string) =>
@@ -494,7 +554,7 @@ const planeTool = (page: Page, name: string) =>
 const planePoints = (page: Page, id: string) =>
   rootOf(page).evaluate((root: Root, id) => {
     const card = root.gfx.getElementById(id) as PlaneCard;
-    const editor = document.querySelector('.capy-plane-editor');
+    const editor = document.querySelector('.capy-graph-editor');
     if (!editor) throw new Error('no plane editor');
     const box = editor.getBoundingClientRect();
     const centre = [

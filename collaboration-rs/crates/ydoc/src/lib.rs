@@ -3,7 +3,8 @@
 //! (`inspectUpdate`), `yjsUpdateMessage.ts` (`yjsUpdateContainsChanges`),
 //! and `scratchDoc.ts`, plus the delta rows, the replay of delta saves
 //! (DESIGN.md section 3), the in-place collection of a folded state ([gc])
-//! and the live Undo of server edits ([undo]).
+//! the live Undo of server edits ([undo]) and where each new struct of an
+//! update lands ([locate]).
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -81,9 +82,12 @@ pub mod steps {
         /// An item room's exact check and counted bounds: each entry they
         /// visit (live-items, REVIEW1 S2).
         Exact,
+        /// A canvas room's content check (`board::admit_shapes`): each struct,
+        /// deleted block, entity key, stored value node and keyed entry it reads.
+        Board,
     }
 
-    const WALKS: usize = Walk::Exact as usize + 1;
+    const WALKS: usize = Walk::Board as usize + 1;
 
     thread_local!(static STEPS: [Cell<u64>; WALKS] = const { [const { Cell::new(0) }; WALKS] });
 
@@ -1710,6 +1714,7 @@ pub fn has_pending<T: ReadTxn>(txn: &T) -> bool {
 }
 
 pub mod gc;
+pub mod locate;
 pub mod undo;
 
 #[cfg(test)]

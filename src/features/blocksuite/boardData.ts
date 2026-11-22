@@ -13,12 +13,16 @@ export type Color =
   | { normal: string }
   | { dark: string; light: string };
 const isText = (value: unknown) => typeof value === 'string';
-/** Whether a stored value is a board colour, as BlockSuite's `ColorSchema` takes it. */
+/** Whether a stored value is a board colour, as BlockSuite reads one: its
+ * `resolveColor` takes `dark` and `light` whenever both keys are there, else
+ * `normal`. */
 export const isColour = (value: unknown) => {
   if (isText(value)) return true;
   if (!value || typeof value !== 'object') return false;
   const { dark, light, normal } = value as Record<string, unknown>;
-  return isText(normal) || (isText(dark) && isText(light));
+  return Object.hasOwn(value, 'dark') && Object.hasOwn(value, 'light')
+    ? isText(dark) && isText(light)
+    : isText(normal);
 };
 
 /** Most elements one plane holds, a label's length and a curve's points: every

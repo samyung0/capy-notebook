@@ -1,9 +1,11 @@
 //! What a material room's document is, by the material's kind: a Plate
 //! document (notes, mindmaps, diagrams; the notes crate), a live item
 //! document (flashcard sets; the items crate, live-items DESIGN.md) or a
-//! canvas's board (BlockSuite's block map, which the server stores and bounds
-//! but never reads beyond the assets its blocks name). All project to the same Plate
-//! envelope, so storage, projection, receipts and evictions do not care which.
+//! canvas's board (BlockSuite's block map, which the server stores, bounds
+//! and checks each update of against the board's rules, the board crate; its
+//! projection reads only the assets its blocks name). All project to the same
+//! Plate envelope, so storage, projection, receipts and evictions do not care
+//! which.
 
 use notes::catalog::CANVAS_BOARD_MAX;
 use notes::limits::{LimitCode, Metrics};
@@ -11,7 +13,7 @@ use serde_json::{Value, json};
 use yrs::{Any, Map, Out, ReadTxn, StateVector, Transact};
 
 /// The one root a board's editors write: BlockSuite's map of blocks by id.
-pub const BOARD_ROOT: &str = "blocks";
+pub const BOARD_ROOT: &str = board::ROOT;
 
 /// A board's first state, made by the editor's own code under Yjs client id
 /// 1 (`src/features/blocksuite/boardFirstState.ts`, which pins these bytes):
@@ -26,15 +28,6 @@ const SPLIT_HEADER: u64 = 36;
 /// for it (the value its map key held, or the struct itself under a deleted
 /// parent): a deleted range under a client the delete set may not name yet.
 const REPLACED: u64 = 25;
-/// The deepest a board nests a type below its root (`ydoc::Bounds`), so
-/// yrs's recursion through nested types stays shallow: a chain of 8,000
-/// maps and the deletion of its top overflowed a worker's 2 MiB stack. A
-/// resource bound like the size cap, no rule on what the content is. The
-/// editor's deepest today is 5 (blocks, the surface block, its elements'
-/// holder and map, an element, the element's own text or map), measured on
-/// the first state (3) and a saved board with a plane card (5).
-const BOARD_DEPTH: u32 = 64;
-
 // A joiner takes a board's whole state in one sync message.
 const _: () = assert!(CANVAS_BOARD_MAX <= crate::room::NOTE_MAX_SYNC_BYTES);
 
@@ -128,8 +121,9 @@ impl Model {
             Model::Item(items::Kind::Quiz | items::Kind::QuizKeys) => {
                 Ok(items::quiz::holds_unknown_block(txn).then(|| UNKNOWN_QUIZ_BLOCK.to_owned()))
             }
-            // Whatever a board holds is its editors' to read (an element
-            // type this version does not know shows as a placeholder there).
+            // A board's updates are checked on entry (`admit_board`); what a
+            // stored board holds that a build cannot read shows as a
+            // placeholder there.
             Model::Item(items::Kind::Flashcards) | Model::Board => Ok(None),
         }
     }
@@ -320,8 +314,10 @@ fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
 
 /// A board update's own checks, after the room's (the client-id rule, the
 /// marker root): one the room can place, within its work budget and no
-/// deeper than [BOARD_DEPTH] (`ydoc::inspect_bounded`), writing only the
-/// blocks root, and keeping the state within [CANVAS_BOARD_MAX].
+/// deeper than `board::DEPTH` (`ydoc::inspect_bounded`), writing only the
+/// blocks root, keeping the board's rules (`board::admit_shapes`, Epo
+/// 2026-11-22: refused on entry, the writer's unsent edits opened for
+/// copying) and keeping the state within [CANVAS_BOARD_MAX].
 ///
 /// `bound` is an upper bound of the state's bytes. While it and the most the
 /// update can add ([board_growth]) fit the cap, the update enters unmeasured.
@@ -343,7 +339,9 @@ fn admit_board(
     let cap = CANVAS_BOARD_MAX as u64;
     let txn = doc.transact();
     let incoming = ydoc::Incoming::new(update);
-    let bounds = ydoc::Bounds { depth: BOARD_DEPTH };
+    let bounds = ydoc::Bounds {
+        depth: board::DEPTH,
+    };
     let inspection = match ydoc::inspect_bounded(&txn, &incoming, bounds) {
         Ok(inspection) => inspection,
         Err(error) => return Admitted::Refused(error.to_string()),
@@ -360,6 +358,9 @@ fn admit_board(
     }
     if !changes {
         return Admitted::Accepted;
+    }
+    if let Err(reason) = board::admit_shapes(&txn, &incoming, inspection.trial.as_ref()) {
+        return Admitted::Refused(reason);
     }
     let growth = board_growth(update, bytes.len());
     if !inspection.unnamed && *bound + growth <= cap {
@@ -507,7 +508,9 @@ mod tests {
 
     use serde_json::json;
     use yrs::updates::decoder::Decode;
-    use yrs::{Map, MapPrelim, ReadTxn, StateVector, Text, TextPrelim, Transact, Update};
+    use yrs::{
+        ArrayPrelim, Map, MapPrelim, ReadTxn, StateVector, Text, TextPrelim, Transact, Update,
+    };
 
     use super::{Admitted, BOARD_FIRST_STATE, CANVAS_BOARD_MAX, LimitCode, Model, RoomValidator};
 
@@ -543,15 +546,38 @@ mod tests {
         tab.transact().encode_state_as_update_v1(&before)
     }
 
-    /// Adds a block as BlockSuite does: a map under its id in `blocks`.
+    /// Adds a block as BlockSuite does: a map under its id in `blocks`, its
+    /// flavour, its children and plain props.
     fn add_block(doc: &yrs::Doc, id: &str, flavour: &str, props: &[(&str, &str)]) {
         let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
         let mut txn = doc.transact_mut();
         let block = blocks.insert(&mut txn, id, MapPrelim::default());
         block.insert(&mut txn, "sys:flavour", flavour);
+        block.insert(&mut txn, "sys:children", ArrayPrelim::default());
         for (key, value) in props {
             block.insert(&mut txn, *key, *value);
         }
+    }
+
+    /// Adds a paragraph holding `text` (a block with a Y.Text), its text.
+    fn add_paragraph(doc: &yrs::Doc, id: &str, text: &str) -> yrs::TextRef {
+        let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+        let mut txn = doc.transact_mut();
+        let block = blocks.insert(&mut txn, id, MapPrelim::default());
+        block.insert(&mut txn, "sys:flavour", "affine:paragraph");
+        block.insert(&mut txn, "sys:children", ArrayPrelim::default());
+        block.insert(&mut txn, "prop:text", TextPrelim::new(text))
+    }
+
+    /// The canvas's map of elements by id.
+    fn elements(doc: &yrs::Doc) -> yrs::MapRef {
+        let txn = doc.transact();
+        let at = |map: &yrs::MapRef, key: &str| match map.get(&txn, key) {
+            Some(yrs::Out::YMap(inner)) => inner,
+            _ => panic!("no {key}"),
+        };
+        let surface = at(&txn.get_map(super::BOARD_ROOT).unwrap(), "surface");
+        at(&at(&surface, "prop:elements"), "value")
     }
 
     /// Admits `bytes` and, accepted, applies them as the room does. Whatever
@@ -577,7 +603,7 @@ mod tests {
         *bound
     }
 
-    /// A stroke as the editor draws one: a block map holding its points.
+    /// A stroke as the editor draws one: a brush element holding its points.
     fn stroke(doc: &yrs::Doc, id: &str) {
         let points: Vec<yrs::Any> = (0..400)
             .map(|n| {
@@ -586,12 +612,19 @@ mod tests {
                 )
             })
             .collect();
-        let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+        let value = elements(doc);
         let mut txn = doc.transact_mut();
-        let block = blocks.insert(&mut txn, id, MapPrelim::default());
-        block.insert(&mut txn, "sys:flavour", "affine:brush");
-        block.insert(&mut txn, "prop:lineWidth", 4.0);
-        block.insert(&mut txn, "prop:points", yrs::Any::Array(points.into()));
+        let element = value.insert(&mut txn, id, MapPrelim::default());
+        element.insert(&mut txn, "type", "brush");
+        element.insert(&mut txn, "id", id);
+        element.insert(&mut txn, "lineWidth", 4.0);
+        element.insert(&mut txn, "points", yrs::Any::Array(points.into()));
+        element.insert(&mut txn, "xywh", "[0,0,548,844]");
+    }
+
+    /// Erases a stroke.
+    fn erase(doc: &yrs::Doc, id: &str) {
+        elements(doc).remove(&mut doc.transact_mut(), id);
     }
 
     /// An update of deletions alone: `ranges` (clock, length) of `client`.
@@ -643,8 +676,8 @@ mod tests {
     fn a_board_takes_blocks_and_no_other_root() {
         let (room, mut validator) = board();
         let (a, b) = (tab(&room, 11), tab(&room, 12));
-        let first = update(&a, |doc| add_block(doc, "a1", "affine:note", &[]));
-        let second = update(&b, |doc| add_block(doc, "b1", "affine:note", &[]));
+        let first = update(&a, |doc| add_block(doc, "a1", "affine:image", &[]));
+        let second = update(&b, |doc| add_block(doc, "b1", "affine:image", &[]));
         assert!(matches!(
             send(&room, &mut validator, &first),
             Admitted::Accepted
@@ -684,8 +717,8 @@ mod tests {
             add_block(
                 doc,
                 "big",
-                "affine:note",
-                &[("prop:text", &text(CANVAS_BOARD_MAX - 200_000))],
+                "affine:image",
+                &[("prop:caption", &text(CANVAS_BOARD_MAX - 200_000))],
             )
         });
         assert!(matches!(
@@ -694,7 +727,7 @@ mod tests {
         ));
         for id in ["over", "again"] {
             let more = update(&tab(&room, 12), |doc| {
-                add_block(doc, id, "affine:note", &[("prop:text", &text(300_000))])
+                add_block(doc, id, "affine:image", &[("prop:caption", &text(300_000))])
             });
             let Admitted::Limit(code, metrics) = send(&room, &mut validator, &more) else {
                 panic!("{id} entered");
@@ -722,7 +755,12 @@ mod tests {
             Admitted::Accepted
         ));
         let more = update(&tab(&room, 12), |doc| {
-            add_block(doc, "fits", "affine:note", &[("prop:text", &text(300_000))])
+            add_block(
+                doc,
+                "fits",
+                "affine:image",
+                &[("prop:caption", &text(300_000))],
+            )
         });
         assert!(matches!(
             send(&room, &mut validator, &more),
@@ -730,7 +768,7 @@ mod tests {
         ));
     }
 
-    /// Board review 3.2: a board of strokes (block maps holding point
+    /// Board review 3.2: a board of strokes (element maps holding point
     /// arrays) drawn to its cap, then half of them erased, takes the next
     /// stroke at once. The size estimate that came before counted an erased
     /// stroke as freeing nothing and refused that stroke 999 times. Fails if
@@ -756,10 +794,7 @@ mod tests {
         // The refused stroke stays in its writer's tab: another one erases.
         let eraser = tab(&room, 12);
         for n in 0..drawn / 2 {
-            let erased = update(&eraser, |doc| {
-                doc.get_or_insert_map(super::BOARD_ROOT)
-                    .remove(&mut doc.transact_mut(), &format!("s{n}"));
-            });
+            let erased = update(&eraser, |doc| erase(doc, &format!("s{n}")));
             assert!(matches!(
                 send(&room, &mut validator, &erased),
                 Admitted::Accepted
@@ -786,10 +821,8 @@ mod tests {
         let writer = tab(&room, 11);
         // 3,300 separate items of twenty characters: each typed at the start.
         let typed = update(&writer, |doc| {
-            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+            let text = add_paragraph(doc, "note", "");
             let mut txn = doc.transact_mut();
-            let block = blocks.insert(&mut txn, "note", MapPrelim::default());
-            let text = block.insert(&mut txn, "prop:text", TextPrelim::new(""));
             for _ in 0..3_300 {
                 text.insert(&mut txn, 0, &"t".repeat(20));
             }
@@ -804,8 +837,8 @@ mod tests {
             add_block(
                 doc,
                 "fill",
-                "affine:note",
-                &[("prop:text", &"x".repeat(room_left))],
+                "affine:image",
+                &[("prop:caption", &"x".repeat(room_left))],
             )
         });
         assert!(matches!(
@@ -847,7 +880,7 @@ mod tests {
         assert_eq!(whole(&room).len(), before);
         // The same beside a new block.
         let block = update(&tab(&room, 12), |doc| {
-            add_block(doc, "b", "affine:note", &[])
+            add_block(doc, "b", "affine:image", &[])
         });
         let both = yrs::merge_updates_v1([block.as_slice(), all.as_slice()]).unwrap();
         assert!(matches!(
@@ -885,10 +918,7 @@ mod tests {
             send(&room, &mut validator, &drawn),
             Admitted::Accepted
         ));
-        let erased = update(&writer, |doc| {
-            doc.get_or_insert_map(super::BOARD_ROOT)
-                .remove(&mut doc.transact_mut(), "s");
-        });
+        let erased = update(&writer, |doc| erase(doc, "s"));
         assert!(matches!(
             send(&room, &mut validator, &erased),
             Admitted::Accepted
@@ -920,12 +950,7 @@ mod tests {
         let writer = tab(&room, 11);
         let tombstones = 1_500u32;
         let typed = update(&writer, |doc| {
-            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
-            let text = {
-                let mut txn = doc.transact_mut();
-                let block = blocks.insert(&mut txn, "note", MapPrelim::default());
-                block.insert(&mut txn, "prop:text", TextPrelim::new(""))
-            };
+            let text = add_paragraph(doc, "note", "");
             for _ in 0..tombstones {
                 text.insert(&mut doc.transact_mut(), 0, "t");
             }
@@ -976,11 +1001,11 @@ mod tests {
     }
 
     /// The server reads one thing from a board: the assets its blocks name,
-    /// each once, in byte order, whatever the block's flavour (one this
-    /// version does not know keeps its asset: board review 3.5); a name that
-    /// is no asset id, a block naming none and a value that is no block are
-    /// skipped. Its value is one block, which a projection gives the stored
-    /// version projected.
+    /// each once, in byte order, whatever the block's flavour (a stored board
+    /// may hold one this version does not know, which keeps its asset: board
+    /// review 3.5); a name that is no asset id, a block naming none and a
+    /// value that is no block are skipped. Its value is one block, which a
+    /// projection gives the stored version projected.
     #[test]
     fn a_board_projects_its_version_and_the_assets_it_names() {
         let (room, mut validator) = board();
@@ -995,7 +1020,16 @@ mod tests {
             add_block(doc, "i6", "affine:image", &[("prop:sourceId", &long)]);
             add_block(doc, "i7", "affine:image", &[("prop:sourceId", "")]);
             add_block(doc, "i8", "affine:image", &[]);
-            add_block(doc, "n1", "affine:note", &[("prop:text", "asset_text")]);
+            add_block(doc, "n1", "affine:image", &[("prop:caption", "asset_text")]);
+        });
+        assert!(super::names_asset(&Update::decode_v1(&drawn).unwrap()));
+        assert!(matches!(
+            send(&room, &mut validator, &drawn),
+            Admitted::Accepted
+        ));
+        // What no update enters now (its blocks break the board's rules), as
+        // a stored board may hold it.
+        let stored = update(&writer, |doc| {
             add_block(
                 doc,
                 "f1",
@@ -1008,11 +1042,11 @@ mod tests {
             let numbered = blocks.insert(&mut txn, "f2", MapPrelim::default());
             numbered.insert(&mut txn, "prop:sourceId", 7.0);
         });
-        assert!(super::names_asset(&Update::decode_v1(&drawn).unwrap()));
         assert!(matches!(
-            send(&room, &mut validator, &drawn),
-            Admitted::Accepted
+            send(&room, &mut validator, &stored),
+            Admitted::Refused(_)
         ));
+        ydoc::apply(&room, ydoc::decode(&stored).unwrap()).unwrap();
         let block = |version: i64| {
             json!({
                 "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
@@ -1132,10 +1166,7 @@ mod tests {
         let (room, mut validator) = board();
         let writer = tab(&room, 11);
         let typed = update(&writer, |doc| {
-            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
-            let mut txn = doc.transact_mut();
-            let block = blocks.insert(&mut txn, "note", MapPrelim::default());
-            block.insert(&mut txn, "prop:text", TextPrelim::new(long.as_str()));
+            add_paragraph(doc, "note", &long);
         });
         assert!(matches!(
             send(&room, &mut validator, &typed),
@@ -1160,11 +1191,13 @@ mod tests {
         ));
     }
 
-    /// Security regression (board review 2, finding 1): a board has no rule
-    /// on what its content is, and yrs deletes and collects nested types by
-    /// recursion, which overflowed a worker's stack at 8,000 levels. A board
-    /// takes a type [super::BOARD_DEPTH] deep below its root (the editor's
-    /// deepest is 5), what such a type holds, and no type deeper.
+    /// Security regression (board review 2, finding 1): yrs deletes and
+    /// collects nested types by recursion, which overflowed a worker's stack
+    /// at 8,000 levels. A board holds a type [board::DEPTH] deep below its
+    /// root at most (the editor's deepest is 5): one exactly that deep
+    /// passes the depth bound (the board's rules refuse this chain, so it is
+    /// stored directly, as a stored board may hold one), and a deeper one is
+    /// refused by its depth, before anything recurses.
     #[test]
     fn a_board_refuses_a_type_nested_past_its_depth() {
         let (room, mut validator) = board();
@@ -1174,21 +1207,32 @@ mod tests {
             let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
             let mut txn = doc.transact_mut();
             let mut current: yrs::MapRef = blocks.insert(&mut txn, "deep", MapPrelim::default());
-            for _ in 1..super::BOARD_DEPTH {
+            for _ in 1..board::DEPTH {
                 current = current.insert(&mut txn, "k", MapPrelim::default());
             }
             deepest = Some(current);
         });
         let deepest = deepest.unwrap();
+        let bounded = |bytes: &[u8]| {
+            let update = ydoc::decode(bytes).unwrap();
+            let txn = room.transact();
+            let bounds = ydoc::Bounds {
+                depth: board::DEPTH,
+            };
+            ydoc::inspect_bounded(&txn, &ydoc::Incoming::new(&update), bounds).map(|_| ())
+        };
+        assert!(bounded(&chain).is_ok());
+        assert!(matches!(
+            send(&room, &mut validator, &chain),
+            Admitted::Refused(reason) if !reason.contains("nested more than")
+        ));
+        ydoc::apply(&room, ydoc::decode(&chain).unwrap()).unwrap();
         let held = update(&writer, |doc| {
             deepest.insert(&mut doc.transact_mut(), "text", "abc");
         });
-        for bytes in [&chain, &held] {
-            assert!(matches!(
-                send(&room, &mut validator, bytes),
-                Admitted::Accepted
-            ));
-        }
+        assert!(bounded(&held).is_ok());
+        ydoc::apply(&room, ydoc::decode(&held).unwrap()).unwrap();
+        validator.invalidate();
         let deeper = update(&writer, |doc| {
             deepest.insert(&mut doc.transact_mut(), "k", MapPrelim::default());
         });
@@ -1209,27 +1253,22 @@ mod tests {
     /// takes it, measured again. Fails in `send` if the state passes the cap.
     #[test]
     fn a_type_deleted_with_content_unnamed_is_measured() {
-        use yrs::Array;
         use yrs::encoding::write::Write;
         let (room, mut validator) = board();
         let writer = tab(&room, 11);
-        // Two blocks, each a list of one value. `b` is the writer's first
-        // struct.
+        // Two paragraphs, each a text of one character. `b` is the writer's
+        // first struct.
         let mut anchors = Vec::new();
         let made = update(&writer, |doc| {
-            let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
-            let mut txn = doc.transact_mut();
             for id in ["b", "o"] {
-                let block = blocks.insert(&mut txn, id, MapPrelim::default());
-                let list = block.insert(&mut txn, "a", yrs::ArrayPrelim::default());
-                list.push_back(&mut txn, yrs::Any::Null);
-                let branch: &yrs::branch::Branch = list.as_ref();
+                let text = add_paragraph(doc, id, "c");
+                let branch: &yrs::branch::Branch = text.as_ref();
                 anchors.push(*branch.start().unwrap().id());
             }
         });
         // Under one client, past 2^28 clocks (a collected struct claims
         // them, so every later clock takes five bytes): 4,000 pairs of one
-        // value in `b`'s list and one in `o`'s, five bytes each.
+        // character in `b`'s text and one in `o`'s, five bytes each.
         let pairs = 4_000u32;
         let mut tiny: Vec<u8> = Vec::new();
         tiny.write_var(1u32);
@@ -1240,11 +1279,10 @@ mod tests {
         tiny.write_var(1u32 << 28);
         for _ in 0..pairs {
             for anchor in &anchors {
-                tiny.write_u8(0x80 | 8);
+                tiny.write_u8(0x80 | 4); // a string
                 tiny.write_var(anchor.client.get());
                 tiny.write_var(anchor.clock);
-                tiny.write_var(1u32);
-                tiny.write_u8(126);
+                tiny.write_string("x");
             }
         }
         tiny.write_var(0u32);
@@ -1261,8 +1299,8 @@ mod tests {
             add_block(
                 doc,
                 "fill",
-                "affine:note",
-                &[("prop:text", &"x".repeat(room_left))],
+                "affine:image",
+                &[("prop:caption", &"x".repeat(room_left))],
             )
         });
         assert!(matches!(
@@ -1271,7 +1309,7 @@ mod tests {
         ));
         let before = whole(&room).len();
         assert_eq!(bound(&validator), before as u64);
-        // `b` alone, by its id: every value in its list goes with it.
+        // `b` alone, by its id: every character in its text goes with it.
         let gone = deleting(11, &[(0, 1)]);
         let Admitted::Limit(LimitCode::DocumentSizeExceeded, metrics) =
             send(&room, &mut validator, &gone)
@@ -1324,14 +1362,11 @@ mod tests {
         let blocks = writer.get_or_insert_map(super::BOARD_ROOT);
         let mut note = None;
         unmeasured(update(&writer, |doc| {
-            let mut txn = doc.transact_mut();
-            let block = blocks.insert(&mut txn, "note", MapPrelim::default());
-            block.insert(
-                &mut txn,
-                "prop:text",
-                TextPrelim::new("a long line of text"),
-            );
-            note = Some(block);
+            add_paragraph(doc, "note", "a long line of text");
+            note = Some(match blocks.get(&doc.transact(), "note") {
+                Some(yrs::Out::YMap(block)) => block,
+                _ => panic!("no block"),
+            });
         }));
         let note: yrs::MapRef = note.unwrap();
         let Some(yrs::Out::YText(text)) = note.get(&writer.transact(), "prop:text") else {
@@ -1348,17 +1383,52 @@ mod tests {
         unmeasured(update(&writer, |doc| {
             let mut txn = doc.transact_mut();
             note.insert(&mut txn, "prop:text", TextPrelim::new("again"));
-            note.insert(&mut txn, "sys:flavour", "affine:note");
-            note.insert(&mut txn, "sys:flavour", "affine:edgeless-text");
+            note.insert(&mut txn, "prop:type", "h1");
+            note.insert(&mut txn, "prop:type", "quote");
         }));
         // Another tab erases: half the strokes, then the note.
         let eraser = tab(&room, 12);
-        for id in ["s0", "s3", "s4", "s5", "s11", "s19", "note"] {
-            unmeasured(update(&eraser, |doc| {
-                doc.get_or_insert_map(super::BOARD_ROOT)
-                    .remove(&mut doc.transact_mut(), id);
-            }));
+        for id in ["s0", "s3", "s4", "s5", "s11", "s19"] {
+            unmeasured(update(&eraser, |doc| erase(doc, id)));
         }
+        unmeasured(update(&eraser, |doc| {
+            doc.get_or_insert_map(super::BOARD_ROOT)
+                .remove(&mut doc.transact_mut(), "note");
+        }));
+    }
+
+    /// The board's rules hold on entry (Epo 2026-11-22, "sure A then"): an
+    /// update breaking one (a shape of a type BlockSuite has not) is refused
+    /// with the rule as its reason, which the room answers as any refused
+    /// update (`document-rejected`, `invalid_document`), and the room's state
+    /// is what it was; the shape as the editor writes it enters. Fails if a
+    /// tampered element enters a canvas.
+    #[test]
+    fn a_board_refuses_an_update_that_breaks_its_rules() {
+        let (room, mut validator) = board();
+        let shape = |kind: &'static str| {
+            move |doc: &yrs::Doc| {
+                let value = elements(doc);
+                let mut txn = doc.transact_mut();
+                let shape = value.insert(&mut txn, "s1", MapPrelim::default());
+                shape.insert(&mut txn, "type", "shape");
+                shape.insert(&mut txn, "id", "s1");
+                shape.insert(&mut txn, "shapeType", kind);
+                shape.insert(&mut txn, "xywh", "[0,0,10,10]");
+            }
+        };
+        let before = whole(&room);
+        let tampered = update(&tab(&room, 11), shape("star"));
+        assert!(matches!(
+            send(&room, &mut validator, &tampered),
+            Admitted::Refused(reason) if reason.contains("canvas element shape: shapeType")
+        ));
+        assert_eq!(whole(&room), before);
+        let drawn = update(&tab(&room, 12), shape("rect"));
+        assert!(matches!(
+            send(&room, &mut validator, &drawn),
+            Admitted::Accepted
+        ));
     }
 
     fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<Option<String>, String> {

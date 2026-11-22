@@ -5,13 +5,12 @@
 //!
 //! An item room admits only the shapes its editors write (Epo, 2026-10-08,
 //! for notes; the same rule here): every struct a writer's update adds is
-//! placed (`locate`) and checked against the document's shape, and its
+//! placed (`ydoc::locate`) and checked against the document's shape, and its
 //! growth is bounded per touched text (`Growth`), so typing never copies the
 //! room. Only an update whose bound crosses a cap or a limit is applied to a
 //! copy and checked exactly. Every walk is counted (`ydoc::steps`).
 
 pub mod flashcards;
-pub mod locate;
 pub mod quiz;
 pub mod validator;
 

@@ -31,6 +31,7 @@ import {
 } from '@/features/graph/keyed';
 import type { Frame } from '@/features/graph/model';
 import {
+  AXIS_MAX,
   BAR_SHARE,
   barPlot,
   CARD_PADS,
@@ -431,6 +432,38 @@ export function typedBars(
 ): ChartBar[] | null {
   if (text === opened || !bars.some((bar) => bar.id === id)) return null;
   return bars.map((bar) => (bar.id === id ? { ...bar, label: text } : bar));
+}
+
+/** Most numbered lines a chart's axis takes. */
+export const AXIS_LINES_MAX = 100;
+const NICE_STEPS = [1, 2, 2.5, 5, 10];
+
+/** An axis to a top, about five numbered lines in 1, 2, 2.5 or 5 steps, its top
+ * never past AXIS_MAX. */
+export function niceAxis(top: number) {
+  const rough = top / 5;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const axisStep =
+    (NICE_STEPS.find((step) => step * power >= rough) ?? 10) * power;
+  return {
+    axisMax: Math.min(
+      AXIS_MAX,
+      Number((Math.ceil(top / axisStep - 1e-9) * axisStep).toPrecision(12))
+    ),
+    axisStep: Number(axisStep.toPrecision(12)),
+  };
+}
+
+/** The axis that shows `top`: the first line of `axisStep` at or above it, or a
+ * nice axis to it where that line would be past AXIS_MAX (which the room refuses)
+ * or past AXIS_LINES_MAX lines. */
+export function axisAbove(top: number, axisStep: number) {
+  const axisMax = Number(
+    (Math.max(Math.ceil(top / axisStep - 1e-9), 1) * axisStep).toPrecision(12)
+  );
+  return axisMax <= AXIS_MAX && axisMax / axisStep <= AXIS_LINES_MAX
+    ? { axisMax, axisStep }
+    : niceAxis(top);
 }
 
 /** The bars once a drag lifts, against the chart as it read `before` it: a bar the
