@@ -9319,8 +9319,11 @@ async fn note_with(env: &Env, value: serde_json::Value) -> (String, String) {
 
 /// Review M4, kept for the payload: an Undo whose result the note's check
 /// would refuse (an earlier removal of an interactive block undone after a
-/// later edit brought the note back to ten) answers `invalid_input`, writes
-/// nothing, and the same payload lands once the note has room again.
+/// client's raw insert, as a merge or a hand-made client leaves a note,
+/// brought it back to twice the cap, 20, the most a merge may leave; Epo
+/// 2026-11-22) answers `invalid_input`, writes nothing,
+/// and the same payload lands once the note has room again. An Undo is no
+/// writer's edit, so up to twice the cap it goes in.
 #[tokio::test]
 async fn an_undo_the_note_check_refuses_writes_nothing() {
     let Some(env) = env() else { return };
@@ -9331,19 +9334,22 @@ async fn an_undo_the_note_check_refuses_writes_nothing() {
             "html": "<div>snippet</div>", "children": [{ "text": "" }],
         })
     };
-    let mut value: Vec<serde_json::Value> = (0..10).map(|n| embed(&format!("h{n}"))).collect();
+    let most = notes::limits::merged_cap(notes::catalog::HTML_EMBED_MAX_COUNT);
+    let mut value: Vec<serde_json::Value> = (0..most).map(|n| embed(&format!("h{n}"))).collect();
     value.push(serde_json::json!({ "type": "p", "id": "p1", "children": [{ "text": "end" }] }));
     let (user, material) = note_with(&env, serde_json::Value::Array(value)).await;
     let room = format!("material:{material}:schema:1");
     let mut client = Client::open(server.port).await;
     client.joined(&room, &token(&room, &user, "write")).await;
-    assert!(client.settle(|c| c.block("h9").is_some()).await);
-    let text = note_blocks(server.port, &user, &material)
-        .await
-        .into_iter()
-        .find(|(id, _)| id == "h0")
-        .map(|(_, text)| text)
-        .expect("h0");
+    let last = format!("h{}", most - 1);
+    assert!(client.settle(|c| c.block(&last).is_some()).await);
+    let text = |blocks: Vec<(String, String)>, id: &str| {
+        blocks
+            .into_iter()
+            .find(|(block, _)| block == id)
+            .map(|(_, text)| text)
+            .expect("block")
+    };
     let (status, removal) = internal(
         server.port,
         "/internal/documents/edit",
@@ -9351,25 +9357,22 @@ async fn an_undo_the_note_check_refuses_writes_nothing() {
             &user,
             &material,
             &format!("e1_{material}"),
-            serde_json::json!([{ "type": "remove_block", "blockId": "h0", "expectedText": text }]),
+            serde_json::json!([{
+                "type": "remove_block", "blockId": "h0",
+                "expectedText": text(note_blocks(server.port, &user, &material).await, "h0"),
+            }]),
         ),
     )
     .await;
     assert_eq!(status, 200, "{removal}");
     assert!(client.settle(|c| c.block("h0").is_none()).await);
-    let (status, insert) = internal(
-        server.port,
-        "/internal/documents/edit",
-        &note_edit(
-            &user,
-            &material,
-            &format!("e2_{material}"),
-            serde_json::json!([{ "type": "insert_block", "afterBlockId": "p1", "blocks": [embed("h10")] }]),
-        ),
-    )
-    .await;
-    assert_eq!(status, 200, "{insert}");
-    assert!(client.settle(|c| c.block("h10").is_some()).await);
+    // A client's raw insert (the browser's paste guard would drop it) takes
+    // the note back to twice the cap.
+    client
+        .insert_blocks(most as u32 - 1, &[embed("h-pasted")])
+        .await;
+    assert!(client.settle(|c| c.block("h-pasted").is_some()).await);
+    let pasted = text(note_blocks(server.port, &user, &material).await, "h-pasted");
 
     let (status, refusal) = internal(
         server.port,
@@ -9383,25 +9386,30 @@ async fn an_undo_the_note_check_refuses_writes_nothing() {
         "{refusal}"
     );
     let _ = client.hears(200, 500).await;
-    assert!(client.block("h0").is_none() && client.block("h10").is_some());
+    assert!(client.block("h0").is_none() && client.block("h-pasted").is_some());
 
     let (status, answer) = internal(
         server.port,
-        "/internal/documents/undo",
-        &undo_step(&user, &format!("u2_{material}"), &material, &insert),
+        "/internal/documents/edit",
+        &note_edit(
+            &user,
+            &material,
+            &format!("e2_{material}"),
+            serde_json::json!([{ "type": "remove_block", "blockId": "h-pasted", "expectedText": pasted }]),
+        ),
     )
     .await;
     assert_eq!(status, 200, "{answer}");
     let (status, answer) = internal(
         server.port,
         "/internal/documents/undo",
-        &undo_step(&user, &format!("u3_{material}"), &material, &removal),
+        &undo_step(&user, &format!("u2_{material}"), &material, &removal),
     )
     .await;
     assert_eq!(status, 200, "{answer}");
     assert!(
         client
-            .settle(|c| c.block("h0").is_some() && c.block("h10").is_none())
+            .settle(|c| c.block("h0").is_some() && c.block("h-pasted").is_none())
             .await
     );
 }

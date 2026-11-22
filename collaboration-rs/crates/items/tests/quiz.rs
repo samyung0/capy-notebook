@@ -14,6 +14,7 @@ use items::{Admission, Kind, Refusal, Validator};
 use notes::edit::DocumentCommand;
 use notes::questions::Policy;
 use serde_json::{Value, json};
+use ydoc::steps::Walk;
 use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
 use yrs::{
@@ -559,20 +560,24 @@ fn a_type_change_during_an_edit_in_an_option_converges() {
     }
 }
 
-/// One crafted edit of the room's `kind` document, refused with `reason`,
-/// its walk a few steps per struct.
+/// One crafted edit of the room's `kind` document, refused with `reason`:
+/// its shape walks a few steps per struct, and an exact check (an update that
+/// may pass a cap) one step per entry of the room for the counted bounds and
+/// one for the walk, which visits the parts in no fixed order.
 fn refused(kind: Kind, edit: impl FnOnce(&Doc), reason: &str) {
     let questions = fixtures();
     let (content, keys, client_content, client_keys) = rooms(&questions);
-    let (room, client) = match kind {
-        Kind::QuizKeys => (keys, client_keys),
-        _ => (content, client_content),
+    let (room, client, root) = match kind {
+        Kind::QuizKeys => (keys, client_keys, quiz::KEYS_ROOT),
+        _ => (content, client_content, quiz::QUESTIONS_ROOT),
     };
     edit(&client);
     let update = diff(&client, &room);
     let structs = Update::decode_v1(&update).unwrap().blocks().count() as u64;
     let mut check = validator(kind, &room);
-    let (result, steps) = admit(&mut check, &room, &update);
+    let _ = ydoc::steps::take();
+    let result = check.admit(&room, &Update::decode_v1(&update).unwrap());
+    let steps = ydoc::steps::take();
     match result {
         Err(error) => assert!(
             error.to_string().contains(reason),
@@ -580,10 +585,31 @@ fn refused(kind: Kind, edit: impl FnOnce(&Doc), reason: &str) {
         ),
         Ok(admission) => panic!("{admission:?}: expected a refusal for {reason}"),
     }
+    let exact = steps.of(Walk::Exact);
+    let shapes = steps.total() - exact;
     assert!(
-        steps <= 64 * structs.max(1),
-        "{steps} steps for {structs} structs"
+        shapes <= 64 * structs.max(1),
+        "{shapes} steps for {structs} structs"
     );
+    let entries = room_entries(&room, root);
+    assert!(
+        exact <= 2 * entries,
+        "{exact} exact steps for {entries} entries"
+    );
+}
+
+/// Every map entry under the room's root, nested.
+fn room_entries(doc: &Doc, root: &str) -> u64 {
+    fn count<T: ReadTxn>(txn: &T, map: &MapRef) -> u64 {
+        map.iter(txn)
+            .map(|(_, value)| match value {
+                Out::YMap(inner) => 1 + count(txn, &inner),
+                _ => 1,
+            })
+            .sum()
+    }
+    let txn = doc.transact();
+    txn.get_map(root).map_or(0, |map| count(&txn, &map))
 }
 
 #[test]
