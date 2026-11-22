@@ -80,3 +80,66 @@ it('keeps the stored object for an equal fresh copy, and writes a move as one en
   expect(touched).toEqual([['c']]);
   expect(readElements(map.entries())).toEqual([c, a, b]);
 });
+
+/** A document with the given Yjs client id, and a writer that hands
+ * `writeElements` a change of its own read, returning the keys it touched. */
+function peer(client: number) {
+  const doc = new Y.Doc();
+  doc.clientID = client;
+  const map = doc.getMap<ElementEntry<GraphElement>>('elements');
+  const write = (change: (list: GraphElement[]) => GraphElement[]) => {
+    const touched: string[] = [];
+    const record = (event: Y.YMapEvent<ElementEntry<GraphElement>>) =>
+      touched.push(...event.keysChanged);
+    map.observe(record);
+    doc.transact(() => writeElements(map, change(readElements(map.entries()))));
+    map.unobserve(record);
+    return touched.sort();
+  };
+  return { doc, map, write };
+}
+
+/** Exchanges what each document lacks. */
+function sync(a: Y.Doc, b: Y.Doc) {
+  Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)));
+  Y.applyUpdate(a, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a)));
+}
+
+it.each([
+  [1, 2],
+  [2, 1],
+])(
+  'keeps a peer edit to an element a tie of two adds left (client ids %i, %i)',
+  (first, second) => {
+    const a = peer(first);
+    const b = peer(second);
+    const held = [point('b1', 1), point('b2', 2), point('b3', 3)];
+    a.doc.transact(() => {
+      for (const [id, entry] of Object.entries(keyedElements(held)))
+        a.map.set(id, entry);
+    });
+    sync(a.doc, b.doc);
+    // Both add at the end at once: b4 and b5 take the same key.
+    a.write((list) => [...list, point('b4', 4)]);
+    b.write((list) => [...list, point('b5', 5)]);
+    sync(a.doc, b.doc);
+    const changed = point('b1', 10);
+    const renamed: GraphElement = {
+      coords: [4, 0],
+      id: 'b4',
+      name: 'Four',
+      type: 'point',
+    };
+    const touched = a.write((list) =>
+      list.map((element) => (element.id === 'b1' ? changed : element))
+    );
+    b.write((list) =>
+      list.map((element) => (element.id === 'b4' ? renamed : element))
+    );
+    sync(a.doc, b.doc);
+    const merged = [changed, held[1], held[2], renamed, point('b5', 5)];
+    expect(readElements(a.map.entries())).toEqual(merged);
+    expect(readElements(b.map.entries())).toEqual(merged);
+    expect(touched).toEqual(['b1']);
+  }
+);

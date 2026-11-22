@@ -67,16 +67,19 @@ export function keyedElements<E extends Keyed>(list: E[]) {
  * 2026-11-16, D10: the one writer of every keyed list). An item alike its
  * stored one, the same object or equal JSON (a note's Slate value hands fresh
  * objects), keeps its stored object; a changed one is replaced; order keys
- * come from `risingOrders`, so every held key that can stay does and a moved
- * or new item takes a key between its neighbours; a gone one is deleted. Each
- * entry is written at most once. */
+ * come from `risingOrders`, so every held key that can stay does (ties
+ * compared by id, as readers sort: a tie two editors' adds left stays, since
+ * re-keying would rewrite the whole entry over a peer's edit) and a moved or
+ * new item takes a key between its neighbours (one between tied neighbours
+ * re-keys the later tied neighbours); a gone one is deleted. Each entry is
+ * written at most once. */
 export function writeElements<E extends Keyed>(map: EntryMap<E>, next: E[]) {
   const held = [...map.entries()];
   const stored = new Map<string, ElementEntry<E>>();
   for (const [id, value] of held)
     if (isElementEntry(value, id)) stored.set(id, value as ElementEntry<E>);
   const orders = risingOrders(
-    next.map((element) => stored.get(element.id)?.order ?? '')
+    next.map(({ id }) => ({ id, order: stored.get(id)?.order ?? '' }))
   );
   next.forEach((element, i) => {
     const entry = stored.get(element.id);

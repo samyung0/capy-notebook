@@ -1100,9 +1100,13 @@ through it too): an element
 alike its stored one (the same object, or equal JSON, as a note's Slate value
 hands fresh objects) keeps its entry, and order keys come from `risingOrders`
 (`src/lib/orderKey.ts`), which keeps every held key that still rises in the
-wanted order (the longest such run), so appending re-keys nothing held and a
-moved element alone takes a key between its neighbours; each entry is written
-at most once. A chart's series and labels are aligned by `alignPlaces`
+wanted order (the longest such run), comparing `(order key, id)` as readers
+sort, so appending re-keys nothing held, a tie two editors' adds left stays
+(re-keying it would rewrite the whole entry over a peer's edit), a moved
+element alone takes a key between its neighbours, a new element placed
+between tied neighbours re-keys the later tied neighbours, and each gap is
+placed the same way between its neighbours, so a held key inside it stays;
+each entry is written at most once. A chart's series and labels are aligned by `alignPlaces`
 (`figures/align.ts`, used by `alignAxis`). One Rust
 module (`collaboration-rs/crates/notes/src/figure_map.rs`) reads, writes and
 admits them for notes and `items::quiz`. Two editors' changes to different
