@@ -14,6 +14,7 @@ import {
   type Message,
   MessageKind,
   message,
+  pieceMessage,
   Reader,
   readClosed,
   readSync,
@@ -50,6 +51,12 @@ export interface RoomProviderConfig {
    * update event reports it after collecting what landed in deleted content,
    * which an Office editor's Undo may bring back (Q549). */
   onFrame?: (update: Uint8Array) => void;
+  /** The room dropped a group of this channel's as late (an uplink too slow
+   * for a piece within the server's slack): its edits are held, unsynced,
+   * until `retry` joins again now (the save strip's Retry, Epo 2026-11-23),
+   * or a reconnect or reload does; null once a join carries them. Nothing
+   * retries on a timer. */
+  onHeld?: (held: HeldEdits | null) => void;
   /** The room's other editors (`presence.ts`); none once the channel ends. */
   onPresence?: (connections: PresenceConnection[]) => void;
   /** The room's answer waits on the user's open budget (many large opens
@@ -95,6 +102,17 @@ const TIMEOUT_TYPE = 'update-timeout';
 /** The server's notice that the room's answer waits on the user's open
  * budget (`OPEN_SLOWED_TYPE`, collaboration-rs/crates/server/src/room.rs). */
 const OPEN_SLOWED_TYPE = 'open-slowed';
+/** The server's notice that it dropped this channel's unfinished group of
+ * pieces as late (`GROUP_DROPPED_TYPE`, same file), before acknowledging
+ * its pieces. */
+const GROUP_DROPPED_TYPE = 'group-dropped';
+/** The server's notice that this channel's group of pieces found another
+ * group of the user's unfinished (`GROUP_BUSY_TYPE`, same file): one at a
+ * time, Epo 2026-11-23. */
+const GROUP_BUSY_TYPE = 'group-busy';
+/** How long a busy group waits before the channel joins again to resend it
+ * (Epo 2026-11-23). */
+export const GROUP_BUSY_RETRY_MS = 10_000;
 /** Why the server closed a channel as its user's oldest when they joined
  * one past their cap (`OLDEST_CLOSED_REASON`, same file). */
 export const OLDEST_CLOSED_REASON = 'collaboration-oldest-closed';
@@ -161,6 +179,20 @@ function isEmptyUpdate(update: Uint8Array) {
  * Undo stack survives. The server admits its changes only under ids it
  * assigned to this user.
  */
+/** A late drop's held edits (`onHeld`): `retry` joins again now, and does
+ * nothing more while that join is pending (`retrying`, round 4, finding 4). */
+export interface HeldEdits {
+  retry: () => void;
+  retrying: boolean;
+}
+
+/** The `unsynced` strip's actions: the provider's Retry, and its owner's
+ * Discard, which drops the held edits from the device and continues from the
+ * last saved version (Epo 2026-11-23). */
+export interface HeldStrip extends HeldEdits {
+  discard: () => void;
+}
+
 export class RoomProvider implements ChannelHandler, SeatedRoom {
   readonly awareness: Awareness;
   readonly document: Y.Doc;
@@ -177,6 +209,36 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private lastPiece: number | null = null;
   /** The user is in a timeout: nothing is sent until it ends. */
   private paused = false;
+  /** The room dropped a group of this channel's, late or busy: nothing more
+   * is sent, and the edits count as unsynced, until the next join's step 2
+   * carries them (review of 43fae032a round 2, finding 5: a resend at once
+   * would be late again, with no end). */
+  private resendHeld = false;
+  /** The drop was a late one: the save strip shows (`onHeld`). */
+  private heldLate = false;
+  /** A retry's join is pending: another retry does nothing until it is
+   * answered or the channel ends (round 4, finding 4). */
+  private retrying = false;
+  /** A group's pieces after its first, which go once the room holds the
+   * first (its acknowledgement reaching `held`, a `sent` count), so a busy
+   * answer costs one piece, not the burst (round 4, finding 5). */
+  private rest: {
+    held: number;
+    kind: typeof SyncKind.Step2 | typeof SyncKind.Update;
+    pieces: Uint8Array[];
+  } | null = null;
+  /** Stateless messages sent while a group's rest waits (a checkpoint
+   * request): they go after it, as they were sent after the group. */
+  private afterRest: string[] = [];
+  /** A busy group's resend: the channel joins again when it fires. */
+  private busyTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Updates waiting for the socket's group turn (one group of pieces at a
+   * time per socket, round 3, finding 4), with every later one, so none
+   * overtakes them: merged and sent when the turn comes. */
+  private turnWait: {
+    kind: typeof SyncKind.Step2 | typeof SyncKind.Update;
+    updates: Uint8Array[];
+  } | null = null;
   /** Closed as the user's oldest: joins again on the user's return. */
   private parked = false;
   /** The channel's open is slowed and has not synced. */
@@ -365,8 +427,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   }
 
   sendStateless(payload: string) {
-    if (this.isAuthenticated && !this.paused)
-      this.send(MessageKind.Stateless, text(payload));
+    if (!this.isAuthenticated || this.paused) return;
+    if (this.rest) this.afterRest.push(payload);
+    else this.send(MessageKind.Stateless, text(payload));
   }
 
   onSocketOpen() {
@@ -480,7 +543,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
         this.inFlight = this.inFlight.filter(
           ({ upTo }) => upTo > this.acknowledged
         );
-        this.setUnsynced(Math.max(0, this.unsyncedChanges - count));
+        this.setUnsynced(
+          Math.max(this.resendHeld ? 1 : 0, this.unsyncedChanges - count)
+        );
+        if (this.rest && this.acknowledged >= this.rest.held) this.sendRest();
         if (this.lastPiece !== null && this.acknowledged >= this.lastPiece)
           this.setLastPiece(null);
         return;
@@ -527,6 +593,20 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
             return;
           }
         }
+        if (event.includes(GROUP_DROPPED_TYPE)) {
+          const notice = JSON.parse(event) as { type?: string };
+          if (notice.type === GROUP_DROPPED_TYPE) {
+            this.groupDropped(true);
+            return;
+          }
+        }
+        if (event.includes(GROUP_BUSY_TYPE)) {
+          const notice = JSON.parse(event) as { type?: string };
+          if (notice.type === GROUP_BUSY_TYPE) {
+            this.groupBusy();
+            return;
+          }
+        }
         this.config.onStateless?.({ payload: event });
         return;
       }
@@ -552,7 +632,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
           kind === MessageKind.Awareness ||
           kind === MessageKind.QueryAwareness
           ? 'charged'
-          : 'free'
+          : 'free',
+        this.channel
       );
   }
 
@@ -562,7 +643,15 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.socket.timeOut(ms);
     if (this.paused) return;
     this.paused = true;
+    // The join after the timeout carries the group, and the held edits: a
+    // Retry meanwhile would join nothing (round 5, finding 3).
+    this.rest = null;
+    this.afterRest = [];
     this.setLastPiece(null);
+    if (this.heldLate) {
+      this.heldLate = false;
+      this.config.onHeld?.(null);
+    }
     if (this.isSynced) {
       this.isSynced = false;
       this.config.onSynced?.({ state: false });
@@ -590,9 +679,12 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (this.wanted && this.socket.status === 'connected') void this.join();
   };
 
+  /** The last piece of the group in flight; none ends this room's group turn
+   * on the socket. */
   private setLastPiece(piece: number | null) {
     this.lastPiece = piece;
     setHeld(this, piece !== null);
+    if (piece === null) this.socket.endGroupTurn(this);
   }
 
   /** A `stored` notice: the version this document now holds. The first on
@@ -624,21 +716,131 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     this.inFlight = [];
     this.admitted = [];
     this.answered = false;
+    this.resendHeld = false;
+    // A join's step 2 carries what waited for the group turn, or behind a
+    // group's first piece.
+    this.turnWait = null;
+    this.rest = null;
+    this.afterRest = [];
     this.setUnsynced(0);
     this.sent = 0;
     this.acknowledged = 0;
     this.setLastPiece(null);
+    if (this.heldLate) {
+      this.heldLate = false;
+      this.config.onHeld?.(null);
+    }
+  }
+
+  /** `GROUP_DROPPED_TYPE` (`late`) or `GROUP_BUSY_TYPE`: what was in flight
+   * is unsent again (the acknowledgement that follows admits none of it),
+   * and stays so until the next join (`resendHeld`). One unsynced change
+   * stands for it, so no receipt is asked for meanwhile and the save status
+   * says it is not saved. The group's pieces still waiting to go are
+   * dropped (round 3, finding 2), so the tab is held for them no longer. A
+   * late drop shows the save strip, whose Retry joins again (`onHeld`),
+   * unless the tab is in a timeout, whose rejoin carries them (round 5,
+   * finding 3). */
+  private groupDropped(late: boolean) {
+    this.resendHeld = true;
+    for (const { at } of this.inFlight)
+      this.unsentAt = Math.min(this.unsentAt ?? at, at);
+    this.inFlight = [];
+    this.setUnsynced(Math.max(this.unsyncedChanges, 1));
+    if (this.channel !== null) this.socket.dropQueued(this.channel);
+    this.rest = null;
+    for (const payload of this.afterRest.splice(0))
+      this.send(MessageKind.Stateless, text(payload));
+    this.setLastPiece(null);
+    if (late && !this.heldLate && !this.paused) {
+      this.heldLate = true;
+      this.config.onHeld?.({ retry: this.retryHeld, retrying: false });
+    }
+  }
+
+  private readonly retryHeld = () => this.retry();
+
+  /** `GROUP_BUSY_TYPE`: held as a group dropped as late, and the same
+   * channel joins again `GROUP_BUSY_RETRY_MS` later, silently: the room's
+   * step 1 is answered with everything this client holds, the group and the
+   * edits made meanwhile (Epo 2026-11-23). */
+  private groupBusy() {
+    this.groupDropped(false);
+    clearTimeout(this.busyTimer);
+    this.busyTimer = setTimeout(() => {
+      this.busyTimer = undefined;
+      this.retry();
+    }, GROUP_BUSY_RETRY_MS);
+  }
+
+  /** The same channel joins again now while a dropped group is held: its
+   * step 2 carries the group and every edit since. The save strip's Retry
+   * after a late drop, and a busy group's resend. A join meanwhile (a
+   * reconnect, a timeout's end) sent it already. */
+  retry() {
+    const channel = this.channel;
+    if (channel === null || this.paused || !this.resendHeld || this.retrying)
+      return;
+    this.retrying = true;
+    if (this.heldLate)
+      this.config.onHeld?.({ retry: this.retryHeld, retrying: true });
+    this.isAuthenticated = false;
+    this.noteSeat?.ended();
+    void this.sendJoin(channel);
+  }
+
+  /** The socket's group turn came: what waited for it goes, merged. */
+  onGroupTurn() {
+    const wait = this.turnWait;
+    this.turnWait = null;
+    if (!wait) {
+      this.socket.endGroupTurn(this);
+      return;
+    }
+    this.setUnsynced(this.unsyncedChanges - 1);
+    // In a timeout the rejoin after it carries them.
+    if (this.paused) {
+      this.heldBack();
+      this.socket.endGroupTurn(this);
+      return;
+    }
+    this.sendUpdate(wait.kind, Y.mergeUpdates(wait.updates));
   }
 
   /** An update or step 2 reply, in pieces of at most 2 MiB in order
-   * (Epo 2026-10-18), each acknowledged on its own. */
+   * (Epo 2026-10-18). The room admits a group's pieces as one update after
+   * the last, or none of them (`pieceMessage`): it acknowledges the first
+   * once it holds it, when the rest goes (`sendRest`, round 4, finding 5),
+   * and the rest with the last; each counts as unsynced until then. A group
+   * waits for the socket's group turn (`groupTurn`), one unsynced change
+   * meanwhile, and every update after it, until its rest went, waits with
+   * it. */
   private sendUpdate(
     kind: typeof SyncKind.Step2 | typeof SyncKind.Update,
     update: Uint8Array
   ) {
+    if (this.turnWait) {
+      this.turnWait.updates.push(update);
+      if (kind === SyncKind.Step2) this.turnWait.kind = kind;
+      return;
+    }
+    // Behind a group whose first piece the room has not held yet: none goes
+    // between its pieces.
+    if (this.rest) {
+      this.turnWait = { kind, updates: [update] };
+      this.heldBack();
+      this.setUnsynced(this.unsyncedChanges + 1);
+      return;
+    }
     const pieces = splitUpdate(update);
     if (pieces.some((piece) => piece.byteLength > MAX_UPDATE_BYTES)) {
       this.stop();
+      return;
+    }
+    if (pieces.length > 1 && !this.socket.groupTurn(this)) {
+      this.turnWait = { kind, updates: [update] };
+      this.heldBack();
+      this.setUnsynced(this.unsyncedChanges + 1);
       return;
     }
     // An update is an edit made now, and takes any mark `unsentFrom` left
@@ -652,14 +854,50 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       kind === SyncKind.Step2 ? this.reportedVersion : this.storedVersion;
     at = Math.min(at, this.unsentAt ?? at);
     this.unsentAt = null;
-    for (const piece of pieces) {
-      this.sent += 1;
-      this.setUnsynced(this.unsyncedChanges + 1);
-      this.send(MessageKind.Sync, syncMessage(kind, piece));
-    }
+    // A group's first piece goes alone; the rest once the room holds it.
+    this.send(
+      MessageKind.Sync,
+      pieces.length > 1
+        ? pieceMessage(kind, 0, pieces.length, pieces[0])
+        : syncMessage(kind, pieces[0])
+    );
+    this.sent += pieces.length;
+    this.setUnsynced(this.unsyncedChanges + pieces.length);
+    if (pieces.length > 1)
+      this.rest = {
+        held: this.sent - pieces.length + 1,
+        kind,
+        pieces: pieces.slice(1),
+      };
     if (carries) this.inFlight.push({ at, upTo: this.sent });
     if (pieces.length > 1 || this.lastPiece !== null)
       this.setLastPiece(this.sent);
+    // A turn that came for what merged into one message is not needed.
+    else this.socket.endGroupTurn(this);
+  }
+
+  /** The room holds the group's first piece: the rest goes, then the updates
+   * and stateless messages that waited behind the group. */
+  private sendRest() {
+    const rest = this.rest;
+    if (!rest) return;
+    this.rest = null;
+    const count = rest.pieces.length + 1;
+    for (const [index, piece] of rest.pieces.entries())
+      this.send(
+        MessageKind.Sync,
+        pieceMessage(rest.kind, index + 1, count, piece)
+      );
+    const wait = this.turnWait;
+    if (wait) {
+      this.turnWait = null;
+      this.setUnsynced(this.unsyncedChanges - 1);
+      this.sendUpdate(wait.kind, Y.mergeUpdates(wait.updates));
+    }
+    // What waited goes too, unless it was a group whose rest waits again.
+    if (!this.rest)
+      for (const payload of this.afterRest.splice(0))
+        this.send(MessageKind.Stateless, text(payload));
   }
 
   /** The room stops for an update no resend can fix; the edit stays in the
@@ -761,6 +999,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   private joined() {
     this.assertBound();
+    this.retrying = false;
     // A join after a timeout counts afresh from here, so waiters on the
     // unsynced count see it go to zero only after the resync.
     this.resetCounts();
@@ -787,6 +1026,11 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       // not place, mid-session, would arm the hidden-typing watch with no
       // sync to end it.
       if (!this.isSynced) this.config.onStep1?.(body);
+      // A group dropped as late goes again only after the next join.
+      if (this.resendHeld) {
+        this.heldBack();
+        return;
+      }
       // The server asks for everything it lacks: this reply carries this
       // client's offline or restored edits, and an unplaced update's resend.
       this.sendUpdate(
@@ -814,6 +1058,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
    * embeds end with it. */
   private endChannel() {
     if (this.channel !== null) this.socket.release(this.channel);
+    this.retrying = false;
+    clearTimeout(this.busyTimer);
+    this.busyTimer = undefined;
     const wasJoined = this.isAuthenticated;
     this.channel = null;
     const wasSynced = this.isSynced;
@@ -856,7 +1103,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       if (this.wanted && this.socket.status === 'connected') void this.join();
       return;
     }
-    if (!this.isAuthenticated || this.paused) {
+    if (!this.isAuthenticated || this.paused || this.resendHeld) {
       this.heldBack();
       return;
     }

@@ -1068,10 +1068,11 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
   background: var(--surface-card-hover-bg);
   border-bottom: 1px solid var(--divider);
 }
+/* An inline strip's message wraps on phones (two actions beside it at
+   360 px), and keeps one row from 640 px up, as FileBanner's. */
 .office-banner[data-inline] {
   align-items: center;
-  height: 36px;
-  padding-block: 0;
+  min-height: 36px;
 }
 .office-banner[data-tone="error"] {
   background: var(--tint-error-bg);
@@ -1087,7 +1088,6 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
 }
 .office-banner[data-inline] > p {
   padding: 0;
-  white-space: nowrap;
 }
 .office-banner > button {
   flex: none;
@@ -1133,5 +1133,12 @@ html[data-frosted] .oox-root .bg-doc-surface:has(> .oox-formatting-bar) {
 @media (min-width: 640px) {
   .office-banner {
     padding-inline: 16px 8px;
+  }
+  .office-banner[data-inline] {
+    height: 36px;
+    padding-block: 0;
+  }
+  .office-banner[data-inline] > p {
+    white-space: nowrap;
   }
 }

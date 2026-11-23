@@ -25,6 +25,7 @@ import {
   type PresenceConnection,
   useReportPresence,
 } from '@/features/collaboration/presence';
+import { downloadRecovery } from '@/features/collaboration/recoveryDownload';
 import type { UndoTarget } from '@/features/collaboration/undo';
 import {
   LOCAL_EDIT,
@@ -116,7 +117,8 @@ export default function MermaidMaterialEditor({
     );
     return node ? storedMermaid(node) : null;
   });
-  const recovered = useMermaid(snapshot.recovery?.doc);
+  const recoveryDoc = snapshot.recovery?.doc ?? null;
+  const recovered = useMermaid(recoveryDoc);
   useEffect(() => {
     const saveState = snapshot.recovery
       ? 'error'
@@ -146,7 +148,10 @@ export default function MermaidMaterialEditor({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <SaveBanner
-          onReload={() => void room.reload()}
+          onDiscard={() => void room.reload()}
+          onDownload={() =>
+            void downloadRecovery({ kind, name: title }, recoveryDoc)
+          }
           state={recoveryBanner(snapshot.recovery)}
         />
         {recovered && (
@@ -176,7 +181,18 @@ export default function MermaidMaterialEditor({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {snapshot.offline && <SaveBanner state={snapshot.offline} />}
+      {snapshot.offline ? (
+        <SaveBanner state={snapshot.offline} />
+      ) : (
+        snapshot.held && (
+          <SaveBanner
+            onDiscard={snapshot.held.discard}
+            onRetry={snapshot.held.retry}
+            retrying={snapshot.held.retrying}
+            state="unsynced"
+          />
+        )
+      )}
       <CollaborationHold className="flex min-h-0 flex-1 flex-col">
         <LiveDiagram
           history={room.history}

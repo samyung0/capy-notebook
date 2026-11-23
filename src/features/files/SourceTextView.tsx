@@ -184,15 +184,18 @@ export function SourceTextView({
             : []),
         ]}
         banner={source.banner}
+        discarding={source.discarding}
         error={source.error}
-        onReload={() => {
+        onDiscard={() => {
           void source.discardDraft();
         }}
+        onDownload={source.doc ? downloadDraft : undefined}
+        onRetry={source.retryHeld}
         paused={source.paused}
         pausedAtOpen={pausedAtOpen}
         readOnly={source.readOnly}
-        reloading={source.discarding}
         replaced={source.replaced}
+        retrying={source.retryingHeld}
         storageFull={source.session?.storageFull}
       />
       <div className="min-h-0 flex-1 overflow-auto">

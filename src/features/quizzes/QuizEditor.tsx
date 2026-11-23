@@ -383,7 +383,7 @@ function QuizOpeningPaint({
  * Reset. The rooms' state goes to the header's save status like a note's,
  * Undo and Redo sit in the header with Study, unsent edits stay on this
  * device (an offline banner; refused or left behind, they show read-only to
- * copy until Reload), and a room turned read-only shows the questions to
+ * copy or download until Discard), and a room turned read-only shows the questions to
  * read. A note's embed edits through its own rooms (AppEmbed).
  */
 export function QuizEditor({
@@ -499,6 +499,7 @@ export function QuizEditor({
               recovery={rooms.recovery}
               rooms={rooms}
               stored={stored}
+              title={title}
             />
           </div>
         </div>
@@ -524,7 +525,18 @@ export function QuizEditor({
                 rooms.access !== 'write' &&
                 wrote && <FileBanner message={m.editor_read_only_strip()} />
               )}
-              {rooms.offline && <SaveBanner state={rooms.offline} />}
+              {rooms.offline ? (
+                <SaveBanner state={rooms.offline} />
+              ) : (
+                rooms.held && (
+                  <SaveBanner
+                    onDiscard={rooms.held.discard}
+                    onRetry={rooms.held.retry}
+                    retrying={rooms.held.retrying}
+                    state="unsynced"
+                  />
+                )
+              )}
             </>
           }
           head={head}
@@ -535,7 +547,18 @@ export function QuizEditor({
         />
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="flex h-full min-h-0 flex-col">
-          {rooms.offline && <SaveBanner state={rooms.offline} />}
+          {rooms.offline ? (
+            <SaveBanner state={rooms.offline} />
+          ) : (
+            rooms.held && (
+              <SaveBanner
+                onDiscard={rooms.held.discard}
+                onRetry={rooms.held.retry}
+                retrying={rooms.held.retrying}
+                state="unsynced"
+              />
+            )
+          )}
           <CollaborationHold className="flex min-h-0 flex-1 flex-col">
             <QuizEditorBody
               content={rooms.content.doc}

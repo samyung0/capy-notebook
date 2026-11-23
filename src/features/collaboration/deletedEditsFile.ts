@@ -123,6 +123,62 @@ export const saveShownEdits = (
   format?: ExportFormat
 ) => saveFile(target, async (key) => shown[key] ?? [], format);
 
+/** Saves the file of what an open item's recovery shows (Epo 2026-11-23),
+ * from its documents as drawn, named as `saveFile` names an item's: a
+ * canvas as its image, a quiz's questions with its keys as JSON, a set's or
+ * a diagram's text. Throws when they hold nothing to save. */
+export async function saveRecoveryFile(
+  item: DeletedItem,
+  content: Y.Doc | null,
+  keys: Y.Doc | null
+) {
+  const made = await recoveryFile(item, content, keys);
+  downloadEditorFile(
+    made.blob,
+    `${item.name} (${m.lost_edits_file()}).${made.extension}`
+  );
+}
+
+async function recoveryFile(
+  item: DeletedItem,
+  content: Y.Doc | null,
+  keys: Y.Doc | null
+): Promise<Made> {
+  if (item.kind === 'canvas' && content)
+    return {
+      blob: await boardImage(content, item.name),
+      extension: 'png',
+    };
+  if (item.kind === 'quiz' && (content || keys)) {
+    const value = content
+      ? readQuestions(content, keys)
+      : {
+          about: m.lost_edits_questions(),
+          answerKeys: keys && keysScope(keys).toJSON(),
+        };
+    return {
+      blob: new Blob([JSON.stringify(value, null, 2)], {
+        type: 'application/json',
+      }),
+      extension: 'json',
+    };
+  }
+  if (
+    (item.kind === 'flashcards' ||
+      item.kind === 'diagram' ||
+      item.kind === 'mindmap') &&
+    content
+  ) {
+    const made = draftFile(content, item.kind, undefined);
+    if (made)
+      return {
+        blob: new Blob([made.text], { type: 'text/plain' }),
+        extension: made.extension,
+      };
+  }
+  throw new Error(`Nothing of the ${item.kind} to save`);
+}
+
 /** Saves the file: "{title} (unsaved edits).{ext}", a file keeping its own
  * extension (none when its name has none); a note as Markdown, or as Word
  * from its open page's ⋮ (`format`). Throws when nothing in the drafts can be

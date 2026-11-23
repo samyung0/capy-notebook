@@ -564,8 +564,8 @@ it('follows a room that moved to a new lineage', async () => {
 });
 
 // Epo 2026-10-04: refused (or other-lineage) stored edits open read-only for
-// copying instead of the room; Reload drops them and opens a fresh room.
-it('opens stored refused edits in recovery until Reload', async () => {
+// copying instead of the room; Discard drops them and opens a fresh room.
+it('opens stored refused edits in recovery until Discard', async () => {
   drafts.rows = [{ lineage: 'material:q:schema:1', refused: true }];
   const { onReplace, room } = await started();
   expect(providers).toHaveLength(0);

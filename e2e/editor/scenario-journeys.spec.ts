@@ -118,33 +118,37 @@ test('one click fails a real source save and retry preserves the mounted editor'
 });
 
 // Every recovery path (a save refused for good, a replaced session, a draft
-// from another version) leaves the edits on screen read-only for copying,
-// with no download or discard; a page reload keeps them until Reload.
+// from another version) leaves the edits on screen read-only for copying
+// under a strip with Discard, then Download (round 4, item 10); a page
+// reload keeps them until Discard.
 for (const [id, kind] of [
   ['source-replaced', 'changed'],
   ['source-draft-recovery', 'changed'],
   ['source-save-refused', 'refused'],
 ] as const) {
-  test(`${id} shows the edits for copying until Reload`, async ({ page }) => {
+  test(`${id} shows the edits for copying until Discard`, async ({ page }) => {
     await launch(page, id);
     const draft = page.locator('textarea[readonly]');
     const banner = page.getByTestId('save-banner');
+    const actions = banner.getByRole('button');
     const shown = async () => {
       await expect(draft).toHaveValue(new RegExp(marker), { timeout: 30_000 });
       await expect(banner).toHaveAttribute('data-kind', kind);
-      // Reload replaces the close button: recovery cannot be dismissed.
-      await expect(banner.getByRole('button')).toHaveCount(1);
-      await expect(
-        banner.getByRole('button', {
-          exact: true,
-          name: m.error_action_reload(),
-        })
-      ).toBeVisible();
+      // Discard (ghost-hover) and a dark Download take the close button's
+      // place: recovery cannot be dismissed.
+      await expect(actions).toHaveText([
+        m.action_discard(),
+        m.action_download(),
+      ]);
+      await expect(actions.first()).toHaveAttribute(
+        'data-variant',
+        'ghost-hover'
+      );
+      await expect(actions.last()).toHaveAttribute('data-variant', 'dark');
       // 'Discard this draft' is a removed control, kept as a negative check.
-      for (const name of [m.source_edit_download_draft(), 'Discard this draft'])
-        await expect(
-          page.getByRole('button', { exact: true, name })
-        ).toHaveCount(0);
+      await expect(
+        page.getByRole('button', { exact: true, name: 'Discard this draft' })
+      ).toHaveCount(0);
       await draft.selectText();
       expect(
         await draft.evaluate(
@@ -164,9 +168,13 @@ for (const [id, kind] of [
       'data-scenario-status',
       'idle'
     );
-    await banner
-      .getByRole('button', { exact: true, name: m.error_action_reload() })
-      .click();
+    // Download saves what shows and keeps it.
+    const saving = page.waitForEvent('download');
+    await actions.last().click();
+    const file = await saving;
+    expect(await readFile(await file.path(), 'utf8')).toContain(marker);
+    await expect(banner).toHaveAttribute('data-kind', kind);
+    await actions.first().click();
     await expect(banner).toHaveCount(0);
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(
@@ -190,7 +198,7 @@ for (const [id, kind] of [
 
 // Office recovery hands the engine its read-only mode instead of an inert
 // editor: the refused DOCX edit can be selected and copied.
-test('a refused DOCX save keeps the edit copyable until Reload', async ({
+test('a refused DOCX save keeps the edit copyable until Discard', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -204,12 +212,11 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
   const frame = officeFrame(page);
   const banner = frame.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
-  await expect(
-    frame.getByRole('button', {
-      exact: true,
-      name: m.source_edit_download_draft(),
-    })
-  ).toHaveCount(0);
+  // Discard, then Download (round 4, item 10).
+  await expect(banner.getByRole('button')).toHaveText([
+    m.action_discard(),
+    m.action_download(),
+  ]);
   await expect
     .poll(() =>
       frame
@@ -248,7 +255,7 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
     timeout: 60_000,
   });
   await banner
-    .getByRole('button', { exact: true, name: m.error_action_reload() })
+    .getByRole('button', { exact: true, name: m.action_discard() })
     .click();
   await expect(banner).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
@@ -260,7 +267,7 @@ test('a refused DOCX save keeps the edit copyable until Reload', async ({
 
 // PPTX recovery copies too: the engine's read-only mode still selects and
 // copies slide text.
-test('a refused PPTX save keeps the slide text copyable until Reload', async ({
+test('a refused PPTX save keeps the slide text copyable until Discard', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -274,6 +281,10 @@ test('a refused PPTX save keeps the slide text copyable until Reload', async ({
   const frame = officeFrame(page);
   const banner = frame.getByTestId('save-banner');
   await expect(banner).toHaveAttribute('data-kind', 'refused');
+  await expect(banner.getByRole('button')).toHaveText([
+    m.action_discard(),
+    m.action_download(),
+  ]);
   const input = frame.getByTestId('pptx-text-input');
   await expect(input).toHaveAttribute('readonly', '');
   const copied = frame
@@ -301,7 +312,7 @@ test('a refused PPTX save keeps the slide text copyable until Reload', async ({
   await page.keyboard.press('ControlOrMeta+C');
   expect(await copied).toContain(marker);
   await banner
-    .getByRole('button', { exact: true, name: m.error_action_reload() })
+    .getByRole('button', { exact: true, name: m.action_discard() })
     .click();
   await expect(banner).toHaveCount(0);
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(

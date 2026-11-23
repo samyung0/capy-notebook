@@ -14,6 +14,22 @@ import pptxStateURL from './fixtures/rich-pptx-checkpoint.bin?url';
 import xlsxStateURL from './fixtures/rich-xlsx-checkpoint.bin?url';
 import rowsXlsxStateURL from './fixtures/rows-xlsx-checkpoint.bin?url';
 
+/** The Office perf spec's ~250-page DOCX and its room state, which its web
+ * server generates before building (bench/editor/scripts/office-server.mjs);
+ * empty in a build made without them. */
+const generatedDocx = import.meta.glob<string>(
+  '/bench/editor/.results/office-fixtures/long-handbook-250*',
+  { eager: true, import: 'default', query: '?url' }
+);
+const longDocx250URL =
+  generatedDocx[
+    '/bench/editor/.results/office-fixtures/long-handbook-250.docx'
+  ];
+const longDocx250StateURL =
+  generatedDocx[
+    '/bench/editor/.results/office-fixtures/long-handbook-250-checkpoint.bin'
+  ];
+
 export const biologyOfficeFixtures = [
   {
     format: 'docx',
@@ -55,6 +71,21 @@ export const biologyOfficeFixtures = [
           sourceURL: longDocxURL,
           stateURL: longDocxStateURL,
         },
+        ...(longDocx250URL && longDocx250StateURL
+          ? [
+              {
+                format: 'docx',
+                id: 'bio-office-docx-250',
+                kind: 'doc',
+                name: 'long-handbook-250.docx',
+                // The generating Python's zlib sets the exact size: 74,310
+                // bytes with zlib-ng (3.14 on Windows), 74,928 with zlib 1.3.1.
+                sizeBytes: 74_310,
+                sourceURL: longDocx250URL,
+                stateURL: longDocx250StateURL,
+              } as const,
+            ]
+          : []),
         {
           format: 'xlsx',
           id: 'bio-office-xlsx-long',

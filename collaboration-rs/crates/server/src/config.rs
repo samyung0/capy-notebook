@@ -76,7 +76,27 @@ pub struct Config {
     /// before it closes (`socket.rs`); tests shorten them.
     pub ping_every: Duration,
     pub silent_close: Duration,
+    /// How long an unfinished group of pieces may wait for its next piece
+    /// past what the update allowance takes to carry its room's group cap
+    /// (`Room::group_carry`), while no message arrives for it. 90 s by
+    /// default (Epo 2026-11-23). Tests shorten it.
+    pub group_slack: Duration,
+    /// The slowest uplink a group must still land on, in bytes a second
+    /// ([SLOWEST_UPLINK], `COLLABORATION_SLOWEST_UPLINK_BYTES`): a draft
+    /// group waits for one whole piece at it past the slack
+    /// (`Room::draft_wait`). Tests raise it.
+    pub slowest_uplink: u64,
 }
+
+/// The slowest uplink a group of pieces must still land on: 8 KB/s (64
+/// kbit/s), half the 128 kbit/s carriers throttle to past a data cap (round
+/// 5; Epo 2026-11-23). The browser's `SLOWEST_UPLINK`
+/// (src/lib/draftUpload.ts) is the same.
+pub const SLOWEST_UPLINK: u64 = 8_000;
+
+/// The most a browser sends in one piece, of a channel's group or a draft
+/// send's (Epo 2026-10-18, `splitUpdate`).
+pub const PIECE_BYTES: usize = 2 << 20;
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
 pub mod dev {
@@ -124,6 +144,21 @@ fn millis(
     positive(env, name, fallback).map(Duration::from_millis)
 }
 
+/// How often the server's clients send their heartbeat
+/// ([crate::protocol::HEARTBEAT_MS]). A debug build takes
+/// `COLLABORATION_IT_HEARTBEAT_MS` instead, so the rooms tests can scale the
+/// windows it bounds down; a release build refuses it.
+fn heartbeat(env: &HashMap<String, String>) -> Result<Duration, ConfigError> {
+    const NAME: &str = "COLLABORATION_IT_HEARTBEAT_MS";
+    if cfg!(debug_assertions) {
+        millis(env, NAME, crate::protocol::HEARTBEAT_MS)
+    } else if env.contains_key(NAME) {
+        Err(ConfigError(format!("{NAME} is for debug builds only")))
+    } else {
+        Ok(Duration::from_millis(crate::protocol::HEARTBEAT_MS))
+    }
+}
+
 fn required(env: &HashMap<String, String>, name: &str) -> Result<u64, ConfigError> {
     match env.get(name) {
         None => Err(ConfigError(format!("{name} is required"))),
@@ -140,6 +175,12 @@ fn flag(env: &HashMap<String, String>, name: &str) -> Result<bool, ConfigError> 
 }
 
 impl Config {
+    /// How long one whole piece takes at the slowest uplink a group must
+    /// land on: 262 s for 2 MiB at 8 KB/s.
+    pub fn slowest_piece(&self) -> Duration {
+        Duration::from_secs_f64(PIECE_BYTES as f64 / self.slowest_uplink as f64)
+    }
+
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::load(&std::env::vars().collect())
     }
@@ -182,6 +223,22 @@ impl Config {
                 "COLLABORATION_SILENT_SECONDS must be greater than COLLABORATION_PING_SECONDS"
                     .into(),
             ));
+        }
+        // A tab's heartbeat keeps its socket heard through a long send to it,
+        // and its group alive while the first piece's acknowledgement waits
+        // behind that send: each window holds two.
+        let heartbeat = heartbeat(env)?;
+        let group_slack = millis(env, "COLLABORATION_GROUP_SLACK_MS", 90_000)?;
+        for (name, window) in [
+            ("COLLABORATION_SILENT_SECONDS", silent_close),
+            ("COLLABORATION_GROUP_SLACK_MS", group_slack),
+        ] {
+            if window < 2 * heartbeat {
+                return Err(ConfigError(format!(
+                    "{name} must be at least twice the clients' heartbeat ({} ms)",
+                    heartbeat.as_millis()
+                )));
+            }
         }
         // A smaller burst would refuse an update the rooms take, every time.
         if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
@@ -252,6 +309,8 @@ impl Config {
             )?,
             ping_every,
             silent_close,
+            group_slack,
+            slowest_uplink: positive(env, "COLLABORATION_SLOWEST_UPLINK_BYTES", SLOWEST_UPLINK)?,
         })
     }
 
@@ -295,6 +354,8 @@ mod tests {
         assert_eq!(config.port, 1234);
         assert_eq!(config.projection_idle, Duration::from_secs(30));
         assert_eq!(config.projection_cadence, Duration::from_secs(300));
+        assert_eq!(config.group_slack, Duration::from_secs(90));
+        assert_eq!(config.slowest_uplink, 8_000);
         assert_eq!(
             config.update_limits,
             crate::rate::Limits {
@@ -430,6 +491,46 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "COLLABORATION_SILENT_SECONDS must be greater than COLLABORATION_PING_SECONDS"
+        );
+    }
+
+    /// The silent window and a group's slack each hold two of the clients'
+    /// 20 s heartbeats (`HEARTBEAT_MS`): 40 s and 40,000 ms start, a second or
+    /// a millisecond less is refused at start; a debug build's scaled
+    /// heartbeat (the rooms tests') scales the bound, and a release build
+    /// refuses the knob. Fails without the bounds (a tab beating through a
+    /// long send would close as silent, or lose a group waiting on its first
+    /// acknowledgement).
+    #[test]
+    fn the_silent_window_and_group_slack_hold_two_heartbeats() {
+        let refused = |pairs: &[(&str, &str)]| Config::load(&env(pairs)).unwrap_err().to_string();
+        assert!(
+            Config::load(&env(&[
+                ("COLLABORATION_SILENT_SECONDS", "40"),
+                ("COLLABORATION_GROUP_SLACK_MS", "40000"),
+            ]))
+            .is_ok()
+        );
+        assert_eq!(
+            refused(&[("COLLABORATION_SILENT_SECONDS", "39")]),
+            "COLLABORATION_SILENT_SECONDS must be at least twice the clients' heartbeat (20000 ms)"
+        );
+        assert_eq!(
+            refused(&[("COLLABORATION_GROUP_SLACK_MS", "39999")]),
+            "COLLABORATION_GROUP_SLACK_MS must be at least twice the clients' heartbeat (20000 ms)"
+        );
+        let scaled = [
+            ("COLLABORATION_IT_HEARTBEAT_MS", "100"),
+            ("COLLABORATION_PING_SECONDS", "1"),
+            ("COLLABORATION_SILENT_SECONDS", "2"),
+            ("COLLABORATION_GROUP_SLACK_MS", "300"),
+        ];
+        #[cfg(debug_assertions)]
+        assert!(Config::load(&env(&scaled)).is_ok());
+        #[cfg(not(debug_assertions))]
+        assert_eq!(
+            refused(&scaled),
+            "COLLABORATION_IT_HEARTBEAT_MS is for debug builds only"
         );
     }
 }

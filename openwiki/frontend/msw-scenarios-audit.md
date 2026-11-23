@@ -188,7 +188,7 @@ leave the room), and `setCollaborationReachable` and `moveMockMaterialRoom` in
 Neither is equivalent to an MSW response override.
 
 `e2e/editor/scenario-journeys.spec.ts` checks one-click editor failures, retained
-edits, explicit page/form retry, copy-only recovery across a reload until Reload, Office export
+edits, explicit page/form retry, copy-only recovery across a reload until Discard, Office export
 recovery, pending auth cancellation and note guard behavior.
 `e2e/editor/file-errors.spec.ts` covers preview retries and actual workspace
 launchers. `e2e/editor/biology-office.spec.ts` opens each rich sample in View and
