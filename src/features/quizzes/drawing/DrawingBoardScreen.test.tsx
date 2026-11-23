@@ -39,6 +39,7 @@ const boardImages = vi.hoisted(() =>
   vi.fn((): { file?: Blob; id: string }[] => [])
 );
 const handle = {
+  closeNoteSizes(_sizes: 'save' | 'drop') {},
   fit,
   imageFiles: () =>
     Promise.resolve(
@@ -257,6 +258,36 @@ it("Done hands the board's pictures on with its value, and the device keeps them
   boardImages.mockReturnValue([]);
   mountDrawingBoard.mockImplementation(() => handle);
   await act(async () => root.unmount());
+});
+
+it("closing the screen keeps a note's size waiting on a pause in the draft", async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  saveLocalDrawingDraft.mockClear();
+  let options: MountOptions | undefined;
+  const closeNoteSizes = vi.fn(() => options?.onChange?.());
+  mountDrawingBoard.mockImplementation((_host, mounted) => {
+    options = mounted;
+    // Saving the waiting size changes the board.
+    return { ...handle, closeNoteSizes };
+  });
+  await act(async () =>
+    root.render(
+      <DrawingBoardScreen
+        draft="quiz:qz_3:p"
+        onClose={() => undefined}
+        onDone={() => undefined}
+        pinned={PINNED}
+        withImage={false}
+      />
+    )
+  );
+  // Nothing changed since the last write: only the size waits.
+  await act(async () => root.unmount());
+  expect(closeNoteSizes).toHaveBeenCalledWith('save');
+  expect(saveLocalDrawingDraft).toHaveBeenCalledOnce();
+  mountDrawingBoard.mockImplementation(() => handle);
 });
 
 it('a board mounted ahead is out of sight and takes no time-limit Done until shown', async () => {

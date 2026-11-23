@@ -1,11 +1,11 @@
 import type { NoteBlockModel } from '@blocksuite/affine-model';
-import { almostEqual, Bound } from '@blocksuite/global/gfx';
 import { SignalWatcher, WithDisposable } from '@blocksuite/global/lit';
 import { type EditorHost, ShadowlessElement } from '@blocksuite/std';
 import { html } from 'lit';
 import { property } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
+import { measureNoteSize } from '../note-size';
 import { ACTIVE_NOTE_EXTRA_PADDING } from '../note-styles';
 
 export class EdgelessNoteMask extends SignalWatcher(
@@ -13,25 +13,19 @@ export class EdgelessNoteMask extends SignalWatcher(
 ) {
   protected override firstUpdated() {
     const maskDOM = this.renderRoot!.querySelector('.affine-note-mask');
+    // Capy (local change 75): measured while read-only too, so an unlocked
+    // board has the text's last height.
     const observer = new ResizeObserver(entries => {
-      if (this.model.store.readonly) return;
       // Capy (local change 55): always the text's height; a note has no fold.
       for (const entry of entries) {
-        const bound = Bound.deserialize(this.model.xywh);
-        const scale = this.model.props.edgeless.scale ?? 1;
         // Capy (local change 53): less the 20 px the mask reaches past the
         // note on each side while it is edited, which AFFiNE stored as height.
         const extra = this.editing ? ACTIVE_NOTE_EXTRA_PADDING : 0;
-        const height = (entry.contentRect.height - 2 * extra) * scale;
-
-        if (!height || almostEqual(bound.h, height)) {
-          return;
-        }
-
-        bound.h = height;
-        this.model.stash('xywh');
-        this.model.xywh = bound.serialize();
-        this.model.pop('xywh');
+        const height = entry.contentRect.height - 2 * extra;
+        if (!height) return;
+        // Capy (local change 75): the editing tab saves it once typing
+        // pauses, the others only after 3 s of differing.
+        measureNoteSize(this.model, 'h', height, this.editing);
       }
     });
 
