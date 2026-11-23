@@ -277,9 +277,11 @@ export function DocxEditorHost({
         }
         area.scrollTop = position.scrollTop;
         if (!top) return;
-        // The pages now in view lay out their paragraphs; the top one goes
+        // The pages now in view lay out their paragraphs (an editor builds
+        // the pages out of its first view after it, Q815 C); the top one goes
         // back to its height (content above it may have changed).
-        await frames(1);
+        await frames(2);
+        await editorRef.current?.ensureVisiblePages();
         const line = top.line === null ? '' : `[data-from-line="${top.line}"]`;
         const fragment = area.querySelector(
           `${BODY_PARAGRAPH}[data-para-id="${CSS.escape(top.paraId)}"]${line}`
