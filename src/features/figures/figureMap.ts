@@ -1,5 +1,9 @@
 import * as Y from 'yjs';
 import {
+  QUESTION_CHART_LABELS_MAX,
+  QUESTION_CHART_SERIES_MAX,
+} from '@/api/limits.generated';
+import {
   type ElementEntry,
   isElementEntry,
   readElements,
@@ -215,25 +219,34 @@ function writeFields(map: YMap, block: FigureBlock) {
       map.delete(key);
 }
 
-function writeGraph(map: YMap, block: GraphBlock) {
+/** A graph's board and elements as `block` holds them; of the elements it
+ * lacks, only those the read showed (`shown`; none: every one) go. */
+function writeGraph(map: YMap, block: GraphBlock, shown: GraphBlock | null) {
   const board = child(map, 'board');
   const wanted = block.board as Record<string, unknown>;
   for (const [key, value] of Object.entries(wanted))
     setPlain(board, key, value);
   for (const key of [...board.keys()])
     if (wanted[key] === undefined) board.delete(key);
-  writeElements(child(map, 'elements'), block.elements);
+  writeElements(
+    child(map, 'elements'),
+    block.elements,
+    shown ? new Set(shown.elements.map(({ id }) => id)) : undefined
+  );
 }
 
 /** A chart's data written as its table would be: labels as columns, series as
- * rows, aligned by `alignAxis`; names and values only where they differ. */
-function writeChart(map: YMap, block: ChartBlock) {
+ * rows, aligned by `alignAxis`; names and values only where they differ. Only
+ * the first `shown` series, the ones a read shows, take part: the rest stay
+ * with their names and values. */
+function writeChart(map: YMap, block: ChartBlock, shown: number) {
   const labelMap = child(map, 'labels');
   const seriesMap = child(map, 'series');
   const names = child(map, 'names');
   const values = child(map, 'values');
   const name = (id: string) => nameOf(names, id);
   const heldSeries = orderedKeys(seriesMap);
+  const hidden = heldSeries.splice(Math.min(shown, heldSeries.length));
   const heldLabels = orderedKeys(labelMap);
   const labels = alignAxis(
     labelMap,
@@ -259,7 +272,8 @@ function writeChart(map: YMap, block: ChartBlock) {
           (block.series[w].values[l] ?? null)
       ),
     'ser',
-    (id) => names.delete(id)
+    (id) => names.delete(id),
+    shown
   );
   labels.forEach((id, l) => {
     setPlain(names, id, block.labels[l]);
@@ -273,19 +287,49 @@ function writeChart(map: YMap, block: ChartBlock) {
       setPlain(values, key, block.series[s].values[l] ?? undefined);
     });
   });
+  for (const id of hidden)
+    for (const label of labels) kept.add(`${id}/${label}`);
   // Values of a series or label that went (here or in a merge).
   for (const key of [...values.keys()]) if (!kept.has(key)) values.delete(key);
-  const ids = new Set([...labels, ...series]);
+  const ids = new Set([...labels, ...series, ...hidden]);
   for (const id of [...names.keys()]) if (!ids.has(id)) names.delete(id);
+}
+
+/** A figure's map as a quiz's readers and writers read it: repaired. */
+function repairedBlock(map: YMap, type: FigureType): FigureBlock | null {
+  const figure = build(map, type);
+  return figure && repairFigureBlock(figure.block);
 }
 
 /** A figure's map made to hold `block`, writing only what differs (the
  * diffing replace): server writers, a dialog's Save and a note's `set_node`
- * of a figure's block take this path. */
-export function writeFigure(map: YMap, block: FigureBlock) {
+ * of a figure's block take this path. `block` is the writer's copy of `read`,
+ * the block it read, so only an entry `read` holds goes when `block` lacks it:
+ * one the read left out stays (Epo 2026-11-22). A quiz's writers read the
+ * repaired block, which leaves out a pie's extra series and an element naming
+ * a point that is gone; a note's editor reads the block as held (`heldBlock`),
+ * every entry, so it removes them too. The Rust server's `figure_map::sync` is
+ * the repaired case. */
+export function writeFigure(
+  map: YMap,
+  block: FigureBlock,
+  read: FigureBlock | null = repairedBlock(map, block.type)
+) {
   writeFields(map, block);
-  if (block.type === 'graph') writeGraph(map, block);
-  if (block.type === 'chart') writeChart(map, block);
+  if (block.type === 'graph')
+    writeGraph(
+      map,
+      block,
+      read?.type === 'graph' && Array.isArray(read.elements) ? read : null
+    );
+  if (block.type === 'chart')
+    writeChart(
+      map,
+      block,
+      read?.type === 'chart' && Array.isArray(read.series)
+        ? read.series.length
+        : Number.POSITIVE_INFINITY
+    );
 }
 
 /** A new figure map holding `block`, not yet in a document (an insert or a
@@ -367,20 +411,29 @@ export function moveElement(map: YMap, id: string, index: number) {
 export type ChartAxis = 'series' | 'labels';
 
 /** Adds a series or label named `name` at `index`; its values start empty.
- * The new id. */
+ * The new id, or none at the axis's cap (QUESTION_CHART_SERIES_MAX,
+ * QUESTION_CHART_LABELS_MAX): an add checks the axis as it reads when
+ * written, so only adds merged from the same moment pass the cap, which
+ * readers keep up to twice (Epo 2026-11-22). */
 export function addChartItem(
   map: YMap,
   axis: ChartAxis,
   index: number,
   name: string
-): string {
-  const id = uid(axis === 'series' ? 'ser' : 'lab');
+): string | null {
   const items = child(map, axis);
   const ids = orderedKeys(items);
+  const cap =
+    axis === 'series' ? QUESTION_CHART_SERIES_MAX : QUESTION_CHART_LABELS_MAX;
+  if (ids.length >= cap) return null;
+  const id = uid(axis === 'series' ? 'ser' : 'lab');
   ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id);
-  const held = ids.map((key) => (items.get(key) as string | undefined) ?? '');
+  const held = ids.map((key) => ({
+    id: key,
+    order: (items.get(key) as string | undefined) ?? '',
+  }));
   risingOrders(held).forEach((order, i) => {
-    if (order !== held[i]) items.set(ids[i], order);
+    if (order !== held[i].order) items.set(ids[i], order);
   });
   child(map, 'names').set(id, name);
   return id;

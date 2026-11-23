@@ -437,8 +437,32 @@ of the note cannot drop its group. Quick review skips a part inside a group
 The Go validator is `server/internal/questions`; the browser and collaboration
 service share its JSON fixtures. Bounds originate in
 `server/internal/fieldlimits` and are generated for TypeScript and Python by
-`pnpm gen:openapi`. Bank parts require worked solutions; user quiz solutions
-are optional. Levels are optional metadata and the unenforced timer was removed.
+`pnpm gen:openapi`. A count or text length that two people's edits merged at
+once can pass (a section's blocks and texts, a question's parts and groups, a
+part's marking items, answer lists and texts, table rows and columns, chart
+series and labels, graph elements, a sample answer, a quiz's parts) is taken
+up to twice its cap by readers, room admission, the store's checks and every
+validator outside the bank (Epo 2026-11-22, "Yes, A everywhere";
+`fieldlimits.Merged`, `limits::merged_cap`, `mergedCap`): nothing up to twice
+is trimmed, hidden or refused, and past twice is refused. Editors stop at the
+cap itself, checked against the question or quiz as it reads when written.
+The bank holds every cap exactly (`Policy.held`), its questions being written
+whole. The shared fixtures hold each at twice (`*-at-twice`) and one past it
+(`*-past-twice-rejected`, `*-over-limit-rejected`, `*-long-rejected`). An open
+part's one sample answer stays one (`OPEN_ACCEPTED_MAX`, on every layer), since
+its field shows one (Epo 2026-11-22, "then last save wins? if we change the
+question data structure now we need to change the UI as well, dont"): every
+live writer (`writeSample` in the browser, `quiz::sync_sample` in Rust) puts a
+new one under the fixed entry key `sample` (`SAMPLE_KEY`), so two editors
+typing the first one at once set the same key and one of the two wins (Yjs
+keeps the entry of the client with the higher id), and a removal wins over
+typing at the same moment; the other's first keystrokes, typed before the
+peer's entry arrived, are dropped, and from then on both type into the one
+text. An entry held under another id
+(seeded or generated) is edited and removed in place, never joined by a
+second. Go writes no live quiz documents: its Plate JSON is seeded into the
+room by the collaboration server's writer. Bank parts
+require worked solutions; user quiz solutions are optional. Levels are optional metadata and the unenforced timer was removed.
 
 A question may carry topics of its own (Epo 2026-11-15,
 `todo-question-topics.md`, several since the same day: "let a question have
@@ -810,10 +834,25 @@ table rows, a value per label), so nothing uneven is stored (Epo
 ones; a figure without one is `[Figure]` in the grading text and has empty
 alt text. Only an image carries an `attribution`, the figure's own printed
 credit (a library figure's caption); graphs, charts and plots have none
-(Epo 2026-10-17), and a question's credit is its bank `sources`. An open part's marks are its marking items' total capped at
-`QUESTION_MARKS_MAX` (`schemeMarks`, live and staged alike): items past the
-cap stay as entered, so the live room admits the edit and the dialog names
-the mismatch. Graphs store a bounded
+(Epo 2026-10-17), and a question's credit is its bank `sources`. An open part's marks are its marking items' total (`schemeMarks`, live and
+staged alike), and every reader of a live room's keys takes the total, so
+items two editors added at once read as worth what they add up to: the
+editor stops adding items at a total of `QUESTION_MARKS_MAX`, so a total two
+people's adds take past it is a limit a merge can pass, kept up to twice the
+cap (Epo 2026-11-22, "Yes, A everywhere"). Learners, who never read the keys,
+get each marked part's total on the room's reader lists (`quiz-items`).
+Outside the bank any part's marks may reach twice `QUESTION_MARKS_MAX` (40) on
+every validator and in the room, a closed part's too, so marks written while
+another editor turns the part closed both go in (fixtures
+`quiz-open-marks-at-twice`, `quiz-open-marks-past-twice-rejected`,
+`quiz-closed-marks-at-twice`, `quiz-closed-marks-past-twice-rejected`). A
+total past 40 (three or more editors' adds at once, or a hand-made client) is
+not refused by the room: it stays the explicit warning the user tunes (Epo
+2026-10-14), and the question is left out of the stored quiz until it is
+tuned. The bank holds the total to the cap and names the mismatch. Every live
+writer (`writeQuestion`, `quiz::put_question`) writes a part's own marks as
+the total it reads, at most 40, so an edit to a part worth more is still
+admitted, and a part turned closed is brought back to the cap (`withAnswer`). Graphs store a bounded
 recipe and a static rendering. Recipe elements are function graphs,
 points, lines, segments, circles, labels, angles (three points with the vertex
 in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
@@ -964,7 +1003,8 @@ tenth of it. Each tool write becomes rows (`rowsAfterEdit`): a moved named point
 keeps its name, a new point is a named `A = (a, b)` row, a line or vector a
 `(a, b) to (c, d)` row typed in place, a curve, ellipse or formula a row with
 its kind's name, as the plane lists them; erasing or deleting a point takes what
-is built on it too. A tool at 100 elements is refused and the cap's issue shows.
+is built on it too. A tool at 100 elements is refused and the cap's issue shows; a graph two
+people's adds merged past 100 keeps every element, up to 200, and adds none.
 Advanced's Paper chooses square or polar paper (`board.polar`). Full screen
 opens the graph as shown in the note figure preview. A graph stores no picture
 (D16, D11, Epo 2026-11-16): the block is its elements, board, size and
@@ -1308,7 +1348,10 @@ answer and points as written, LaTeX included. Open parts are called
 for every quiz on 2026-11-03 (a full HKDSE Paper 1 has about 45), and the
 quiz editor shows the count under its cards ("34 of 100 AI-marked parts").
 The Go, browser and collaboration validators share these bounds
-(`fieldlimits.Quiz*`), the generation prompt states them, and the grading
+(`fieldlimits.Quiz*`) and take a quiz up to twice them, what two editors'
+adds at once may leave; an editor's add past a cap does not go, checked
+against the quiz as it reads then (`editQuestion`, `quizCapsIssue`), while a
+write that adds nothing goes even past it. The generation prompt states them, and the grading
 routes take a body of up to 4 MiB so a quiz's hundred longest open answers
 fit one submission.
 

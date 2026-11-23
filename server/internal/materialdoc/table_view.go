@@ -12,6 +12,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
@@ -21,7 +22,8 @@ import (
 // merge leaves (a cell of a deleted column, a value that no longer fits its
 // column, a sort naming a gone column) passes and readers draw it as empty.
 // The collaboration server's store and room admission keep the same rules,
-// with these messages.
+// with these messages. Its lists hold up to twice their caps, as two people's
+// adds at once merge past them (Epo 2026-11-22); the editor stops at the caps.
 
 // TableViewType is the table view element: void and top-level, notes only.
 const TableViewType = "table_view"
@@ -108,7 +110,7 @@ func validateTableView(node map[string]any) error {
 	if !tableViewNameOK(block["title"]) {
 		return fmt.Errorf("table view title must be a string of at most %d characters", embeds.TableViewNameMax)
 	}
-	columns, err := tableViewList("column", block["columns"], 1, embeds.TableViewColumnsMax)
+	columns, err := tableViewList("column", block["columns"], 1, fieldlimits.Merged(embeds.TableViewColumnsMax))
 	if err != nil {
 		return err
 	}
@@ -124,7 +126,7 @@ func validateTableView(node map[string]any) error {
 	if titles != 1 {
 		return errors.New("table view needs exactly one title column")
 	}
-	rows, err := tableViewList("row", block["rows"], 0, embeds.TableViewRowsMax)
+	rows, err := tableViewList("row", block["rows"], 0, fieldlimits.Merged(embeds.TableViewRowsMax))
 	if err != nil {
 		return err
 	}
@@ -135,7 +137,7 @@ func validateTableView(node map[string]any) error {
 	}
 	// No view is a block too: two writers deleting the last two views at once
 	// must not leave one the room refuses (Revision 2).
-	views, err := tableViewList("view", block["views"], 0, embeds.TableViewViewsMax)
+	views, err := tableViewList("view", block["views"], 0, fieldlimits.Merged(embeds.TableViewViewsMax))
 	if err != nil {
 		return err
 	}
@@ -169,7 +171,7 @@ func validateTableViewColumn(column map[string]any) error {
 		}
 		return nil
 	}
-	list, err := tableViewList("option", options, 0, embeds.TableViewOptionsMax)
+	list, err := tableViewList("option", options, 0, fieldlimits.Merged(embeds.TableViewOptionsMax))
 	if err != nil {
 		return err
 	}
@@ -188,10 +190,11 @@ func validateTableViewColumn(column map[string]any) error {
 }
 
 // validateTableViewRow: a row is flat (Revision 2), its id beside one key a
-// cell, so two writers editing different cells of a row merge.
+// cell, so two writers editing different cells of a row merge; a cell per
+// column, the columns up to twice their cap.
 func validateTableViewRow(row map[string]any) error {
-	if len(row) > embeds.TableViewColumnsMax+1 {
-		return fmt.Errorf("a table view row holds at most %d cells", embeds.TableViewColumnsMax)
+	if cells := fieldlimits.Merged(embeds.TableViewColumnsMax); len(row) > cells+1 {
+		return fmt.Errorf("a table view row holds at most %d cells", cells)
 	}
 	for key, value := range row {
 		if key == "id" {

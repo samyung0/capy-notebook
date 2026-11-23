@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
@@ -1277,6 +1279,41 @@ func TestGradedQuizMadeWithItsQuiz(t *testing.T) {
 	var left int
 	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM materials WHERE workspace_id=$1 AND title='Refused'`, f.ws.ID).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("a refused graded quiz left %d quizzes, err %v", left, err)
+	}
+}
+
+// TestCopyQuestionsHoldsAWholeQuizToItsBounds: a whole quiz's copy holds what
+// the quiz holds, a merge's parts past the quiz cap and a question's past
+// its cap included (QuizBounds, Epo 2026-11-22), while picked bank questions
+// are an add at the caps. Fails if copying a valid stored quiz into a graded
+// quiz is refused again, or a bank pick may pass a cap.
+func TestCopyQuestionsHoldsAWholeQuizToItsBounds(t *testing.T) {
+	var qs []map[string]any
+	for n := 0; n <= fieldlimits.QuizParts; n += fieldlimits.QuizQuestionParts {
+		var parts []any
+		for i := n; i < n+fieldlimits.QuizQuestionParts && i <= fieldlimits.QuizParts; i++ {
+			parts = append(parts, map[string]any{"id": fmt.Sprintf("p%d", i), "marks": 1, "solution": []any{},
+				"blocks": []any{map[string]any{"type": "text", "text": "Answer?"}},
+				"answer": map[string]any{"type": "short", "accepted": []any{"alpha"}}})
+		}
+		qs = append(qs, map[string]any{"id": fmt.Sprintf("q%d", n), "layout": "paper", "labels": "letters", "stem": []any{}, "parts": parts})
+	}
+	owners := make([]string, len(qs))
+	if _, err := copyQuestions(qs, owners, map[string]string{}, true, true); err != nil {
+		t.Fatalf("a whole quiz of %d parts: %v", fieldlimits.QuizParts+1, err)
+	}
+	if _, err := copyQuestions(qs, owners, map[string]string{}, false, false); !errors.Is(err, materialdoc.ErrInvalid) {
+		t.Fatalf("an add of %d parts: %v", fieldlimits.QuizParts+1, err)
+	}
+	// One question a merge took past its parts cap.
+	long := qs[:2]
+	long[0]["parts"] = append(long[0]["parts"].([]any), long[1]["parts"].([]any)[0])
+	long = long[:1]
+	if _, err := copyQuestions(long, owners[:1], map[string]string{}, true, true); err != nil {
+		t.Fatalf("a whole quiz's question of %d parts: %v", fieldlimits.QuizQuestionParts+1, err)
+	}
+	if _, err := copyQuestions(long, owners[:1], map[string]string{}, false, false); !errors.Is(err, materialdoc.ErrInvalid) {
+		t.Fatalf("a bank pick of %d parts: %v", fieldlimits.QuizQuestionParts+1, err)
 	}
 }
 

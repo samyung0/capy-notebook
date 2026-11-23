@@ -8,6 +8,11 @@ import {
 import { createSlateEditor, type SlateEditor } from 'platejs';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import {
+  addChartItem,
+  heldBlock,
+  setElement,
+} from '@/features/figures/figureMap';
 import type { ChartBlock, GraphBlock } from '@/features/questions/types';
 import '../figureBinding';
 import { noteFigureBinding } from './noteFigureBinding';
@@ -228,4 +233,71 @@ it('edits the saved copy before the room binds, as any note edit', () => {
   const binding = noteFigureBinding(editor, 'fig', graph);
   binding.setBoard('grid', false);
   expect((blockOf(editor) as GraphBlock).board.grid).toBe(false);
+});
+
+/* The note's editor edits the figure as held, every entry a merge left
+ * included, so its removals reach the room (Epo 2026-11-22). */
+
+/** The figure's map in `doc`, as the room holds it. */
+const figureMap = (doc: Y.Doc) =>
+  (
+    doc.get('content', Y.XmlText).toDelta() as { insert: Y.XmlText }[]
+  )[1].insert.getAttribute('block') as unknown as Y.Map<unknown>;
+const seriesNames = (doc: Y.Doc) =>
+  (heldBlock(figureMap(doc), 'chart') as ChartBlock).series.map(
+    ({ name }) => name
+  );
+const bars = (
+  series: number,
+  kind: ChartBlock['kind'] = 'bar'
+): ChartBlock => ({
+  ...chart,
+  kind,
+  series: Array.from({ length: series }, (_, s) => ({
+    name: `S${s}`,
+    values: [s + 1, s + 1],
+  })),
+});
+
+it('turns a three-series bar chart into a pie as the chart editor does', () => {
+  const { doc, editor } = editorOn(roomOf(bars(3)));
+  const { binding } = dialogOn(editor);
+  const ids = binding.read()?.series ?? [];
+  binding.setFields({ kind: 'pie', xTitle: undefined, yTitle: undefined });
+  for (const id of ids.slice(1)) binding.removeChartItem('series', id);
+  YjsEditor.flushLocalChanges(editor);
+  expect(seriesNames(doc)).toEqual(['S0']);
+});
+
+it("removes a pie's second series a merge left with Remove last series", () => {
+  const room = roomOf(bars(1, 'pie'));
+  room.transact(() => addChartItem(figureMap(room), 'series', 1, 'Second'));
+  const { doc, editor } = editorOn(room);
+  const { binding } = dialogOn(editor);
+  const read = binding.read();
+  if (!read) throw new Error('no figure');
+  const shown = (read.block as ChartBlock).series.length;
+  expect(shown).toBe(2);
+  binding.removeChartItem('series', read.series[shown - 1]);
+  YjsEditor.flushLocalChanges(editor);
+  expect(seriesNames(doc)).toEqual(['S0']);
+});
+
+it('deletes a graph row naming a point that is gone', () => {
+  const room = roomOf(graph);
+  room.transact(() =>
+    setElement(figureMap(room), {
+      id: 's1',
+      points: ['p1', 'gone'],
+      type: 'segment',
+    })
+  );
+  const { doc, editor } = editorOn(room);
+  const { binding } = dialogOn(editor);
+  expect(graphIn(binding).elements.map(({ id }) => id)).toContain('s1');
+  binding.deleteElement('s1');
+  YjsEditor.flushLocalChanges(editor);
+  expect([
+    ...(figureMap(doc).get('elements') as Y.Map<unknown>).keys(),
+  ]).not.toContain('s1');
 });

@@ -17,13 +17,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
+  OfficeCitation,
   OfficeLocale,
   OfficeNotice,
   OfficeParagraphPoint,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
+import { CITATION_FILL, quoteProbe, uniqueCitation } from './citations';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
+import { BODY_PARAGRAPH, topParagraph } from './docxPlace';
 import { DOCX_RIBBON } from './docxRibbon';
 import { fontSliceErrors } from './fontSliceErrors';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
@@ -91,6 +94,7 @@ function docxPresence(channel: CursorChannel): CollaborationPresence {
 
 export function DocxEditorHost({
   bytes,
+  citation,
   collaboration,
   colorMode,
   compact,
@@ -114,6 +118,8 @@ export function DocxEditorHost({
   ribbon,
 }: {
   bytes: Uint8Array;
+  /** A chat citation's passage: marked and centred as in View. */
+  citation: OfficeCitation | null;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
   /**
@@ -161,6 +167,18 @@ export function DocxEditorHost({
     writeViewToggle('docxRuler', shown);
   }, []);
   useEffect(() => onOfficeFontFailure(onError), [onError]);
+  // View's rule (citations.ts) over the paragraphs the engine's search finds
+  // with the quote's longest piece; marked once the pages are presented, and
+  // only while its paragraph still holds the quote (Q809 A, Q811 A).
+  useEffect(() => {
+    editorRef.current?.showCitation(
+      citation && {
+        color: CITATION_FILL,
+        match: (paragraphs) => uniqueCitation(paragraphs, citation.quote),
+        probe: quoteProbe(citation.quote),
+      }
+    );
+  }, [citation]);
   // A font slice failing while editing is a notice, not an error (Q752 B);
   // back online, the editor asks for the failed slices again.
   const fontSlices = useMemo(
@@ -241,7 +259,14 @@ export function DocxEditorHost({
         const paged = editorRef.current?.getEditorRef();
         const area = document.querySelector<HTMLElement>(SCROLL_BOX);
         if (!(paged && area) || position.format !== 'docx') return;
-        const { selection, top } = position;
+        const { selection, top, zoom } = position;
+        // The zoom first, so the place below is found on pages at their size;
+        // a fitted zoom is only the editor's own at open (the ref sets levels).
+        const editor = editorRef.current;
+        if (typeof zoom === 'number' && editor && editor.getZoom() !== zoom) {
+          editor.setZoom(zoom);
+          await frames(2);
+        }
         const anchor =
           selection && paged.yrsLocToDisplayPosition(selection.anchor);
         const head = selection && paged.yrsLocToDisplayPosition(selection.head);
@@ -351,29 +376,6 @@ export function DocxEditorHost({
 const RIBBON_CONTEXTS = { picture: 'imageWrap', table: 'tableMore' };
 
 const SCROLL_BOX = '.docx-editor__scroll-container';
-/** Body paragraphs in the page mirrors (headers and footers repeat theirs on
- * every page), split ones by fragment. */
-const BODY_PARAGRAPH = '.layout-page-content [data-para-id]';
-
-/** The first body paragraph fragment showing at the box's top, and how far
- * below the top edge it starts; mirrors run in document order. */
-function topParagraph(area: HTMLElement) {
-  const edge = area.getBoundingClientRect().top;
-  for (const fragment of area.querySelectorAll<HTMLElement>(BODY_PARAGRAPH)) {
-    const rect = fragment.getBoundingClientRect();
-    const paraId = fragment.dataset.paraId;
-    if (rect.height > 0 && rect.bottom > edge && paraId)
-      return {
-        line:
-          fragment.dataset.fromLine === undefined
-            ? null
-            : Number(fragment.dataset.fromLine),
-        offset: rect.top - edge,
-        paraId,
-      };
-  }
-  return null;
-}
 
 const frames = (count: number) =>
   new Promise<void>((resolve) => {

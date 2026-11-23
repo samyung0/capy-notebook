@@ -30,7 +30,11 @@ import type {
 import { m } from '@/i18n';
 import { CITATION_FILL } from './citations';
 import { runtimeEngines } from './prewarm';
-import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import type {
+  OfficeMenuReporter,
+  OfficePositioner,
+  OfficeRenderer,
+} from './runtimeMenus';
 import { type CellCitation, xlsxCitation } from './xlsxCitation';
 import { xlsxViewMenus } from './xlsxMenus';
 import { nameBoxTarget, revealedExtent, scrollSize } from './xlsxNameBox';
@@ -62,6 +66,7 @@ export function XlsxViewer({
   onError,
   onFontError,
   onMenus,
+  onPositioner,
   onRenderer,
   onZoomChange,
 }: {
@@ -75,6 +80,7 @@ export function XlsxViewer({
   /** A bundled face that failed to load; its text keeps the browser's font. */
   onFontError: (family: string, error: Error) => void;
   onMenus: OfficeMenuReporter;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onZoomChange: (zoom: number) => void;
 }) {
@@ -435,6 +441,22 @@ export function XlsxViewer({
     });
     return () => onRenderer(null);
   }, [onRenderer]);
+
+  // Where the reader is, for the editor after View (Q608 A): the selected
+  // cell and its sheet by name. View's sheet ids count the opened file's
+  // sheets in order, where a room's name its base's sheets and added ones.
+  useEffect(() => {
+    onPositioner({
+      read: () => {
+        const sheetName = sheetNamesRef.current[activeSheetRef.current];
+        const { cell } = selectionRef.current;
+        return sheetName === undefined
+          ? null
+          : { anchor: cell, format: 'xlsx', head: cell, sheetName };
+      },
+    });
+    return () => onPositioner(null);
+  }, [onPositioner]);
 
   const selectAtPointer = (event: MouseEvent<HTMLDivElement>) => {
     const handle = handleRef.current;

@@ -30,6 +30,9 @@ function blockOf(type: string, block: Record<string, unknown>): FigureBlock {
 
 setFigureCodec({
   create: (type, block) => newFigureMap(blockOf(type, block)),
-  edit: (type, map, block) => writeFigure(map, blockOf(type, block)),
+  // The editor edits the block as held, every entry, so a removal of any
+  // goes (a pie's extra series, a graph row naming a gone point).
+  edit: (type, map, block) =>
+    writeFigure(map, blockOf(type, block), heldBlock(map, figureType(type))),
   read: (type, map) => heldBlock(map, figureType(type)),
 });

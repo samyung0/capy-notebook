@@ -17,7 +17,7 @@ import {
 } from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
 import {
-  reloadDeleted,
+  discardDeleted,
   showDeletedDrafts,
 } from '@/features/collaboration/lostEdits';
 import { markItemWorking } from '@/features/collaboration/roomRefusals';
@@ -408,7 +408,7 @@ export function useSourceSession(
     const controller = new AbortController();
     let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
-    // What its deleted strip shows, for the page's Reload (Q39).
+    // What its deleted strip shows, for the page's Discard (Q39).
     let shownDeleted: (() => void) | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let goOffline = () => {};
@@ -711,13 +711,13 @@ export function useSourceSession(
       ) => {
         if (disposed) return;
         // Deleted (Q39): its unsent edits stay, written whole so they draw
-        // alone, shown read-only under the deleted strip until its Reload
+        // alone, shown read-only under the deleted strip until its Discard
         // deletes the rows the document shows and loads the page again.
         if (deleted) {
           void recorder?.snapshot();
           if (doc) shownDeleted = showDeletedDrafts(draftKey, { doc });
           discardHandler.current = async () =>
-            reloadDeleted({ file: true, id: fileId, keys: [draftKey] });
+            discardDeleted({ file: true, id: fileId, keys: [draftKey] });
         }
         // An account lock keeps them (refusalDropsDrafts), and so does the
         // service's reason alone, for the file's read or the next page load

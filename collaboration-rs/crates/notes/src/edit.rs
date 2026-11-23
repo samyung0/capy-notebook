@@ -138,10 +138,16 @@ pub struct Relocation {
 }
 
 /// What a material edit reports beyond its change: the inserts that landed
-/// away from a gone anchor.
+/// away from a gone anchor, and the blocks replacements rewrite.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct EditOutcome {
     pub relocated: Vec<Relocation>,
+    /// A replacement's rewrite of the block it replaced (its first block of
+    /// that type, `keep_caption`'s pairing) by its new id: the replaced
+    /// block's id, so a writer's caps compare it with what that block held
+    /// (`material::check_written`).
+    #[serde(skip)]
+    pub rewrites: HashMap<String, String>,
 }
 
 /// A media block: an uploaded file ([crate::material::MEDIA_TYPES]) or an
@@ -626,16 +632,18 @@ pub fn apply_material_commands(
     run_commands(&mut editor, commands, &mut run)?;
     Ok(EditOutcome {
         relocated: run.relocated,
+        rewrites: run.rewrites,
     })
 }
 
 /// What a call's commands leave behind: the inserts that landed away from a
-/// gone anchor, and the blocks the call removed (by id: the ids that stood
-/// before each).
+/// gone anchor, the blocks the call removed (by id: the ids that stood
+/// before each) and the replacements' rewrites ([EditOutcome::rewrites]).
 #[derive(Default)]
 struct Run {
     relocated: Vec<Relocation>,
     removed: HashMap<String, Vec<String>>,
+    rewrites: HashMap<String, String>,
 }
 
 fn run_commands(
@@ -667,7 +675,11 @@ fn run_command(
     command: &DocumentCommand,
     run: &mut Run,
 ) -> Result<(), EditError> {
-    let Run { relocated, removed } = run;
+    let Run {
+        relocated,
+        removed,
+        rewrites,
+    } = run;
     match command {
         DocumentCommand::ReplaceText {
             block_id,
@@ -813,6 +825,11 @@ fn run_command(
                 .find(|node| node.get("type") == block.get("type"))
             {
                 keep_caption(&block, rewrite);
+                // Chained replacements trace back to the block first held.
+                let held = rewrites
+                    .remove(block_id)
+                    .unwrap_or_else(|| block_id.clone());
+                rewrites.insert(stable_id(rewrite), held);
             }
             let mut before: Vec<String> = editor.root.children[..index]
                 .iter()

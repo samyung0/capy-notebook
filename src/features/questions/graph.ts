@@ -1,4 +1,5 @@
 import * as limits from '@/api/limits.generated';
+import { mergedCap } from '@/api/mergedCap';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 import type { GraphBlock } from './types';
@@ -26,9 +27,15 @@ const issueMessages = {
   points: m.question_ui_select_different_points,
 } satisfies Record<GraphElementsIssue, () => string>;
 
-/** The graph dialog's check, in its own words: bounds and size, the element
- * cap, then the checks every surface runs (`graphElementSchema` on each
- * element, `graphElementsIssue` across them). */
+/** Whether a graph's tools and rows add no more: at the element cap, or past it
+ * where two adds at the same moment merged past it (Epo 2026-11-22). */
+export const graphFull = (count: number) =>
+  count >= limits.QUESTION_GRAPH_ELEMENTS_MAX;
+
+/** The graph dialog's check, in its own words: bounds and size, at most twice
+ * the element cap (what two people's adds at once may leave, which every
+ * reader keeps, Epo 2026-11-22), then the checks every surface runs
+ * (`graphElementSchema` on each element, `graphElementsIssue` across them). */
 export function validateGraphRecipe(graph: GraphBlock): void {
   const [left, top, right, bottom] = graph.board.bbox;
   if (
@@ -46,12 +53,9 @@ export function validateGraphRecipe(graph: GraphBlock): void {
     throw new GraphError(
       m.question_ui_enter_valid_graph_bounds_and_dimensions()
     );
-  if (graph.elements.length > limits.QUESTION_GRAPH_ELEMENTS_MAX)
-    throw new GraphError(
-      m.question_ui_graph_elements_max({
-        max: limits.QUESTION_GRAPH_ELEMENTS_MAX,
-      })
-    );
+  const most = mergedCap(limits.QUESTION_GRAPH_ELEMENTS_MAX);
+  if (graph.elements.length > most)
+    throw new GraphError(m.question_ui_graph_elements_max({ max: most }));
   for (const element of graph.elements) {
     const parsed = graphElementSchema.safeParse(element);
     if (parsed.success) continue;

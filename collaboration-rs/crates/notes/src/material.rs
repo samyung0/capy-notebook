@@ -15,6 +15,7 @@ use crate::catalog::{
     HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN, MERMAID_SOURCE_MAX,
     TABLE_VIEW_MAX_COUNT,
 };
+use crate::limits::merged_cap;
 use crate::questions::{self, Policy, js_trim};
 
 pub const DEPTH_CEILING: usize = 1024;
@@ -194,16 +195,16 @@ fn validate_flashcard(node: &Node) -> Check {
         return fail("flashcard children must be front then back");
     }
     // Go's limits and image shape (validateFlashcard): a set Go cannot
-    // project breaks the material for everyone.
-    if text_chars(cards[0]) > CARD_FRONT_MAX {
+    // project breaks the material for everyone. Two people typing in one face
+    // at once may pass its cap, up to twice it (Epo 2026-11-22).
+    let (front, back) = (merged_cap(CARD_FRONT_MAX), merged_cap(CARD_BACK_MAX));
+    if text_chars(cards[0]) > front {
         return fail(format!(
-            "a flashcard front holds at most {CARD_FRONT_MAX} characters"
+            "a flashcard front holds at most {front} characters"
         ));
     }
-    if text_chars(cards[1]) > CARD_BACK_MAX {
-        return fail(format!(
-            "a flashcard back holds at most {CARD_BACK_MAX} characters"
-        ));
+    if text_chars(cards[1]) > back {
+        return fail(format!("a flashcard back holds at most {back} characters"));
     }
     if let Some(image) = node.get("image") {
         let valid = image.as_object().is_some_and(|image| {
@@ -252,11 +253,11 @@ fn validate_diagram(node: &Node) -> Check {
     let Some(source) = node.get("source").and_then(Value::as_str) else {
         return fail("source must be a string");
     };
-    // UTF-16 units, as the browser counts it (Epo 2026-10-22).
-    if crate::plate::utf16_len(source) as usize > MERMAID_SOURCE_MAX {
-        return fail(format!(
-            "diagram source is over {MERMAID_SOURCE_MAX} characters"
-        ));
+    // UTF-16 units, as the browser counts it (Epo 2026-10-22), up to twice
+    // the cap two people typing at once may pass (Epo 2026-11-22).
+    let max = merged_cap(MERMAID_SOURCE_MAX);
+    if crate::plate::utf16_len(source) as usize > max {
+        return fail(format!("diagram source is over {max} characters"));
     }
     validate_width(node)?;
     let list = children(node);
@@ -701,6 +702,173 @@ pub fn assert_canonical(value: &[Value], kind: &str) -> Check {
     assert_canonical_with(value, kind, &Policy::quiz())
 }
 
+/// One count or text length of a document a merge may take past its cap: its
+/// place (a block id and field), its value, its cap and how a refusal names it.
+struct Measure {
+    /// The block (or card) it belongs to: none for the document's counts.
+    block: String,
+    field: String,
+    value: usize,
+    cap: usize,
+    what: &'static str,
+}
+
+/// The [Measure]s of a document's value: its interactive blocks and table
+/// views, each table view's lists, each Mermaid source, each figure's lists
+/// and each flashcard's faces.
+fn measures(value: &[Value]) -> Vec<Measure> {
+    let mut out = Vec::new();
+    let mut count = |block: &str, field: String, value: usize, cap: usize, what: &'static str| {
+        out.push(Measure {
+            block: block.to_owned(),
+            field,
+            value,
+            cap,
+            what,
+        });
+    };
+    let length = |value: Option<&Value>| value.and_then(Value::as_array).map_or(0, Vec::len);
+    let (mut embeds, mut table_views) = (0, 0);
+    let mut stack: Vec<&Node> = value.iter().filter_map(Value::as_object).collect();
+    while let Some(node) = stack.pop() {
+        let id = node.get("id").and_then(Value::as_str).unwrap_or_default();
+        let block = node.get("block");
+        let field = |key: &str| block.and_then(|block| block.get(key));
+        match node.get("type").and_then(Value::as_str).unwrap_or_default() {
+            HTML_EMBED_TYPE => embeds += 1,
+            crate::table_view::TYPE => {
+                table_views += 1;
+                for (key, cap, what) in [
+                    (
+                        "columns",
+                        catalog::TABLE_VIEW_COLUMNS_MAX,
+                        "table view columns",
+                    ),
+                    ("rows", catalog::TABLE_VIEW_ROWS_MAX, "table view rows"),
+                    (
+                        "views",
+                        catalog::TABLE_VIEW_VIEWS_MAX,
+                        "views in a table view",
+                    ),
+                ] {
+                    count(id, key.into(), length(field(key)), cap, what);
+                }
+                for column in field("columns")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let column_id = column.get("id").and_then(Value::as_str).unwrap_or_default();
+                    count(
+                        id,
+                        format!("{column_id}/options"),
+                        length(column.get("options")),
+                        catalog::TABLE_VIEW_OPTIONS_MAX,
+                        "column options",
+                    );
+                }
+            }
+            "mermaid" => count(
+                id,
+                "source".into(),
+                node.get("source")
+                    .and_then(Value::as_str)
+                    .map_or(0, |source| crate::plate::utf16_len(source) as usize),
+                MERMAID_SOURCE_MAX,
+                "diagram source characters",
+            ),
+            "chart" => {
+                count(
+                    id,
+                    "series".into(),
+                    length(field("series")),
+                    catalog::QUESTION_CHART_SERIES_MAX,
+                    "chart series",
+                );
+                count(
+                    id,
+                    "labels".into(),
+                    length(field("labels")),
+                    catalog::QUESTION_CHART_LABELS_MAX,
+                    "chart labels",
+                );
+            }
+            "graph" => count(
+                id,
+                "elements".into(),
+                length(field("elements")),
+                catalog::QUESTION_GRAPH_ELEMENTS_MAX,
+                "graph elements",
+            ),
+            "flashcard" => {
+                let faces = children(node);
+                for (face, cap, what) in [
+                    (0, CARD_FRONT_MAX, "flashcard front characters"),
+                    (1, CARD_BACK_MAX, "flashcard back characters"),
+                ] {
+                    if let Some(face) = faces.get(face) {
+                        count(id, face_at(face).into(), text_chars(face), cap, what);
+                    }
+                }
+            }
+            _ => {}
+        }
+        stack.extend(children(node));
+    }
+    count(
+        "",
+        "embeds".into(),
+        embeds,
+        HTML_EMBED_MAX_COUNT,
+        "interactive blocks",
+    );
+    count(
+        "",
+        "table views".into(),
+        table_views,
+        TABLE_VIEW_MAX_COUNT,
+        "table views",
+    );
+    out
+}
+
+/// A flashcard face's place on its card.
+fn face_at(face: &Node) -> &str {
+    face.get("type").and_then(Value::as_str).unwrap_or_default()
+}
+
+/// A server writer's edit (an agent's, the content save API) against the
+/// document it changed (`before`): no count or text a merge may take past its
+/// cap grows past it, as an editor stops there (Epo 2026-11-22, "Yes, A
+/// everywhere"); one a merge already took past it may stay or shrink.
+/// `rewrites`: a replacement block's id to the block it rewrites
+/// ([crate::edit::EditOutcome::rewrites]), compared with what that one held.
+/// [assert_canonical] holds them to twice their caps.
+pub fn check_written(
+    before: &[Value],
+    after: &[Value],
+    rewrites: &std::collections::HashMap<String, String>,
+) -> Check {
+    let held: std::collections::HashMap<(String, String), usize> = measures(before)
+        .into_iter()
+        .map(|measure| ((measure.block, measure.field), measure.value))
+        .collect();
+    for measure in measures(after) {
+        let block = rewrites.get(&measure.block).unwrap_or(&measure.block);
+        let was = held
+            .get(&(block.clone(), measure.field.clone()))
+            .copied()
+            .unwrap_or(0);
+        if measure.value > measure.cap && measure.value > was {
+            return fail(format!(
+                "{} {} over {}",
+                measure.value, measure.what, measure.cap
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// [assert_canonical] with the quiz figure host given.
 pub fn assert_canonical_with(value: &[Value], kind: &str, policy: &Policy) -> Check {
     if value.is_empty() {
@@ -720,17 +888,15 @@ pub fn assert_canonical_with(value: &[Value], kind: &str, policy: &Policy) -> Ch
             .filter(|n| n.get("type").and_then(Value::as_str) == Some(kind))
             .count()
     };
-    let embeds = count(HTML_EMBED_TYPE);
-    if embeds > HTML_EMBED_MAX_COUNT {
-        return fail(format!(
-            "{embeds} interactive blocks over {HTML_EMBED_MAX_COUNT}"
-        ));
+    // Two people inserting at once may pass a count's cap, up to twice it.
+    let (embeds, most) = (count(HTML_EMBED_TYPE), merged_cap(HTML_EMBED_MAX_COUNT));
+    if embeds > most {
+        return fail(format!("{embeds} interactive blocks over {most}"));
     }
     let table_views = count(crate::table_view::TYPE);
-    if table_views > TABLE_VIEW_MAX_COUNT {
-        return fail(format!(
-            "{table_views} table views over {TABLE_VIEW_MAX_COUNT}"
-        ));
+    let most = merged_cap(TABLE_VIEW_MAX_COUNT);
+    if table_views > most {
+        return fail(format!("{table_views} table views over {most}"));
     }
 
     let mut found: Vec<&Map<String, Value>> = Vec::new();

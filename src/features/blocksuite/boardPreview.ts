@@ -1,5 +1,9 @@
 import { drawGraph } from '@/features/graph/draw';
-import { type ElementEntry, readElements } from '@/features/graph/keyed';
+import {
+  type ElementEntry,
+  type Keyed,
+  readElements,
+} from '@/features/graph/keyed';
 import type { GraphElement } from '@/features/graph/model';
 import { EXPORT_PAPER } from '@/features/graph/paper';
 import { canvasMeasure, SvgRecorder } from '@/features/graph/svg';
@@ -10,10 +14,11 @@ import {
   BAR_SHARE,
   barPlot,
   CARD_PADS,
-  type ChartData,
+  type ChartBar,
   filledSlices,
   INK,
   onScreen,
+  type PieSpoke,
   pieCircle,
 } from './boardData';
 import {
@@ -23,12 +28,8 @@ import {
   unite,
   type Vec,
 } from './boardGeometry';
-import {
-  type BoardKind,
-  BoardLoadError,
-  checkSavedBoard,
-  type Fields,
-} from './boardLoad';
+import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import { type BoardKind, type Fields, isPlace } from './boardRules';
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
@@ -66,7 +67,9 @@ export function drawBoardPreview(
         (block['sys:flavour'] === 'affine:note' &&
           block['prop:displayMode'] !== 'doc') ||
         block['sys:flavour'] === MATERIAL_CARD ||
-        (block['sys:flavour'] === 'affine:image' && isOnCanvas(blocks, id))
+        (block['sys:flavour'] === 'affine:image' &&
+          isOnCanvas(blocks, id) &&
+          isPlace(block['prop:xywh']))
     ),
   ];
   const boxById = new Map(
@@ -202,7 +205,7 @@ function drawItem(
     case 'plane':
       return drawPlane(box, fields, pen, n);
     case 'chart':
-      return drawChart(box, fields as unknown as ChartData, pen);
+      return drawChart(box, fields, pen);
     case 'formula':
       return drawFormula(box, String(fields.latex ?? ''));
     case 'affine:note':
@@ -366,6 +369,11 @@ function endPoint(end: unknown, boxById: Map<string, Box>): Vec | null {
   return position ? [position[0], position[1]] : null;
 }
 
+/** A keyed list as checked data holds it (a plane's elements, a chart's bars and
+ * lines), in order. */
+const listOf = <E extends Keyed>(value: unknown) =>
+  readElements(Object.entries(value as Record<string, ElementEntry<E>>));
+
 /** The card as the graph engine draws it on the light export paper (one renderer for
  * every graph, Epo 2026-11-16), at no less than half the card's own size so its marks
  * keep a pixel. No labels or formulas: the preview can't lay a formula out, and better
@@ -373,11 +381,9 @@ function endPoint(end: unknown, boxById: Map<string, Box>): Vec | null {
 function drawPlane(box: Box, fields: Fields, pen: Pen, n: number) {
   const { h, w, x, y } = box;
   const k = Math.max(1 / pen.pixel, 0.5);
-  const elements = readElements(
-    Object.entries(
-      fields.elements as Record<string, ElementEntry<GraphElement>>
-    )
-  ).filter(({ type }) => type !== 'text' && type !== 'formula');
+  const elements = listOf<GraphElement>(fields.elements).filter(
+    ({ type }) => type !== 'text' && type !== 'formula'
+  );
   const recorder = new SvgRecorder(w * k, h * k, canvasMeasure, `p${n}`);
   const view: View = {
     left: Number(fields.x0),
@@ -404,30 +410,29 @@ function drawPlane(box: Box, fields: Fields, pen: Pen, n: number) {
 }
 
 /** Bars and the axes, or the circle and its spokes. */
-function drawChart(box: Box, chart: ChartData, pen: Pen) {
+function drawChart(box: Box, fields: Fields, pen: Pen) {
   const ink = Math.max(2, pen.pixel);
   let out = rect(box, '#fff', '#d9d9d6', Math.max(1, pen.pixel));
-  if (chart.kind === 'bar') {
-    const slots = Math.max(chart.bars.length, 1);
+  if (fields.kind === 'bar') {
+    const bars = listOf<ChartBar>(fields.bars);
+    const axisMax = Number(fields.axisMax);
+    const slots = Math.max(bars.length, 1);
     const { base, height, left, slotW, top, width } = barPlot(
       box,
       CARD_PADS.bar,
       slots
     );
-    for (const [i, bar] of chart.bars.entries()) {
+    for (const [i, bar] of bars.entries()) {
       const w = slotW * BAR_SHARE;
       const x = left + slotW * i + (slotW - w) / 2;
-      const y =
-        base - (height * Math.min(bar.value, chart.axisMax)) / chart.axisMax;
+      const y = base - (height * Math.min(bar.value, axisMax)) / axisMax;
       out += rect({ h: base - y, w, x, y }, colour(bar.fill, 'none'), INK, ink);
     }
     out += `<path d="M${num(left)} ${num(top)}V${num(base)}H${num(left + width)}" stroke="#6f6f6c" stroke-width="${num(Math.max(1.5, pen.pixel))}"/>`;
   } else {
+    const spokes = listOf<PieSpoke>(fields.spokes);
     const { cx, cy, r } = pieCircle(box, CARD_PADS.pie);
-    for (const { fill, from, to } of filledSlices({
-      fills: chart.fills ?? [],
-      spokes: chart.spokes,
-    })) {
+    for (const { fill, from, to } of filledSlices(spokes)) {
       const paint = colour(fill, 'none');
       if (to - from >= 360) {
         out += `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(r)}" fill="${paint}"/>`;
@@ -437,15 +442,15 @@ function drawChart(box: Box, chart: ChartData, pen: Pen) {
       const [x1, y1] = onScreen(cx, cy, r, to);
       out += `<path d="M${num(cx)} ${num(cy)}L${num(x0)} ${num(y0)}A${num(r)} ${num(r)} 0 ${to - from > 180 ? 1 : 0} 1 ${num(x1)} ${num(y1)}Z" fill="${paint}"/>`;
     }
-    const spokes = chart.spokes
-      .map((spoke) => {
-        const [sx, sy] = onScreen(cx, cy, r, spoke);
+    const lines = spokes
+      .map(({ angle }) => {
+        const [sx, sy] = onScreen(cx, cy, r, angle);
         return `M${num(cx)} ${num(cy)}L${num(sx)} ${num(sy)}`;
       })
       .join('');
     out += `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(r)}" stroke="${INK}" stroke-width="${num(ink)}"/>`;
-    if (spokes)
-      out += `<path d="${spokes}" stroke="${INK}" stroke-width="${num(ink)}"/>`;
+    if (lines)
+      out += `<path d="${lines}" stroke="${INK}" stroke-width="${num(ink)}"/>`;
   }
   return out;
 }

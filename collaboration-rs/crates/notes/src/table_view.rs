@@ -4,7 +4,9 @@
 //! `materialdoc.validateTableView` with its messages, the browser's
 //! `isTableViewBlock`), so what a merge leaves (a cell of a deleted column, a
 //! value that no longer fits its column, a sort naming a gone column) passes
-//! and readers draw it as empty ([text], the index text).
+//! and readers draw it as empty ([text], the index text). Its lists hold up to
+//! twice their caps, as two people's adds at once merge past them (Epo
+//! 2026-11-22); the editor's adds stop at the caps.
 
 use std::collections::HashSet;
 
@@ -14,6 +16,7 @@ use crate::catalog::{
     TABLE_VIEW_CELL_MAX, TABLE_VIEW_COLUMNS_MAX, TABLE_VIEW_ID_MAX, TABLE_VIEW_NAME_MAX,
     TABLE_VIEW_NUMBER_MAX, TABLE_VIEW_OPTIONS_MAX, TABLE_VIEW_ROWS_MAX, TABLE_VIEW_VIEWS_MAX,
 };
+use crate::limits::merged_cap;
 use crate::plate::utf16_len;
 use crate::questions::js_trim;
 
@@ -108,7 +111,12 @@ pub fn block(block: &Value) -> Check {
             "table view title must be a string of at most {TABLE_VIEW_NAME_MAX} characters"
         ));
     }
-    let columns = list("column", block.get("columns"), 1, TABLE_VIEW_COLUMNS_MAX)?;
+    let columns = list(
+        "column",
+        block.get("columns"),
+        1,
+        merged_cap(TABLE_VIEW_COLUMNS_MAX),
+    )?;
     for column in &columns {
         validate_column(column)?;
     }
@@ -119,12 +127,17 @@ pub fn block(block: &Value) -> Check {
     if titles != 1 {
         return Err("table view needs exactly one title column".into());
     }
-    for row in list("row", block.get("rows"), 0, TABLE_VIEW_ROWS_MAX)? {
+    for row in list("row", block.get("rows"), 0, merged_cap(TABLE_VIEW_ROWS_MAX))? {
         validate_row(row)?;
     }
     // No view is a block too: two writers deleting the last two views at
     // once must not leave one the room refuses (Revision 2).
-    for view in list("view", block.get("views"), 0, TABLE_VIEW_VIEWS_MAX)? {
+    for view in list(
+        "view",
+        block.get("views"),
+        0,
+        merged_cap(TABLE_VIEW_VIEWS_MAX),
+    )? {
         validate_view(view)?;
     }
     Ok(())
@@ -154,7 +167,12 @@ fn validate_column(column: &Node) -> Check {
         }
         return Ok(());
     }
-    for option in list("option", column.get("options"), 0, TABLE_VIEW_OPTIONS_MAX)? {
+    for option in list(
+        "option",
+        column.get("options"),
+        0,
+        merged_cap(TABLE_VIEW_OPTIONS_MAX),
+    )? {
         keys("option", option, &["id", "name", "color"])?;
         if !name_ok(option.get("name")) {
             return Err(format!(
@@ -173,12 +191,12 @@ fn validate_column(column: &Node) -> Check {
 }
 
 /// A row is flat (Revision 2): its id beside one key a cell, so two writers
-/// editing different cells of a row merge key by key.
+/// editing different cells of a row merge key by key; a cell per column, the
+/// columns up to twice their cap.
 fn validate_row(row: &Node) -> Check {
-    if row.len() > TABLE_VIEW_COLUMNS_MAX + 1 {
-        return Err(format!(
-            "a table view row holds at most {TABLE_VIEW_COLUMNS_MAX} cells"
-        ));
+    let cells = merged_cap(TABLE_VIEW_COLUMNS_MAX);
+    if row.len() > cells + 1 {
+        return Err(format!("a table view row holds at most {cells} cells"));
     }
     for (key, value) in row.iter().filter(|(key, _)| *key != "id") {
         if !id_ok(Some(&Value::String(key.clone()))) {

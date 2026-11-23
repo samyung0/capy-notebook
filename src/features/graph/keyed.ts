@@ -1,26 +1,30 @@
-/* A graph's elements held one entry per element id (Epo 2026-11-16, D9/D10):
- * each value one plain element with an order key, so two editors changing
- * different elements both keep their work when the entries merge key by key.
- * Reading sorts by order key and breaks a tie (two editors adding at once) by
- * id. A Y.Map fits `EntryMap`, so this module needs no Yjs. */
+/* A list held one entry per item id (Epo 2026-11-16, D9/D10): each value one
+ * plain item with an order key, so two editors changing different items both
+ * keep their work when the entries merge key by key. A graph's elements, in
+ * quiz rooms, note figures and the canvas plane, and a canvas chart's bars,
+ * pie labels and pie lines (Epo 2026-11-22) are held so. Reading sorts by
+ * order key and breaks a tie (two editors adding at once) by id. A Y.Map fits
+ * `EntryMap`, so this module needs no Yjs. */
 import { keyBetween, risingOrders } from '@/lib/orderKey';
 import { sameJson } from '@/lib/sameJson';
-import type { GraphElement } from './model';
 
-export type ElementEntry<E extends GraphElement = GraphElement> = {
+/** What a keyed list holds: anything with an id. */
+export type Keyed = { id: string };
+
+export type ElementEntry<E extends Keyed = Keyed> = {
   element: E;
   order: string;
 };
 
 /** The keyed map a writer takes: a Y.Map, or a plain Map in tests. */
-export type EntryMap<E extends GraphElement> = {
+export type EntryMap<E extends Keyed> = {
   delete(key: string): void;
   entries(): IterableIterator<[string, unknown]>;
   set(key: string, value: ElementEntry<E>): unknown;
 };
 
-/** Whether a held value is an element entry for `id` (a malformed one reads
- * as missing). */
+/** Whether a held value is an entry for `id` (a malformed one reads as
+ * missing). */
 export const isElementEntry = (
   value: unknown,
   id: string
@@ -40,16 +44,16 @@ const before = (a: [string, ElementEntry], b: [string, ElementEntry]) =>
         ? -1
         : 1;
 
-/** The elements in order. Each is the stored value itself, so an unchanged one
+/** The items in order. Each is the stored value itself, so an unchanged one
  * stays the same object from one read to the next. */
-export function readElements<E extends GraphElement>(
+export function readElements<E extends Keyed>(
   entries: Iterable<[string, ElementEntry<E>]>
 ): E[] {
   return [...entries].sort(before).map(([, entry]) => entry.element);
 }
 
-/** Entries for a list, in its order: a new graph's first value. */
-export function keyedElements<E extends GraphElement>(list: E[]) {
+/** Entries for a list, in its order: a new list's first value. */
+export function keyedElements<E extends Keyed>(list: E[]) {
   let order: string | null = null;
   const out: Record<string, ElementEntry<E>> = {};
   for (const element of list) {
@@ -60,22 +64,27 @@ export function keyedElements<E extends GraphElement>(list: E[]) {
 }
 
 /** Makes `map` hold `next`, in its order, touching only what changed (Epo
- * 2026-11-16, D10: the plane's, a quiz's and a note's one writer). An element
- * alike its stored one, the same object or equal JSON (a note's Slate value
- * hands fresh objects), keeps its stored object; a changed one is replaced;
- * order keys come from `risingOrders`, so every held key that can stay does
- * and a moved or new element takes a key between its neighbours; a gone one
- * is deleted. Each entry is written at most once. */
-export function writeElements<E extends GraphElement>(
+ * 2026-11-16, D10: the one writer of every keyed list). An item alike its
+ * stored one, the same object or equal JSON (a note's Slate value hands fresh
+ * objects), keeps its stored object; a changed one is replaced; order keys
+ * come from `risingOrders`, so every held key that can stay does (ties
+ * compared by id, as readers sort: a tie two editors' adds left stays, since
+ * re-keying would rewrite the whole entry over a peer's edit) and a moved or
+ * new item takes a key between its neighbours (one between tied neighbours
+ * re-keys the later tied neighbours); a gone one is deleted, of those in
+ * `seen` alone when given (the ones the writer's copy was read from: an entry
+ * it never saw stays, Epo 2026-11-22). Each entry is written at most once. */
+export function writeElements<E extends Keyed>(
   map: EntryMap<E>,
-  next: E[]
+  next: E[],
+  seen?: ReadonlySet<string>
 ) {
   const held = [...map.entries()];
   const stored = new Map<string, ElementEntry<E>>();
   for (const [id, value] of held)
     if (isElementEntry(value, id)) stored.set(id, value as ElementEntry<E>);
   const orders = risingOrders(
-    next.map((element) => stored.get(element.id)?.order ?? '')
+    next.map(({ id }) => ({ id, order: stored.get(id)?.order ?? '' }))
   );
   next.forEach((element, i) => {
     const entry = stored.get(element.id);
@@ -89,5 +98,6 @@ export function writeElements<E extends GraphElement>(
     });
   });
   const kept = new Set(next.map((element) => element.id));
-  for (const [id] of held) if (!kept.has(id)) map.delete(id);
+  for (const [id] of held)
+    if (!(kept.has(id) || (seen && !seen.has(id)))) map.delete(id);
 }

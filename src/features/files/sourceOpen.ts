@@ -8,9 +8,9 @@ import { warmSourceSocket } from './sourceProvider';
 export type SourceOpenMode = 'view' | 'edit';
 
 /**
- * What opening a source reads from the network, started as one unit: the
- * session (View: the lock-free read; Edit: the editing session and its room
- * token), then the base bytes as soon as the session names them.
+ * What opening a source reads from the network for one mode: the session
+ * (View: the lock-free read; Edit: the editing session and its room token),
+ * then the base bytes as soon as the session names them.
  */
 export interface SourceOpen {
   /** The base bytes; rejects with the download's failure. */
@@ -20,12 +20,17 @@ export interface SourceOpen {
   session: SourceSession;
 }
 
-/** An open the route started for a view or editor that has not taken it. */
-interface Pending {
+/** One mode's part of an open; aborting `controller` stops its requests. */
+interface Part {
   controller: AbortController;
-  fileId: string;
-  mode: SourceOpenMode;
   open: Promise<SourceOpen>;
+}
+
+/** An open the route started that a view or editor has not taken: View for
+ * everyone, Edit beside it for an editor, each part taken on its own. */
+interface Pending {
+  fileId: string;
+  parts: Partial<Record<SourceOpenMode, Part>>;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -36,13 +41,18 @@ let pending: Pending | null = null;
 const held = new Map<string, number>();
 
 /** A view shows this file until the returned release: the route starts no
- * open for it meanwhile (its loader runs again on every search change). */
+ * open for it meanwhile (its loader runs again on every search change).
+ * Leaving the file before Edit took its part drops that part, and with it
+ * the download it shared with the view (Q818 A). */
 export function holdSource(fileId: string) {
   held.set(fileId, (held.get(fileId) ?? 0) + 1);
   return () => {
     const count = (held.get(fileId) ?? 1) - 1;
     if (count > 0) held.set(fileId, count);
-    else held.delete(fileId);
+    else {
+      held.delete(fileId);
+      if (pending?.fileId === fileId) dropPending();
+    }
   };
 }
 
@@ -65,49 +75,78 @@ async function sourceBase(
   return bytes;
 }
 
-function startOpen(
-  fileId: string,
-  mode: SourceOpenMode,
-  signal: AbortSignal
-): Promise<SourceOpen> {
+/**
+ * Starts the parts of one open together (Q608 A). A base one part's session
+ * names is downloaded once for every part naming it, and that download stops
+ * only once every part has stopped.
+ */
+function startOpen(fileId: string, modes: readonly SourceOpenMode[]) {
   clearOfficeMarks();
-  officeMark('open', { mode });
-  const session = api
-    .get<SourceSession>(
-      `/files/${fileId}/source-session${mode === 'view' ? '?view=true' : ''}`,
-      { signal }
-    )
-    .then((value) => {
-      officeMark('session', { mode });
-      // A newer epoch retires the file's agent Undo payloads (Q122).
-      retireUndoPayloads(value.fileId, value.epoch);
-      return value;
+  officeMark('open', { modes: modes.join(',') });
+  const download = new AbortController();
+  const bases = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
+  let running = modes.length;
+  const parts: Partial<Record<SourceOpenMode, Part>> = {};
+  for (const mode of modes) {
+    const controller = new AbortController();
+    const { signal } = controller;
+    signal.addEventListener(
+      'abort',
+      () => {
+        running -= 1;
+        if (!running) download.abort();
+      },
+      { once: true }
+    );
+    const session = api
+      .get<SourceSession>(
+        `/files/${fileId}/source-session${mode === 'view' ? '?view=true' : ''}`,
+        { signal }
+      )
+      .then((value) => {
+        officeMark('session', { mode });
+        // A newer epoch retires the file's agent Undo payloads (Q122).
+        retireUndoPayloads(value.fileId, value.epoch);
+        return value;
+      });
+    const credentials =
+      mode === 'edit'
+        ? api
+            .post<SourceCollaborationToken>(
+              `/files/${fileId}/collaboration-token`,
+              {},
+              { signal }
+            )
+            .then((value) => {
+              officeMark('token');
+              sawRoom(value.room);
+              // The room joins on this socket when its editor takes the open.
+              warmSourceSocket(value.url);
+              return value;
+            })
+        : undefined;
+    // The download starts with the session, not after the token. A session
+    // naming no base hash shares nothing.
+    const base = session.then((value) => {
+      const key = value.baseSourceSHA256;
+      const started = key ? bases.get(key) : undefined;
+      if (started) return started;
+      const bytes = sourceBase(value, download.signal);
+      if (key) bases.set(key, bytes);
+      return bytes;
     });
-  const credentials =
-    mode === 'edit'
-      ? api
-          .post<SourceCollaborationToken>(
-            `/files/${fileId}/collaboration-token`,
-            {},
-            { signal }
-          )
-          .then((value) => {
-            officeMark('token');
-            sawRoom(value.room);
-            // The room joins on this socket when its editor takes the open.
-            warmSourceSocket(value.url);
-            return value;
-          })
-      : undefined;
-  // The download starts with the session, not after the token.
-  const base = session.then((value) => sourceBase(value, signal));
-  // A caller that stops before awaiting the bytes leaves them unhandled.
-  base.catch(() => {});
-  return Promise.all([session, credentials]).then(([value, token]) => ({
-    base,
-    credentials: token,
-    session: value,
-  }));
+    // A caller that stops before awaiting the bytes leaves them unhandled.
+    base.catch(() => {});
+    const open = Promise.all([session, credentials]).then(([value, token]) => ({
+      base,
+      credentials: token,
+      session: value,
+    }));
+    // So does a part nobody takes.
+    open.catch(() => {});
+    parts[mode] = { controller, open };
+  }
+  return parts;
 }
 
 function link(signal: AbortSignal | undefined, controller: AbortController) {
@@ -119,22 +158,18 @@ function link(signal: AbortSignal | undefined, controller: AbortController) {
 }
 
 /**
- * Starts opening a file the route knows is an Office file, for the view or
- * editor that will mount for it; one open waits at a time, so a quick switch
- * drops the earlier one (its download aborts), as does nobody taking it.
+ * Starts opening a file the route knows is an Office file: the View read for
+ * everyone and, for an editor, the edit session and room token beside it, for
+ * the view or editor that mounts to take. One open waits at a time, so a
+ * quick switch drops the earlier one (its download aborts), as does nobody
+ * taking it.
  */
-export function prefetchSourceOpen(fileId: string, mode: SourceOpenMode) {
-  if (held.has(fileId) || (pending?.fileId === fileId && pending.mode === mode))
-    return;
+export function prefetchSourceOpen(fileId: string, canEdit: boolean) {
+  if (held.has(fileId) || pending?.fileId === fileId) return;
   dropPending();
-  const controller = new AbortController();
-  const open = startOpen(fileId, mode, controller.signal);
-  open.catch(() => {});
   pending = {
-    controller,
     fileId,
-    mode,
-    open,
+    parts: startOpen(fileId, canEdit ? ['view', 'edit'] : ['view']),
     timer: setTimeout(dropPending, PENDING_MS),
   };
 }
@@ -142,7 +177,7 @@ export function prefetchSourceOpen(fileId: string, mode: SourceOpenMode) {
 function dropPending() {
   if (!pending) return;
   clearTimeout(pending.timer);
-  pending.controller.abort();
+  for (const part of Object.values(pending.parts)) part.controller.abort();
   pending = null;
 }
 
@@ -152,10 +187,11 @@ export function dropSourceOpens() {
   dropPending();
 }
 
-/** The open the route started for this file and mode, or a new one; aborting
- * `signal` stops it either way. One the route started for the file in the
- * other mode (it guessed Edit, the view opens in View) is dropped, so the
- * file never downloads twice in parallel. */
+/** The part the route started for this file and mode, or a new open;
+ * aborting `signal` stops it either way. A View take leaves the edit part
+ * for Edit pressed within the 30 s; an Edit take drops the View read made at
+ * open, so a later View (the room turning read-only, a reopen) reads the
+ * saved state afresh (Q818 A). */
 export function takeSourceOpen(
   fileId: string,
   mode: SourceOpenMode,
@@ -163,16 +199,21 @@ export function takeSourceOpen(
 ): Promise<SourceOpen> {
   const controller = new AbortController();
   link(signal, controller);
-  let open: Promise<SourceOpen>;
-  if (pending?.fileId === fileId && pending.mode !== mode) dropPending();
-  if (pending?.fileId === fileId && pending.mode === mode) {
-    const taken = pending;
-    clearTimeout(taken.timer);
-    pending = null;
-    link(controller.signal, taken.controller);
-    open = taken.open;
-  } else open = startOpen(fileId, mode, controller.signal);
+  let part: Part | undefined;
+  if (pending?.fileId === fileId) {
+    part = pending.parts[mode];
+    delete pending.parts[mode];
+    if (mode === 'edit' || !pending.parts.edit) dropPending();
+  }
+  part ??= startOpen(fileId, [mode])[mode]!;
+  link(controller.signal, part.controller);
   // A refused session or token stops the download it started.
-  open.catch(() => controller.abort());
-  return open;
+  part.open.catch(() => controller.abort());
+  return part.open;
+}
+
+/** A View read of its own, never a part the route started: Download saves
+ * the latest saved state (Epo 2026-10-27, Q818 A). */
+export function readSourceView(fileId: string): Promise<SourceOpen> {
+  return startOpen(fileId, ['view']).view!.open;
 }

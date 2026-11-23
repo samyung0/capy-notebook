@@ -1,8 +1,11 @@
 /// <reference lib="webworker" />
 
-import type { DisplayList } from '@betteroffice/docx/layout/render';
+import type { DisplayPage } from '@betteroffice/docx/layout/render';
 import {
   configureDefaultFonts,
+  type DocxPageSize,
+  type DocxViewerPages,
+  type DocxViewerSlicedFace,
   initWasm,
   openDocumentViewer,
 } from '@betteroffice/docx/viewer';
@@ -13,23 +16,44 @@ import {
   officeViewerFonts,
   onOfficeFontFailure,
   openFailure,
+  paintedFamilies,
   type SlicedOfficeFace,
   slicedOfficeFaces,
   usedOfficeFaces,
 } from './officeFonts';
 
-/** One layout per worker: pages, or with `reading` one column that wide. */
+/** Where the pages open: those it shows at the top go first. */
+export type DocxViewport = {
+  height: number;
+  width: number;
+  zoom: number | 'fit';
+};
+
+/** One layout per worker: pages, or with `reading` one column that wide.
+ * `whole` lays the whole body out before any page, for an open that waits
+ * for every page (a citation, a print). */
 type Request = {
   bytes: ArrayBuffer;
   reading: { padding: number; width: number } | null;
+  viewport: DocxViewport;
+  whole: boolean;
 };
-type Response =
+export type DocxViewerWorkerResponse =
   | {
-      displayList: DisplayList;
+      /** The faces these pages paint with that no batch before sent. */
       faces: OfficeFace[];
+      /** In order, each at its `pageIndex`: a page sent again replaces the
+       * one before. */
+      pages: DisplayPage[];
+      /** The widest page of the whole document, known before its pages are. */
+      width: number;
+      /** Sliced faces whose outlines (`bytes`) or painted families grew. */
+      sliced: (Omit<SlicedOfficeFace, 'bytes'> & { bytes?: ArrayBuffer })[];
+      type: 'pages';
+    }
+  | {
       /** Stage times (epoch ms) for the frame to mark. */
       marks: Record<string, number>;
-      sliced: SlicedOfficeFace[];
       type: 'ready';
     }
   | { message: string; type: 'error' };
@@ -48,48 +72,96 @@ const wasmStart = epochNow();
 const wasm = initWasm().then(epochNow);
 wasm.catch(() => {});
 
+/** How many pages the viewport shows at the top, plus one, from the sizes of
+ * the pages laid out so far and the widest page of the document. */
+function firstPages(
+  sizes: readonly DocxPageSize[],
+  width: number,
+  viewport: DocxViewport
+) {
+  const zoom =
+    viewport.zoom === 'fit'
+      ? Math.min(1, viewport.width / width)
+      : viewport.zoom;
+  let shown = 0;
+  for (let top = 0; shown < sizes.length && top < viewport.height; shown++)
+    top += sizes[shown].height * zoom;
+  return shown + 1;
+}
+
 self.onmessage = (event: MessageEvent<Request>) => {
-  const { bytes, reading } = event.data;
-  const openStart = epochNow();
+  const { bytes, reading, viewport, whole } = event.data;
+  const marks: Record<string, number> = { 'worker:open-start': epochNow() };
+  // What the batches so far sent: whole faces by family, weight and style,
+  // and each sliced face's painted families.
+  const sentFaces = new Set<string>();
+  const sliced = new Map<
+    string,
+    { family: string; sent: string; slices: DocxViewerSlicedFace['slices'] }
+  >();
+  const painted = new Set<string>();
+  const progressive = {
+    firstPages(sizes: readonly DocxPageSize[], width: number) {
+      // The layout of the first pages, or of every page when the body is
+      // laid out whole first.
+      marks['worker:first-layout-end'] = epochNow();
+      return firstPages(sizes, width, viewport);
+    },
+    onPages({ pages, slicedFaces, width }: DocxViewerPages) {
+      // A missing face would leave the fallback layout: fail instead.
+      if (fontFailure) throw fontFailure;
+      for (const family of paintedFamilies(pages)) painted.add(family);
+      const faces = usedOfficeFaces(pages).filter(({ face, family }) => {
+        const key = `${family}|${face.weight}|${face.style}`;
+        if (sentFaces.has(key)) return false;
+        sentFaces.add(key);
+        return true;
+      });
+      const grown = new Map(
+        slicedFaces.map((face) => [face.family, face.bytes])
+      );
+      for (const { family, slices } of slicedFaces)
+        if (!sliced.has(family))
+          sliced.set(family, { family, sent: '', slices });
+      const changed = slicedOfficeFaces([...sliced.values()], painted).flatMap(
+        ({ families, id }) => {
+          const entry = sliced.get(id)!;
+          const key = JSON.stringify(families);
+          if (!grown.has(id) && entry.sent === key) return [];
+          entry.sent = key;
+          return [{ bytes: grown.get(id), families, id }];
+        }
+      );
+      marks['worker:first-pages'] ??= epochNow();
+      self.postMessage(
+        {
+          faces,
+          pages,
+          sliced: changed,
+          type: 'pages',
+          width,
+        } satisfies DocxViewerWorkerResponse,
+        // Outlines come in a new buffer each time.
+        changed.flatMap(({ bytes }) => (bytes ? [bytes] : []))
+      );
+    },
+    whole,
+  };
   void openDocumentViewer(
     new Uint8Array(bytes),
-    reading ? { reading } : {}
+    reading ? { progressive, reading } : { progressive }
   ).then(
     async (document) => {
-      try {
-        // A missing face would leave the fallback layout: fail instead.
-        if (fontFailure) throw fontFailure;
-        const openEnd = epochNow();
-        const displayList = document.displayList();
-        const faces = usedOfficeFaces(displayList);
-        const sliced = slicedOfficeFaces(document.slicedFaces(), displayList);
-        post(
-          {
-            displayList,
-            faces,
-            marks: {
-              'wasm:docx-view:end': await wasm,
-              'wasm:docx-view:start': wasmStart,
-              'worker:display-list': epochNow(),
-              'worker:open-end': openEnd,
-              'worker:open-start': openStart,
-            },
-            sliced,
-            type: 'ready',
-          },
-          // One face's bytes can stand for two family names.
-          [
-            ...new Set([
-              ...faces.map((face) => face.bytes),
-              ...sliced.map((face) => face.bytes),
-            ]),
-          ]
-        );
-      } catch (value) {
-        post({ message: toError(value).message, type: 'error' });
-      } finally {
-        document.dispose();
-      }
+      document.dispose();
+      post({
+        marks: {
+          ...marks,
+          'wasm:docx-view:end': await wasm,
+          'wasm:docx-view:start': wasmStart,
+          'worker:open-end': epochNow(),
+        },
+        type: 'ready',
+      });
     },
     // A slice that fails fails the open, naming its file.
     (value: unknown) => {
@@ -98,10 +170,6 @@ self.onmessage = (event: MessageEvent<Request>) => {
   );
 };
 
-function post(message: Response, transfer: Transferable[] = []) {
-  self.postMessage(message, transfer);
-}
-
-function toError(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
+function post(message: DocxViewerWorkerResponse) {
+  self.postMessage(message);
 }

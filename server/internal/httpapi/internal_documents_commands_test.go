@@ -103,13 +103,15 @@ func TestADiagramTakesReplaceBlockOnly(t *testing.T) {
 
 // The agent's card commands refuse an over-long front or back with a clear
 // message before any document is built (security regression: a stored set
-// Go cannot project breaks the material for everyone).
+// Go cannot project breaks the material for everyone). A new card stops at
+// the caps; a replaced side at twice them, as a merge may leave the card past
+// a cap (the collaboration server compares it with what the card held).
 func TestCardCommandsRefuseOverLongText(t *testing.T) {
 	long := func(n int) string { return strings.Repeat("é", n+1) }
 	cases := []struct{ command, message string }{
 		{`{"type":"add_card","front":"` + long(materialdoc.MaxCardFrontRunes) + `","back":"b"}`, "add_card: a flashcard front holds at most 200 characters"},
 		{`{"type":"add_card","front":"f","back":"` + long(materialdoc.MaxCardBackRunes) + `"}`, "add_card: a flashcard back holds at most 1000 characters"},
-		{`{"type":"replace_card","card_id":"c1","back":"` + long(materialdoc.MaxCardBackRunes) + `","expected_back":"b"}`, "replace_card: a flashcard back holds at most 1000 characters"},
+		{`{"type":"replace_card","card_id":"c1","back":"` + long(2*materialdoc.MaxCardBackRunes) + `","expected_back":"b"}`, "replace_card: a flashcard back holds at most 2000 characters"},
 	}
 	for _, tc := range cases {
 		_, err := normalizeMaterialCommands("flashcards", []json.RawMessage{json.RawMessage(tc.command)}, nil)
@@ -122,6 +124,12 @@ func TestCardCommandsRefuseOverLongText(t *testing.T) {
 		`{"type":"add_card","front":"` + strings.Repeat("é", materialdoc.MaxCardFrontRunes) + `","back":"` + strings.Repeat("é", materialdoc.MaxCardBackRunes) + `"}`,
 	)}, nil); err != nil {
 		t.Fatalf("a card at the caps: %v", err)
+	}
+	// A merged 250-character front cut to 240.
+	if _, err := normalizeMaterialCommands("flashcards", []json.RawMessage{json.RawMessage(
+		`{"type":"replace_card","card_id":"c1","front":"` + strings.Repeat("é", 240) + `","expected_front":"` + strings.Repeat("é", 250) + `"}`,
+	)}, nil); err != nil {
+		t.Fatalf("a merged front cut back: %v", err)
 	}
 }
 

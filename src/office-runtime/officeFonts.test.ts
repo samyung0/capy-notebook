@@ -121,8 +121,6 @@ test('the viewer frame gets each sliced face under the families its pages paint 
   provider.resolve('MS Gothic', true, false);
   provider.resolveScriptFallback('cjk-jp', false, false);
   const index = 'NotoSansJP-Regular/slices.json';
-  const bytes = new ArrayBuffer(8);
-  const files = new Map([['NotoSansJP-Regular/c001.zst', new ArrayBuffer(2)]]);
   const displayList = {
     pages: [
       {
@@ -143,24 +141,21 @@ test('the viewer frame gets each sliced face under the families its pages paint 
   const sliced = slicedOfficeFaces(
     [
       {
-        bytes,
         family: 'BetterOffice Sliced 1.0',
-        files,
         slices: { ref: { index } } as DocxViewerSlicedFace['slices'],
       },
     ],
-    displayList
+    paintedFamilies(displayList)
   );
   // Noto Sans JP (the script fallback) paints nothing here, so it is left
-  // out. The decoded files stay in the worker: Edit opens in a frame of its
-  // own, which reads the slices from the HTTP cache.
+  // out.
   expect(sliced).toEqual([
     {
-      bytes,
       families: [
         { family: 'BetterOffice Sliced 1.0' },
         { family: 'MS Gothic', style: 'normal', weight: '400' },
       ],
+      id: 'BetterOffice Sliced 1.0',
     },
   ]);
 });
@@ -193,6 +188,7 @@ test("a layout's sliced faces are registered for it and deleted with it", async 
         { family: 'BetterOffice Sliced 1.0' },
         { family: 'MS Gothic', style: 'normal', weight: '400' },
       ],
+      id: 'BetterOffice Sliced 1.0',
     },
   ]);
   expect([...fonts].map((face) => (face as { family: string }).family)).toEqual(

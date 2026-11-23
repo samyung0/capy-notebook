@@ -41,10 +41,11 @@ import {
   modelMarked,
   questionMarks,
 } from '@/features/questions/types';
-import { quizBounds } from '@/features/questions/validation';
+import { quizCapsIssue, quizCounts } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { quizSampleUpload } from './drawing/DrawnSample';
 import {
+  editQuestion,
   figureRoom,
   insertQuestions,
   moveQuestion,
@@ -52,7 +53,6 @@ import {
   removeQuestion,
   seedQuiz,
   withEmptyKeys,
-  writeQuestion,
 } from './liveQuiz';
 import { useQuizQuestions, useQuizRooms } from './liveQuizRooms';
 import type { QuestionTopics } from './QuestionPane';
@@ -124,14 +124,20 @@ function QuizEditorBody({
   // A question just added, whose text opens in its editor.
   const [fresh, setFresh] = useState<string>();
   const open = (id: string) => pick.open(id);
+  // A write past the quiz's caps, read now, does not go and says so.
+  const write = (question: Question) => {
+    const issue = editQuestion(content, keys, question);
+    if (issue) userToast({ title: issue, variant: 'error' });
+    return !issue;
+  };
   // A new question goes right after `index`, as Google Forms adds one.
   const place = (question: Question, index: number) => {
-    writeQuestion(content, keys, question);
+    if (!write(question)) return;
     moveQuestion(content, question.id, index + 1);
     open(question.id);
   };
   // The copies go in where the dialog opened, read again now: someone else
-  // may have changed the quiz meanwhile. Past the quiz's bounds, none goes.
+  // may have changed the quiz meanwhile. Past the quiz's caps, none goes.
   // A new question after `index`, opened; it stays, as each + in Google Forms
   // adds a card (Epo 2026-11-15).
   const addQuestion = (index: number) => {
@@ -141,10 +147,12 @@ function QuizEditorBody({
   };
   const addFromBank = (copies: Question[]) => {
     const now = readQuestions(content, keys);
-    try {
-      quizBounds([...now, ...copies]);
-    } catch (error) {
-      userToast({ title: (error as Error).message, variant: 'error' });
+    const issue = quizCapsIssue(
+      quizCounts(now),
+      quizCounts([...now, ...copies])
+    );
+    if (issue) {
+      userToast({ title: issue, variant: 'error' });
       return;
     }
     const at = now.findIndex((question) => question.id === bank?.after);
@@ -210,7 +218,7 @@ function QuizEditorBody({
             topics={topics}
             uploadAsset={quizImageUpload(quizId)}
             uploadSample={quizSampleUpload(quizId)}
-            write={(next) => writeQuestion(content, keys, next)}
+            write={write}
           />
           {bank && (
             <BankQuestionsDialog

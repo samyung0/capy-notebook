@@ -10,8 +10,10 @@ import {
   frameCanEdit,
   frameRequestLimit,
   keepsFocus,
+  keepZoom,
   officeNotices,
   openRequestedPresenter,
+  renderLimit,
   reportOfficeFontFailure,
   viewCheckpoint,
 } from './useOfficeRuntime';
@@ -40,6 +42,25 @@ function element(
     tagName,
   } as unknown as Element;
 }
+
+// The zoom is kept while the file stays open (Epo 2026-10-06), across a room
+// swap's views too: the view on screen leaves it to the next one, which opens
+// at it; a view building hidden leaves nothing.
+describe("an Office frame's zoom", () => {
+  it('goes from the view on screen to the next view a swap opens', () => {
+    const swap = { building: false, zoom: { current: undefined } };
+    const shown = { current: undefined };
+    keepZoom(1.5, shown, swap);
+    expect(shown.current).toBe(1.5);
+    expect(swap.zoom.current).toBe(1.5);
+    const next = { current: swap.zoom.current };
+    keepZoom(1.5, next, { ...swap, building: true });
+    keepZoom(2, shown, swap);
+    keepZoom(1.25, next, { ...swap, building: true });
+    expect(swap.zoom.current).toBe(2);
+    expect(next.current).toBe(1.25);
+  });
+});
 
 describe('the focus a newly opened DOCX leaves alone', () => {
   it('is a field taking typing, also behind a shadow root', () => {
@@ -232,6 +253,26 @@ describe('the frame editing while the tab holds back', () => {
       expect(expire).toHaveBeenCalledTimes(1);
     } finally {
       setHeld(holder, false);
+      vi.useRealTimers();
+    }
+  });
+});
+
+// Q804 A: Print clicked while a DOCX view's pages still arrive waits for
+// them; its minute counts from `ready`.
+describe("a render's limit", () => {
+  it('starts when the waiting renders are started at ready', () => {
+    vi.useFakeTimers();
+    const expire = vi.fn();
+    const waiting = new Set<() => void>();
+    try {
+      renderLimit(expire, waiting);
+      vi.advanceTimersByTime(120_000);
+      expect(expire).not.toHaveBeenCalled();
+      for (const start of waiting) start();
+      vi.advanceTimersByTime(60_000);
+      expect(expire).toHaveBeenCalledTimes(1);
+    } finally {
       vi.useRealTimers();
     }
   });

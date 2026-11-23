@@ -24,8 +24,8 @@ import {
 /** The open page's Download (Epo 2026-11-20), on the deleted strip and the
  * header's ⋮: the toast's file (`deletedEditsFile`) from the rows the page
  * shows (`shownDeletedRows`, by id and seq), a note's ⋮ also as Word. It
- * deletes nothing: Reload still ends them. A file that could not be made says
- * so, the edits kept as they are. */
+ * deletes nothing: the strip's Discard still ends them. A file that could not
+ * be made says so, the edits kept as they are. */
 export async function downloadShownEdits(
   target: DeletedTarget,
   item: DeletedItem,

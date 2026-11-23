@@ -1,9 +1,5 @@
 import type { z } from 'zod';
-import {
-  QUESTION_CHART_SERIES_MAX,
-  QUESTION_MARKS_MAX,
-  QUESTION_PLOT_SERIES_MAX,
-} from '@/api/limits.generated';
+import { QUESTION_PLOT_SERIES_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { isLonePart, partPlaces, subLabel } from './groups';
 import {
@@ -17,7 +13,7 @@ import {
 import {
   type QuestionPolicy,
   questionBlockSchema,
-  questionSchema,
+  questionSchemaFor,
   type RuleIssue,
   ruleIssues,
 } from './validation';
@@ -92,14 +88,13 @@ function blockMessage(
     issue.message === m.question_validation_series_values()
   )
     return issue.message;
+  // Past the bound the schema took (twice the cap outside the bank).
   if (
     block?.type === 'chart' &&
     issue.code === 'too_big' &&
     issue.path.at(-1) === 'series'
   )
-    return m.question_ui_chart_series_over({
-      max: QUESTION_CHART_SERIES_MAX,
-    });
+    return m.question_ui_chart_series_over({ max: Number(issue.maximum) });
   if (block?.type === 'graph' && issue.code === 'custom')
     return m.question_issue_graph({ message: issue.message });
   // A chart without rows: no labels, so no values either.
@@ -230,7 +225,7 @@ export function questionIssues(
     });
   };
 
-  const parsed = questionSchema.safeParse(normal);
+  const parsed = questionSchemaFor(policy).safeParse(normal);
   for (const issue of parsed.success ? [] : parsed.error.issues) {
     const [head, at, field, ...rest] = issue.path;
     if (head === 'stem' && typeof at === 'number') {
@@ -272,7 +267,8 @@ export function questionIssues(
       else add({ message: generic, row: { kind: 'part', partId: part.id } });
       continue;
     }
-    // An open part's marks are its items' total: no item, nothing to grade.
+    // An open part's marks are its items' total: no item, nothing to grade;
+    // past the bound the schema took, too much.
     const noScheme =
       issue.code === 'too_small' &&
       (field === 'markscheme'
@@ -280,12 +276,20 @@ export function questionIssues(
         : field === 'marks' &&
           modelMarked(part.answer.type) &&
           !normal.parts[at].markscheme?.length);
+    const overTotal =
+      issue.code === 'too_big' &&
+      field === 'marks' &&
+      normal.parts[at].markscheme?.length
+        ? Number(issue.maximum)
+        : undefined;
     const message =
       field === 'answer'
         ? answerMessage(part, rest, issue)
         : noScheme
           ? m.question_issue_open_scheme()
-          : undefined;
+          : overTotal === undefined
+            ? undefined
+            : m.question_issue_open_total({ max: overTotal });
     if (message) answerIssue(part, at, message);
     else add({ message: generic, row: { kind: 'part', partId: part.id } });
   }
@@ -300,7 +304,7 @@ export function questionIssues(
       add({ message: rule.rule === 'images' ? rule.message : generic });
       continue;
     }
-    const message = ruleMessage(rule, normal.parts[rule.part]);
+    const message = ruleMessage(rule);
     if (rule.rule === 'bank-solution')
       add({
         message: m.question_validation_bank_solution(),
@@ -413,15 +417,8 @@ function answerMessage(
 }
 
 /** A hand-written rule's agreed wording, for the rules a user can break. */
-function ruleMessage(rule: RuleIssue, part: QuestionPart): string | undefined {
+function ruleMessage(rule: RuleIssue): string | undefined {
   if (rule.rule === 'gap-markers') return m.question_issue_blanks_order();
-  // Items past the cap: the part's marks stop at it (`schemeMarks`).
-  if (
-    rule.rule === 'markscheme-total' &&
-    (part.markscheme ?? []).reduce((sum, item) => sum + item.marks, 0) >
-      QUESTION_MARKS_MAX
-  )
-    return m.question_issue_open_total({ max: QUESTION_MARKS_MAX });
 }
 
 /** The issues' messages, each once, in order. */

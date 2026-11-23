@@ -1,4 +1,5 @@
 import * as limits from '@/api/limits.generated';
+import { mergedCap } from '@/api/mergedCap';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -7,9 +8,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * A live chart, plot or graph as its merges are read (Epo 2026-10-17,
  * 2026-10-18): two editors' changes to one figure merge entry by entry,
  * which can leave what neither wrote and the validators refuse; the type
- * wins on read and no merge is refused. Series and graph elements past their
- * cap keep the first ones in document order, a pie or stacked chart its
- * first series; a chart series' values are padded with empty cells (null) or
+ * wins on read and no merge is refused. A chart's series and a graph's
+ * elements are all kept up to twice their caps (`mergedCap`), which two
+ * people's adds at once may reach (Epo 2026-11-22), and only a tampered list
+ * past that keeps its first ones in document order; a pie or stacked chart
+ * keeps its first series; a chart series' values are padded with empty cells (null) or
  * cut to its labels; a line plot's series with fewer than two points is
  * skipped (before the cap); a graph element naming a point that is gone is
  * skipped (only points are referenced, so one pass). A chart or plot left
@@ -27,11 +30,11 @@ export function repairFigureBlock<T>(block: T): T {
     block.type === 'chart'
       ? single
         ? 1
-        : limits.QUESTION_CHART_SERIES_MAX
+        : mergedCap(limits.QUESTION_CHART_SERIES_MAX)
       : block.type === 'plot'
         ? limits.QUESTION_PLOT_SERIES_MAX
         : block.type === 'graph'
-          ? limits.QUESTION_GRAPH_ELEMENTS_MAX
+          ? mergedCap(limits.QUESTION_GRAPH_ELEMENTS_MAX)
           : undefined;
   const held = block[list];
   if (cap === undefined || !Array.isArray(held)) return block;

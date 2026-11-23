@@ -1492,7 +1492,7 @@ direction.
 | Label name, tag value | 35 |
 | Email (invite identifier, deletion confirm, users.email) | 254 |
 | Profile name | 60 |
-| Flashcard front / back (content API, Go document check, agent tools, collaboration store) | 4,000 / 2,000 |
+| Flashcard front / back (card editor, agent tools; the Go document check behind the content API and the collaboration store take twice, 400 / 2,000, what two people's typing at once may leave: Epo 2026-11-22) | 200 / 1,000 |
 
 User-typed values are rejected with a 422; the source details dialog refuses
 oversized file names before upload. Values the user did not type are clamped

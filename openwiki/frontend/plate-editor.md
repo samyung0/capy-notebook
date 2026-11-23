@@ -1094,14 +1094,20 @@ inside a figure. One reader, one diffing writer and the one-entry writes serve
 both rooms (`src/features/figures/figureMap.ts`, its Y.Map helpers in
 `figures/yMaps.ts`; `quizzes/liveFigures.ts` re-exports them). A graph's
 element entries have one writer wherever they are held, quiz, note and the
-canvas plane alike (`writeElements` in `src/features/graph/keyed.ts`, D10;
-the one-entry `setElement` and `moveElement` go through it too): an element
+canvas plane alike, and so do a canvas chart's bars, pie labels and pie
+lines (`writeElements` in `src/features/graph/keyed.ts`, for any item with
+an id; D10, Epo 2026-11-22; the one-entry `setElement` and `moveElement` go
+through it too): an element
 alike its stored one (the same object, or equal JSON, as a note's Slate value
 hands fresh objects) keeps its entry, and order keys come from `risingOrders`
 (`src/lib/orderKey.ts`), which keeps every held key that still rises in the
-wanted order (the longest such run), so appending re-keys nothing held and a
-moved element alone takes a key between its neighbours; each entry is written
-at most once. A chart's series and labels are aligned by `alignPlaces`
+wanted order (the longest such run), comparing `(order key, id)` as readers
+sort, so appending re-keys nothing held, a tie two editors' adds left stays
+(re-keying it would rewrite the whole entry over a peer's edit), a moved
+element alone takes a key between its neighbours, a new element placed
+between tied neighbours re-keys the later tied neighbours, and each gap is
+placed the same way between its neighbours, so a held key inside it stays;
+each entry is written at most once. A chart's series and labels are aligned by `alignPlaces`
 (`figures/align.ts`, used by `alignAxis`). One Rust
 module (`collaboration-rs/crates/notes/src/figure_map.rs`) reads, writes and
 admits them for notes and `items::quiz`. Two editors' changes to different
@@ -1158,10 +1164,18 @@ at its Save. No merge is refused (Epo 2026-10-18):
 readers draw it repaired, a chart or plot left without series as an empty
 frame and a pie without a positive value through the chart's empty state. The
 editors show a merge's raw block with its issues: a chart's rows past its
-labels and series past the cap, a pie's other series (Remove last series
-shows for it), its negative or missing positive value, no series (Add series
-shows even on a pie), and a graph's rows past the cap or naming a gone point,
-each marked (a plot's Save held until they are fixed). A graph stores no picture (Epo
+labels, a pie's other series (Remove last series shows for it), its negative
+or missing positive value, no series (Add series shows even on a pie), and a
+graph's rows naming a gone point, each marked (a plot's Save held until they
+are fixed). Series and graph rows two editors' adds merged past the cap, or a pasted or
+duplicated figure that held them, are
+no issue (Epo 2026-11-22, "Yes, A everywhere"): readers and editors keep them
+up to twice the cap (`mergedCap`, `src/api/mergedCap.ts`) and each edits as
+any other. An add stops at the cap as the figure reads when written
+(`addChartItem` gives no id, `graphFull` hides the graph's new row), a
+whole-figure write (`writeFigure`) removes only the series and elements its
+read showed, so a pie's other series or a row a read leaves out stays, and
+Remove last column takes the last series on screen. A graph stores no picture (Epo
 2026-11-16): every view, the editor's and readers', draws its elements (repaired)
 with the graph engine (`GraphView`, [embeds](../embeds.md)), so a co-editor's
 change shows as it arrives and nothing is written back. The Rust server writes the same maps on bootstrap and an agent's insert
@@ -1183,8 +1197,11 @@ place rather than in a dialog. `TableViewElement` writes every edit the same
 way a figure's Save does: the pure edit in `edit.ts` runs on the block as the
 editor holds it at that moment and the result goes through one `setNodes` of
 `block`, so only the columns, rows and views it touched change in the room's
-map (an edit that would break `isTableViewBlock` throws; a block a merge left
-past a cap still takes edits). Text, title and number cells write on Enter or
+map (an edit that would break `isTableViewBlock` throws). Lists two people's adds
+merged past a cap (options, columns, rows, views, a row's keys) are kept and
+read up to twice it, as every layer's check takes them (Epo 2026-11-22, "Yes,
+A everywhere", replacing the 2026-11-12 refusal); such a block takes edits as
+any other. Text, title and number cells write on Enter or
 leaving the field, select and date cells from a popover (`SelectEditor`, the
 schedule's `MiniCalendar`), a checkbox on click; a column header opens
 `ColumnMenu`; the title cell's pill opens the record's menu, whose Open (and a
@@ -1212,9 +1229,14 @@ stops the event, so neither Slate's drop nor the block drag reads it. A
 read-only note draws the same component with only its tabs live. The slash
 menu's Table view (searchable by "database") inserts `newTableViewBlock` with
 translated names, refused past `TABLE_VIEW_MAX_COUNT` with a toast; the
-`table_view` plugin's `insertNodes` and `insertFragment` leave out table views
-past the cap the same way for block Duplicate and paste (`count.ts`). An edit
-that would pass a cap against the block as it is does nothing. The block's
+`blockCountCaps` plugin's `insertNodes` and `insertFragment` leave out table
+views and interactive blocks past `TABLE_VIEW_MAX_COUNT` and
+`HTML_EMBED_MAX_COUNT` the same way for block Duplicate and paste
+(`blocks/countCaps.ts`, checked on the note as it reads now; a merge of two
+people's inserts may pass a cap, up to twice it, Epo 2026-11-22). A pasted or
+duplicated table view keeps the rows, columns and texts it holds, up to twice
+their caps, as a figure or Mermaid diagram does. An edit
+that would pass a cap against the block as it is when written does nothing. The block's
 fields keep their own undo: the wrapper stops React `input` and native
 `beforeinput` from reaching slate-react (which would run `editor.undo()`), and
 `fieldHistory.ts` holds back Cmd+Z in a field once its text is back to what it
@@ -1271,8 +1293,10 @@ collaboration service's converter builds the same node, reading the agent's
 note as plain Markdown so the snippet keeps every character (the MDX pass a
 paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
 fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
-is refused by name, as is an agent edit that would leave the note with an
-eleventh (`invalid_input`, the collaboration service's whole-note check). Go
+is refused by name, as is an agent edit that would leave the note with more
+than twice the ten (`invalid_input`, the collaboration service's whole-note
+check, which takes up to 20, what two people inserting at once may leave: Epo
+2026-11-22). Go
 `materialdoc`, the collaboration validator and the browser's
 `isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes), `caption` at
 `BLOCK_CAPTION_MAX` (300 characters; Go `materialdoc`, the collaboration
@@ -2532,6 +2556,70 @@ design, option d), and the nudge's release file on 2026-10-17.
   to 32, so source tabs on the older pin (protocols 30 and 31) reload;
   `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
   request names "client protocol 31 -> 32, source 30 -> 32".
+  The C6 and Q789 pin (bbbde1d4e: DOCX View hands over its first pages before
+  the rest are laid out, the DOCX editor's per-key reads touch only the
+  paragraphs and stories that changed) raised `CLIENT_PROTOCOL` to 33 and
+  `MIN_SOURCE` to 33, so source tabs on the older pin (protocol 32) reload;
+  `MIN_MATERIAL` stays 31 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
+  request names "client protocol 32 -> 33, source 32 -> 33".
+  Keyed chart lists (Epo 2026-11-22: a canvas chart's `bars`, `labels` and
+  `spokes` are maps of id to `{element, order}`, and `fills` is gone, each
+  line carrying its slice's fill) raised `CLIENT_PROTOCOL` to 33 and
+  `MIN_MATERIAL` to 33: the same keys changed shape, and each build's load
+  check refuses the other's, so a tab from before and a newer tab on one canvas
+  would each show the other's charts as "cannot be shown". The tab from before
+  reloads instead. A chart already stored in the old shape draws as that
+  placeholder on a workspace canvas; on a question board (a drawing answer)
+  `checkSavedBoard` throws on it, so a saved answer or a device draft holding
+  one fails to open. Both are accepted, since there is no production data (no
+  shim).
+  The two 33s met in one merge before either was deployed, so 33 covers both:
+  `MIN_MATERIAL` and `MIN_SOURCE` are both 33, and their deploy request names
+  "client protocol 32 -> 33, material 31 -> 33, source 32 -> 33".
+  The first Q608 landing and the Q667 pin land together (Office protocol 15:
+  every reader place carries its frame's zoom, viewers answer
+  `position-request`, and an XLSX place may name its sheet by name; pin
+  eb7d8b4f7: chat citations are highlighted inside the DOCX, XLSX and PPTX
+  editors). They raised `OFFICE_PROTOCOL_VERSION` to 15, `CLIENT_PROTOCOL` to
+  34 and `MIN_SOURCE` to 34, so source tabs from before them (protocol 33)
+  reload; `MIN_MATERIAL` stays 33. Their deploy request names "client protocol
+  33 -> 34, source 33 -> 34".
+  The Q801 pin (bda081c71: DOCX View lays out the first screen of pages
+  before the rest, the page count and scroll height growing as pages come,
+  and `painted` sent again as the count grows; short files, bodies all in
+  columns, cited opens and prints lay out whole) raised `CLIENT_PROTOCOL` to
+  35 and `MIN_SOURCE` to 35, so source tabs on the older pin (protocol 34)
+  reload; `MIN_MATERIAL` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 15 (the
+  runtime messages keep their shape). Its deploy request names "client
+  protocol 34 -> 35, source 34 -> 35".
+  The Q813 and Q814 pin (ccb90cc2d: the DOCX editor's worker lays out every
+  pass and the page adopts its layout, the table-of-contents pass and a
+  failed worker laying out on the page; a pass over an unchanged input, such
+  as a web-font load, is skipped in the worker and in the page's engine)
+  raised `CLIENT_PROTOCOL` to 36 and `MIN_SOURCE` to 36, so source tabs on the
+  older pin (protocol 35) reload; `MIN_MATERIAL` stays 33 and
+  `OFFICE_PROTOCOL_VERSION` stays 15 (the runtime messages keep their shape).
+  Its deploy request names "client protocol 35 -> 36, source 35 -> 36".
+  Merges past a cap (Epo 2026-11-22, "Yes, A everywhere": readers, the room
+  and the stores keep a list or text two people's edits merged past its cap,
+  up to twice it, and editors stop at the cap) raised `CLIENT_PROTOCOL` to 37
+  and `MIN_MATERIAL` to 37. A tab from before reads a chart's series and a
+  graph's elements cut to the cap, and its whole-figure write deletes the ones
+  it left out, a peer's merged edits; its validators hide a quiz question a
+  merge took past a cap and its question text fields undo typing in a text
+  over one. The tab from before reloads instead. No source room changed, so
+  `MIN_SOURCE` stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy
+  request names "client protocol 36 -> 37, material 33 -> 37".
+  The board rules in the browser (Epo 2026-11-22, B: every viewer reads a
+  canvas by one strict rule set, `boardRules.ts`, and draws what breaks it as
+  "This block cannot be shown"; the room-side content check was dropped)
+  raised `CLIENT_PROTOCOL` to 38 and `MIN_MATERIAL` to 38. The board catalog
+  changed (the emoji list; images under a paragraph, list or image in a
+  note), and a tab from before draws content the rules refuse, such as a
+  chart axis top past `AXIS_MAX`, where a new tab shows the placeholder. The
+  tab from before reloads instead. No source room changed, so `MIN_SOURCE`
+  stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
+  "client protocol 37 -> 38, material 37 -> 38".
 
 #### When to bump
 
@@ -2674,8 +2762,8 @@ The open editor writes its whole document once more (`snapshot`, so the rows
 draw without the room) and turns read-only as for a refusal, the recorder
 keeping the rows until it unmounts; the page, whose read answers the same,
 keeps the item on screen under "This item was deleted. Your unsaved edits are
-shown here to copy until you reload." while this device holds unsent edits to
-it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
+shown here to copy until you discard them." while this device holds unsent
+edits to it (`useDeletedEdits` in `lostEdits.ts`, holding their documents so no sweep
 offers or deletes them meanwhile, and dismissing a toast already offering
 them), and says "This item is unavailable" when it holds none or cannot read
 its store. A deleted note, quiz, set or diagram never reads as lost access: a
@@ -2707,24 +2795,28 @@ move, Shared with members, clone, its usual download, delete), a quiz's or
 set's Practice. The ⋮ keeps Properties, from the item's last read, and
 downloads made from what the page shows (Epo 2026-11-20): a note's Download
 Markdown and Download Word, an Office or text file's Download, each the
-strip's file; other kinds have none there. The deleted strip has Download
-beside Reload for every kind (`DeletedDownload` in `SaveBanner`, Office's in
-its frame, a canvas's on its board's strip): the toast's file
+strip's file; other kinds have none there. The deleted strip has Discard
+then Download for every kind (Epo 2026-11-21: Discard the `ghost-hover`
+Button, Download the `dark` one, neither underlined; `DeletedDownload` in
+`SaveBanner`, Office's in its frame drawn alike, a canvas's on its board's
+strip, where Discard asks first and its confirm reads Discard; Discard alone
+where the page has no Download). Discard (`discardDeleted`) deletes the rows
+the page shows and loads the page again. Download saves the toast's file
 (`saveShownEdits`) from the rows the page shows (`shownDeletedRows`, matched
-by id and seq as Reload matches them), deleting nothing, so Reload still ends
-them; a file that cannot be made says "Your edits couldn't be downloaded.
+by id and seq as Discard matches them), deleting nothing, so Discard still
+ends them; a file that cannot be made says "Your edits couldn't be downloaded.
 They're kept on this device.". The strip's Download and the ⋮ entries show
 once the room, session or note drawing shows the edits
 (`useShowsDeleted`), before which they would draw nothing. A canvas's board
 menu keeps its Download as image of the board shown, and Office its menu
 bar's Download of the open document.
 
-What shows, what Download writes and what Reload deletes come from one
-drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
+What shows, what Download writes and what the strip's Discard deletes come
+from one drawing (`ShownDrafts`): `deletedDocument` draws one group of rows (one
 lineage and base, a board's hidden edits from Q33 always a group of their
 own, since they copy the early board with what still showed deleted), and
-Reload or the toast's Download deletes the rows of that group as drawn (by id
-and seq; the open page's Download deletes none);
+the strip's Discard or the toast's Download deletes the rows of that group as
+drawn (by id and seq; the open page's Download deletes none);
 an open session's own document deletes the rows it holds. Rows of another
 group, another tab's lineage, an older base or an unreviewed piece stay and
 come back as the next page load's toast. The toast acts on the rows it
@@ -2740,7 +2832,7 @@ rooms and file sessions draw from their own document. A quiz whose keys
 alone have edits takes its questions from this device's copy of its
 content room, which the copy sweep keeps while any edits to the item are
 stored (`sweepDeviceCopies`); with none, its file says the questions are
-not included. Reload and Discard are counted as
+not included. The strip's and the toast's Discard are counted as
 `discard_unsaved` with the reason `item_deleted`, apart from a lost item's
 silent `not_found`. A read of the store that fails deletes nothing and shows
 the item unavailable. The collaboration service's "not found" alone (no API
@@ -4123,7 +4215,14 @@ part names. The limits still measure such a group and its images stay in use
 solution, correct | accepted | markscheme | gaps | options | pairs |
 items}`; an mcq's `correct` is a map of ticks by option id (one or more,
 Epo 2026-10-15), a boolean's a plain true or false, and an open part's
-`accepted` holds at most one sample answer, which the room refuses past.
+`accepted` holds at most one sample answer, which the room refuses past. Every
+writer (`writeSample`, `quiz::sync_sample`) keeps it under the fixed entry key
+`sample` (`SAMPLE_KEY`), so two first sample answers typed at once set one key
+and one of the two wins (Epo 2026-11-22, "then last save wins? if we change the
+question data structure now we need to change the UI as well, dont"; Yjs keeps
+the entry of the client with the higher id), and a removal wins over typing at
+the same moment: the other's first keystrokes are dropped, and later typing
+merges into the one text; an entry under another id is edited in place.
 A block entry holds its fields in both documents (a solution's in the keys
 document). A chart, plot or graph is a map of plain fields, each replaced
 whole (Epo 2026-11-16, D2, D3, D9; client protocol 30): a graph `{order,
@@ -4152,8 +4251,11 @@ document. Readers get them outside Yjs (D3 as revised 2026-10-10: a reader
 copy inside the content document leaked typing order through its tombstones):
 the content room keeps a plain list of texts per part (`items::quiz::
 ReaderLists`) and pushes it over its channels as a stateless `quiz-items`
-message, `{type, full, parts: {<part id>: {kind, items} | null}}`, the whole
-set to a channel that joins (`full`) and the parts that changed otherwise. A
+message, `{type, full, parts: {<part id>: {kind, items, total?} | null}}`, the
+whole set to a channel that joins (`full`) and the parts that changed
+otherwise. A part with marking items is listed too (no items, any kind) with
+`total`, the items' total its learners read as its marks (Epo 2026-11-22,
+"Yes, A everywhere": two editors' adds at once may take it past the cap). A
 part whose entries change as a set is shuffled afresh (a uniform
 permutation); a single text edit keeps the order, and a change of several
 texts at once (a write that reorders and edits at once changes the list's
@@ -4189,14 +4291,28 @@ items, ticks and matching pairs, and each figure field, graph element
 (`notes::questions::figure_caps` on the element alone; its form is the
 validators') and chart value as it arrives (sizes only: an unfinished figure
 is admitted). A figure's maps (graph elements, chart series, labels, names and
-values) count to twice their caps, as a merge may pass a cap and the read
-keeps the first ones; a figure written as one value (the layout before client
-protocol 30) is refused. Nothing past a
-limit is stored (Epo 2026-10-14): the question dialog's inputs stop at each
-limit and its Add buttons at each count, and everything the store's check
-refuses is refused at admission, so a store never discards a room for it. An
-answer turned `open` sends its update to the exact check, which holds its
-accepted texts to `QUIZ_OPEN_ANSWER_MAX`. A list's count
+values) count to twice their caps, as a merge may pass a cap and every read
+keeps them all; a figure written as one value (the layout before client
+protocol 30) is refused. Every count and typed text two people's edits at
+once may merge past its cap (Epo 2026-11-22, "Yes, A everywhere",
+superseding 2026-10-14's "nothing past a limit is stored") is admitted,
+stored and read up to twice the cap: the question dialog's inputs stop at
+each limit and its Add buttons at each count (checked on the question as it
+reads now), a server writer's edit (an agent's, question media, the content
+save API) may not grow one past its cap (`quiz::check_written`, against what
+the room held: a rewrite places entries by their list or section, not by id,
+so each place's n-th largest value may reach the cap or the n-th largest it
+held), past twice it is refused, and everything the store's check
+refuses is refused at admission, so a store never discards a room for it. A
+value past a cap comes three ways: two people's edits merged, a hand-made
+client, and a paste or block Duplicate, which copies a block whole: a pasted
+or duplicated figure, Mermaid diagram or table view keeps what it holds, up to
+twice the cap, while interactive blocks and table views are still guarded by
+count (`blocks/countCaps.ts`). A
+part's marks reach twice `QUESTION_MARKS_MAX` outside the bank, a closed part's
+too, so marks racing a type switch both go in. An answer turned `open` sends
+its update to the exact check, which holds its accepted texts to twice
+`QUIZ_OPEN_ANSWER_MAX`. A list's count
 is bounded like a text's length (held plus added against its cap): only an
 update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
@@ -4245,7 +4361,19 @@ is touched, and on the next frame its element is written if it differs from
 the figure's (at most once a frame however fast it is typed, nothing when
 unchanged; a new one goes last, then to its row's place, counted by the
 figure's elements of the rows above it, a row that cannot draw now included).
-A row that does not
+Every existing row is written: readers draw every element up to twice the cap,
+which two people's adds at once may reach (Epo 2026-11-22), on a quiz graph, a
+note graph and a canvas plane alike. A new row's element is not written while
+the figure already holds 100 (`graphFull`, checked as the figure reads when
+written): it is named with `question_ui_graph_elements_max` and keeps its text.
+While a row waits so, the writer writes again on each co-editor's change to the
+figure (its own writes are skipped), so a row started before a co-editor filled
+the last place goes in on its own once a delete makes room;
+`onRefused` hears only a change in what is refused, and a refused row typed back
+to what the figure holds is refused no more. Closing disposes the writer: the
+watch ends and a frame already queued is cancelled, so one still refused when
+the dialog closes is dropped with its text, as a row never drawable is: nothing
+reaches the room and nothing asks first. A row that does not
 parse or names a point that is not there is not written: it keeps its text
 and issue while the dialog is open, and when the dialog closes the room keeps
 the element's last drawable form (none for a row never drawable). A co-editor's
@@ -5358,9 +5486,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   deletes only the entries that changed, keeping every held order key that can stay
   (`risingOrders`), so two
   people drawing on one plane would merge mark by mark once the canvas has a room. A
-  plane holds at most 100 elements, as every graph, its labels up to 60 characters and
-  a curve up to 100 points, where its tool finishes it (the question bounds
-  `QUESTION_GRAPH_*`, D7); the load check runs the graph model's one element check
+  plane takes at most 100 elements from its tools, as every graph, its labels up to 60
+  characters and a curve up to 100 points, where its tool finishes it (the question
+  bounds `QUESTION_GRAPH_*`, D7); the load check takes up to twice the 100 elements
+  (`mergedCap` in `boardRules.ts`, Epo 2026-11-22, "sure A"), as two people's adds at
+  the same moment merge a plane past its cap, and runs the graph model's one element check
   (`graphElementSchema`, the same as quiz and note graphs and Go and Rust) on each
   element of a kind the plane makes (`PLANE_KINDS`); a board saved with the old
   `marks` list fails it (no production data, no shim). A card is a picture on the canvas: Select moves it, the frame's knob
@@ -5544,18 +5674,61 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   icon with its reason and keeps its text, unwritten, until it can; Escape puts it back
   as it was. Moving a named point drags what's built on it; erasing it (Erase, Delete)
   takes what's built on it too, while deleting its row in the list leaves those rows
-  with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) a tool or a new row
-  is refused with `drawing_board_plane_full` on the new row's icon. "+ Label" adds a label in
+  with their issue, as in the dialog. At 100 rows (`ELEMENTS_MAX`) or more (`graphFull`
+  in `questions/graph.ts`) the list shows no new row, "+ Label" is disabled and a
+  tool's new mark is turned away, the issue line above the editor then reading
+  `question_ui_graph_elements_max` while the plane stays full. Every add is checked
+  against the plane as it reads when written (`graphWriter`): a row started under the
+  cap whose last place a co-editor's add took meanwhile is not written, its icon
+  carrying that message and its text kept, and goes in on its own once a delete makes
+  room; one still refused when the editor closes is dropped with its text, with no
+  prompt. So only adds written
+  on two tabs at the same moment, before either holds the other's, merge a plane past
+  100; it then draws every element on its card, and in the editor every row, the
+  101st on, edits and saves as any with no cap issue on it (Epo 2026-11-22: the cap
+  stops only adding), as on a quiz or note graph, whose readers and validators also
+  take up to 200 ("Yes, A everywhere"). "+ Label" adds a label in
   the middle of what's in view and selects its text. Hovering a row lights its mark,
   focusing a label row selects only its label (Shift/⌘/Ctrl adds it), focusing any other row
   clears the selection; selected marks light their rows. The answer board has no list button and no
   functions. The shell lets a `math-field` keep its keys.
 - **Chart cards** (`boardChart.ts`, `boardChartEditor.ts`) are a `chart` canvas element of
-  kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either. They
+  kind `bar` or `pie`, holding plain data, since a coordinate means nothing on either:
+  `axisMax`, `axisStep`, `kind`, `rotate` and `xywh` as plain fields, and `bars`
+  (`ChartBar`: `id`, `label`, `value`, `fill`), `labels` (pie labels) and `spokes` (pie
+  lines: `id`, `angle`, and `fill`, the fill of the slice that starts at the line,
+  clockwise) each a `Y.Map` of id to `{ element, order }`, as the plane keeps its elements
+  (Epo 2026-11-22, "Yes, fix it"): `propsToY` turns a new or pasted card's plain entries
+  into the maps, an `@observe` per list tells the renderer and an open editor to draw
+  again on a change inside it (a peer's too), reads are cached per list (`barList`,
+  `labelList`, `spokeList`), and `write` sets lists and the axis in one transaction, one
+  undo step, each list through `writeElements`. Changes to different bars, labels or lines
+  merge; two changes to the same item at once keep one; two people adding at once keep
+  both. The editor builds every write from the lists as they read then, and a gesture
+  follows its bar, line or label by id, so a peer's add, removal or turn mid-drag lands
+  nowhere wrong; the bar being drawn in the free place after the last has the id `''`
+  until it is written. An add checks the cap against the list as it reads when written
+  (`appended` in `boardChart.ts`), so a bar a peer added mid-drag counts and the add
+  does nothing at the cap or past it; two adds merged from the very same moment can
+  still pass it, and the load check takes each list up to twice its cap for that (Epo
+  2026-11-22, "sure A"): a chart merged past the cap opens and edits as any, the editor
+  giving each bar its place and no free one (`barSlots`, `setsBar` in `boardData.ts`).
+  Closing a label's text field writes nothing unless the
+  text differs from what the field opened with, so closing an untouched field keeps a
+  peer's rename; a changed text goes onto the bar or pie label as it reads then
+  (`typedBars`, `typedLabels`), so a peer's move or resize stays and a label a peer
+  erased stays erased; only a new pie label takes the place where the field opened. A
+  pie's first line has one id on every pie (`FIRST_SPOKE`), which a new pie,
+  Clear all and "+ Slice" on a pie with no line all use, so two Clear alls at once, or
+  one crossing a peer's turn or fill of that line, leave one line. The load check (`boardRules.ts`) takes each map as it takes a
+  plane's: every key its item's id, at most twice `BARS_MAX`, `LABELS_MAX` and
+  `SPOKES_MAX` items (48, 120 and 120, `mergedCap`), finite values and angles, and a line's `fill` a board colour. They
   move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
-  tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
+  tallest bar, and typing a bar past the top lifts it the same way; neither passes
+  `AXIS_MAX` or 100 lines, falling back to a rounder step, `axisAbove` in `boardChart.ts`,
+  since the board's rules draw a chart past its limits as a placeholder). The wheel or a pinch zooms the value axis: its top moves, the step
   following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
   written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
   value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
@@ -5563,7 +5736,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the bars. Pie chart: no grid or axes, starting with a line at 12 o'clock. A click adds a
   line, whose chip shows the sector it closes, from the line before it clockwise;
   Finish slicing (shown once there's a line) moves to Fill, where a click gives the slice
-  under it the picked fill (`fills`, keyed by the line the slice starts at; erasing that
+  under it the picked fill (the `fill` of the line the slice starts at; erasing that
   line drops it, No fill clears it). A label goes where it's clicked, kept as an angle and
   a share of the radius (`reach`), so it stays put as the card resizes. Select
   (Epo 2026-11-09) selects bars, pie lines and pie labels as the plane does (a click,
@@ -5574,7 +5747,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   alone wears the board's selection frame, and dragging a corner sizes it (`size`, as a
   plane label's). One of several
   chosen items takes the others of its kind along: bars up or down by as much (none
-  below 0, one taken to 0 goes), lines round by as far, labels by as far across. After
+  below 0; a bar the drag takes to 0 goes, judged against the values before it
+  (`liftedBars`), so one typed as 0 in the data pane stays, held along or not),
+  lines round by as far, labels by as far across. After
   one label the tool goes back to Select, as on the plane.
 - **A chart's data pane** (Epo 2026-11-13, B1 and P1, workspace canvases only): the
   plane list's button, card and phone sheet (`.capy-plane-list`, its own session
@@ -5582,8 +5757,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   axis right of the button (dropping to the second row under 460 px). A bar's row is
   its fill swatch, label and value; a value past the axis's top raises the top to the
   next numbered line (or a fresh axis past 100 lines), and "+ Bar" adds one a step
-  tall with the caret in its label. A pie's row per slice (`slicesOf`, clockwise
-  from each line) is its swatch, name and share in % with its degrees: the name is the
+  tall with the caret in its label. A pie's row per slice (`slicesOf` in `boardData.ts`,
+  clockwise from each line, the row going by that line's id) is its swatch, name and
+  share in % with its degrees: the name is the
   first label inside the pie within the slice (typing one adds it at the slice's middle,
   reach 0.62; emptied it goes), and a share typed moves the slice's closing line in
   whole degrees, the slices after it keeping their sizes and the last taking up the
@@ -5641,7 +5817,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
     line from it); highlighter strokes from the pen menu are rounded the same way. The
     answer flow refuses past Epo's 250 KB on Done.
-  - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
+  - `saved` is checked before anything mounts (`boardLoad.ts`, by the board's rules in
+    `boardRules.ts`, below), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
     only the blocks and elements the **board catalog** lists for that board (the pen
     menu's highlighter included, which the preview draws as a see-through stroke), each
@@ -5828,19 +6005,46 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
     `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
     `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
-    `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
-    the browser is the only reader for now.
+    `boardData.ts` come from it, as does the picture emoji list (`emoji`, read by
+    `boardPictureData.ts`). The server keeps a saved board as opaque bytes and
+    checks no canvas room's content (below), so the browser is the only reader.
+  - **The board's rules** (2026-11-22): `src/features/blocksuite/boardRules.ts`, read by
+    the load check, the live board's placeholders, the preview and `keepToCatalog`. A
+    corpus test (`boardRules.corpus.test.ts`) builds what every tool, editor and paste
+    writes through BlockSuite's own model code and holds it fitting, and one broken case
+    per rule not. An element or block is
+    read from its own Y.Map's entries, never `toJSON()`, so a string where a Y.Text
+    belongs is told apart: keys are strict per element type and block flavour (only
+    the fields BlockSuite or the card stores), each value of its kind (colours, places,
+    finite numbers, BlockSuite's enums, points, connector ends, label styles, a note's
+    nested `edgeless` and colour maps; a colour with both `dark` and `light` holds strings
+    in both), required fields present (a place on everything that stores one, a shape's
+    `shapeType`, a connector's ends and mode, a group's children and title, a mind map's
+    children, style and layout, a text element's text, a note's `edgeless.style`, each
+    card's own), a block prop holding `undefined` only where BlockSuite's default is
+    `undefined` (loading fills only absent props), text
+    as string runs with plain-valued formats (no embeds or nested types; a reference or
+    footnote format is an object), keyed lists up to twice their caps, ids of
+    `[A-Za-z0-9_-]{1,128}` and never `__proto__` (nor a `__proto__` key inside a plain
+    value; a run of overwritten values at one key is read by its last). The tree and a
+    mind map's nodes are checked as before (the load check's tree, `mindmapNodesFit`).
+    What breaks the rules is drawn as "This block cannot be shown" and never removed
+    unless it is the tab's own add (Epo 2026-11-18); the canvas room checks none of it
+    (Epo 2026-11-22, "maybe drop the cnvas content check if its not that useful").
   - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
     once, so a mounted board also drops what its catalog leaves out whatever adds it
-    (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
-    such an element or block right after it lands, and any element the load check's
-    per-element and mind map checks would refuse (`addedElementFits`), so a mind map copied from the
+    (a paste, a duplicate, later a peer): `keepToCatalog` in `boardKeep.ts` deletes
+    such an element or block right after it lands, and any element the board's rules
+    and the mind map's node check would refuse (`storedElementFits`), so a mind map copied from the
     workspace canvas and pasted into an answer goes with its node shapes, as does a capy
-    embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
+    embed. A saved mind map's nodes are checked too (`mindmapNodesFit`): each a shape on
     the canvas no other mind map or group holds, under a parent among its own nodes,
-    one root, no cycle, layout 0–2. A board whose JSON would hide a key (`__proto__`,
-    which Yjs's `toJSON` turns into the object's prototype while BlockSuite still loads
-    the entry) is refused. Emoji, GIFs and cards copy, paste and duplicate on
+    one root, no cycle. A person's copy, paste or Duplicate never carries a placeholder:
+    a clipboard middleware drops `capy:unknown` and `capy:unknown-card` blocks from what a
+    copy exports and a paste or Duplicate imports (`placeholdersLeftOut` in
+    `boardUnknown.ts`), and BlockSuite's canvas copy and clone leave out placeholder
+    elements, stand-in cards and groups left empty (vendor local change 74), a group
+    keeping only the children copied with it. Emoji, GIFs and cards copy, paste and duplicate on
     the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
     re-adds only a block the load check would take (`embedFits`, the same check), since
     any page can write the clipboard. Their renderers check again what they use: a link
@@ -5903,8 +6107,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       contract adds a rule the code does not hold: from here a change to the board
       catalog (`server/internal/boardcatalog`) raises both together.
     - **What the room admits.** A board has no rule on what its content is (Epo
-      2026-11-18, "reject nothing"): admission bounds what an update may cost, never
-      its shape. After the checks every material room makes (the 4 MiB sync message,
+      2026-11-18, "reject nothing"; a content check built 2026-11-22 was dropped the
+      same day, Epo: "maybe drop the cnvas content check if its not that useful"):
+      admission bounds what an update may cost, never its shape. After the checks every material room makes (the 4 MiB sync message,
       the token, the client-id rule, the marker root), `admit_board` takes an update
       that:
       - the room can place (`ydoc::inspect_bounded`): no struct or deleted range

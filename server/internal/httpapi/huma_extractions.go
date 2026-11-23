@@ -724,8 +724,13 @@ func (a *api) internalCheckQuestion(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid question check"})
 		return
 	}
+	// An agent's question, held to the caps an editor stops at.
 	problem := ""
-	if _, err := materialdoc.QuizDocument(json.RawMessage("["+string(req.Question)+"]"), nil); err != nil {
+	content, err := materialdoc.QuizDocument(json.RawMessage("["+string(req.Question)+"]"), nil)
+	if err == nil {
+		err = materialdoc.CheckWritten(content)
+	}
+	if err != nil {
 		problem = err.Error()
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"problem": problem})

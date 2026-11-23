@@ -22,24 +22,41 @@ import {
 import { alongDrag, ERASER_SIZE } from '@/features/graph/tools';
 import { m } from '@/i18n';
 import {
+  AXIS_LINES_MAX,
+  appended,
+  axisAbove,
+  type ChartChange,
   type ChartElementModel,
+  cleared,
   drawChart,
+  FIRST_SPOKE,
+  type LabelDraft,
+  liftedBars,
+  niceAxis,
   setChartEditor,
+  typedBars,
+  typedLabels,
 } from './boardChart';
 import {
   AXIS_MAX,
   BAR_SHARE,
   BARS_MAX,
   barPlot,
+  barSlots,
   CHART_TEXT,
   type ChartBar,
+  type Color,
   LABEL_LENGTH_MAX,
   LABELS_MAX,
   PAPER,
   type Pads,
   type PieLabel,
+  type PieSpoke,
   pieCircle,
+  type Slice,
   SPOKES_MAX,
+  setsBar,
+  slicesOf,
   TEXT_SIZE_MAX,
   TEXT_SIZE_MIN,
 } from './boardData';
@@ -49,24 +66,19 @@ import { clockAngle, snapTo, tidy, type Vec } from './boardGeometry';
 import { boardKindOf, fillRow, hugeIcon, mathsIcon } from './boardTools';
 
 type Tool = 'select' | 'draw' | 'fill' | 'label' | 'erase';
-/** What Select picked (Epo 2026-11-09): a bar, a pie's line or a pie's label. */
-type Picked =
-  | { id: string; kind: 'bar' }
-  | { angle: number; kind: 'spoke' }
-  | { id: string; kind: 'label' };
+/** What Select picked (Epo 2026-11-09): a bar, a pie's line or a pie's label, by
+ * id, so it stays picked while a peer adds, removes or turns others. */
+type Picked = { id: string; kind: 'bar' | 'label' | 'spoke' };
 
 const PIXELS_TO_LABEL = 30;
 /** How far a press goes before it's a drag rather than a click. */
 const PIXELS_TO_DRAG = 4;
 const BLUE = '#1e96eb';
 const HALO = 'rgba(30, 150, 235, 0.18)';
-/** Most numbered lines the axis takes. */
-const AXIS_LINES_MAX = 100;
 /** The smallest axis top zooming in reaches. */
 const AXIS_MIN = 1e-3;
 /** A zoom is written, one undo step, once it has rested this long. */
 const ZOOM_SETTLE_MS = 300;
-const NICE_STEPS = [1, 2, 2.5, 5, 10];
 /** The data pane open or closed, as last chosen this session; until then open on a
  * wide screen (Epo 2026-11-13, B1 and P1, as the plane's list). */
 let listChoice: boolean | null = null;
@@ -75,64 +87,50 @@ const SHEET_BELOW = 640;
 /** Where a pie label inside the pie is put when a slice is named. */
 const NAME_REACH = 0.62;
 
-/** A pie's slices clockwise from its lines: each from a line to the next. */
-type Slice = { from: number; size: number };
-const slicesOf = (spokes: number[]): Slice[] => {
-  const sorted = [...spokes].sort((a, b) => a - b);
-  return sorted.map((from, i) => ({
-    from,
-    size: (i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 360) - from,
-  }));
-};
+/** `list` with the item `id` changed. */
+const changed = <T extends { id: string }>(
+  list: T[],
+  id: string,
+  change: Partial<T>
+) => list.map((one) => (one.id === id ? { ...one, ...change } : one));
+/** A pie line with its slice's fill set, or cleared by No fill. */
+const filled = ({ angle, id }: PieSpoke, fill: Color): PieSpoke =>
+  fill === 'transparent' ? { angle, id } : { angle, fill, id };
 /** Whether a clockwise angle falls in a slice. */
 const inSlice = ({ from, size }: Slice, angle: number) =>
   (((angle - from) % 360) + 360) % 360 < size;
 /** A slice's size as a share, to a tenth of a percent. */
 const shareOf = ({ size }: Slice) => Math.round((size / 3.6) * 10) / 10;
 
-/** An axis to a top, about five numbered lines in 1, 2, 2.5 or 5 steps. */
-function niceAxis(top: number) {
-  const rough = top / 5;
-  const power = 10 ** Math.floor(Math.log10(rough));
-  const axisStep =
-    (NICE_STEPS.find((step) => step * power >= rough) ?? 10) * power;
-  return {
-    axisMax: Number(
-      (Math.ceil(top / axisStep - 1e-9) * axisStep).toPrecision(12)
-    ),
-    axisStep: Number(axisStep.toPrecision(12)),
-  };
-}
-
 /** A bar or pie chart, filling the board for editing. Each change is written at once,
- * one undo step. */
+ * one undo step, from the chart as it is then (a peer's changes merged in), and
+ * touches only the bars, labels and lines it changes (Epo 2026-11-22). */
 function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let frame = 0;
   let tool: Tool = 'draw';
-  /** The label being typed: under a bar, or in a pie at an angle. */
+  /** The label being typed: under a bar, or in a pie on a label or at a new place;
+   * `text` is what the field opened with. */
   let typing: {
-    angle?: number;
-    reach?: number;
     barId?: string;
-    id?: string;
+    draft?: LabelDraft;
     size?: number;
     text: string;
     x: number;
     y: number;
   } | null = null;
-  /** The bar being dragged up. */
-  let live: { slot: number; value: number } | null = null;
+  /** The bar being dragged up, by id ('' for a new one in the free place after the
+   * last), so it stays the same bar as a peer adds or removes others. */
+  let live: { id: string; value: number } | null = null;
   /** What a press with Select landed on, which a drag moves. */
   let picked: Picked | null = null;
   /** What's selected, as on the board: a click, Shift adding or taking away, or a box
    * on empty paper; Delete removes them all (Epo 2026-11-09). */
   let chosen: Picked[] = [];
   let boxing: { adding: boolean; from: Vec; to: Vec } | null = null;
-  const same = (a: Picked, b: Picked) =>
-    a.kind === b.kind &&
-    (a.kind === 'spoke'
-      ? a.angle === (b as typeof a).angle
-      : a.id === (b as typeof a).id);
+  const same = (a: Picked, b: Picked) => a.kind === b.kind && a.id === b.id;
+  /** The ids of what a list of picks holds of one kind. */
+  const idsOf = (list: Picked[], kind: Picked['kind']) =>
+    new Set(list.flatMap((one) => (one.kind === kind ? one.id : [])));
   /** How far a pie's line being dragged has turned; written when it lifts. */
   let turning: { by: number } | null = null;
   /** How far a pie's label being dragged has moved, in pixels: it goes anywhere, in
@@ -148,12 +146,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       : [held];
   const spin = (angle: number, by: number) =>
     (((angle + by) % 360) + 360) % 360;
-  /** What the eraser has passed over while pressed; gone in one step when it lifts. */
-  let erasing: {
-    bars: Set<string>;
-    labels: Set<string>;
-    spokes: Set<number>;
-  } | null = null;
+  /** What the eraser has passed over while pressed, by id; gone in one step when it
+   * lifts. */
+  let erasing: Record<Picked['kind'], Set<string>> | null = null;
   const trail = new EraserTrail(() => redraw());
   /** The value axis while a zoom is still moving (Epo 2026-11-08), and its top
    * before rounding. */
@@ -161,12 +156,13 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   let zoomTimer: ReturnType<typeof setTimeout> | undefined;
   let pointer: Vec | null = null;
   const workspace = boardKindOf(gfx.std) === 'workspace';
-  /** The row under the mouse, its bar, slice (`s` and its line) or label lit. */
+  /** The row under the mouse, its bar, slice (`s:` and its line's id) or label lit. */
   let hot: string | null = null;
   /** The row whose ⋮ menu is open, and how far down the pane it sits. */
   let menuFor: { key: string; top: number } | null = null;
-  /** A row's swatch picked: the next fill picked goes to that bar or slice. */
-  let recolour: { bar: string } | { from: number } | null = null;
+  /** A row's swatch picked: the next fill picked goes to that bar or slice (by the
+   * line it starts at). */
+  let recolour: { bar: string } | { spoke: string } | null = null;
   /** The row whose first field takes the caret once drawn (one just added). */
   let focusRow: string | null = null;
 
@@ -174,18 +170,13 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     // A pie keeps its first line at 12 o'clock, as a new one starts.
     clear: {
       empty: () =>
-        !(model.bars.length || model.labels.length) &&
-        model.spokes.length <= (model.kind === 'pie' ? 1 : 0),
+        !(model.barList.length || model.labelList.length) &&
+        model.spokeList.length <= (model.kind === 'pie' ? 1 : 0),
       run: () => {
         typing = null;
         chosen = [];
         picked = null;
-        update({
-          bars: [],
-          fills: [],
-          labels: [],
-          spokes: model.kind === 'pie' ? [0] : [],
-        });
+        update(cleared(model.kind));
         drawControls();
         redraw();
       },
@@ -251,8 +242,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const resolve = gfx.std.get(ThemeProvider);
   const isBar = model.kind === 'bar';
 
-  const update = (props: Partial<ChartElementModel>) =>
-    shell.write(() => gfx.surface?.updateElement(model.id, props));
+  /** Lists given in full, built from the model's lists as they read now: only the
+   * items that changed are written. */
+  const update = (change: ChartChange) =>
+    shell.write(() => model.write(change));
 
   const listOpen = () =>
     workspace && (listChoice ?? box().width >= SHEET_BELOW);
@@ -279,11 +272,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         }
       : { bottom: 92, left: 16, right: 16, top: 64 };
   };
-  const slots = () =>
-    Math.max(
-      3,
-      model.bars.length < BARS_MAX ? model.bars.length + 1 : BARS_MAX
-    );
+  const slots = () => barSlots(model.barList.length);
   const screen = () => {
     const { height, width } = box();
     return { h: height, w: width, x: 0, y: 0 };
@@ -308,13 +297,15 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     return clockAngle([cx, -cy], [x, -y]);
   };
   /** The line before an angle, clockwise: where its slice starts. */
-  const lineBefore = (angle: number) =>
-    [...model.spokes]
-      .sort((a, b) => a - b)
-      .filter((spoke) => spoke <= angle)
-      .at(-1) ?? Math.max(...model.spokes, 0);
+  const lineBefore = (angle: number) => {
+    const sorted = [...model.spokeList].sort((a, b) => a.angle - b.angle);
+    return (
+      sorted.filter((spoke) => spoke.angle <= angle).at(-1) ?? sorted.at(-1)
+    );
+  };
   /** The sector a new line closes: from the line before it, clockwise. */
-  const sectorTo = (angle: number) => (angle - lineBefore(angle) + 360) % 360;
+  const sectorTo = (angle: number) =>
+    (angle - (lineBefore(angle)?.angle ?? 0) + 360) % 360;
   /** Where a pie label sits on screen. */
   const labelPoint = ({
     angle,
@@ -350,7 +341,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   };
   /** The pie label under a point, if any: on its text, or near its point. */
   const labelAt = ([x, y]: Vec) =>
-    model.labels.find((label) => {
+    model.labelList.find((label) => {
       const [lx, ly] = labelPoint(label);
       const box = labelBox(label);
       return (
@@ -362,11 +353,11 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       );
     });
   /** The one label Select has picked, which wears the board's frame (Epo 2026-11-13). */
-  const framed = (labels = model.labels) => {
+  const framed = (labels = model.labelList) => {
     const [one] = chosen;
     if (tool !== 'select' || chosen.length !== 1 || one.kind !== 'label')
       return null;
-    if (typing?.id === one.id) return null;
+    if (typing?.draft?.id === one.id) return null;
     return labels.find(({ id }) => id === one.id) ?? null;
   };
   const cornerAt = (px: Vec) => {
@@ -399,34 +390,38 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** The bar, pie line or pie label under a pixel, within `reach` of it. */
   const hitAt = (at: Vec, reach: number): Picked | null => {
     if (isBar) {
-      const slot = model.bars.findIndex(({ value }, i) => {
-        const bar = barBox(i, value);
+      const bar = model.barList.find(({ value }, i) => {
+        const box = barBox(i, value);
         return (
-          at[0] >= bar.left - reach &&
-          at[0] <= bar.left + bar.w + reach &&
-          at[1] >= bar.top - reach &&
-          at[1] <= bar.bottom
+          at[0] >= box.left - reach &&
+          at[0] <= box.left + box.w + reach &&
+          at[1] >= box.top - reach &&
+          at[1] <= box.bottom
         );
       });
-      const bar = model.bars[slot];
       return bar ? { id: bar.id, kind: 'bar' } : null;
     }
     const label = labelAt(at);
     if (label) return { id: label.id, kind: 'label' };
-    const spoke = model.spokes.find((each) => offSpoke(at, each) <= reach);
-    return spoke === undefined ? null : { angle: spoke, kind: 'spoke' };
+    const spoke = model.spokeList.find(
+      ({ angle }) => offSpoke(at, angle) <= reach
+    );
+    return spoke ? { id: spoke.id, kind: 'spoke' } : null;
   };
-  /** Removes them in one step. */
-  const remove = (gone: Picked[]) => {
-    const has = (item: Picked) => gone.some((other) => same(other, item));
-    const spokeGone = (angle: number) => has({ angle, kind: 'spoke' });
+  /** Takes out the bars, labels and lines named, in one step; a line's fill goes
+   * with it. */
+  const without = (gone: Record<Picked['kind'], Set<string>>) =>
     update({
-      bars: model.bars.filter(({ id }) => !has({ id, kind: 'bar' })),
-      fills: (model.fills ?? []).filter(({ from }) => !spokeGone(from)),
-      labels: model.labels.filter(({ id }) => !has({ id, kind: 'label' })),
-      spokes: model.spokes.filter((spoke) => !spokeGone(spoke)),
+      bars: model.barList.filter(({ id }) => !gone.bar.has(id)),
+      labels: model.labelList.filter(({ id }) => !gone.label.has(id)),
+      spokes: model.spokeList.filter(({ id }) => !gone.spoke.has(id)),
     });
-  };
+  const remove = (picks: Picked[]) =>
+    without({
+      bar: idsOf(picks, 'bar'),
+      label: idsOf(picks, 'label'),
+      spoke: idsOf(picks, 'spoke'),
+    });
   /** Everything with a part inside a box of pixels, as the board's selection box. */
   const boxed = ([ax, ay]: Vec, [bx, by]: Vec): Picked[] => {
     const [x0, x1, y0, y1] = [
@@ -437,7 +432,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     ];
     const inside = ([x, y]: Vec) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
     if (isBar)
-      return model.bars
+      return model.barList
         .filter(({ value }, i) => {
           const bar = barBox(i, value);
           return (
@@ -454,14 +449,14 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return [cx + reach * Math.sin(turn), cy - reach * Math.cos(turn)];
     };
     // A line is in when a point along it is, sampled finer than any box worth drawing.
-    const spokes: Picked[] = model.spokes
-      .filter((spoke) =>
-        Array.from({ length: 41 }, (_, i) => at(spoke, (r * i) / 40)).some(
+    const spokes: Picked[] = model.spokeList
+      .filter(({ angle }) =>
+        Array.from({ length: 41 }, (_, i) => at(angle, (r * i) / 40)).some(
           inside
         )
       )
-      .map((angle) => ({ angle, kind: 'spoke' }));
-    const labels: Picked[] = model.labels
+      .map(({ id }) => ({ id, kind: 'spoke' }));
+    const labels: Picked[] = model.labelList
       .filter((label) => inside(labelPoint(label)))
       .map(({ id }) => ({ id, kind: 'label' }));
     return [...spokes, ...labels];
@@ -469,9 +464,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   /** Whatever is within the eraser's reach of a pixel joins what it's erasing. */
   const eraseNear = (at: Vec) => {
     const hit = hitAt(at, ERASER_SIZE / 2);
-    if (hit?.kind === 'bar') erasing?.bars.add(hit.id);
-    if (hit?.kind === 'label') erasing?.labels.add(hit.id);
-    if (hit?.kind === 'spoke') erasing?.spokes.add(hit.angle);
+    if (hit) erasing?.[hit.kind].add(hit.id);
   };
 
   /** A selected or held item, in blue, where it's being dragged to. */
@@ -480,7 +473,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     area: { h: number; w: number; x: number; y: number },
     bars: ChartBar[],
     labels: PieLabel[],
-    spokes: number[]
+    spokes: PieSpoke[]
   ) => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -513,10 +506,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     };
     if (one.kind === 'spoke') {
       const held = picked && same(picked, one);
-      const turned =
-        turning && picked && groupOf(picked).some((other) => same(other, one));
-      const angle = turned && turning ? spin(one.angle, turning.by) : one.angle;
-      if (!spokes.includes(angle)) return;
+      const angle = spokes.find(({ id }) => id === one.id)?.angle;
+      if (angle === undefined) return;
       const [x, y] = at(angle, r);
       outline(() => {
         ctx.moveTo(cx, cy);
@@ -546,46 +537,37 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
    * moves. Chosen bars go up or down by as much as the held one, chosen lines and
    * labels round by as far. */
   const moving = () => {
-    let { bars, fills = [], labels, spokes } = model;
+    let { barList: bars, labelList: labels, spokeList: spokes } = model;
     if (live) {
-      const { slot, value } = live;
-      const by = value - (bars[slot]?.value ?? value);
-      const along = new Set(
-        picked?.kind === 'bar'
-          ? groupOf(picked).flatMap((one) => (one.kind === 'bar' ? one.id : []))
-          : []
-      );
-      bars = bars.map((bar, i) => {
-        if (i === slot) return { ...bar, value };
+      const { id, value } = live;
+      const by = value - (bars.find((bar) => bar.id === id)?.value ?? value);
+      const along = idsOf(picked?.kind === 'bar' ? groupOf(picked) : [], 'bar');
+      bars = bars.map((bar) => {
+        if (bar.id === id) return { ...bar, value };
         if (!along.has(bar.id)) return bar;
         return {
           ...bar,
           value: Math.min(AXIS_MAX, Math.max(0, tidy(bar.value + by))),
         };
       });
-      if (slot >= bars.length)
-        bars = [...bars, { fill: newFill(), id: '', label: '', value }];
+      // The new bar shows only while there's room: a peer may have filled the
+      // last place mid-drag.
+      if (!id)
+        bars =
+          appended(bars, { fill: newFill(), id, label: '', value }, BARS_MAX) ??
+          bars;
     }
     if (turning && picked) {
       const { by } = turning;
-      const group = groupOf(picked);
-      const angles = new Set(
-        group.flatMap((one) => (one.kind === 'spoke' ? one.angle : []))
-      );
+      const ids = idsOf(groupOf(picked), 'spoke');
+      // A line turns alone: its slice's fill goes with it.
       spokes = spokes.map((spoke) =>
-        angles.has(spoke) ? spin(spoke, by) : spoke
-      );
-      fills = fills.map((slice) =>
-        angles.has(slice.from)
-          ? { ...slice, from: spin(slice.from, by) }
-          : slice
+        ids.has(spoke.id) ? { ...spoke, angle: spin(spoke.angle, by) } : spoke
       );
     }
     if (shifting && picked) {
       const [dx, dy] = shifting;
-      const ids = new Set(
-        groupOf(picked).flatMap((one) => (one.kind === 'label' ? one.id : []))
-      );
+      const ids = idsOf(groupOf(picked), 'label');
       labels = labels.map((label) => {
         if (!ids.has(label.id)) return label;
         const [x, y] = labelPoint(label);
@@ -598,32 +580,33 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         label.id === id ? { ...label, size } : label
       );
     }
-    return { bars, fills, labels, spokes };
+    return { bars, labels, spokes };
   };
 
   const draw = () => {
     const { height, width } = shell.sizeCanvas();
     const area = { h: height, w: width, x: 0, y: 0 };
-    let { bars, fills, labels, spokes } = moving();
+    let { bars, labels, spokes } = moving();
     if (erasing) {
       const gone = erasing;
-      bars = bars.filter(({ id }) => !gone.bars.has(id));
-      labels = labels.filter(({ id }) => !gone.labels.has(id));
-      spokes = spokes.filter((spoke) => !gone.spokes.has(spoke));
-      fills = fills.filter((slice) => !gone.spokes.has(slice.from));
+      bars = bars.filter(({ id }) => !gone.bar.has(id));
+      labels = labels.filter(({ id }) => !gone.label.has(id));
+      spokes = spokes.filter(({ id }) => !gone.spoke.has(id));
     }
     const { kind } = model;
     const { axisMax, axisStep } = axis();
     drawChart(
       ctx,
       area,
-      { axisMax, axisStep, bars, fills, kind, labels, spokes },
+      { axisMax, axisStep, bars, kind, labels, spokes },
       (color) => resolve.getColorValue(color, 'transparent', true),
       PAPER[resolve.theme],
       pads(),
       isBar ? slots() : undefined
     );
-    if (live) {
+    // The bar being set: its place is where it is now, a new one's after the last.
+    const slot = live && bars.findIndex(({ id }) => id === live?.id);
+    if (live && slot !== null && slot >= 0) {
       const {
         base,
         height: plot,
@@ -633,7 +616,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       drawChip(
         ctx,
         `${Number(live.value.toPrecision(10))}`,
-        left + slotW * live.slot + slotW * 0.78,
+        left + slotW * slot + slotW * 0.78,
         base - (plot * live.value) / axisMax + 20,
         width
       );
@@ -651,8 +634,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       );
     // A hovered row lights its bar, slice or label.
     if (hot?.startsWith('s:')) {
-      const from = Number(hot.slice(2));
-      const slice = slicesOf(spokes).find((one) => one.from === from);
+      const line = hot.slice(2);
+      const slice = slicesOf(spokes).find(({ spoke }) => spoke.id === line);
       if (slice) {
         const { cx, cy, r } = pieCircle(area, pads());
         const turn = (deg: number) => ((deg - 90) * Math.PI) / 180;
@@ -698,7 +681,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     // Where a press would set a bar, as the plane shows where a point would go.
     if (isBar && tool === 'draw' && pointer && !live) {
       const slot = slotAt(pointer);
-      if (slot <= model.bars.length && slot < BARS_MAX) {
+      if (setsBar(slot, model.barList.length)) {
         const value = valueAt(pointer);
         const {
           base,
@@ -755,7 +738,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   const openLabel = (at: Vec) => {
     if (isBar) {
       const slot = slotAt(at);
-      const bar = model.bars[slot];
+      const bar = model.barList[slot];
       if (!bar) return;
       const { base, left, slotW } = barPlot(screen(), pads(), slots());
       typing = {
@@ -767,15 +750,14 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     } else {
       // A new label goes where it's clicked.
       const label = labelAt(at);
-      if (!label && model.labels.length >= LABELS_MAX) return;
+      if (!label && model.labelList.length >= LABELS_MAX) return;
       const place = label ?? labelPlace(at);
       const [x, y] = labelPoint(place);
+      const text = label?.text ?? '';
       typing = {
-        angle: place.angle,
-        id: label?.id,
-        reach: place.reach,
+        draft: { angle: place.angle, id: label?.id, reach: place.reach, text },
         size: label?.size,
-        text: label?.text ?? '',
+        text,
         x,
         y,
       };
@@ -789,47 +771,30 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     typing = null;
     if (!open || !field) return;
     const text = field.value.trim();
-    if (open.barId) {
-      const bars = model.bars.map((bar) =>
-        bar.id === open.barId ? { ...bar, label: text } : bar
-      );
-      if (text !== model.bars.find((bar) => bar.id === open.barId)?.label)
-        update({ bars });
-    } else {
-      const others: PieLabel[] = model.labels.filter(
-        ({ id }) => id !== open.id
-      );
-      if (text)
-        update({
-          labels: [
-            ...others,
-            {
-              angle: open.angle ?? 0,
-              id: open.id ?? crypto.randomUUID(),
-              reach: open.reach ?? 0,
-              ...(open.size && { size: open.size }),
-              text,
-            },
-          ],
-        });
-      else if (open.id) update({ labels: others });
+    const { barId, draft } = open;
+    if (barId) {
+      const bars = typedBars(model.barList, barId, open.text, text);
+      if (bars) update({ bars });
+    } else if (draft) {
+      const labels = typedLabels(model.labelList, draft, text);
+      if (labels) update({ labels });
     }
     // One label, then back to Select, as on the plane.
     if (tool === 'label') tool = 'select';
     drawControls();
   };
 
-  /** The pie slice under a point takes the picked fill; No fill clears it. */
-  const fillAt = (at: Vec) => {
-    if (!model.spokes.length) return;
-    const from = lineBefore(angleAt(at));
-    const fill = newFill();
-    const others = (model.fills ?? []).filter(
-      (slice) => slice.from !== from && model.spokes.includes(slice.from)
-    );
+  /** The slice starting at a line takes the picked fill; No fill clears it. */
+  const fillSlice = (line: string) =>
     update({
-      fills: fill === 'transparent' ? others : [...others, { fill, from }],
+      spokes: model.spokeList.map((spoke) =>
+        spoke.id === line ? filled(spoke, newFill()) : spoke
+      ),
     });
+  /** The pie slice under a point takes the picked fill. */
+  const fillAt = (at: Vec) => {
+    const line = lineBefore(angleAt(at));
+    if (line) fillSlice(line.id);
   };
 
   const setAxis = (event: Event, which: 'axisMax' | 'axisStep') => {
@@ -848,10 +813,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   };
   /** The axis ends at the first numbered line above the tallest bar. */
   const fitAxis = () => {
-    const tallest = Math.max(...model.bars.map(({ value }) => value), 0);
-    const axisMax =
-      Math.max(Math.ceil(tallest / model.axisStep), 1) * model.axisStep;
-    if (axisMax !== model.axisMax) update({ axisMax });
+    const tallest = Math.max(...model.barList.map(({ value }) => value), 0);
+    const fitted = axisAbove(tallest, model.axisStep);
+    if (fitted.axisMax !== model.axisMax || fitted.axisStep !== model.axisStep)
+      update(fitted);
   };
 
   const axis = () => zoom ?? model;
@@ -916,13 +881,13 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     lastAt = at;
     dragging = false;
     if (tool === 'erase') {
-      erasing = { bars: new Set(), labels: new Set(), spokes: new Set() };
+      erasing = { bar: new Set(), label: new Set(), spoke: new Set() };
       trail.start(at);
       eraseNear(at);
     }
     const pulled = tool === 'select' && cornerAt(at);
     if (pulled) {
-      const label = model.labels.find(({ id }) => id === pulled.id);
+      const label = model.labelList.find(({ id }) => id === pulled.id);
       picked = { id: pulled.id, kind: 'label' };
       resizing = { ...pulled, size: label?.size ?? CHART_TEXT };
     } else if (tool === 'select') {
@@ -931,8 +896,9 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     }
     if (isBar && tool === 'draw') {
       const slot = slotAt(at);
-      if (slot <= model.bars.length && slot < BARS_MAX)
-        live = { slot, value: valueAt(at) };
+      const bars = model.barList;
+      if (setsBar(slot, bars.length))
+        live = { id: bars[slot]?.id ?? '', value: valueAt(at) };
     }
     redraw();
   });
@@ -960,7 +926,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     }
     const held = picked;
     const label =
-      resizing && model.labels.find(({ id }) => id === resizing?.id);
+      resizing && model.labelList.find(({ id }) => id === resizing?.id);
     if (resizing && label && pressed) {
       resizing.size = draggedSize(
         label.size ?? CHART_TEXT,
@@ -974,21 +940,24 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       dragging ||=
         Math.hypot(at[0] - pressedAt[0], at[1] - pressedAt[1]) >=
         PIXELS_TO_DRAG;
+      const spokes = model.spokeList;
+      const line = spokes.find(({ id }) => id === held.id);
       if (dragging && held.kind === 'bar') {
-        const slot = model.bars.findIndex(({ id }) => id === held.id);
-        if (slot >= 0) live = { slot, value: valueAt(at) };
+        if (model.barList.some(({ id }) => id === held.id))
+          live = { id: held.id, value: valueAt(at) };
       } else if (dragging && held.kind === 'label')
         shifting = [at[0] - pressedAt[0], at[1] - pressedAt[1]];
-      else if (dragging && held.kind === 'spoke') {
-        const by = angleAt(at) - held.angle;
+      else if (dragging && held.kind === 'spoke' && line) {
+        // From where the line is now, should a peer have turned it.
+        const by = angleAt(at) - line.angle;
         // Lines stay off the others.
-        const group = groupOf(held).flatMap((one) =>
-          one.kind === 'spoke' ? one.angle : []
+        const group = idsOf(groupOf(held), 'spoke');
+        const others = spokes.filter(({ id }) => !group.has(id));
+        const taken = spokes.some(
+          ({ angle, id }) =>
+            group.has(id) &&
+            others.some((other) => other.angle === spin(angle, by))
         );
-        const taken = group.some((angle) => {
-          const to = spin(angle, by);
-          return model.spokes.includes(to) && !group.includes(to);
-        });
         if (!taken) turning = { by };
       }
       canvas.style.cursor = dragging ? 'grabbing' : '';
@@ -1043,56 +1012,45 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
           : [...chosen, held];
       else chosen = [held];
     }
+    // Each write starts from the lists as they read now (`moving` reads them too),
+    // so a peer's change since the press stays.
     if (gone) {
       trail.end();
-      if (gone.bars.size || gone.labels.size || gone.spokes.size)
-        update({
-          bars: model.bars.filter(({ id }) => !gone.bars.has(id)),
-          fills: (model.fills ?? []).filter(
-            ({ from }) => !gone.spokes.has(from)
-          ),
-          labels: model.labels.filter(({ id }) => !gone.labels.has(id)),
-          spokes: model.spokes.filter((spoke) => !gone.spokes.has(spoke)),
-        });
+      if (gone.bar.size || gone.label.size || gone.spoke.size) without(gone);
     } else if (turned && held?.kind === 'spoke') {
-      const { by } = turned;
-      if (by) update({ fills: next.fills, spokes: next.spokes });
-      // The selection follows its lines round.
-      const angles = groupOf(held).flatMap((one) =>
-        one.kind === 'spoke' ? one.angle : []
-      );
-      picked = { angle: spin(held.angle, by), kind: 'spoke' };
-      chosen = chosen.map((one) =>
-        one.kind === 'spoke' && angles.includes(one.angle)
-          ? { angle: spin(one.angle, by), kind: 'spoke' }
-          : one
-      );
+      // The selection follows its lines round by their ids.
+      if (turned.by) update({ spokes: next.spokes });
     } else if (shifted && held?.kind === 'label') {
       update({ labels: next.labels });
     } else if (sized) {
-      const was = model.labels.find(({ id }) => id === sized.id)?.size;
+      const was = model.labelList.find(({ id }) => id === sized.id)?.size;
       if (sized.size !== (was ?? CHART_TEXT)) update({ labels: next.labels });
     } else if (live) {
-      const { slot, value } = live;
+      const { id, value } = live;
       live = null;
-      // A bar taken down to nothing goes.
-      if (model.bars[slot])
-        update({ bars: next.bars.filter((bar) => bar.value) });
-      else if (value)
-        update({
-          bars: [
-            ...model.bars,
-            { fill: newFill(), id: crypto.randomUUID(), label: '', value },
-          ],
-        });
+      // A bar dragged down to nothing goes; one a peer took out stays out. A new bar
+      // waits for room, should a peer have filled the last place meanwhile.
+      if (id) {
+        if (model.barList.some((bar) => bar.id === id))
+          update({ bars: liftedBars(model.barList, next.bars) });
+      } else if (value) {
+        const bars = appended(
+          model.barList,
+          { fill: newFill(), id: crypto.randomUUID(), label: '', value },
+          BARS_MAX
+        );
+        if (bars) update({ bars });
+      }
     } else if (tool === 'label') {
       commitLabel();
       openLabel(at);
     } else if (tool === 'fill') fillAt(at);
-    else if (tool === 'draw' && !isBar && model.spokes.length < SPOKES_MAX) {
+    else if (tool === 'draw' && !isBar && model.spokeList.length < SPOKES_MAX) {
       const angle = angleAt(at);
-      if (!model.spokes.includes(angle))
-        update({ spokes: [...model.spokes, angle] });
+      if (!model.spokeList.some((spoke) => spoke.angle === angle))
+        update({
+          spokes: [...model.spokeList, { angle, id: crypto.randomUUID() }],
+        });
     }
     if (event.pointerType !== 'mouse') pointer = null;
     redraw();
@@ -1187,17 +1145,21 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
   };
   /** A slice's name: the first label inside the pie within it. */
   const nameOf = (slice: Slice) =>
-    model.labels.find(
+    model.labelList.find(
       ({ angle, reach }) => reach <= 1 && inSlice(slice, angle)
     );
-  const colourOf = (fill: ChartBar['fill'] | undefined) =>
+  /** The slices as they are now, and the one starting at a line, by its id. */
+  const sliceAt = (line: string) => {
+    const slices = slicesOf(model.spokeList);
+    return {
+      index: slices.findIndex(({ spoke }) => spoke.id === line),
+      slices,
+    };
+  };
+  const colourOf = (fill: Color | undefined) =>
     fill ? resolve.getColorValue(fill, 'transparent', true) : 'transparent';
   const setBar = (id: string, change: Partial<ChartBar>) =>
-    update({
-      bars: model.bars.map((bar) =>
-        bar.id === id ? { ...bar, ...change } : bar
-      ),
-    });
+    update({ bars: changed(model.barList, id, change) });
   /** A typed value; past the axis's top it raises the top to the next line. */
   const setValue = (bar: ChartBar, field: HTMLInputElement) => {
     const value = Number(field.value.replace(/[−–]/g, '-'));
@@ -1206,37 +1168,30 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
       return;
     }
     let { axisMax, axisStep } = model;
-    if (value > axisMax) {
-      const lifted = Number(
-        (Math.ceil(value / axisStep - 1e-9) * axisStep).toPrecision(12)
-      );
-      if (lifted / axisStep <= AXIS_LINES_MAX) axisMax = lifted;
-      else ({ axisMax, axisStep } = niceAxis(value));
-    }
+    if (value > axisMax) ({ axisMax, axisStep } = axisAbove(value, axisStep));
     update({
       axisMax,
       axisStep,
-      bars: model.bars.map((one) =>
-        one.id === bar.id ? { ...one, value } : one
-      ),
+      bars: changed(model.barList, bar.id, { value }),
     });
   };
   const addBar = () => {
-    if (model.bars.length >= BARS_MAX) return;
+    if (model.barList.length >= BARS_MAX) return;
     const id = crypto.randomUUID();
     focusRow = id;
     update({
       bars: [
-        ...model.bars,
+        ...model.barList,
         { fill: newFill(), id, label: '', value: model.axisStep },
       ],
     });
   };
   /** A slice's share typed: its closing line moves, the slices after it keep their
    * sizes and the last takes up the rest (the last one's own share moves its opening
-   * line). Labels inside a slice keep their place in it; fills follow their line. */
-  const setShare = (index: number, field: HTMLInputElement) => {
-    const slices = slicesOf(model.spokes);
+   * line). Labels inside a slice keep their place in it; fills go with their line. */
+  const setShare = (line: string, field: HTMLInputElement) => {
+    const { index, slices } = sliceAt(line);
+    if (index < 0) return;
     const size = Math.round(Number(field.value.replace('%', '')) * 3.6);
     const last = slices.length - 1;
     const delta = size - slices[index]?.size;
@@ -1263,11 +1218,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     });
     const spin = (angle: number) => ((angle % 360) + 360) % 360;
     update({
-      fills: (model.fills ?? []).map((fill) => {
-        const i = slices.findIndex(({ from }) => from === fill.from);
-        return i < 0 ? fill : { ...fill, from: spin(moved[i].from) };
-      }),
-      labels: model.labels.map((label) => {
+      labels: model.labelList.map((label) => {
         const i =
           label.reach <= 1
             ? slices.findIndex((slice) => inSlice(slice, label.angle))
@@ -1276,24 +1227,29 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         const into = spin(label.angle - slices[i].from) / slices[i].size;
         return { ...label, angle: spin(moved[i].from + into * moved[i].size) };
       }),
-      spokes: moved.map(({ from }) => spin(from)),
+      spokes: model.spokeList.map((spoke) => {
+        const i = slices.findIndex((slice) => slice.spoke.id === spoke.id);
+        return { ...spoke, angle: spin(moved[i].from) };
+      }),
     });
   };
-  const nameSlice = (slice: Slice, field: HTMLInputElement) => {
+  const nameSlice = (line: string, field: HTMLInputElement) => {
+    const { index, slices } = sliceAt(line);
+    const slice = slices[index];
+    if (!slice) return;
     const text = field.value.trim().slice(0, LABEL_LENGTH_MAX);
     const named = nameOf(slice);
+    const labels = model.labelList;
     if (named)
       update({
         labels: text
-          ? model.labels.map((label) =>
-              label.id === named.id ? { ...label, text } : label
-            )
-          : model.labels.filter(({ id }) => id !== named.id),
+          ? changed(labels, named.id, { text })
+          : labels.filter(({ id }) => id !== named.id),
       });
-    else if (text && model.labels.length < LABELS_MAX)
+    else if (text && labels.length < LABELS_MAX)
       update({
         labels: [
-          ...model.labels,
+          ...labels,
           {
             angle: (slice.from + slice.size / 2) % 360,
             id: crypto.randomUUID(),
@@ -1303,48 +1259,41 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         ],
       });
   };
-  /** "+ Slice": the last slice halved, or a first line at 12 o'clock. */
+  /** "+ Slice": the last slice halved, or the first line at 12 o'clock. */
   const addSlice = () => {
-    const slices = slicesOf(model.spokes);
-    const last = slices.at(-1);
-    if (!last) {
-      focusRow = 's:0';
-      update({ spokes: [0] });
-      return;
-    }
-    if (last.size < 2 || model.spokes.length >= SPOKES_MAX) return;
-    const from = (last.from + Math.floor(last.size / 2)) % 360;
-    focusRow = `s:${from}`;
-    update({ spokes: [...model.spokes, from] });
+    const spokes = model.spokeList;
+    const last = slicesOf(spokes).at(-1);
+    if (last && (last.size < 2 || spokes.length >= SPOKES_MAX)) return;
+    const id = last ? crypto.randomUUID() : FIRST_SPOKE;
+    const angle = last ? (last.from + Math.floor(last.size / 2)) % 360 : 0;
+    focusRow = `s:${id}`;
+    update({ spokes: [...spokes, { angle, id }] });
   };
   const textOf = (field: HTMLInputElement) =>
     field.value.trim().slice(0, LABEL_LENGTH_MAX);
   const setLabel = (id: string, field: HTMLInputElement) => {
     const text = textOf(field);
+    const labels = model.labelList;
     update({
       labels: text
-        ? model.labels.map((label) =>
-            label.id === id ? { ...label, text } : label
-          )
-        : model.labels.filter((label) => label.id !== id),
+        ? changed(labels, id, { text })
+        : labels.filter((label) => label.id !== id),
     });
   };
-  /** ⋮ Delete: a bar, a label, or a slice's opening line (it joins the one before). */
+  /** ⋮ Delete: a bar, a label, or a slice's opening line (it joins the one before,
+   * its fill going with it). */
   const removeRow = (key: string) => {
     hot = null;
-    if (key.startsWith('s:')) {
-      const from = Number(key.slice(2));
-      update({
-        fills: (model.fills ?? []).filter((fill) => fill.from !== from),
-        spokes: model.spokes.filter((spoke) => spoke !== from),
-      });
-    } else if (model.bars.some(({ id }) => id === key))
-      update({ bars: model.bars.filter(({ id }) => id !== key) });
-    else update({ labels: model.labels.filter(({ id }) => id !== key) });
+    const line = key.startsWith('s:') ? key.slice(2) : '';
+    without({
+      bar: new Set(line ? [] : [key]),
+      label: new Set(line ? [] : [key]),
+      spoke: new Set(line ? [line] : []),
+    });
     redraw();
   };
   /** A swatch picked: the fill row opens for it, and its next pick goes there. */
-  const pickSwatch = (target: { bar: string } | { from: number }) => {
+  const pickSwatch = (target: { bar: string } | { spoke: string }) => {
     commitLabel();
     recolour = target;
     tool = isBar ? 'draw' : 'fill';
@@ -1355,19 +1304,8 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     const target = recolour;
     recolour = null;
     if (!target) return;
-    const fill = newFill();
-    if ('bar' in target) setBar(target.bar, { fill });
-    else {
-      const others = (model.fills ?? []).filter(
-        (slice) => slice.from !== target.from
-      );
-      update({
-        fills:
-          fill === 'transparent'
-            ? others
-            : [...others, { fill, from: target.from }],
-      });
-    }
+    if ('bar' in target) setBar(target.bar, { fill: newFill() });
+    else fillSlice(target.spoke);
   };
   const field = (
     label: string,
@@ -1411,7 +1349,10 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     >
       ${hugeIcon(MoreVerticalIcon)}
     </button>`;
-  const swatch = (colour: string, target: { bar: string } | { from: number }) =>
+  const swatch = (
+    colour: string,
+    target: { bar: string } | { spoke: string }
+  ) =>
     html`<button
       aria-label=${m.drawing_board_fill()}
       class="swatch"
@@ -1430,7 +1371,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
     </li>`;
   const barRows = () =>
     repeat(
-      model.bars,
+      model.barList,
       ({ id }) => id,
       (bar) =>
         row(
@@ -1448,31 +1389,26 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
         )
     );
   const sliceRows = () => {
-    const slices = slicesOf(model.spokes);
+    const slices = slicesOf(model.spokeList);
     const names = new Set(slices.map((slice) => nameOf(slice)?.id));
-    const free = model.labels.filter(({ id }) => !names.has(id));
+    const free = model.labelList.filter(({ id }) => !names.has(id));
     return html`${repeat(
       slices,
-      ({ from }) => from,
-      (slice, index) =>
+      ({ spoke }) => spoke.id,
+      (slice) =>
         row(
-          `s:${slice.from}`,
-          html`${swatch(
-            colourOf(
-              (model.fills ?? []).find(({ from }) => from === slice.from)?.fill
-            ),
-            { from: slice.from }
-          )}
+          `s:${slice.spoke.id}`,
+          html`${swatch(colourOf(slice.spoke.fill), { spoke: slice.spoke.id })}
           ${field(
             m.drawing_board_chart_label(),
             nameOf(slice)?.text ?? '',
-            (input) => nameSlice(slice, input)
+            (input) => nameSlice(slice.spoke.id, input)
           )}
           <span class="share">
             ${field(
               m.drawing_board_chart_share(),
               String(shareOf(slice)),
-              (input) => setShare(index, input),
+              (input) => setShare(slice.spoke.id, input),
               true
             )}<small>%</small><small>${slice.size}°</small>
           </span>`
@@ -1601,7 +1537,7 @@ function openChartEditor(gfx: GfxController, model: ChartElementModel) {
             : nothing
         }
         ${
-          !isBar && tool === 'draw' && model.spokes.length
+          !isBar && tool === 'draw' && model.spokeList.length
             ? html`<button
                 class="capy-plane-finish"
                 type="button"

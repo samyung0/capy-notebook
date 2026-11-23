@@ -1,5 +1,4 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
-import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
 import type { Board, GraphElement } from '@/features/graph/model';
 import { m } from '@/i18n';
 
@@ -389,12 +388,13 @@ export function blankQuestion(): Question {
   };
 }
 
-/** An open part's marks from its marking items, capped at QUESTION_MARKS_MAX:
- * the items stay as entered, so a total past the cap shows as a mismatch
- * instead of a value the live room refuses (Epo 2026-10-14). */
+/** An open part's marks: its marking items' total. Its editor stops adding
+ * at a total of QUESTION_MARKS_MAX; two editors' adds at once may pass it, a
+ * limit a merge can pass like any other (Epo 2026-11-22, "Yes, A
+ * everywhere"), and every reader takes the total. Past twice the cap it is
+ * the warning the user tunes (Epo 2026-10-14). */
 export function schemeMarks(items: MarkItem[]): number {
-  const total = items.reduce((sum, item) => sum + item.marks, 0);
-  return Math.min(QUESTION_MARKS_MAX, total);
+  return items.reduce((sum, item) => sum + item.marks, 0);
 }
 
 /** A figure without a blank description: descriptions are optional. */

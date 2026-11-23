@@ -8,17 +8,24 @@ import {
   exampleQuestion,
   exampleQuestions,
 } from '@/features/questions/questionFixtures';
-import type { Question, QuestionBlock } from '@/features/questions/types';
+import type {
+  LearnerQuestion,
+  Question,
+  QuestionBlock,
+} from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
+import { ordered } from './liveMaps';
 import {
   applyReaderMessage,
   insertQuestions,
   itemParts,
   keysScope,
+  moveQuestion,
   questionsScope,
   readLearnerQuestions,
   readQuestions,
+  SAMPLE_KEY,
   seedQuiz,
   writeQuestion,
 } from './liveQuiz';
@@ -368,6 +375,123 @@ it('applies pushed lists: a full one replaces, a partial one changes named parts
   expect([...lists.keys()]).toEqual(['m']);
 });
 
+it("keeps one sample answer when two editors type an open part's first at once", () => {
+  // Epo 2026-11-22: "then last save wins? if we change the question data
+  // structure now we need to change the UI as well, dont".
+  const open = exampleQuestions[6];
+  const bare: Question = {
+    ...open,
+    parts: [{ ...open.parts[0], answer: { accepted: [], type: 'open' } }],
+  };
+  const content = new Y.Doc();
+  const keys = new Y.Doc();
+  seedQuiz(content, keys, [bare]);
+  const copy = (doc: Y.Doc, client: number) => {
+    const made = new Y.Doc();
+    made.clientID = client;
+    Y.applyUpdate(made, Y.encodeStateAsUpdate(doc));
+    return made;
+  };
+  const editors = [1, 2].map((n) => ({
+    content: copy(content, 10 + n),
+    keys: copy(keys, 20 + n),
+  }));
+  const sampleOf = (editor: (typeof editors)[number]) => {
+    const answer = readQuestions(editor.content, editor.keys)[0].parts[0]
+      .answer;
+    return answer.type === 'open' ? answer.accepted : [];
+  };
+  const type = (editor: (typeof editors)[number], sample: string) =>
+    writeQuestion(editor.content, editor.keys, {
+      ...bare,
+      parts: [
+        { ...bare.parts[0], answer: { accepted: [sample], type: 'open' } },
+      ],
+    });
+  type(editors[0], 'Folds');
+  type(editors[1], 'Cristae');
+  const sync = () => {
+    const [a, b] = editors.map((editor) => Y.encodeStateAsUpdate(editor.keys));
+    Y.applyUpdate(editors[0].keys, b);
+    Y.applyUpdate(editors[1].keys, a);
+  };
+  sync();
+  const [kept] = sampleOf(editors[0]);
+  expect(sampleOf(editors[0])).toHaveLength(1);
+  expect(sampleOf(editors[1])).toEqual([kept]);
+  const accepted = keysScope(editors[0].keys)
+    .get(bare.parts[0].id)
+    ?.get('accepted');
+  if (!(accepted instanceof Y.Map)) throw new Error('no accepted list');
+  expect([...accepted.keys()]).toEqual([SAMPLE_KEY]);
+  const merged = readQuestions(editors[0].content, editors[0].keys)[0];
+  expect(validateQuestion(merged)).toEqual(merged);
+  // From then on both type into the one text.
+  type(editors[0], `${kept} add`);
+  type(editors[1], `More ${kept}`);
+  sync();
+  expect(sampleOf(editors[0])).toEqual([`More ${kept} add`]);
+  expect(sampleOf(editors[1])).toEqual([`More ${kept} add`]);
+});
+
+it("gives learners a marked part's total from the pushed lists", () => {
+  const { content, keys } = quiz();
+  const part = 'example-7-part';
+  // A second editor's marking item merged in: the part's own marks stay 1.
+  const scheme = keysScope(keys).get(part)?.get('markscheme') as Y.Map<
+    Y.Map<unknown>
+  >;
+  const item = new Y.Map<unknown>();
+  item.set('order', 'a9');
+  item.set('text', new Y.Text('Names the cristae.'));
+  item.set('marks', 19);
+  scheme.set('m-late', item);
+  const pushed = itemParts(keys).find((entry) => entry.part === part);
+  expect(pushed).toEqual({ entries: [], kind: 'open', part, total: 20 });
+  const lists = applyReaderMessage(new Map(), {
+    full: true,
+    parts: { [part]: { items: [], kind: 'open', total: 20 } },
+  });
+  const marks = (read: LearnerQuestion[]) =>
+    read.find((question) => question.parts[0].id === part)?.parts[0].marks;
+  expect(marks(readLearnerQuestions(content))).toBe(1);
+  expect(marks(readLearnerQuestions(content, lists))).toBe(20);
+});
+
+it('writes a part worth more than twice the cap with its own marks at 40', () => {
+  const { content, keys } = quiz();
+  const part = 'example-7-part';
+  // Two editors' adds at once left items worth 15 + 15 + 15.
+  const scheme = keysScope(keys).get(part)?.get('markscheme');
+  if (!(scheme instanceof Y.Map)) throw new Error('no marking items');
+  scheme.clear();
+  for (const [at, id] of ['m1', 'm2', 'm3'].entries()) {
+    const item = new Y.Map<unknown>();
+    item.set('order', `a${at}`);
+    item.set('text', new Y.Text(`Point ${id}.`));
+    item.set('marks', 15);
+    scheme.set(id, item);
+  }
+  const read = readQuestions(content, keys).find(
+    (question) => question.parts[0].id === part
+  );
+  if (!read) throw new Error('no question');
+  expect(read.parts[0].marks).toBe(45);
+  // A stem edit sends the read marks back: the room admits own marks up to
+  // 40, so 40 is written and the part still reads as the items' total.
+  writeQuestion(content, keys, {
+    ...read,
+    stem: [{ text: 'Read the passage.', type: 'text' }],
+  });
+  const parts = questionsScope(content).get(read.id)?.get('parts');
+  const entry = parts instanceof Y.Map ? parts.get(part) : undefined;
+  expect(entry instanceof Y.Map && entry.get('marks')).toBe(40);
+  expect(
+    readQuestions(content, keys).find((question) => question.id === read.id)
+      ?.parts[0].marks
+  ).toBe(45);
+});
+
 /* The live quiz against the embed catalog (openwiki/embeds.md): every
    question block the catalog lists is written and read back, for editors and
    learners, and a block type the room holds but this reader does not know
@@ -610,4 +734,104 @@ it("undoes a group's removal whole", () => {
   expect(readQuestions(content, keys)[0]).not.toHaveProperty('groups');
   undo.undo();
   expect(readQuestions(content, keys)[0]).toEqual(fixture);
+});
+
+/* Two editors adding at the end at once give their entries one order key (a
+   tie, read by id); a move or an insert between the two still lands there. */
+function editors() {
+  const a = quiz();
+  const b = { content: copy(a.content), keys: copy(a.keys) };
+  const sync = () => {
+    for (const doc of ['content', 'keys'] as const) {
+      merge(a[doc], b[doc]);
+      merge(b[doc], a[doc]);
+    }
+  };
+  return { a, b, sync };
+}
+
+/** The order keys of the last two entries in the list at `path`. */
+function lastOrders(doc: Y.Doc, [root, ...path]: string[]) {
+  let map = doc.getMap<unknown>(root);
+  for (const key of path) map = map.get(key) as Y.Map<unknown>;
+  return ordered(map)
+    .slice(-2)
+    .map((entry) => entry.order);
+}
+
+it('moves a question down one place re-keying only that question', () => {
+  const { content } = quiz();
+  const orders = () =>
+    ordered(questionsScope(content) as Y.Map<unknown>).map(({ id, order }) => ({
+      id,
+      order,
+    }));
+  const [moved, ...others] = orders();
+  moveQuestion(content, moved.id, 1);
+  const now = orders();
+  expect(now[1].id).toBe(moved.id);
+  expect(now.filter(({ id }) => id !== moved.id)).toEqual(others);
+});
+
+it('moves a question between two that two editors added at once', () => {
+  const { a, b, sync } = editors();
+  writeQuestion(a.content, a.keys, exampleQuestion('tie-a'));
+  writeQuestion(b.content, b.keys, exampleQuestion('tie-b'));
+  sync();
+  const tied = lastOrders(a.content, ['questions']);
+  expect(tied).toHaveLength(2);
+  expect(tied[0]).toBe(tied[1]);
+  const [moved, ...rest] = questions.map((question) => question.id);
+  moveQuestion(a.content, moved, rest.length + 1);
+  expect(
+    readQuestions(a.content, a.keys).map((question) => question.id)
+  ).toEqual([...rest, 'tie-a', moved, 'tie-b']);
+});
+
+it('writes an option between two that two editors appended at once', () => {
+  const { a, b, sync } = editors();
+  const withOptions = (...options: string[]) => {
+    const next = structuredClone(questions[0]);
+    const answer = next.parts[0].answer;
+    if (answer.type !== 'mcq') throw new Error('mcq fixture');
+    answer.options.push(...options);
+    return next;
+  };
+  writeQuestion(a.content, a.keys, withOptions('Golgi'));
+  writeQuestion(b.content, b.keys, withOptions('Vacuole'));
+  sync();
+  const { id, parts } = questions[0];
+  const path = ['questions', id, 'parts', parts[0].id, 'answer', 'options'];
+  const tied = lastOrders(a.content, path);
+  expect(tied).toHaveLength(2);
+  expect(tied[0]).toBe(tied[1]);
+  const answer = readQuestions(a.content, a.keys)[0].parts[0].answer;
+  if (answer.type !== 'mcq') throw new Error('mcq fixture');
+  const [first, second] = answer.options.slice(-2);
+  const next = withOptions(first, 'Lysosome', second);
+  writeQuestion(a.content, a.keys, next);
+  expect(readQuestions(a.content, a.keys)[0]).toEqual(next);
+});
+
+it('writes a block between, or in place of, one of two stem blocks added at once', () => {
+  const { a, b, sync } = editors();
+  const withStem = (...stem: QuestionBlock[]) => ({ ...questions[0], stem });
+  writeQuestion(a.content, a.keys, withStem({ text: 'From A', type: 'text' }));
+  writeQuestion(b.content, b.keys, withStem({ text: 'From B', type: 'text' }));
+  sync();
+  const path = ['questions', questions[0].id, 'stem'];
+  const tied = lastOrders(a.content, path);
+  expect(tied).toHaveLength(2);
+  expect(tied[0]).toBe(tied[1]);
+  const [first, second] = readQuestions(a.content, a.keys)[0].stem;
+  const between = withStem(first, { text: 'Between', type: 'text' }, second);
+  writeQuestion(a.content, a.keys, between);
+  expect(readQuestions(a.content, a.keys)[0]).toEqual(between);
+  // Another type for the first starts a new entry, still read first.
+  const replaced = withStem(
+    { header: false, rows: [['x']], type: 'table' },
+    second
+  );
+  writeQuestion(b.content, b.keys, replaced);
+  expect(readQuestions(b.content, b.keys)[0]).toEqual(replaced);
 });

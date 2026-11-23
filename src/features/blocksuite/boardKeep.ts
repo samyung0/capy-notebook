@@ -1,7 +1,8 @@
 import type { SurfaceBlockModel } from '@blocksuite/affine/std/gfx';
 import type { Store } from '@blocksuite/affine/store';
 import * as Y from 'yjs';
-import { type BoardKind, holds, isPlace, storedElementFits } from './boardLoad';
+import { storedElementFits } from './boardLoad';
+import { type BoardKind, holds, isPlace } from './boardRules';
 
 /** Whether a change is this tab's own person's doing: made here, and not by an undo
  * or redo, which brings back what was there. An update applied from elsewhere (the
@@ -29,7 +30,7 @@ export function keepToCatalog(
   surface: SurfaceBlockModel | null,
   board: BoardKind
 ) {
-  const { elements, parents } = holds(board);
+  const { parents } = holds(board);
   const refuses = (transaction: Y.Transaction) =>
     board !== 'workspace' || ownAction(transaction);
   const canvas = surface?.elements.getValue();
@@ -37,7 +38,7 @@ export function keepToCatalog(
   const checkElement = (id: string) => {
     const element = canvas?.get(id);
     if (!(surface && canvas && element)) return;
-    if (element instanceof Y.Map && storedElementFits(id, element, elements))
+    if (element instanceof Y.Map && storedElementFits(id, element, board))
       return;
     // One the canvas gave no model (it has no place to draw at) goes from the map.
     if (surface.hasElementById(id)) surface.deleteElement(id);

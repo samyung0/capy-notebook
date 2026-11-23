@@ -159,16 +159,18 @@ fn typing_and_a_large_paste_stay_on_the_bound() {
 }
 
 /// Security regression (Mermaid source cap, Epo 2026-10-22): a source past
-/// `MERMAID_SOURCE_MAX` UTF-16 units costs every reader's browser a render
-/// that never ends, so room admission refuses an update that takes one past
-/// it (typed, in a new block, or as a plain string) and the store refuses a
-/// document holding one; an astral character counts two, and a source
-/// rewritten whole at the cap goes in. Fails with the admission or the store
-/// check removed.
+/// twice `MERMAID_SOURCE_MAX` UTF-16 units (two people typing at once may
+/// pass the cap the editor stops at, Epo 2026-11-22) costs every reader's
+/// browser a render that never ends, so room admission refuses an update that
+/// takes one past it (typed, or in a new block; a plain string, written
+/// whole, past the cap itself) and the store refuses a document holding one;
+/// an astral character counts two, and a source rewritten whole at twice the
+/// cap goes in. Fails with the admission or the store check removed.
 #[test]
 fn a_source_past_the_catalog_cap_is_refused() {
     let room = room(&[mermaid(SOURCE), paragraph("text")]);
-    let fill = MERMAID_SOURCE_MAX - SOURCE.len();
+    let most = notes::limits::merged_cap(MERMAID_SOURCE_MAX);
+    let fill = most - SOURCE.len();
     let typed = edit(&room, 3, |peer| {
         source(peer, 0).insert(&mut peer.transact_mut(), 0, &"x".repeat(fill + 1));
     });
@@ -176,7 +178,7 @@ fn a_source_past_the_catalog_cap_is_refused() {
         let mut txn = peer.transact_mut();
         let root = plate::content_root(&txn).unwrap();
         let end = XmlTextRef::from(root).len(&txn);
-        let mut second = mermaid(&"y".repeat(MERMAID_SOURCE_MAX + 1));
+        let mut second = mermaid(&"y".repeat(most + 1));
         second["id"] = json!("d2");
         slate_yjs::insert_nodes(&mut txn, root, end, &[second]);
     });
@@ -202,7 +204,7 @@ fn a_source_past_the_catalog_cap_is_refused() {
             other => panic!("{what}: {other:?}"),
         }
     }
-    // Typed up to the cap (an astral character counting two), then
+    // Typed up to twice the cap (an astral character counting two), then
     // rewritten whole at it: each goes in, and one more unit does not.
     let mut validator = validator(&room);
     let near = edit(&room, 6, |peer| {
@@ -231,7 +233,7 @@ fn a_source_past_the_catalog_cap_is_refused() {
         let mut txn = peer.transact_mut();
         let len = text.len(&txn);
         text.remove_range(&mut txn, 0, len);
-        text.insert(&mut txn, 0, &"w".repeat(MERMAID_SOURCE_MAX));
+        text.insert(&mut txn, 0, &"w".repeat(most));
     });
     let (result, _) = admit(&mut validator, &room, &rewrite);
     assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
@@ -241,12 +243,12 @@ fn a_source_past_the_catalog_cap_is_refused() {
     }
     let value = plate::value(&room.transact()).unwrap();
     notes::material::assert_canonical(&value, "note").unwrap();
-    let over = [mermaid(&"v".repeat(MERMAID_SOURCE_MAX + 1))];
+    let over = [mermaid(&"v".repeat(most + 1))];
     assert_eq!(
         notes::material::assert_canonical(&over, "note")
             .unwrap_err()
             .0,
-        format!("diagram source is over {MERMAID_SOURCE_MAX} characters")
+        format!("diagram source is over {most} characters")
     );
 }
 

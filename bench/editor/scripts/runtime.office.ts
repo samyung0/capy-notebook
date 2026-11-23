@@ -31,8 +31,10 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  * passes through the file, and closing and reopening it.
  *
  * Timings are on the host's clock, from the click to a runtime message:
- * - open, every format: `ready`, sent once the first pages, grid or slide are
- *   painted, carrying the runtime's own `timings` (officeProtocol.ts,
+ * - open: XLSX and PPTX `ready`, sent once the grid or first slide is
+ *   painted; DOCX `painted`, sent once the first pages are, before the rest
+ *   are in, and `ready` once every page is (`allPagesMs`, report-only); each
+ *   carries the runtime's own `timings` (officeProtocol.ts,
  *   OfficeReadyTimings);
  * - edit, every format: the edit frame's `ready`, sent once the editor's first
  *   pages, grid or slide are painted, with timings too. XLSX/PPTX budgets are
@@ -77,8 +79,10 @@ interface Timings {
  * ubuntu-24.04, 2026-11-20 after Q691's second round (Q757 A):
  * 44715718554, 44715736656 and 44715754042 on 65bdfc1e8, two on AMD EPYC 7763
  * and one on Intel Xeon 6975P-C (25-30% faster on every figure). For XLSX/PPTX
- * `editReadyMs` ends at `collaboration-ready` (see above). Heap figures are
- * report-only (openwiki/editor-perf.md).
+ * `editReadyMs` ends at `collaboration-ready` (see above). DOCX
+ * `openFirstPaintMs` was measured to `ready`, before View painted its first
+ * pages early (Q804 A), until recalibrated from three CI runs. Heap figures
+ * are report-only (openwiki/editor-perf.md).
  */
 const MEDIANS: Record<Fixture['id'], Timings> = {
   // MSW adds ~1.1 s per call to every open.
@@ -352,6 +356,7 @@ async function installHostProbe(page: Page) {
       const data = event.data as Partial<RuntimeMessage>;
       if (
         data?.type === 'ready' ||
+        data?.type === 'painted' ||
         data?.type === 'collaboration-ready' ||
         data?.type === 'update' ||
         data?.type === 'error'
@@ -385,7 +390,7 @@ const countMessages = (page: Page, type: string) =>
     type
   );
 
-type RuntimeSignal = 'collaboration-ready' | 'ready';
+type RuntimeSignal = 'collaboration-ready' | 'painted' | 'ready';
 
 /**
  * Click, then wait for the next runtime message of each type: ms on the host
@@ -411,14 +416,16 @@ async function clickUntil(
     { polling: 50, timeout: 240_000 }
   );
   return page.evaluate(
-    (kinds) =>
-      kinds.map((kind) => {
+    ({ counts, kinds }) =>
+      kinds.map((kind, index) => {
         const { clicks, messages } = window.__officeBench;
-        const last = messages.filter((m) => m.type === kind).at(-1)!;
-        const analysis = last.analysis;
+        // The first since the click: DOCX View sends `painted` again as its
+        // page count grows.
+        const first = messages.filter((m) => m.type === kind)[counts[index]]!;
+        const analysis = first.analysis;
         return {
-          ms: Math.round(last.at - clicks.at(-1)!),
-          runtime: last.timings ?? null,
+          ms: Math.round(first.at - clicks.at(-1)!),
+          runtime: first.timings ?? null,
           // Pages, sheets or slides.
           units: analysis
             ? analysis.format === 'docx'
@@ -429,7 +436,7 @@ async function clickUntil(
             : null,
         };
       }),
-    types
+    { counts: before, kinds: types }
   );
 }
 
@@ -775,17 +782,28 @@ async function openWorkspace(page: Page) {
   await showPanelView(page, m.workspace_tab_files());
 }
 
-/** Click a file in the tree; for an Office file, wait for its `ready`. */
-async function openFile(page: Page, id: string) {
-  const link = page.locator(`[data-workspace-file-tree] a[href$="file=${id}"]`);
+/** Click a file in the tree and wait for its `ready`; a DOCX view's first
+ * paint is its `painted`, before every page is in. */
+async function openFile(page: Page, fixture: { format: string; id: string }) {
+  const link = page.locator(
+    `[data-workspace-file-tree] a[href$="file=${fixture.id}"]`
+  );
   await expect(link).toBeVisible({ timeout: 60_000 });
-  const [ready] = await clickUntil(page, ['ready'], () => link.click());
-  return ready;
+  const [painted, ready = painted] = await clickUntil(
+    page,
+    fixture.format === 'docx' ? ['painted', 'ready'] : ['ready'],
+    () => link.click()
+  );
+  // The page count at first paint is the first screen's; every page's is ready's.
+  return { ...painted, allPagesMs: ready.ms, units: ready.units };
 }
 
-async function openInView(page: Page, fixture: { id: string }) {
+async function openInView(
+  page: Page,
+  fixture: { format: string; id: string }
+) {
   await openWorkspace(page);
-  return openFile(page, fixture.id);
+  return openFile(page, fixture);
 }
 
 /** Click where typing should start and check the caret is there. */
@@ -1692,6 +1710,7 @@ for (const fixture of FIXTURES) {
           editFirstPaintMs:
             fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
           heap: 'report-only',
+          ...(fixture.format === 'docx' && { openAllPagesMs: 'report-only' }),
         },
         downloads: {
           edit: downloadsBetween(
@@ -1723,7 +1742,12 @@ for (const fixture of FIXTURES) {
           afterTyping: typingHeap,
           afterTypingEnd: typingEndHeap,
         },
-        open: { firstPaintMs: open.ms, runtime: open.runtime },
+        open: {
+          // DOCX: the click to `ready`, every page in.
+          ...(fixture.format === 'docx' && { allPagesMs: open.allPagesMs }),
+          firstPaintMs: open.ms,
+          runtime: open.runtime,
+        },
         runner: RUNNER,
         typing: { ...typing, cadenceMs: KEY_CADENCE_MS },
         typingEnd: { ...typingEnd, at: endAt, cadenceMs: KEY_CADENCE_MS },
@@ -2174,7 +2198,7 @@ for (const fixture of CYCLED)
     const beforeOpen = await heap(page);
     const afterClose: Heap[] = [];
     for (let cycle = 0; cycle < CYCLES; cycle += 1) {
-      await openFile(page, fixture.id);
+      await openFile(page, fixture);
       await page.waitForTimeout(1000);
       await text.click();
       await expect

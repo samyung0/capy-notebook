@@ -290,7 +290,7 @@ describe('the draft store', () => {
     expect(kept).toEqual(new Set(['shown']));
   });
 
-  // Review 2026-11-20: Reload and Download delete only the rows what they
+  // Review 2026-11-20: Discard and Download delete only the rows what they
   // showed or drew holds; another tab's edits and an unreviewed piece stay
   // for the next page load's offer.
   it('deletes only the rows a shown document holds', async () => {
@@ -392,7 +392,7 @@ describe('the draft store', () => {
   });
 
   // Review 2026-11-20 (3): a crashed online session's updates on the room's
-  // state stay pending in the drawing; its Reload or Download deletes only
+  // state stay pending in the drawing; its Discard or Download deletes only
   // the rows it drew, and the pending ones stay for the next offer, whose
   // Download fails on them and whose Discard deletes them.
   it('deletes only the rows a deleted drawing holds, keeping pending updates', async () => {

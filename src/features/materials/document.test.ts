@@ -70,12 +70,15 @@ describe('Universal Plate material documents', () => {
     ]);
     expect(() => createMaterialDocument([merged] as never)).toThrow();
   });
-  it('caps interactive blocks at 64 KB of html and 10 per document', () => {
+  // Two people inserting at once may pass the 10 the editor stops at: up to
+  // twice it reads (Epo 2026-11-22).
+  it('caps interactive blocks at 64 KB of html and twice 10 per document', () => {
     const embeds = (count: number, html = '<p>x</p>') =>
       Array.from({ length: count }, (_, i) => htmlEmbedNode(html, '', `e${i}`));
     const doc = (value: MaterialValue) => ({ schemaVersion: 1, value });
-    expect(isMaterialDocument(doc(embeds(10)))).toBe(true);
-    expect(isMaterialDocument(doc(embeds(11)))).toBe(false);
+    expect(isMaterialDocument(doc(embeds(11)))).toBe(true);
+    expect(isMaterialDocument(doc(embeds(20)))).toBe(true);
+    expect(isMaterialDocument(doc(embeds(21)))).toBe(false);
     expect(
       isMaterialDocument(doc(embeds(1, 'é'.repeat(HTML_EMBED_MAX_BYTES / 2))))
     ).toBe(true);
@@ -480,14 +483,16 @@ describe('Universal Plate material documents', () => {
   });
 
   // As Go and the collaboration server (Epo 2026-10-22): a Mermaid source
-  // stops at MERMAID_SOURCE_MAX UTF-16 units, an astral character two.
-  it('caps a Mermaid source at the catalog max', () => {
+  // counts UTF-16 units, an astral character two; two people typing at once
+  // may pass MERMAID_SOURCE_MAX, up to twice it (Epo 2026-11-22).
+  it('caps a Mermaid source at twice the catalog max', () => {
     const diagram = (source: string) =>
       isMaterialDocument({
         schemaVersion: 1,
         value: [mermaidNode(source, '', 'm1')],
       });
-    const full = `${'x'.repeat(MERMAID_SOURCE_MAX - 2)}😀`;
+    expect(diagram('x'.repeat(MERMAID_SOURCE_MAX + 1))).toBe(true);
+    const full = `${'x'.repeat(2 * MERMAID_SOURCE_MAX - 2)}😀`;
     expect(diagram(full)).toBe(true);
     expect(diagram(`${full}x`)).toBe(false);
   });
@@ -606,8 +611,8 @@ describe('table views', () => {
   const views = (count: number) =>
     Array.from({ length: count }, (_, i) => tableView(`tv${i}`));
 
-  it('writes and reads back one a writer may store, up to the count', () => {
-    const document = createMaterialDocument(views(TABLE_VIEW_LIMITS.count));
+  it('writes and reads back up to twice the count, as merges may leave', () => {
+    const document = createMaterialDocument(views(2 * TABLE_VIEW_LIMITS.count));
     expect(parseMaterialDocument(JSON.stringify(document))).toEqual(document);
   });
 
@@ -621,7 +626,7 @@ describe('table views', () => {
       ])
     ).toThrow();
     expect(() =>
-      createMaterialDocument(views(TABLE_VIEW_LIMITS.count + 1))
+      createMaterialDocument(views(2 * TABLE_VIEW_LIMITS.count + 1))
     ).toThrow();
     // Top-level only, as every figure.
     expect(() =>

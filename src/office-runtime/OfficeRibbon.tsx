@@ -823,6 +823,7 @@ export function RibbonBanner({
       <p>{banner.message}</p>
       {banner.actions.map((action, index) => (
         <button
+          data-variant={action.variant}
           disabled={action.disabled}
           key={action.label}
           onClick={() => onAction(index)}

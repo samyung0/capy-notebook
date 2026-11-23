@@ -42,11 +42,12 @@ export type OfficeThumbnailer = () => Promise<OfficeRenderedPage | null>;
 /** Called on each local edit: whether it may change the capture. */
 export type OfficeCaptureScope = () => boolean;
 
-/** Where an editor's reader is, and going back there in the next view of a
- * room swap (Epo 2026-10-22); `show` settles once the editor is there. */
+/** Where a viewer's or editor's reader is, and, in an editor, going back
+ * there in the next view of a room swap (Epo 2026-10-22) or after View (Q608
+ * A); `show` settles once the editor is there. */
 export interface OfficePositioner {
   read: () => OfficePosition | null;
-  show: (position: OfficePosition) => Promise<void> | void;
+  show?: (position: OfficePosition) => Promise<void> | void;
 }
 
 /** The menu item an id names, if any. */

@@ -994,7 +994,15 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			if kind != "flashcards" {
 				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
-			if err := materialdoc.ValidateCardText(deref(c.Front), deref(c.Back)); err != nil {
+			// A new card stops at the caps; a replaced side may keep what two
+			// people's typing took past one, up to twice it, and the
+			// collaboration server refuses growing it past the cap against
+			// what the card held (`check_written`, Epo 2026-11-22).
+			check := materialdoc.ValidateCardText
+			if c.Type == "replace_card" {
+				check = materialdoc.ValidateHeldCardText
+			}
+			if err := check(deref(c.Front), deref(c.Back)); err != nil {
 				return nil, refusal(agenttools.ErrInvalidInput, "%s: %v", c.Type, err)
 			}
 			switch c.Type {

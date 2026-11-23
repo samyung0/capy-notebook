@@ -1,17 +1,36 @@
 import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
-import type { SurfaceBlockModel } from '@blocksuite/affine/blocks/surface';
+import type {
+  ClipboardConfigCreationContext,
+  SurfaceBlockModel,
+} from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
-import { UnknownElementModel } from '@blocksuite/affine/std/gfx';
-import { Text } from '@blocksuite/affine/store';
+import type { SerializedGroupElement } from '@blocksuite/affine/model';
+import { replaceIdMiddleware } from '@blocksuite/affine/shared/adapters';
+import type { BlockStdScope } from '@blocksuite/affine/std';
+import {
+  type GfxPrimitiveElementModel,
+  type SerializedElement,
+  UnknownElementModel,
+} from '@blocksuite/affine/std/gfx';
+import { Slice, Text } from '@blocksuite/affine/store';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { keepToCatalog, savedCopy } from './boardKeep';
-import { type BoardKind, BoardLoadError, checkSavedBoard } from './boardLoad';
+// BlockSuite's canvas copy, Duplicate and paste, which its package doesn't export.
+import { createCanvasElement } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/clipboard/canvas';
+import { prepareClipboardData } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/clipboard/utils';
 import {
+  getSortedCloneElements,
+  prepareCloneData,
+} from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/utils/clone-utils';
+import { keepToCatalog, savedCopy } from './boardKeep';
+import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import type { BoardKind } from './boardRules';
+import {
+  placeholdersLeftOut,
   UNKNOWN_BLOCK,
   UNKNOWN_CARD,
   UnknownCardModel,
@@ -80,8 +99,8 @@ const elementsOf = (doc: Y.Doc) =>
 
 /** What another build writes: an element of a type this one has no model for, one
  * with no place to draw at, an entry that is no element, a block of a flavour it has
- * no schema for on the canvas and in a note, and entries keyed `__proto__`. `tag`
- * keeps two rounds apart. */
+ * no schema for on the canvas and in a note, and entries keyed `__proto__`, which no
+ * id is. `tag` keeps two rounds apart. */
 function writeUnknown(doc: Y.Doc, note: string, tag: string) {
   doc.transact(() => {
     const elements = elementsOf(doc);
@@ -123,10 +142,7 @@ function writeUnknown(doc: Y.Doc, note: string, tag: string) {
     const [, surface] = surfaceOf(doc);
     (surface.get('sys:children') as Y.Array<string>).push([`card${tag}`]);
     const noteBlock = blocks.get(note) as Y.Map<unknown>;
-    (noteBlock.get('sys:children') as Y.Array<string>).push([
-      `line${tag}`,
-      '__proto__',
-    ]);
+    (noteBlock.get('sys:children') as Y.Array<string>).push([`line${tag}`]);
   });
 }
 
@@ -143,14 +159,13 @@ const settled = () => new Promise((resolve) => setTimeout(resolve));
 it('opens a canvas holding what it cannot read, as placeholders, unchanged', async () => {
   const { note, saved } = withUnknown();
   expect(checkSavedBoard(saved, 'workspace').misfits).toEqual([
-    'hidden key',
     'block affine:embed-hologram',
     'block affine:hologram-caption',
-    // The note's child that no check can see.
-    'block tree',
+    'paragraph fields',
     'element type hologram',
     'element type aura',
     'element type undefined',
+    'shape fields',
   ]);
   const { store, surface } = open(saved, 'workspace');
   await settled();
@@ -189,6 +204,28 @@ it('opens a canvas holding what it cannot read, as placeholders, unchanged', asy
   });
 });
 
+it('draws a note listing a child no id can be as a placeholder, unchanged', async () => {
+  const { note, update } = canvas();
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, update);
+  // `__proto__` is no id (a block keyed so would be hidden behind JSON's prototype).
+  (blocksOf(doc).get(note)!.get('sys:children') as Y.Array<string>).push([
+    '__proto__',
+  ]);
+  const saved = Y.encodeStateAsUpdate(doc);
+  // Its fields, and the tree that names a block nowhere.
+  expect(checkSavedBoard(saved, 'workspace').misfits).toEqual([
+    'note fields',
+    'block tree',
+  ]);
+  expect(() => checkSavedBoard(saved, 'question')).toThrow('note fields');
+
+  const { store } = open(saved, 'workspace');
+  await settled();
+  expect(store.getModelById(note)?.flavour).toBe(UNKNOWN_CARD);
+  expect(Y.encodeStateAsUpdate(store.spaceDoc)).toEqual(saved);
+});
+
 it('draws what a peer adds as placeholders and leaves it in the document', async () => {
   const { note, update } = canvas();
   const { store, surface } = open(update, 'workspace');
@@ -218,19 +255,157 @@ it("still takes out what the canvas's own person adds that it does not hold", as
   const { note, update } = canvas();
   const { store, surface } = open(update, 'workspace');
 
-  // A connector joined to nothing, and a copied placeholder pasted back.
+  // A connector joined to nothing, and a block of a flavour it does not hold.
   const connector = surface.addElement({
     source: {},
     target: {},
     type: 'connector',
   });
-  const pasted = store.addBlock(UNKNOWN_BLOCK, {}, note);
+  const added = store.addBlock(UNKNOWN_BLOCK, {}, note);
   expect(surface.hasElementById(connector)).toBe(true);
-  expect(store.hasBlock(pasted)).toBe(true);
+  expect(store.hasBlock(added)).toBe(true);
   await settled();
 
   expect(elementsOf(store.spaceDoc).has(connector)).toBe(false);
-  expect(blocksOf(store.spaceDoc).has(pasted)).toBe(false);
+  expect(blocksOf(store.spaceDoc).has(added)).toBe(false);
+});
+
+it('leaves placeholders out of what a copy puts down', async () => {
+  const { note, saved } = withUnknown();
+  const { store } = open(saved, 'workspace');
+  await settled();
+  const model = store.getModelById(note)!;
+  const flavours = (id: string) =>
+    store.getModelById(id)?.children.map(({ flavour }) => flavour);
+
+  // The canvas's copy and Duplicate serialize the note as it is drawn.
+  const copy = store.getTransformer().blockToSnapshot(model)!;
+  expect(copy.children.map(({ flavour }) => flavour)).toEqual([
+    'affine:paragraph',
+    UNKNOWN_BLOCK,
+  ]);
+  // Their paste goes through the clipboard's middlewares, as the note's config
+  // pastes it (`onBlockSnapshotPaste`).
+  const paste = store.getTransformer([
+    placeholdersLeftOut,
+    replaceIdMiddleware(store.workspace.idGenerator),
+  ]);
+  const pasted = await paste.snapshotToBlock(copy, store, store.root!.id);
+  expect(flavours(pasted!.id)).toEqual(['affine:paragraph']);
+  // A copy in the note's text exports none either.
+  const slice = paste.sliceToSnapshot(Slice.fromModels(store, model.children));
+  expect(slice?.content.map(({ flavour }) => flavour)).toEqual([
+    'affine:paragraph',
+  ]);
+
+  // The paste wrote nothing the board does not hold, which stays.
+  await settled();
+  expect(store.hasBlock(pasted!.id)).toBe(true);
+  expect(
+    checkSavedBoard(Y.encodeStateAsUpdate(store.spaceDoc), 'workspace').misfits
+  ).toEqual(checkSavedBoard(saved, 'workspace').misfits);
+  expect(flavours(note)).toEqual(['affine:paragraph', UNKNOWN_BLOCK]);
+});
+
+it('leaves placeholder elements out of a canvas copy and Duplicate', async () => {
+  const { update } = canvas();
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, update);
+  const shape = (id: string, x: number, extra: Record<string, unknown> = {}) =>
+    mapOf({
+      id,
+      index: `a${x}`,
+      shapeType: 'rect',
+      type: 'shape',
+      xywh: `[${x * 100},0,80,80]`,
+      ...extra,
+    });
+  doc.transact(() => {
+    const elements = elementsOf(doc);
+    elements.set('square', shape('square', 1));
+    // A shape with a key no shape has, and a type this build has no model for.
+    elements.set('odd', shape('odd', 2, { tilt: 3 }));
+    elements.set('holo', shape('holo', 3, { type: 'hologram' }));
+    // And a card of a flavour it has no schema for.
+    blocksOf(doc).set(
+      'card',
+      mapOf({
+        'prop:index': 'a6',
+        'prop:xywh': '[600,0,80,80]',
+        'sys:children': new Y.Array(),
+        'sys:flavour': 'affine:embed-hologram',
+        'sys:id': 'card',
+      })
+    );
+    (surfaceOf(doc)[1].get('sys:children') as Y.Array<string>).push(['card']);
+    elements.set(
+      'pair',
+      mapOf({
+        children: mapOf({ odd: true, square: true }),
+        id: 'pair',
+        index: 'a4',
+        title: new Y.Text(),
+        type: 'group',
+      })
+    );
+    elements.set(
+      'lost',
+      mapOf({
+        children: mapOf({ odd: true }),
+        id: 'lost',
+        index: 'a5',
+        title: new Y.Text(),
+        type: 'group',
+      })
+    );
+  });
+  const saved = Y.encodeStateAsUpdate(doc);
+  const { store, surface } = open(saved, 'workspace');
+  await settled();
+  expect(surface.getElementById('odd')).toBeInstanceOf(UnknownElementModel);
+  expect(store.getModelById('card')).toBeInstanceOf(UnknownCardModel);
+  const std = { store } as unknown as BlockStdScope;
+  const picked = getSortedCloneElements([
+    ...['pair', 'lost', 'holo'].map((id) => surface.getElementById(id)!),
+    store.getModelById('card') as UnknownCardModel,
+  ]);
+  const kinds = (copy: (SerializedElement | { flavour: string })[]) =>
+    copy.map((data) => ('type' in data ? data.type : data.flavour));
+
+  // A copy and a Duplicate carry the shape and its group, which holds it alone;
+  // the group of a placeholder alone is not carried.
+  const { snapshot } = await prepareClipboardData(picked, std);
+  const cloned = prepareCloneData(picked, std) as SerializedElement[];
+  expect(kinds(snapshot as SerializedElement[])).toEqual(['shape', 'group']);
+  expect(snapshot).toEqual(cloned);
+  expect((cloned[1] as SerializedGroupElement).children).toEqual({
+    square: true,
+  });
+
+  // Put down as BlockSuite's paste does: the group again, round its shape.
+  const paste = {
+    get: () => ({
+      addElement: (type: string, props: Record<string, unknown>) =>
+        surface.addElement({ ...props, type }),
+      getElementById: (id: string) => surface.getElementById(id),
+    }),
+    getOptional: () => null,
+  } as unknown as BlockStdScope;
+  const context = {
+    oldToNewIdMap: new Map<string, string>(),
+  } as ClipboardConfigCreationContext;
+  const pasted = cloned.map((data) => {
+    const element = createCanvasElement(paste, data, context, data.xywh);
+    context.oldToNewIdMap.set(data.id, element!.id);
+    return element as GfxPrimitiveElementModel;
+  });
+  expect(
+    Object.keys((pasted[1].yMap.get('children') as Y.Map<boolean>).toJSON())
+  ).toEqual([pasted[0].id]);
+  await settled();
+  expect(
+    checkSavedBoard(Y.encodeStateAsUpdate(store.spaceDoc), 'workspace').misfits
+  ).toEqual(checkSavedBoard(saved, 'workspace').misfits);
 });
 
 it("keeps what the canvas holds through its own person's undo and redo", async () => {

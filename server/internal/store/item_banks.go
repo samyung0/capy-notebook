@@ -744,8 +744,11 @@ func (s *Store) readBankCopies(ctx context.Context, actorID, bank string, questi
 // question or quiz holding it, which must be its question's owners[i]) is
 // named by the copy copyQuizAssetsTx makes. An image no longer there is
 // dropped, as a re-save drops it (Epo 2026-11-14); a part left with nothing
-// in it refuses the copy. keepTopics keeps each question's topics. The
-// copies hold within a quiz's bounds.
+// in it refuses the copy. keepTopics keeps each question's topics. A whole
+// quiz's copy (fromQuiz) holds what the quiz holds, a merge's overflow
+// included, within its bounds (QuizBounds); picked bank questions are an add,
+// each question and the quiz at the caps an editor stops at (Written,
+// QuizCaps, Epo 2026-11-22).
 func copyQuestions(qs []map[string]any, owners []string, present map[string]string, keepTopics, fromQuiz bool) (quizCopies, error) {
 	out := quizCopies{
 		questions: make([]map[string]any, 0, len(qs)),
@@ -772,9 +775,18 @@ func copyQuestions(qs []map[string]any, owners []string, present map[string]stri
 		if !questions.RewriteAssetIDs(q, out.assets) {
 			return quizCopies{}, ErrBankQuestionAssets
 		}
+		if !fromQuiz {
+			if err := questions.Validate(q, questions.Policy{Written: true}); err != nil {
+				return quizCopies{}, fmt.Errorf("%w: %v", materialdoc.ErrInvalid, err)
+			}
+		}
 		out.questions = append(out.questions, q)
 	}
-	if err := questions.QuizBounds(out.questions); err != nil {
+	within := questions.QuizCaps
+	if fromQuiz {
+		within = questions.QuizBounds
+	}
+	if err := within(out.questions); err != nil {
 		return quizCopies{}, fmt.Errorf("%w: %v", materialdoc.ErrInvalid, err)
 	}
 	return out, nil

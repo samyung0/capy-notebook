@@ -36,9 +36,11 @@ import (
 // shared page, where they stay Not marked. The response carries the key for what
 // was just checked.
 
-// answersMaxBytes bounds a request of answers: 150 5,000-character open
-// answers at up to four bytes a character plus every closed answer of a
-// 150-part quiz.
+// answersMaxBytes bounds a request of answers: an open answer for each of up
+// to 200 AI-marked parts (twice QuizOpenParts, as two editors' changes at
+// once may merge past the cap, Epo 2026-11-22), 5,000 characters at up to
+// four bytes each (4,000,000 bytes), plus the closed answers of the rest of a
+// quiz of up to 300 parts.
 const answersMaxBytes = 4 << 20
 
 // checkMaxBytes bounds a quiz check, whose drawing answers come with their

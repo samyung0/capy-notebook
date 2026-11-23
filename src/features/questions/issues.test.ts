@@ -178,21 +178,29 @@ it('names the image limit past it', () => {
   ]);
 });
 
-it('caps an open part past the marks limit and names the mismatch', () => {
+// Epo 2026-11-22: an open part is worth its items' total, which two
+// editors' items merged at once may take up to twice the cap; the bank's
+// questions stay at the cap.
+it('takes an open part worth its items past the marks cap, up to twice it', () => {
   const question = open();
-  const markscheme = [
-    { marks: 15, text: 'Names the organelle.' },
-    { marks: 10, text: 'Explains the folds.' },
-  ];
-  const marks = schemeMarks(markscheme);
-  expect(marks).toBe(limits.QUESTION_MARKS_MAX);
-  const over: Question = {
-    ...question,
-    parts: [{ ...question.parts[0], marks, markscheme }],
+  const worth = (...marks: number[]): Question => {
+    const markscheme = marks.map((n, i) => ({ marks: n, text: `Point ${i}` }));
+    return {
+      ...question,
+      parts: [
+        { ...question.parts[0], marks: schemeMarks(markscheme), markscheme },
+      ],
+    };
   };
-  expect(messages(over)).toEqual([
-    m.question_issue_open_total({ max: limits.QUESTION_MARKS_MAX }),
+  const most = 2 * limits.QUESTION_MARKS_MAX;
+  expect(messages(worth(15, 10))).toEqual([]);
+  expect(messages(worth(20, 20))).toEqual([]);
+  expect(messages(worth(20, 21))).toEqual([
+    m.question_issue_open_total({ max: most }),
   ]);
+  expect(messages(worth(15, 10), true)).toContain(
+    m.question_issue_open_total({ max: limits.QUESTION_MARKS_MAX })
+  );
 });
 
 it('words each issue, names parts and points at rows and titles', () => {
@@ -321,15 +329,17 @@ it('names what a merge of two editors’ charts left in a note chart', () => {
     type: 'chart',
   } as QuestionBlock;
   expect(blockIssues(chart)).toEqual([m.question_validation_series_values()]);
-  const series = Array.from({ length: 7 }, (_, i) => ({
-    name: `S${i}`,
-    values: [i],
-  }));
-  expect(blockIssues({ ...chart, series } as QuestionBlock)).toEqual([
-    m.question_ui_chart_series_over({
-      max: limits.QUESTION_CHART_SERIES_MAX,
-    }),
-  ]);
+  // Two editors' adds at once may take the series past the cap: up to twice
+  // it is no issue (Epo 2026-11-22), past it is.
+  const series = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ name: `S${i}`, values: [i] }));
+  const most = 2 * limits.QUESTION_CHART_SERIES_MAX;
+  expect(
+    blockIssues({ ...chart, series: series(most) } as QuestionBlock)
+  ).toEqual([]);
+  expect(
+    blockIssues({ ...chart, series: series(most + 1) } as QuestionBlock)
+  ).toEqual([m.question_ui_chart_series_over({ max: most })]);
 });
 
 it('names what a merge of two editors left in a note pie, chart or plot', () => {
@@ -400,7 +410,8 @@ it('names a part inside a group by its computed label and a group block by its r
         blocks: [
           empty,
           {
-            description: 'x'.repeat(limits.QUESTION_DESCRIPTION_MAX + 1),
+            // Past twice the cap a merge may leave (Epo 2026-11-22).
+            description: 'x'.repeat(2 * limits.QUESTION_DESCRIPTION_MAX + 1),
             height: 10,
             image: { assetId: 'asset' },
             type: 'image',

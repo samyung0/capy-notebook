@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { QUESTION_GRAPH_ELEMENTS_MAX } from '@/api/limits.generated';
 import { validateGraphRecipe } from './graph';
 import type { GraphBlock } from './types';
 
@@ -66,4 +67,27 @@ it('takes the free marks and styles the canvas plane draws', () => {
     width: 320,
   };
   expect(() => validateGraphRecipe(graph)).not.toThrow();
+});
+
+// Epo 2026-11-22: every surface takes up to twice the element cap.
+it('takes a graph two adds merged past the element cap, up to twice it', () => {
+  const graph = (count: number): GraphBlock => ({
+    board: { axis: true, bbox: [-5, 5, 5, -5], grid: true },
+    elements: Array.from({ length: count }, (_, i) => ({
+      coords: [0, 0] as [number, number],
+      id: `P${i}`,
+      type: 'point' as const,
+    })),
+    height: 240,
+    type: 'graph',
+    width: 320,
+  });
+  for (const count of [
+    QUESTION_GRAPH_ELEMENTS_MAX + 1,
+    2 * QUESTION_GRAPH_ELEMENTS_MAX,
+  ])
+    expect(() => validateGraphRecipe(graph(count))).not.toThrow();
+  expect(() =>
+    validateGraphRecipe(graph(2 * QUESTION_GRAPH_ELEMENTS_MAX + 1))
+  ).toThrow();
 });

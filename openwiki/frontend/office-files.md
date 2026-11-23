@@ -167,22 +167,28 @@ the `outdated` save strip, and its drafts stay for the reloaded page
 - **Route.** The workspace and `/files/{id}` routes' loaders start the open
   as soon as `GET /files/{id}` says the file is DOCX, XLSX or PPTX: the view's
   code (`DocxView`/`SheetView`/`PptxView`), the workspace read whose
-  capability picks the mode, and the source session for the mode it opens in
-  (the URL's, else the saved one; Edit only for an editor): View reads
-  `source-session?view=true`, Edit reads the editing session and the room
-  token together. The base bytes start as soon as the session names them. A
-  hover's preload stops at the file row, and a route left before the rows
-  arrive (its loader's abort signal) starts no open. One started open waits
-  at a time: a quick switch to another file aborts the earlier one (its
-  download included), and one nobody takes within 30 s is dropped. A file a
-  mounted view already shows starts nothing (the loader runs again on every
-  search change).
+  capability decides Edit, and the sessions, whichever mode the view then
+  shows (Q608 A): the View read (`source-session?view=true`) for everyone
+  and, for an editor (not from the Trash), the editing session and the room
+  token beside it, all started together. The base bytes start as soon as a
+  session names them, once per base SHA-256 for both sessions; that download
+  stops only once both parts have. A hover's preload stops at the file row,
+  and a route left before the rows arrive (its loader's abort signal) starts
+  no open. One started open waits at a time: a quick switch to another file
+  aborts the earlier one (its download included), and a part nobody takes
+  within 30 s is dropped. A file a mounted view already shows starts nothing
+  (the loader runs again on every search change); leaving it before Edit
+  took its part drops that part, so their shared download stops at unmount
+  and a quick reopen downloads the base once (Q818 A).
 - **View.** `FileViewer` mounts an Office view without `GET /files/{id}/links`
   (only the published file's link, which no Office view uses), once the
-  workspace capability is known. The view takes the started open
-  (`takeSourceOpen`), or starts its own; an open the route started for the
-  file in the other mode (it guessed Edit, the view opens in View) is
-  dropped, so the file never downloads twice in parallel.
+  workspace capability is known. The view takes the started open's part for
+  the mode it shows (`takeSourceOpen`), or starts its own. A View take
+  leaves the edit part for Edit pressed within the 30 s, so the file never
+  downloads twice in parallel; an Edit take drops the View read made at open,
+  so a later View (the room turning read-only, a reopen) reads the saved
+  state afresh. Download reads its own View session (`readSourceView`), never
+  the route's (Q818 A).
 - **Frame.** The runtime frame's URL names the format and the mode it opened
   in (`runtimeFrameUrl`), fixed for the frame's life (a changed `src` would
   reload it; the maintenance pause's drop to View keeps the frame opened for
@@ -240,15 +246,16 @@ performance marks (`src/lib/officeMarks.ts`), for UAT's measure lane and
 later RUM; no telemetry is sent. Capy's page clears its marks when an open
 starts and marks `open`, `session`, `token`, `base` (`bytes`, `cached`),
 `provider`, `synced`, `load-posted` (`bytes`, `checkpointBytes`,
-`initialUpdateBytes`), `runtime-initialized`, `ready` and
-`collaboration-ready`. The frame marks `runtime-boot`, `load-received`
-(`bytes`), `chunk:<format>-<mode>:start`/`:end`,
+`initialUpdateBytes`), `runtime-initialized`, `painted` (DOCX View's first
+pages), `ready` and `collaboration-ready`. The frame marks `runtime-boot`,
+`load-received` (`bytes`), `chunk:<format>-<mode>:start`/`:end`,
 `wasm:<module>:start`/`:end` (`docx-edit`, `pptx-edit`, `pptx-view`,
 `xlsx-view`, and `xlsx-edit-fetch` for the cache warm-up), `fonts:start`/`:end`
-(DOCX view) and `fonts:faces` (PPTX view); the DOCX viewer worker posts
-`wasm:docx-view:start`/`:end`, `worker:open-start`, `worker:open-end` and
-`worker:display-list` back with its result, and the frame marks them at the
-worker's times.
+(DOCX view, the first pages' faces) and `fonts:faces` (PPTX view); the DOCX
+viewer worker posts `wasm:docx-view:start`/`:end`, `worker:open-start`,
+`worker:first-layout-end` (the first pages laid out, or every page when the
+body is laid out whole first), `worker:first-pages` and `worker:open-end` back
+with its last message, and the frame marks them at the worker's times.
 
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
 WASM omits editing, collaboration, undo, and save machinery; the DOCX viewer
@@ -257,9 +264,42 @@ bridge with the editor. The React editor and editor WASM are imported only after
 the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
-The DOCX viewer builds that list from the engine's typed state eight pages at a
-time, parsing the display extras once, with measured text as the editor's
-joined glyph runs, and frees its WASM before posting.
+The DOCX viewer builds that list from the engine's typed state, parsing the
+display extras once, with measured text as the editor's joined glyph runs, and
+shows it progressively (C6, Q790 A; Q801 B). It first lays out only the
+body's first pages, as Google Docs does: the engine measures the body in
+growing prefixes, with the whole body's floating zones so each block measures
+as in the whole pass, until a prefix paginates two pages past the pages the
+frame shows at the top plus one, never ending inside a keep-with-next chain,
+next to a section break or inside a section with columns, and keeps those
+pages (`layout_document_with_regions_first_pages` in docx-edit, used only by
+the viewer). Their page-count (NUMPAGES) fields show the file's saved count.
+A short file, under 40,000 characters of body text (where the first pages
+came no sooner, about 25 pages of the bench's mixed text; Q822 A), a body too
+short for that cut, one in columns from where it would be cut to its end, or
+one holding a section break inside a content control or a shape wrapped on
+an inside or outside margin, is laid out whole first instead; so are a file
+opened from a citation and the pages a reading layout prints, which wait for
+every page anyway (Q823 A). The viewer builds and posts those pages, then
+lays out the whole body and builds the rest eight at a time, each batch once
+its sliced faces hold its outlines; a first page the whole layout draws otherwise (the
+real page count in its page-count fields) is posted again. The frame draws
+each batch as it comes, so the page count and the scroll height grow until
+every page is in, the fit taking the widest page of the whole document from
+the first paint, and the pages are windowed from the first paint while more
+are to come (Q804 A), then from 12 pages. A batch's outline chunks load while
+the next batch builds; batches still arrive in order. A later page's list
+marker that names a sliced face after an earlier page's family re-sends that
+earlier page, so the final pages equal a whole build's; the mirror keeps
+that page's elements and updates the changed attributes in place (Q803 B).
+The frame posts `painted` at the first paint and again as the page count
+grows (the host marks the first and shows the count so far), and `ready`
+once every page is in; print and a citation's highlight wait for every
+page, and the host's minute for a Print clicked before then counts from
+`ready` (Q804 A). A file
+opened from a citation posts no `painted`: the host keeps its skeleton until
+`ready` and the file opens at the quote (Q802 B). The worker frees its WASM
+after the last batch and goes.
 Every editor and viewer WASM module grows its linear memory in steps as large
 as the memory already is, at most 64 MiB (`vendor/betteroffice/crates/wasm-alloc`):
 Rust's allocator alone grows it by the 64 KiB a request needs, and each grow
@@ -279,13 +319,22 @@ Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse. Every viewer and editor sends `ready` once its first
 pages, grid or slide (pictures included) are painted, with the runtime's own
 `timings` (frame start to `load`, `load` to first paint) for
-`pnpm bench:office`; the host's loading skeleton stays until then. The DOCX
+`pnpm bench:office`; the host's loading skeleton stays until then (DOCX View
+sends `painted` at its first paint and `ready` once every page is in, see
+above). The DOCX
 editor's signal is `docx-pages-presented`, the XLSX and PPTX editors'
 `onFirstPaint`, once per opened file. An edit frame's `ready` leaves the host's
 error state alone.
 
-The DOCX editor lays pages out in a resident engine worker. A peer's update
-reaches the worker as it arrives; after the main thread's next layout the
+The DOCX editor lays pages out in a resident engine worker. Since the Q813
+and Q814 pin the worker does every layout: the page records each pass and
+adopts the worker's layout for its own readers (page indicator, comment
+anchors), which may lag through a long run of fast edits until a pause; a
+table of contents, which reads its pages at once, and every pass after the
+worker failed lay out on the page. A pass over an unchanged input, such as a
+web-font load, is skipped, in the worker and in the page's engine (Q813 A,
+Q814 A, Q824 A). A peer's update
+reaches the worker as it arrives; after the page's next pass the
 worker lays the updates out as it lays out a keystroke (changed paragraphs
 re-measured, changed pages rebuilt) and answers with a delta of the changed
 pages. Frame requests run one at a time and a burst costs one request in flight
@@ -474,8 +523,19 @@ by `position` once the editor is there, which the swap waits for): DOCX the
 scroll offset, the first body paragraph showing at the top by `w14:paraId`
 (its fragment by first line, from the page mirrors' `data-para-id`) with its
 distance below the top edge, and the selection by paragraph id and offset;
-XLSX the sheet by id and the selected cells; PPTX the slide. Yrs positions are
-not used, since the new epoch has new ones. BetterOffice going read-only and
+XLSX the sheet by id and the selected cells; PPTX the slide. Every answer
+carries the frame's zoom (Office protocol 15), which an editor's `set-position`
+applies first (DOCX levels, not a fit; XLSX's listed levels; PPTX any), and
+the next view opens at the zoom the view on screen was at, which `OfficeSwap`
+keeps beside the ribbon tab (the 2026-10-06 zoom line). Viewers answer too,
+for the editor after View (Q608 A): DOCX View with the same scroll offset and
+top paragraph, its text-layer selection by body paragraph id and offset (View
+lays out the editor engine's seeded state, so a run's positions are the
+editor's: the offset counts from one past the paragraph's first fragment's
+start; notes, headers, table cells and text boxes give no selection), XLSX
+View the sheet by name (its sheet ids follow the opened file's order, not the
+room's) and the selected cell, PPTX View the slide. Yrs positions are not
+used, since the new epoch has new ones. BetterOffice going read-only and
 a document's first frame never move the view (Epo 2026-10-22; fork
 `layoutPassOrigin`, `shouldScrollCaretIntoView`): a layout pass nobody
 scheduled is laid out as a peer's and a session's first caret pass never
@@ -2573,8 +2633,32 @@ viewer's displayed cell text, and uses its current viewport geometry. Matching
 requires a complete unique quote of at least 12 non-whitespace characters; short,
 ambiguous, unsupported and off-page matches open without a highlight. Workbooks
 are bounded to 20 MiB of relevant XML and 20,000 cells; decks to 200 slides.
-No editing engine is loaded just for citation matching. Highlights are transient,
-read-only, and absent in edit mode. Reopening resolves against the saved state.
+No editing engine is loaded just for citation matching. Reopening resolves
+against the saved state.
+
+The editors take the same citation, in the `load` and in `set-citation`, with
+the same rule (`citations.ts`), the same `CITATION_FILL` and the same scroll
+(Q667, landing before the handover per Q799 so a highlight carries through it):
+
+| Format | Match | Mark | Jump |
+| --- | --- | --- | --- |
+| DOCX | the rule over the paragraphs the engine's `searchText` finds with the quote's longest piece (`quoteProbe`), picked once outside render; a body paragraph (table cells included) marked | `DocxEditorRef.showCitation`: the paragraph's live range over the canvas pages | centred once the pages are presented, again if the fitted zoom settles before the reader moves (Q811 A) |
+| XLSX | `liveXlsxCitation`: the workbook search for `quoteProbe`, then the rule over those current cells | `markedCell` fills the cell | the editor scrolls to it with View's 100 px of context, selecting nothing (Q810 B) |
+| PPTX | every slide laid out (`layoutSlide`) through `slideCitationItems` | `textMark` fills the text box's lines | `goToSlide` without taking the focus, then centred if a zoomed slide hides it |
+
+Highlights are display only in both modes: nothing reaches the document, its
+undo history or saved state, and the mark is drawn over the editor, not in it.
+DOCX and XLSX leave the user's selection, presence and any open cell draft as
+they were; PPTX moves to the cited slide, which co-editors see. A cell on
+another sheet switches the editor to that sheet as a tab click does (Q812 B:
+presence moves there, an open cell draft commits, the sheet's own selection),
+then the cell is marked and scrolled to, unselected. A highlight
+stays until the next citation replaces it or none clears it, as in View, and
+only while the paragraph, cell or text box it marks still holds the quote
+(Q809 A): checked with the same rule on every change to it (DOCX each layout,
+XLSX each drawn frame, PPTX each slide frame), never moved to follow the text,
+so a row inserted above, a sort, a replaced or joined paragraph or a deleted
+sheet takes it away. Q802 B (the skeleton until every page is in) is View's.
 
 Google Docs, Sheets and Slides imports export DOCX, XLSX and PPTX respectively;
 Drawings still export PDF. Acquire rejects a source whose current export format

@@ -95,24 +95,30 @@ export function child(map: YMap, key: string): YMap {
 
 /** Reorders `entries` (current order) so they read as `ids` ([risingOrders]). */
 export function reorder(entries: Map<string, YMap>, ids: string[]) {
-  const held = ids.map((id) => plain<string>(entries.get(id), 'order') ?? '');
+  const held = ids.map((id) => ({
+    id,
+    order: plain<string>(entries.get(id), 'order') ?? '',
+  }));
   risingOrders(held).forEach((order, i) => {
-    if (order !== held[i]) entries.get(ids[i])?.set('order', order);
+    if (order !== held[i].order) entries.get(ids[i])?.set('order', order);
   });
 }
 
 /** An axis (id -> order key: a table's rows or columns, a chart's series or
  * labels) brought to `count` entries as one editor action leaves it, aligned
  * by `alignPlaces`: the ids it drops go (`drop` clears what they held), new
- * ones come in between their neighbours. The ids, in order. */
+ * ones come in between their neighbours. Only its first `shown` ids, what a
+ * read shows, take part; the ids past them stay as they are. The ids, in
+ * order. */
 export function alignAxis(
   map: YMap,
   count: number,
   same: (held: number, wanted: number) => boolean,
   prefix: string,
-  drop: (id: string) => void
+  drop: (id: string) => void,
+  shown = Number.POSITIVE_INFINITY
 ): string[] {
-  const ids = orderedKeys(map);
+  const ids = orderedKeys(map).slice(0, shown);
   if (ids.length === count) return ids;
   const places = alignPlaces(ids.length, count, same);
   const kept = new Set(places);
@@ -122,11 +128,12 @@ export function alignAxis(
     drop(id);
   });
   const next = places.map((at) => (at < 0 ? uid(prefix) : ids[at]));
-  const held = places.map((at) =>
-    at < 0 ? '' : ((map.get(ids[at]) as string | undefined) ?? '')
-  );
+  const held = places.map((at, i) => ({
+    id: next[i],
+    order: at < 0 ? '' : ((map.get(ids[at]) as string | undefined) ?? ''),
+  }));
   risingOrders(held).forEach((order, i) => {
-    if (order !== held[i]) map.set(next[i], order);
+    if (order !== held[i].order) map.set(next[i], order);
   });
   return next;
 }

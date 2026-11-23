@@ -256,6 +256,13 @@ function OfficeRuntime() {
     },
     []
   );
+  // Where the reader is, at the zoom last reported, which the next frame
+  // applies first.
+  const readPosition = () => {
+    const position = positionerRef.current?.read() ?? null;
+    const zoom = zoomSentRef.current;
+    return position && zoom !== undefined ? { ...position, zoom } : position;
+  };
   const reportThumbnailer = useCallback(
     (thumbnailer: OfficeThumbnailer | null, scope?: OfficeCaptureScope) => {
       thumbnailerRef.current = thumbnailer;
@@ -575,7 +582,7 @@ function OfficeRuntime() {
         pausedRef.current = pausedFor(canEditRef.current ?? message.canEdit);
         setReadOnly(pausedRef.current);
         setMode(nextMode);
-        setCitation(nextMode === 'view' ? (message.citation ?? null) : null);
+        setCitation(message.citation ?? null);
         const bytes =
           nextMode === 'view' && message.checkpoint
             ? await exportCheckpoint(
@@ -661,18 +668,18 @@ function OfficeRuntime() {
       if (message.type === 'position-request' && revisionRef.current !== null) {
         post({
           id: message.id,
-          position: positionerRef.current?.read() ?? null,
+          position: readPosition(),
           revision: revisionRef.current,
           type: 'position',
         });
         return;
       }
       if (message.type === 'set-position') {
-        await positionerRef.current?.show(message.position);
+        await positionerRef.current?.show?.(message.position);
         if (revisionRef.current !== null)
           post({
             id: message.id,
-            position: positionerRef.current?.read() ?? null,
+            position: readPosition(),
             revision: revisionRef.current,
             type: 'position',
           });
@@ -846,12 +853,24 @@ function OfficeRuntime() {
   const reportAnalysis = useCallback(
     (analysis: OfficeAnalysis) => {
       if (runtimeRevision === undefined) return;
-      // Every caller reports once its first paint is done, so the timings end there.
+      // Every caller reports once its first paint is done (DOCX View once
+      // every page is in too), so the timings end there.
       const timings = {
         loadMs: Math.round(loadedAtRef.current),
         paintMs: Math.round(performance.now() - loadedAtRef.current),
       };
       post({ analysis, revision: runtimeRevision, timings, type: 'ready' });
+    },
+    [runtimeRevision]
+  );
+  const reportPainted = useCallback(
+    (analysis: OfficeAnalysis) => {
+      if (runtimeRevision === undefined) return;
+      const timings = {
+        loadMs: Math.round(loadedAtRef.current),
+        paintMs: Math.round(performance.now() - loadedAtRef.current),
+      };
+      post({ analysis, revision: runtimeRevision, timings, type: 'painted' });
     },
     [runtimeRevision]
   );
@@ -944,6 +963,7 @@ function OfficeRuntime() {
           file.format === 'docx' ? (
             <DocxEditorHost
               bytes={file.bytes}
+              citation={citation}
               collaboration={collaboration}
               colorMode={dark ? 'dark' : 'light'}
               compact={compact}
@@ -970,6 +990,7 @@ function OfficeRuntime() {
             <EditorCrash onCrash={reportCrash}>
               <XlsxEditorHost
                 bytes={file.bytes}
+                citation={citation}
                 collaboration={collaboration}
                 compact={compact}
                 fileName={file.fileName}
@@ -996,6 +1017,7 @@ function OfficeRuntime() {
             <EditorCrash onCrash={reportCrash}>
               <PptxEditorHost
                 bytes={file.bytes}
+                citation={citation}
                 collaboration={collaboration}
                 compact={compact}
                 fileName={file.fileName}
@@ -1032,6 +1054,8 @@ function OfficeRuntime() {
             onAnalysis={reportAnalysis}
             onError={reportError}
             onMenus={reportMenus}
+            onPainted={reportPainted}
+            onPositioner={reportPositioner}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}
           />
@@ -1045,6 +1069,7 @@ function OfficeRuntime() {
             onError={reportError}
             onFontError={reportFontFailure}
             onMenus={reportMenus}
+            onPositioner={reportPositioner}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}
           />
@@ -1059,6 +1084,7 @@ function OfficeRuntime() {
             onAskPresenter={askPresenter}
             onError={reportError}
             onMenus={reportMenus}
+            onPositioner={reportPositioner}
             onPresentingChange={reportPresenting}
             onRenderer={reportRenderer}
             onZoomChange={reportZoom}

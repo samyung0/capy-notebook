@@ -94,15 +94,100 @@ fn holds_multi(value: &Value) -> bool {
     }
 }
 
+/// The longest list under `key` anywhere in `value`.
+fn longest_list(value: &Value, key: &str) -> usize {
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .map(|(name, child)| {
+                let own = match child {
+                    Value::Array(items) if name == key => items.len(),
+                    _ => 0,
+                };
+                own.max(longest_list(child, key))
+            })
+            .max()
+            .unwrap_or(0),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| longest_list(item, key))
+            .max()
+            .unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// The longest string (in code points, as zod counts) under `key` anywhere
+/// in `value`, or in a list under it.
+fn longest_text(value: &Value, key: &str) -> usize {
+    let chars = |value: &Value| value.as_str().map_or(0, |text| text.chars().count());
+    match value {
+        Value::Object(map) => map
+            .iter()
+            .map(|(name, child)| {
+                let own = match child {
+                    Value::String(_) if name == key => chars(child),
+                    Value::Array(items) if name == key => {
+                        items.iter().map(chars).max().unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                own.max(longest_text(child, key))
+            })
+            .max()
+            .unwrap_or(0),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| longest_text(item, key))
+            .max()
+            .unwrap_or(0),
+        _ => 0,
+    }
+}
+
 /// A case the Rust store accepts where the Node server refused, by a rule
 /// relaxed after it was frozen: a figure without a description (Epo
-/// 2026-10-14).
-fn loosened(ours: &Result<(), String>, theirs: &Value) -> bool {
+/// 2026-10-14); a question's parts, an open part's marking items and sample
+/// answer, and a block's text past their caps, which two people's edits at
+/// once may reach and every layer holds up to twice (Epo 2026-11-22), so
+/// only within twice them (`value`, the case's question or document).
+fn loosened(ours: &Result<(), String>, theirs: &Value, value: &Value) -> bool {
+    use notes::catalog::{
+        QUESTION_TEXT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_QUESTION_PARTS_MAX,
+    };
+    use notes::limits::merged_cap;
+    let Some(message) = theirs["message"].as_str() else {
+        return false;
+    };
+    let merged = match message {
+        "A question has at most 7 parts." => {
+            Some(longest_list(value, "parts") <= merged_cap(QUIZ_QUESTION_PARTS_MAX))
+        }
+        "A part has at most 5 marking items." => {
+            Some(longest_list(value, "markscheme") <= merged_cap(QUIZ_MARKSCHEME_MAX))
+        }
+        "Sample answers are limited to 5000 characters." => {
+            Some(longest_text(value, "accepted") <= merged_cap(QUIZ_OPEN_ANSWER_MAX))
+        }
+        _ => None,
+    };
+    // A zod refusal whose every issue is a block's text too long.
+    let text_too_long = || {
+        let issues = message.trim_start_matches("invalid material document: ");
+        serde_json::from_str::<Vec<Value>>(issues).is_ok_and(|issues| {
+            issues.iter().all(|issue| {
+                issue["message"] == "Text is too long."
+                    && issue["path"].as_array().and_then(|path| path.last()) == Some(&json!("text"))
+            })
+        })
+    };
     ours.is_ok()
-        && theirs["zod"] == true
-        && theirs["message"]
-            .as_str()
-            .is_some_and(|m| m.contains("\"description\"") && m.contains("received undefined"))
+        && if theirs["zod"] == true {
+            (message.contains("\"description\"") && message.contains("received undefined"))
+                || (text_too_long() && longest_text(value, "text") <= merged_cap(QUESTION_TEXT_MAX))
+        } else {
+            merged == Some(true)
+        }
 }
 
 fn compare(at: &str, ours: Result<(), String>, theirs: &Value, failures: &mut Vec<String>) {
@@ -130,7 +215,9 @@ fn validation_matches_the_node_server() {
             &policy(&case["policy"], &case["host"]),
         )
         .map(|_| ());
-        if tightened(&ours, &case["question"]) {
+        if tightened(&ours, &case["question"])
+            || loosened(&ours, &case["outcome"], &case["question"])
+        {
             continue;
         }
         compare(&at, ours, &case["outcome"], &mut failures);
@@ -155,7 +242,7 @@ fn validation_matches_the_node_server() {
             tightenings += 1;
             continue;
         }
-        if loosened(&ours, &case["outcome"]) {
+        if loosened(&ours, &case["outcome"], &case["value"]) {
             loosenings += 1;
             continue;
         }
@@ -486,14 +573,15 @@ fn set(card: Value) -> Result<(), String> {
 }
 
 /// A stored set holds only what Go projects (security regression: a stored
-/// set Go cannot project breaks the material for everyone): a front of at
-/// most 4,000 characters and a back of at most 2,000, counted as Go counts
-/// runes, and an image exactly `{assetId}` with a non-blank id of at most 128.
+/// set Go cannot project breaks the material for everyone): a front and a
+/// back of at most twice their caps (two people typing in one at once may pass
+/// the cap, Epo 2026-11-22), counted as Go counts runes, and an image exactly
+/// `{assetId}` with a non-blank id of at most 128.
 #[test]
 fn a_card_holds_what_go_projects() {
     // Astral characters count once, as Go's runes.
-    let front = "\u{1F600}".repeat(notes::catalog::CARD_FRONT_MAX);
-    let back = "\u{1F600}".repeat(notes::catalog::CARD_BACK_MAX);
+    let front = "\u{1F600}".repeat(2 * notes::catalog::CARD_FRONT_MAX);
+    let back = "\u{1F600}".repeat(2 * notes::catalog::CARD_BACK_MAX);
     set(card(
         &front,
         &back,
@@ -502,11 +590,11 @@ fn a_card_holds_what_go_projects() {
     .unwrap();
     assert_eq!(
         set(card(&format!("{front}x"), "b", None)).unwrap_err(),
-        "a flashcard front holds at most 200 characters"
+        "a flashcard front holds at most 400 characters"
     );
     assert_eq!(
         set(card("f", &format!("{back}x"), None)).unwrap_err(),
-        "a flashcard back holds at most 1000 characters"
+        "a flashcard back holds at most 2000 characters"
     );
     for image in [
         json!({ "assetId": "" }),
@@ -782,7 +870,9 @@ fn group_repairs_follow_the_shared_fixtures() {
 }
 
 /// An image's or graph's description holds QUESTION_DESCRIPTION_MAX in a
-/// quiz and a note, the bank's QUESTION_TEXT_MAX in the bank (Epo 2026-10-14).
+/// quiz and a note, the bank's QUESTION_TEXT_MAX in the bank (Epo 2026-10-14);
+/// an image's, typed in place, up to twice it, as two people typing at once
+/// may pass it (Epo 2026-11-22), a graph's, written whole, at it.
 #[test]
 fn a_figure_description_holds_500_outside_the_bank() {
     let max = questions::QUESTION_DESCRIPTION_MAX;
@@ -809,8 +899,11 @@ fn a_figure_description_holds_500_outside_the_bank() {
     };
     let quiz = Policy::default();
     let asset = json!({ "assetId": "a1" });
-    questions::validate_question(&question("d".repeat(max), asset.clone()), &quiz).unwrap();
-    assert!(questions::validate_question(&question("d".repeat(max + 1), asset), &quiz).is_err());
+    questions::validate_question(&question("d".repeat(max + 1), asset.clone()), &quiz).unwrap();
+    questions::validate_question(&question("d".repeat(2 * max), asset.clone()), &quiz).unwrap();
+    assert!(
+        questions::validate_question(&question("d".repeat(2 * max + 1), asset), &quiz).is_err()
+    );
     let bank = Policy {
         bank: true,
         bank_assets_url: Some("https://bank.example/assets".into()),

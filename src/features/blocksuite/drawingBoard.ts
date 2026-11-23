@@ -167,12 +167,13 @@ import {
 } from './boardCards';
 import { closeBoardEditor, watchBoardEditor } from './boardEditorShell';
 import { keepToCatalog, savedCopy } from './boardKeep';
-import { type BoardKind, checkSavedBoard } from './boardLoad';
+import { checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
 import { setPlaneOpener } from './boardPlaneEditor';
 import { boardPresenceView } from './boardPresenceView';
 import { readOnlyCopy, TapPanTool } from './boardReadOnly';
+import type { BoardKind } from './boardRules';
 import {
   boardToolbar,
   markBoard,

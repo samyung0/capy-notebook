@@ -186,6 +186,12 @@ describe('office host protocol', () => {
     expect(isOfficeHostMessage(message({ ...banner, actions: 'x' }))).toBe(
       false
     );
+    // The deleted strip's Button variants (Epo 2026-11-21), no others.
+    const variant = (value: string) =>
+      message({ ...banner, actions: [{ label: 'Download', variant: value }] });
+    expect(isOfficeHostMessage(variant('dark'))).toBe(true);
+    expect(isOfficeHostMessage(variant('ghost-hover'))).toBe(true);
+    expect(isOfficeHostMessage(variant('danger'))).toBe(false);
   });
 
   it('takes a strip click, and the keyboard leaving the ribbon, with a revision', () => {
@@ -567,6 +573,18 @@ describe('office host protocol', () => {
     );
   });
 
+  it("accepts DOCX View's first paint with its timings", () => {
+    expect(
+      isOfficeRuntimeMessage({
+        analysis: { format: 'docx', pageCount: 481 },
+        revision: 1,
+        timings: { loadMs: 120, paintMs: 640 },
+        type: 'painted',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(true);
+  });
+
   it('tells a runtime from another protocol version apart from a malformed message', () => {
     expect(isOutdatedOfficeRuntime({ type: 'initialized', version: 5 })).toBe(
       true
@@ -728,6 +746,32 @@ it('accepts a reader place in each format and nothing else', () => {
       id: 'p1',
       position: xlsx,
       type: 'set-position',
+      version: OFFICE_PROTOCOL_VERSION,
+    })
+  ).toBe(true);
+});
+
+// Q608 A, Office protocol 15: View says where its reader is too, naming an
+// XLSX sheet by name, and every place carries its frame's zoom.
+it("accepts View's reader place by sheet name and a place's zoom", () => {
+  expect(OFFICE_PROTOCOL_VERSION).toBe(15);
+  const view = {
+    anchor: { col: 1, row: 3 },
+    format: 'xlsx',
+    head: { col: 1, row: 3 },
+    sheetName: 'Summary',
+    zoom: 1.5,
+  };
+  expect(isOfficePosition(view)).toBe(true);
+  expect(isOfficePosition({ format: 'pptx', slide: 2, zoom: 'fit' })).toBe(
+    true
+  );
+  expect(
+    isOfficeRuntimeMessage({
+      id: 'p1',
+      position: view,
+      revision: 1,
+      type: 'position',
       version: OFFICE_PROTOCOL_VERSION,
     })
   ).toBe(true);

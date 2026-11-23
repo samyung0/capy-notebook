@@ -824,6 +824,25 @@ Outside this directory, for BlockSuite:
     same with or without the stored one. The page-mode writers (`frame-panel`,
     `surface-ref`) still write the key, which nothing reads now.
 
+74. A canvas copy, Duplicate or Alt-drag clone carries no placeholder element
+    (`affine/blocks/root` `edgeless/utils/clone-utils.ts` `serializeElement`, marked
+    `Capy (local change 74)`; 2026-11-22). An `UnknownElementModel` (local change 62:
+    a type this build has no model for, or a known type the board's rules don't
+    read) stands for another build's or person's element, and its copy is that
+    element's map as it is: pasted, a known type's map was written whole and reached
+    every peer before the board took its own misfit add out again (`keepToCatalog`);
+    an unknown type threw `Invalid element type` part way through the paste. Both
+    serializers (`prepareClipboardData` for copy and cut, `prepareCloneData` for
+    Duplicate and Alt-drag) now leave it out, and a block's placeholder on the canvas
+    (one read through a stand-in schema, whose model's flavour is not its stored one)
+    too, which no paste config took anyway; a group's copy keeps only the children it
+    is copied with, and a group left with nothing is not copied (upstream a group whose
+    child was not pasted was not pasted at all). A placeholder in a note's text is left
+    out by the board's clipboard middleware (`placeholdersLeftOut`,
+    `src/features/blocksuite/boardUnknown.ts`).
+    Pinned by "leaves placeholder elements out of a canvas copy and Duplicate" in
+    `src/features/blocksuite/boardUnknown.test.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

@@ -21,6 +21,7 @@ import {
   setGraphElement,
   subscribeFigure,
 } from './liveFigures';
+import { ordered } from './liveMaps';
 import { figureRoom, readQuestions, seedQuiz, writeQuestion } from './liveQuiz';
 
 const graph: GraphBlock = {
@@ -327,6 +328,39 @@ it('inserts a figure after the block it followed and removes it by its entry', (
   if (!entry) throw new Error('not inserted');
   expect(room.remove({ entry, question: 'q1', section })).toBe(true);
   expect(readQuestions(docs.content, docs.keys)).toEqual([question]);
+});
+
+it('inserts a figure between two blocks two editors added at once', () => {
+  const a = seeded();
+  const b = peer(a);
+  const [part] = question.parts;
+  const append = (docs: QuizDocs, text: string) =>
+    writeQuestion(docs.content, docs.keys, {
+      ...question,
+      parts: [{ ...part, blocks: [...part.blocks, { text, type: 'text' }] }],
+    });
+  append(a, 'From A');
+  append(b, 'From B');
+  sync(a, b);
+  const path = ['questions', 'q1', 'parts', 'p1', 'blocks'];
+  const tied = ordered(mapIn(a.content, path)).slice(-2);
+  expect(tied[0].order).toBe(tied[1].order);
+  const room = figureRoom(a);
+  const blocks = readQuestions(a.content, a.keys)[0].parts[0].blocks;
+  room.insert(
+    {
+      after: room.key(blocks[2]),
+      index: 3,
+      question: 'q1',
+      section: { partId: 'p1' },
+    },
+    graph
+  );
+  expect(readQuestions(a.content, a.keys)[0].parts[0].blocks).toEqual([
+    ...blocks.slice(0, 3),
+    graph,
+    blocks[3],
+  ]);
 });
 
 it('tells a dialog of its own figure changing, not of edits elsewhere', () => {

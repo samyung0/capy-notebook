@@ -241,7 +241,6 @@ const workspaceRoute = createRoute({
     abortController,
     context: { queryClient: qc },
     deps,
-    location,
     params,
     preload,
   }) => {
@@ -260,11 +259,7 @@ const workspaceRoute = createRoute({
     if (deps.file) {
       qc.prefetchQuery(fileQuery(deps.file));
       // An Office file's open starts once its row arrives.
-      prefetchOfficeFile(qc, deps.file, {
-        abortController,
-        location,
-        preload,
-      });
+      prefetchOfficeFile(qc, deps.file, { abortController, preload });
     }
   },
   path: '/workspaces/$workspaceId',
@@ -455,16 +450,11 @@ const appRoutes = [
     loader: ({
       abortController,
       context: { queryClient: qc },
-      location,
       params,
       preload,
     }) => {
       qc.prefetchQuery(fileQuery(params.fileId));
-      prefetchOfficeFile(qc, params.fileId, {
-        abortController,
-        location,
-        preload,
-      });
+      prefetchOfficeFile(qc, params.fileId, { abortController, preload });
     },
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,

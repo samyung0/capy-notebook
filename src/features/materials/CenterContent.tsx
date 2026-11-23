@@ -73,7 +73,7 @@ import {
 import {
   type DeletedTarget,
   deletedTarget,
-  reloadDeleted,
+  discardDeleted,
   useDeletedEdits,
   useShowsDeleted,
 } from '@/features/collaboration/lostEdits';
@@ -766,7 +766,7 @@ function MaterialContentBody({
   }, [lost, deleted, owner, materialId]);
   // Deleted while this page showed it, live or from its device copy: that
   // stays, read-only, while this device holds unsent edits to it (`kept`),
-  // shown to copy until Reload (a note's drawn from them, as its Download
+  // shown to copy until Discard (a note's drawn from them, as its Download
   // draws them); with none it is unavailable as any refusal.
   const shownLive = useRef<Material | undefined>(undefined);
   const showing = loaded ?? copied;
@@ -786,7 +786,7 @@ function MaterialContentBody({
   const keptDeleted =
     deleted && deletedEdits?.status !== 'none' ? shown : undefined;
   // A deleted note's kept edits drawn from the stored rows alone, as its
-  // Download draws them: what its strip says shows, and its Reload deletes.
+  // Download draws them: what its strip says shows, and its Discard deletes.
   const deletedNote = deletedEdits?.status === 'kept' && deletedEdits.note;
   const drawnNote = useMemo(
     () =>
@@ -936,7 +936,10 @@ function MaterialContentBody({
   const readOnlyStrip = keptDeleted ? (
     drawnNote &&
     deletedDocs && (
-      <SaveBanner onReload={() => reloadDeleted(deletedDocs)} state="deleted" />
+      <SaveBanner
+        onReload={() => discardDeleted(deletedDocs)}
+        state="deleted"
+      />
     )
   ) : material.storageFull ? (
     <StorageFullBanner by={material.storageFull} />

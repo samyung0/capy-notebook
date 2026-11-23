@@ -1,14 +1,10 @@
 import { POLYGON_SHAPES } from '@blocksuite/affine/model';
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { type Keyed, keyedElements } from '@/features/graph/keyed';
 import { m } from '@/i18n';
 import { fromBase64, toBase64 } from './base64';
-import {
-  planeElements,
-  SAVED,
-  withCanvasBlock,
-  withElements,
-} from './boardFixture';
+import { keyedMap, SAVED, withCanvasBlock, withElements } from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview, POLYGON_CORNERS } from './boardPreview';
 
@@ -24,6 +20,16 @@ const INK_STROKE = /<path d="M[^"]*" fill="none" stroke="#000"/;
 const DRAWN_NEARER = /<g transform="translate\(-1780 0\)">/;
 const CARD_NOTE_BOX =
   /<rect [^>]*rx="16" fill="#fff" fill-opacity="0.5" stroke="#e6e6e6"/;
+const RED_SLICE = /<path d="M[^"]*A[^"]*Z" fill="#e03131"\/>/;
+
+/** A keyed list stored in the reverse of its order keys, so only the keys put it
+ * right. */
+function backwards<E extends Keyed>(list: E[]) {
+  const map = new Y.Map<unknown>();
+  for (const [id, entry] of Object.entries(keyedElements(list)).reverse())
+    map.set(id, entry);
+  return map;
+}
 
 it('draws the plane card, its marks and its axes', () => {
   const svg = drawBoardPreview(SAVED, SIZE, 'question');
@@ -35,7 +41,7 @@ it("draws a plane's elements as the graph engine does, in the card's place", () 
   const svg = drawBoardPreview(
     toBase64(
       withElements({
-        elements: planeElements([
+        elements: keyedMap([
           {
             coords: [
               [0, 0],
@@ -58,6 +64,44 @@ it("draws a plane's elements as the graph engine does, in the card's place", () 
   );
   expect(svg).toMatch(PLANE_CARD);
   expect(svg).toMatch(INK_STROKE);
+});
+
+it("draws a chart's bars and a pie's filled slice from their keyed lists", () => {
+  const chart = (fields: Record<string, unknown>) =>
+    drawBoardPreview(
+      toBase64(
+        withElements({
+          axisMax: 10,
+          axisStep: 2,
+          bars: keyedMap([]),
+          labels: keyedMap([]),
+          spokes: keyedMap([]),
+          type: 'chart',
+          xywh: '[0,600,300,200]',
+          ...fields,
+        })
+      ),
+      SIZE,
+      'question'
+    );
+  const bars = chart({
+    bars: backwards([
+      { fill: '#e03131', id: 'a', label: 'Mon', value: 4 },
+      { fill: '#1971c2', id: 'b', label: 'Tue', value: 8 },
+    ]),
+    kind: 'bar',
+  });
+  expect(bars.indexOf('fill="#e03131"')).toBeLessThan(
+    bars.indexOf('fill="#1971c2"')
+  );
+  const pie = chart({
+    kind: 'pie',
+    spokes: keyedMap([
+      { angle: 0, id: 's' },
+      { angle: 90, fill: '#e03131', id: 't' },
+    ]),
+  });
+  expect(pie).toMatch(RED_SLICE);
 });
 
 it('keeps a long stroke to what the preview can show', () => {
@@ -111,6 +155,7 @@ it('draws a connector saved before the board placed it, between its ends', () =>
           xywh: '[900,0,100,50]',
         },
         {
+          mode: 2,
           source: { id: 'box', position: [0.5, 1] },
           stroke: '#1971c2',
           target: { position: [950, 300] },
@@ -190,10 +235,15 @@ function withNote(
     blocks.set(id, map);
     return map;
   };
+  // BlockSuite keeps a block's objects as maps.
+  const edgeless = new Y.Map<unknown>();
+  const styles = new Y.Map<unknown>();
+  for (const [key, value] of Object.entries(style)) styles.set(key, value);
+  edgeless.set('style', styles);
   const note = block('note', 'affine:note', {
     background,
     displayMode: 'both',
-    edgeless: { style },
+    edgeless,
     index: 'a1',
     xywh: '[0,0,200,40]',
     ...props,
@@ -253,7 +303,7 @@ it("draws a quiz drawing's far label nearer and a canvas's where it is", () => {
       fontSize: 24,
       id: 'far',
       index: 'z9',
-      text: 'Far',
+      text: new Y.Text('Far'),
       type: 'text',
       xywh: '[3000,0,80,30]',
     })

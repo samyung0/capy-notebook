@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -53,4 +54,13 @@ func TestCatalogIsConsistent(t *testing.T) {
 			}
 		}
 	}
+	// Each emoji is written as its code points, lowercase hex joined by "_" (the
+	// names of its files under public/emoji/noto; the files are not checked).
+	for _, code := range c.Emoji {
+		if !emojiCode.MatchString(code) {
+			t.Errorf("emoji %q is not code points", code)
+		}
+	}
 }
+
+var emojiCode = regexp.MustCompile(`^[0-9a-f]{4,5}(_[0-9a-f]{4,5})*$`)

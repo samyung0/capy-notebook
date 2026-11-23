@@ -11,6 +11,7 @@ import { uploadEditorAsset } from '@/api/editorAssets';
 import type { LearnerQuestion, Question } from '@/api/types';
 import { recoveryBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
+import { userToast } from '@/components/ui/userToast';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
 import {
   LiveStatus,
@@ -23,12 +24,12 @@ import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { quizSampleUpload } from './drawing/DrawnSample';
 import {
+  editQuestion,
   figureRoom,
   moveQuestion,
   removeQuestion,
   seedQuiz,
   withEmptyKeys,
-  writeQuestion,
 } from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
@@ -90,9 +91,15 @@ export function QuizForm({
   const hosted = useContext(UndoSink) !== null;
   // A question just added, whose text opens in its editor.
   const [fresh, setFresh] = useState<string>();
+  // A write past the quiz's caps, read now, does not go and says so.
+  const write = (question: Question) => {
+    const issue = editQuestion(content, keys, question);
+    if (issue) userToast({ title: issue, variant: 'error' });
+    return !issue;
+  };
   // A new question goes right after `index`, as Google Forms adds one.
   const place = (question: Question, index: number) => {
-    writeQuestion(content, keys, question);
+    if (!write(question)) return;
     moveQuestion(content, question.id, index + 1);
     setPicked(question.id);
   };
@@ -135,7 +142,7 @@ export function QuizForm({
           questions={questions}
           uploadAsset={quizImageUpload(quizId)}
           uploadSample={quizSampleUpload(quizId)}
-          write={(next) => writeQuestion(content, keys, next)}
+          write={write}
         />
       </Suspense>
     </div>
