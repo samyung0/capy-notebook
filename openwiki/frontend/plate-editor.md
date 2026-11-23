@@ -6616,7 +6616,18 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   edits still gets its size. Size saves take no undo step. A read-only board
   writes none (a lock drops a waiting size before the selection's end could save
   it), and unlocking measures every note again, a size the lock dropped going in
-  as this tab's. Before the board's document goes, its waiting sizes are saved,
+  as this tab's. A locked note (BlockSuite's lock, its own or a group's, as a
+  Canvas question's elements on a student's copy) keeps its stored size in every
+  tab, since the lock stops only a person's edits: no tab holds, saves or writes
+  it, a lock arriving while a size waits drops that size, and unlocking measures
+  the note again as by a tab not editing it (written after 3 s). Locks are checked
+  only after a change that can lock or unlock a note (a lock, a group's or frame's
+  children, an element or block added or gone), never per typed key. A lock made
+  as a tracked step in the tab holding a size stores it first, as any step does,
+  so a tab making a copy with locked elements adds and locks them in one
+  transaction (or the copy is built before the board mounts, or on the server): a
+  note it adds counts as its own change, and a later lock would store the size it
+  measured in between. Before the board's document goes, its waiting sizes are saved,
   or dropped when the room was lost, refused the person or was replaced by a
   recovery copy, and every wait stops, so nothing is written after the board is
   gone. Leaving the page, each note saves its size as React takes the board's

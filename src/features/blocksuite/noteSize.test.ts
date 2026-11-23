@@ -41,10 +41,26 @@ import { BLOCKS_ROOT, openRoomStore } from './roomStore';
  * local change 75), not after every key: each size write took the clock
  * between two typed characters, so no two merged into one run. Only the tab
  * editing the note, or whose person just changed it, holds its size; the
- * others write only after 3 s of differing. */
+ * others write only after 3 s of differing. No tab writes a locked note's. */
 
 const page = Object.assign(new EventTarget(), { visibilityState: 'visible' });
 vi.stubGlobal('document', page);
+// A group's bound reads its notes' through the DOM's DOMRect (unturned here).
+vi.stubGlobal(
+  'DOMRect',
+  class {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    constructor(x: number, y: number, width: number, height: number) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+  }
+);
 
 const stores = new StoreExtensionManager([
   RootStoreExtension,
@@ -77,6 +93,9 @@ function tab(state: Uint8Array = boardFirstState()) {
 }
 
 type Tab = ReturnType<typeof tab>;
+
+const surfaceOf = (at: Tab) =>
+  at.store.getModelsByFlavour('affine:surface')[0] as SurfaceBlockModel;
 
 /** Sends what `from` has that `to` lacks, as the room relays it. */
 const relay = (from: Tab, to: Tab) =>
@@ -515,6 +534,116 @@ it('measures a locked board’s notes again as it unlocks, a size the lock dropp
 });
 
 it.each([
+  ['not editing it', false],
+  ['whose person is changing it', true],
+] as const)(
+  'never holds or writes the size of a locked note, measured by a tab %s',
+  (_, editing) => {
+    const { at, model, stored, text, writes } = typist();
+    // A question's note on a student's copy of the board.
+    model.lock();
+    if (editing) text.insert('Light', 0);
+    // This tab's fonts measure the text unlike the stored size.
+    measureNoteSize(model, 'h', 60, editing);
+    expect(model.h).toBe(30);
+    vi.advanceTimersByTime(NOTE_SIZE_VIEWER_MS);
+    // Editing ends, a drag starts and ends, the board is saved.
+    saveNoteSize(model);
+    noteGestureStarts(model);
+    noteGestureEnds(model);
+    saveNoteSizes(at.store);
+    vi.advanceTimersByTime(NOTE_SIZE_VIEWER_MS);
+    expect(writes()).toBe(0);
+    expect(stored().h).toBe(30);
+    at.dispose();
+  }
+);
+
+it.each([
+  [
+    'the note',
+    (on: Tab, ids: string[]) => {
+      for (const id of ids) noteOn(on, id).model.lock();
+    },
+  ],
+  [
+    'a group holding it',
+    (on: Tab, ids: string[]) =>
+      surfaceOf(on).addElement({
+        children: Object.fromEntries(ids.map((id) => [id, true])),
+        lockedBySelf: true,
+        type: 'group',
+      }),
+  ],
+] as const)(
+  'drops a waiting size when a peer locks %s, writing nothing',
+  (_, lock) => {
+    const a = typist();
+    const other = noteOn(a.at, addNote(a.at));
+    vi.advanceTimersByTime(NOTE_SIZE_IDLE_MS);
+    const b = tab(Y.encodeStateAsUpdate(a.at.doc));
+    // A size held by the tab editing one note, a 3 s wait on another.
+    measureNoteSize(a.model, 'h', 60, true);
+    measureNoteSize(other.model, 'h', 60, false);
+    lock(b, [a.id, other.model.id]);
+    relay(b, a.at);
+    // The stored size shows again at once.
+    expect(a.model.h).toBe(30);
+    // Editing ends; the waits pass.
+    saveNoteSize(a.model);
+    vi.advanceTimersByTime(NOTE_SIZE_VIEWER_MS);
+    expect(a.writes() + other.writes()).toBe(0);
+    expect(a.stored().h).toBe(30);
+    b.dispose();
+    a.at.dispose();
+  }
+);
+
+it('measures a note again once a peer unlocks it, writing its size after 3 s', () => {
+  const a = typist();
+  const b = tab(Y.encodeStateAsUpdate(a.at.doc));
+  const onB = noteOn(b, a.id);
+  measureNoteSize(a.model, 'h', 60, true);
+  onB.model.lock();
+  relay(b, a.at);
+  // Measured while locked: a peer's text arrived.
+  measureNoteSize(a.model, 'h', 80, false);
+  vi.advanceTimersByTime(NOTE_SIZE_VIEWER_MS);
+  expect(a.writes()).toBe(0);
+  onB.model.unlock();
+  relay(b, a.at);
+  // As by a tab not editing it: nothing shown or written before 3 s.
+  expect(a.model.h).toBe(30);
+  vi.advanceTimersByTime(NOTE_SIZE_VIEWER_MS - 100);
+  expect(a.writes()).toBe(0);
+  vi.advanceTimersByTime(100);
+  expect(a.stored().h).toBe(80);
+  b.dispose();
+  a.at.dispose();
+});
+
+it('checks no locked note’s lock while a key is typed into another', () => {
+  const { at, model, stored, text } = typist();
+  // Question notes a group locks, as the toolbar's Lock of several elements.
+  const locked = [addNote(at), addNote(at)].map((id) => noteOn(at, id).model);
+  surfaceOf(at).addElement({
+    children: Object.fromEntries(locked.map((note) => [note.id, true])),
+    lockedBySelf: true,
+    type: 'group',
+  });
+  for (const note of locked) measureNoteSize(note, 'h', 60, false);
+  const checks = locked.map((note) => vi.spyOn(note, 'isLocked'));
+  for (let typed = 1; typed <= 5; typed++) {
+    text.insert('a', typed - 1);
+    measureNoteSize(model, 'w', 7 * typed, true);
+  }
+  vi.advanceTimersByTime(NOTE_SIZE_IDLE_MS);
+  expect(stored().w).toBe(35);
+  for (const check of checks) expect(check).not.toHaveBeenCalled();
+  at.dispose();
+});
+
+it.each([
   ['saves', 'save', 60],
   // The room lost, refused or replaced the board.
   ['drops', 'drop', 30],
@@ -599,9 +728,7 @@ it('lets a tab not editing the note write a size it measures and no one stores, 
 
 it('moves a connector’s label at the save, in its transaction, not per key', async () => {
   const { at, id, model, text } = typist();
-  const surface = at.store.getModelsByFlavour(
-    'affine:surface'
-  )[0] as SurfaceBlockModel;
+  const surface = surfaceOf(at);
   const shape = surface.addElement({
     shapeType: 'rect',
     type: 'shape',
