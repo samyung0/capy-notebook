@@ -296,12 +296,12 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
   await pickExtract(page);
+  // The question paper's Upload a file, the first field's.
+  const chooser = page.waitForEvent('filechooser');
   await dialog(page)
-    .getByRole('button', { name: m.file_choose() })
+    .getByRole('button', { name: m.make_quiz_upload_file() })
     .first()
     .click();
-  const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: m.make_quiz_upload_file() }).click();
   await (await chooser).setFiles({
     buffer: emptyPdf(),
     mimeType: 'application/pdf',

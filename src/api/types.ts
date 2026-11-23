@@ -50,6 +50,7 @@ import type {
   Material as GenMaterial,
   MaterialListItem as GenMaterialListItem,
   MaterialPage as GenMaterialPage,
+  MemberAnswer as GenMemberAnswer,
   Message as GenMessage,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
@@ -58,6 +59,7 @@ import type {
   ReviewResult as GenReviewResult,
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
+  StudyQuestion as GenStudyQuestion,
   StudySummary as GenStudySummary,
   SubmittedPaper as GenSubmittedPaper,
   TrashItem as GenTrashItem,
@@ -354,6 +356,17 @@ export type {
 export type ReviewItem = Omit<GenReviewItem, 'question'> & {
   question?: LearnerQuestion;
 };
+/** A topic page's or Frequently wrong's question with its latest result;
+ * `question` is its answer-free content where it can be practised. */
+export type StudyQuestion = Omit<GenStudyQuestion, 'question'> & {
+  question?: LearnerQuestion;
+};
+/** A member's latest answer to a question for a class's staff: the question
+ * as checked, key and marks included, and the answers given. */
+export type MemberAnswer = Omit<GenMemberAnswer, 'question' | 'answers'> & {
+  question: Question;
+  answers: Answers;
+};
 /** An item answered earlier in a resumed session, with its record; a
  * question is the graded one, key included, with the answers given. */
 export type ReviewAnswer = Omit<GenReviewAnswer, 'question' | 'answers'> & {
@@ -404,7 +417,6 @@ export type {
   MemberProgress,
   MembersProgress,
   MembersTopic,
-  MissedQuestion,
   PaperFileReq,
   PastReview,
   Practice,

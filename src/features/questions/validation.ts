@@ -633,6 +633,7 @@ export type RuleIssue = {
     | 'quiz-markscheme'
     | 'open-answer-length'
     | 'quiz-question-parts'
+    | 'images'
     | 'description'
     | 'asset-host';
   part?: number;
@@ -735,6 +736,22 @@ export function ruleIssues(
         max: limits.QUIZ_QUESTION_PARTS_MAX,
       }),
       rule: 'quiz-question-parts',
+    });
+  // The grader is sent every image but the explanations', 32 a call at most
+  // (Epo 2026-11-23).
+  const images = [
+    question.stem,
+    ...(question.groups ?? []).map((group) => group.blocks),
+    ...question.parts.map((part) => part.blocks),
+  ]
+    .flat()
+    .filter((block) => block.type === 'image').length;
+  if (images > limits.QUESTION_IMAGES_MAX)
+    issues.push({
+      message: m.question_validation_images({
+        max: limits.QUESTION_IMAGES_MAX,
+      }),
+      rule: 'images',
     });
   type Section = NonNullable<RuleIssue['block']>['section'];
   const sections: {

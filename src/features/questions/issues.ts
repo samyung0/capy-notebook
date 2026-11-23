@@ -297,7 +297,7 @@ export function questionIssues(
     }
     const part = parts(rule.part);
     if (!part || rule.part === undefined) {
-      add({ message: generic });
+      add({ message: rule.rule === 'images' ? rule.message : generic });
       continue;
     }
     const message = ruleMessage(rule, normal.parts[rule.part]);

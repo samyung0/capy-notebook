@@ -33,7 +33,6 @@ import {
   SimpleDialog,
 } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { InputTitle } from '@/components/ui/Input';
 import {
@@ -55,6 +54,8 @@ import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { outOfCredits } from '@/features/billing/credits';
 import { AddFileDestination } from '@/features/files/AddFileDestination';
+import { useFileDrop } from '@/features/files/fileDrop';
+import { UploadDropZone } from '@/features/files/UploadDropZone';
 import { markGettingStarted } from '@/features/guide/gettingStarted';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
@@ -741,10 +742,6 @@ function UploadFooter({
   );
 }
 
-function hasDraggedFiles(dataTransfer: DataTransfer) {
-  return Array.from(dataTransfer.types).includes('Files');
-}
-
 export function AddSourceDialog({
   open,
   onClose,
@@ -830,7 +827,6 @@ export function AddSourceDialog({
             transfer.stage === 'importing')
       ).length
   );
-  const [isDragOver, setIsDragOver] = useState(false);
   // Who can see it, for both tabs' files; everyone until changed.
   const [hidden, setHidden] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
@@ -854,6 +850,11 @@ export function AddSourceDialog({
   const pendingCount =
     uploads.sources.length + imports.sources.length + inFlightCount;
   const canAdd = workspaceRoom > pendingCount;
+  // The dialog takes drops for the Upload tab and keeps a stray one elsewhere
+  // in it from opening the file in the tab.
+  const { dropHandlers, over } = useFileDrop(
+    mode === 'upload' && uploadPolicy && canAdd ? acceptLocalFiles : undefined
+  );
 
   useEffect(() => {
     if (!open) {
@@ -1007,7 +1008,7 @@ export function AddSourceDialog({
     if (other.sources.length === 0) closeDialog();
   }
 
-  function acceptLocalFiles(list: FileList | null) {
+  function acceptLocalFiles(list: ArrayLike<File> | null) {
     if (!list?.length) return;
     if (!uploadPolicy) {
       userToast({
@@ -1389,7 +1390,6 @@ export function AddSourceDialog({
     );
   }
 
-  const acceptsDrop = mode === 'upload' && Boolean(uploadPolicy) && canAdd;
   // Files' Add to, right above whichever tab's footer shows.
   const destination = onDestinationChange && (
     <div className="shrink-0 pt-4">
@@ -1425,28 +1425,7 @@ export function AddSourceDialog({
       open={open}
       title={m.action_add_file()}
     >
-      {/* Takes file drops for the Upload tab and keeps a stray drop elsewhere
-          in the dialog from opening the file in the tab. */}
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-4"
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-            setIsDragOver(false);
-          }
-        }}
-        onDragOver={(event) => {
-          if (!hasDraggedFiles(event.dataTransfer)) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = acceptsDrop ? 'copy' : 'none';
-          setIsDragOver(acceptsDrop);
-        }}
-        onDrop={(event) => {
-          if (!hasDraggedFiles(event.dataTransfer)) return;
-          event.preventDefault();
-          setIsDragOver(false);
-          if (acceptsDrop) acceptLocalFiles(event.dataTransfer.files);
-        }}
-      >
+      <div className="flex min-h-0 flex-1 flex-col gap-4" {...dropHandlers}>
         <Tabs
           className="dialog-tabs-bleed w-auto"
           onChange={setMode}
@@ -1479,46 +1458,14 @@ export function AddSourceDialog({
         )}
         {mode === 'upload' && (
           <div className="flex min-h-0 flex-1 flex-col">
-            {uploads.sources.length === 0 ? (
-              <button
-                className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-card border-2 border-line border-dashed px-6 py-4 transition-colors hover:bg-surface-hover-bg sm:gap-2 sm:py-8',
-                  isDragOver && 'border-solid-accent-1 bg-tint-accent-1/60'
-                )}
-                disabled={!uploadPolicy || !canAdd}
-                onClick={() => inputRef.current?.click()}
-                type="button"
-              >
-                <Icon
-                  className="non-scaling-svg size-6 sm:size-7"
-                  name="upload"
-                />
-                <p className="t-body font-semibold">
-                  {m.source_upload_computer()}
-                </p>
-                <p className="t-meta text-fg-muted">{m.source_upload_hint()}</p>
-              </button>
-            ) : (
-              <button
-                className={cn(
-                  'flex min-h-21.5 shrink-0 items-center justify-center gap-3.5 rounded-card border-2 border-line border-dashed px-5 py-4 text-left transition-colors hover:bg-surface-hover-bg',
-                  isDragOver && 'border-solid-accent-1 bg-tint-accent-1/60'
-                )}
-                disabled={!uploadPolicy || !canAdd}
-                onClick={() => inputRef.current?.click()}
-                type="button"
-              >
-                <Icon className="size-6.5 shrink-0" name="upload" />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="t-body font-semibold">
-                    {m.source_upload_computer()}
-                  </span>
-                  <span className="t-meta text-fg-muted">
-                    {m.source_upload_hint()}
-                  </span>
-                </span>
-              </button>
-            )}
+            <UploadDropZone
+              disabled={!uploadPolicy || !canAdd}
+              hint={m.source_upload_hint()}
+              label={m.source_upload_computer()}
+              onClick={() => inputRef.current?.click()}
+              over={over}
+              tall={uploads.sources.length === 0}
+            />
             <input
               accept={uploadPolicy?.accept}
               hidden

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -15,8 +16,9 @@ import (
 
 // Marking a paper (todo-file-submissions.md 5a): one pipeline call, /paper,
 // reads every page (prompt R) and grades the open and drawn parts four to a
-// call on their pages (P1 + B), all on the member's credits. Closed answers are
-// marked here against the key, as typed ones are.
+// call on their pages (P1 + B), with their question's images, on the payer's
+// credits (the member's for a submission, staff's for what they press).
+// Closed answers are marked here against the key, as typed ones are.
 
 // paperIngestPoll is how often marking looks again for a paper's files to
 // finish their ingest, the normal upload's, within markingAttemptTimeout.
@@ -64,6 +66,31 @@ func paperBody(paper store.Paper, again map[string][]int) map[string]any {
 	return map[string]any{"files": files, "parts": parts, "pages": pages}
 }
 
+// paperFigures adds each graded part's question images to body's parts, read
+// as the assignment's frozen copy's (questionFigures).
+func (a *api) paperFigures(ctx context.Context, assignmentID string, paper store.Paper, body map[string]any) error {
+	figures := map[string][]map[string]any{}
+	for _, p := range paper.Parts {
+		if len(p.Figures) > 0 {
+			figures[p.Label] = p.Figures
+		}
+	}
+	cache := newFigureCache()
+	parts, _ := body["parts"].([]map[string]any)
+	for _, part := range parts {
+		label, _ := part["id"].(string)
+		if len(figures[label]) == 0 {
+			continue
+		}
+		urls, err := a.questionFigures(ctx, sampleOwner{assignmentID: assignmentID}, figures[label], cache)
+		if err != nil {
+			return err
+		}
+		part["figures"] = urls
+	}
+	return nil
+}
+
 // waitForPaperFiles waits until none of the paper's files is still in ingest.
 func (a *api) waitForPaperFiles(ctx context.Context, attemptID string) (store.Paper, error) {
 	for {
@@ -95,16 +122,16 @@ var unreadablePaperCodes = map[string]bool{
 	"file_unreadable": true, "file_unavailable": true, "unsupported_format": true, "unavailable_target": true,
 }
 
-// postPaper runs /paper on the payer's credits. A failure of the whole call
+// postPaper runs /paper on payer's credits. A failure of the whole call
 // returns why (store.AIErrorCredits, store.AIErrorFile or store.AIErrorGrade)
 // and the error.
-func (a *api) postPaper(ctx context.Context, paper store.Paper, body map[string]any) (paperReply, string, error) {
+func (a *api) postPaper(ctx context.Context, paper store.Paper, payer string, body map[string]any) (paperReply, string, error) {
 	var reply paperReply
-	llm, err := a.gradingLLM(ctx, paper.PayerID)
+	llm, err := a.gradingLLM(ctx, payer)
 	if err != nil {
 		return reply, store.AIErrorGrade, err
 	}
-	charge, err := a.beginProviderSession(ctx, paper.PayerID, paper.WorkspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
+	charge, err := a.beginProviderSession(ctx, payer, paper.WorkspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
 		if errors.Is(err, store.ErrCreditsExhausted) {
 			return reply, store.AIErrorCredits, err
@@ -132,11 +159,12 @@ func (a *api) postPaper(ctx context.Context, paper store.Paper, body map[string]
 }
 
 // markPaper reads a submitted paper and grades its open parts, or with the
-// paper read, grades again the open parts in again (part id to pages). What
-// could not be graded waits with why, for Mark with AI. Under manual marking
-// nothing is noted: a failed read leaves its parts waiting for hand marking
-// with no badge, and Read papers again reads it (Q730).
-func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, again map[string][]int) error {
+// paper read, grades again the open parts in again (part id to pages), on
+// payer's credits (the member's when empty). What could not be graded waits
+// with why, for Mark with AI. Under manual marking nothing is noted: a failed
+// read leaves its parts waiting for hand marking with no badge, and Read
+// papers again reads it (Q730).
+func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, again map[string][]int, payer string) error {
 	marking, cancel := context.WithTimeout(ctx, markingAttemptTimeout)
 	defer cancel()
 	paper, err := a.waitForPaperFiles(marking, attemptID)
@@ -180,7 +208,21 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 	if paper.TextGap != "" {
 		return waitAll(paper.TextGap)
 	}
-	reply, reason, callErr := a.postPaper(marking, paper, body)
+	// The parts it grades carry their question's images. One unreadable
+	// leaves them all waiting, as a failed call does: graded without it, an
+	// answer would be judged on less than the question shows.
+	if !paper.Manual {
+		if err := a.paperFigures(marking, assignmentID, paper, body); err != nil {
+			if err := waitAll(store.AIErrorGrade); err != nil {
+				return err
+			}
+			return fmt.Errorf("paper %s: %w", attemptID, err)
+		}
+	}
+	if payer == "" {
+		payer = paper.PayerID
+	}
+	reply, reason, callErr := a.postPaper(marking, paper, payer, body)
 	if callErr != nil {
 		if err := waitAll(reason); err != nil {
 			return err
@@ -216,9 +258,11 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 			return err
 		}
 	}
-	if err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now()); err != nil {
+	sent, err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now())
+	if err != nil {
 		return err
 	}
+	a.publishNotifications(saving, sent)
 	if err := a.s.SaveAIFailures(saving, attemptID, failures); err != nil {
 		return err
 	}
@@ -228,31 +272,33 @@ func (a *api) markPaper(ctx context.Context, assignmentID, attemptID string, aga
 	return nil
 }
 
-// readPapers reads, in the background, the papers ids (PapersToRead) one at a
-// time per payer as other marking runs, releasing each read's hold as it ends.
-func (a *api) readPapers(ctx context.Context, assignmentID string, ids []string, held map[string]func()) {
+// readPapers reads the papers ids (PapersToRead), each in one of its payer's
+// slots as other marking runs, releasing each read's hold as it ends.
+func (a *api) readPapers(ctx context.Context, assignmentID string, ids []string, held map[string]func(), req markingRequest) {
 	report := func(err error) {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "paper_marking"})
 	}
+	var reads sync.WaitGroup
 	for _, id := range ids {
-		paper, err := a.s.GetPaper(ctx, id)
-		if err != nil {
-			report(err)
-			continue
-		}
-		lock := a.marking.payer(paper.PayerID)
-		func() {
-			lock.Lock()
-			defer lock.Unlock()
+		reads.Go(func() {
+			defer held[id]()
+			paper, err := a.s.GetPaper(ctx, id)
+			if err != nil {
+				report(err)
+				return
+			}
+			slots := a.marking.payer(req.payerOf(paper.PayerID))
+			slots <- struct{}{}
+			defer func() { <-slots }()
 			defer func() {
 				if r := recover(); r != nil {
 					report(panicError("reading a paper", r))
 				}
 			}()
-			if err := a.markPaper(ctx, assignmentID, id, nil); err != nil {
+			if err := a.markPaper(ctx, assignmentID, id, nil, req.payer); err != nil {
 				report(err)
 			}
-		}()
-		held[id]()
+		})
 	}
+	reads.Wait()
 }

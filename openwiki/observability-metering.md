@@ -753,12 +753,27 @@ Open quiz parts signed in are graded on the `grading` slot's pin, OpenRouter's
 (`pipeline/pipeline/retrieval/grading.py`). The server loads the marking scheme
 from the stored quiz, so no endpoint grades arbitrary text. Drawn parts go the
 same way with their marking image, so the slot requires `vision` (M4, Epo
-2026-11-07; `models.slotRequirements`). One call per answered
-open or drawn part, ten at a time per submission, waiting in the model's line. Each is
+2026-11-07; `models.slotRequirements`). A question's images go with each of its
+parts: the grading text numbers them `[Figure N: description]`
+(`questions.GradingTextAndFigures`) and each follows the marking items as a JPEG
+at most 1,568 px on its long side, labelled `Figure N:` (Epo 2026-11-23, bench
+`bench/grading/reports/2026-11-23-online-batching-and-figures.md`). They are read
+from the quiz's or the assignment copy's own ready editor images, or from under the
+bank's asset base for a copied bank question (`questionFigures`); one that can't be
+read leaves its part Not marked (`error`). Graphs store no picture and stay text.
+A check grades one call per answered open or drawn part. An assignment's marking
+(a submission, Grade with AI, Regrade with AI) sends up to four parts a call through
+`POST /grade-batch` under `SYSTEM_PROMPT` + `BATCH_SECTION` (Epo 2026-11-23, after
+the same bench): parts with working apart from plain ones, each question's first
+parts before any second, at most 28 images a call. Ten calls run at a time per
+attempt, waiting in the model's line. Each is
 **charged** to whoever started the job (Epo 2026-11-03): the learner for a check
-of their own practice, and for an assignment's answers the member attempting
-(Epo 2026-11-08, superseding the workspace owner), about 32 credits a 40-part
-paper (surface `quiz`). A part that fails, or every part when there is nothing to
+of their own practice, for an assignment's submission the member attempting
+(Epo 2026-11-08, superseding the workspace owner), and for Grade with AI, Read
+papers again and Regrade with AI the staff member who pressed it (2026-11-23),
+about 32 credits a 40-part paper (surface `quiz`). One payer's marking runs at
+most four attempts or paper reads at once (`payerSlots`), each on one of their
+five provider sessions. A part that fails, or every part when there is nothing to
 pay with, stays "Not marked" and is not retried; closed parts still mark and a
 submission never fails for it. On an assignment the part keeps why (`aiError`:
 `credits` or `error`), which the owner's row shows as No credits or Grade Error.
@@ -772,7 +787,10 @@ One read call (prompt R, reasoning off, every page at 1,024 px) gives each part'
 pages and each closed part's answer; an answer on no pages is dropped. Open and
 drawing parts with pages are then graded four to a call, concurrently, on the
 union of their pages at 1,568 px under `SYSTEM_PROMPT` + `DRAWN_SECTION` + P1 + B,
-thinking when a part has working. A failed read fails the request; a failed batch
+thinking when a part has working, each with its question's images. A batch takes
+at most 32 images, figures and pages together (`CALL_IMAGES`, Cloudflare's cap on
+the grading route), so it closes early when the next part would pass it; one
+unreadable figure leaves every part of the paper waiting with `error`. A failed read fails the request; a failed batch
 leaves only its parts with `error` `credits` (the session's credits ran out) or
 `error`. Given `pages`, there is no read and only those parts are graded. R, P1
 and B are Epo's word for word (2026-11-08).

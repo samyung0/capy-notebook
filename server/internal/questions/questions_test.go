@@ -150,7 +150,7 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 	q := map[string]any{
 		"stem": []any{
 			map[string]any{"type": "text", "text": "Prices rose."},
-			map[string]any{"type": "image", "description": "A demand curve"},
+			map[string]any{"type": "image", "image": map[string]any{"assetId": "a1"}, "description": "A demand curve"},
 			map[string]any{"type": "graph"},
 			map[string]any{"type": "chart", "title": "Sales (kg)", "labels": []any{"Jan", "Feb", "Mar"},
 				"series": []any{map[string]any{"name": "Shop", "values": []any{1.5, 2.0, nil}}}},
@@ -160,12 +160,19 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 			map[string]any{"blocks": []any{map[string]any{"type": "text", "text": "Explain."}}},
 		},
 	}
-	want := "Prices rose.\n\n[Figure: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
-	if got := GradingText(q, 1); got != want {
+	// The image is numbered for the picture sent after it; the graph has none.
+	want := "Prices rose.\n\n[Figure 1: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
+	got, figures := GradingTextAndFigures(q, 1)
+	if got != want {
 		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
+	}
+	if len(figures) != 1 || figures[0]["assetId"] != "a1" {
+		t.Fatalf("figures = %v", figures)
 	}
 }
 
+// A question holds at most five images across its stem, groups and parts
+// (Epo 2026-11-23); a solution's don't count.
 // A part inside a group is graded with the group's text and figures (Epo
 // 2026-11-04), once, before the group's first part; a question with no group
 // reads byte for byte as before.

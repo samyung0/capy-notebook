@@ -62,11 +62,13 @@ var (
 	ErrUnreadable = errors.New("image header unreadable")
 )
 
-// The formats each check accepts (Q344): editor images as the editor-asset
-// reservation takes them, image sources as the browser re-saves them, and
-// Office pictures as older Word, PowerPoint and LibreOffice open them.
+// The formats each check accepts (Q344): editor images and bank figures as
+// the editor-asset reservation takes them (no AVIF, which the browser
+// re-encodes: Go decodes none and the AI grader takes PNG, JPEG or WebP, Epo
+// 2026-11-23), image sources as the browser re-saves them, and Office
+// pictures as older Word, PowerPoint and LibreOffice open them.
 var (
-	editorFormats = []string{"png", "jpeg", "gif", "webp", "avif"}
+	editorFormats = []string{"png", "jpeg", "gif", "webp"}
 	sourceFormats = []string{"png", "jpeg", "gif", "webp"}
 	officeFormats = []string{"png", "jpeg", "gif"}
 )
@@ -279,7 +281,7 @@ func SVG(name string, head []byte) bool {
 func CheckEditorImage(r io.Reader) error {
 	format, width, height, err := Size(r)
 	if err != nil || !slices.Contains(editorFormats, format) {
-		return &Refusal{Code: "image_unreadable", Detail: "the image's size could not be read"}
+		return &Refusal{Code: "image_unreadable", Detail: "the image is not a PNG, JPEG, GIF or WebP whose size can be read"}
 	}
 	if width > MaxSide || height > MaxSide {
 		return &Refusal{Code: "image_too_large", Detail: fmt.Sprintf(

@@ -229,7 +229,7 @@ func TestTrashedQuizAnswersCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	missed, err := f.s.memberMissed(ctx, f.ws.ID, f.user, topics)
+	missed, err := f.s.studyQuestions(ctx, f.ws.ID, f.user, QuestionsFilter{Wrong: true}, false, topics)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestQuestionWithTwoTopicsCountsUnderEach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	missed, err := f.s.memberMissed(ctx, f.ws.ID, f.user, topics)
+	missed, err := f.s.studyQuestions(ctx, f.ws.ID, f.user, QuestionsFilter{Wrong: true}, false, topics)
 	if err != nil {
 		t.Fatal(err)
 	}

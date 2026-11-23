@@ -1,7 +1,7 @@
 import { PlaceholderPlugin } from '@platejs/media/react';
 import { type Descendant, ElementApi, KEYS, type SlateEditor } from 'platejs';
 import { createPlatePlugin } from 'platejs/react';
-import { IMAGE_EXTENSIONS } from '@/lib/fitImage';
+import { PICKED_IMAGE_EXTENSIONS } from '@/lib/fitImage';
 import { uid } from '@/lib/id';
 import {
   replaceUrlImages,
@@ -57,9 +57,9 @@ function fileName(url: string, extension: string) {
 }
 
 /** The bytes of a pasted image the browser can read (a `data:` URL, a web
- * host that allows CORS) and the server stores, as a file to upload; null
- * otherwise. Only absolute http(s) and `data:` URLs are read, never a path on
- * this app. Throws only when `signal` aborts. */
+ * host that allows CORS) and the upload takes (an AVIF it re-encodes), as a
+ * file to upload; null otherwise. Only absolute http(s) and `data:` URLs are
+ * read, never a path on this app. Throws only when `signal` aborts. */
 export async function readPastedImage(
   url: string,
   signal?: AbortSignal
@@ -76,7 +76,7 @@ export async function readPastedImage(
     return null;
   }
   const type = blob.type.split(';')[0].trim();
-  const extension = IMAGE_EXTENSIONS[type];
+  const extension = PICKED_IMAGE_EXTENSIONS[type];
   if (!extension) return null;
   return new File([blob], fileName(target, extension), { type });
 }

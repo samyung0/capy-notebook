@@ -313,7 +313,8 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 		id, _ := p["id"].(string)
 		text, _ := answers[id].(string)
 		items, itemMarks := questions.MarkItems(p)
-		open[id] = openPart{question: questions.GradingText(held, i), markscheme: items, itemMarks: itemMarks, answer: text,
+		question, figures := questions.GradingTextAndFigures(held, i)
+		open[id] = openPart{question: question, markscheme: items, itemMarks: itemMarks, answer: text, figures: figures,
 			sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: in.ID}}
 		if given, _ := answers[id].(map[string]any); given["drawing"] != nil {
 			drawn[id] = true

@@ -220,3 +220,17 @@ async def test_a_batch_failed_for_credits_says_so(monkeypatch, pdf):
     calls_with(monkeypatch, lambda m: RuntimeError("only a terminal call is allowed"))
     out = await paper.mark(FILES, [part("1", "open", ITEMS)], {"1": [1]}, model=None)
     assert out["parts"] == [{"id": "1", "pages": [1], "error": "credits"}]
+
+
+def test_a_batch_holds_at_most_32_images():
+    """Up to four parts a call, packed in order under Cloudflare's 32 images."""
+    pages = [paper.Page(n, "f1") for n in range(1, 16)]
+    parts = [part(str(n), "open", ITEMS) for n in range(1, 6)]
+    for p in parts:
+        p.figures = ["data:image/jpeg;base64,AA=="] * 5
+    pages_of = {"1": list(range(1, 16)), "2": [1], "3": [2], "4": [3], "5": [4]}
+    batches = paper.pack(parts, pages_of, pages)
+    # The first three share the 15 pages with 15 figures (30); a fourth would
+    # make 35, so it starts the next call.
+    assert [[p.id for p in b] for b in batches] == [["1", "2", "3"], ["4", "5"]]
+    assert all(paper._images(b, pages_of, pages) <= 32 for b in batches)

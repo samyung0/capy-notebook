@@ -4,6 +4,7 @@ import {
   useAssignmentAttempt,
   useMarkAssignmentAnswer,
   useMarkAssignmentWithAI,
+  useRegradeAssignmentQuestion,
 } from '@/api/hooks';
 import type {
   Assignment,
@@ -287,7 +288,9 @@ export function ApproveTab({
     <div
       className={cn(
         'flex min-h-0 flex-col md:flex-1',
-        fullscreen && 'page-px fixed inset-0 z-40 bg-surface'
+        // Full screen keeps the other full screens' 16px, not the page's
+        // padding (Epo 2026-11-23): the rows' 10px hover still shows.
+        fullscreen && 'fixed inset-0 z-40 bg-surface px-4'
       )}
       // Past the question list on a phone the page's own back link leads out,
       // so the workspace header and the report's head step aside (CSS).
@@ -867,8 +870,12 @@ function MarkPane({
       attemptNumber={row.attemptNumber}
       avatar={avatar}
       canGoBack={canGoBack}
-      // Starts over from the AI's marks when its read brings them.
-      key={question.parts.some((p) => p.aiAwards) ? 'ai' : 'none'}
+      // Starts over from the AI's marks when its read or a regrade brings
+      // them, and once a regrade's run lets go.
+      key={[
+        question.parts.some((p) => p.aiAwards) ? 'ai' : 'none',
+        question.parts.some((p) => p.marking) ? 'marking' : '',
+      ].join()}
       name={name}
       onApproved={onApproved}
       onPrevious={onPrevious}
@@ -923,6 +930,14 @@ function MarkForm({
     assignment.workspaceId,
     assignment.id
   );
+  const { mutate: regrade, isPending: regrading } =
+    useRegradeAssignmentQuestion(assignment.workspaceId, assignment.id);
+  const marking = parts.some((p) => p.marking);
+  // Typed text, a drawing or a read paper's pages: something for the AI.
+  const answered = parts.some((p) => {
+    const value = answers[p.id];
+    return typeof value === 'string' ? value.trim() !== '' : value != null;
+  });
   const flat = Object.values(items).flat();
   const complete = flat.every((v) => v !== null);
   const total = flat.reduce<number>((sum, v) => sum + (v ?? 0), 0);
@@ -1012,9 +1027,12 @@ function MarkForm({
           />
         </div>
       ))}
-      <p className="mt-5 text-fg-secondary">
-        {parts.every((p) => p.aiAwards)
-          ? m.assignment_ai_mark({
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <p className="text-fg-secondary">
+          {marking ? (
+            <MarkingNow />
+          ) : parts.every((p) => p.aiAwards) ? (
+            m.assignment_ai_mark({
               mark: markText(
                 parts
                   .flatMap((p) => p.aiAwards ?? [])
@@ -1022,21 +1040,36 @@ function MarkForm({
                 marks
               ),
             })
-          : parts.some((p) => p.aiError === 'credits')
-            ? m.assignment_not_graded_credits()
-            : parts.some((p) => p.aiError === 'file')
-              ? m.assignment_not_graded_file()
-              : parts.some((p) => p.aiError === 'error')
-                ? m.assignment_not_graded_error()
-                : m.assignment_ai_not_marked()}
-        {' · '}
-        <b className="font-bold text-fg">
-          {m.assignment_mark_of({
-            marks: formatPoints(marks),
-            total: formatPoints(total),
-          })}
-        </b>
-      </p>
+          ) : parts.some((p) => p.aiError === 'credits') ? (
+            m.assignment_not_graded_credits()
+          ) : parts.some((p) => p.aiError === 'file') ? (
+            m.assignment_not_graded_file()
+          ) : parts.some((p) => p.aiError === 'error') ? (
+            m.assignment_not_graded_error()
+          ) : (
+            m.assignment_ai_not_marked()
+          )}
+          {' · '}
+          <b className="font-bold text-fg">
+            {m.assignment_mark_of({
+              marks: formatPoints(marks),
+              total: formatPoints(total),
+            })}
+          </b>
+        </p>
+        {/* Graded again on the question as it is now, on the caller's
+            credits; manual grading has no AI to ask (Epo 2026-11-23). */}
+        {assignment.manage?.marking !== 'manual' && answered && (
+          <Button
+            disabled={marking || regrading || isPending}
+            onClick={() => regrade({ attemptId, questionId: question.id })}
+            size="sm"
+            variant="outline"
+          >
+            {m.assignment_regrade_with_ai()}
+          </Button>
+        )}
+      </div>
       <Input
         aria-label={m.assignment_comment_for({ name: first })}
         className="mt-0"

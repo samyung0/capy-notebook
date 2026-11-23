@@ -1161,9 +1161,6 @@ components:
           type: array
         partId:
           type: string
-        percent:
-          format: double
-          type: number
         wrongAnswers:
           items:
             $ref: "#/components/schemas/AssignmentWrongAnswer"
@@ -1175,16 +1172,10 @@ components:
     AssignmentQuestionReport:
       additionalProperties: false
       properties:
-        average:
-          format: double
-          type: number
         parts:
           items:
             $ref: "#/components/schemas/AssignmentPartReport"
           type: array
-        percent:
-          format: double
-          type: number
         question:
           additionalProperties: {}
           type: object
@@ -5278,6 +5269,29 @@ components:
         - questions
         - at
       type: object
+    MemberAnswer:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MemberAnswer.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties: {}
+          type: object
+        at:
+          format: date-time
+          type: string
+        question:
+          additionalProperties: {}
+          type: object
+      required:
+        - answers
+        - question
+        - at
+      type: object
     MemberAssignment:
       additionalProperties: false
       properties:
@@ -5352,7 +5366,7 @@ components:
           type: string
         missed:
           items:
-            $ref: "#/components/schemas/MissedQuestion"
+            $ref: "#/components/schemas/StudyQuestion"
           type: array
         missing:
           format: int64
@@ -5527,38 +5541,6 @@ components:
         - id
         - driveType
         - webUrl
-      type: object
-    MissedQuestion:
-      additionalProperties: false
-      properties:
-        at:
-          format: date-time
-          type: string
-        group:
-          enum:
-            - topic
-            - others
-          type: string
-        materialId:
-          type: string
-        misses:
-          format: int64
-          type: integer
-        questionId:
-          type: string
-        text:
-          type: string
-        topicId:
-          type: string
-        topicName:
-          type: string
-      required:
-        - materialId
-        - questionId
-        - text
-        - group
-        - misses
-        - at
       type: object
     ModelOption:
       additionalProperties: false
@@ -6803,6 +6785,20 @@ components:
         - page
         - bbox
         - space
+      type: object
+    RegradeQuestionInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RegradeQuestionInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questionId:
+          type: string
+      required:
+        - questionId
       type: object
     ReloadState:
       additionalProperties: false
@@ -8422,6 +8418,51 @@ components:
             - story
           type: string
       type: object
+    StudyQuestion:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        group:
+          enum:
+            - topic
+            - others
+          type: string
+        materialId:
+          type: string
+        materialTitle:
+          type: string
+        misses:
+          format: int64
+          type: integer
+        question:
+          additionalProperties: {}
+          type: object
+        questionId:
+          type: string
+        result:
+          enum:
+            - right
+            - partial
+            - wrong
+            - unattempted
+          type: string
+        text:
+          type: string
+        topicId:
+          type: string
+        topicName:
+          type: string
+      required:
+        - materialId
+        - materialTitle
+        - questionId
+        - text
+        - group
+        - result
+        - misses
+      type: object
     StudyQuestionCountOutputBody:
       additionalProperties: false
       properties:
@@ -8436,6 +8477,22 @@ components:
           type: integer
       required:
         - total
+      type: object
+    StudyQuestionsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyQuestionsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          items:
+            $ref: "#/components/schemas/StudyQuestion"
+          type: array
+      required:
+        - questions
       type: object
     StudySummary:
       additionalProperties: false
@@ -10262,6 +10319,37 @@ paths:
       summary: A paper file's presigned reads, for its member or the class's staff
       tags:
         - assignments
+  /api/assignment-attempts/{id}/regrade:
+    post:
+      operationId: regradeAssignmentQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegradeQuestionInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentAttempt"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Have the AI grade one question of a member's answers again, on the caller's credits
+      tags:
+        - Assignments
   /api/assignment-attempts/{id}/submit:
     post:
       operationId: submitAssignmentAttempt
@@ -17364,6 +17452,95 @@ paths:
       summary: "A member's profile: assignments, topics, questions still missed and recent work, for a class's owner and teaching assistants"
       tags:
         - Study
+  /api/workspaces/{id}/study/members/{memberId}/answers/{materialId}/{questionId}:
+    get:
+      operationId: getWorkspaceMemberAnswer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: memberId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: materialId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: questionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberAnswer"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A member's latest answer to a question their lists show answered, marked, with the question's key, for a class's owner and teaching assistants
+      tags:
+        - Study
+  /api/workspaces/{id}/study/members/{memberId}/questions:
+    get:
+      operationId: getWorkspaceMemberQuestions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: memberId
+          required: true
+          schema:
+            type: string
+        - description: As getWorkspaceStudyQuestions's list
+          explode: false
+          in: query
+          name: list
+          required: true
+          schema:
+            description: As getWorkspaceStudyQuestions's list
+            enum:
+              - topic
+              - others
+              - wrong
+            type: string
+        - description: The topic of a topic list
+          explode: false
+          in: query
+          name: topicId
+          schema:
+            description: The topic of a topic list
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyQuestionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A member's topic questions or Frequently wrong, each with their latest result, read only, for a class's owner and teaching assistants
+      tags:
+        - Study
   /api/workspaces/{id}/study/question-count:
     get:
       operationId: getStudyQuestionCount
@@ -17404,6 +17581,50 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: How many questions a practice group holds, for its start dialog
+      tags:
+        - Study
+  /api/workspaces/{id}/study/questions:
+    get:
+      operationId: getWorkspaceStudyQuestions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "topic: a topic's questions; others: Other files'; wrong: every question whose latest answer was not right, most missed first"
+          explode: false
+          in: query
+          name: list
+          required: true
+          schema:
+            description: "topic: a topic's questions; others: Other files'; wrong: every question whose latest answer was not right, most missed first"
+            enum:
+              - topic
+              - others
+              - wrong
+            type: string
+        - description: The topic of a topic list
+          explode: false
+          in: query
+          name: topicId
+          schema:
+            description: The topic of a topic list
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyQuestionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: A topic's questions or Frequently wrong's, each with the caller's latest result, to practise one at a time
       tags:
         - Study
   /api/workspaces/{id}/study/reset:

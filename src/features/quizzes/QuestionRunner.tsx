@@ -246,8 +246,8 @@ const LEADING_PUNCTUATION = /^[.,;:!?)\]”’]+/;
  * is typed, up to the line: a hidden copy of the value (data-value) sizes it,
  * which every browser supports. On review each blank shows the learner's
  * answer right or wrong under its number; the correct answers list under the
- * part (PartRunner). */
-function GapText({
+ * part (PartRunner). A member's result draws it in its question's view. */
+export function GapText({
   block,
   part,
   value,
@@ -258,7 +258,7 @@ function GapText({
   block: TextBlock;
   part: QuestionPart | LearnerPart;
   value: Answer;
-  onChange: (value: Answer) => void;
+  onChange?: (value: Answer) => void;
   review: boolean;
   disabled: boolean;
 }) {
@@ -304,7 +304,7 @@ function GapText({
                 disabled={review || disabled}
                 maxLength={SHORT_ANSWER_MAX}
                 onChange={(event) =>
-                  onChange(
+                  onChange?.(
                     typed.map((item, j) =>
                       j === gap ? event.target.value : item
                     )

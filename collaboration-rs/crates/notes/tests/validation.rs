@@ -751,6 +751,13 @@ fn group_fixtures_validate_as_go_and_the_browser() {
     assert!(seen >= 16, "{seen} group fixtures");
 }
 
+/// At most five images outside the explanations (Epo 2026-11-23).
+#[test]
+fn image_fixtures_validate_as_go_and_the_browser() {
+    let seen = shared_fixtures("images-");
+    assert!(seen >= 2, "{seen} image fixtures");
+}
+
 /// Graphs, the canvas plane's free marks and styles included (Epo
 /// 2026-11-16, D1/D6/D7).
 #[test]

@@ -28,13 +28,13 @@ const ROUTE =
 export const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
 const JSON_LIMIT = 64 * 1024;
 const ASSET_LIMIT = 20 * 1024 * 1024;
-// Editor asset images never include SVG, so nothing served here can script.
+// The editor asset image types (server/internal/httpapi/editor_assets.go):
+// never SVG, so nothing served here can script, and never AVIF.
 const IMAGE_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/gif',
   'image/webp',
-  'image/avif',
 ]);
 // The audio types a note's asset may have (server/internal/httpapi/editor_assets.go).
 const AUDIO_TYPES = new Set([

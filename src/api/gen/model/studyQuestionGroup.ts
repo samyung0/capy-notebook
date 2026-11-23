@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type MissedQuestionGroup = typeof MissedQuestionGroup[keyof typeof MissedQuestionGroup];
+export type StudyQuestionGroup = typeof StudyQuestionGroup[keyof typeof StudyQuestionGroup];
 
 
-export const MissedQuestionGroup = {
+export const StudyQuestionGroup = {
   topic: 'topic',
   others: 'others',
 } as const;

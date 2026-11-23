@@ -1,0 +1,83 @@
+{
+  "name": "images-over-limit-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "image",
+        "image": {
+          "assetId": "asset_0000000000"
+        },
+        "width": 4,
+        "height": 3,
+        "description": "Figure"
+      },
+      {
+        "type": "image",
+        "image": {
+          "assetId": "asset_0000000001"
+        },
+        "width": 4,
+        "height": 3,
+        "description": "Figure"
+      },
+      {
+        "type": "image",
+        "image": {
+          "assetId": "asset_0000000002"
+        },
+        "width": 4,
+        "height": 3,
+        "description": "Figure"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000010"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000011"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000012"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ]
+  }
+}

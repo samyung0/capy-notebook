@@ -1,9 +1,11 @@
 """Marking an uploaded answer paper (todo-file-submissions.md M and 5a).
 
 One read call (R) finds each part's pages and the closed parts' answers on
-every page at 1,024 px; then open and drawing parts are graded four to a call
-(SYSTEM_PROMPT + DRAWN_SECTION + P1 + B) on the union of their pages at
-1,568 px. Go marks the closed answers against the key and computes marks.
+every page at 1,024 px; then open and drawing parts are graded up to four to a
+call (SYSTEM_PROMPT + DRAWN_SECTION + P1 + B) on the union of their pages at
+1,568 px, each part with its question's images (Epo 2026-11-23), a call
+holding at most 32 images (`pack`). Go marks the closed answers against the
+key and computes marks.
 
 R, P1 and B are approved by Epo word for word (2026-11-08, benched in
 bench/grading/reports/2026-11-08-paper-prompts.md); change them only with Epo.
@@ -55,6 +57,8 @@ PAPER_MAX_PAGES = 15
 READ_EDGE = 1024
 GRADE_EDGE = 1568
 BATCH = 4
+# Images one call may carry: Cloudflare, on the grading route, refuses more.
+CALL_IMAGES = 32
 _READ_MAX_TOKENS = 6000
 GRADED = ("open", "drawing")
 
@@ -70,6 +74,8 @@ class Part:
     label: str
     question: str
     items: list[dict[str, Any]]
+    # The question's images in the order `question` numbers them.
+    figures: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -223,12 +229,57 @@ async def read(
     return found
 
 
-def _batch_message(batch: list[Part]) -> str:
-    blocks = "\n\n".join(
-        f'<part id="{part.id}">\n{grading._question_and_items(part.question, part.items)}\n</part>'
-        for part in batch
+def _batch_message(batch: list[Part]) -> list[dict[str, Any]]:
+    """The parts in <parts>, each with its question's images after its
+    <marking_items>; one text, as benched, when none has any."""
+    if not any(part.figures for part in batch):
+        blocks = "\n\n".join(
+            f'<part id="{part.id}">\n{grading._question_and_items(part.question, part.items)}\n</part>'
+            for part in batch
+        )
+        return [
+            {"type": "text", "text": f"<parts>\n{blocks}\n</parts>\n\nStudent's pages:"}
+        ]
+    content: list[dict[str, Any]] = [{"type": "text", "text": "<parts>"}]
+    for part in batch:
+        content += [
+            {
+                "type": "text",
+                "text": f'<part id="{part.id}">\n{grading._question_and_items(part.question, part.items)}',
+            },
+            *grading._figures(part.figures),
+            {"type": "text", "text": "</part>"},
+        ]
+    return [*content, {"type": "text", "text": "</parts>\n\nStudent's pages:"}]
+
+
+def _images(
+    batch: list[Part], pages_of: dict[str, list[int]], pages: list[Page]
+) -> int:
+    """A batch's images: its parts' figures and the image pages they share."""
+    union = {n for part in batch for n in pages_of[part.id]}
+    return sum(len(part.figures) for part in batch) + sum(
+        1 for n in union if pages[n - 1].text is None
     )
-    return f"<parts>\n{blocks}\n</parts>\n\nStudent's pages:"
+
+
+def pack(
+    graded: list[Part], pages_of: dict[str, list[int]], pages: list[Page]
+) -> list[list[Part]]:
+    """The parts in order, up to BATCH a call and CALL_IMAGES images a call.
+    One part alone always fits: at most 5 figures and PAPER_MAX_PAGES pages."""
+    batches: list[list[Part]] = []
+    for part in graded:
+        last = batches[-1] if batches else None
+        if (
+            last is not None
+            and len(last) < BATCH
+            and _images([*last, part], pages_of, pages) <= CALL_IMAGES
+        ):
+            last.append(part)
+        else:
+            batches.append([part])
+    return batches
 
 
 async def _grade_batch(
@@ -254,7 +305,7 @@ async def _grade_batch(
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": _batch_message(batch)},
+                        *_batch_message(batch),
                         *_page_content(shown, GRADE_EDGE),
                     ],
                 },
@@ -323,8 +374,8 @@ async def mark(
     results: dict[str, dict[str, Any]] = {}
     for batch_result in await asyncio.gather(
         *(
-            _graded_or_error(graded[i : i + BATCH], pages_of, pages, model)
-            for i in range(0, len(graded), BATCH)
+            _graded_or_error(batch, pages_of, pages, model)
+            for batch in pack(graded, pages_of, pages)
         )
     ):
         results.update(batch_result)

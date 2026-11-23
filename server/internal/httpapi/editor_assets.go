@@ -24,11 +24,13 @@ import (
 )
 
 // editorAssetRules lists, per purpose, each allowed extension's content types.
-// A note's media are images and audio only (Epo 2026-10-15).
+// A note's media are images and audio only (Epo 2026-10-15). No AVIF: Go
+// decodes none and the AI grader takes PNG, JPEG or WebP, so the browser
+// re-encodes it first (src/lib/fitImage.ts, Epo 2026-11-23).
 var editorAssetRules = map[string]map[string][]string{
 	"image": {
 		".png": {"image/png"}, ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"},
-		".gif": {"image/gif"}, ".webp": {"image/webp"}, ".avif": {"image/avif"},
+		".gif": {"image/gif"}, ".webp": {"image/webp"},
 	},
 	// A drawn sample answer's board, gzipped (Q3): the quiz's own asset.
 	"board": {".gz": {"application/gzip"}},
@@ -347,9 +349,6 @@ func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {
 		return has([]byte("GIF87a")) || has([]byte("GIF89a"))
 	case ".webp":
 		return len(data) >= 12 && has([]byte("RIFF")) && string(data[8:12]) == "WEBP"
-	case ".avif":
-		return isISOBaseMedia && (bytes.Contains(data[8:min(len(data), 32)], []byte("avif")) ||
-			bytes.Contains(data[8:min(len(data), 32)], []byte("avis")))
 	case ".gz":
 		return has([]byte{0x1f, 0x8b})
 	case ".mp3":

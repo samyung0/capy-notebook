@@ -94,10 +94,11 @@ it('lists answers without marks while grades wait for release', async () => {
   act(() => root.unmount());
 });
 
-it('opens a question as the report does, and a click on the question folds it', async () => {
+// Epo 2026-11-22: every question drawn whole as the Questions tab draws it,
+// nothing folding, each part's answer and marking where its answer would be.
+it('draws a question whole with its answer and marking points', async () => {
   const host = document.createElement('div');
   document.body.append(host);
-  Object.assign(window, { getSelection: () => null });
   const root = createRoot(host);
   const open = {
     answer: { accepted: [], type: 'open' },
@@ -126,39 +127,24 @@ it('opens a question as the report does, and a click on the question folds it', 
       />
     )
   );
-  // A question waiting for its mark opens first: what it is on the left,
-  // its marking points beside, each with what it was awarded (a member's
-  // view: staff's mark menus need a fuller DOM than this one).
+  // A member's view: staff's mark menus need a fuller DOM than this one.
   const text = host.textContent ?? '';
-  expect(text).toContain(
-    `Q1 · ${m.question_ui_open_answer()} · ${m.question_ui_marks({ count: 2 })}`
-  );
+  expect(text).toContain('Explain how water enters');
+  expect(text).toContain('By osmosis');
   expect(text).toContain(m.assignment_awarded());
   expect(text).toContain('Names the membrane');
-  const click = (element: Element | null) =>
-    act(() => {
-      element?.dispatchEvent(
-        new window.Event('pointerdown', { bubbles: true })
-      );
-      element?.dispatchEvent(new window.Event('click', { bubbles: true }));
-    });
-  // The answer's side keeps it open; the question's side folds it.
-  click(host.querySelector('[data-result-body] p'));
-  expect(host.querySelector('[data-result-body]')).not.toBeNull();
-  click(host.querySelector('li > div > p:nth-child(2)'));
-  expect(host.querySelector('[data-result-body]')).toBeNull();
+  expect(text).toContain(`${m.assignment_not_marked()}– / 2`);
+  expect(host.querySelector('[aria-expanded]')).toBeNull();
   act(() => root.unmount());
 });
 
-// Epo 2026-11-18: a question of several parts lays each out as its own row,
-// as the report's Questions tab does.
-it('lists each part of a question as its own row', async () => {
+it('labels the parts of a question under its stem, each with its mark', async () => {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
-  const marked = (id: string, text: string) => ({
+  const marked = (id: string, text: string, awarded: number) => ({
     ...part(id),
-    awarded: 2,
+    awarded,
     blocks: [{ text, type: 'text' }],
   });
   await act(async () =>
@@ -168,12 +154,15 @@ it('lists each part of a question as its own row', async () => {
         attempt={
           {
             ...attempt,
-            answers: { a: 'osmosis', b: 'osmosis' },
+            answers: { a: 'osmosis', b: 'diffusion' },
             gradesHidden: false,
             questions: [
               {
                 ...attempt.questions[0],
-                parts: [marked('a', 'First part'), marked('b', 'Second part')],
+                parts: [
+                  marked('a', 'First part', 2),
+                  marked('b', 'Second part', 0),
+                ],
                 stem: [{ text: 'A shared stem', type: 'text' }],
               },
             ],
@@ -184,13 +173,17 @@ it('lists each part of a question as its own row', async () => {
       />
     )
   );
-  const rows = [...host.querySelectorAll('li button[aria-expanded]')].map(
-    (row) => row.textContent ?? ''
-  );
-  expect(rows).toHaveLength(2);
-  expect(rows[0]).toContain('Q1 (a)');
-  expect(rows[0]).toContain('First part');
-  expect(rows[1]).toContain('Q1 (b)');
+  // The question's own parts, not those of the answers' views inside them.
+  const list = host.querySelector('article > div > ol');
+  const parts = [...(list?.children ?? [])].map((li) => li.textContent ?? '');
+  expect(host.querySelector('article header')?.textContent).toContain('2 / 4');
+  expect(host.textContent).toContain('A shared stem');
+  expect(parts).toHaveLength(2);
+  expect(parts[0]).toContain('(a)');
+  expect(parts[0]).toContain('First part');
+  expect(parts[0]).toContain(`${m.practice_outcome_right()}2 / 2`);
+  expect(parts[1]).toContain('(b)');
+  expect(parts[1]).toContain(`${m.practice_outcome_wrong()}0 / 2`);
   act(() => root.unmount());
 });
 

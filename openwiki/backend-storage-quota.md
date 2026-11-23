@@ -1021,8 +1021,21 @@ header (Server checks below).
   colours on a nearest-neighbour sample at the output size), never WebP.
 - The original is kept when it needs no resize (both sides compared), fits
   the image cap, is a type its target takes (PNG, JPEG or GIF in an Office
-  file; PNG, JPEG, WebP, GIF or AVIF as an editor image) and the encode is not
-  smaller.
+  file; PNG, JPEG, WebP or GIF by its bytes, whatever its name, as an editor
+  image or bank figure) and the encode is not smaller.
+- No image is stored as AVIF (Epo 2026-11-23): the gateway's Go decoders read
+  PNG, JPEG, GIF and WebP only, and question images go to the AI grader, which
+  takes PNG, JPEG or WebP. A person may still pick, paste or drop an AVIF
+  (`IMAGE_ACCEPT` and `PICKED_IMAGE_EXTENSIONS` in `src/lib/fitImage.ts` offer
+  it); every editor image and bank figure path ends in `fitImage` (through
+  `uploadEditorAsset`, `uploadBankAsset` or an answer board's `shrink`), which
+  re-encodes it as WebP (JPEG or PNG without a WebP encoder) whatever its
+  size. That covers notes (picked, dropped, pasted files, pasted or imported
+  URL images, `.docx` pictures), quiz and flashcard images, drawn sample
+  answers, the workspace canvas and answer boards, and bank figures; an Office
+  editor's `prepareImage` re-encodes it as JPEG or PNG. The editor-asset
+  reservation and `imagecheck.CheckEditorImage` refuse AVIF, so a path that
+  missed the browser step fails instead of storing one.
 - A result over the cap is shrunk further: a lossy one at 2,000 px with the
   quality falling from 0.85 to 0.4 (an opaque PNG turns into JPEG), a
   transparent PNG at 2,000, 1,400 then 1,000 px. When nothing fits, the image
@@ -1191,7 +1204,7 @@ follow-up). A `[Content_Types].xml` with a namespace prefix (ElementTree's
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Editor image     | not PNG, JPEG, WebP, GIF or AVIF by its bytes, its header gives no size, or over 2,400 px on either side                                        | `image_unreadable`, `image_too_large`                                                        |
+| Editor image     | not PNG, JPEG, WebP or GIF by its bytes (an AVIF too, which the browser re-encodes), its header gives no size, or over 2,400 px on either side | `image_unreadable`, `image_too_large`                                                        |
 | Office file      | not a zip, over 4,096 entries, not one contiguous archive (above), a relationships part over 4 MiB by its declared size (Q367), a part that does not read, or past 256 MiB inflated in all | `office_unreadable`                                                                          |
 | Office file      | an EMF or WMF part (by name or signature); an SVG part; a picture part that is not PNG, JPEG or GIF by its bytes, or whose header gives no size   | `office_vector_image`, `office_image_unsupported`                                            |
 | Office file      | any part whose bytes are WebP, AVIF, HEIF, BMP, TIFF, ICO or CUR, JPEG XR or JPEG 2000                                                            | `office_image_unsupported`                                                                   |

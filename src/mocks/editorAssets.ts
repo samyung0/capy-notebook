@@ -15,10 +15,27 @@ const cellDiagram = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 54
 <circle cx="760" cy="280" r="12" fill="#f35a71"/>
 </svg>`;
 
+// The region under y = x² from 0 to 2, for Calculus II's area questions.
+const areaFigure = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
+<rect width="960" height="540" fill="#f4f1fb"/>
+<path d="M120 460 Q 360 460 600 100 L 600 460 Z" fill="#b9a8ec" opacity="0.8"/>
+<path d="M120 460 Q 360 460 600 100" fill="none" stroke="#5b4aa8" stroke-width="8"/>
+<line x1="80" y1="460" x2="880" y2="460" stroke="#2b2b2b" stroke-width="5"/>
+<line x1="120" y1="500" x2="120" y2="60" stroke="#2b2b2b" stroke-width="5"/>
+<line x1="600" y1="452" x2="600" y2="476" stroke="#2b2b2b" stroke-width="5"/>
+</svg>`;
+
+const svgUrl = (svg: string) =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
 const assets: Record<string, { name: string; url: string }> = {
+  asset_mock_area_figure: {
+    name: 'area-under-curve.svg',
+    url: svgUrl(areaFigure),
+  },
   asset_mock_cell_diagram: {
     name: 'animal-cell.svg',
-    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cellDiagram)}`,
+    url: svgUrl(cellDiagram),
   },
 };
 

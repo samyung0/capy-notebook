@@ -379,6 +379,57 @@ export const GetPaperFileLinksResponse = zod.object({
 
 
 /**
+ * @summary Have the AI grade one question of a member's answers again, on the caller's credits
+ */
+export const RegradeAssignmentQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const RegradeAssignmentQuestionBody = zod.object({
+  "questionId": zod.string()
+})
+
+export const RegradeAssignmentQuestionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "assignmentId": zod.string(),
+  "autoSubmitted": zod.boolean(),
+  "closesAt": zod.iso.datetime({"offset":true}).optional(),
+  "correct": zod.number(),
+  "deadlineAt": zod.iso.datetime({"offset":true}).optional(),
+  "drawingImages": zod.boolean(),
+  "gradesHidden": zod.boolean(),
+  "id": zod.string(),
+  "late": zod.boolean(),
+  "latePenaltyPct": zod.int(),
+  "mark": zod.number(),
+  "marking": zod.boolean().optional(),
+  "now": zod.iso.datetime({"offset":true}),
+  "paper": zod.enum(['upload', 'reading', 'read']).optional(),
+  "paperFiles": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "status": zod.string()
+})),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "removedAssetIds": zod.array(zod.string()),
+  "showAnswers": zod.boolean(),
+  "startedAt": zod.iso.datetime({"offset":true}).optional(),
+  "status": zod.enum(['running', 'submitted']),
+  "submittedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "total": zod.number(),
+  "userAvatarUrl": zod.string().optional(),
+  "userId": zod.string(),
+  "userName": zod.string(),
+  "waitingAnswers": zod.int(),
+  "waitingMarks": zod.number()
+})
+
+
+/**
  * @summary Submit a running attempt: closed parts marked, open parts left for the owner
  */
 export const SubmitAssignmentAttemptParams = zod.object({
@@ -1193,7 +1244,6 @@ export const GetAssignmentReportResponse = zod.object({
 })),
   "papersToRead": zod.int(),
   "questions": zod.array(zod.object({
-  "average": zod.number().optional(),
   "parts": zod.array(zod.object({
   "average": zod.number().optional(),
   "items": zod.array(zod.object({
@@ -1204,13 +1254,11 @@ export const GetAssignmentReportResponse = zod.object({
 })).nullish(),
   "options": zod.array(zod.int()).nullish(),
   "partId": zod.string(),
-  "percent": zod.number().optional(),
   "wrongAnswers": zod.array(zod.object({
   "count": zod.int(),
   "text": zod.string()
 })).nullish()
 })),
-  "percent": zod.number().optional(),
   "question": zod.record(zod.string(), zod.unknown()),
   "submitted": zod.int()
 }))
@@ -11467,11 +11515,14 @@ export const GetWorkspaceMemberProfileResponse = zod.object({
   "joinedAt": zod.iso.datetime({"offset":true}),
   "lastActiveAt": zod.iso.datetime({"offset":true}).optional(),
   "missed": zod.array(zod.object({
-  "at": zod.iso.datetime({"offset":true}),
+  "at": zod.iso.datetime({"offset":true}).optional(),
   "group": zod.enum(['topic', 'others']),
   "materialId": zod.string(),
+  "materialTitle": zod.string(),
   "misses": zod.int(),
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
   "questionId": zod.string(),
+  "result": zod.enum(['right', 'partial', 'wrong', 'unattempted']),
   "text": zod.string(),
   "topicId": zod.string().optional(),
   "topicName": zod.string().optional()
@@ -11497,6 +11548,55 @@ export const GetWorkspaceMemberProfileResponse = zod.object({
 
 
 /**
+ * @summary A member's latest answer to a question their lists show answered, marked, with the question's key, for a class's owner and teaching assistants
+ */
+export const GetWorkspaceMemberAnswerParams = zod.object({
+  "id": zod.string(),
+  "memberId": zod.string(),
+  "materialId": zod.string(),
+  "questionId": zod.string()
+})
+
+export const GetWorkspaceMemberAnswerResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "at": zod.iso.datetime({"offset":true}),
+  "question": zod.record(zod.string(), zod.unknown())
+})
+
+
+/**
+ * @summary A member's topic questions or Frequently wrong, each with their latest result, read only, for a class's owner and teaching assistants
+ */
+export const GetWorkspaceMemberQuestionsParams = zod.object({
+  "id": zod.string(),
+  "memberId": zod.string()
+})
+
+export const GetWorkspaceMemberQuestionsQueryParams = zod.object({
+  "list": zod.enum(['topic', 'others', 'wrong']).describe('As getWorkspaceStudyQuestions\'s list'),
+  "topicId": zod.string().optional().describe('The topic of a topic list')
+})
+
+export const GetWorkspaceMemberQuestionsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "questions": zod.array(zod.object({
+  "at": zod.iso.datetime({"offset":true}).optional(),
+  "group": zod.enum(['topic', 'others']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "misses": zod.int(),
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "questionId": zod.string(),
+  "result": zod.enum(['right', 'partial', 'wrong', 'unattempted']),
+  "text": zod.string(),
+  "topicId": zod.string().optional(),
+  "topicName": zod.string().optional()
+}))
+})
+
+
+/**
  * @summary How many questions a practice group holds, for its start dialog
  */
 export const GetStudyQuestionCountParams = zod.object({
@@ -11513,6 +11613,36 @@ export const GetStudyQuestionCountQueryParams = zod.object({
 export const GetStudyQuestionCountResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "total": zod.int()
+})
+
+
+/**
+ * @summary A topic's questions or Frequently wrong's, each with the caller's latest result, to practise one at a time
+ */
+export const GetWorkspaceStudyQuestionsParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceStudyQuestionsQueryParams = zod.object({
+  "list": zod.enum(['topic', 'others', 'wrong']).describe('topic: a topic\'s questions; others: Other files\'; wrong: every question whose latest answer was not right, most missed first'),
+  "topicId": zod.string().optional().describe('The topic of a topic list')
+})
+
+export const GetWorkspaceStudyQuestionsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "questions": zod.array(zod.object({
+  "at": zod.iso.datetime({"offset":true}).optional(),
+  "group": zod.enum(['topic', 'others']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "misses": zod.int(),
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "questionId": zod.string(),
+  "result": zod.enum(['right', 'partial', 'wrong', 'unattempted']),
+  "text": zod.string(),
+  "topicId": zod.string().optional(),
+  "topicName": zod.string().optional()
+}))
 })
 
 

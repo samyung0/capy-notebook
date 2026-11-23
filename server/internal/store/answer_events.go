@@ -33,7 +33,9 @@ func logAnswerTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, gra
 
 // logAnswerPartsTx is logAnswerTx for the parts named in only, or all when nil;
 // a part still waiting for the owner logs when it is marked. mt.ID is empty once
-// an assignment's quiz is deleted.
+// an assignment's quiz is deleted. The question's answer, marked, is kept as
+// its latest (question_answers); a marking (only) replaces only its own
+// attempt's.
 func logAnswerPartsTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, graded, given map[string]any, source, attemptID string, now time.Time, only map[string]bool) error {
 	if questions.Blank(graded, given) {
 		return nil
@@ -91,5 +93,14 @@ func logAnswerPartsTx(ctx context.Context, tx pgx.Tx, userID string, mt Material
 		FROM unnest($9::text[], $10::text[], $11::float8[], $12::float8[], $13::text[]) AS p(id, type, awarded, marks, grader)`,
 		userID, mt.StudyWorkspaceID(), mt.ID, questionID, review.QuestionHash(graded), source, attemptID, now,
 		ids, types, awarded, marks, graders, ownTopics(graded))
+	if err != nil || mt.ID == "" {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO question_answers (user_id, material_id, question_id, attempt_id, answers, graded, answered_at)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
+		ON CONFLICT (user_id, material_id, question_id) DO UPDATE
+			SET attempt_id=EXCLUDED.attempt_id, answers=EXCLUDED.answers, graded=EXCLUDED.graded, answered_at=EXCLUDED.answered_at
+			WHERE NOT $8 OR question_answers.attempt_id IS NOT DISTINCT FROM EXCLUDED.attempt_id`,
+		userID, mt.ID, questionID, attemptID, given, graded, now, only != nil)
 	return err
 }

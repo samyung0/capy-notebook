@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { api } from '@/api/client';
 import type {
   CheckReviewItemReq,
@@ -38,15 +38,21 @@ export function QuestionItem({
   onChecked,
   session,
   source = true,
+  link,
   onCheck,
+  actions,
 }: {
   item: ReviewItem;
   onChecked: (graded: GradedQuestion, answers: Answers) => void;
   session?: ReviewSessionRef;
   /** Names its quiz beside Check; off where the page header already does. */
   source?: boolean;
+  /** In place of the quiz's name: a link to the question in its quiz. */
+  link?: ReactNode;
   /** Check was sent: the server records it whatever happens to the page. */
   onCheck?: () => void;
+  /** Before Check, e.g. a list's Skip. */
+  actions?: ReactNode;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
   const { isPending: grading, mutate } = useMutation({
@@ -85,22 +91,26 @@ export function QuestionItem({
         question={item.question!}
       />
       <div className="flex items-center justify-between gap-3">
-        {source ? (
-          <span className="t-meta text-fg-muted">
-            {m.review_from({ title: item.materialTitle })}
-          </span>
-        ) : (
-          <span />
-        )}
-        <Button
-          className="h-9 px-3.5"
-          disabled={grading}
-          onClick={() => check()}
-          rounded="normal"
-          size="sm"
-        >
-          {m.review_check()}
-        </Button>
+        {link ??
+          (source ? (
+            <span className="t-meta text-fg-muted">
+              {m.review_from({ title: item.materialTitle })}
+            </span>
+          ) : (
+            <span />
+          ))}
+        <div className="flex items-center gap-2">
+          {actions}
+          <Button
+            className="h-9 px-3.5"
+            disabled={grading}
+            onClick={() => check()}
+            rounded="normal"
+            size="sm"
+          >
+            {m.review_check()}
+          </Button>
+        </div>
       </div>
     </>
   );

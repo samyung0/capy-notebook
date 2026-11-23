@@ -2954,14 +2954,15 @@ func validMark(v, marks float64) bool {
 // open part stops waiting, and any part's mark can change (§7, board G3m). Each
 // change is a new answer event; a question that stops waiting after the
 // assignment is released is rated.
-func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID string, mark AssignmentMark, now time.Time) (AssignmentAttempt, error) {
+func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID string, mark AssignmentMark, now time.Time) (AssignmentAttempt, *Notification, error) {
 	if len([]rune(mark.Comment)) > assignmentNoteMax {
-		return AssignmentAttempt{}, assignmentInput("a comment is too long")
+		return AssignmentAttempt{}, nil, assignmentInput("a comment is too long")
 	}
 	first, err := s.readAttempt(ctx, attemptID)
 	if err != nil {
-		return AssignmentAttempt{}, err
+		return AssignmentAttempt{}, nil, err
 	}
+	var note *Notification
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := s.lockAssignmentStaffTx(ctx, tx, first.wsID, actorID); err != nil {
 			return err
@@ -3013,17 +3014,33 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 			delete(question, "comment")
 			delete(question, "commentBy")
 		}
-		return s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
+		note, err = s.storeQuestionMarksTx(ctx, tx, r, graded, question, given, changed, waited, now)
+		return err
 	})
 	if err != nil {
-		return AssignmentAttempt{}, err
+		return AssignmentAttempt{}, nil, err
 	}
-	return s.GetAssignmentAttempt(ctx, actorID, attemptID, now)
+	attempt, err := s.GetAssignmentAttempt(ctx, actorID, attemptID, now)
+	return attempt, note, err
 }
 
 // storeQuestionMarksTx stores a question's changed marks: the attempt's totals,
-// its answer log and, once nothing waits, its reviews.
-func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, graded []map[string]any, question map[string]any, given map[string]any, changed map[string]bool, waited bool, now time.Time) error {
+// its answer log and, once nothing waits, its reviews. A regraded question
+// (`regraded`, the mark it had) whose new mark is decided and differs rings
+// the member where they see grades (Epo 2026-11-23); that notification is
+// returned for the caller to send.
+func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, graded []map[string]any, question map[string]any, given map[string]any, changed map[string]bool, waited bool, now time.Time) (*Notification, error) {
+	var note *Notification
+	if before, regraded := question["regraded"].(float64); regraded && !questionWaiting(question) {
+		delete(question, "regraded")
+		if awarded, _ := questionMarks(question); awarded != before && !gradesHidden(r.showGrades, r.gradesReleased) {
+			n, err := s.markChangedNotificationTx(ctx, tx, r, now)
+			if err != nil {
+				return nil, err
+			}
+			note = &n
+		}
+	}
 	correct, total, waitingMarks, waitingAnswers := attemptTotals(graded)
 	pct := 0
 	if total > 0 {
@@ -3031,27 +3048,44 @@ func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRo
 	}
 	raw, err := json.Marshal(graded)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE attempts SET questions=$2, correct=$3, total=$4, pct=$5, waiting_marks=$6, waiting_answers=$7 WHERE id=$1`,
 		r.id, raw, correct, total, pct, waitingMarks, waitingAnswers); err != nil {
-		return err
+		return nil, err
 	}
 	mt := r.quiz()
 	if err := logAnswerPartsTx(ctx, tx, r.userID, mt, question, given, answerSourceAssignment, r.id, now, changed); err != nil {
-		return err
+		return nil, err
 	}
 	if r.released == nil || !waited || questionWaiting(question) {
-		return nil
+		return note, nil
 	}
 	// Reviews rate a member's latest submission (latestAttempts): an earlier one
 	// marked now moves its mark alone.
 	var latest bool
 	if err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM attempts
 		WHERE assignment_id=$1 AND user_id=$2 AND submitted_at > $3)`, r.assignmentID, r.userID, r.submitted).Scan(&latest); err != nil || !latest {
-		return err
+		return note, err
 	}
-	return s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
+	return note, s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
+}
+
+// markChangedNotificationTx tells the member a regraded mark of theirs changed,
+// linking to the assignment as a release does.
+func (s *Store) markChangedNotificationTx(ctx context.Context, tx pgx.Tx, r attemptRow, now time.Time) (Notification, error) {
+	var title string
+	if err := tx.QueryRow(ctx, `SELECT title FROM assignments WHERE id=$1`, r.assignmentID).Scan(&title); err != nil {
+		return Notification{}, err
+	}
+	data, err := json.Marshal(map[string]string{"code": "mark_changed", "assignmentId": r.assignmentID, "title": title})
+	if err != nil {
+		return Notification{}, err
+	}
+	return CreateNotificationTx(ctx, tx, NotificationParams{
+		UserID: r.userID, Kind: NotifSystem, Data: data, WorkspaceID: r.wsID, At: now,
+		Href: "/workspaces/" + r.wsID + "/assignments?assignment=" + r.assignmentID,
+	})
 }
 
 // applyPartMarks writes the marks into the graded question and returns which
@@ -3160,12 +3194,8 @@ type AssignmentMemberRow struct {
 type AssignmentQuestionReport struct {
 	Question map[string]any `json:"question"`
 	// Submitted counts the members' answers to the question, blanks included.
-	Submitted int `json:"submitted"`
-	// Percent is the average share of the marks (0 to 1); Average the mean mark,
-	// on a question with an open part. Absent until one answer is marked.
-	Percent *float64               `json:"percent,omitempty"`
-	Average *float64               `json:"average,omitempty"`
-	Parts   []AssignmentPartReport `json:"parts" nullable:"false"`
+	Submitted int                    `json:"submitted"`
+	Parts     []AssignmentPartReport `json:"parts" nullable:"false"`
 }
 
 // AssignmentPartReport is one part's answers: chosen options, common wrong
@@ -3177,9 +3207,8 @@ type AssignmentPartReport struct {
 	// WrongAnswers are the commonest wrong short answers.
 	WrongAnswers []AssignmentWrongAnswer `json:"wrongAnswers,omitempty"`
 	Items        []AssignmentItemReport  `json:"items,omitempty"`
-	// Percent and Average are the question's numbers for this part alone, as
-	// the report lists each part on its own row (Epo 2026-11-14).
-	Percent *float64 `json:"percent,omitempty"`
+	// Average is the part's mean mark over its marked answers, partial marks
+	// counted, every type in marks (Epo 2026-11-22). Absent until one is marked.
 	Average *float64 `json:"average,omitempty"`
 }
 
@@ -3536,15 +3565,10 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 		id, _ := q["id"].(string)
 		list, _ := q["parts"].([]any)
 		report := AssignmentQuestionReport{Question: q, Parts: make([]AssignmentPartReport, 0, len(list))}
-		open := false
 		for _, raw := range list {
 			p, _ := raw.(map[string]any)
-			a, _ := p["answer"].(map[string]any)
-			open = open || questions.ModelMarked(a["type"])
 			report.Parts = append(report.Parts, partReport(p, attempts))
 		}
-		var marked int
-		var awardedSum, marksSum float64
 		for _, attempt := range attempts {
 			graded := attempt.graded[id]
 			if graded == nil {
@@ -3553,11 +3577,6 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 			report.Submitted++
 			awarded, marks := questionMarks(graded)
 			waiting := questionWaiting(graded)
-			if !waiting {
-				marked++
-				awardedSum += awarded
-				marksSum += marks
-			}
 			// Every answer, so Grading lists every question (Epo 2026-11-19); by
 			// their own copy, as a republish may have changed the question since.
 			rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
@@ -3569,19 +3588,6 @@ func questionReports(frozen []map[string]any, attempts, others []reportAttempt) 
 				awarded, marks := questionMarks(graded)
 				rows = append(rows, AssignmentAnswerRow{QuestionID: id, UserID: attempt.userID, AttemptID: attempt.id, AttemptNumber: attempt.number,
 					Waiting: true, AIMarked: questionAIMarked(graded), AIAwarded: questionAIAwarded(graded), AIWarning: questionAIWarning(graded), AIError: questionAIError(graded), Awarded: awarded, Marks: marks})
-			}
-		}
-		if marked > 0 {
-			if open {
-				average := awardedSum / float64(marked)
-				report.Average = &average
-			} else {
-				// The average share of its marks (Epo 2026-11-13): a matching or
-				// gaps part's partial marks count.
-				if marksSum > 0 {
-					percent := awardedSum / marksSum
-					report.Percent = &percent
-				}
 			}
 		}
 		reports = append(reports, report)
@@ -3680,9 +3686,9 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 			}
 		}
 	}
-	// The part's own numbers, as questionReports takes the question's.
+	// The part's mean mark over its marked answers.
 	var marked int
-	var awardedSum, marksSum float64
+	var awardedSum float64
 	for _, attempt := range attempts {
 		gp := graded(attempt)
 		if gp == nil {
@@ -3692,19 +3698,12 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 			continue
 		}
 		awarded, _ := gp["awarded"].(float64)
-		marks, _ := gp["marks"].(float64)
 		marked++
 		awardedSum += awarded
-		marksSum += marks
 	}
 	if marked > 0 {
-		if questions.ModelMarked(a["type"]) {
-			average := awardedSum / float64(marked)
-			out.Average = &average
-		} else if marksSum > 0 {
-			percent := awardedSum / marksSum
-			out.Percent = &percent
-		}
+		average := awardedSum / float64(marked)
+		out.Average = &average
 	}
 	return out
 }

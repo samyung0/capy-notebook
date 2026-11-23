@@ -49,6 +49,7 @@ pub const QUESTION_GRAPH_POLYGON_MAX: usize = 12;
 pub const QUESTION_GRAPH_TEXT_SIZE_MAX: usize = 96;
 pub const QUESTION_GRAPH_TEXT_SIZE_MIN: usize = 8;
 pub const QUESTION_ID_MAX: usize = 128;
+pub const QUESTION_IMAGES_MAX: usize = 5;
 pub const QUESTION_IMAGE_DIMENSION_MAX: f64 = 10000.0;
 pub const QUESTION_MARKSCHEME_MAX: usize = 20;
 pub const QUESTION_MARKS_MAX: f64 = 20.0;

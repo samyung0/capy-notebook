@@ -6,10 +6,32 @@ import {
   SortHeader,
   sortDirection,
 } from '@/components/app/SortHeader';
+import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { type StudyTab, studyLink } from '../studyRoutes';
+
+/** A Study page's way back, above its title: a member's profile to Study,
+ * a topic's questions to Study or the profile. */
+export function BackLink({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="inline-flex items-center gap-1.5 font-semibold underline decoration-1 underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
+      onClick={onClick}
+      type="button"
+    >
+      <Icon name="navigationBack" size={16} />
+      {label}
+    </button>
+  );
+}
 
 /** The Study pages' padding: the page gutter (`page-px`), 28px above from lg. */
 export function PracticeFrame({

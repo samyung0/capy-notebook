@@ -372,6 +372,8 @@ marking-point agreement, latency, memory and input truncation.
 The [Alibaba decision-model comparison](grading/reports/2026-09-27-alibaba-decision.md)
 uses the same requests through the hosted System One API, with separate
 format controls and server/client latency records.
+[`online_batching.py` and `question_figures.py`](grading/reports/2026-11-23-online-batching-and-figures.md)
+test the production grading prompt four parts to a call and with question figures as images.
 The [production contract report](grading/reports/2026-10-02-jev-production-contract.md)
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state

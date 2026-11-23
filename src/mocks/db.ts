@@ -1623,6 +1623,10 @@ const seedQuizzes: EditableQuiz[] = [
         ],
         stem: [],
       },
+      // Blocks before the question's text, to see how the topic page and its
+      // dialog read them (Epo 2026-11-22): a figure, texts and a chart, a
+      // graph, a table and a plot.
+      ...leadingBlockQuestions(),
     ],
     revision: 1,
     topics: ['Techniques of integration'],
@@ -1630,6 +1634,147 @@ const seedQuizzes: EditableQuiz[] = [
     workspaceName: 'Calculus II',
   },
 ];
+
+/** Calculus II's questions that open with something other than their text. */
+function leadingBlockQuestions(): Question[] {
+  const text = (value: string) => ({ text: value, type: 'text' as const });
+  const question = (
+    id: string,
+    stem: Question['stem'],
+    blocks: Question['parts'][number]['blocks'],
+    answer: Question['parts'][number]['answer'],
+    marks = 1,
+    markscheme?: { marks: number; text: string }[]
+  ): Question => ({
+    id,
+    labels: 'letters',
+    layout: 'paper',
+    level: 'application',
+    parts: [
+      {
+        answer,
+        blocks,
+        id: `${id}:part`,
+        marks,
+        ...(markscheme ? { markscheme } : {}),
+        solution: [],
+      },
+    ],
+    stem,
+  });
+  return [
+    // A figure, then the text.
+    question(
+      'q31',
+      [
+        {
+          description: 'The region under y = x² between x = 0 and x = 2.',
+          height: 540,
+          image: { assetId: 'asset_mock_area_figure' },
+          type: 'image',
+          width: 960,
+        },
+        text('The shaded region lies under y = x² between x = 0 and x = 2.'),
+      ],
+      [text('Find the area of the shaded region.')],
+      { accepted: ['8/3'], type: 'short' }
+    ),
+    // Two texts and a chart, then the part's text.
+    question(
+      'q32',
+      [
+        text('A student estimates ∫₀¹ x² dx with the trapezium rule.'),
+        text('Each estimate uses twice as many strips as the one before.'),
+        {
+          kind: 'bar',
+          labels: ['1 strip', '2 strips', '4 strips', '8 strips'],
+          series: [{ name: 'Estimate', values: [0.5, 0.375, 0.344, 0.336] }],
+          title: 'Trapezium estimates of ∫₀¹ x² dx',
+          type: 'chart',
+          xTitle: 'Strips',
+          yTitle: 'Estimate',
+        },
+      ],
+      [text('Which value are the estimates approaching?')],
+      { correct: [1], options: ['1/2', '1/3', '1/4', '1'], type: 'mcq' }
+    ),
+    // A graph alone in the stem; the text is the part's.
+    question(
+      'q33',
+      [
+        {
+          board: { axis: true, bbox: [-0.5, 1.5, 3.6, -0.5], grid: true },
+          description: 'y = sin x from 0 to π.',
+          elements: [
+            {
+              id: 'sine',
+              latex: 'y=\\sin x\\left\\lbrace 0\\le x\\le \\pi\\right\\rbrace',
+              type: 'expression',
+            },
+          ],
+          height: 360,
+          type: 'graph',
+          width: 600,
+        },
+      ],
+      [text('Find the area between y = sin x and the x-axis from 0 to π.')],
+      { accepted: ['2'], type: 'short' }
+    ),
+    // A table, then the text.
+    question(
+      'q34',
+      [
+        {
+          header: true,
+          rows: [
+            ['x', '0', '0.5', '1', '1.5', '2'],
+            ['f(x)', '1', '1.25', '2', '3.25', '5'],
+          ],
+          type: 'table',
+        },
+        text('The table gives values of f(x) = x² + 1.'),
+      ],
+      [
+        text(
+          'Use the trapezium rule with these five values to estimate ∫₀² f(x) dx.'
+        ),
+      ],
+      { accepted: ['4.75'], type: 'short' },
+      2
+    ),
+    // A plot and a text, then the part's text.
+    question(
+      'q35',
+      [
+        {
+          series: [
+            {
+              name: 'Velocity',
+              points: [
+                [0, 0],
+                [2, 6],
+                [6, 6],
+                [8, 0],
+              ],
+            },
+          ],
+          title: "A car's velocity",
+          type: 'plot',
+          xTitle: 'Time (s)',
+          yTitle: 'Velocity (m/s)',
+        },
+        text('The plot shows a car’s velocity over 8 seconds.'),
+      ],
+      [text('Explain what the area under the plot represents, and find it.')],
+      { accepted: [], type: 'open' },
+      2,
+      [
+        { marks: 1, text: 'The area is the distance travelled' },
+        { marks: 1, text: 'Distance = 36 m' },
+      ]
+    ),
+  ];
+}
 
 /** Seed answers are written per question; grading reads them per part. */
 const byPart = (answers: Record<string, Answer>) =>
@@ -2872,7 +3017,11 @@ for (const c of seedCards) flashcardCards[c.id] = { materialId: c.materialId };
 
 // Biology's quizzes sit in its topics, so Practice can filter and practise
 // by topic.
-const QUIZ_TOPICS: Record<string, string> = { qz_1: 'ch_2', qz_2: 'ch_3' };
+const QUIZ_TOPICS: Record<string, string> = {
+  qz_1: 'ch_2',
+  qz_2: 'ch_3',
+  qz_3: 'ch_c1',
+};
 seedQuizzes.forEach((q) => {
   materials.push(
     makeMaterial({

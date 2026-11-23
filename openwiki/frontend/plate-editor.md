@@ -579,8 +579,9 @@ URL-only nodes, become a placeholder in their place whose element fetches the
 URL in the browser and uploads the bytes, or a link to the URL showing the
 image's alt text when it cannot. Only absolute http(s) and `data:` URLs are
 read, never a path on this app; the file's extension comes from the served
-type through the types the server stores (`IMAGE_EXTENSIONS` in
-`src/lib/fitImage.ts`), and a type it refuses (an icon, SVG) or any failed
+type through the types the upload takes (`PICKED_IMAGE_EXTENSIONS` in
+`src/lib/fitImage.ts`: the stored ones, and AVIF, which the upload re-encodes
+as WebP, Epo 2026-11-23), and a type it refuses (an icon, SVG) or any failed
 read ends as the link, or nothing for a non-web URL, with the URL forgotten,
 so no skeleton stays (REVIEW5 S1). Pasted images read and upload four at a
 time; the rest wait as skeletons (REVIEW5 N6). Nothing is fetched by a

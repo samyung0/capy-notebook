@@ -531,6 +531,12 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
 - **Files.** Up to `EXTRACTION_PAPER_FILES_MAX` (5) question files, such as a photographed
   paper's images, and up to `EXTRACTION_ANSWER_FILES_MAX` (3) mark scheme or answer files,
   from a menu of the workspace's indexed files other than Excel and audio or a new upload.
+  The question paper's Upload a file is a dashed box under its menu (`UploadDropZone`, the
+  Add file dialog's, Epo 2026-11-22) that also takes files dropped on its list
+  (`useFileDrop`) and whatever is pasted on the step outside a text field
+  (`usePastedFiles`): files as named, a copied image or screenshot as "Pasted image.png",
+  and text alone as "Pasted text.txt" (`pastedFiles`). The answers keep Upload a file in
+  their menu, so a paste only ever means the paper; a drop anywhere else is refused.
   A row names the file, with no page count: reading one would download a Word or PowerPoint
   file just to show it (Epo 2026-11-06).
   Each list keeps its Choose a file trigger (`ChooseFileButton`, shared with a task's and
@@ -538,7 +544,7 @@ step is an address, `?make=files`, `?make=pages&paper=…&answers=…&quizFile=�
   (`RemoveFileButton`) in place of Change or Remove, with no dividers; its menu ticks the
   list's own files and stays open for more until closed, a ticked row takes its file off,
   and a file the other list holds is left out. At the list's cap the trigger still opens
-  the menu, whose unticked rows and Upload a file are disabled (Epo 2026-11-12).
+  the menu, whose unticked rows and Upload a file (the paper's box) are disabled (Epo 2026-11-12).
   An upload takes the normal path (`useQuizUpload`, `startSourceTransfer`), hidden from
   members and in no topic. The upload panel sits under the dialog, so an upload from the
   dialog closes it (Epo 2026-11-09) once every file picked has started, since the browser's
@@ -1072,7 +1078,8 @@ options stay plain strings; no images or rich content go inside them.
 server environment credentials. The local publisher has the same validation.
 Figures are PNG, JPEG, GIF or WebP, capped at a flat 4 MiB, with no plan because the
 platform pays; the bank editor shrinks a larger raster image in the browser
-first (`uploadBankAsset`, `src/lib/fitImage.ts`).
+first, and re-encodes an AVIF as WebP whatever its size (`uploadBankAsset`,
+`src/lib/fitImage.ts`; Epo 2026-11-23, [Image compression and checks](backend-storage-quota.md#image-compression-and-checks)).
 `BANK_ASSETS_URL` is the allowed public base URL for stored bank asset references;
 it does not restrict uploads to one developer machine. Credentials stay on the
 server or publisher. Existing private workspace editor assets are separate.
@@ -1262,8 +1269,13 @@ snapshot keeps `itemAwards`. A shared page marks no open answer: for every visit
 signed in or out, an answered open part stays Not marked with its marking points and
 worked solution to compare, and has no Check again (Epo 2026-11-05, Q640 B). The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
-part, with figures as their descriptions (`[Figure]` for one without), tables
-and chart data. A group's text and figures come once, as `Shared context: …`
+part, with images numbered as `[Figure N: description]` and sent with it
+(`questions.GradingTextAndFigures`, Epo 2026-11-23), graphs as their descriptions
+(`[Figure]` for one without), tables and chart data. A question holds at most
+`QUESTION_IMAGES_MAX` (5) images in its stem, groups and parts together, its
+explanations not counted, so a call of four parts stays inside the grading route's
+32 images; the dialog names the cap (`question_validation_images`) and Go refuses
+more, a Make a quiz extraction included. A group's text and figures come once, as `Shared context: …`
 before the group's first part (Epo 2026-11-04); a group with no blocks adds
 nothing, and a question with no group reads byte for byte as before. Requests carry
 only part ids and answers; the server loads the scheme, so the endpoints cannot
@@ -1369,7 +1381,11 @@ when a paper-layout answer area is at least 36rem wide (a container query);
 split-layout questions keep one column beside their passage. Layouts follow
 the question's own width (`@container/question` in `QuestionView`), not the
 viewport: from 36rem a split question sets its stem beside its parts and a
-paper question its first stem text beside the number; below 36rem (phones,
+paper question its first stem text beside the number. A split question's key
+sections (marking scheme, sample answer, explanation; an editor's answer
+key) sit under both columns, the width of the question, each part's under its
+label; the answer and its verdict stay beside the stem (`renderKey`, Epo
+2026-11-22, "move the explanation/other sections out of the split view"); below 36rem (phones,
 the Study panel) both read alike, number and marks on the top row and the
 stem full width under them, and a single part's empty label column closes so
 its text and answer line up with the stem (labelled parts keep theirs).

@@ -386,3 +386,14 @@ language of the reason.
 
 The small compatibility pilot is in [`PILOT_RESULTS.md`](reports/2026-09-05-pilot.md).
 Its result files are separate from the larger test set.
+
+## Typed answers in batches, and question figures (2026-11-23)
+
+Two small tests against the production prompt, read from
+`pipeline/pipeline/retrieval/grading.py`, on the grading pin. Neither needs a model download.
+
+- `scripts/online_batching.py <env file> <out dir>` grades 68 fixture answers one part a call, then four parts a call with a drafted batch section.
+- `uv run --with pillow python scripts/question_figures.py <env file> <out dir> [conditions]` draws eight figure questions (`fixtures/question-figures.json`) and grades their answers with the figure as text only, or as an image.
+
+Findings are in [2026-11-23-online-batching-and-figures.md](reports/2026-11-23-online-batching-and-figures.md).
+

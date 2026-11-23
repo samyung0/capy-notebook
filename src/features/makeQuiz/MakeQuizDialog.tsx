@@ -4,7 +4,7 @@ import {
   EXTRACTION_ANSWER_FILES_MAX,
   EXTRACTION_PAPER_FILES_MAX,
 } from '@/api/limits.generated';
-import type { Extraction, SourceFile, SourceUploadPolicy } from '@/api/types';
+import type { Extraction, SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -21,6 +21,8 @@ import {
   FileSearchMenu,
   RemoveFileButton,
 } from '@/features/files/FileSearchMenu';
+import { useFileDrop, usePastedFiles } from '@/features/files/fileDrop';
+import { UploadDropZone } from '@/features/files/UploadDropZone';
 import type { GradedSource } from '@/features/study/assignments/gradedSource';
 import { matchesSearch } from '@/features/workspace/PanelSearch';
 import {
@@ -182,8 +184,9 @@ function MenuFileRow({
   );
 }
 
-/** The file menu (X0a): search, Upload a file, then the workspace's files,
- * the field's chosen ones ticked; a ticked one's row takes it off. */
+/** The file menu (X0a): search, `upload`'s Upload a file, then the
+ * workspace's files, the field's chosen ones ticked; a ticked one's row takes
+ * it off. The question paper uploads from its own box (Epo 2026-11-22). */
 function FileMenu({
   chosen,
   files,
@@ -191,10 +194,9 @@ function FileMenu({
   label,
   onOpenChange,
   onPick,
-  onUpload,
   open,
-  policy,
   trigger,
+  upload,
   workspaceName,
 }: {
   /** The field's files' ids. */
@@ -204,10 +206,9 @@ function FileMenu({
   label: string;
   onOpenChange: (open: boolean) => void;
   onPick: (file: SourceFile) => void;
-  onUpload: () => void;
   open: boolean;
-  policy: SourceUploadPolicy | undefined;
   trigger: React.ReactNode;
+  upload?: { disabled: boolean; onClick: () => void };
   workspaceName: string;
 }) {
   return (
@@ -218,11 +219,15 @@ function FileMenu({
       searchLabel={m.make_quiz_search_files()}
       top={
         <>
-          <FileMenuRow disabled={!policy || full} onClick={onUpload}>
-            <Icon name="upload" size={16} />
-            {m.make_quiz_upload_file()}
-          </FileMenuRow>
-          <hr className="my-1 border-divider" />
+          {upload && (
+            <>
+              <FileMenuRow disabled={upload.disabled} onClick={upload.onClick}>
+                <Icon name="upload" size={16} />
+                {m.make_quiz_upload_file()}
+              </FileMenuRow>
+              <hr className="my-1 border-divider" />
+            </>
+          )}
           <p className="px-2.5 pt-2 pb-1.5 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
             {m.make_quiz_in_workspace({ workspace: workspaceName })}
           </p>
@@ -253,7 +258,7 @@ function FileMenu({
   );
 }
 
-/** The hidden file picker behind Upload a file. */
+/** The hidden file picker behind a field's Upload a file. */
 function UploadInput({
   accept,
   inputRef,
@@ -505,10 +510,21 @@ export function MakeQuizDialog({
     if (!graded)
       setUploading((current) => [...current, ...rows.map((row) => row.key)]);
   };
-  const startUpload = (target: 'answers' | 'paper') => {
-    setMenu(null);
-    (target === 'answers' ? answersInput : paperInput).current?.click();
+  const addAnswerFiles = (list: File[]) => {
+    const rows = add(
+      list.slice(0, EXTRACTION_ANSWER_FILES_MAX - answers.length)
+    );
+    if (rows.length === 0) return;
+    setAnswers((current) => [...current, ...rows]);
+    if (!graded)
+      setUploading((current) => [...current, ...rows.map((row) => row.key)]);
   };
+  // The question paper takes files dropped on its field or pasted (Epo
+  // 2026-11-22), so a paste means one field; a drop elsewhere is refused.
+  const paperDrop = useFileDrop(
+    policy && paperRoom ? addPaperFiles : undefined
+  );
+  const strayDrop = useFileDrop(undefined);
   const removeButton = (set: typeof setPaper, row: Picked) => (
     <RemoveFileButton
       label={m.make_quiz_remove_file({ name: row.name })}
@@ -543,27 +559,17 @@ export function MakeQuizDialog({
     onLeave: onClose,
     runId,
   });
+  usePastedFiles(
+    stepName === 'files' && !tabs.other && !tabs.settings && policy && paperRoom
+      ? addPaperFiles
+      : undefined
+  );
   const filesBody = (
     <>
       <UploadInput inputRef={paperInput} multiple onFiles={addPaperFiles} />
-      <UploadInput
-        inputRef={answersInput}
-        multiple
-        onFiles={(list) => {
-          const rows = add(
-            list.slice(0, EXTRACTION_ANSWER_FILES_MAX - answers.length)
-          );
-          if (rows.length === 0) return;
-          setAnswers((current) => [...current, ...rows]);
-          if (!graded)
-            setUploading((current) => [
-              ...current,
-              ...rows.map((row) => row.key),
-            ]);
-        }}
-      />
-      {/* 16px between sections, as Workspace settings. Each field keeps Choose a file above the files
-          chosen, whose rows end in × (Epo 2026-11-12). */}
+      <UploadInput inputRef={answersInput} multiple onFiles={addAnswerFiles} />
+      {/* 16px between sections, as Workspace settings. Each field keeps Choose a file (and the
+          paper its Upload a file) above the files chosen, whose rows end in × (Epo 2026-11-12). */}
       <div className="flex flex-col gap-4 pb-1">
         <div>
           <p className="t-meta text-fg-muted">
@@ -579,7 +585,10 @@ export function MakeQuizDialog({
             />
           )}
         </div>
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div
+          className="flex min-w-0 flex-col gap-1.5"
+          {...paperDrop.dropHandlers}
+        >
           <InputTitle>
             {m.make_quiz_question_paper()}{' '}
             <span className="t-meta font-normal text-fg-muted">
@@ -593,11 +602,16 @@ export function MakeQuizDialog({
             label={m.make_quiz_question_paper()}
             onOpenChange={(open) => setMenu(open ? 'paper' : null)}
             onPick={(file) => toggleFile(paper, setPaper, file)}
-            onUpload={() => startUpload('paper')}
             open={menu === 'paper'}
-            policy={policy}
             trigger={<ChooseFileButton />}
             workspaceName={workspaceName}
+          />
+          <UploadDropZone
+            disabled={!(policy && paperRoom)}
+            hint={m.make_quiz_upload_hint()}
+            label={m.make_quiz_upload_file()}
+            onClick={() => paperInput.current?.click()}
+            over={paperDrop.over}
           />
           {paper.length > 0 && (
             <div>
@@ -627,10 +641,15 @@ export function MakeQuizDialog({
             label={m.make_quiz_answers()}
             onOpenChange={(open) => setMenu(open ? 'answers' : null)}
             onPick={(file) => toggleFile(answers, setAnswers, file)}
-            onUpload={() => startUpload('answers')}
             open={menu === 'answers'}
-            policy={policy}
             trigger={<ChooseFileButton />}
+            upload={{
+              disabled: !(policy && room),
+              onClick: () => {
+                setMenu(null);
+                answersInput.current?.click();
+              },
+            }}
             workspaceName={workspaceName}
           />
           {answers.length > 0 && (
@@ -778,6 +797,7 @@ export function MakeQuizDialog({
         <div
           className={cn(tabbed && 'min-h-0 flex-1 overflow-y-auto')}
           hidden={!!tabs.other}
+          {...strayDrop.dropHandlers}
         >
           {filesBody}
         </div>

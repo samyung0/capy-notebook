@@ -1,3 +1,4 @@
+import { parseHTML } from 'linkedom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
@@ -35,6 +36,37 @@ it('reviews the graded snapshot with marks, the answer before an open Explanatio
   // Open under its heading (Epo 2026-11-18), no fold.
   expect(html).not.toContain('<details');
   expect(html).toContain(m.question_ui_worked_solution());
+});
+
+// Epo 2026-11-22: a split question's explanation and other key sections sit
+// under both columns, the answer and its verdict staying on the right.
+it("puts a split question's explanation under both columns", () => {
+  const question = exampleQuestion('split', {
+    accepted: ['osmosis'],
+    type: 'short',
+  });
+  question.layout = 'split';
+  question.stem = [
+    { text: 'The chart shows a membrane sample.', type: 'text' },
+  ];
+  question.parts[0].solution = [
+    { text: 'Water moves by osmosis.', type: 'text' },
+  ];
+  question.parts[0].awarded = 0;
+  const { document } = parseHTML(
+    `<!doctype html><html><body>${renderToStaticMarkup(
+      <QuestionRunner
+        answers={{ 'split-part': 'diffusion' }}
+        question={question}
+        review
+      />
+    )}</body></html>`
+  );
+  const columns = document.querySelector('[class*="grid-cols-2"]');
+  // The answer field, on the right.
+  expect(columns?.innerHTML).toContain('value="diffusion"');
+  expect(columns?.textContent).not.toContain('Water moves by osmosis.');
+  expect(document.body.textContent).toContain('Water moves by osmosis.');
 });
 
 it('reviews an ordering answered by item text against the stored order', () => {

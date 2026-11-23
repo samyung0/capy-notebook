@@ -60,7 +60,7 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	if workspace != f.ws.ID || len(answers) != 1 || answers[0].PayerID != f.viewer || answers[0].PartID != "p3" || answers[0].Answer == "" || len(answers[0].Items) != 2 {
 		t.Fatalf("to mark = %s %+v", workspace, answers)
 	}
-	if err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 0}, Comment: "Says nothing of dilution."}}, now); err != nil {
+	if _, err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 0}, Comment: "Says nothing of dilution."}}, now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,7 +94,7 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 		t.Fatalf("the report's row = %+v", report.Answers)
 	}
 
-	approved, err := f.s.ApproveAIMarks(ctx, f.user, id, "q3", now)
+	approved, _, err := f.s.ApproveAIMarks(ctx, f.user, id, "q3", now)
 	if err != nil || approved != 1 {
 		t.Fatalf("approved %d, err %v", approved, err)
 	}
@@ -110,7 +110,7 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	}
 
 	// Cleared, it leaves the answer and its row; the marks stay.
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, attempt, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{}, ClearWarning: true}, now); err != nil {
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, attempt, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{}, ClearWarning: true}, now); err != nil {
 		t.Fatal(err)
 	}
 	cleared, err := f.s.GetAssignmentAttempt(ctx, f.viewer, attempt, now)
@@ -119,6 +119,47 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	}
 	if part := openPart(t, cleared.Questions); part["aiComment"] != nil || cleared.Correct != 2 {
 		t.Fatalf("after clearing = %+v, correct %v", part, cleared.Correct)
+	}
+}
+
+// TestRegradeQuestion: staff grade an approved question again. Its open part
+// waits for the AI, then for approval, and the approved mark rings the member.
+func TestRegradeQuestion(t *testing.T) {
+	f := newAssignmentFixture(t, "regrade-question")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	id, attempt := submitOpenAnswer(t, f, true, now)
+	if _, err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 0}}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.s.ApproveAIMarks(ctx, f.user, id, "q3", now); err != nil {
+		t.Fatal(err)
+	}
+
+	parts, err := f.s.RegradeQuestion(ctx, f.user, attempt, "q3", now)
+	if err != nil || len(parts) != 1 || parts[0] != "p3" {
+		t.Fatalf("regraded %v, err %v", parts, err)
+	}
+	if _, answers, err := f.s.AnswersToMark(ctx, id, attempt); err != nil || len(answers) != 1 || answers[0].PartID != "p3" {
+		t.Fatalf("to mark = %+v, err %v", answers, err)
+	}
+	if _, err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{1, 0}}}, now); err != nil {
+		t.Fatal(err)
+	}
+	approved, sent, err := f.s.ApproveAIMarks(ctx, f.user, id, "q3", now)
+	if err != nil || approved != 1 {
+		t.Fatalf("approved %d, err %v", approved, err)
+	}
+	var data struct{ Code string }
+	if len(sent) != 1 || sent[0].UserID != f.viewer || json.Unmarshal(sent[0].Data, &data) != nil || data.Code != "mark_changed" {
+		t.Fatalf("notifications = %+v", sent)
+	}
+	member, err := f.s.GetAssignmentAttempt(ctx, f.viewer, attempt, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.WaitingAnswers != 0 || member.Correct != 1 {
+		t.Fatalf("after the regrade = %+v", member)
 	}
 }
 
@@ -143,7 +184,7 @@ func TestAIWarningStaysHiddenWithShowAnswersOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	leak := "The scheme says Names the membrane"
-	if err := f.s.SaveAIMarks(ctx, run.ID, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{0, 0}, Comment: leak}}, now); err != nil {
+	if _, err := f.s.SaveAIMarks(ctx, run.ID, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{0, 0}, Comment: leak}}, now); err != nil {
 		t.Fatal(err)
 	}
 	got, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now)
@@ -193,7 +234,7 @@ func TestAIMarksWithApprovalOffAreTheMarks(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	_, attempt := submitOpenAnswer(t, f, false, now)
-	if err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 1}}}, now); err != nil {
+	if _, err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 1}}}, now); err != nil {
 		t.Fatal(err)
 	}
 	got, err := f.s.GetAssignmentAttempt(ctx, f.viewer, attempt, now)
@@ -214,12 +255,12 @@ func TestAIMarksLeaveAnOwnersMarkAlone(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	_, attempt := submitOpenAnswer(t, f, false, now)
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, attempt, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, attempt, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{1, 0}}},
 	}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 1}}}, now); err != nil {
+	if _, err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 1}}}, now); err != nil {
 		t.Fatal(err)
 	}
 	got, err := f.s.GetAssignmentAttempt(ctx, f.user, attempt, now)

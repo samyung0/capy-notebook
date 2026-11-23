@@ -24,7 +24,7 @@ pub use crate::catalog::{
     QUESTION_GRAPH_EXPRESSION_MAX, QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_LATEX_MAX,
     QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_PATH_MAX, QUESTION_GRAPH_POLYGON_MAX,
     QUESTION_GRAPH_TEXT_SIZE_MAX, QUESTION_GRAPH_TEXT_SIZE_MIN, QUESTION_ID_MAX,
-    QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
+    QUESTION_IMAGE_DIMENSION_MAX, QUESTION_IMAGES_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
     QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_LABEL_MAX,
     QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
     QUESTION_PLOT_TITLE_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX,
@@ -1653,6 +1653,19 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     if !policy.bank && parts.len() > QUIZ_QUESTION_PARTS_MAX {
         return fail(format!(
             "A question has at most {QUIZ_QUESTION_PARTS_MAX} parts."
+        ));
+    }
+    // The grader is sent every image but the explanations', 32 a call at most
+    // (Epo 2026-11-23, Go's `questionImages`).
+    let images = stem
+        .iter()
+        .chain(groups.iter().flat_map(|g| g.blocks.iter()))
+        .chain(parts.iter().flat_map(|p| p.blocks.iter()))
+        .filter(|b| b.kind == "image")
+        .count();
+    if images > QUESTION_IMAGES_MAX {
+        return fail(format!(
+            "A question has at most {QUESTION_IMAGES_MAX} images outside its explanations."
         ));
     }
     for block in stem

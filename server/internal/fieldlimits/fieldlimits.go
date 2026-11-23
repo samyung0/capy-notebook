@@ -56,8 +56,12 @@ const (
 	QuestionID        = 128
 	QuestionParts     = 26
 	QuestionBlocks    = 40
-	QuestionText      = 12_000
-	QuestionMetadata  = 1_000
+	// QuestionImages caps a question's images, its stem, groups and parts
+	// (not solutions): each goes to the grader with the part, and one call
+	// carries at most 32 images (Epo 2026-11-23).
+	QuestionImages   = 5
+	QuestionText     = 12_000
+	QuestionMetadata = 1_000
 	// QuestionDescription bounds an image's or graph's description outside
 	// the bank (quizzes and notes); bank questions take QuestionText.
 	QuestionDescription  = 500
@@ -174,6 +178,7 @@ var QuestionBounds = map[string]int{
 	"QUESTION_ID_MAX":                QuestionID,
 	"QUESTION_PARTS_MAX":             QuestionParts,
 	"QUESTION_BLOCKS_MAX":            QuestionBlocks,
+	"QUESTION_IMAGES_MAX":            QuestionImages,
 	"QUESTION_TEXT_MAX":              QuestionText,
 	"QUESTION_METADATA_MAX":          QuestionMetadata,
 	"QUESTION_DESCRIPTION_MAX":       QuestionDescription,

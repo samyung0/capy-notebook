@@ -36,6 +36,7 @@ import {
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
 import { learnerView } from './answerKeys';
+import { surfaceAreaGraph } from './biologyQuiz';
 import * as db from './db';
 import { mockBoardAssets } from './editorAssets';
 import { paperPdf } from './extraction';
@@ -860,6 +861,133 @@ const richQuestions = (): Question[] => [
       },
     ],
     stem: [],
+  },
+  ...leadingBlockQuestions(),
+];
+
+/** Questions that open with something other than their text (Epo
+ * 2026-11-22), for the report's rows, results and Grading: a figure, texts
+ * and a chart, a chart in the part, a graph and a table, a plot. */
+const leadingBlockQuestions = (): Question[] => [
+  {
+    ...short(
+      'q22',
+      'Name the structure that controls what enters and leaves the cell.',
+      ['cell membrane', 'membrane'],
+      1
+    ),
+    stem: [
+      CELL_FIGURE,
+      ...textBlock('The image shows an animal cell at ×400.'),
+    ],
+  },
+  {
+    ...open('q23', 'Explain the pattern in the chart.', [
+      ['Fewer bubbles further from the lamp', 1],
+      ['Less light, so slower photosynthesis', 1],
+    ]),
+    stem: [
+      ...textBlock('A student measured photosynthesis in pondweed.'),
+      ...textBlock(
+        'They counted the bubbles a minute at four distances from a lamp.'
+      ),
+      {
+        kind: 'bar',
+        labels: ['10 cm', '20 cm', '30 cm', '40 cm'],
+        series: [{ name: 'Bubbles a minute', values: [42, 25, 12, 6] }],
+        title: 'Bubbles at each distance from the lamp',
+        type: 'chart',
+        xTitle: 'Distance from the lamp',
+        yTitle: 'Bubbles a minute',
+      },
+    ],
+  },
+  {
+    ...base('q24'),
+    parts: [
+      {
+        answer: {
+          correct: [2],
+          options: ['100', '200', '300', '400'],
+          type: 'mcq',
+        },
+        // The chart first in the part itself, its text after.
+        blocks: [
+          {
+            kind: 'line',
+            labels: ['0', '100', '200', '300', '400'],
+            series: [
+              { name: 'Low CO₂', values: [0, 3, 6, 6, 6] },
+              { name: 'High CO₂', values: [0, 4, 8, 10, 10] },
+            ],
+            title: 'Oxygen production at two CO₂ concentrations',
+            type: 'chart',
+            xTitle: 'Light intensity',
+            yTitle: 'Oxygen (µmol/min)',
+          },
+          ...textBlock(
+            'At which light intensity does oxygen production stop rising with high CO₂?'
+          ),
+        ],
+        id: 'q24:a',
+        marks: 1,
+        solution: [],
+      },
+    ],
+  },
+  {
+    ...short(
+      'q25',
+      'Give the surface area to volume ratio at B.',
+      ['3', '3:1'],
+      1
+    ),
+    stem: [
+      surfaceAreaGraph,
+      {
+        header: true,
+        rows: [
+          ['Point', 'Side (µm)'],
+          ['A', '1'],
+          ['B', '2'],
+          ['C', '3'],
+        ],
+        type: 'table',
+      },
+    ],
+  },
+  {
+    ...short(
+      'q26',
+      'State the optimum temperature of the enzyme.',
+      ['37', '37 °C'],
+      1
+    ),
+    stem: [
+      {
+        series: [
+          {
+            name: 'Activity',
+            points: [
+              [10, 8],
+              [20, 22],
+              [30, 41],
+              [37, 50],
+              [45, 24],
+              [55, 3],
+            ],
+          },
+        ],
+        title: 'Enzyme activity against temperature',
+        type: 'plot',
+        unit: '%',
+        xTitle: 'Temperature (°C)',
+        yTitle: 'Activity (%)',
+      },
+      ...textBlock(
+        'The plot shows how fast an enzyme works at each temperature.'
+      ),
+    ],
   },
 ];
 
@@ -1970,16 +2098,13 @@ function partReport(part: QuestionPart, list: Attempt[]): AssignmentPartReport {
       };
     });
   }
-  // The part's own numbers, as the server takes them.
+  // The part's mean mark, as the server takes it.
   const marked = list.flatMap((a) => {
     const graded = gradedPart(a);
     return graded && !graded.pending ? [graded] : [];
   });
   const awarded = marked.reduce((sum, g) => sum + (g.awarded ?? 0), 0);
-  if (marked.length && modelMarked(part.answer.type))
-    out.average = awarded / marked.length;
-  else if (marked.length && part.marks)
-    out.percent = awarded / (part.marks * marked.length);
+  if (marked.length) out.average = awarded / marked.length;
   return out;
 }
 
@@ -2047,13 +2172,10 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
   const answers: AssignmentAnswerRow[] = [];
   const questions: AssignmentQuestionReport[] = (row.questions ?? []).map(
     (question) => {
-      // Written and drawn answers wait for marking alike.
-      const isOpen = question.parts.some((p) => modelMarked(p.answer.type));
       const graded = countedRows.flatMap((a) => {
         const q = a.graded.find((g) => g.id === question.id);
         return q ? [{ attempt: a, q }] : [];
       });
-      const marked = graded.filter(({ q }) => !q.parts.some((p) => p.pending));
       const score = (q: AssignmentGradedQuestion) =>
         q.parts.reduce((n, p) => n + (p.awarded ?? 0), 0);
       const marks = question.parts.reduce((n, p) => n + p.marks, 0);
@@ -2086,18 +2208,8 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
             waiting: true,
           });
       }
-      const enough = marked.length > 0;
       return {
-        average:
-          enough && isOpen
-            ? marked.reduce((n, { q }) => n + score(q), 0) / marked.length
-            : undefined,
         parts: question.parts.map((p) => partReport(p, countedRows)),
-        percent:
-          enough && !isOpen && marks > 0
-            ? marked.reduce((n, { q }) => n + score(q), 0) /
-              (marked.length * marks)
-            : undefined,
         question,
         submitted: graded.length,
       };
@@ -2953,6 +3065,62 @@ export const assignmentHandlers = (viewer: Viewer) => {
           const { answers } = (await request.json()) as { answers: Answers };
           finish(found.row, found.attempt, answers, false);
         }
+        return HttpResponse.json(attemptView(found.attempt, found.row, viewer));
+      }
+    ),
+    // Graded again at once: its answered AI parts take the AI's mark again,
+    // waiting for approval unless the AI's marks need none.
+    http.post(
+      '/api/assignment-attempts/:id/regrade',
+      async ({ params, request }) => {
+        const found = attemptOf(params.id);
+        if (!found || !runs(found.row, viewer)) return gone();
+        if (found.row.marking === 'manual')
+          return conflict(
+            'regrade_manual',
+            'this assignment is graded by hand'
+          );
+        const { questionId } = (await request.json()) as {
+          questionId: string;
+        };
+        const question = found.attempt.graded.find((q) => q.id === questionId);
+        if (!question) return gone();
+        let regraded = 0;
+        question.parts = question.parts.map((part) => {
+          const value = found.attempt.answers[part.id];
+          if (
+            !modelMarked(part.answer.type) ||
+            (typeof value === 'string' ? !value.trim() : value == null)
+          )
+            return part;
+          regraded++;
+          const {
+            aiComment: _c,
+            aiError: _e,
+            aiFlag: _f,
+            awarded: _a,
+            itemAwards: _i,
+            markedBy: _m,
+            ...rest
+          } = part;
+          const items = (part.markscheme ?? []).map((item, i) =>
+            i === 0 ? item.marks : 0
+          );
+          return found.row.marking === 'ai'
+            ? {
+                ...rest,
+                awarded: items.reduce((sum, v) => sum + v, 0),
+                itemAwards: items,
+                markedBy: 'ai',
+                pending: undefined,
+              }
+            : { ...rest, aiAwards: items, pending: true };
+        });
+        if (!regraded)
+          return conflict(
+            'nothing_to_regrade',
+            'this answer has nothing for the AI to grade again'
+          );
         return HttpResponse.json(attemptView(found.attempt, found.row, viewer));
       }
     ),

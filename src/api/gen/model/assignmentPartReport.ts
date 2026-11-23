@@ -14,7 +14,6 @@ export interface AssignmentPartReport {
   /** @nullable */
   options?: number[] | null;
   partId: string;
-  percent?: number;
   /** @nullable */
   wrongAnswers?: AssignmentWrongAnswer[] | null;
 }

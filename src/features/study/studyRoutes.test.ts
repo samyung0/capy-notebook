@@ -30,3 +30,11 @@ it("keeps Practice's session or result and a member's profile from the URL", () 
   expect(parseStudySearch({ review: 's1' })).toMatchObject({ review: 's1' });
   expect(parseStudySearch({ member: 'u1' })).toMatchObject({ member: 'u1' });
 });
+
+it("keeps a topic's questions or Frequently wrong's from the URL", () => {
+  expect(parseStudySearch({ member: 'u1', topic: 't1' })).toMatchObject({
+    member: 'u1',
+    topic: 't1',
+  });
+  expect(parseStudySearch({ wrong: 'true' })).toMatchObject({ wrong: true });
+});

@@ -16,7 +16,7 @@ import re
 import secrets
 import threading
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -25,7 +25,11 @@ from starlette.exceptions import HTTPException
 
 from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
-from ..generated.limits import CHAT_CHARACTER_LIMIT, GENERATE_INSTRUCTIONS_MAX
+from ..generated.limits import (
+    CHAT_CHARACTER_LIMIT,
+    GENERATE_INSTRUCTIONS_MAX,
+    QUESTION_IMAGES_MAX,
+)
 from ..prompts import generate as generate_prompts
 from ..retrieval import (
     accounting,
@@ -699,7 +703,14 @@ class GradeItem(BaseModel):
     marks: float
 
 
-class GradeReq(LLMPin):
+# A question image as Go sends it: a JPEG at most 1,568 px on its long side
+# (questionfigures.go), well under this.
+_FIGURE_MAX = 1_500_000
+# Images one call may carry: Cloudflare, on the grading route, refuses more.
+_CALL_IMAGES_MAX = 32
+
+
+class GradePartReq(BaseModel):
     question: str
     items: list[GradeItem] = Field(min_length=1)
     # A text answer, or a drawing's marking image as a data URL (M1, Epo
@@ -708,17 +719,57 @@ class GradeReq(LLMPin):
     image: str = Field(default="", max_length=600_000)
     # A drawing part's drawn sample answer image (Q3), sent before the drawing.
     sampleImage: str = Field(default="", max_length=600_000)
-    spendSessionId: str = Field(min_length=1)
+    # The question's images in the order its text numbers them (Epo 2026-11-23).
+    figures: list[Annotated[str, Field(max_length=_FIGURE_MAX)]] = Field(
+        default_factory=list, max_length=QUESTION_IMAGES_MAX
+    )
 
     @model_validator(mode="after")
-    def _one_answer(self) -> GradeReq:
+    def _one_answer(self) -> GradePartReq:
         if bool(self.answer) == bool(self.image):
             raise ValueError("send an answer or an image, not both")
         for name, value in (("image", self.image), ("sampleImage", self.sampleImage)):
             if value and not _DRAWING_IMAGE.match(value):
                 raise ValueError(f"{name} must be a WebP, JPEG or PNG data URL")
+        if any(not _DRAWING_IMAGE.match(url) for url in self.figures):
+            raise ValueError("figures must be WebP, JPEG or PNG data URLs")
         if self.sampleImage and not self.image:
             raise ValueError("a sample image goes only with a drawing")
+        return self
+
+    def images(self) -> int:
+        return len(self.figures) + bool(self.image) + bool(self.sampleImage)
+
+    def grading(self) -> dict[str, Any]:
+        return {
+            "question": self.question,
+            "items": [item.model_dump() for item in self.items],
+            "answer": self.answer,
+            "image": self.image,
+            "sample": self.sampleImage,
+            "figures": self.figures,
+        }
+
+
+class GradeReq(GradePartReq, LLMPin):
+    spendSessionId: str = Field(min_length=1)
+
+
+class GradeBatchPart(GradePartReq):
+    id: str = Field(min_length=1)
+
+
+class GradeBatchReq(LLMPin):
+    # One attempt's parts, at most four and 32 images (Epo 2026-11-23).
+    parts: list[GradeBatchPart] = Field(min_length=1, max_length=4)
+    spendSessionId: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _fits_a_call(self) -> GradeBatchReq:
+        if len({part.id for part in self.parts}) != len(self.parts):
+            raise ValueError("part ids must be distinct")
+        if sum(part.images() for part in self.parts) > _CALL_IMAGES_MAX:
+            raise ValueError(f"a batch carries at most {_CALL_IMAGES_MAX} images")
         return self
 
 
@@ -734,12 +785,14 @@ async def grade(req: GradeReq) -> dict[str, Any]:
     accounting_token = None
     try:
         accounting_token = _bind_accounting(req.spendSessionId)
+        part = req.grading()
         return await grading.grade_part(
-            req.question,
-            [item.model_dump() for item in req.items],
-            req.answer,
-            image=req.image,
-            sample=req.sampleImage,
+            part["question"],
+            part["items"],
+            part["answer"],
+            image=part["image"],
+            sample=part["sample"],
+            figures=part["figures"],
             model=models.resolve_query_model(
                 req.providerSlug,
                 req.modelSlug,
@@ -747,6 +800,34 @@ async def grade(req: GradeReq) -> dict[str, Any]:
                 slot=registry.Slot.GRADING,
             ),
         )
+    finally:
+        _reset_accounting(accounting_token)
+        limits.reset_call_slots(slots_token)
+
+
+@app.post("/grade-batch")
+async def grade_batch(req: GradeBatchReq) -> dict[str, Any]:
+    """Mark up to four parts of one attempt in one call, as an assignment's
+    marking does (Epo 2026-11-23): per part id, each item's share, a comment
+    and a flag, or an error. A failed call fails the request, leaving them all
+    unmarked; nothing retries it."""
+    _bind_llm(req)
+    slots_token = limits.bind_call_slots(
+        limits.CallSlotPolicy(wait_s=limits.CHAT_SLOT_WAIT_S)
+    )
+    accounting_token = None
+    try:
+        accounting_token = _bind_accounting(req.spendSessionId)
+        graded = await grading.grade_batch(
+            [{"id": part.id, **part.grading()} for part in req.parts],
+            model=models.resolve_query_model(
+                req.providerSlug,
+                req.modelSlug,
+                req.configVersion,
+                slot=registry.Slot.GRADING,
+            ),
+        )
+        return {"parts": graded}
     finally:
         _reset_accounting(accounting_token)
         limits.reset_call_slots(slots_token)
@@ -774,6 +855,16 @@ class PaperPart(BaseModel):
     # Grading text and marking items, for open and drawing parts.
     question: str = ""
     items: list[GradeItem] = Field(default_factory=list)
+    # The question's images in the order its text numbers them (Epo 2026-11-23).
+    figures: list[Annotated[str, Field(max_length=_FIGURE_MAX)]] = Field(
+        default_factory=list, max_length=QUESTION_IMAGES_MAX
+    )
+
+    @model_validator(mode="after")
+    def _figures(self) -> PaperPart:
+        if any(not _DRAWING_IMAGE.match(url) for url in self.figures):
+            raise ValueError("figures must be WebP, JPEG or PNG data URLs")
+        return self
 
 
 class PaperReq(LLMPin):
@@ -809,6 +900,7 @@ async def mark_paper(req: PaperReq) -> dict[str, Any]:
                     p.label,
                     p.question,
                     [item.model_dump() for item in p.items],
+                    p.figures,
                 )
                 for p in req.parts
             ],

@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -55,11 +58,15 @@ type openPart struct {
 	image     []byte
 	imageType string
 	sample    sampleOwner
+	// figures are the question's images in the order question numbers them
+	// (questions.GradingTextAndFigures), read as sample's owner's.
+	figures []map[string]any
 }
 
 // sampleOwner is a drawing part's drawn sample answer image (assetID) and what
-// it must belong to: the quiz checked (materialID) or the assignment's frozen
-// copy (assignmentID). A bank question names neither, so it takes none.
+// it and the question's images must belong to: the quiz checked (materialID)
+// or the assignment's frozen copy (assignmentID). A bank question names
+// neither: its figures are bank links, and it takes no drawn sample.
 type sampleOwner struct {
 	assetID, materialID, assignmentID string
 }
@@ -104,8 +111,9 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 				answers[id] = map[string]any{"drawing": ""}
 				if imageType != "" {
 					items, marks := questions.MarkItems(p)
+					text, figures := questions.GradingTextAndFigures(q, i)
 					plan.open[id] = openPart{
-						question: questions.GradingText(q, i), markscheme: items, itemMarks: marks,
+						question: text, markscheme: items, itemMarks: marks, figures: figures,
 						image: drawing.Image, imageType: imageType,
 						sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: owner.materialID, assignmentID: owner.assignmentID},
 					}
@@ -123,7 +131,9 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 				continue
 			}
 			items, marks := questions.MarkItems(p)
-			plan.open[id] = openPart{question: questions.GradingText(q, i), markscheme: items, itemMarks: marks, answer: text}
+			question, figures := questions.GradingTextAndFigures(q, i)
+			plan.open[id] = openPart{question: question, markscheme: items, itemMarks: marks, answer: text, figures: figures,
+				sample: sampleOwner{materialID: owner.materialID, assignmentID: owner.assignmentID}}
 		}
 	}
 	for id := range answers {
@@ -246,26 +256,16 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	if len(parts) == 0 {
 		return out, failed
 	}
-	failAll := func(reason string) (map[string]partGrade, map[string]string) {
+	llm, charge, reason := a.beginGrading(ctx, payerID, workspaceID)
+	if reason != "" {
 		for id := range parts {
 			failed[id] = reason
 		}
 		return out, failed
 	}
-	llm, err := a.gradingLLM(ctx, payerID)
-	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		return failAll(store.AIErrorGrade)
-	}
-	charge, err := a.beginProviderSession(ctx, payerID, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
-	if err != nil {
-		if errors.Is(err, store.ErrCreditsExhausted) {
-			return failAll(store.AIErrorCredits)
-		}
-		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
-		return failAll(store.AIErrorGrade)
-	}
 	defer charge.settle(ctx)
+	// The parts of one question share its images: each is read once.
+	figures := newFigureCache()
 	var mu sync.Mutex
 	var group errgroup.Group
 	group.SetLimit(10)
@@ -274,7 +274,7 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	var report sync.Once
 	for id, part := range parts {
 		group.Go(func() error {
-			grade, err := a.gradePartSafely(ctx, llm, charge.id, part)
+			grade, err := a.gradePartSafely(ctx, llm, charge.id, part, figures)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -296,16 +296,173 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 	return out, failed
 }
 
+// gradingBatch is how many parts an assignment's marking grades in one call
+// (Epo 2026-11-23, bench/grading/reports/2026-11-23-online-batching-and-figures.md).
+// Four parts hold at most 28 images, 5 question images and a drawing with its
+// sample each, inside the 32 a call takes.
+const gradingBatch = 4
+
+// working is the pipeline's has_working: a part marked on its working, which
+// the model thinks on. Batches keep those apart from plain parts, as tested;
+// the pipeline still decides each call's thinking itself.
+var working = regexp.MustCompile(`\\[A-Za-z(\[]|\$[^$\n]+\$|\b[MA]\d\b`)
+
+func hasWorking(part openPart) bool {
+	return working.MatchString(part.question) || slices.ContainsFunc(part.markscheme, working.MatchString)
+}
+
+// gradeInBatches grades an assignment attempt's typed and drawn parts four to
+// a call (/grade-batch) in the order given, parts with working apart from
+// plain ones. Quiz checks grade a part a call (gradeWithModel): a check is one
+// question. A failed call leaves its parts Not marked; a part whose images
+// can't be read, or that the reply breaks, fails alone.
+func (a *api) gradeInBatches(ctx context.Context, payerID, workspaceID string, order []string, parts map[string]openPart) (grades map[string]partGrade, failed map[string]string) {
+	out := make(map[string]partGrade, len(parts))
+	failed = map[string]string{}
+	if len(parts) == 0 {
+		return out, failed
+	}
+	llm, charge, reason := a.beginGrading(ctx, payerID, workspaceID)
+	if reason != "" {
+		for id := range parts {
+			failed[id] = reason
+		}
+		return out, failed
+	}
+	defer charge.settle(ctx)
+	var thinking, plain []string
+	for _, id := range order {
+		if part, ok := parts[id]; ok && hasWorking(part) {
+			thinking = append(thinking, id)
+		} else if ok {
+			plain = append(plain, id)
+		}
+	}
+	batches := append(slices.Collect(slices.Chunk(thinking, gradingBatch)), slices.Collect(slices.Chunk(plain, gradingBatch))...)
+	figures := newFigureCache()
+	var mu sync.Mutex
+	var group errgroup.Group
+	group.SetLimit(10)
+	var report sync.Once
+	for _, ids := range batches {
+		group.Go(func() error {
+			graded, errs := a.gradeBatchSafely(ctx, llm, charge.id, ids, parts, figures)
+			mu.Lock()
+			defer mu.Unlock()
+			maps.Copy(out, graded)
+			for id, err := range errs {
+				failed[id] = store.AIErrorGrade
+				if errors.Is(err, store.ErrCreditsExhausted) {
+					failed[id] = store.AIErrorCredits
+					continue
+				}
+				report.Do(func() {
+					obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "grade_batch"})
+				})
+			}
+			return nil
+		})
+	}
+	_ = group.Wait()
+	return out, failed
+}
+
+// gradeBatchSafely makes gradeBatch's panic its parts' failure, as
+// gradePartSafely does for one part.
+func (a *api) gradeBatchSafely(ctx context.Context, llm resolvedLLM, sessionID string, ids []string, parts map[string]openPart, figures *figureCache) (grades map[string]partGrade, errs map[string]error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err := panicError("grading parts", r)
+			grades, errs = nil, map[string]error{}
+			for _, id := range ids {
+				errs[id] = err
+			}
+		}
+	}()
+	return a.gradeBatch(ctx, llm, sessionID, ids, parts, figures)
+}
+
+// gradeBatch grades up to four parts in one /grade-batch call: each part's
+// grade, or why it failed.
+func (a *api) gradeBatch(ctx context.Context, llm resolvedLLM, sessionID string, ids []string, parts map[string]openPart, figures *figureCache) (map[string]partGrade, map[string]error) {
+	ctx, cancel := context.WithTimeout(ctx, gradingPartTimeout)
+	defer cancel()
+	grades := map[string]partGrade{}
+	errs := map[string]error{}
+	var sent []string
+	bodies := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		body, err := a.gradeRequest(ctx, parts[id], figures)
+		if err != nil {
+			errs[id] = err
+			continue
+		}
+		body["id"] = id
+		sent = append(sent, id)
+		bodies = append(bodies, body)
+	}
+	if len(sent) == 0 {
+		return grades, errs
+	}
+	body := map[string]any{"parts": bodies, "spendSessionId": sessionID}
+	llm.attach(body)
+	var reply struct {
+		Parts map[string]gradeReply `json:"parts"`
+	}
+	raw, err := a.pipe.PostRawUntil(ctx, "/grade-batch", body)
+	if err == nil {
+		err = json.Unmarshal(raw, &reply)
+	}
+	for _, id := range sent {
+		if err != nil {
+			errs[id] = err
+			continue
+		}
+		answer, ok := reply.Parts[id]
+		if !ok {
+			errs[id] = fmt.Errorf("grading left part %s out", id)
+			continue
+		}
+		grade, partErr := answer.grade(parts[id])
+		if partErr != nil {
+			errs[id] = partErr
+			continue
+		}
+		grades[id] = grade
+	}
+	return grades, errs
+}
+
 // gradePartSafely makes gradePart's panic that part's failure. It runs on a
 // goroutine of its own, where nothing above it catches one, so a panic would stop
 // the whole server for everyone.
-func (a *api) gradePartSafely(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (grade partGrade, err error) {
+func (a *api) gradePartSafely(ctx context.Context, llm resolvedLLM, sessionID string, part openPart, figures *figureCache) (grade partGrade, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = panicError("grading a part", r)
 		}
 	}()
-	return a.gradePart(ctx, llm, sessionID, part)
+	return a.gradePart(ctx, llm, sessionID, part, figures)
+}
+
+// beginGrading resolves the grading pin and opens a provider session on the
+// payer's credits, or says why every part fails (store.AIErrorCredits or
+// store.AIErrorGrade).
+func (a *api) beginGrading(ctx context.Context, payerID, workspaceID string) (resolvedLLM, *spend, string) {
+	llm, err := a.gradingLLM(ctx, payerID)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		return llm, nil, store.AIErrorGrade
+	}
+	charge, err := a.beginProviderSession(ctx, payerID, workspaceID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.Thinking)
+	if err != nil {
+		if errors.Is(err, store.ErrCreditsExhausted) {
+			return llm, nil, store.AIErrorCredits
+		}
+		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
+		return llm, nil, store.AIErrorGrade
+	}
+	return llm, charge, ""
 }
 
 // panicError turns a recovered panic into an error that keeps where it happened.
@@ -313,50 +470,80 @@ func panicError(what string, recovered any) error {
 	return fmt.Errorf("%s panicked: %v\n%s", what, recovered, debug.Stack())
 }
 
-func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, part openPart) (partGrade, error) {
+func (a *api) gradePart(ctx context.Context, llm resolvedLLM, sessionID string, part openPart, figures *figureCache) (partGrade, error) {
 	ctx, cancel := context.WithTimeout(ctx, gradingPartTimeout)
 	defer cancel()
+	body, err := a.gradeRequest(ctx, part, figures)
+	if err != nil {
+		return partGrade{}, err
+	}
+	body["spendSessionId"] = sessionID
+	llm.attach(body)
+	raw, err := a.pipe.PostRawUntil(ctx, "/grade", body)
+	if err != nil {
+		return partGrade{}, err
+	}
+	var reply gradeReply
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return partGrade{}, err
+	}
+	return reply.grade(part)
+}
+
+// gradeRequest is a part as /grade and /grade-batch take it: its question, its
+// marking items and its answer, or a drawing's marking image after its drawn
+// sample answer's (M1, Epo 2026-11-07; Q3), with the question's images.
+func (a *api) gradeRequest(ctx context.Context, part openPart, figures *figureCache) (map[string]any, error) {
 	items := make([]map[string]any, len(part.markscheme))
 	for i, text := range part.markscheme {
 		items[i] = map[string]any{"text": text, "marks": part.itemMarks[i]}
 	}
-	body := map[string]any{"question": part.question, "items": items, "spendSessionId": sessionID}
-	// A drawing goes as its marking image in place of the answer (M1, Epo
-	// 2026-11-07), after its drawn sample answer's image when it has one (Q3).
+	body := map[string]any{"question": part.question, "items": items}
+	if len(part.figures) > 0 {
+		urls, err := a.questionFigures(ctx, part.sample, part.figures, figures)
+		if err != nil {
+			return nil, err
+		}
+		body["figures"] = urls
+	}
 	if len(part.image) > 0 {
 		body["image"] = "data:" + part.imageType + ";base64," + base64.StdEncoding.EncodeToString(part.image)
 		if part.sample.assetID != "" {
 			sample, err := a.sampleImage(ctx, part.sample)
 			if err != nil {
-				return partGrade{}, err
+				return nil, err
 			}
 			body["sampleImage"] = sample
 		}
 	} else {
 		body["answer"] = part.answer
 	}
-	llm.attach(body)
-	raw, err := a.pipe.PostRawUntil(ctx, "/grade", body)
-	if err != nil {
-		return partGrade{}, err
+	return body, nil
+}
+
+// gradeReply is the pipeline's answer for one part: each item's share, the
+// comment and its flag, or why it failed.
+type gradeReply struct {
+	Shares  []float64 `json:"shares"`
+	Comment string    `json:"comment"`
+	Flag    string    `json:"flag"`
+	Error   string    `json:"error"`
+}
+
+// grade is the reply in marks: the model judges none, half or all of an
+// item, and items carry their own marks.
+func (r gradeReply) grade(part openPart) (partGrade, error) {
+	if r.Error != "" {
+		return partGrade{}, errors.New(r.Error)
 	}
-	var reply struct {
-		Shares  []float64 `json:"shares"`
-		Comment string    `json:"comment"`
-		Flag    string    `json:"flag"`
+	if len(r.Shares) != len(part.itemMarks) {
+		return partGrade{}, fmt.Errorf("grading answered %d items of %d", len(r.Shares), len(part.itemMarks))
 	}
-	if err := json.Unmarshal(raw, &reply); err != nil {
-		return partGrade{}, err
-	}
-	if len(reply.Shares) != len(part.itemMarks) {
-		return partGrade{}, fmt.Errorf("grading answered %d items of %d", len(reply.Shares), len(part.itemMarks))
-	}
-	// The model judges none, half or all of an item; items carry their own marks.
-	marks := make([]float64, len(reply.Shares))
-	for i, share := range reply.Shares {
+	marks := make([]float64, len(r.Shares))
+	for i, share := range r.Shares {
 		marks[i] = share * part.itemMarks[i]
 	}
-	return partGrade{Items: marks, Comment: reply.Comment, Flag: reply.Flag}, nil
+	return partGrade{Items: marks, Comment: r.Comment, Flag: r.Flag}, nil
 }
 
 // applyPartGrade writes a late mark into a part left Not marked.

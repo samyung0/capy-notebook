@@ -18,6 +18,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/api/hooks', () => ({
   usePractice: () => ({ data: page.data, isError: false, isPending: false }),
+  useStudyQuestions: () => ({ data: undefined }),
   useStudyTopics: () => ({ data: undefined }),
   useTopics: () => ({
     data: [

@@ -122,6 +122,8 @@ type PaperPart struct {
 	Question  string
 	Items     []string
 	ItemMarks []float64
+	// Figures are the question's images, in the order Question numbers them.
+	Figures []map[string]any
 }
 
 // Paper is a submitted paper with the parts its marking lists.
@@ -269,7 +271,7 @@ func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
 			}
 			part := PaperPart{Label: label, QuestionID: qid, PartID: pid, Type: paperTypes[kind], Listing: listing}
 			if questions.ModelMarked(kind) {
-				part.Question = questions.GradingText(q, i)
+				part.Question, part.Figures = questions.GradingTextAndFigures(q, i)
 				part.Items, part.ItemMarks = questions.MarkItems(p)
 			}
 			out.Parts = append(out.Parts, part)

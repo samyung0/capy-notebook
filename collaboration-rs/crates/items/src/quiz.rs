@@ -745,11 +745,15 @@ pub fn asset_ids<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<String> {
     for question in held_questions_json(content, Some(&KeysRead::new(keys))) {
         walk(&question, &mut ids);
     }
-    // Drawn sample answers live in the keys: read them there, whatever the
-    // part's answer type says now, so one being written stays in use.
+    // Drawn sample answers and explanations live in the keys: read them there,
+    // whatever the part's answer type says now, so one being written stays in
+    // use.
     if let Some(root) = keys.get_map(KEYS_ROOT) {
         for (_, entry) in root.iter(keys) {
             if let Out::YMap(key) = entry {
+                for block in read_blocks(keys, map_at(keys, &key, "solution").as_ref()) {
+                    walk(&block, &mut ids);
+                }
                 for name in ["sampleBoard", "sampleImage"] {
                     if let Some(id) = str_at(keys, &key, name)
                         && !id.trim().is_empty()

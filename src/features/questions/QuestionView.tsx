@@ -455,6 +455,10 @@ export interface QuestionViewProps {
     section: BlockSection,
     view?: ReactNode
   ) => ReactNode;
+  /** A part's key sections (marking scheme, sample answer, explanation),
+   * grid items as the answer's: under the answer, or under both columns of a
+   * split question (Epo 2026-11-22). */
+  renderKey?: (part: QuestionPart | LearnerPart) => ReactNode;
   renderMarks?: (part: QuestionPart | LearnerPart) => ReactNode;
   review?: boolean;
   /** Right of a title, after its marks: the question's (no part id) or a
@@ -472,10 +476,12 @@ export function QuestionView({
   totalMarks,
   headerMarks = true,
   renderAnswer,
+  renderKey,
   renderBlock,
   renderMarks,
   titleAside,
 }: QuestionViewProps) {
+  const split = question.layout === 'split';
   // A lone part needs no label, and the header's marks stand in for its own.
   // With no stem either, its first text block joins the header.
   const lone = isLonePart(question);
@@ -514,41 +520,10 @@ export function QuestionView({
   const label = (text: string, sub = false) => (
     <Label all={labels} sub={sub} subs={subLabels} text={text} />
   );
-  const partRow = (
-    part: QuestionPart | LearnerPart,
-    text: string,
-    sub = false
-  ) => (
-    <li
-      className={cn(
-        'grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3',
-        // A lone part has no label: on narrow widths its empty column
-        // closes so the part lines up with the stem.
-        lone && '@max-[36rem]/question:grid-cols-[0_minmax(0,1fr)_auto]'
-      )}
-      key={part.id}
-    >
-      {lone ? (
-        <span className="overflow-hidden">{label('')}</span>
-      ) : (
-        label(text, sub)
-      )}
-      {partBlocks(part).length > 0 && (
-        <div className="min-w-0 space-y-3">
-          {blocks(partBlocks(part), { partId: part.id }, partOffset)}
-        </div>
-      )}
-      {!lone && (
-        <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-sm md:pl-2">
-          {renderMarks ? renderMarks(part) : marksText(part.marks)}
-          {titleAside?.(part.id)}
-        </span>
-      )}
-      {renderAnswer ? (
-        renderAnswer(part)
-      ) : (
-        <Choices part={part} twoColumns={optionColumns(question)} />
-      )}
+  // A part's key: the caller's sections, then an editor's answer key.
+  const keys = (part: QuestionPart | LearnerPart) => (
+    <>
+      {renderKey?.(part)}
       {review && isAuthoredPart(part) && (
         <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
           {/* A long or drawing part's key is its marking scheme; its sample
@@ -611,6 +586,46 @@ export function QuestionView({
           )}
         </div>
       )}
+    </>
+  );
+  const hasKeys = (part: QuestionPart | LearnerPart) =>
+    !!renderKey?.(part) || (review && isAuthoredPart(part));
+  const partRow = (
+    part: QuestionPart | LearnerPart,
+    text: string,
+    sub = false
+  ) => (
+    <li
+      className={cn(
+        'grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3',
+        // A lone part has no label: on narrow widths its empty column
+        // closes so the part lines up with the stem.
+        lone && '@max-[36rem]/question:grid-cols-[0_minmax(0,1fr)_auto]'
+      )}
+      key={part.id}
+    >
+      {lone ? (
+        <span className="overflow-hidden">{label('')}</span>
+      ) : (
+        label(text, sub)
+      )}
+      {partBlocks(part).length > 0 && (
+        <div className="min-w-0 space-y-3">
+          {blocks(partBlocks(part), { partId: part.id }, partOffset)}
+        </div>
+      )}
+      {!lone && (
+        <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-sm md:pl-2">
+          {renderMarks ? renderMarks(part) : marksText(part.marks)}
+          {titleAside?.(part.id)}
+        </span>
+      )}
+      {renderAnswer ? (
+        renderAnswer(part)
+      ) : (
+        <Choices part={part} twoColumns={optionColumns(question)} />
+      )}
+      {!split && keys(part)}
     </li>
   );
   // 1A: number, part label and text share one column grid so every text line
@@ -696,6 +711,40 @@ export function QuestionView({
           )}
         </ol>
       </div>
+      {split && (
+        // Out of the two columns, the width of the question, each part's key
+        // under its label.
+        <ol className="min-w-0 space-y-6">
+          {items
+            .flatMap((item) =>
+              item.kind === 'part'
+                ? [{ label: item.label, part: item.part, sub: false }]
+                : item.parts.map((p) => ({
+                    label: p.label,
+                    part: p.part,
+                    sub: true,
+                  }))
+            )
+            .filter(({ part }) => hasKeys(part))
+            .map(({ label: text, part, sub }) => (
+              <li
+                className={cn(
+                  'grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3',
+                  lone &&
+                    '@max-[36rem]/question:grid-cols-[0_minmax(0,1fr)_auto]'
+                )}
+                key={part.id}
+              >
+                {lone ? (
+                  <span className="overflow-hidden">{label('')}</span>
+                ) : (
+                  label(text, sub)
+                )}
+                {keys(part)}
+              </li>
+            ))}
+        </ol>
+      )}
     </article>
   );
 }
@@ -722,7 +771,11 @@ export function QuestionReview({
       headerMarks={headerMarks}
       question={question}
       questionNumber={questionNumber}
-      renderAnswer={(part) => {
+      renderAnswer={(part) =>
+        isAuthoredPart(part) ? renderAnswer?.(part) : null
+      }
+      renderBlock={renderBlock}
+      renderKey={(part) => {
         if (!isAuthoredPart(part)) return null;
         // Closed parts have no scheme: their answer key and solution explain them.
         const items = part.markscheme ?? [];
@@ -737,7 +790,7 @@ export function QuestionReview({
           </div>
         );
         if (items.length === 0 && !sample && part.solution.length === 0)
-          return renderAnswer?.(part);
+          return null;
         // Open under its heading, as the Sample answer is (Epo 2026-11-18).
         const solution = part.solution.length > 0 && (
           <div className="col-start-2 grid min-w-0 gap-1.5">
@@ -752,7 +805,6 @@ export function QuestionReview({
         if (items.length === 0)
           return (
             <>
-              {renderAnswer?.(part)}
               {sample}
               {solution}
             </>
@@ -761,7 +813,6 @@ export function QuestionReview({
         // open, each point with its mark once marked, then the sample answer.
         return (
           <>
-            {renderAnswer?.(part)}
             <div className="col-start-2 grid min-w-0 gap-1.5 text-sm">
               <p className="t-meta font-bold text-fg-muted">
                 {m.question_ui_marking_scheme()}
@@ -812,7 +863,6 @@ export function QuestionReview({
           </>
         );
       }}
-      renderBlock={renderBlock}
       renderMarks={(part) => {
         const awarded =
           'awarded' in part && !part.pending ? part.awarded : undefined;

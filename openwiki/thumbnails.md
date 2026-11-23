@@ -220,8 +220,9 @@ which drew only icons before. Audio gets none.
   (`storeEditorAssetBytes`) after its asset is ready, and an agent's figures
   (`create_material` notes and `ensureFigureAssets` edits) once their rows
   are inserted. `assetthumb.Make` decodes PNG, JPEG, GIF (its first frame)
-  and WebP within the editors' 2400 px side limit; AVIF and anything that does
-  not decode gets none. A JPEG is turned the way its EXIF orientation says
+  and WebP within the editors' 2400 px side limit (no editor image is AVIF:
+  the browser re-encodes one, Epo 2026-11-23); anything that does not decode
+  gets none. A JPEG is turned the way its EXIF orientation says
   (phones store photos as taken), scaled small first so the turn is cheap.
   200 px wide (narrower images are not enlarged), cut at 400 px tall from the
   top, flattened on white, JPEG quality 70. A 2400 x 2400

@@ -281,7 +281,39 @@ func Validate(q map[string]any, policy Policy) error {
 			}
 		}
 	}
-	return checkGroups(q, parts, maxParts, policy)
+	if err := checkGroups(q, parts, maxParts, policy); err != nil {
+		return err
+	}
+	if questionImages(q) > fieldlimits.QuestionImages {
+		return fail(fmt.Sprintf("a question holds at most %d images, its stem, groups and parts together", fieldlimits.QuestionImages))
+	}
+	return nil
+}
+
+// questionImages counts the images the grader is sent: the stem's, the
+// groups' and the parts' own (solutions stay with the key).
+func questionImages(q map[string]any) int {
+	lists := []any{q["stem"]}
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		g, _ := raw.(map[string]any)
+		lists = append(lists, g["blocks"])
+	}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		lists = append(lists, p["blocks"])
+	}
+	n := 0
+	for _, list := range lists {
+		blocks, _ := list.([]any)
+		for _, raw := range blocks {
+			if b, _ := raw.(map[string]any); b["type"] == "image" {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // checkGroups holds grouped parts (Epo 2026-11-04): a group is text and
@@ -1548,6 +1580,17 @@ func imageAssetID(raw any) (string, bool) {
 // inside a group is graded with its context; a question with no group reads
 // exactly as it did before groups.
 func GradingText(q map[string]any, partIndex int) string {
+	text, _ := GradingTextAndFigures(q, partIndex)
+	return text
+}
+
+// GradingTextAndFigures is GradingText with its images numbered in order,
+// "[Figure 1: description]", and their `image` values (an editor asset id or
+// a bank URL) in that order, sent with the part as "Figure N:" (Epo
+// 2026-11-23). A graph has no stored picture and stays "[Figure: ...]".
+func GradingTextAndFigures(q map[string]any, partIndex int) (string, []map[string]any) {
+	var figures []map[string]any
+	blocksText := func(blocks []any) string { return blocksTextNumbered(blocks, &figures) }
 	stem, _ := q["stem"].([]any)
 	sections := []string{blocksText(stem)}
 	parts, _ := q["parts"].([]any)
@@ -1576,7 +1619,7 @@ func GradingText(q map[string]any, partIndex int) string {
 			nonEmpty = append(nonEmpty, section)
 		}
 	}
-	return strings.Join(nonEmpty, "\n\n")
+	return strings.Join(nonEmpty, "\n\n"), figures
 }
 
 // PartText is a part's own text as a paper shows it: the question's stem and
@@ -1613,6 +1656,12 @@ func PartText(q map[string]any, partIndex int) string {
 }
 
 func blocksText(blocks []any) string {
+	return blocksTextNumbered(blocks, nil)
+}
+
+// blocksTextNumbered is blocksText; with figures it numbers each image after
+// those already in it and appends the image's `image` value.
+func blocksTextNumbered(blocks []any, figures *[]map[string]any) string {
 	out := make([]string, 0, len(blocks))
 	for _, raw := range blocks {
 		b, _ := raw.(map[string]any)
@@ -1621,10 +1670,15 @@ func blocksText(blocks []any) string {
 		case "text":
 			out = append(out, str("text"))
 		case "image", "graph":
+			label := "Figure"
+			if image, ok := b["image"].(map[string]any); ok && b["type"] == "image" && figures != nil {
+				*figures = append(*figures, image)
+				label = fmt.Sprintf("Figure %d", len(*figures))
+			}
 			if description := str("description"); description != "" {
-				out = append(out, "[Figure: "+description+"]")
+				out = append(out, "["+label+": "+description+"]")
 			} else {
-				out = append(out, "[Figure]")
+				out = append(out, "["+label+"]")
 			}
 		case "table":
 			rows, _ := b["rows"].([]any)

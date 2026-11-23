@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -14,15 +15,22 @@ import (
 // 15 minutes in the 2026-11-04 concurrency run). A 40-part paper took under 90 s.
 var markingAttemptTimeout = 10 * time.Minute
 
+// payerSlots is how many attempts or paper reads one payer's marking runs at
+// once (Epo 2026-11-23). Each holds one of the payer's provider sessions at a
+// time, of store.ConcurrentLLMLeases (5): one stays free for their own chat or
+// check.
+const payerSlots = 4
+
 // assignmentMarking is what the gateway is marking: the run's progress per
-// assignment, the answers its runs hold, and one lock per payer (the member
-// attempting), since a payer's sessions are few (store.ConcurrentLLMLeases) and
-// thirty submissions at once would use them all. In memory: one gateway
-// process marks, and a restart leaves nothing held (Q729).
+// assignment, the answers its runs hold, and payerSlots slots per payer (the
+// member attempting, or the staff member who pressed Grade or Regrade), since
+// a payer's sessions are few and thirty submissions at once would use them
+// all. In memory: one gateway process marks, and a restart leaves nothing held
+// (Q729).
 type assignmentMarking struct {
 	mu     sync.Mutex
 	runs   map[string]*markingRun
-	payers map[string]*sync.Mutex
+	payers map[string]chan struct{}
 	held   map[string]*heldAnswers
 }
 
@@ -104,14 +112,15 @@ type AssignmentMarkingProgress struct {
 	Total int `json:"total"`
 }
 
-func (m *assignmentMarking) payer(id string) *sync.Mutex {
+// payer is id's slots: a run sends to take one and receives to free it.
+func (m *assignmentMarking) payer(id string) chan struct{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.payers == nil {
-		m.payers = map[string]*sync.Mutex{}
+		m.payers = map[string]chan struct{}{}
 	}
 	if m.payers[id] == nil {
-		m.payers[id] = &sync.Mutex{}
+		m.payers[id] = make(chan struct{}, payerSlots)
 	}
 	return m.payers[id]
 }
@@ -169,13 +178,31 @@ func (a *api) markAnswersSoon(assignmentID, attemptID string) {
 	if attemptID != "" {
 		queued = a.marking.hold(attemptID, false)
 	}
-	a.markAnswersAfter(assignmentID, attemptID, queued)
+	a.markAnswersAfter(assignmentID, attemptID, markingRequest{}, queued)
+}
+
+// markingRequest is who pays for a run and what it marks. A submit's run
+// leaves payer empty: each attempt's member pays. Staff pressing Grade with AI
+// or Regrade pay for it themselves (Epo 2026-11-23). Only, a regrade's, limits
+// it to those parts and reads no paper.
+type markingRequest struct {
+	payer string
+	only  map[string]bool
+}
+
+// payerOf is who pays for an attempt's marking: the request's payer, else the
+// member attempting.
+func (req markingRequest) payerOf(member string) string {
+	if req.payer != "" {
+		return req.payer
+	}
+	return member
 }
 
 // markAnswersAfter is markAnswersSoon with what the caller already holds,
 // released once the run holds its own.
-func (a *api) markAnswersAfter(assignmentID, attemptID string, queued func()) {
-	go a.markAnswers(context.Background(), assignmentID, attemptID, queued)
+func (a *api) markAnswersAfter(assignmentID, attemptID string, req markingRequest, queued func()) {
+	go a.markAnswers(context.Background(), assignmentID, attemptID, req, queued)
 }
 
 // markAnswers marks an assignment's waiting answers, or one attempt's, one attempt
@@ -184,7 +211,7 @@ func (a *api) markAnswersAfter(assignmentID, attemptID string, queued func()) {
 // nothing. One attempt's failure leaves the rest to go on. What it lists it
 // holds (assignmentMarking.hold) until that attempt's call ends; queued, the
 // caller's hold, gives way once it does.
-func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string, queued func()) {
+func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string, req markingRequest, queued func()) {
 	defer queued()
 	report := func(err error) {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz, "stage": "assignment_marking"})
@@ -198,15 +225,24 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string, q
 	}()
 	// Listed before any paper is read: a part its read leaves unmarked waits
 	// for the next Mark with AI rather than trying again at once.
-	_, listed, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
+	_, all, err := a.s.AnswersToMark(ctx, assignmentID, attemptID)
 	if err != nil {
 		report(err)
 		return
 	}
-	papers, err := a.s.PapersToRead(ctx, assignmentID, attemptID)
-	if err != nil {
-		report(err)
-		return
+	listed := all[:0]
+	for _, answer := range all {
+		if req.only == nil || req.only[answer.PartID] {
+			listed = append(listed, answer)
+		}
+	}
+	var papers []string
+	if req.only == nil {
+		papers, err = a.s.PapersToRead(ctx, assignmentID, attemptID)
+		if err != nil {
+			report(err)
+			return
+		}
 	}
 	// Every part listed is held until its attempt's call ends, a paper's whole
 	// paper until its read does.
@@ -231,7 +267,7 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string, q
 		}
 	}()
 	queued()
-	a.readPapers(ctx, assignmentID, papers, reads)
+	a.readPapers(ctx, assignmentID, papers, reads, req)
 	if len(listed) == 0 {
 		return
 	}
@@ -245,39 +281,54 @@ func (a *api) markAnswers(ctx context.Context, assignmentID, attemptID string, q
 			order = append(order, answer.AttemptID)
 		}
 		counts[answer.AttemptID]++
-		payers[answer.AttemptID] = answer.PayerID
+		payers[answer.AttemptID] = req.payerOf(answer.PayerID)
 	}
+	var attempts sync.WaitGroup
 	for _, id := range order {
-		if err := a.markAttemptInTurn(ctx, a.marking.payer(payers[id]), assignmentID, id); err != nil {
-			report(err)
-		}
-		releases[id]()
-		a.marking.progressed(assignmentID, counts[id])
+		attempts.Go(func() {
+			if err := a.markAttemptInTurn(ctx, a.marking.payer(payers[id]), assignmentID, id, req); err != nil {
+				report(err)
+			}
+			releases[id]()
+			a.marking.progressed(assignmentID, counts[id])
+		})
 	}
+	attempts.Wait()
 }
 
-// markAttemptInTurn marks one attempt under its payer's lock. A panic is that
-// attempt's failure: it frees the lock for the payer's other runs, and the rest go on.
-func (a *api) markAttemptInTurn(ctx context.Context, lock *sync.Mutex, assignmentID, attemptID string) (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+// markAttemptInTurn marks one attempt in one of its payer's slots. A panic is
+// that attempt's failure: it frees the slot for the payer's other runs, and
+// the rest go on.
+func (a *api) markAttemptInTurn(ctx context.Context, slots chan struct{}, assignmentID, attemptID string, req markingRequest) (err error) {
+	slots <- struct{}{}
+	defer func() { <-slots }()
 	defer func() {
 		if r := recover(); r != nil {
 			err = panicError("marking an attempt", r)
 		}
 	}()
-	return a.markAttemptAnswers(ctx, assignmentID, attemptID)
+	return a.markAttemptAnswers(ctx, assignmentID, attemptID, req)
 }
 
-func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID string) error {
+func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID string, req markingRequest) error {
 	marking, cancel := context.WithTimeout(ctx, markingAttemptTimeout)
 	defer cancel()
-	workspaceID, answers, err := a.s.AnswersToMark(marking, assignmentID, attemptID)
-	if err != nil || len(answers) == 0 {
+	workspaceID, all, err := a.s.AnswersToMark(marking, assignmentID, attemptID)
+	if err != nil {
 		return err
 	}
-	// The person attempting pays for all of it (Epo 2026-11-08).
-	payer := answers[0].PayerID
+	answers := all[:0]
+	for _, answer := range all {
+		if req.only == nil || req.only[answer.PartID] {
+			answers = append(answers, answer)
+		}
+	}
+	if len(answers) == 0 {
+		return nil
+	}
+	// The member pays for their submission's marking (Epo 2026-11-08), staff
+	// for the marking they ask for (2026-11-23).
+	payer := req.payerOf(answers[0].PayerID)
 	parts := make(map[string]openPart, len(answers))
 	byPart := make(map[string]store.AnswerToMark, len(answers))
 	var drawn []string
@@ -296,7 +347,7 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	}
 	answers = typed
 	if len(again) > 0 {
-		if err := a.markPaper(ctx, assignmentID, attemptID, again); err != nil {
+		if err := a.markPaper(ctx, assignmentID, attemptID, again, req.payer); err != nil {
 			return err
 		}
 	}
@@ -308,10 +359,21 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	if err != nil {
 		return err
 	}
+	// A batch takes each question's first parts before any second, so its
+	// parts come from different questions where the attempt allows, as tested.
+	rank := map[string]int{}
+	ranks := map[string]int{}
+	order := make([]string, 0, len(answers))
+	for _, answer := range answers {
+		ranks[answer.PartID] = rank[answer.QuestionID]
+		rank[answer.QuestionID]++
+		order = append(order, answer.PartID)
+	}
+	slices.SortStableFunc(order, func(x, y string) int { return ranks[x] - ranks[y] })
 	for _, answer := range answers {
 		part := openPart{
 			question: answer.Question, markscheme: answer.Items, itemMarks: answer.ItemMarks, answer: answer.Answer,
-			sample: sampleOwner{assetID: answer.SampleImage, assignmentID: assignmentID},
+			figures: answer.Figures, sample: sampleOwner{assetID: answer.SampleImage, assignmentID: assignmentID},
 		}
 		if answer.Drawing {
 			image, kept := images[answer.PartID]
@@ -323,7 +385,7 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 		parts[answer.PartID] = part
 		byPart[answer.PartID] = answer
 	}
-	grades, failed := a.gradeWithModel(marking, payer, workspaceID, parts)
+	grades, failed := a.gradeInBatches(marking, payer, workspaceID, order, parts)
 	marks := make([]store.AIMark, 0, len(grades))
 	for id, grade := range grades {
 		answer := byPart[id]
@@ -334,9 +396,11 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	// Paid for, so they are kept even if the attempt's time ran out meanwhile.
 	saving, done := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer done()
-	if err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now()); err != nil {
+	sent, err := a.s.SaveAIMarks(saving, attemptID, marks, time.Now())
+	if err != nil {
 		return err
 	}
+	a.publishNotifications(saving, sent)
 	// What could not be marked says why on the owner's rows (mock T3).
 	reasons := make([]store.AIFailure, 0, len(failed))
 	for id, reason := range failed {
@@ -414,4 +478,11 @@ func (a *api) reportMarking(res store.AssignmentReport) store.AssignmentReport {
 		row.Marking = busy[row.UserID]
 	}
 	return res
+}
+
+// publishNotifications sends what a store call created to each member's bell.
+func (a *api) publishNotifications(ctx context.Context, sent []store.Notification) {
+	for i := range sent {
+		a.publishNotificationEvent(ctx, sent[i].UserID, notificationEvent{Type: "created", Notification: &sent[i]})
+	}
 }

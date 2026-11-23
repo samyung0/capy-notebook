@@ -100,7 +100,7 @@ func TestSizeReadsHeadersOnly(t *testing.T) {
 }
 
 func TestCheckEditorImageRefusesPastEitherSide(t *testing.T) {
-	for _, data := range [][]byte{pngHeader(2400, 2400), heif("avif", 2400, 1600), gifHeader(2400, 10, 0, 0, 2400, 10)} {
+	for _, data := range [][]byte{pngHeader(2400, 2400), gifHeader(2400, 10, 0, 0, 2400, 10)} {
 		if err := CheckEditorImage(bytes.NewReader(data)); err != nil {
 			t.Fatalf("within 2400 px refused: %v", err)
 		}
@@ -115,7 +115,8 @@ func TestCheckEditorImageRefusesPastEitherSide(t *testing.T) {
 			t.Fatalf("code = %s", code)
 		}
 	}
-	for _, data := range [][]byte{[]byte("\x89PNG\r\n\x1a\nbroken"), []byte("BM\x00\x00"), heif("heic", 100, 100)} {
+	// An AVIF too, which the browser re-encodes (Epo 2026-11-23).
+	for _, data := range [][]byte{[]byte("\x89PNG\r\n\x1a\nbroken"), []byte("BM\x00\x00"), heif("heic", 100, 100), heif("avif", 100, 100)} {
 		if code := refusal(t, CheckEditorImage(bytes.NewReader(data))); code != "image_unreadable" {
 			t.Fatalf("code = %s", code)
 		}

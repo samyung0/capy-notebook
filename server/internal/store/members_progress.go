@@ -4,10 +4,8 @@ import (
 	"context"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/review"
 )
 
@@ -504,7 +502,7 @@ type MemberProfile struct {
 	MemberMarks
 	Assignments []MemberAssignment `json:"assignments" nullable:"false"`
 	Topics      []SummaryTopic     `json:"topics" nullable:"false"`
-	Missed      []MissedQuestion   `json:"missed" nullable:"false"`
+	Missed      []StudyQuestion    `json:"missed" nullable:"false"`
 	Activity    []MemberActivity   `json:"activity" nullable:"false"`
 }
 
@@ -526,21 +524,6 @@ type MemberAssignment struct {
 	WaitingMarks float64  `json:"waitingMarks"`
 	Running      bool     `json:"running"`
 	Missing      bool     `json:"missing"`
-}
-
-// MissedQuestion is a question whose latest check was not right.
-type MissedQuestion struct {
-	MaterialID string `json:"materialId"`
-	QuestionID string `json:"questionId"`
-	Text       string `json:"text"`
-	Group      string `json:"group" enum:"topic,others"`
-	// TopicID is its first topic (itemTopics); TopicName names every one,
-	// joined with commas.
-	TopicID   *string `json:"topicId,omitempty"`
-	TopicName string  `json:"topicName,omitempty"`
-	// Misses counts the checks of it that were not right.
-	Misses int       `json:"misses"`
-	At     time.Time `json:"at"`
 }
 
 // MemberActivity is one piece of recent work: an attempt at a class practice
@@ -566,7 +549,7 @@ const (
 // WorkspaceMemberProfile reads a member's profile for a class's owner and
 // teaching assistants. Only viewer members have one.
 func (s *Store) WorkspaceMemberProfile(ctx context.Context, userID, wsID, memberID string, now time.Time) (MemberProfile, error) {
-	out := MemberProfile{UserID: memberID, Assignments: []MemberAssignment{}, Topics: []SummaryTopic{}, Missed: []MissedQuestion{}, Activity: []MemberActivity{}}
+	out := MemberProfile{UserID: memberID, Assignments: []MemberAssignment{}, Topics: []SummaryTopic{}, Missed: []StudyQuestion{}, Activity: []MemberActivity{}}
 	if err := s.membersStaff(ctx, userID, wsID); err != nil {
 		return out, err
 	}
@@ -603,9 +586,13 @@ func (s *Store) WorkspaceMemberProfile(ctx context.Context, userID, wsID, member
 	if standings[memberID] != nil {
 		out.Topics = standings[memberID]
 	}
-	if out.Missed, err = s.memberMissed(ctx, wsID, memberID, topics); err != nil {
+	// Frequently wrong: the first of the member's wrong questions, the rest
+	// behind its See all (WorkspaceMemberQuestions).
+	missed, err := s.studyQuestions(ctx, wsID, memberID, QuestionsFilter{Wrong: true}, false, topics)
+	if err != nil {
 		return out, err
 	}
+	out.Missed = missed[:min(len(missed), missedShown)]
 	if out.Activity, err = s.memberActivity(ctx, wsID, memberID, topics); err != nil {
 		return out, err
 	}
@@ -662,129 +649,6 @@ func (s *Store) memberAssignments(ctx context.Context, wsID, memberID string, no
 		out = append(out, a)
 	}
 	return out, rows.Err()
-}
-
-// memberMissed is the questions whose latest check by the member was not
-// right, most missed first, from the class's own quizzes their Summary counts,
-// a trashed one's included (Epo 2026-11-15). A member's own practice quiz ("In
-// class, only them", no workspace) is private and stays out (Q723, finding 2),
-// and an assignment's answers wait for its grades as labels do (finding 7).
-func (s *Store) memberMissed(ctx context.Context, wsID, memberID string, topics workspaceTopics) ([]MissedQuestion, error) {
-	rows, err := s.pool.Query(ctx, `SELECT ae.material_id, m.revision, ae.question_id, COALESCE(ae.attempt_id, ''), ae.item_hash,
-			ae.awarded, ae.marks, ae.created_at, m.topic_id
-		FROM answer_events ae JOIN materials m ON m.id=ae.material_id
-		WHERE ae.workspace_id=$1 AND ae.user_id=$2 AND m.workspace_id=$1 AND m.kind='quiz'
-			AND m.parent_material_id IS NULL AND `+standingQuizSQL("$2")+`
-			AND NOT EXISTS (SELECT 1 FROM answer_events newer WHERE newer.material_id=ae.material_id AND newer.question_id=ae.question_id
-				AND newer.attempt_id=ae.attempt_id AND newer.part_id=ae.part_id AND newer.id>ae.id)
-			AND NOT `+gradesHeldSQL+`
-		ORDER BY ae.created_at, ae.id`, wsID, memberID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	type check struct {
-		awarded, marks float64
-		at             time.Time
-	}
-	type question struct {
-		MissedQuestion
-		hash   string
-		checks map[string]*check
-		order  []string
-	}
-	byQuestion := map[string]*question{}
-	var keys []string
-	revisions := map[string]int64{}
-	for rows.Next() {
-		var mq MissedQuestion
-		var attempt, hash string
-		var revision int64
-		var awarded, marks float64
-		var at time.Time
-		if err := rows.Scan(&mq.MaterialID, &revision, &mq.QuestionID, &attempt, &hash, &awarded, &marks, &at, &mq.TopicID); err != nil {
-			return nil, err
-		}
-		revisions[mq.MaterialID] = revision
-		key := mq.MaterialID + "/" + mq.QuestionID
-		q := byQuestion[key]
-		if q == nil {
-			q = &question{MissedQuestion: mq}
-			byQuestion[key] = q
-			keys = append(keys, key)
-		}
-		// An edited question starts again, as its label does.
-		if q.hash != hash {
-			q.hash, q.checks, q.order = hash, map[string]*check{}, nil
-		}
-		ck := attempt
-		if ck == "" {
-			ck = at.Format(time.RFC3339Nano)
-		}
-		c := q.checks[ck]
-		if c == nil {
-			c = &check{}
-			q.checks[ck] = c
-			q.order = append(q.order, ck)
-		}
-		c.awarded, c.marks, c.at = c.awarded+awarded, c.marks+marks, at
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	rows.Close()
-	var missed []*question
-	for _, key := range keys {
-		q := byQuestion[key]
-		latest := q.checks[q.order[len(q.order)-1]]
-		if latest.marks <= 0 || latest.awarded >= latest.marks {
-			continue
-		}
-		for _, ck := range q.order {
-			if c := q.checks[ck]; c.awarded < c.marks {
-				q.Misses++
-			}
-		}
-		q.At = latest.at
-		missed = append(missed, q)
-	}
-	sort.SliceStable(missed, func(i, j int) bool {
-		if missed[i].Misses != missed[j].Misses {
-			return missed[i].Misses > missed[j].Misses
-		}
-		return missed[i].At.After(missed[j].At)
-	})
-	// Each quiz parsed once, through the cache.
-	docs, err := s.cachedItems(ctx, revisions)
-	if err != nil {
-		return nil, err
-	}
-	out := []MissedQuestion{}
-	for _, q := range missed {
-		if len(out) == missedShown {
-			break
-		}
-		it, ok := findItem(docs[q.MaterialID], q.QuestionID)
-		// A question since removed from its quiz has nothing to show.
-		if !ok || it.Question == nil {
-			continue
-		}
-		q.Text = strings.Join(strings.Fields(questions.PromptText(it.Question)), " ")
-		var ids, names []string
-		for _, id := range itemTopics(it, q.TopicID, topics) {
-			if topics.has(id) {
-				ids, names = append(ids, id), append(names, topics.names[id])
-			}
-		}
-		q.Group, q.TopicID = GroupOthers, nil
-		if len(ids) > 0 {
-			// Its first topic's id and every topic's name, as its Topics field
-			// reads them.
-			q.Group, q.TopicID, q.TopicName = GroupTopic, &ids[0], strings.Join(names, ", ")
-		}
-		out = append(out, q.MissedQuestion)
-	}
-	return out, nil
 }
 
 // findItem is the item with id among items.

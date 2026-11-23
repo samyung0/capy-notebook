@@ -53,6 +53,7 @@ clone or charged to storage.
 | `review_answers (session_id, material_id, item_id, kind, rating, correct, total, answers, graded, answered_at)` | One answered item of a session: a card's rating, or a question's rating, marks (`correct` of `total`), answers and graded question with its key. |
 | `attempts.kind`, `attempts.started_at` | Migration `0094_flashcard_attempts.sql`. Quiz and flashcard attempts share `attempts`: `kind` is `quiz` or `flashcards`; `started_at` is the browser's start time (null when not sent, and never after the end), so results show minutes. A flashcard attempt keeps its cards in `questions` (`AttemptCard`: id, front, back, image, every rating in order, cards in the order first rated), `correct` the cards whose first rating is Good or Easy, `total` the cards rated, `taken_at` the latest rating. |
 | `answer_events`, `attempts.workspace_id` | Migration `0143_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). `answer_events.topic_ids` (`0177_answer_event_topics.sql`): the topics at answer time. |
+| `question_answers (user_id, material_id, question_id, attempt_id, answers, graded, answered_at)` | Migration `0191_question_answers.sql`: each person's latest answer to a question, marked (the question as checked, with its key), one row per question, written with its answer events. A marking of an earlier attempt's parts replaces only that attempt's row, so a newer answer stays. Goes with its quiz and with an account purge. Staff open it from a member's lists ([Topic questions](#topic-questions)). |
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
 `study_progress` cascades with its workspace;
@@ -163,6 +164,9 @@ result body resetting the session's list.
 | `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Overview's Topics: each topic's standing. Refused (403) to a class's owner and editors. |
 | `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns, read for the whole class in a fixed number of queries. A class's owner and editor members only: everyone else (its viewer members, a link editor, a nonmember) and a personal workspace 404; the store refuses a member with `ErrForbidden`, which the API answers as 404 too. |
 | `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a `memberId` who isn't this class's viewer member (staff, removed, another class's) 404. |
+| `GET /api/workspaces/{id}/study/questions?list=&topicId=` | `StudyQuestion`s, a [topic questions](#topic-questions) page: `list` topic (with `topicId`), others or wrong, each question with the caller's latest result and, where they may practise it, its answer-free content. Refused to a class's owner and editors as Summary is; a topic not in the workspace 404. |
+| `GET /api/workspaces/{id}/study/members/{memberId}/questions?list=&topicId=` | The same list for a member, read only (no content, no own practice quizzes), for a class's owner and teaching assistants; refused as the profile is. |
+| `GET /api/workspaces/{id}/study/members/{memberId}/answers/{materialId}/{questionId}` | The member's latest answer to a question their lists show answered: the answers and the question as checked, key and marks included, and when; for the same staff. 404 when the lists don't show it answered or none was kept. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts by the grading model), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
@@ -216,8 +220,8 @@ read by the topic labels (below) and kept for the mastery model still to come. I
 keeps partial credit, which `review_log`'s ratings drop.
 
 - **Written** by `logAnswerTx` (`server/internal/store/answer_events.go`) in
-  the check's transaction, one row per part, on the two routes that grade
-  parts:
+  the check's transaction, one row per part, with the question's answer kept
+  as its latest in `question_answers`, on the routes that grade parts:
   - `POST /api/quizzes/{id}/check` (`CheckQuizQuestion`): source `quiz`,
     with the attempt's id. Every quiz check belongs to an attempt; there is no
     separate submit.
@@ -422,7 +426,8 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   mode's label and today's reason in words (`reviewReason`),
   and Practise, which starts the suggestion's session (its mode, so due
   practised questions only). Then **Topics** (`TopicsSection.tsx`, the
-  former Summary): one row per topic with its marks squares and Practise.
+  former Summary): one row per topic with its marks squares, the row opening
+  its questions, then **Frequently wrong** ([Topic questions](#topic-questions)).
   Then **All practice** with the list pages' toolbar (`ListToolbar` with
   `inPage`, the section's title in its `before` slot for members; Epo
   2026-11-16, Filter since Epo 2026-11-13: the topics the rows hold, any number picked, no Other files)
@@ -525,9 +530,87 @@ and Suggested lives on Study's Overview.
 last: its label, "9 of 10 right" (each question's latest check, full marks),
 squares for every question (right, partly, wrong by its latest answer, grey when
 not attempted, a quiz left partway included; above 10 they scale to 10 and any
-unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
+unattempted question keeps at least 1 grey; `topicSquares`). The whole row
+opens the topic's questions (Epo 2026-11-22: the row is the practise button;
+it had a Practise button starting a topic session, which Suggested and the
+learner's own topic reviews still start).
 Assignments' overall joins it once they exist. Make my own practice sits at
 the Overview's top right and preselects the weakest topic (`weakestTopicId`).
+
+### Topic questions
+
+Epo 2026-11-22 (mock Artifact KYKXRU5LGiSMGfAZrYvCUq, round 2):
+`TopicQuestions.tsx` over `GET …/study/questions`. A topic row on the
+Overview opens its page (`study/summary?topic=<id>`, `topic=others` for Other
+files) and Frequently wrong's See all opens every wrong question
+(`?wrong=true`); beside `member` they are a member's, from the profile.
+
+- **Which questions** (`studyQuestions` in `store/study_questions.go`): those
+  the standings count, in reading order. Every question of a quiz the person
+  may practise (untrashed, not hidden from them, not a graded quiz's own) is
+  listed; one of a graded quiz's own quiz, a hidden or a trashed one only once
+  answered, and it does not open. A question lists under each of its own
+  topics (`itemTopics`). Each has its latest check's result (right, partial,
+  wrong, or unattempted), its misses (checks not right) and when; an edited question starts again, parts worth no marks say nothing,
+  and an assignment's answers wait for released grades (`gradesHeldSQL`).
+  The wrong list keeps the answered ones not right, most missed then latest
+  first; the profile's Frequently wrong is its first five.
+- **Page:** back to Study (or the member's profile), the topic's name with
+  its label, "10 questions · 3 of 8 right · 2 not tried" counted from the
+  rows (the member's name first for staff), with no button. The list
+  toolbar's Sort (Most missed: wrong,
+  partly right, not tried, right, then misses and the latest; or Quiz order)
+  and Filter (Result; on Frequently wrong, its topics instead and no Sort).
+  A row has one square in its latest result's colour (grey before any
+  answer), as a topic row's squares are its questions (board H1: a square per
+  part wrapped into a block nobody could read), the prompt on up to two
+  lines, its quiz and the day of the latest answer; Frequently wrong adds the
+  topic chip. No result word and no miss count: the square shows it (Epo
+  2026-11-22). No Practise topic or Practise all: the
+  rows are the practice.
+- **Practising one question** (the mock's P1): a practisable row opens a
+  dialog (720px, full screen on phones) with the topic's name and "2 of 10",
+  "Question 2 · Ordering" and the session's runner (`QuestionItem`) with Skip
+  and Check. Check goes to `POST /api/review/check` with no session, so it
+  counts as a review does (FSRS, answer events, labels) and History gets no
+  row; the result shows with its key, then Close or Next question, which goes
+  on through the list as sorted and filtered. Closing after a check refreshes
+  study (`invalidateStudy`). The first check marks Get started's practice step.
+  "Open in <quiz>", underlined with no arrow, in place of the runner's quiz
+  name, opens the quiz at that question (`?material=…&item=…`) and closes the
+  dialog (Epo 2026-11-22).
+- **Overview:** under Topics, Frequently wrong's three most missed with an
+  underlined See all (no arrow); each row practises in the same dialog. Not
+  drawn while there are none.
+- **Staff** (a member's page): the same rows without content, and no Assign
+  quiz (Epo 2026-11-22; the profile keeps its own). An answered row opens the
+  same dialog on the member's latest answer, marked, as a member's graded quiz
+  result shows it (`QuestionRunner` `layout="list"`, `partResults={false}`:
+  Your answer and Correct answer as plain lines; Epo 2026-11-22, no new
+  component, and "just use the second one"), from
+  `GET …/members/{memberId}/answers/{materialId}/{questionId}`
+  (`question_answers`), with "Question 3 · Short answer · 19 Nov", the quiz
+  link, Close and Next question through the answered rows. A row not tried
+  opens nothing. An answer the lists show but none kept (from before
+  `0191`) reads "This answer wasn't kept". A drawing shows as its check sent
+  it: a review keeps no drawing, so its board is empty.
+
+MSW (`src/mocks/study.ts`) seeds a spread of results over each workspace's
+quizzes and moves a question's result on a check; Calculus II's quiz is filed
+under Techniques of integration so its page has questions, five of them (q31
+to q35, `leadingBlockQuestions` in `src/mocks/db.ts`) opening with a figure,
+two texts and a chart, a graph, a table or a plot before their text (Epo
+2026-11-22), as Past paper 2025 P1's Q22 to Q26 do for the report
+(`src/mocks/assignments.ts`). A member's lists
+come from `src/mocks/members.ts`: Biology questions per topic column matching
+that member's standings (right, wrong, not tried), the profile's Frequently
+wrong being the first three of the wrong list; a few stems open with a
+figure, a table, a chart or a plot, the row reading the stem's text when it
+has one, as `PromptText` does. Each answered one has a short
+answer question and the member's latest answer, graded by the mock grader:
+the model answer when right, another question's answer when wrong. Their
+quizzes are not in the mock database, so the staff dialog's quiz link opens
+nothing there.
 
 ### Members' marks (a class staff's Study)
 
@@ -611,10 +694,14 @@ under the workspace's `study` key).
   On the right: Frequently wrong (Still missing until
   Epo 2026-11-11)
   (up to five questions whose latest check was not right, most missed first,
+  each its prompt and topic chip with no miss count, Epo 2026-11-22,
   from the class's own quizzes Summary counts, the prompt from
   `questions.PromptText`; a member's own practice quiz is private and stays
   out, and an assignment's answers wait for released grades as labels do,
-  `gradesHeldSQL`; Q723 findings 2 and 7); and
+  `gradesHeldSQL`; Q723 findings 2 and 7; the first five of
+  `studyQuestions`' wrong list, whose underlined See all, no arrow, opens the
+  whole list, as a topic row opens that topic's, both for the member and read
+  only: [Topic questions](#topic-questions)); and
   Recent activity (the latest five: an attempt at a class practice quiz with its
   title and question count, a day's reviews in a topic, and submissions). A
   member's own practice quiz is private, so it shows as its topic, never its
@@ -1334,16 +1421,23 @@ already open to them, the same short window a No late due date has.
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
-credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08; one lock per
-member); a blank one earns 0. A part it could not mark keeps why, `aiError`
-`credits` (that member has none left), `error` (the grade failed) or `file` (a
+credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08); a blank
+one earns 0. Its written and drawn parts go four to a call (`gradeInBatches`,
+`POST /grade-batch`, Epo 2026-11-23), each with its question's images; a quiz or
+review check still sends one part a call. One payer's marking runs at most four
+attempts or paper reads at once (`payerSlots`, Epo 2026-11-23), so Grade {k} with
+AI on a class is about four times faster than one at a time and leaves the payer
+one provider session free ([observability-metering.md](observability-metering.md)). A part it could not mark keeps why, `aiError`
+`credits` (whoever pays has none left), `error` (the grade failed) or `file` (a
 file of its paper can't be read, Q730), which only staff read: Approve AI marks
 shows it on the row as No credits, Grade Error or Can't read file and in the
 answer pane as one line, with no banner and no names (mock T3). Waiting
 answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
 which the Assignments row, the report header and Approve AI marks show apart from
-those to approve. Mark with AI runs each attempt on its member's credits and is
-refused only when grading isn't set up. While a run holds answers they read
+those to approve. Mark with AI (Grade {k} with AI) and Regrade with AI run on
+the credits of the staff member who presses them (Epo 2026-11-23: whoever
+starts it pays; `markingRequest`), and are refused only when grading isn't set
+up for them. While a run holds answers they read
 Marking… with a spinner (Q729): the gateway notes, in memory beside the run's
 progress (one gateway process; a restart forgets it), each attempt it holds
 from queued until its call returns or fails, its parts by id, or every part
@@ -1579,8 +1673,8 @@ extension.
   Manual answer (Q730). There Read papers again sits
   where Mark with AI would, shown while the report's `papersToRead` (papers
   still `reading`: a read that failed, never ran, or runs now) is above zero;
-  it is the same `mark-with-ai` call, reading without grading on each
-  member's credits (Q725).
+  it is the same `mark-with-ai` call, reading without grading on the credits
+  of whoever presses it (Q725, payer from 2026-11-23).
 - Grading shows a part's pages of the paper (T1), or the whole paper where it
   was found on none, under the paper's files by name: each underlined
   (`SubmissionFileLink`, Epo 2026-11-19) and opening its signed link, a PDF or
@@ -1670,36 +1764,49 @@ before them (`FileActionsTarget`). Questions edits the graded quiz's own quiz
 (`manage.quizId`) in place with the quiz page's `QuizEditor`
 (`GradedQuizQuestions`; read only to someone who can't edit it, and the frozen
 questions to read when the quiz is gone); after publishing, edits reach members
-only on Republish (Settings). Responses opens with a row: View, a select of By
-member (default) or By question (`by=question`), "n of m handed in · average
-x / y" (the mean of the marks and totals the members' rows show), the select
-36px as Preview (Epo 2026-11-16). Marking is the Grading tab (`tab=grading`,
+only on Republish (Settings). Responses opens, in both views, with a row of
+numbers and at its end View, a select of By member (default) or By question
+(`by=question`), the select 36px as Preview (Epo 2026-11-16; one line since
+Epo 2026-11-22, the "n of m handed in · average x / y" line gone). By question
+has a Full screen at the tab row's end, as Grading and Questions do (Epo
+2026-11-22, `fullscreen` kept with `by=question`): its split alone over the
+page under a bar holding the exit, Escape leaving it. Marking is the Grading tab (`tab=grading`,
 its own tab between Responses and Settings since Epo 2026-11-19), so the row
 has no Approve AI grades button any more (Epo 2026-11-19). The report's head
 reads as a member's attempt: the back link, then the title on one line (an
 ellipsis, the full title on hover) with its chips under it 4px down, the
 actions (save status, Preview, Publish, Release grades) at the right, top
 aligned; below 20rem of room the actions wrap under. A tab the report does not have (the old `tab=preview`
-or `tab=members`) opens its first tab. By question's folded rows
-are one 36px line from md, as By member's table rows (Epo 2026-11-16). By
-question shows a row of numbers first, Submitted
-"n of m", Average, Average time (the mean of members' minutes), and Attempts
-and Uploads when allowed; per question one wording, "Average 80%" (the
-average share of its marks, partial marks counted) or for an open or drawing
-part "Average 2.8 of 4", only "Average" muted, "–" until one is marked, led by an
-"AI graded" badge on a question with open or drawing parts unless Marking is
-Manual (Epo 2026-11-14); answer frequencies, common wrong
-answers, how often each marking point was awarded; under them the part's answer
-key where the bars do not mark it, an open part's sample answer or a drawing
-part's drawn one, and the Solution. An open question folds on a click
-anywhere on it but a control or a text selection. A question of several parts
-lists each part on a row of its own (Epo 2026-11-14, board C), named with its
-full label, "Q18 (a)(i)" or "Q19 (2)" (Epo 2026-11-19, not "Q19.2"), with its own type, marks and numbers (the
-report's `parts[].percent` and `.average`, taken as the question's are); opened,
-it shows "From Q18", the question's stem and its group's text and figures above
-them; a one-part question's row shows its group's too. The first three rows start open,
-and what is opened or folded by hand stays so across the report's tabs, held by
-the report, Epo 2026-11-14). By member lists
+or `tab=members`) opens its first tab. The numbers row: Submitted "n of m",
+Average in marks, "46.8 / 83" (the mean of the marks and totals the members'
+rows show; was a percentage), Average time (the mean of members' minutes), and
+Attempts and Uploads when allowed. By question is laid out as a member answers
+(Epo 2026-11-22; was rows that fold, a part of several on a row of its own):
+from a tablet up the page stops scrolling and `QuizSplit` (`listed`, so its
+pane keeps its scroll) holds the question numbers on the left
+(`QuestionNumbers`, each in its average's tint, a legend under them) and every
+question on the right in one scrolling list at most 3xl wide, centred; a
+number scrolls to its question and the question in view is current; phones
+have the numbers in a strip above the list (`NumberStrip`). Each question is
+drawn as the Questions tab draws it (`QuestionView`): every block of its stem,
+groups and parts, parts labelled and sub-parts indented, each part's type and
+marks at its right (the type gone on narrow questions) and its numbers where
+its answer would be. A tint is the topic labels' thresholds (Epo 2026-11-03;
+`averageTone`, Claude's pick to reuse them): 70% or more green, 60 to 69%
+amber, under 60% red, none before one answer is marked; a question's is its
+marked parts' averages over their marks. Per part: "Average" muted with the
+mean mark in a badge of its tint, "1.6 of 2", for every type (the report's
+`parts[].average`, Epo 2026-11-22; closed parts read "80%" before), "–" until
+one is marked, led by an "AI graded" badge on an open or drawing part unless
+Marking is Manual (Epo 2026-11-14); answer frequencies (an option's label and
+its bar halving the width), common wrong answers, how often each marking point
+was awarded; under them the part's answer key where the bars do not mark it,
+an open part's sample answer or a drawing part's drawn one, and the Solution.
+A member's Results draw their questions the same way, nothing folding, at most
+3xl wide and centred (`ResultBody` with `questionNumber`): each part's answer
+and marking where its answer would be, its outcome square, word and "1 / 2" at
+its right, the question's "6 / 10" in its header, and the question's comment
+and Save marks under it; the outcome chips at the top count parts. By member lists
 submitted, Late with its penalty, Missing, minutes taken, mark, "n to approve"; a row opens that
 member's Results (whose back link returns to Responses), where any mark and
 comment can change. Grading takes `&question=` and `&member=` (A3 by
@@ -1758,6 +1865,26 @@ says why, and its AI column reads "–". `POST /api/assignments/{id}/mark-with-a
 the AI over all of those across the assignment, one attempt at a time per payer,
 with "Grading 12 of 40 answers…" from the report's `marking` while it runs. Nothing
 retries by itself (Epo 2026-11-03).
+
+**Regrade with AI** (Epo 2026-11-23). One member's question, from the grading
+pane: Canvas regrades a question across every submission and Moodle whole
+attempts, while here staff pick the answer. The button sits on the pane's AI
+line unless Marking is Manual or nothing in the question is answered.
+`POST /api/assignment-attempts/{id}/regrade` `{questionId}` (`RegradeQuestion`)
+grades the answer again on the assignment's latest copy of the question
+(Republish's; the attempt's own copy without its marks if Republish dropped
+it). Closed parts are scored again at once. Each answered written, drawn or
+paper part goes back to waiting with its marks, AI marks and reason cleared;
+the staff comment stays. A drawing whose marking image went with an earlier
+AI mark has nothing to read and keeps its mark. The gateway holds those parts
+and marks only them in the background on the caller's credits, a paper's on
+its pages through `/paper`. Under Approve the AI's mark then waits for
+approval; under AI it is the mark. It is refused with 409 when nothing is
+answered (`nothing_to_regrade`), under Manual (`regrade_manual`) or while the
+attempt is being marked (`answer_marking`). A question that had a decided
+mark keeps it in `regraded` until the next decided mark; if that mark differs
+and the member sees grades (not Manual release still unreleased), they get a
+`mark_changed` notification, "Mark changed", linking to the assignment.
 
 **A graded quiz's Grading** (Epo 2026-11-14 as Approve AI grades, a view of
 Responses from 2026-11-15, its own Grading tab since 2026-11-19, after
@@ -2020,8 +2147,7 @@ each row's facts under it as phones do. Empty, it says Nothing to do. Activity g
 "assigned" rows, to whoever it went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with
-AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
-question. Per-member extra time and excused work.
+AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Per-member extra time and excused work.
 
 Sources: [store](../server/internal/store/assignments.go),
 [routes](../server/internal/httpapi/huma_assignments.go),
@@ -2037,6 +2163,9 @@ Sources: [store](../server/internal/store/assignments.go),
   `server/internal/httpapi/members_progress_test.go`,
   `src/features/study/members/membersRows.test.ts` and
   `src/features/study/members/MembersPage.test.tsx`: Members; see
+  [test-catalog.md](test-catalog.md).
+- `server/internal/store/study_questions_test.go` and
+  `src/features/study/practice/TopicQuestions.test.tsx`: topic questions; see
   [test-catalog.md](test-catalog.md).
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).

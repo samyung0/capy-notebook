@@ -162,6 +162,22 @@ it('asks for the file of an image not uploaded yet', () => {
   ]);
 });
 
+it('names the image limit past it', () => {
+  const [question] = exampleQuestions;
+  const image: QuestionBlock = {
+    height: 20,
+    image: { assetId: 'asset_1' },
+    type: 'image',
+    width: 20,
+  };
+  const stem = Array.from({ length: limits.QUESTION_IMAGES_MAX + 1 }, () => ({
+    ...image,
+  }));
+  expect(messages({ ...question, stem })).toEqual([
+    m.question_validation_images({ max: limits.QUESTION_IMAGES_MAX }),
+  ]);
+});
+
 it('caps an open part past the marks limit and names the mismatch', () => {
   const question = open();
   const markscheme = [

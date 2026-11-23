@@ -170,7 +170,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
 		QuestionID: "q4",
 		Parts:      []AssignmentPartMark{{PartID: "p4", Items: []float64{1, 0}}},
 	}, now.Add(2*time.Minute)); err != nil {
@@ -289,7 +289,7 @@ func TestMarkingByHandOrSwitchingToManualDropsTheImage(t *testing.T) {
 	if !keptImage(t, f, run.ID) {
 		t.Fatal("a waiting drawing lost its image")
 	}
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
 		QuestionID: "q4", Parts: []AssignmentPartMark{{PartID: "p4", Items: []float64{1, 1}}},
 	}, now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)

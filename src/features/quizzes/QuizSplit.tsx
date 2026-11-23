@@ -92,6 +92,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   current,
   foot,
   listClassName,
+  listed = false,
   numbers,
   onBack,
   onOpen,
@@ -116,6 +117,9 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   foot?: ReactNode;
   /** Around the list: room under its last row where it meets a card's edge. */
   listClassName?: string;
+  /** The pane lists every question, so it keeps its scroll when another is
+   * current (a report's By question). */
+  listed?: boolean;
   /** In place of the rows: the questions as numbers (an online assessment's
    * grid, Epo 2026-11-19). */
   numbers?: ReactNode;
@@ -139,7 +143,7 @@ export function QuizSplit<Q extends Question | LearnerQuestion>({
   const back = useRef<HTMLButtonElement>(null);
   // The list keeps the open question in view, and each opens at its top.
   useEffect(() => {
-    if (pane.current) pane.current.scrollTop = 0;
+    if (pane.current && !listed) pane.current.scrollTop = 0;
     const row = list.current?.querySelector('[aria-current]');
     // Not in every test DOM.
     row?.scrollIntoView?.({ block: 'nearest' });

@@ -121,10 +121,14 @@ export function parseAssignmentsSearch(
     assignment,
     by:
       tab === 'responses' && search.by === 'question' ? 'question' : undefined,
-    // Grading's and the Questions editor's full screen (Epo 2026-11-19);
-    // no tab is the first, a graded quiz's Questions.
+    // Grading's and the Questions editor's full screen (Epo 2026-11-19), and
+    // By question's (Epo 2026-11-22); no tab is the first, a graded quiz's
+    // Questions.
     fullscreen:
-      (tab === 'grading' || tab === 'questions' || tab === undefined) &&
+      (tab === 'grading' ||
+        tab === 'questions' ||
+        tab === undefined ||
+        (tab === 'responses' && search.by === 'question')) &&
       (search.fullscreen === true || search.fullscreen === 'true')
         ? true
         : undefined,
@@ -163,10 +167,14 @@ function parsePracticeSearch(search: Record<string, unknown>): PracticeSearch {
 
 /** Study's tabs share one route, so their keys share one search: a staff
  * member's profile on Overview or Topics (`member`), Practice's session or
- * result, History's sort and filters. */
+ * result, History's sort and filters. On Overview `topic` opens a topic's
+ * questions (a topic id, or `others` for Other files) and `wrong` Frequently
+ * wrong's, beside `member` for a class's staff (Epo 2026-11-22). */
 export type StudySearch = PracticeSearch &
   HistorySearch & {
     member?: string;
+    topic?: string;
+    wrong?: true;
   };
 
 export function parseStudySearch(search: Record<string, unknown>): StudySearch {
@@ -179,6 +187,8 @@ export function parseStudySearch(search: Record<string, unknown>): StudySearch {
     ...parseHistorySearch(search),
     ...parsePracticeSearch(search),
     member: text(search.member),
+    topic: text(search.topic),
+    wrong: search.wrong === true || search.wrong === 'true' ? true : undefined,
   };
 }
 

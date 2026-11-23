@@ -6,7 +6,7 @@
  */
 import type { MemberActivity } from './memberActivity.ts';
 import type { MemberAssignment } from './memberAssignment.ts';
-import type { MissedQuestion } from './missedQuestion.ts';
+import type { StudyQuestion } from './studyQuestion.ts';
 import type { SummaryTopic } from './summaryTopic.ts';
 
 export interface MemberProfile {
@@ -19,7 +19,7 @@ export interface MemberProfile {
   done: number;
   joinedAt: string;
   lastActiveAt?: string;
-  missed: MissedQuestion[];
+  missed: StudyQuestion[];
   missing: number;
   name: string;
   overall?: number;
