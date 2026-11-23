@@ -391,6 +391,20 @@ nudge's page load waits for the connection the same way (plate-editor
 a connection that is down while the browser reports online still takes
 TanStack's reload.
 
+**Asked offline, failed once back.** A request sent offline can fail only once
+the connection is back, its `online` event gone before anything listened
+(canvas-room-states CI, 2026-11-23). `errorKind` reads the browser as the
+failure is handled, so each of these notes `navigator.onLine` when it asks,
+counts such a failure as offline, and asks again at once if the browser is
+already back when it starts listening: a canvas's read (`useCanvasBoard`: a
+network failure of a read sent offline waits, and the canvas never shows its
+error screen, "We couldn't reach Capy Notebook"), an image's or audio clip's
+link (`useResolvedAsset`), and a late note's merge code (`NoteEditorCore`; its
+load failure goes to Sentry only when asked and failed online, `lateMerge.ts`).
+None asks in a loop: a canvas read that failed online shows the error screen
+with Retry and does nothing on a reconnect; an image's link or the merge code
+that failed online waits for Retry or the next reconnect.
+
 Two pieces of a workspace page load only when wanted (Q619), so a failed load
 leaves the page. Each loads ahead of the press, except offline, where it asks for
 nothing, since the browser would keep the failure until a reload. A preload that

@@ -6736,7 +6736,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       error id (Q612); a board whose mount throws says the canvas couldn't be opened,
       and both reach Sentry (`canvas-open`, `canvas-board`; an API failure is the
       server's to log). A canvas opened offline with no copy waits ("Waiting for
-      connection") and opens by itself when the connection returns; with the browser
+      connection") and opens by itself when the connection returns, also when its
+      read, sent offline, fails only once the connection is back (error-handling
+      "Asked offline, failed once back"); with the browser
       online and the service down, the loader stays and at 30 s from the join's start
       the strip reads "The live collaboration service is unavailable." with Retry
       (Epo 2026-11-04, D5, C9; `unreachable` and `retry` in `itemRoom.ts`). A

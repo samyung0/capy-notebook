@@ -849,6 +849,9 @@ export function NoteEditorCore({
   // The merge's code did not load: Retry, or the browser's reconnect, tries
   // again (Q295, Q398).
   const [lateUnloaded, setLateUnloaded] = useState(false);
+  // That load was asked for offline: tried again at once if the connection is
+  // back before the reconnect is listened for.
+  const lateUnloadedOffline = useRef(false);
   // Until then the note shows the tab's own copy, read-only (Q295).
   const lateCopy = useMemo<MaterialDocument | null>(() => {
     if (!lateDocument) return null;
@@ -1255,6 +1258,7 @@ export function NoteEditorCore({
     if (!lateDocument || mergeStarted.current) return;
     mergeStarted.current = true;
     setLateUnloaded(false);
+    const askedOffline = !navigator.onLine;
     const signal = mergeStop.current?.signal;
     // The version the session held as the merge took the current document,
     // which its mark (`mergeBase`, required) holds it to.
@@ -1328,6 +1332,7 @@ export function NoteEditorCore({
         }
         console.warn('The late merge did not load:', error);
         mergeStarted.current = false;
+        lateUnloadedOffline.current = askedOffline;
         if (!(rejected.current || stale.current)) setLateUnloaded(true);
       });
   };
@@ -1384,10 +1389,16 @@ export function NoteEditorCore({
     shown?.(() => mergeNow.current());
     return () => shown?.(null);
   }, [lateMerging, lateUnloaded]);
-  // A reconnecting browser tries the code again (Q398).
+  // A reconnecting browser tries the code again (Q398), at once when it came
+  // back before this listened; a load that failed online waits for Retry or
+  // the next reconnect.
   useEffect(() => {
     if (!lateUnloaded) return;
     const again = () => mergeNow.current();
+    if (lateUnloadedOffline.current && navigator.onLine) {
+      again();
+      return;
+    }
     window.addEventListener('online', again);
     return () => window.removeEventListener('online', again);
   }, [lateUnloaded]);

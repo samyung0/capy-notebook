@@ -109,6 +109,10 @@ export function useResolvedAsset(assetId: string | undefined) {
   const { ids, recheck } = useContext(RemovedAssetsContext);
   const removed = !!assetId && ids.has(assetId);
   const onFailure = useEffectEvent(() => recheck?.());
+  // The failure was asked for offline: once the connection is back, it is
+  // asked again at once, its `online` event perhaps gone before the failure
+  // landed.
+  const failedOffline = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,10 +124,12 @@ export function useResolvedAsset(assetId: string | undefined) {
     const again = generation > 0;
     const held = again ? undefined : heldAssetLink(assetId);
     setState(held ? assetReady(held) : { status: 'loading' });
+    const askedOffline = !navigator.onLine;
     void assetLink(assetId, controller.signal, again)
       .then((asset) => setState(assetReady(asset)))
       .catch(() => {
         if (!controller.signal.aborted) {
+          failedOffline.current = askedOffline;
           setState({
             kind: 'failed',
             status: 'error',
@@ -141,6 +147,7 @@ export function useResolvedAsset(assetId: string | undefined) {
   const failed = state.status === 'error' && state.kind === 'failed';
   const onImageError = useCallback(() => {
     if (retried.current) {
+      failedOffline.current = !navigator.onLine;
       setState({ kind: 'failed', status: 'error' });
       return;
     }
@@ -153,6 +160,12 @@ export function useResolvedAsset(assetId: string | undefined) {
       retried.current = false;
       reload();
     };
+    // Failed offline and back already. One failed online waits for the
+    // next `online`, never asked again in a loop.
+    if (failedOffline.current && navigator.onLine) {
+      again();
+      return;
+    }
     window.addEventListener('online', again);
     return () => window.removeEventListener('online', again);
   }, [failed, reload]);
