@@ -9,7 +9,7 @@ import {
 import { focusTextModel } from '@blocksuite/affine-rich-text';
 import { TelemetryProvider } from '@blocksuite/affine-shared/services';
 import { handleNativeRangeAtPoint } from '@blocksuite/affine-shared/utils';
-import { almostEqual, Bound } from '@blocksuite/global/gfx';
+import { Bound } from '@blocksuite/global/gfx';
 import { toGfxBlockComponent } from '@blocksuite/std';
 import {
   type BoxSelectionContext,
@@ -21,6 +21,12 @@ import { styleMap } from 'lit/directives/style-map.js';
 import clamp from 'lodash-es/clamp';
 
 import { NoteBlockComponent } from './note-block';
+import {
+  measureNoteSize,
+  noteGestureEnds,
+  noteGestureStarts,
+  saveNoteSize,
+} from './note-size';
 import * as styles from './note-styles';
 
 export const AFFINE_EDGELESS_NOTE = 'affine-edgeless-note';
@@ -49,12 +55,32 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
         if (selection.has(this.model.id) && selection.editing) {
           this._editing = true;
         } else {
+          // Capy (local change 75): the size waiting on a pause is saved.
+          if (this._editing) saveNoteSize(this.model);
           this._editing = false;
         }
       })
     );
 
     this.disposables.addFromEvent(this, 'keydown', this._handleKeyDown);
+  }
+
+  override disconnectedCallback(): void {
+    // Capy (local change 75): the size waiting on a pause is saved.
+    saveNoteSize(this.model);
+    super.disconnectedCallback();
+  }
+
+  // Capy (local change 75): a drag starts from the saved size, so its stash
+  // and its tracked pop are its own.
+  override onDragStart() {
+    noteGestureStarts(this.model);
+    super.onDragStart();
+  }
+
+  override onDragEnd() {
+    super.onDragEnd();
+    noteGestureEnds(this.model);
   }
 
   get edgelessSlots() {
@@ -66,16 +92,11 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
 
     // Capy (local change 53): an inline note is as wide as its text (up to a
     // card's width, where it wraps), so its frame hugs it as a text box does.
+    // Capy (local change 75): saved as its height is (measured while
+    // read-only too); a card drops a waiting width.
     const sizer = new ResizeObserver(([entry]) => {
-      if (this.store.readonly || !isInlineNote(this.model.props)) return;
-      const bound = Bound.deserialize(this.model.xywh);
-      const width =
-        entry.contentRect.width * (this.model.props.edgeless.scale ?? 1);
-      if (!width || almostEqual(bound.w, width)) return;
-      bound.w = width;
-      this.model.stash('xywh');
-      this.model.xywh = bound.serialize();
-      this.model.pop('xywh');
+      const width = entry.contentRect.width;
+      if (width) measureNoteSize(this.model, 'w', width, this._editing);
     });
     sizer.observe(this);
     _disposables.add(() => sizer.disconnect());
@@ -242,6 +263,8 @@ export const EdgelessNoteInteraction =
             });
           },
           onResizeStart(context): void {
+            // Capy (local change 75): from the saved size.
+            noteGestureStarts(model);
             context.default(context);
             model.stash('edgeless');
           },
@@ -279,9 +302,21 @@ export const EdgelessNoteInteraction =
           onResizeEnd(context): void {
             context.default(context);
             model.pop('edgeless');
+            noteGestureEnds(model);
           },
         };
       },
+      // Capy (local change 75): a turn starts from the saved size.
+      handleRotate: ({ model }) => ({
+        onRotateStart(context): void {
+          noteGestureStarts(model);
+          context.default(context);
+        },
+        onRotateEnd(context): void {
+          context.default(context);
+          noteGestureEnds(model);
+        },
+      }),
       handleSelection: ({ std, gfx, view, model }) => {
         return {
           onSelect(context) {

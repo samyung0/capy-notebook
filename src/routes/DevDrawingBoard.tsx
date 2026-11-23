@@ -34,7 +34,7 @@ export default function DevDrawingBoard() {
     }
     // The drawing answer's board, as every test on this page opens it.
     const mount = (options: Omit<DrawingBoardOptions, 'board'>) => {
-      board?.unmount();
+      board?.unmount('save');
       board = mountDrawingBoard(host, {
         openPlane,
         ...options,
@@ -54,7 +54,7 @@ export default function DevDrawingBoard() {
         drawBoardPreview(saved, size, 'question'),
       __reopen: reopen,
     });
-    return () => board?.unmount();
+    return () => board?.unmount('save');
   }, []);
   return (
     <div className="h-dvh w-full [&>div]:h-full" ref={container}>

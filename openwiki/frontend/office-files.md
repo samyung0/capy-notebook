@@ -846,7 +846,13 @@ differently), and a transaction's update and events read its insert set
 instead of before and after state vectors, so applying a peer's keystroke
 costs the same however many clients wrote the document. Placing an edit
 (`find_position`) takes each item's length as its UTF-16 length instead of
-counting its string again (speed round 2026-10-22). The native viewer,
+counting its string again (speed round 2026-10-22). A decoded item of values
+reserves its declared length only up to the bytes left in the input
+(`Decoder::remaining`; a decoder that does not say reserves nothing), so its
+`Vec` holds no spare slots: grown from empty, a map value's one entry kept
+four, 2 to 15% of every room's heap ([room memory
+report](../../bench/collaboration/reports/2026-11-22-room-memory.md) cut 3).
+The native viewer,
 Python bindings and fuzz workspaces use that same copy, including the native
 viewer's UTF-8 validation in both update decoders. WASM fingerprints include
 the vendored source so changes rebuild the engines.
