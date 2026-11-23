@@ -274,9 +274,12 @@ export default function DrawingBoardScreen({
       cancelled = true;
       cancelIdle?.();
       mountNow.current = null;
+      // A note's size waiting on a pause in typing goes in first, as a change
+      // of the board, so the last write below keeps it.
+      board.current?.closeNoteSizes('save');
       // The last strokes are kept, not dropped with the timer.
       if (pending) void write();
-      board.current?.unmount();
+      board.current?.unmount('save');
       board.current = null;
     };
   }, [draft, noPictures, readOnly, saved]);

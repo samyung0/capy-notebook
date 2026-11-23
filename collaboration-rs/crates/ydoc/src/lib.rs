@@ -5,7 +5,7 @@
 //! (DESIGN.md section 3), the in-place collection of a folded state ([gc])
 //! and the live Undo of server edits ([undo]).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use yrs::block::{ClientID, Item, ItemContent, UpdateParent};
@@ -1511,19 +1511,47 @@ pub enum ReplayError {
 /// Load-time check of a delta-saved document: base and rows applied in order
 /// in one transaction, nothing left pending (DESIGN.md 3.4).
 pub fn replay(doc: &Doc, base: &[u8], rows: &[impl AsRef<[u8]>]) -> Result<(), ReplayError> {
-    let mut txn = doc.transact_mut();
-    if !base.is_empty() {
-        txn.apply_update(decode(base)?)
-            .map_err(|error| ReplayError::Apply(error.to_string()))?;
+    Stored::decode(base, rows)?.replay(doc)
+}
+
+/// A delta-saved document's base and rows, decoded and not yet applied: a
+/// room reads the clients they name before it picks its own id and replays
+/// them into its document (no scratch copy, room-memory report cut 1).
+pub struct Stored(Vec<Update>);
+
+impl Stored {
+    pub fn decode(base: &[u8], rows: &[impl AsRef<[u8]>]) -> Result<Self, ReplayError> {
+        let base = (!base.is_empty()).then_some(base);
+        let updates = base
+            .into_iter()
+            .chain(rows.iter().map(AsRef::as_ref))
+            .map(decode)
+            .collect::<Result<_, _>>()?;
+        Ok(Stored(updates))
     }
-    for row in rows {
-        txn.apply_update(decode(row.as_ref())?)
-            .map_err(|error| ReplayError::Apply(error.to_string()))?;
+
+    /// Every client id the updates name, in a struct or a deletion.
+    pub fn clients(&self) -> HashSet<u64> {
+        let mut clients = HashSet::new();
+        for update in &self.0 {
+            clients.extend(update.blocks().map(|block| struct_end(&block).0.get()));
+            clients.extend(update.delete_set().iter().map(|(client, _)| client.get()));
+        }
+        clients
     }
-    if txn.store().pending_update().is_some() || txn.store().pending_ds().is_some() {
-        return Err(ReplayError::Pending);
+
+    /// [replay]: applied in order in one transaction, nothing left pending.
+    pub fn replay(self, doc: &Doc) -> Result<(), ReplayError> {
+        let mut txn = doc.transact_mut();
+        for update in self.0 {
+            txn.apply_update(update)
+                .map_err(|error| ReplayError::Apply(error.to_string()))?;
+        }
+        if txn.store().pending_update().is_some() || txn.store().pending_ds().is_some() {
+            return Err(ReplayError::Pending);
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 /// Commits `txn` and returns its update as an `observe_update_v1` observer
