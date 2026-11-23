@@ -96,7 +96,11 @@ format: DOCX `exchange-plan.docx` and the generated 62-page
 XLSX `course-guide.xlsx` and the generated 8-sheet, 16,000-row
 `editor/fixtures/office/large-gradebook.xlsx` (`editor/scripts/gen_large_xlsx.py`),
 PPTX `lecture.pptx` and the 84-slide `parsers/fixtures/docs/jp_llm2.pptx`. The
-large files' checkpoints come from `scripts/dev/seed-scenario-office.ts`. It
+large files' checkpoints come from `scripts/dev/seed-scenario-office.ts`. A
+third DOCX, the ~250-page `long-handbook-250.docx` (`gen_long_docx.py` at 96
+sections, the Google gap round's file), is not committed: the bench's web
+server generates it and seeds its checkpoint before the build, into the
+gitignored `editor/.results/office-fixtures/`. It
 reports open to first paint, View to Edit ready, keystroke to painted frame at
 the start and at the end of the file, and the heap at each step: JS and the
 frames' WASM per module, plus each worker's JS and WASM from the typing on
@@ -117,12 +121,14 @@ the decoded size beside, and with WASM and TTF fonts at the brotli-11 size the
 Office Worker stores; CJK slice indexes count as fonts), and records the runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
 reaches its frame or errors, a fallback to the main-thread engine, a missed budget
-(from three CI runs per format), or scrolling a generated 50,000-row sheet
+(from three CI runs per format; the ~250-page DOCX has none yet, so its figures
+are report-only), or scrolling a generated 50,000-row sheet
 (`rows-50k.xlsx`) over a fixed ceiling (a paint gap over 100 ms or under 50
 paints/s, slow or fast); the
 end-of-file keys, the co-editor timings, the PPTX busy time, the downloads and
 the heap figures are report-only. Its web server (`editor/scripts/office-server.mjs`)
-runs on Linux and Windows. It runs as
+runs on Linux and Windows, with Python 3.12 or later (`python3`; `python` on
+Windows) for the generated DOCX. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
 The same fixtures against Google Docs, Sheets and Slides (open, editable,
 memory, scrolling, typing, downloads; a one-off run by hand):

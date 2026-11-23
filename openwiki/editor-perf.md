@@ -92,13 +92,28 @@ CI runs plain HTTP. It covers one small and one large file per format:
 
 | Format | Small | Large |
 | --- | --- | --- |
-| DOCX | `exchange-plan.docx` (15 pages, 66 KB) | `long-handbook.docx` (62 pages, 41 KB, [`gen_long_docx.py`](../bench/editor/scripts/gen_long_docx.py)) |
+| DOCX | `exchange-plan.docx` (15 pages, 66 KB) | `long-handbook.docx` (62 pages, 41 KB, [`gen_long_docx.py`](../bench/editor/scripts/gen_long_docx.py)); `long-handbook-250.docx` (241 pages on the f18e63f35 pin, 74 KB, the same generator at 96 sections, generated per run) |
 | XLSX | `course-guide.xlsx` (3 sheets, ~55k styled cells, 145 KB) | `large-gradebook.xlsx` (8 class sheets of 2,000 rows with SUM, AVERAGE and IF per row, plus a cross-sheet Summary; 224k cells, 48k formulas, 1.4 MB, [`gen_large_xlsx.py`](../bench/editor/scripts/gen_large_xlsx.py)) |
 | PPTX | `lecture.pptx` (20 slides, 25 pictures, 311 KB) | `jp_llm2.pptx` (84 slides, 69 pictures, 24 MB; the committed parser fixture in `bench/parsers/fixtures/docs/`) |
 
 The small files are the e2e rich-content fixtures. The large files are seeded
 only under `VITE_LOAD_TEST_SEED`; their checkpoints come from
-`scripts/dev/seed-scenario-office.ts`.
+`scripts/dev/seed-scenario-office.ts`. The ~250-page DOCX (Q832 A: a long
+handbook with headings, a table of contents, tables, pictures, a
+`PAGE`/`NUMPAGES` footer and Traditional and Simplified Chinese, the Google gap
+round's file: 288 headings, 48 tables, 96 bullet lists, 32 inline pictures) is
+committed as its generator only: before the build the web
+server runs `gen_long_docx.py exchange-plan.docx <out> 96 text` (Python 3.12
+or later; `python` on Windows, `python3` elsewhere) and seeds its checkpoint
+with the pinned engines' Node bundle (`office-checkpoint.mjs`, from
+`pnpm office:prepare`), about 2 s in all, into the gitignored
+`bench/editor/.results/office-fixtures/`, which `src/mocks/officeFixtures.ts`
+picks up with `import.meta.glob` (a build without those files has no such
+fixture). The generator's fixed seed and zip timestamps give the same bytes
+every run on one Python; its zlib sets the compression, so the file is 74,310
+bytes with zlib-ng (Python 3.14 on Windows, the gap round's twin) and 74,928
+with zlib 1.3.1, the parts identical. The checkpoint is seeded each run with a
+random client id, as the committed ones were.
 
 The size ladder for the Office limits (opt-survey PLAN.md section 4) comes
 from the same generators: `python3 bench/editor/scripts/gen_office_ladder.py`
@@ -227,7 +242,7 @@ Per file it reports:
   start), with the heap after open and after each pass. The first pass warms
   caches; growth on the second is what keeps creeping;
 - view-mode heap over open and close (a third case for the small files and
-  the long DOCX): with a plain text file open, open the Office file in View,
+  the long DOCXs): with a plain text file open, open the Office file in View,
   then switch back to the text file (the workspace has no close button), five
   times, with the heap after each close. Every sample also counts the
   renderer's live `documents`: a closed runtime frame that stays counted is a
@@ -324,8 +339,10 @@ missed budget (open, View to Edit, key p50 and p90 per fixture); the
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below
-on 65bdfc1e8, 2026-11-20 (Q757 A, recalibrated after Q691's second round):
+anything smaller. A fixture whose median is `null` has no budget: its result
+says `budget: "report-only"` and only the checks above gate it (the ~250-page
+DOCX, until three CI runs give its medians, Q832 A). The medians come from
+three runs of the `office` job below on 65bdfc1e8, 2026-11-20 (Q757 A, recalibrated after Q691's second round):
 44715718554, 44715736656 and 44715754042, two on AMD EPYC 7763 and one on
 Intel Xeon 6975P-C runners. The Xeon run was 25-30% faster on every figure, so
 the medians are mostly the EPYC runs'. Per fixture, the three runs and their

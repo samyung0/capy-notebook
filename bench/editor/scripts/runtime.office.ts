@@ -24,7 +24,8 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
 
 /**
  * DOCX, XLSX and PPTX in the Office runtime, on a production build (see
- * playwright.office.config.ts), one small and one large file each: open to
+ * playwright.office.config.ts), one small and one large file each, plus a
+ * ~250-page DOCX its web server generates (office-server.mjs): open to
  * first paint, View to Edit ready, keystroke to painted frame at the start and
  * at the end of the file and the heap at each step, a co-editor's remote edits
  * applied in the open editor, plus two view-mode memory probes: two full
@@ -82,9 +83,10 @@ interface Timings {
  * `editReadyMs` ends at `collaboration-ready` (see above). DOCX
  * `openFirstPaintMs` was measured to `ready`, before View painted its first
  * pages early (Q804 A), until recalibrated from three CI runs. Heap figures
- * are report-only (openwiki/editor-perf.md).
+ * are report-only (openwiki/editor-perf.md). `null`: no CI runs yet, so every
+ * figure of that fixture is report-only (Q832 A).
  */
-const MEDIANS: Record<Fixture['id'], Timings> = {
+const MEDIANS: Record<Fixture['id'], Timings | null> = {
   // MSW adds ~1.1 s per call to every open.
   'bio-office-docx': {
     editReadyMs: 2579,
@@ -98,6 +100,7 @@ const MEDIANS: Record<Fixture['id'], Timings> = {
     keyToFrameP90Ms: 139,
     openFirstPaintMs: 5908,
   },
+  'bio-office-docx-250': null,
   'bio-office-pptx': {
     editReadyMs: 997,
     keyToFrameP50Ms: 11,
@@ -166,6 +169,11 @@ type Fixture = (typeof FIXTURES)[number];
 const FIXTURES = [
   { format: 'docx', id: 'bio-office-docx', name: 'exchange-plan.docx' },
   { format: 'docx', id: 'bio-office-docx-long', name: 'long-handbook.docx' },
+  {
+    format: 'docx',
+    id: 'bio-office-docx-250',
+    name: 'long-handbook-250.docx',
+  },
   {
     cell: 'F5',
     format: 'xlsx',
@@ -813,7 +821,7 @@ async function placeCaret(page: Page, frame: Frame, fixture: Fixture) {
       .locator('canvas[data-page-index="0"]')
       .boundingBox();
     if (!box) throw new Error('First page is not laid out');
-    // Body text near the top of the first page (both fixtures open with prose).
+    // Body text near the top of the first page (every DOCX fixture opens with prose).
     await page.mouse.click(box.x + box.width / 2, box.y + 200);
   } else if (fixture.format === 'xlsx') {
     const box = await frame
@@ -1699,19 +1707,24 @@ for (const fixture of FIXTURES) {
     const typingEndHeap = await heap(page);
     const runtimeOrigin = new URL(frame.url()).origin;
 
-    const budget = budgetOf(MEDIANS[fixture.id]);
+    const median = MEDIANS[fixture.id];
+    const budget = median && budgetOf(median);
     await reportMetrics(
       testInfo,
       `office-${fixture.format}-${fixture.id}`,
       {
-        budget: {
-          ...budget,
-          downloads: 'report-only',
-          editFirstPaintMs:
-            fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
-          heap: 'report-only',
-          ...(fixture.format === 'docx' && { openAllPagesMs: 'report-only' }),
-        },
+        budget: budget
+          ? {
+              ...budget,
+              downloads: 'report-only',
+              editFirstPaintMs:
+                fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
+              heap: 'report-only',
+              ...(fixture.format === 'docx' && {
+                openAllPagesMs: 'report-only',
+              }),
+            }
+          : 'report-only',
         downloads: {
           edit: downloadsBetween(
             fetches.entries,
@@ -1764,6 +1777,7 @@ for (const fixture of FIXTURES) {
     expect(typingEnd.unpaintedKeys).toBe(0);
     expect(typingEnd.edits).toBeGreaterThan(0);
     expect(fallbacks).toEqual([]);
+    if (!budget) return;
     expect.soft(open.ms).toBeLessThanOrEqual(budget.openFirstPaintMs);
     expect.soft(edit.ms).toBeLessThanOrEqual(budget.editReadyMs);
     expect
