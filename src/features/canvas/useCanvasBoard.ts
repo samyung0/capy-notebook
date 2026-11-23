@@ -196,6 +196,9 @@ export function useCanvasBoard(
     let live = true;
     setFailed(null);
     setReadRefusal(null);
+    // Sent offline: its failure is the offline one's, even when it lands
+    // once the connection is back (`errorKind` reads the browser as it is).
+    const askedOffline = !navigator.onLine;
     canvasById(id).then(
       (body) => {
         if (!live) return;
@@ -208,7 +211,8 @@ export function useCanvasBoard(
       },
       (error: unknown) => {
         if (!live) return;
-        if (errorKind(error) === 'offline') {
+        const kind = errorKind(error);
+        if (kind === 'offline' || (askedOffline && kind === 'network')) {
           setAway(true);
           return;
         }
@@ -234,6 +238,12 @@ export function useCanvasBoard(
       setAway(false);
       setAttempt((count) => count + 1);
     };
+    // Back before this listened: its `online` came and went. Asked again
+    // online, a failure shows as one.
+    if (navigator.onLine) {
+      again();
+      return;
+    }
     window.addEventListener('online', again);
     return () => window.removeEventListener('online', again);
   }, [away]);

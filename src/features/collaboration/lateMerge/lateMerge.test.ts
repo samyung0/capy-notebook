@@ -360,16 +360,17 @@ it('fails the merge at once when the current document cannot be taken', async ()
 });
 
 // Review r3 L3: code that does not load while online goes to Sentry once a
-// page, so a cause no Retry fixes is seen; offline failures are not sent.
+// page, so a cause no Retry fixes is seen; one asked offline is not sent,
+// even when its failure lands once the browser is back.
 it('reports code that did not load while online once a page', async () => {
   const workers = fakeWorkers();
   vi.stubGlobal('navigator', { onLine: false });
   try {
     const offline = mergeLate(new Uint8Array(), () => new Uint8Array());
+    vi.stubGlobal('navigator', { onLine: true });
     workers[0].onmessage({ data: { error: 'Failed to fetch' } });
     await expect(offline).rejects.toBeInstanceOf(LateMergeUnloaded);
     expect(captureException).not.toHaveBeenCalled();
-    vi.stubGlobal('navigator', { onLine: true });
     for (const index of [1, 2]) {
       const online = mergeLate(new Uint8Array(), () => new Uint8Array());
       workers[index].onmessage({ data: { error: 'blocked by CSP' } });
