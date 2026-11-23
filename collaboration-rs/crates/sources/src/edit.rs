@@ -9,6 +9,14 @@
 //! sent back is written the same way, its checkpoint carrying the Undo's
 //! receipt, which names the step it reverses (r1 M2), and returns its Redo
 //! payload.
+//!
+//! Q826 A: right before it commits, the edit looks again for the file's room.
+//! One that opened while it computed admits the edit instead, as a person's
+//! (the caller's Q402 path), and a room loading while the commit is in flight
+//! waits for it ([Commits]), so no room takes the row without its admission.
+
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 use notes::edit::DocumentCommand;
 use office_service::Command;
@@ -21,11 +29,63 @@ use crate::effects::{TextCount, edited_text, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, FailureKind};
 use crate::gateway::{CheckpointBody, CheckpointSaved};
-use crate::store::{Job, Reader, office, replay, text_of};
+use crate::store::{Job, Reader, lock, office, replay, text_of};
 use crate::text::{TEXT_ROOT, full_text_effects};
 use crate::{BoxFuture, SourceError, SourceRoom, Sources};
 
 const ATTEMPTS: usize = 3;
+
+/// The rooms with a no-room agent commit in flight (Q826 A): a room's load
+/// waits for them, so it loads the committed row before any writer's update.
+#[derive(Default)]
+pub(crate) struct Commits {
+    rooms: Mutex<HashMap<String, usize>>,
+    done: tokio::sync::Notify,
+}
+
+impl Commits {
+    /// Marks a commit to `room` in flight until the guard drops.
+    pub(crate) fn begin(&self, room: &str) -> Committing<'_> {
+        *lock(&self.rooms).entry(room.to_owned()).or_default() += 1;
+        Committing {
+            commits: self,
+            room: room.to_owned(),
+        }
+    }
+
+    /// Returns once no commit to `room` is in flight.
+    pub(crate) async fn settled(&self, room: &str) {
+        loop {
+            let mut done = std::pin::pin!(self.done.notified());
+            done.as_mut().enable();
+            if !lock(&self.rooms).contains_key(room) {
+                return;
+            }
+            done.await;
+        }
+    }
+}
+
+/// A commit in flight ([Commits::begin]).
+pub(crate) struct Committing<'a> {
+    commits: &'a Commits,
+    room: String,
+}
+
+impl Drop for Committing<'_> {
+    fn drop(&mut self) {
+        {
+            let mut rooms = lock(&self.commits.rooms);
+            if let Some(count) = rooms.get_mut(&self.room) {
+                *count -= 1;
+                if *count == 0 {
+                    rooms.remove(&self.room);
+                }
+            }
+        }
+        self.commits.done.notify_waiters();
+    }
+}
 
 /// The refusal of an actor who may not edit the source. A model reads it.
 pub const NOT_EDITABLE: &str = "Source is not editable by this actor";
@@ -163,10 +223,18 @@ pub(crate) fn office_error(error: EngineError) -> SourceError {
 }
 
 impl Sources {
-    /// `applyEdit`. `live` hands over this instance's copy of the room.
-    pub async fn apply_edit<F>(&self, input: EditInput, live: F) -> Result<EditResult, SourceError>
+    /// `applyEdit`. `live` hands over this instance's copy of the room;
+    /// `open` says whether a room is loaded. None when one opened before the
+    /// commit: nothing was written, and that room admits the edit (Q826 A).
+    pub async fn apply_edit<F, O>(
+        &self,
+        input: &EditInput,
+        live: F,
+        open: O,
+    ) -> Result<Option<EditResult>, SourceError>
     where
         F: Fn(&str) -> BoxFuture<Option<Vec<u8>>>,
+        O: Fn(&str) -> bool,
     {
         let mut operation = input.operation.clone();
         operation["actorUserId"] = json!(input.actor_user_id);
@@ -176,7 +244,7 @@ impl Sources {
         let mut last = None;
         let job = Job::default();
         for _ in 0..ATTEMPTS {
-            match self.edit_once(&input, &operation, &live, &job).await {
+            match self.edit_once(input, &operation, &live, &open, &job).await {
                 Ok(result) => return Ok(result),
                 // A moved checkpoint applies again on the new state; an ended
                 // epoch never will.
@@ -192,15 +260,17 @@ impl Sources {
         Err(last.unwrap_or_else(|| SourceError::Other("Source edit could not be committed".into())))
     }
 
-    async fn edit_once<F>(
+    async fn edit_once<F, O>(
         &self,
         input: &EditInput,
         operation: &Value,
         live: &F,
+        open: &O,
         job: &Job,
-    ) -> Result<EditResult, SourceError>
+    ) -> Result<Option<EditResult>, SourceError>
     where
         F: Fn(&str) -> BoxFuture<Option<Vec<u8>>>,
+        O: Fn(&str) -> bool,
     {
         let session = self
             .gateway()
@@ -288,7 +358,7 @@ impl Sources {
             // Applied before (a retry whose answer was lost): done, nothing
             // written, no Redo.
             Applied::Before => {
-                return Ok(EditResult {
+                return Ok(Some(EditResult {
                     receipt: Value::Null,
                     notice: None,
                     room: name,
@@ -298,7 +368,7 @@ impl Sources {
                     row_bytes: 0,
                     undo: None,
                     epoch: session.epoch as i64,
-                });
+                }));
             }
         };
         let whole = doc
@@ -383,6 +453,12 @@ impl Sources {
             operations: Vec::new(),
             preview,
         };
+        // A room that opened meanwhile admits it instead (Q826 A); one that
+        // loads from here waits for the commit, so it loads the row.
+        let _committing = self.commits.begin(&name);
+        if open(&name) {
+            return Ok(None);
+        }
         let saved: CheckpointSaved = self
             .gateway()
             .file(&input.file_id, "checkpoint", Some(&body), None, None)
@@ -395,7 +471,7 @@ impl Sources {
         // first: its receipt answers, and this request's own change, which
         // nothing stored, reaches no room (review r2 M1).
         if saved.replayed {
-            return Ok(EditResult {
+            return Ok(Some(EditResult {
                 receipt,
                 notice: None,
                 room: name,
@@ -405,7 +481,7 @@ impl Sources {
                 row_bytes: 0,
                 undo: None,
                 epoch: session.epoch as i64,
-            });
+            }));
         }
         let update = match &live_vector {
             Some(vector) => doc.transact().encode_state_as_update_v1(vector),
@@ -416,7 +492,7 @@ impl Sources {
             .then(|| ydoc::undo::payload(&doc, captured))
             .flatten()
             .filter(|payload| fits(payload.len()));
-        Ok(EditResult {
+        Ok(Some(EditResult {
             receipt,
             notice,
             room: name,
@@ -426,7 +502,7 @@ impl Sources {
             row_bytes: row.len(),
             undo,
             epoch: session.epoch as i64,
-        })
+        }))
     }
 
     /// The edit's commands, or the Undo payload sent back, on `doc` (the
@@ -641,6 +717,23 @@ impl Sources {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Q826 A: a room's load waits while a no-room agent commit to it is in
+    /// flight and goes on once it lands; another room's never waits.
+    #[tokio::test]
+    async fn a_room_load_waits_for_a_no_room_commit_in_flight() {
+        const ROOM: &str = "source:f_1:epoch:1";
+        let short = std::time::Duration::from_millis(50);
+        let commits = Commits::default();
+        let committing = commits.begin(ROOM);
+        let mut waiting = std::pin::pin!(commits.settled(ROOM));
+        assert!(tokio::time::timeout(short, &mut waiting).await.is_err());
+        commits.settled("source:f_2:epoch:1").await;
+        drop(committing);
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiting)
+            .await
+            .expect("the load goes on once the commit landed");
+    }
 
     /// An agent edit's update over the cap is a `quota_rejected` refusal the
     /// agent can act on; one at the cap goes (Epo 2026-10-18).
