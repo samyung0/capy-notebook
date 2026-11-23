@@ -879,14 +879,10 @@ test('a DOCX edit that keeps the caret brings it back into view', async ({
   await expect.poll(() => pageInView(page, 'live', 0)).toBe(true);
 });
 
-// An edit made before the editor's first caret pass, its geometry still
-// loading, is a reader action too (Q833 B): once the geometry arrives the
-// caret comes into view. The layout WASM is held until the press (on the
-// context: the mock service worker fetches it for the frame).
-test('a DOCX edit before the first caret pass brings the caret into view', async ({
-  page,
-}) => {
-  test.setTimeout(300_000);
+/** Holds the DOCX layout WASM, and so the editor's first caret pass, until
+ * the returned release (on the context: the mock service worker fetches it
+ * for the frame). */
+async function holdLayoutWasm(page: Page) {
   let release = () => {};
   const released = new Promise<void>((resolve) => {
     release = resolve;
@@ -895,12 +891,45 @@ test('a DOCX edit before the first caret pass brings the caret into view', async
     await released;
     await route.continue();
   });
+  return release;
+}
+
+// An edit made before the editor's first caret pass, its geometry still
+// loading, is a reader action too (Q833 B): once the geometry arrives the
+// caret comes into view. The layout WASM is held until the press.
+test('a DOCX edit before the first caret pass brings the caret into view', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const release = await holdLayoutWasm(page);
   await openDocxOnPage4(page, true);
   expect(await pageInView(page, 'live', 0)).toBe(false);
   await expect(
     page.frameLocator('[data-office-view="live"] iframe').getByTestId('caret')
   ).toHaveCount(0);
   await page.keyboard.press('Delete');
+  release();
+  await expect
+    .poll(() => pageInView(page, 'live', 0), { timeout: 60_000 })
+    .toBe(true);
+});
+
+// So does one from the ribbon, outside the document input: Heading 1 from
+// Home's paragraph styles on the caret's paragraph. It also passes without
+// the fork's ribbon mark, as the caret pass after the first inherits the
+// edit's local layout origin; the fork's unit tests cover the mark.
+test('a DOCX ribbon edit before the first caret pass brings the caret into view', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const release = await holdLayoutWasm(page);
+  await openDocxOnPage4(page);
+  expect(await pageInView(page, 'live', 0)).toBe(false);
+  const live = page.frameLocator('[data-office-view="live"] iframe');
+  await officeTab(page, 'home').click();
+  await live.getByRole('combobox', { name: 'Select paragraph style' }).click();
+  await live.getByRole('option', { name: 'Heading 1' }).click();
+  await expect(live.getByTestId('caret')).toHaveCount(0);
   release();
   await expect
     .poll(() => pageInView(page, 'live', 0), { timeout: 60_000 })
