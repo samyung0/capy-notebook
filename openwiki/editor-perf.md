@@ -146,15 +146,14 @@ Per file it reports:
   PPTX, the first `painted` for DOCX, whose View paints its first pages before
   the rest are in (and sends `painted` again as its page count grows). DOCX
   also reports the click to `ready`, every page in, as `open.allPagesMs`
-  (report-only), and its page count from `ready`. Its `openFirstPaintMs` budget still comes
-  from medians measured to `ready`, until recalibrated from three CI runs
-  (Q804 A);
+  (report-only), and its page count from `ready`. Its `openFirstPaintMs` budget comes
+  from medians measured to `painted` (Q804 A, Q832 A);
 - View to Edit: the mode toggle click to the edit frame's `ready`, its first
   painted pages, grid or slide, with timings (`edit.firstPaintMs`). DOCX gates
-  that as `editReadyMs`; XLSX and PPTX still gate `editReadyMs` on
+  that as `editReadyMs`; XLSX and PPTX gate `editReadyMs` on
   `collaboration-ready` (the editor's replica, reported in the same React
-  commit as the editor's first real paint), which their budgets were
-  calibrated against, and report their first paint only until recalibrated;
+  commit as the editor's first real paint), which their medians are measured
+  to, and report their first paint only;
 - keystroke to frame: 40 keys at 120 ms (p50, p90, max, unpainted keys).
   DOCX types `a` and a space into body text and waits for the next
   `docx-pages-presented` in the frame. XLSX types `7` with Enter every sixth
@@ -339,34 +338,33 @@ missed budget (open, View to Edit, key p50 and p90 per fixture); the
 keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
 median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
 budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. A fixture whose median is `null` has no budget: its result
-says `budget: "report-only"` and only the checks above gate it (the ~250-page
-DOCX, until three CI runs give its medians, Q832 A). The medians come from
-three runs of the `office` job below on 65bdfc1e8, 2026-11-20 (Q757 A, recalibrated after Q691's second round):
-44715718554, 44715736656 and 44715754042, two on AMD EPYC 7763 and one on
-Intel Xeon 6975P-C runners. The Xeon run was 25-30% faster on every figure, so
+anything smaller. The medians come from three runs of the `office` job below
+on 69be9249e, 2026-11-23 (Q832 A, recalibrated after the Google gap round's
+landings, DOCX first paint to `painted`, the ~250-page DOCX gated):
+45174430580, 45174458165 and 45174485643, two on AMD EPYC 7763 and one on
+Intel Xeon 6975P-C runners. The Xeon run was the fastest on most figures, so
 the medians are mostly the EPYC runs'. Per fixture, the three runs and their
 median (ms):
 
 | Fixture | Open | View to Edit | Key p50 | Key p90 |
 |---|---|---|---|---|
-| exchange-plan.docx | 4617/3175/4085 -> 4085 | 2579/2109/3032 -> 2579 | 29/26/28 -> 28 | 40/35/38 -> 38 |
-| long-handbook.docx | 5908/4819/6311 -> 5908 | 4593/3286/4829 -> 4593 | 120/92/127 -> 120 | 139/103/145 -> 139 |
-| lecture.pptx | 2048/1851/2291 -> 2048 | 997/846/1026 -> 997 | 11/11/12 -> 11 | 14/12/15 -> 14 |
-| jp_llm2.pptx | 4391/3439/4611 -> 4391 | 3044/2292/3160 -> 3044 | 49/40/52 -> 49 | 54/44/61 -> 54 |
-| course-guide.xlsx | 1870/1714/2148 -> 1870 | 1083/851/1103 -> 1083 | 5/5/5 -> 5 | 10/13/10 -> 10 |
-| large-gradebook.xlsx | 2488/2094/2365 -> 2365 | 3014/2272/3059 -> 3014 | 5/5/6 -> 5 | 13/10/13 -> 13 |
+| exchange-plan.docx | 3699/3467/2968 -> 3467 | 2531/2717/1882 -> 2531 | 24/26/21 -> 24 | 34/35/28 -> 34 |
+| long-handbook.docx | 3875/3885/3087 -> 3875 | 3881/3989/2741 -> 3881 | 95/98/72 -> 95 | 113/120/81 -> 113 |
+| long-handbook-250.docx | 5063/5215/3953 -> 5063 | 9271/9496/6205 -> 9271 | 137/155/170 -> 155 | 182/197/180 -> 182 |
+| lecture.pptx | 2024/2298/1834 -> 2024 | 835/852/653 -> 835 | 11/11/8 -> 11 | 14/15/9 -> 14 |
+| jp_llm2.pptx | 4468/4463/3560 -> 4463 | 1982/1977/1472 -> 1977 | 49/52/37 -> 49 | 54/56/40 -> 54 |
+| course-guide.xlsx | 1932/2168/1958 -> 1958 | 975/1040/762 -> 975 | 4/6/4 -> 4 | 8/14/9 -> 9 |
+| large-gradebook.xlsx | 2373/2326/2145 -> 2326 | 2948/3026/2122 -> 2948 | 5/6/4 -> 5 | 9/10/8 -> 9 |
 
-The bench's earlier medians (2026-11-07 on 97e63a68a, Q692; 2026-10-04 before
-the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
+The bench's earlier medians (2026-11-20 on 65bdfc1e8, Q757 A; 2026-11-07 on
+97e63a68a, Q692; 2026-10-04 before the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
 sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
 Since the Q813 and Q814 pin (2026-11-22) the DOCX editor's resident worker
 does every layout and the page adopts it, where the page used to lay each
 pass out as well, and a pass over an unchanged input (a web-font load) is
-skipped (Q813 A, Q814 A, Q824 A). The DOCX medians above were measured
-before it.
+skipped (Q813 A, Q814 A, Q824 A). The medians above were measured on it.
 
 Heap and download figures stay report-only: they go to the results JSON
 (`budget.heap`, `budget.downloads`, and `budget: "report-only"` in the heap and

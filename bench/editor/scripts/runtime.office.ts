@@ -38,9 +38,9 @@ import { cdpSession, percentile, reportMetrics } from './metrics';
  *   carries the runtime's own `timings` (officeProtocol.ts,
  *   OfficeReadyTimings);
  * - edit, every format: the edit frame's `ready`, sent once the editor's first
- *   pages, grid or slide are painted, with timings too. XLSX/PPTX budgets are
- *   still on `collaboration-ready`, the editor's replica, which they were
- *   calibrated against; their first paint is report-only until recalibrated.
+ *   pages, grid or slide are painted, with timings too. XLSX/PPTX budgets
+ *   stay on `collaboration-ready`, the editor's replica, which their medians
+ *   are measured to; their first paint is report-only.
  * Typing reads the frame directly, since Playwright can evaluate inside the
  * cross-origin runtime: DOCX to the next `docx-pages-presented`; XLSX/PPTX,
  * which apply input on the frame's main thread, to the first task after the
@@ -77,53 +77,56 @@ interface Timings {
 
 /**
  * Medians of three runs of the Performance workflow's `office` job on
- * ubuntu-24.04, 2026-11-20 after Q691's second round (Q757 A):
- * 44715718554, 44715736656 and 44715754042 on 65bdfc1e8, two on AMD EPYC 7763
- * and one on Intel Xeon 6975P-C (25-30% faster on every figure). For XLSX/PPTX
- * `editReadyMs` ends at `collaboration-ready` (see above). DOCX
- * `openFirstPaintMs` was measured to `ready`, before View painted its first
- * pages early (Q804 A), until recalibrated from three CI runs. Heap figures
- * are report-only (openwiki/editor-perf.md). `null`: no CI runs yet, so every
- * figure of that fixture is report-only (Q832 A).
+ * ubuntu-24.04, 2026-11-23 after the Google gap round's landings (Q832 A):
+ * 45174430580, 45174458165 and 45174485643 on 69be9249e, two on AMD EPYC 7763
+ * and one on Intel Xeon 6975P-C (the fastest on most figures, so the medians
+ * are mostly the EPYC runs'). For XLSX/PPTX `editReadyMs` ends at
+ * `collaboration-ready` (see above); DOCX `openFirstPaintMs` at `painted`, the
+ * first pages (Q804 A). Heap figures are report-only (openwiki/editor-perf.md).
  */
-const MEDIANS: Record<Fixture['id'], Timings | null> = {
+const MEDIANS: Record<Fixture['id'], Timings> = {
   // MSW adds ~1.1 s per call to every open.
   'bio-office-docx': {
-    editReadyMs: 2579,
-    keyToFrameP50Ms: 28,
-    keyToFrameP90Ms: 38,
-    openFirstPaintMs: 4085,
+    editReadyMs: 2531,
+    keyToFrameP50Ms: 24,
+    keyToFrameP90Ms: 34,
+    openFirstPaintMs: 3467,
   },
   'bio-office-docx-long': {
-    editReadyMs: 4593,
-    keyToFrameP50Ms: 120,
-    keyToFrameP90Ms: 139,
-    openFirstPaintMs: 5908,
+    editReadyMs: 3881,
+    keyToFrameP50Ms: 95,
+    keyToFrameP90Ms: 113,
+    openFirstPaintMs: 3875,
   },
-  'bio-office-docx-250': null,
+  'bio-office-docx-250': {
+    editReadyMs: 9271,
+    keyToFrameP50Ms: 155,
+    keyToFrameP90Ms: 182,
+    openFirstPaintMs: 5063,
+  },
   'bio-office-pptx': {
-    editReadyMs: 997,
+    editReadyMs: 835,
     keyToFrameP50Ms: 11,
     keyToFrameP90Ms: 14,
-    openFirstPaintMs: 2048,
+    openFirstPaintMs: 2024,
   },
   'bio-office-pptx-long': {
-    editReadyMs: 3044,
+    editReadyMs: 1977,
     keyToFrameP50Ms: 49,
     keyToFrameP90Ms: 54,
-    openFirstPaintMs: 4391,
+    openFirstPaintMs: 4463,
   },
   'bio-office-xlsx': {
-    editReadyMs: 1083,
-    keyToFrameP50Ms: 5,
-    keyToFrameP90Ms: 10,
-    openFirstPaintMs: 1870,
+    editReadyMs: 975,
+    keyToFrameP50Ms: 4,
+    keyToFrameP90Ms: 9,
+    openFirstPaintMs: 1958,
   },
   'bio-office-xlsx-long': {
-    editReadyMs: 3014,
+    editReadyMs: 2948,
     keyToFrameP50Ms: 5,
-    keyToFrameP90Ms: 13,
-    openFirstPaintMs: 2365,
+    keyToFrameP90Ms: 9,
+    openFirstPaintMs: 2326,
   },
 };
 
@@ -1707,24 +1710,19 @@ for (const fixture of FIXTURES) {
     const typingEndHeap = await heap(page);
     const runtimeOrigin = new URL(frame.url()).origin;
 
-    const median = MEDIANS[fixture.id];
-    const budget = median && budgetOf(median);
+    const budget = budgetOf(MEDIANS[fixture.id]);
     await reportMetrics(
       testInfo,
       `office-${fixture.format}-${fixture.id}`,
       {
-        budget: budget
-          ? {
-              ...budget,
-              downloads: 'report-only',
-              editFirstPaintMs:
-                fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
-              heap: 'report-only',
-              ...(fixture.format === 'docx' && {
-                openAllPagesMs: 'report-only',
-              }),
-            }
-          : 'report-only',
+        budget: {
+          ...budget,
+          downloads: 'report-only',
+          editFirstPaintMs:
+            fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
+          heap: 'report-only',
+          ...(fixture.format === 'docx' && { openAllPagesMs: 'report-only' }),
+        },
         downloads: {
           edit: downloadsBetween(
             fetches.entries,
@@ -1777,7 +1775,6 @@ for (const fixture of FIXTURES) {
     expect(typingEnd.unpaintedKeys).toBe(0);
     expect(typingEnd.edits).toBeGreaterThan(0);
     expect(fallbacks).toEqual([]);
-    if (!budget) return;
     expect.soft(open.ms).toBeLessThanOrEqual(budget.openFirstPaintMs);
     expect.soft(edit.ms).toBeLessThanOrEqual(budget.editReadyMs);
     expect

@@ -121,8 +121,7 @@ the decoded size beside, and with WASM and TTF fonts at the brotli-11 size the
 Office Worker stores; CJK slice indexes count as fonts), and records the runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
 reaches its frame or errors, a fallback to the main-thread engine, a missed budget
-(from three CI runs per format; the ~250-page DOCX has none yet, so its figures
-are report-only), or scrolling a generated 50,000-row sheet
+(from three CI runs per format), or scrolling a generated 50,000-row sheet
 (`rows-50k.xlsx`) over a fixed ceiling (a paint gap over 100 ms or under 50
 paints/s, slow or fast); the
 end-of-file keys, the co-editor timings, the PPTX busy time, the downloads and
