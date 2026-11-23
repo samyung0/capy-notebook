@@ -661,6 +661,10 @@ struct Store {
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
 }
 
+/// Why a source update or save was refused for the room's size, on its
+/// `source-checkpoint-failed` (Q827 A) and its incident.
+const SIZE_REASON: &str = "source_state_bytes";
+
 /// See `sync_message`: not a valid update, so a release build refuses it.
 #[cfg(debug_assertions)]
 const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
@@ -691,6 +695,15 @@ pub const IT_SLOW_COMPUTE: &str = "capy-it-slow-compute";
 /// builds only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_RECHECK: &str = "capy-it-slow-recheck";
+
+/// See `edits::source_stored` and `edits::material_stored`: a no-room agent
+/// edit of a source file or material whose id holds this waits [IT_HOLD]
+/// after its snapshot of the live room, before it computes, in debug builds
+/// only (Q826 A: a room opens meanwhile).
+#[cfg(debug_assertions)]
+pub const IT_HOLD_NO_ROOM: &str = "capy-it-hold-no-room";
+#[cfg(debug_assertions)]
+pub const IT_HOLD: std::time::Duration = std::time::Duration::from_secs(6);
 
 /// See `RoomCmd::AgentKeys`: the keys room of a quiz whose id holds this
 /// refuses an agent edit's part, in debug builds only.
@@ -3719,17 +3732,21 @@ impl Room {
         let Kindly::Source(source) = &self.kind else {
             return Outcome::refused(Class::Malformed, refusal.message());
         };
-        let payload = json!({
+        let mut payload = json!({
             "checkpointIds": [],
             "epoch": source.room.epoch,
             "fileId": source.room.file_id,
             "recoverable": false,
             "type": "source-checkpoint-failed",
-        })
-        .to_string();
+        });
+        // The tab's recovery names the size limit (Q827 A).
+        if matches!(refusal, sources::Refusal::StateBytes) {
+            payload["reason"] = json!(SIZE_REASON);
+        }
+        let payload = payload.to_string();
         let (cause, class) = match refusal {
             sources::Refusal::StateBytes => (
-                Cause::new(IncidentKind::OverLimit, "source_state_bytes"),
+                Cause::new(IncidentKind::OverLimit, SIZE_REASON),
                 Class::Limit,
             ),
             _ => (
@@ -4998,6 +5015,11 @@ impl Room {
             });
             if let Some(lost) = error.lost_access_field() {
                 payload["lostAccess"] = json!(lost);
+            }
+            // A state over its cap: the tab's recovery names the size limit
+            // (Q827 A).
+            if error.status() == Some(413) {
+                payload["reason"] = json!(SIZE_REASON);
             }
             payload
         };

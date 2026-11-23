@@ -4984,10 +4984,20 @@ per environment (Q400, Q403).
 
 **With no room loaded** the edit is applied on an isolated Y.Doc loaded from
 durable state under the material or source lock and commits its row with
-its receipt in one transaction, as before (the no-room line); a room that
-loads meanwhile takes the committed row as a service edit (Q389's reload
-covers such writes and the other service edits: replace-block, markers,
-repairs, the children pass). The durable copy drops the room's server-owned
+its receipt in one transaction, as before (the no-room line). Right before
+it commits it looks for the room again (Q826 A): one that opened meanwhile
+admits the edit instead, on its own snapshot as above, so the agent hears
+that room's refusal (at the size limit a 413) and nothing writes past an open
+room's admission; the edit, its Undo and Redo alike, for sources (text and
+Office) and materials. A room loading after that look waits for the commit,
+a material's on the material lock its load takes, a source's on
+`sources::edit::Commits` in `Sources::load`, so it loads the committed row
+and also hears it as a service edit (Q389's reload covers such writes and the
+other service edits: replace-block, markers, repairs, the children pass). A
+loaded room whose snapshot does not answer within 10 s refuses the edit as
+unavailable before anything applied, rather than the edit writing past it,
+and an edit that keeps meeting rooms opening and unloading is refused the same
+way after three rounds. The durable copy drops the room's server-owned
 contributor markers. A source edit reads state and checkpoint from one
 session and commits with that checkpoint's CAS, so a commit landing in
 between conflicts and the edit retries from fresh state, 3 attempts in all;
