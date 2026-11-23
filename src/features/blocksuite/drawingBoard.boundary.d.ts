@@ -74,6 +74,9 @@ export function mountDrawingBoard(
   options: DrawingBoardOptions
 ): {
   closeEditor: () => void;
+  /** A note's waiting size saved or dropped, every wait stopped, before a
+   * host's last write or its document's end. */
+  closeNoteSizes: (sizes: 'save' | 'drop') => void;
   fit: (padding: [number, number, number, number]) => void;
   has: (id: string) => boolean;
   /** The whole board as a PNG, as Download as image draws it. */
@@ -105,5 +108,7 @@ export function mountDrawingBoard(
     span: number;
   };
   toImage: () => Promise<File>;
-  unmount: () => void;
+  /** `sizes`: a note's size waiting on a pause is saved, or dropped when the
+   * room lost, refused or replaced the board. */
+  unmount: (sizes: 'save' | 'drop') => void;
 };

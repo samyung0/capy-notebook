@@ -329,7 +329,8 @@ async function boardImage(doc: Y.Doc, title: string): Promise<Blob> {
     await board.ready;
     return await board.image();
   } finally {
-    board.unmount();
+    // A copy to look at: nothing goes into it.
+    board.unmount('drop');
     host.remove();
   }
 }

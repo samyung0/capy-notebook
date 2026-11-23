@@ -4,6 +4,7 @@ import {
   surfaceMiddlewareExtension,
 } from '@blocksuite/affine-block-surface';
 import type { ConnectorElementModel } from '@blocksuite/affine-model';
+import { noteSizeWrites } from '@blocksuite/affine-shared/utils';
 import type { GfxModel } from '@blocksuite/std/gfx';
 
 import { ConnectorPathGenerator } from './connector-manager';
@@ -91,12 +92,25 @@ export const connectorWatcher: SurfaceMiddleware = (
         payload.type === 'add' ||
         (payload.type === 'update' && payload.props.key === 'xywh')
       ) {
+        // Capy (local change 75): a note's size only its typist's tab shows
+        // moves no stored label.
+        const own =
+          payload.isLocal &&
+          !noteSizeWrites.isLocal(surface.store, payload.id);
         surface
           .getConnectors(payload.id)
-          .forEach(connector => addToUpdateList(connector, payload.isLocal));
+          .forEach(connector => addToUpdateList(connector, own));
       }
     }),
   ];
+  // Capy (local change 75): a note's saved size places its labels now, inside
+  // the save's transaction.
+  const stopSaves = noteSizeWrites.onSaved((store, id) => {
+    if (store !== surface.store) return;
+    surface
+      .getConnectors(id)
+      .forEach(connector => updateConnectorPath(connector, true));
+  });
 
   surface
     .getElementsByType('connector')
@@ -108,6 +122,7 @@ export const connectorWatcher: SurfaceMiddleware = (
     pendingFlag = false;
     pendingList.clear();
     disposables.forEach(d => d.unsubscribe());
+    stopSaves();
   };
 };
 

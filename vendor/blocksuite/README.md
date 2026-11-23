@@ -843,6 +843,79 @@ Outside this directory, for BlockSuite:
     Pinned by "leaves placeholder elements out of a canvas copy and Duplicate" in
     `src/features/blocksuite/boardUnknown.test.ts`.
 
+75. A note's size is saved once typing pauses, by the tab editing it
+    (`affine/blocks/note` `note-size.ts`, `components/edgeless-note-mask.ts`
+    and `note-edgeless-block.ts`; `affine/gfx/connector`
+    `connector-watcher.ts`; `affine/shared` `utils/note-size-writes.ts`; all
+    marked `Capy (local change 75)`; Epo approved cut 2 of
+    `bench/collaboration/reports/2026-11-22-room-memory.md`). The mask's
+    height observer and an inline note's width observer (local change 53)
+    each wrote `xywh` on every key, in every tab that could write, and each
+    write took the clock between two typed characters, so no two merged into
+    one run: an 80-character note held about 173 structs against 80 bytes of
+    text, and a board of typed notes 17 to 21 times its state in the room's
+    memory.
+    - **The tab whose person changed the note** shows a measured size at once
+      (`xywh` stashed: the frame, the selection box and connector paths follow
+      it) and saves it 500 ms after the last new measure, at most 2 s after
+      the first unsaved one. That is the tab editing the note, or the one whose
+      own change that can resize the note came less than 500 ms before the
+      measure: each local transaction of the store's document marks the notes
+      whose blocks or text it changed, or whose style, scale, width or height,
+      or whose fill made them inline or a card (the Inline toggle, an Undo on
+      the board, a side resize's last rewrap, the note tool's new note). A move,
+      a turn or a colour marks nothing, so a viewer that just moved the note
+      still waits as a viewer when a peer's text arrives. A drag, resize or turn ending measures
+      the note again as that tab's (`noteGestureEnds`), so a size the
+      gesture's own write left out still goes in.
+    - That tab saves at once, untracked, when editing ends, the block
+      disconnects, the page is hidden, the board is saved (`saveNoteSizes`,
+      called by `drawingBoard.ts` in `save` and `snapshot`), a drag, resize or
+      turn starts (`noteGestureStarts`: the gesture keeps its own stash and its
+      own tracked pop) or any tracked step of the store starts (align,
+      `updateBlock`: `openNoteSizes` wraps the store's `transact`). Undoing the
+      step or the gesture leaves the typed height. A plain write of the model
+      outside the store's steps (the arrow keys' nudge, untracked itself)
+      stores the size with it. A peer's or an Undo's write shows at once, the measured size
+      over it, and the save writes the measured size (before the note's scale)
+      onto it.
+    - **Every other tab** holds nothing and writes nothing per key: it writes
+      what it measures only once that has differed from the stored size for
+      3 s (`NOTE_SIZE_VIEWER_MS`, the editing tab's longest wait and 1 s) with
+      no new size arriving, as a plain write, or as a drag, resize or turn of
+      the note starts. A note no one edits (an agent's, a font change) still
+      gets its size.
+    - The width is written only while the note is inline: a note turned into
+      a card drops it.
+    - A read-only store writes nothing: a waiting size is dropped and the
+      stored one shown again; `setLocked` drops them (`dropNoteSizes`) before
+      clearing the selection, whose end would save them. The observers measure
+      while read-only too, and unlocking measures every note again with its
+      last size (`measureNoteSizesAgain`), a size the lock dropped as this
+      tab's own.
+    - A board's sizes close (`closeNoteSizes`) before its document goes:
+      saved, or dropped when the room lost, refused or replaced the board, and
+      every wait stops, a viewer's too, with nothing more measured or written
+      in that store. Leaving the page, React takes the board's DOM away before
+      any effect's cleanup, so each note saves its held size as it disconnects,
+      into the room still standing. A room that goes while the board stays
+      (replaced, no longer enabled) is torn down before the board's unmount:
+      the canvas page closes the sizes in the room's `onLeave`, before the
+      teardown, `drop` while locked, since lost, kicked and recovery change the
+      document and lock in one render, before `setLocked` runs. The drawing
+      answer closes them before its last draft write, whose change they mark
+      pending, as its board may go without its DOM (its options changed).
+      `unmount(sizes)` closes them too, for a host that has done neither.
+    - A connector's label (local change 63) moves with the saved size, not per
+      key: a size only the editing tab shows is not an own change for it, and
+      the save places the labels inside its transaction.
+    Size saves take no undo step, as before (their transaction's origin is not
+    the history's). Other tabs see the size up to 2 s later. Pinned by
+    `src/features/blocksuite/noteSize.test.ts` and two tests in
+    `e2e/editor/canvas-presence.spec.ts` ("a note's size reaches another person
+    once typing pauses", "a note's waiting size is stored when editing ends or
+    the board is saved").
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

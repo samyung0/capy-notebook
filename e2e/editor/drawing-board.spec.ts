@@ -2049,6 +2049,87 @@ test("leaving the canvas with a plane's editor open keeps what the editor writes
   await expect.poll(scale).toBeGreaterThan(before ?? Number.NaN);
 });
 
+// vendor/blocksuite local change 75: React takes the board's DOM away before
+// any effect's cleanup, and each note saves its waiting size as it
+// disconnects, into the room still standing.
+test("leaving the canvas while a note's size waits on a pause in typing keeps the size", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  /** The note holding `text`, as stored and as shown. */
+  const sizes = (text: string) =>
+    page.evaluate((held) => {
+      const note = [...document.querySelectorAll('affine-edgeless-note')].find(
+        (element) => element.textContent?.includes(held)
+      ) as unknown as
+        | { model: { xywh: string; yBlock: { get(key: string): unknown } } }
+        | undefined;
+      return note
+        ? {
+            shown: note.model.xywh,
+            stored: String(note.model.yBlock.get('prop:xywh')),
+          }
+        : null;
+    }, text);
+  /** How far two sizes are apart, in board units. */
+  const apart = (one: string, other: string) => {
+    const [, , w, h] = JSON.parse(one) as number[];
+    const [, , w2, h2] = JSON.parse(other) as number[];
+    return Math.max(Math.abs(w - w2), Math.abs(h - h2));
+  };
+  const dashboard = await page
+    .getByRole('button', { name: 'Dashboard' })
+    .elementHandle();
+  await page.mouse.dblclick(board.x + board.width / 2, board.y + 160);
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
+  await page.keyboard.type('Osmosis');
+  // Away within the pause (an inline note's width waits on it), once the
+  // last key's width is measured (two frames).
+  const left = await page.evaluate(
+    async ([held, button]) => {
+      for (const _ of [0, 1])
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      const note = [...document.querySelectorAll('affine-edgeless-note')].find(
+        (element) => element.textContent?.includes(held)
+      ) as unknown as {
+        model: { xywh: string; yBlock: { get(key: string): unknown } };
+      };
+      const before = {
+        shown: note.model.xywh,
+        stored: String(note.model.yBlock.get('prop:xywh')),
+      };
+      (button as HTMLButtonElement).click();
+      return before;
+    },
+    ['Osmosis', dashboard] as const
+  );
+  expect(apart(left.stored, left.shown)).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.waitForFunction(
+    () => (window as unknown as { __board?: unknown }).__board
+  );
+  // Stored as it was shown, the width and height within a pixel, as the note
+  // first shows: before this tab's own write of what it measures (3 s on).
+  await page.waitForFunction(
+    (held) =>
+      [...document.querySelectorAll('affine-edgeless-note')].some((element) =>
+        element.textContent?.includes(held)
+      ),
+    'Osmosis'
+  );
+  const back = await sizes('Osmosis');
+  expect(back && apart(back.stored, left.shown)).toBeLessThan(1);
+});
+
 test("a plane's curve bends by its stroke, and the workspace's objects list plots a typed function", async ({
   page,
 }) => {

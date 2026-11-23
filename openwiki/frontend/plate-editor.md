@@ -2620,6 +2620,14 @@ design, option d), and the nudge's release file on 2026-10-17.
   tab from before reloads instead. No source room changed, so `MIN_SOURCE`
   stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
   "client protocol 37 -> 38, material 37 -> 38".
+  The yrs decode pin (capy/yrs-decode-capacity: a decoded list of values
+  reserves its declared length up to the bytes left, so its `Vec` keeps no
+  spare capacity; room memory report cut 3) raised `CLIENT_PROTOCOL` to 39
+  and `MIN_SOURCE` to 39, as every pin bump does (office-files "Pin bump
+  checklist"); the wire format and every stored shape are unchanged, so
+  `MIN_MATERIAL` stays 38 and `OFFICE_PROTOCOL_VERSION` stays 15. The number
+  is set at merge, since other branches also want 39. Its deploy request
+  names "client protocol 38 -> 39, source 36 -> 39".
 
 #### When to bump
 
@@ -4012,7 +4020,14 @@ reference's `pending` held at null as absent, as the store and Go do.
 The durable content authority is `material_yjs_documents.state` (the base, an
 encoded Y.Doc) plus the update log `material_yjs_updates`: a store appends one
 row, the change since the room's durable state, and `stored_version` (monotonic)
-names it. A room loads by replaying base and rows, and folds the log into the
+names it. A room loads by replaying base and rows straight into its own
+document (`room::loaded_doc`): they are decoded first, the room takes a client
+id none of them names and no user was assigned, and they are applied in one
+transaction, nothing left pending. No scratch copy is built beside it and no
+whole state encoded: a scratch kept alive while the room's document was built
+doubled a loaded room's RSS on glibc, and the direct replay is about twice as
+fast ([room memory report](../../bench/collaboration/reports/2026-11-22-room-memory.md)
+cut 1). It folds the log into the
 base when it unloads or the log passes `max(256 KiB, base bytes)` or 1,000
 rows. The server converts the `content` root to a Plate envelope and calls the
 internal Go projection endpoint: once a store is followed by 30 s without a
@@ -6580,7 +6595,39 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   side handles, and an empty one shows its whole placeholder (local change 53). Card
   keeps its lines, widening it by the card's padding. An inline note's toolbar has no
   Style button (a card's). A note has no custom height or fold: it is always as tall
-  as its text (local change 55). A card's sides set its width, its text rewrapping and
+  as its text (local change 55). Its measured width (while inline) and height
+  are written by the tab whose person changed the note, once that pauses (local
+  change 75): the tab editing it, or the one whose own change that can resize the
+  note (its text or blocks, an Undo of them, the Inline toggle, a resize's last
+  rewrap, a new note; not a move, a turn or a colour) came less than 500 ms before
+  the measure. It saves 500 ms after the last
+  new measure, at most 2 s after the first unsaved one, and at once, untracked,
+  when editing ends, the note's view goes, the page is hidden, the board is saved
+  or snapshotted (`saveNoteSizes`), a drag, resize or turn starts, or any tracked
+  step of the board's store starts (align, `updateBlock`), so undoing the step or
+  the gesture keeps the typed height; the arrow keys' nudge, a plain write of the
+  model, stores the size with it. Until then the size is that tab's alone
+  (`xywh` stashed), so its frame, selection box and connector paths follow the
+  text at once while other tabs see the size up to 2 s later. A gesture's end
+  measures the note again, so a size its own write left out still goes in. A
+  peer's move or resize shows during the wait, the measured size over it. A tab
+  not editing the note holds nothing and writes nothing per key: it writes what
+  it measures only after 3 s of differing from the stored size with no new size
+  arriving (or as it starts a drag, resize or turn of the note), so a note no one
+  edits still gets its size. Size saves take no undo step. A read-only board
+  writes none (a lock drops a waiting size before the selection's end could save
+  it), and unlocking measures every note again, a size the lock dropped going in
+  as this tab's. Before the board's document goes, its waiting sizes are saved,
+  or dropped when the room was lost, refused the person or was replaced by a
+  recovery copy, and every wait stops, so nothing is written after the board is
+  gone. Leaving the page, each note saves its size as React takes the board's
+  DOM away, before any effect's cleanup; a room that goes while the board stays
+  closes them in its `onLeave`, before its teardown (`drop` while locked); the
+  drawing answer closes them before its last draft write. Connector labels move at the save, inside its
+  transaction, not per key. Saved on every key, in every tab, each size
+  took the clock between two typed characters, so a typed note held a struct per
+  character and a deleted size per key ([room memory
+  report](../../bench/collaboration/reports/2026-11-22-room-memory.md) cut 2). A card's sides set its width, its text rewrapping and
   its height following, down to 40 (times its scale), and its corners scale it. A note
   turns by the frame's knob about its middle (`rotate`, local change 56). Its links
   are underlined; hovering one while no note is typed in (or a tap on a touch

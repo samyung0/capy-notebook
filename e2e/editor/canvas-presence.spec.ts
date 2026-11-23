@@ -280,3 +280,158 @@ test("the canvas's maker still sets their presence once their channel is narrowe
   await expect.poll(pointer).not.toEqual(before);
   expect(await pointer()).toEqual([expect.any(Number), expect.any(Number)]);
 });
+
+/** A board note's size reaches the room once typing pauses, not after every
+ * key (vendor/blocksuite local change 75): the other person sees the size the
+ * typist's tab shows, and the typed text is held in a few runs, where a size
+ * written after every key left one per character. */
+test("a note's size reaches another person once typing pauses, its text in a few runs", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await boardShown(page);
+  await joinBen(page, CANVAS);
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  // An inline note, as wide as its text.
+  await page.mouse.dblclick(board.x + board.width / 2, board.y + 220);
+  await page.waitForFunction(
+    () => document.activeElement?.closest('affine-edgeless-note') != null
+  );
+  const sentence = 'Cells divide and grow';
+  // A typist's pace: each key measured in its own frame.
+  await page.keyboard.type(sentence, { delay: 60 });
+  await expect(page.locator('affine-edgeless-note')).toContainText(sentence);
+
+  /** The note's size as this tab shows it and as Ben holds it, and how many
+   * runs hold its text for Ben. */
+  const sizes = () =>
+    page.evaluate(() => {
+      type Holder = { get(key: string): unknown };
+      const { model } = document.querySelector(
+        'affine-edgeless-note'
+      ) as unknown as {
+        model: { children: { id: string }[]; id: string; xywh: string };
+      };
+      const peer = (window as Shown).peer;
+      if (!peer) throw new Error('no peer');
+      const blocks = peer.document.getMap<Holder>('blocks');
+      const text = blocks.get(model.children[0].id)?.get('prop:text');
+      let runs = 0;
+      for (const structs of peer.document.store.clients.values())
+        for (const struct of structs)
+          if ('parent' in struct && struct.parent === text && !struct.deleted)
+            runs++;
+      return {
+        held: blocks.get(model.id)?.get('prop:xywh'),
+        runs,
+        shown: model.xywh,
+      };
+    });
+  await expect
+    .poll(async () => {
+      const { held, shown } = await sizes();
+      return held === shown;
+    })
+    .toBe(true);
+  // The sentence's 21 characters, where every key's size took a clock.
+  expect((await sizes()).runs).toBeLessThanOrEqual(3);
+});
+
+/** A note's size waiting on a pause in typing (vendor/blocksuite local change
+ * 75) is stored at once when its editing ends or the board is saved or
+ * snapshotted, and dropped, nothing written, when the board locks; unlocked,
+ * the board measures the note again and stores it. */
+test("a note's waiting size is stored when editing ends or the board is saved, and dropped when it locks until it unlocks", async ({
+  page,
+}) => {
+  test.slow();
+  await page.goto('/workspaces/ws_bio?view=canvas');
+  await boardShown(page);
+  const board = await page.locator('.capy-board').boundingBox();
+  if (!board) throw new Error('no board');
+  type Steps = {
+    save(): unknown;
+    setLocked(locked: boolean): void;
+    snapshot(): unknown;
+  };
+
+  /** Types `text` into a new inline note `y` down the board. */
+  const typeNote = async (y: number, text: string) => {
+    await page.mouse.dblclick(board.x + board.width / 2, board.y + y);
+    await page.waitForFunction(
+      () => document.activeElement?.closest('affine-edgeless-note') != null
+    );
+    await page.keyboard.type(text);
+  };
+
+  /** The size of the note holding `text`, as stored and as shown, around
+   * `step` taken straight after typing (after the frame that measures). */
+  const around = (
+    text: string,
+    step: 'none' | 'end' | 'save' | 'snapshot' | 'lock'
+  ) =>
+    page.evaluate(
+      async ([held, taken]) => {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const note = [
+          ...document.querySelectorAll('affine-edgeless-note'),
+        ].find((element) => element.textContent?.includes(held)) as unknown as {
+          model: { xywh: string; yBlock: { get(key: string): unknown } };
+        };
+        const stored = () => note.model.yBlock.get('prop:xywh');
+        const before = { shown: note.model.xywh, stored: stored() };
+        const steps = (window as unknown as { __board: Steps }).__board;
+        if (taken === 'end') {
+          // What Escape or a click elsewhere leads to.
+          const root = document.querySelector(
+            'affine-edgeless-root'
+          ) as unknown as { gfx: { selection: { clear(): void } } };
+          root.gfx.selection.clear();
+        }
+        if (taken === 'save') steps.save();
+        if (taken === 'snapshot') steps.snapshot();
+        if (taken === 'lock') steps.setLocked(true);
+        return { after: { shown: note.model.xywh, stored: stored() }, before };
+      },
+      [text, step] as const
+    );
+
+  // Editing ends, or the board is saved or snapshotted while it is edited:
+  // stored at once.
+  for (const [y, text, step] of [
+    [150, 'Cells divide', 'end'],
+    [260, 'and grow', 'save'],
+    [370, 'in mitosis', 'snapshot'],
+  ] as const) {
+    await typeNote(y, text);
+    const { after, before } = await around(text, step);
+    expect(before.stored, step).not.toBe(before.shown);
+    expect(after.stored, step).toBe(before.shown);
+  }
+
+  // The board locks while it is edited: the size is dropped, never written.
+  await typeNote(480, 'Chromosomes pair');
+  const locked = await around('Chromosomes pair', 'lock');
+  expect(locked.before.stored).not.toBe(locked.before.shown);
+  expect(locked.after.shown).toBe(locked.before.stored);
+  await page.waitForTimeout(1000);
+  const later = await around('Chromosomes pair', 'none');
+  expect(later.before.stored).toBe(locked.before.stored);
+  // Unlocked: measured again, the size goes in as this tab's, after its pause.
+  await page.evaluate(() =>
+    (window as unknown as { __board: Steps }).__board.setLocked(false)
+  );
+  const height = (xywh: unknown) => (JSON.parse(String(xywh)) as number[])[3];
+  await expect
+    .poll(
+      async () =>
+        Math.abs(
+          height((await around('Chromosomes pair', 'none')).before.stored) -
+            height(locked.before.shown)
+        ),
+      { timeout: 3000 }
+    )
+    .toBeLessThan(1);
+});
