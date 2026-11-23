@@ -63,9 +63,10 @@ export const connector: ElementRenderer<
   if (hasLabel) {
     ctx.save();
 
-    const { deserializedXYWH, labelXYWH } = model as ConnectorElementModel;
+    // Capy (local change 75): where the label shows on this tab's path.
+    const { deserializedXYWH, shownLabelXYWH } = model as ConnectorElementModel;
     const [x, y, w, h] = deserializedXYWH;
-    const [lx, ly, lw, lh] = labelXYWH!;
+    const [lx, ly, lw, lh] = shownLabelXYWH!;
     const offset = DEFAULT_ARROW_SIZE * strokeWidth;
 
     dx = lx - x;

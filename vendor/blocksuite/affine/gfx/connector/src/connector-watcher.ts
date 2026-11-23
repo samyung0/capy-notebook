@@ -19,8 +19,9 @@ export const connectorWatcher: SurfaceMiddleware = (
   /* Capy (vendor/blocksuite/README.md, local change 63): a label's place is a
    * stored field. `own` says this tab's own change moved the connector, and
    * only then is the place written: on load, on a peer's change and in a
-   * read-only store the path is drawn again and the label stays where the
-   * document has it (the tab that made the change writes it). */
+   * read-only store the path is drawn again and the label's place stays as
+   * the document has it (the tab that made the change writes it; local change
+   * 75 shows the label on the path drawn). */
   const updateConnectorPath = (
     connector: ConnectorElementModel,
     own: boolean
