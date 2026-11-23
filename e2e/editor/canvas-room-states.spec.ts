@@ -1068,7 +1068,7 @@ test('a canvas whose room is at its cap keeps the stroke it refused for copying,
   // The stroke the room refuses is kept on this device, shown read-only on a
   // board of its own under the recovery strip (Developer 2026-09-30).
   await drawStroke(page, 0.6);
-  await expect(strip(page)).toContainText('Download a copy, or discard them');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   await page.waitForFunction(
     () => (window as Shown).__board && !(window as Shown).__board?.kept
   );
@@ -1088,7 +1088,7 @@ test('a canvas whose room is at its cap keeps the stroke it refused for copying,
   await expect(ask).toBeVisible();
   await ask.getByRole('button', { name: 'Cancel' }).click();
   await expect(ask).toHaveCount(0);
-  await expect(strip(page)).toContainText('Download a copy, or discard them');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   await expect.poll(() => drawn(page)).toHaveLength(2);
   // Confirmed, the room opens afresh on what it holds, with the tools.
   await strip(page).getByRole('button', { name: 'Discard' }).click();
@@ -1325,7 +1325,7 @@ test('a move made offline of a shape another person deleted meanwhile stays for 
   await page.evaluate(() => (window as Shown).peer?.remove('from'));
 
   await context.setOffline(false);
-  await expect(strip(page)).toContainText('Download a copy, or discard them');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   // The deleted square alone, to copy; the other one's move is in the room.
   await expect.poll(() => drawn(page)).toEqual(['shape']);
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
@@ -1474,7 +1474,7 @@ test('a canvas refused at the join keeps the strokes drawn on its copy for copyi
   await expect.poll(() => drawn(page)).toHaveLength(2);
   await room(page, 'mockRevokeBoard', theirs);
   await context.setOffline(false);
-  await expect(strip(page)).toContainText('Download a copy, or discard them');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   await expect.poll(() => drawn(page)).toHaveLength(2);
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
 });
