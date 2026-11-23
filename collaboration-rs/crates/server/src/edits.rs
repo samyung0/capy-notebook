@@ -1295,12 +1295,8 @@ async fn material_stored(
 ) -> Result<Option<Value>, DocumentError> {
     let undo = request.undo.as_ref();
     let live = live_state(app, room).await;
-    // Debug builds only: the integration tests' edit, held after its
-    // snapshot while a room opens.
     #[cfg(debug_assertions)]
-    if material_id.contains(crate::room::IT_HOLD_NO_ROOM) {
-        tokio::time::sleep(crate::room::IT_HOLD).await;
-    }
+    it_hold(app, room).await;
     let actor = request.actor_user_id.clone();
     let mut client = app
         .db
@@ -1450,7 +1446,7 @@ async fn material_stored(
     // A room loaded before the material's lock was taken (it opened since
     // the first look) admits it instead (Q826 A); one loading from here
     // waits on the lock and loads the rows.
-    if app.rooms.get(room).is_some() || app.rooms.get(keys_room).is_some() {
+    if opened(app, room) || opened(app, keys_room) {
         return Ok(None);
     }
     let mut version = stored;
@@ -1777,6 +1773,43 @@ async fn step_of_actor<C: deadpool_postgres::GenericClient>(
         Some(_) => Err(DocumentError::Lifecycle(
             "the step is another user's".into(),
         )),
+    }
+}
+
+/// Whether `room` is loaded, as a no-room edit's last look before its commit
+/// sees it (Q826 A). Debug builds only: one whose name holds
+/// [crate::room::IT_ROOM_FLAPS] always is, as if rooms kept opening and
+/// unloading.
+fn opened(app: &Shared, room: &str) -> bool {
+    #[cfg(debug_assertions)]
+    if room.contains(crate::room::IT_ROOM_FLAPS) {
+        return true;
+    }
+    app.rooms.get(room).is_some()
+}
+
+/// Debug builds only: a no-room edit of a room whose name holds
+/// [crate::room::IT_HOLD_NO_ROOM], held after its snapshot while the test
+/// opens the room (Q826 A). It sets `<marker>:<room>:held` in Redis and waits,
+/// at most a minute, for `<marker>:<room>:release`.
+#[cfg(debug_assertions)]
+async fn it_hold(app: &Shared, room: &str) {
+    if !room.contains(crate::room::IT_HOLD_NO_ROOM) {
+        return;
+    }
+    let key = format!("{}:{room}", crate::room::IT_HOLD_NO_ROOM);
+    let mut redis = app.redis.clone();
+    let _: Result<(), _> =
+        redis::AsyncCommands::set_ex(&mut redis, format!("{key}:held"), 1, 600).await;
+    for _ in 0..600 {
+        let released: Option<String> =
+            redis::AsyncCommands::get(&mut redis, format!("{key}:release"))
+                .await
+                .unwrap_or(None);
+        if released.is_some() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
@@ -2649,16 +2682,12 @@ async fn source_stored(
                 let room = room.to_owned();
                 Box::pin(async move {
                     let live = live_state(&app, &room).await;
-                    // Debug builds only: the integration tests' edit, held
-                    // after its snapshot while a room opens.
                     #[cfg(debug_assertions)]
-                    if room.contains(crate::room::IT_HOLD_NO_ROOM) {
-                        tokio::time::sleep(crate::room::IT_HOLD).await;
-                    }
+                    it_hold(&app, &room).await;
                     live
                 })
             },
-            |room| app.rooms.get(room).is_some(),
+            |room| opened(app, room),
         )
         .await;
     let result = match applied {

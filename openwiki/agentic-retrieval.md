@@ -4994,10 +4994,13 @@ a material's on the material lock its load takes, a source's on
 `sources::edit::Commits` in `Sources::load`, so it loads the committed row
 and also hears it as a service edit (Q389's reload covers such writes and the
 other service edits: replace-block, markers, repairs, the children pass). A
-loaded room whose snapshot does not answer within 10 s refuses the edit as
-unavailable before anything applied, rather than the edit writing past it,
-and an edit that keeps meeting rooms opening and unloading is refused the same
-way after three rounds. The durable copy drops the room's server-owned
+loaded room whose snapshot does not answer within 10 s refuses the edit
+before anything applied, rather than the edit writing past it, and an edit
+that keeps meeting rooms opening and unloading is refused the same way after
+three rounds (Q829 A): Go answers the retrieval service 503 `outcome_unknown`,
+which the tool retries with the same operation id and then reports as "might
+have been saved, re-read before further editing". A person's Edit open that
+loads the room meanwhile waits for the commit, one Go checkpoint (Q831 A). The durable copy drops the room's server-owned
 contributor markers. A source edit reads state and checkpoint from one
 session and commits with that checkpoint's CAS, so a commit landing in
 between conflicts and the edit retries from fresh state, 3 attempts in all;

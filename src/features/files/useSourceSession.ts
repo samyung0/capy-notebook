@@ -684,6 +684,10 @@ export function useSourceSession(
       let lastToken: string | undefined;
       // Set by reset() and refuse(): later typing changes nothing stored.
       let discarded = false;
+      // While a save lost for a gone file asks what happened
+      // (`lostAfterAsking`): the room's reset after it is that save's, and
+      // the lost-access handling answers it (Q831 A).
+      let losing = false;
       // Set by stale(): a late change (the frame's last input) is stored
       // and nothing more is sent.
       let refusedBuild = false;
@@ -790,7 +794,9 @@ export function useSourceSession(
       // every session's drafts dropped, and no answer keeps them for the
       // file's read.
       const lostAfterAsking = async () => {
+        losing = true;
         const answer = await askSourceToken(fileId);
+        losing = false;
         if (cancelled) return;
         if (answer === null || isConflict(answer)) reconnect.refused();
         else if (isApiError(answer) && answer.status === 404)
@@ -1108,9 +1114,11 @@ export function useSourceSession(
             return;
           }
           // The room was reset (a save refused for good, a server error):
-          // unsaved edits go to recovery, as after a refused save (Q827 A).
+          // unsaved edits go to recovery, as after a refused save (Q827 A),
+          // unless the save was lost for a gone file, whose own handling
+          // decides (Q831 A).
           if (event.type === 'authorization-revoked') {
-            if (event.room === session.room) refuse();
+            if (event.room === session.room && !losing) refuse();
             return;
           }
           if (event.fileId !== fileId) return;

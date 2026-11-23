@@ -10502,6 +10502,32 @@ fn appending_edit(user: &str, file: &str) -> serde_json::Value {
     )
 }
 
+/// Waits until the no-room edit of `room` is held after its snapshot (the
+/// debug hook `capy-it-hold-no-room` says so in Redis; bounded).
+async fn held(env: &Env, room: &str) {
+    let mut redis = redis_at(&env.redis).await;
+    let key = format!("capy-it-hold-no-room:{room}:held");
+    for _ in 0..600 {
+        let held: Option<String> = redis::AsyncCommands::get(&mut redis, &key)
+            .await
+            .expect("the hold");
+        if held.is_some() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the edit of {room} was never held");
+}
+
+/// Lets the held no-room edit of `room` go on.
+async fn release(env: &Env, room: &str) {
+    let mut redis = redis_at(&env.redis).await;
+    let key = format!("capy-it-hold-no-room:{room}:release");
+    let _: () = redis::AsyncCommands::set_ex(&mut redis, key, 1, 600)
+        .await
+        .expect("the release");
+}
+
 /// Waits until `counter` reaches `count` (bounded).
 async fn counted(counter: &std::sync::atomic::AtomicU64, count: u64) {
     for _ in 0..600 {
@@ -10515,11 +10541,11 @@ async fn counted(counter: &std::sync::atomic::AtomicU64, count: u64) {
 
 /// Q826 A: an agent edit computed with no room open goes through the room
 /// that opened before it committed, like a person's edit. The edit, held
-/// after its snapshot (a debug hook), fits the stored file alone; a writer
-/// opening the file meanwhile adds more than the write reserve, so the room's
-/// admission refuses the edit (413) and the room grows by the writer's text
-/// only, within its cap. Fails if the edit commits past the room (a 200 and
-/// growth past the cap).
+/// after its snapshot (a debug hook) until the writer's update is in, fits
+/// the stored file alone; a writer opening the file meanwhile adds more than
+/// the write reserve, so the room's admission refuses the edit (413) and the
+/// room grows by the writer's text only, within its cap. Fails if the edit
+/// commits past the room (a 200 and growth past the cap).
 #[tokio::test]
 async fn an_agent_edit_held_while_a_room_opens_goes_through_its_admission() {
     let Some(env) = env() else { return };
@@ -10531,9 +10557,8 @@ async fn an_agent_edit_held_while_a_room_opens_goes_through_its_admission() {
     let port = server.port;
     let edited =
         tokio::spawn(async move { internal(port, "/internal/documents/edit", &edit).await });
-    // The edit read the base with no room open; it holds after its snapshot.
-    counted(&gateway.downloads, 1).await;
     let room = format!("source:{file}:epoch:1");
+    held(&env, &room).await;
     let mut writer = Client::open(server.port).await;
     assert_eq!(writer.joined(&room, &token(&room, &user, "write")).await, 1);
     assert!(writer.settle(|c| source_text(c).len() == base.len()).await);
@@ -10542,6 +10567,7 @@ async fn an_agent_edit_held_while_a_room_opens_goes_through_its_admission() {
         .until(6)
         .await
         .expect("the writer's update is admitted");
+    release(&env, &room).await;
     let (status, refusal) = edited.await.expect("the edit");
     assert_eq!(status, 413, "{refusal}");
     let grown = base.len() + RACE_GROWTH;
@@ -10579,6 +10605,82 @@ async fn a_room_loading_during_a_no_room_agent_commit_waits_for_it() {
     closed_for_size(writer.until(4).await);
     let (status, receipt) = edited.await.expect("the edit");
     assert_eq!(status, 200, "{receipt}");
+}
+
+/// Q829 A: an agent edit of a file whose room is loaded but answers no
+/// snapshot within 10 s (a debug hook) is refused (503) before anything
+/// applies, rather than written past the room. Fails if it is written
+/// directly: a 200, the writer sees it, the row is stored.
+#[tokio::test]
+async fn an_agent_edit_whose_room_answers_no_snapshot_is_refused() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) =
+        text_file_named(&env, &gateway, "hello world", "capy-it-slow-snapshot").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(writer.settle(|c| source_text(c) == "hello world").await);
+    let operation = format!("e_{file}");
+    let edit = source_edit(
+        &user,
+        &file,
+        &operation,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (503, Some("unavailable_target")),
+        "{refusal}"
+    );
+    assert!(!writer.settle(|c| source_text(c).contains("there")).await);
+    assert_eq!(receipts_now(&env, &operation).await, 0);
+    assert_eq!(stored_checkpoint(&env, &file).await, 0);
+}
+
+/// Q829 A: an agent edit whose rooms keep opening and unloading before it
+/// commits (a debug hook: its file looks loaded at each no-room round's last
+/// look and is never loaded for a room's admission) is refused (503) after
+/// three rounds, each of which read the base, before anything applies. Fails
+/// if the edit commits after its first round or never answers.
+#[tokio::test]
+async fn an_agent_edit_whose_rooms_keep_opening_and_unloading_is_refused() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file_named(&env, &gateway, "hello world", "capy-it-room-flaps").await;
+    let operation = format!("e_{file}");
+    let edit = source_edit(
+        &user,
+        &file,
+        &operation,
+        serde_json::json!([{ "type": "replace_text", "expectedText": "world", "text": "there" }]),
+    );
+    let (status, refusal) = tokio::time::timeout(
+        Duration::from_secs(60),
+        internal(server.port, "/internal/documents/edit", &edit),
+    )
+    .await
+    .expect("an answer");
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (503, Some("unavailable_target")),
+        "{refusal}"
+    );
+    assert_eq!(
+        gateway.downloads.load(std::sync::atomic::Ordering::Relaxed),
+        3
+    );
+    assert_eq!(
+        gateway
+            .checkpoints
+            .load(std::sync::atomic::Ordering::Relaxed),
+        0
+    );
+    assert_eq!(receipts_now(&env, &operation).await, 0);
+    assert_eq!(stored_checkpoint(&env, &file).await, 0);
 }
 
 /// A text source the agent edited before its room ever saved: the edit's
@@ -14923,11 +15025,12 @@ fn padded_zip(zip: &[u8], total: usize) -> Vec<u8> {
 /// Q826 A for an Office file, whose save checks its whole state: a DOCX with
 /// 512 KiB of growth left (its base padded to the export cap less the margin
 /// and that), an agent edit held after its snapshot of no room (a debug
-/// hook) and a writer typing meanwhile, about 300 KB each, each fitting
+/// hook) until a writer's typing is in, about 300 KB each, each fitting
 /// alone. The room's admission refuses the edit (413) and nothing resets:
-/// the writer's typing saves. Fails if the edit commits past the room, whose
-/// next save is then over its cap, so it resets with
-/// `source-checkpoint-failed` and loses the typing.
+/// the writer's typing saves and the writer hears no
+/// `source-checkpoint-failed` and no `authorization-revoked`. Fails if the
+/// edit commits past the room, whose next save is then over its cap, so it
+/// resets and loses the typing.
 #[tokio::test]
 async fn an_office_agent_edit_held_while_a_room_opens_resets_no_room() {
     use docx_edit::{EditCtx, EngineSession, FormatPolicy, Position};
@@ -14962,13 +15065,11 @@ async fn an_office_agent_edit_held_while_a_room_opens_resets_no_room() {
         &format!("op_{file}"),
         serde_json::json!(commands),
     );
-    let read = gateway.downloads.load(std::sync::atomic::Ordering::Relaxed);
     let port = server.port;
     let edited =
         tokio::spawn(async move { internal(port, "/internal/documents/edit", &edit).await });
-    // The edit read the base with no room open; it holds after its snapshot.
-    counted(&gateway.downloads, read + 1).await;
     let room = format!("source:{file}:epoch:1");
+    held(&env, &room).await;
     let mut writer = office_writer(server.port, &room, &user).await;
     let engine = EngineSession::new(writer.id());
     let state = writer
@@ -14995,11 +15096,31 @@ async fn an_office_agent_edit_held_while_a_room_opens_resets_no_room() {
         .until(6)
         .await
         .expect("the writer's typing is admitted");
+    release(&env, &room).await;
     let (status, refusal) = edited.await.expect("the edit");
     assert_eq!(status, 413, "{refusal}");
-    source_receipt(&mut writer, "typed")
-        .await
-        .expect("the room saves the typing and never resets");
+    let request = serde_json::json!({ "flush": true, "id": "typed", "type": "checkpoint-request" });
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.to_string().as_bytes());
+    writer.send(9, &payload).await;
+    loop {
+        let (saved, before) = writer.stateless("checkpoint-persisted").await;
+        for heard in &before {
+            assert!(
+                !matches!(
+                    heard["type"].as_str(),
+                    Some("source-checkpoint-failed" | "authorization-revoked")
+                ),
+                "the room reset: {heard}"
+            );
+        }
+        if saved["checkpointIds"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|id| id == "typed"))
+        {
+            break;
+        }
+    }
 }
 
 /// The agent's paragraph commands land on a live Office room (Epo
@@ -17065,12 +17186,12 @@ async fn a_note_agent_edit_held_while_a_room_opens_is_admitted_by_it() {
     let port = server.port;
     let edited =
         tokio::spawn(async move { internal(port, "/internal/documents/edit", &request).await });
-    // Past its look for a room, the edit holds after its snapshot of none.
-    tokio::time::sleep(Duration::from_secs(1)).await;
     let room = format!("material:{material}:schema:1");
+    held(&env, &room).await;
     let mut person = Client::open(server.port).await;
     person.joined(&room, &token(&room, &user, "write")).await;
     assert!(person.settle(|c| c.block_text() == "hello world").await);
+    release(&env, &room).await;
     let (status, receipt) = edited.await.expect("the edit");
     assert_eq!(status, 200, "{receipt}");
     assert!(

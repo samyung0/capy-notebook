@@ -2993,9 +2993,15 @@ looks again right before it commits and goes to a room that opened meanwhile
 (Q826 A, `edits::source_request`), so at the cap the agent is refused (413,
 which Go words for the model) and no room resets for size. A room loading
 while such a commit is in flight waits for it (`sources::edit::Commits`), so
-it loads the committed row before any writer's update. A room that is loaded
-but does not hand over its snapshot within 10 s refuses the edit as
-unavailable, before anything applied, instead of the edit writing past it. A file with no
+it loads the committed row before any writer's update. A person opening Edit
+then waits that long before the room answers the join (View needs no room):
+one Go checkpoint, usually tens to hundreds of milliseconds, at most the
+gateway's 60 s timeout if Go hangs (Q831 A). A room that is loaded but does not
+hand over its snapshot within 10 s, or rooms that keep opening and unloading
+for three rounds, refuse the edit before anything applied instead of the edit
+writing past them (Q829 A): the authority answers 503, which the agent's tool
+retries and then reports as "might have been saved, re-read before further
+editing", so the agent redoes the edit. A file with no
 growth budget left reads as not editable (Epo 2026-10-20): the view read's
 `atSizeLimit` (Go works it out on the current base, with no blob read)
 disables the mode control before any Edit attempt. An edit open whose read

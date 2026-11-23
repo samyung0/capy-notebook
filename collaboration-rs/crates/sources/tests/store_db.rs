@@ -775,6 +775,31 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
     );
 }
 
+/// Q826 A: a no-room agent edit that finds a room opened before its commit
+/// commits nothing and answers none, for that room's admission to take it.
+/// Fails if it commits past the room.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_no_room_edit_commits_nothing_once_a_room_opened() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"abc").await;
+    let input = EditInput {
+        actor_user_id: h.user.clone(),
+        commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": unique("op"), "requestHash": "h1" }),
+        undo: None,
+    };
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let opened = h
+        .sources
+        .apply_edit(&input, live, |name| name == room.name())
+        .await
+        .unwrap();
+    assert!(opened.is_none());
+    assert_eq!(h.row(&room).await.get::<_, i64>(0), 0, "nothing was stored");
+}
+
 /// A trashed file waits for no rebuild, though its room unloading (its
 /// editors closed by the trash) still schedules one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
