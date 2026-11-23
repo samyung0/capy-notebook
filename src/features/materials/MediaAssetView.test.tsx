@@ -105,3 +105,46 @@ it('asks once for a link it still holds, and again once it failed', async () => 
   await assetLink('asset_a', signal, true);
   expect(resolveEditorAsset).toHaveBeenCalledTimes(2);
 });
+
+// A link asked offline whose failure lands once the connection is back, its
+// `online` event gone before it: asked again at once, not left failed until
+// the next reconnect. The second, asked online, fails and stays failed.
+it('asks again at once for a link that failed offline once the connection is back', async () => {
+  const { forgetAssetLinks } = await import('./resolvedAssetLinks');
+  forgetAssetLinks();
+  resolveEditorAsset.mockReset();
+  let fail = (_error: Error) => undefined as void;
+  resolveEditorAsset.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      })
+  );
+  resolveEditorAsset.mockRejectedValue(new TypeError('Failed to fetch'));
+  const browser = { onLine: false };
+  vi.stubGlobal('navigator', browser);
+  const root = createRoot(document.getElementById('root') as never);
+  try {
+    await act(async () =>
+      root.render(
+        <MediaAssetView element={{ assetId: 'asset_away', type: 'img' }} />
+      )
+    );
+    await act(() =>
+      vi.waitFor(() => expect(resolveEditorAsset).toHaveBeenCalledOnce())
+    );
+    browser.onLine = true;
+    await act(async () => fail(new TypeError('Failed to fetch')));
+    await act(() =>
+      vi.waitFor(() => expect(resolveEditorAsset).toHaveBeenCalledTimes(2))
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(resolveEditorAsset).toHaveBeenCalledTimes(2);
+    expect(document.getElementById('root')?.textContent).toContain(
+      m.material_asset_failed()
+    );
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

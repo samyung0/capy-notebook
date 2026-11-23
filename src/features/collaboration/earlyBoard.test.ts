@@ -649,7 +649,7 @@ it('lands a move beside one of a shape a peer deleted, which alone is offered to
   await vi.waitUntil(() => room.getSnapshot().recovery?.rows.length === 1);
   expect(onReplace).not.toHaveBeenCalled();
   expect(userToast).not.toHaveBeenCalled();
-  // Reload drops it and shows the room's document, which takes edits.
+  // Discard drops it and shows the room's document, which takes edits.
   await room.reload();
   expect(room.getSnapshot()).toMatchObject({ recovery: null, synced: true });
   expect(room.doc).toBe(copy.doc);
@@ -1342,7 +1342,7 @@ for (const arrives of [
       expect.objectContaining({ id: `item-refused-${id}` })
     );
     expect(merges).toMatchObject({ runs: 0, tried: 1 });
-    // Stored as they were, until Reload, their sessions this tab's while
+    // Stored as they were, until Discard, their sessions this tab's while
     // they show.
     const rows = await settledDrafts(`u_mock:material:${id}`);
     expect(rows.length).toBeGreaterThan(0);

@@ -10,7 +10,10 @@ import { deleteDrafts, putDrafts, readDrafts } from '@/lib/editDrafts';
 import { setChaosPeers } from './chaosPeers';
 import {
   checkpointRoom,
+  holdMockNoteEdits,
+  holdMockSourceEdits,
   join,
+  refuseMockHeldRetry,
   registerMockCollaborationProvider,
   rooms,
   savedSourceState,
@@ -222,4 +225,117 @@ it('replaces idle peers when their room is dropped and reopened', async () => {
   setChaosPeers(false);
   expect(rooms.get(room.name)).toBe(reopened);
   expect(reopened.participants.size).toBe(1);
+});
+
+/** A source tab whose edits the room holds (`holdMockSourceEdits`). */
+async function heldSource(name: string) {
+  vi.useFakeTimers();
+  const room = sourceRoom(name, 1, 'base');
+  const client = participant();
+  const onHeld = vi.fn();
+  const onStateless = vi.fn();
+  const onUnsyncedChanges = vi.fn();
+  const provider = createSourceProvider({
+    document: client.document,
+    name: room.name,
+    onHeld,
+    onStateless,
+    onUnsyncedChanges,
+    token: async () => '',
+    url: 'mock://collaboration',
+  });
+  cleanups.push(() => provider.destroy());
+  await Promise.resolve();
+  const holds = holdMockSourceEdits(name);
+  client.document.getText('source').insert(4, '!');
+  provider.sendStateless(
+    JSON.stringify({ id: 'held', type: 'checkpoint-request' })
+  );
+  await Promise.resolve();
+  const text = () => room.document.getText('source').toString();
+  return {
+    holds,
+    onHeld,
+    onStateless,
+    onUnsyncedChanges,
+    provider,
+    retry: onHeld.mock.calls[0][0].retry,
+    text,
+  };
+}
+
+// Round 6 review: a held source tab counts one unsynced change, as the room
+// provider does, and none once its Retry hands the edits over. Fails with
+// the hold counting nothing.
+it('counts a held source tab’s edits as one unsynced change until its Retry', async () => {
+  const { onUnsyncedChanges, provider, retry } =
+    await heldSource('test-held-count');
+  expect(provider.hasUnsyncedChanges).toBe(true);
+  expect(onUnsyncedChanges).toHaveBeenLastCalledWith({ number: 1 });
+  retry();
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(provider.hasUnsyncedChanges).toBe(false);
+  expect(onUnsyncedChanges).toHaveBeenLastCalledWith({ number: 0 });
+});
+
+// Round 6 review: a held note channel counts one unsynced change, as the
+// room provider does, and none once the hold ends with its channel. Fails
+// with the hold counting nothing.
+it('counts a held note’s edits as one unsynced change while the hold lasts', () => {
+  const material = { ...db.materials[0], id: 'test-held-note' };
+  db.materials.push(material);
+  cleanups.push(() => db.materials.splice(db.materials.indexOf(material), 1));
+  queryClient.setQueryData(qk.material(material.id), { ...material });
+  const Provider = getProviderClass('mock')!;
+  const client = participant(true);
+  const provider = new Provider({
+    awareness: client.awareness,
+    doc: client.document,
+    options: {
+      initialValue: [{ children: [{ text: 'base' }], type: 'p' }],
+      materialId: material.id,
+      name: 'material:test-held-note:schema:1',
+    },
+  });
+  cleanups.push(() => provider.destroy());
+  provider.connect();
+  const unsynced = () =>
+    (provider as unknown as { provider: { unsyncedChanges: number } }).provider
+      .unsyncedChanges;
+  expect(unsynced()).toBe(0);
+  expect(holdMockNoteEdits(material.id)).toBe(1);
+  expect(unsynced()).toBe(1);
+  provider.disconnect();
+  expect(unsynced()).toBe(0);
+});
+
+it('withholds a held tab’s edits and save from the room until its Retry hands them over', async () => {
+  const { holds, onHeld, onStateless, retry, text } =
+    await heldSource('test-held');
+  expect(holds).toBe(1);
+  expect(text()).toBe('base');
+  expect(onStateless).not.toHaveBeenCalled();
+  retry();
+  expect(onHeld).toHaveBeenLastCalledWith({ retry, retrying: true });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(text()).toBe('base!');
+  expect(onHeld).toHaveBeenLastCalledWith(null);
+  expect(JSON.parse(onStateless.mock.calls[0][0].payload)).toMatchObject({
+    checkpointIds: ['held'],
+    type: 'checkpoint-persisted',
+  });
+});
+
+it('refuses a held Retry for good when asked, the room never taking the edits', async () => {
+  const { onHeld, onStateless, retry, text } = await heldSource('test-refused');
+  expect(refuseMockHeldRetry('test-refused', 'refused')).toBe(1);
+  retry();
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(onHeld).toHaveBeenLastCalledWith(null);
+  expect(text()).toBe('base');
+  expect(JSON.parse(onStateless.mock.calls[0][0].payload)).toMatchObject({
+    checkpointIds: ['held'],
+    recoverable: false,
+    type: 'source-checkpoint-failed',
+  });
 });

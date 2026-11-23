@@ -4,7 +4,7 @@
 //! past the cap closes the key's oldest joined channel instead. A [Seat] or
 //! [Membership] is held while its socket or channel lives and gives its
 //! place back when dropped. A socket whose sends move no bytes for the
-//! silent window closes, giving its places back ([Sent], [watched]).
+//! silent window closes, giving its places back ([Traffic], [watched]).
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use axum::extract::connect_info::Connected;
 use axum::serve::{IncomingStream, Listener};
+use futures::{Stream, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -182,42 +183,122 @@ impl Drop for Membership {
     }
 }
 
-/// When a connection's kernel last took bytes to send (Epo 2026-10-20,
-/// rate-limit review r7): a send has no total time limit, since a whole-state
-/// answer is one frame that a slow link takes long to receive, but one that
-/// moves no bytes for the silent window closes its socket ([watched]).
+/// What a connection's IO moved, either way.
+/// - Out: when its kernel last took bytes to send (Epo 2026-10-20, rate-limit
+///   review r7). A send has no total time limit, since a whole-state answer
+///   is one frame that a slow link takes long to receive, but one that moves
+///   no bytes for the silent window closes its socket ([watched]).
+/// - In: when bytes last came and how many, and how many had come when its
+///   socket last read a whole message (round 4, finding 9). A browser sends
+///   a 2 MiB piece as one frame, its pongs waiting behind it, so a slow
+///   uplink is heard by its bytes: a socket closes as silent only once no
+///   byte came for the window (`socket.rs`), and a group of pieces lives on
+///   while a message is arriving (`room.rs`), which pongs alone never are.
+/// - The heartbeats its client's code sent ([crate::protocol::HEARTBEAT]):
+///   a long send to the client (another room's whole state, a peer's large
+///   update) holds back the server's pings and the acknowledgement its
+///   group's rest waits for, so the tab's heartbeats keep it heard and renew
+///   its group (`room.rs`), which a frozen tab whose browser only answers
+///   pings never does.
 #[derive(Debug)]
-pub struct Sent {
+pub struct Traffic {
     born: Instant,
     /// Milliseconds after `born`.
-    at: AtomicU64,
+    sent_at: AtomicU64,
+    heard_at: AtomicU64,
+    /// Bytes read in all.
+    heard: AtomicU64,
+    /// `heard` when the socket last read a whole message.
+    whole: AtomicU64,
+    /// Heartbeats read in all.
+    beats: AtomicU64,
+    /// When the last heartbeat came, and the longest wait between two, in
+    /// milliseconds (the close log: a hidden tab's beats checked on UAT).
+    beat_at: AtomicU64,
+    beat_gap: AtomicU64,
 }
 
-impl Default for Sent {
+impl Default for Traffic {
     fn default() -> Self {
-        Sent {
+        Traffic {
             born: Instant::now(),
-            at: AtomicU64::new(0),
+            sent_at: AtomicU64::new(0),
+            heard_at: AtomicU64::new(0),
+            heard: AtomicU64::new(0),
+            whole: AtomicU64::new(0),
+            beats: AtomicU64::new(0),
+            beat_at: AtomicU64::new(0),
+            beat_gap: AtomicU64::new(0),
         }
     }
 }
 
-impl Sent {
-    fn mark(&self) {
-        let at = u64::try_from(self.born.elapsed().as_millis()).unwrap_or(u64::MAX);
-        self.at.store(at, Ordering::Relaxed);
+impl Traffic {
+    fn now(&self) -> u64 {
+        u64::try_from(self.born.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
-    fn last(&self) -> Instant {
-        self.born + Duration::from_millis(self.at.load(Ordering::Relaxed))
+    fn sent(&self) {
+        self.sent_at.store(self.now(), Ordering::Relaxed);
+    }
+
+    fn last_sent(&self) -> Instant {
+        self.born + Duration::from_millis(self.sent_at.load(Ordering::Relaxed))
+    }
+
+    fn hear(&self, bytes: usize) {
+        self.heard.fetch_add(bytes as u64, Ordering::Relaxed);
+        self.heard_at.store(self.now(), Ordering::Relaxed);
+    }
+
+    /// When the connection last read a byte (its open, before any).
+    pub fn last_heard(&self) -> Instant {
+        self.born + Duration::from_millis(self.heard_at.load(Ordering::Relaxed))
+    }
+
+    /// The bytes it read in all.
+    pub fn heard(&self) -> u64 {
+        self.heard.load(Ordering::Relaxed)
+    }
+
+    /// Its socket read a whole message: every byte so far is in one.
+    pub fn heard_whole(&self) {
+        self.whole.store(self.heard(), Ordering::Relaxed);
+    }
+
+    /// Bytes came after the last whole message: one is arriving.
+    pub fn arriving(&self) -> bool {
+        self.heard() > self.whole.load(Ordering::Relaxed)
+    }
+
+    /// Its socket read a heartbeat.
+    pub fn beat(&self) {
+        let now = self.now();
+        let last = self.beat_at.swap(now, Ordering::Relaxed);
+        if self.beats.fetch_add(1, Ordering::Relaxed) > 0 {
+            self.beat_gap
+                .fetch_max(now.saturating_sub(last), Ordering::Relaxed);
+        }
+    }
+
+    /// The heartbeats it read in all.
+    pub fn beats(&self) -> u64 {
+        self.beats.load(Ordering::Relaxed)
+    }
+
+    /// The longest wait between two of its heartbeats in milliseconds, once
+    /// it read two.
+    pub fn longest_beat_gap_ms(&self) -> Option<u64> {
+        (self.beats() > 1).then(|| self.beat_gap.load(Ordering::Relaxed))
     }
 }
 
-/// A connection's IO, marking its [Sent] whenever a write takes bytes.
+/// A connection's IO, marking its [Traffic] whenever a write takes bytes or
+/// a read gives some.
 #[derive(Debug)]
 pub struct Tracked<T> {
     io: T,
-    sent: Arc<Sent>,
+    traffic: Arc<Traffic>,
 }
 
 impl<T: AsyncRead + Unpin> AsyncRead for Tracked<T> {
@@ -226,7 +307,13 @@ impl<T: AsyncRead + Unpin> AsyncRead for Tracked<T> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_read(cx, buf)
+        let before = buf.filled().len();
+        let polled = Pin::new(&mut self.io).poll_read(cx, buf);
+        let read = buf.filled().len() - before;
+        if read > 0 {
+            self.traffic.hear(read);
+        }
+        polled
     }
 }
 
@@ -238,7 +325,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Tracked<T> {
     ) -> Poll<io::Result<usize>> {
         let polled = Pin::new(&mut self.io).poll_write(cx, buf);
         if let Poll::Ready(Ok(1..)) = &polled {
-            self.sent.mark();
+            self.traffic.sent();
         }
         polled
     }
@@ -250,7 +337,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Tracked<T> {
     ) -> Poll<io::Result<usize>> {
         let polled = Pin::new(&mut self.io).poll_write_vectored(cx, bufs);
         if let Poll::Ready(Ok(1..)) = &polled {
-            self.sent.mark();
+            self.traffic.sent();
         }
         polled
     }
@@ -277,8 +364,8 @@ impl Listener for TrackedListener {
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         let (io, address) = Listener::accept(&mut self.0).await;
-        let sent = Arc::default();
-        (Tracked { io, sent }, address)
+        let traffic = Arc::default();
+        (Tracked { io, traffic }, address)
     }
 
     fn local_addr(&self) -> io::Result<Self::Addr> {
@@ -286,43 +373,54 @@ impl Listener for TrackedListener {
     }
 }
 
-/// A connection's client address and its [Sent] (axum's connect info).
+/// A connection's client address and its [Traffic] (axum's connect info).
 #[derive(Clone, Debug)]
 pub struct Peer {
     pub address: SocketAddr,
-    pub sent: Arc<Sent>,
+    pub traffic: Arc<Traffic>,
 }
 
 impl Connected<IncomingStream<'_, TrackedListener>> for Peer {
     fn connect_info(stream: IncomingStream<'_, TrackedListener>) -> Self {
         Peer {
             address: *stream.remote_addr(),
-            sent: stream.io().sent.clone(),
+            traffic: stream.io().traffic.clone(),
         }
     }
 }
 
-/// How a [watched] send ended.
+/// How a [watched] or [send_reading] send ended.
 #[derive(Debug, PartialEq)]
 pub enum Sending {
     Sent,
     Failed,
     /// No bytes moved for the stall window.
     Stalled,
+    /// The peer sent no byte for the silent window ([send_reading]).
+    Silent,
 }
 
-/// Waits for `sending`, a send on the connection whose writes mark `sent`:
-/// it stalls once the connection's kernel took no bytes for `stall` since the
-/// send began, however long a send that keeps moving takes.
+/// What a [send_reading] step came to.
+#[derive(Debug, PartialEq)]
+pub enum Step<T> {
+    /// The send ended.
+    Sent(Sending),
+    /// The peer sent this while the send goes on (none: its stream ended).
+    Heard(Option<T>),
+}
+
+/// Waits for `sending`, a send on the connection whose writes mark
+/// `traffic`: it stalls once the connection's kernel took no bytes for
+/// `stall` since the send began, however long a send that keeps moving takes.
 pub async fn watched<E>(
     sending: impl Future<Output = Result<(), E>>,
-    sent: &Sent,
+    traffic: &Traffic,
     stall: Duration,
 ) -> Sending {
     let began = Instant::now();
     tokio::pin!(sending);
     loop {
-        let deadline = sent.last().max(began) + stall;
+        let deadline = traffic.last_sent().max(began) + stall;
         if deadline <= Instant::now() {
             return Sending::Stalled;
         }
@@ -336,30 +434,60 @@ pub async fn watched<E>(
     }
 }
 
+/// One step of a [watched] send (`sending`) that reads the peer meanwhile,
+/// as a send to a slow downlink may take minutes and the tab's heartbeats
+/// must not wait behind it: the send's end, what the peer sent next (the
+/// caller takes it and steps again with the same send), or
+/// [Sending::Silent] once the peer sent no byte for `silent`, the
+/// connection's silent window (its stall window too).
+pub async fn send_reading<R: Stream + Unpin>(
+    mut sending: Pin<&mut impl Future<Output = Sending>>,
+    incoming: &mut R,
+    traffic: &Traffic,
+    silent: Duration,
+) -> Step<R::Item> {
+    loop {
+        let quiet = traffic.last_heard() + silent;
+        tokio::select! {
+            biased;
+            sent = &mut sending => return Step::Sent(sent),
+            item = incoming.next() => {
+                traffic.heard_whole();
+                return Step::Heard(item);
+            }
+            () = tokio::time::sleep_until(quiet) => {
+                if traffic.last_heard() + silent <= Instant::now() {
+                    return Step::Sent(Sending::Silent);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use futures::SinkExt;
-    use tokio::io::{AsyncReadExt, DuplexStream};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
     use tokio_tungstenite::WebSocketStream;
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::protocol::Role;
 
-    /// A server socket over a pipe holding 64 KiB, its [Sent], and the
+    /// A server socket over a pipe holding 64 KiB, its [Traffic], and the
     /// peer's end.
     async fn piped() -> (
         WebSocketStream<Tracked<DuplexStream>>,
-        Arc<Sent>,
+        Arc<Traffic>,
         DuplexStream,
     ) {
         let (ours, peer) = tokio::io::duplex(64 * 1024);
-        let sent = Arc::new(Sent::default());
+        let traffic = Arc::new(Traffic::default());
         let io = Tracked {
             io: ours,
-            sent: sent.clone(),
+            traffic: traffic.clone(),
         };
         let socket = WebSocketStream::from_raw_socket(io, Role::Server, None).await;
-        (socket, sent, peer)
+        (socket, traffic, peer)
     }
 
     /// Security regression (Epo 2026-10-20, rate-limit review r7): a 1 MiB
@@ -371,13 +499,15 @@ mod tests {
     async fn a_send_moving_no_bytes_stalls_while_a_slow_one_goes_out() {
         let stall = Duration::from_secs(60);
         let frame = Message::binary(vec![0u8; 1 << 20]);
-        let (mut socket, sent, _reads_nothing) = piped().await;
-        let stalled =
-            tokio::time::timeout(stall * 2, watched(socket.send(frame.clone()), &sent, stall))
-                .await;
+        let (mut socket, traffic, _reads_nothing) = piped().await;
+        let stalled = tokio::time::timeout(
+            stall * 2,
+            watched(socket.send(frame.clone()), &traffic, stall),
+        )
+        .await;
         assert_eq!(stalled.ok(), Some(Sending::Stalled));
 
-        let (mut socket, sent, mut peer) = piped().await;
+        let (mut socket, traffic, mut peer) = piped().await;
         let reader = tokio::spawn(async move {
             let mut chunk = vec![0u8; 16 * 1024];
             let mut read = 0;
@@ -388,11 +518,130 @@ mod tests {
         });
         let began = Instant::now();
         assert_eq!(
-            watched(socket.send(frame), &sent, stall).await,
+            watched(socket.send(frame), &traffic, stall).await,
             Sending::Sent
         );
         assert!(began.elapsed() > Duration::from_secs(600));
         reader.abort();
+    }
+
+    /// The peer's end of [piped] reading 16 KiB a second, so a 1 MiB send
+    /// to it takes about 64 s, and, when it `beats`, sending its heartbeat
+    /// every 10 s, as a browser's text frame (masked with a zero key).
+    fn slow_peer(peer: DuplexStream, beats: bool) -> tokio::task::JoinHandle<()> {
+        let (mut reads, mut writes) = tokio::io::split(peer);
+        tokio::spawn(async move {
+            let heartbeat = crate::protocol::HEARTBEAT.as_bytes();
+            let mut beat = vec![0x81, 0x80 | heartbeat.len() as u8, 0, 0, 0, 0];
+            beat.extend_from_slice(heartbeat);
+            let mut chunk = vec![0u8; 16 * 1024];
+            for second in 1u64.. {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if reads.read(&mut chunk).await.unwrap_or(0) == 0 {
+                    return;
+                }
+                if beats && second % 10 == 0 {
+                    writes.write_all(&beat).await.expect("a heartbeat");
+                }
+            }
+        })
+    }
+
+    /// A 1 MiB frame sent to `socket` in [send_reading] steps, its peer's
+    /// heartbeats counted as `socket.rs` counts them, and the time it took.
+    async fn sent_reading(
+        socket: WebSocketStream<Tracked<DuplexStream>>,
+        traffic: &Traffic,
+        silent: Duration,
+    ) -> (Sending, Duration) {
+        let (mut sink, mut stream) = socket.split();
+        let began = Instant::now();
+        let frame = Message::binary(vec![0u8; 1 << 20]);
+        let sending = watched(sink.send(frame), traffic, silent);
+        tokio::pin!(sending);
+        loop {
+            match send_reading(sending.as_mut(), &mut stream, traffic, silent).await {
+                Step::Sent(sent) => return (sent, began.elapsed()),
+                Step::Heard(Some(Ok(Message::Text(text))))
+                    if text.as_str() == crate::protocol::HEARTBEAT =>
+                {
+                    traffic.beat();
+                }
+                Step::Heard(Some(Ok(_))) => {}
+                Step::Heard(other) => panic!("the peer closed: {other:?}"),
+            }
+        }
+    }
+
+    /// A peer whose 1 MiB frame takes about 64 s to read, past the 30 s
+    /// silent window, while its heartbeats come every 10 s: the send reads
+    /// them as it goes, so they count and the send ends, not as silent
+    /// (paused time; the 2026-11-23 CI rerun: Linux's buffers and proxies end
+    /// a send at once, but one that waits must not hide the tab's beats).
+    /// Fails if the socket reads nothing while it sends (no beat counted).
+    #[tokio::test(start_paused = true)]
+    async fn a_beating_peer_is_heard_through_a_long_send() {
+        let silent = Duration::from_secs(30);
+        let (socket, traffic, peer) = piped().await;
+        let peer = slow_peer(peer, true);
+        let (sent, took) = sent_reading(socket, &traffic, silent).await;
+        assert_eq!(sent, Sending::Sent);
+        assert!(took > silent, "{took:?}");
+        assert!(traffic.beats() >= 5, "{} beats", traffic.beats());
+        peer.abort();
+    }
+
+    /// The close log's longest wait between two heartbeats, the check of a
+    /// hidden tab's beats on UAT (paused time): none before a second beat,
+    /// then the longest of the waits. Fails if a wait goes unmeasured or a
+    /// shorter one replaces it.
+    #[tokio::test(start_paused = true)]
+    async fn the_longest_wait_between_heartbeats_is_kept() {
+        let traffic = Traffic::default();
+        traffic.beat();
+        assert_eq!(traffic.longest_beat_gap_ms(), None);
+        for wait in [20, 61, 20] {
+            tokio::time::advance(Duration::from_secs(wait)).await;
+            traffic.beat();
+        }
+        assert_eq!(traffic.longest_beat_gap_ms(), Some(61_000));
+    }
+
+    /// The same send to a peer that reads it but sends nothing: it ends as
+    /// silent at the 30 s window, long before it would be through (paused
+    /// time). Fails if silence is not watched while a send is under way
+    /// (the send goes on for its 64 s).
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_peer_closes_at_the_window_during_a_long_send() {
+        let silent = Duration::from_secs(30);
+        let (socket, traffic, peer) = piped().await;
+        let peer = slow_peer(peer, false);
+        let (sent, took) = sent_reading(socket, &traffic, silent).await;
+        assert_eq!(sent, Sending::Silent);
+        assert!(took < silent + Duration::from_secs(2), "{took:?}");
+        peer.abort();
+    }
+
+    /// Round 4, finding 9: a read marks its bytes heard, and a message part
+    /// of which came is arriving until the socket reads it whole. Fails if
+    /// reads go unmarked.
+    #[tokio::test]
+    async fn a_read_is_heard_and_a_message_arrives_until_whole() {
+        let (mut socket, traffic, mut peer) = piped().await;
+        // A binary frame of 4 bytes, masked with a zero key, as a browser
+        // sends it: its header and half its payload first.
+        let wire = [0x82, 0x84, 0, 0, 0, 0, 1, 2, 3, 4];
+        peer.write_all(&wire[..8]).await.expect("half");
+        let read = tokio::time::timeout(Duration::from_millis(50), socket.next()).await;
+        assert!(read.is_err(), "a whole message before its end");
+        assert_eq!(traffic.heard(), 8);
+        assert!(traffic.arriving());
+        peer.write_all(&wire[8..]).await.expect("rest");
+        let message = socket.next().await.expect("a message").expect("read");
+        assert_eq!(message, Message::binary(vec![1, 2, 3, 4]));
+        traffic.heard_whole();
+        assert_eq!(traffic.heard(), 10);
+        assert!(!traffic.arriving());
     }
 
     #[test]

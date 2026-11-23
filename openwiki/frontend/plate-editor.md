@@ -1724,8 +1724,205 @@ walk carries over a run of them when a nested item follows, so the figure's
 photo's binary, a format mark, a type) goes whole; one over the server's cap
 is never sent: the room stops and closes (`collaboration-update-too-large`)
 and joins again only when remounted, keeping the edit in the document and its
-drafts, instead of looping on timeouts. The room provider sends each piece as
-its own SYNC message, acknowledged on its own. The tab's socket paces SYNC
+drafts, instead of looping on timeouts. The room provider sends an update's
+pieces as one group: each its own SYNC message of type `PIECE` (3, after
+y-sync's three), naming what was cut (step 2 or update), its place and the
+group's count (`pieceMessage`, `sync::PIECE`); an update of one piece goes as
+before. The room keeps a group's pieces on their channel and admits them as
+one update after the last (`Room::on_piece`): peers and the store see
+nothing of a group before, then all of it, or nothing at all when a piece is
+refused (its writer refused as for any refused update). The writer's first
+piece goes alone: the room acknowledges it once it holds it, and only then
+does the provider send the rest (`RoomProvider.sendRest`), so a busy answer
+costs one piece, not the 8 MiB burst it raced the user's own group with
+(review round 4, finding 5); one more round trip a group, the socket's one
+group at a time kept, a step 2 in pieces the same. Updates and stateless
+messages (a checkpoint request) made meanwhile wait behind the group and go
+after its rest. The rest is acknowledged with the last piece. A channel that
+ends mid-group (a dropped socket, a Leave, a rejoin after a timeout) leaves
+nothing applied, and its next step 2 carries the edit again. Every piece is
+acknowledged, its first once held and the rest with the group, or its
+channel closes or joins again (review of 43fae032a, findings 1, 3, 6 and 7,
+and its rounds 2 to 4, all wrong behaviour with no product decision):
+
+- A read-only channel's piece is checked on its own (a piece decodes alone)
+  and never kept: one that changes anything is refused, so a reader pins no
+  memory with groups it never finishes.
+- A group gathers at most what one sync message carries in a note room
+  (`NOTE_MAX_SYNC_BYTES`, 4 MiB) and a source room's state cap
+  (`Room::group_cap`). Bytes are the bound; the count is only a sanity bound,
+  cap ÷ 256 KiB + 2 pieces (`max_pieces`): the browser packs a piece to 2 MiB
+  by its own estimate, which counts a delete range as 16 bytes against the 2
+  to 7 it encodes in, so a delete-heavy piece may hold an eighth of that
+  (round 2, finding 6; round 3, finding 9). The piece past the cap is refused
+  before anything of the group is read, with the bytes that came: a note
+  room's with `document-rejected` `document_size_exceeded` (class `limit`),
+  as admission refuses a document past its size, so the editor shows its
+  size refusal instead of joining again to resend the group (it looped on
+  the earlier `malformed update`); a source room's with its state-size
+  refusal. A group naming more pieces than `max_pieces`, which no client
+  cuts, is refused at its first as malformed with its own reason naming the
+  count and the bytes that came (`Room::too_many_pieces`): a note room's
+  `document-rejected` `invalid_document`, a source room's unrecoverable
+  `source-checkpoint-failed`, a draft's `malformed`.
+- A piece out of its group's order, or a new group over an unfinished one,
+  drops the group: its pieces are acknowledged and the channel hears step
+  1, as for an update the room cannot place, whose step 2 answer brings the
+  edit; the rest of a dropped group is acknowledged and let go as it comes.
+- A group not finished by its deadline (the later of its first piece plus
+  what the update allowance takes to carry the room's group cap,
+  `Room::group_carry`, and its latest piece, plus
+  `COLLABORATION_GROUP_SLACK_MS`, 90 s) gets the slack again while a message
+  is arriving on its socket: bytes came since its latest piece or renewal,
+  after the socket's last whole message (`seats::Traffic`,
+  `Room::drop_late_groups`; round 4, finding 9). A browser sends a 2 MiB
+  piece as one frame, so a slow but live uplink lands it however long it
+  takes, and a group whose pieces wait behind another message lives on too.
+  Pongs come whole, so they never renew it. While its first piece waits
+  for its acknowledgement (nothing more of it came), the tab's heartbeat
+  renews it too (a text frame every 20 s, `HEARTBEAT`; round 5, finding 1,
+  and the CI rerun of 2026-11-23): a long send to the client (another
+  room's whole state, a peer's large update) holds back that
+  acknowledgement, which stays in the socket's one ordered outbox (moving
+  it ahead would reorder it against the channel's `stored` notices, whose
+  order after an acknowledgement the provider counts), and the heartbeat
+  says the tab's code still runs. That is the one wait a long send causes,
+  so a group stalled after its second piece gets nothing from heartbeats
+  and is dropped as late (review of 2026-11-24: else a live tab's stalled
+  group held its user's one slot to its limit, minutes on a note, hours on
+  a source file). The socket reads while it sends, so a heartbeat is heard
+  however long a send to a slow downlink takes, and the time a send takes
+  counts for nothing: behind cloudflared or Traefik, and on Linux's large
+  socket buffers, the server's send ends at once whatever the client's
+  link. None of these renews a group past its
+  limit, its room's group cap at the slowest uplink (8 KB/s, or its carry
+  if longer) plus the slack (`Room::group_limit`; round 6, finding 4): a
+  client that reads slowly or trickles bytes holds its user's slot and its
+  room's group bound no longer, and is dropped as late. A group whose tab stopped
+  sending (a frozen tab whose browser still answers pings) is dropped as
+  late (`Room::drop_noticed`): the channel hears `group-dropped`, then the
+  acknowledgement, and no step 1. A resend would stall the same way with no
+  end (round 2, finding 5), so the provider sends nothing more on that
+  channel (`resendHeld`): what was in flight is unsent again, the group's
+  pieces still waiting in the socket's outbox are dropped
+  (`CollabSocket.dropQueued`, their allowance given back, round 3, finding
+  2), the room's step 1 and later edits send nothing, and one unsynced change
+  stands for it, so no receipt is asked for. The editor shows its save strip
+  `unsynced` (Epo 2026-11-23): "Couldn't sync your edits. Retry or reload the
+  page." in the error tone, with no close, Discard (`ghost-hover`, first) and
+  Retry (`dark`, as recovery's Download, Epo 2026-11-23), and no Download.
+  - A late drop while the user is in a timeout raises no strip, and a
+    timeout clears one: the join after the timeout carries the edits, and a
+    Retry meanwhile would join nothing (round 5, finding 3).
+  - Retry (`RoomProvider.retry` through `onHeld`): the same channel joins
+    again now, its step 2 carrying all of it. It is disabled while its join is
+    pending (`HeldEdits.retrying`, cleared once the channel joins or ends;
+    round 4, finding 4), so a second click sends no second JOIN. Nothing
+    retries on a timer; a reconnect or a reload joins again too.
+  - Discard (`HeldStrip.discard`, the owner's): the held edits go from the
+    device, this session's draft rows with them, and the editor continues
+    from the last saved version, as the deleted strip's Discard does (a
+    board asks first, with the same dialog). An item room discards its
+    recorder's rows and opens a fresh room (`ItemRoom.discardHeld`, a quiz
+    both rooms); a note's editor discards its rows and copy, then reports
+    `discarded` for a fresh mount (`NoteEditorCore` `discardHeld`); an Office
+    or text file discards its session's rows and opens a new session
+    (`discardDraft`).
+  - A Retry the room refuses for good shows what that refusal shows
+    elsewhere, never `unsynced` again: `refused` (an update over a limit, a
+    malformed or unassigned one), `access-lost` or the page's access-lost
+    strip (a permission loss), the read-only strip, the deleted strip, or a
+    note's merge view. The provider clears the strip whenever its owner lets
+    it go (`RoomProvider.disconnect` ends the channel, which reports
+    `onHeld(null)`), which every such refusal does; another late drop shows
+    `unsynced` again.
+  Notes, boards, quizzes, sets, diagrams, and Office and text files show it;
+  a note's goes at a room swap with the paused editor, which reports no more
+  (`useHeldEdits`, round 4, finding 3), an Office or text file's with its
+  session (`useSourceSession` starts each one clear), and every other
+  editor's with its provider. At phone width the strip's message wraps
+  beside its actions (round 4, finding 8).
+- The room's unfinished groups, with the admitted groups' pieces it has not
+  sent out yet, hold at most twice its group cap: a piece past that drops
+  its own group alone as busy (round 2, finding 1: timing its writer out let
+  a co-editor's held groups pause another writer's every room; round 3,
+  finding 6: step 1 made the client resend at once, past the bound again).
+- A user has one unfinished group at a time across rooms and paths: a
+  channel's update or step 2 in pieces, or a draft send's (Epo 2026-11-23,
+  in place of a 100 MiB hold per user; the review's reader with 22 channels
+  on 27 MiB DOCX rooms pinned about 600 MiB). The first piece claims the
+  user's slot (`GroupSlots`, given back however the group ends), so what
+  one user holds is one group, bounded by its room's group cap: 4 MiB in a
+  note room, an Office room's state cap. Another group's first piece
+  meanwhile is busy, which is not abuse, so no timeout: on a channel the
+  room sends `group-busy`, then acknowledges the group's pieces and lets
+  them go, and the provider holds the edit as for a late drop, unsynced,
+  drops the group's waiting pieces, and joins the same channel again
+  `GROUP_BUSY_RETRY_MS` (10 s) later, silently, its step 2 carrying the
+  group and the edits made meanwhile; a draft piece is answered `busy`
+  (below). The same group claiming again (a draft resend under its rows'
+  id, a channel's JOIN session on another connection) takes its own place.
+  Busy groups queue first come, first served (round 3, finding 8): a busy
+  group is queued once, a freed slot goes only to the head, and one not
+  back within its patience leaves the queue. A channel waits under its room
+  and JOIN session id (`channel_slot`), so a busy tab keeps its place on its
+  next connection, with a patience of twice the 10 s retry; a draft under
+  its room and group id (`draft_slot`), with the 10 s retry plus
+  `COLLABORATION_GROUP_SLACK_MS`. Each patience also takes one 2 MiB piece
+  at the slowest uplink, 262 s, since a busy group claims again only once
+  its first piece came again (`GroupClaim::channel_patience`,
+  `draft_patience`; round 6, finding 2): a slow uplink keeps its place. A
+  channel that leaves waits no more, unless
+  its session is still in the room on another connection, and a user left
+  with no slot and no waiter has no entry (round 4, finding 2: an orphaned
+  head, a reconnect's new key or a tab gone, held up all its user's groups
+  for up to 100 s). A user's drafts wait once a room: a draft group stands
+  in for its room's draft waiting already, the older edits of its page (the
+  page names a group by its rows, so new edits make a new group and the
+  older is sent no more) or another lineage of the same document, both at
+  its place in line and at its head (round 6, finding 1: two lineages of a
+  document, which one sweep sends, replaced each other at the head and
+  neither ever claimed). A draft group refused for good, by its room or
+  before it (the note moved on, a read-only token, too many sends), waits
+  no more (`drafts::leave_line`; round 5, finding 4; round 6, finding 6).
+  The queue looks at the users whose places are due, kept soonest first,
+  never at every user under its lock. The slots and their queue are per server process, as
+  the rooms are. A tab sends one group at a time on its socket
+  (`CollabSocket.groupTurn`): another room's group waits, one unsynced
+  change, until the first is acknowledged (round 3, finding 4, several notes
+  reconnecting with large offline edits). A group is taken over only by the
+  same JOIN session on another connection, a reconnecting tab's whose old
+  connection the room has not seen close (`Room::claim_channel_group`; the
+  old one hears `group-busy`; the JOIN's own takeover, Q472, usually ended
+  it already), never for a quiet connection: below about 70 KB/s a 2 MiB
+  piece outlasts the pings, and two tabs on a slow link took each other's
+  groups over with neither finishing (round 4, finding 1).
+- A source room's admitted group, a channel's or a draft send's, reaches
+  peers as its pieces, each a SYNC message of its own in yrs's encoding that
+  applies alone, at the update allowance's pace (its burst, then its bytes
+  per second; `outgoing`): a whole group at once could close a slow reader
+  (an outbox past max(4 MiB, its largest frame)), and its writer could have
+  sent no faster. Plain updates go out at once meanwhile (round 2, finding
+  3): one that builds on pieces not sent yet waits pending in the peer's
+  Yjs until they come, so a queued group no longer holds every typist back.
+  A member that joined or was answered after the group's admission holds it
+  in its step 2 and skips its pieces (`Outgoing::admitted`, round 3, finding
+  7). The pieces go to the broadcast with their update, never kept beside
+  it, so a panic in its admission leaves none for the next (round 3, finding
+  5). A note room's group, at most 4 MiB, goes as one.
+- One group is one admission: its limits and its work budget
+  (`ydoc::MAX_WORK`, a million steps) apply to the whole, as to an update
+  sent in one message. The budget counts the splits it makes in held items
+  (the content copied and walked to each cut), which grow with the points it
+  types or deletes inside held content, not with its bytes, and the browser
+  cuts an update in pieces only for its size (new content past 2 MiB), so no
+  honest group nears it; admitted as n budgets, one action could take n
+  million steps.
+
+Draft sends stay one request per piece of at most 2 MiB (Epo 2026-10-18,
+below), each naming its group (`X-Capy-Group`), which the room holds and
+admits whole under the same bounds, and whose pieces reach a source room's
+peers as above (round 2, finding 2). The tab's socket paces SYNC
 and awareness frames under the same allowance (`allowance.ts`, mirroring the
 defaults; a load generator's own socket has its own): a frame waits while the
 allowance is spent, and every frame sent
@@ -1738,7 +1935,7 @@ can still go over, and then the user is in a timeout.
 **Held back.** While the tab holds back messages, every editor (notes,
 items, DOCX, PPTX, XLSX and text) takes no input: frames wait in the socket
 for the allowance, a split update's pieces wait for the server's
-acknowledgement of the last, a draft send waits for the allowance, or the
+acknowledgement of their group, a draft send waits for the allowance, or the
 user is in a timeout (`held.ts`). `CollaborationHold` wraps the note
 editor and its toolbar, the quiz form, the flashcards editor, a live Mermaid
 diagram and the text editor: its content is `inert` and `aria-busy`, with a
@@ -1812,17 +2009,50 @@ their oldest connection to it the same way. The closed room waits, not synced, a
 comes back to it: its tab shows again, or an edit is made in it (a local
 transaction; an applied update such as a restored draft is none); joining at
 once would close the user's next oldest. The server pings every socket every
-30 s and closes one that sends nothing for 60 s (`PING_EVERY`, `SILENT_CLOSE`,
-`COLLABORATION_PING_SECONDS`, `COLLABORATION_SILENT_SECONDS`; any frame counts,
-the browser's automatic pong too, a frame that waited while the socket was
-busy elsewhere as well; Epo 2026-10-20), so a dead connection (a laptop that
+30 s and closes one that sends no byte for 60 s (`PING_EVERY`, `SILENT_CLOSE`,
+`COLLABORATION_PING_SECONDS`, `COLLABORATION_SILENT_SECONDS`; Epo 2026-10-20).
+Any byte counts: the browser's automatic pong, a frame that waited while the
+socket was busy elsewhere, and a frame still arriving, since a slow uplink's
+2 MiB piece is one frame its pong waits behind (round 4, finding 9). A long
+send to a slow downlink holds back the server's pings, so the tab sends its
+own heartbeat, a text frame of `HEARTBEAT` every 20 s while its socket is
+open (`CollabSocket`, `HEARTBEAT_MS`; protocol 41), straight on the socket
+past the update allowance. Its clock is a dedicated worker's timer, one a
+tab, running while any socket is open (`heartbeat.ts`; the worker is built
+from an inline blob, its URL revoked once it starts, so a tab whose first
+socket opens after a deploy changed the bundle's hashes still starts it;
+`worker-src blob:`): Chrome runs the
+timers of a page hidden for 5 minutes once a minute (intensive wake-up
+throttling, which its documentation scopes to the page's `setTimeout` and
+`setInterval`), right at the silent window, and a hidden tab that keeps its
+socket (unsent edits, an Office or text file) is the one with a group to
+lose. A worker that cannot start or fails is reported to Sentry (an
+`Error` saying so; a load failure's event has no message) and no heartbeat
+goes; no page timer stands in. The bench's Node clients pass their own
+`setInterval` clock to `CollabSocket.create` (`nodeHeartbeat.ts`), a
+dependency the bench gives, not an app fallback. Each socket logs one Info
+line at close, `socket heartbeats`, with its `beats` and
+`longest_beat_gap_ms`, so a hidden tab's beats are checked on UAT from the
+logs (deployment-runbook). The server reads while it sends
+(`Connection::write`, `seats::send_reading`), so it hears the heartbeats
+however long the send takes and however the kernels and proxies between
+buffer it; a client that sends nothing, not even a heartbeat, closes at the
+window during a send too. Meanwhile the socket's other work (token timers,
+closings, auth and join answers) waits for the send to end; the writer
+recheck, every 5 s on a writer's updates, still enforces access, so an
+expired token only stretches its grace. The server refuses to start with
+`COLLABORATION_SILENT_SECONDS` or `COLLABORATION_GROUP_SLACK_MS` under two
+heartbeats (40 s, 40,000 ms; `config.rs`; a debug build takes
+`COLLABORATION_IT_HEARTBEAT_MS` for the 20 s, so the rooms tests scale their
+windows down, and a release build refuses it). So a
+dead connection (a laptop that
 changed networks) frees its places through the normal close; the client takes
 that close (1001) like any drop and reconnects. A send has no total time limit,
 since a whole-state answer is one frame that a slow link takes long to receive,
 but a send that moves no bytes for the silent window closes the socket the same
 way (logged `stalled socket closed`; Epo 2026-10-20, rate-limit review r7): the
-listener's connections record when their kernel last took bytes
-(`seats::TrackedListener`, `Sent`, `watched`), so a slow link that keeps taking
+listener's connections record when their kernel last took bytes and when
+bytes last came in (`seats::TrackedListener`, `Traffic`, `watched`), so a slow link that keeps taking
 bytes stays open however long one frame takes. The server refuses to start when
 the silent window is not longer than the pings.
 
@@ -2085,9 +2315,29 @@ session takes over its own channel a dropped socket left behind.
   material). Until the send settles (every group stored or held) the editor
   shows the syncing status and is view-only: notes lock the content and
   toolbar, items set `sending` (`itemEditingStopped`), sources return
-  `draftsSending`. Each request has 30 s plus its upload at 100 KB/s, at
-  most 3 minutes (`draftSendTimeout`, Epo 2026-10-25, Q365), so a 2 MiB
-  piece on a slow uplink still lands; one that fails or times out goes again
+  `draftsSending`. A request is cut only when its upload moved no byte for
+  30 s, or when its answer has not come within 30 s plus its size at the
+  slowest uplink, 8 KB/s, of its upload's end (`postDraft`,
+  `DRAFT_STALL_MS`, `draftSendTimeout`, `SLOWEST_UPLINK`; Epo 2026-10-25,
+  Q360; round 4, finding 9; round 5, finding 2, the rate Epo 2026-11-23):
+  the browser's upload counts bytes handed to its network stack,
+  which may still drain them at that pace. fetch reports no upload progress, so pieces go by XHR; under
+  MSW they go by fetch within that limit, as `client.ts` uploads do, since
+  the e2e specs stand in for `/drafts` by patching fetch. The room gives a
+  draft group its slack again while a piece's body is arriving
+  (`RoomCmd::DraftArriving`, at most once a second), so a slow but live
+  uplink lands a 2 MiB piece, and a body that stops lets the group go at its
+  deadline. A draft group's deadline between pieces is at least the slack
+  plus one 2 MiB piece at the slowest uplink (`Room::draft_wait`,
+  `COLLABORATION_SLOWEST_UPLINK_BYTES`, 8,000; 352 s), since an edge or
+  tunnel in front of the service may take a whole body before the room
+  hears any of it (round 5, finding 2). None of these renews it past the
+  limit a channel's group has, its room's group cap at the slowest uplink
+  plus the slack (`Room::group_limit`; round 6 review): a client sending a
+  held piece again, or trickling a body, holds its user's slot no longer.
+  Cutting smaller pieces after a timeout would not hold:
+  `splitUpdate` keeps a new block's subtree whole up to the update cap and
+  cannot cut binary, format or embed content. One that fails or is cut goes again
   30 s later, doubling to 5 minutes, and at once on the browser's `online`
   event or when the room connects (`now`, from the `beforeJoin` hooks),
   never twice at once: one asked during a try goes as it ends. While steps
@@ -2641,6 +2891,50 @@ design, option d), and the nudge's release file on 2026-10-17.
   `OFFICE_PROTOCOL_VERSION` stays 15 (the runtime messages keep their
   shape). Their deploy request names "client protocol 39 -> 40, source
   39 -> 40".
+  Groups of pieces (2026-11-22, a wrong behaviour with no product decision:
+  a room admitted an action's pieces one by one, so a later piece refused
+  left the earlier ones with peers and in the store) add SYNC type 3,
+  `PIECE` (see **Update allowance and pieces** under
+  [Connection lifetime and refusals](#connection-lifetime-and-refusals)),
+  in both families. A server before it refuses a piece as a malformed sync
+  message, and a tab before it sends its pieces as plain updates the room
+  admits one by one, the partial actions again. It raised `CLIENT_PROTOCOL`
+  to 41 and both minimums to it (material 38 -> 41, source 40 -> 41),
+  `OFFICE_PROTOCOL_VERSION` staying 15.
+  Draft sends name their group on the same change (`X-Capy-Group` on each
+  piece of a group of more than one, listed by the preflight): a page
+  before it, whose pieces a room would admit one by one, is refused as
+  outdated with the minimums raised, and a page after it cannot send a
+  group to a server before it (the preflight refuses the header), so its
+  sweep retries until the server is updated. Its round 2 changed draft
+  sends again (a group's id is its rows' and the same at every send, a send
+  goes on from the piece that failed, a repeated piece answers
+  `piece-held`, a group past the room's bound answers `unavailable`, and a
+  second group of the user's answers `busy`, Epo 2026-11-23) and added the
+  stateless `group-dropped` and `group-busy` notices, which a tab before it
+  ignores: it would resend a late group at once, late again on a slow
+  uplink, and never resend a busy one. The same bump covers it. Its round 3
+  changed them once more: a group past the room's bound answers `busy`
+  (a draft, 409) or `group-busy` (a channel) instead of `unavailable`, a
+  group naming more pieces than the cap allows answers `malformed` with its
+  own reason instead of a size limit, and a resumed draft group answered
+  `unavailable` starts over from piece 0. A tab before it would take a busy
+  group's ACK as its admission and delete the group's draft rows, so the
+  same bump is needed for correctness, not only for behaviour. Round 4 kept
+  the bump: a channel group's first piece is acknowledged on its own once
+  held, the rest with the last (a tab before it adds the two up as one),
+  and a tab after it sends the rest only on that acknowledgement, which a
+  server before it never sends, so its group would stall; a channel's busy group
+  waits under its JOIN session; a draft piece the group does not expect
+  answers `unavailable` without dropping the group. The heartbeat rides the
+  same bump (2026-11-24): a tab sends the text frame `HEARTBEAT` every 20 s
+  (`HEARTBEAT` and `HEARTBEAT_MS` in protocol.rs and protocol.ts, a test
+  keeps them equal), which keeps its socket open, and its group alive while
+  the first piece's acknowledgement waits, through a long frame to it. A
+  server before it ignores text frames, and a tab before it sends none, so
+  such a tab's group would be dropped as late behind a long frame.
+  Its deploy request names "client protocol 40 -> 41, material 38 -> 41,
+  source 40 -> 41".
 
 #### When to bump
 
@@ -3384,7 +3678,7 @@ page load; a later sweep that meets one leaves it for the next load. A 410
 ends (`onDeleted`, its quiz keys with it), unless a page here shows it: one
 error toast, "Edits to “{title}” can't sync" / "It was deleted.", with
 Discard (plain, ringed), Download (filled) and × (Epo 2026-11-20, Q40 A,
-Q44 1; `offerDeletedEdits` in `deletedEditsToast.ts`, apart from `lostEdits.ts` so the rooms that import the latter never reach the file writers, which the board's typecheck would then take in). Rows that make no file (no group draws, or an
+Q44 1; `offerDeletedEdits` in `deletedEditsToast.ts`, apart from `lostEdits.ts` so the rooms that import the latter never reach the file writers, which the board's typecheck would then take in, with @types/hast newer than vendored BlockSuite's pin. The rule: nothing the drawing board reaches imports `deletedEditsFile.ts` or `deletedEditsToast.ts`, statically or dynamically, as tsc follows both. The recovery strip's Download, which a board's embedded quizzes and sets show, is `downloadRecovery` in `recoveryDownload.ts`, whose writer the app's entry `main.tsx` hands in; with none handed in, it fails with the download-failed toast). Rows that make no file (no group draws, or an
 Office file's base is gone; `canSaveDeletedEdits`, checked before the toast
 shows) get Discard and × alone, the body "It was deleted, and these edits
 can't be downloaded." (review 2026-11-20). Download saves the file made from the rows alone
@@ -3416,11 +3710,45 @@ same URL for every document (so one preflight, kept 2 h, covers a sweep):
 for a source, `X-Capy-Protocol: <client protocol>`, the piece as the body
 (`collaboration-rs/crates/server/src/drafts.rs`). A piece over the service's
 8 MiB cap (a struct that cannot be cut) is not sent: the group is left for
-the editor (`held`). A piece the service does not take stops the group's
-send; the pieces before it are in the room, so
-the group's rows become one row of the pieces not sent (the worker's
-`unsent`), which the answer below applies to and recovery shows (Epo
-2026-10-18).
+the editor (`held`). A group of more than one piece names it on each
+request (`X-Capy-Group: <id>,<index>,<count>`): the room holds the pieces
+by user and id (`Room::draft_piece`) and admits the whole after the last,
+or none of it (review of 43fae032a, finding 2: a third piece refused had
+left the first two with peers and in the store). The id is the group's
+rows' (32 hex characters of the SHA-256 of each row's key, id and seq,
+`groupId`), the same at every send and in every tab, so a send of the same
+rows takes the place of the group the room holds instead of holding a
+second one beside it, and two tabs sending them share one (round 2,
+finding 1). A piece before the last answers `piece-held` once held, which
+holds nothing for good; the last answers as a single send does. The room
+holds a draft group under the bounds of a channel's (its count, its group
+cap, the user's one unfinished group, its deadline), stays loaded while it
+holds one, and charges each piece to the allowance as it comes, except one
+the room holds in full, which it neither charges nor keeps (Q321). A piece
+taking the room's unfinished groups past twice its group cap drops the
+group and answers `busy`, uncharged and with no timeout (round 3, finding
+6). A first piece while another group of the user's is unfinished, a
+channel's or a draft send's, answers `busy` (409) with no timeout, and the
+sweep (or the opening editor's send) tries the group again
+`BUSY_RETRY_MS` (10 s) later, silently (Epo 2026-11-23). A count past
+`max_pieces` answers `malformed`, its message naming the count and the
+bytes that came. A piece the
+room holds already (the same count, an index
+below the next it expects, a first piece included) answers `piece-held`
+again, its deadline renewed and nothing charged; a first piece of another
+count, or of a group the room does not hold, begins the group again. A
+piece the room does not expect otherwise (its group dropped at its
+deadline, refused or never begun, or another tab's send of the same rows
+further along) is refused `unavailable`, and the group the room holds stays
+as it is (round 4, finding 6: a stray index dropped the group another send
+was building). A piece the
+service does not take stops the send, and every row of the group stays,
+the answer below applying to all of them; after `too_fast` or no answer
+the next trigger goes on from that piece under the same id (round 2,
+finding 4: sending the whole again cost the group's allowance again). A
+refusal or the deadline drops the group in the room, so a resumed piece
+answered `unavailable` starts the send over from the first piece at once,
+in the same send (round 3, finding 3).
 
 The service counts the send against the user's draft sends once its token
 checks out, at most 60 in any minute apart from the update allowance (Epo
@@ -3479,6 +3807,10 @@ class
   [Client protocol](#client-protocol-and-the-release-nudge));
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
+- `busy` (409, another group of pieces of the user's is unfinished, Epo
+  2026-11-23, or the room holds too many unfinished groups): kept, and sent
+  again 10 s later; the document's later groups wait for that retry too,
+  as each would be busy (`sendGroups`; round 6, finding 1);
 - `too_fast` (429, the user is in a timeout or sent 60 drafts in the last
   minute), no answer (offline, or none within the request's 30 s) or rows
   that changed meanwhile: kept for the next trigger.
@@ -3683,8 +4015,8 @@ change sends none, it closes only those who lost access, with 4403 and no notice
 or the room's) by swapping in a new `NoteEditorCore` under a new generation key
 ([room swap](#room-swap)), which reconnects onto the room's state (after a
 discard, the last durable state). Unsaved edits are kept as one refused draft
-first, so what the swap brings in is the recovery view showing them read-only
-for copying until Reload; a limit also shows the too-large toast, and only
+first, so what the swap brings in offers them as the merge view's pieces
+(Q251); a limit also shows the too-large toast, and only
 edits this device could not store end in the changes-undone toast.
 Invalidating the collaboration token alone is not enough, because an unchanged
 room string leaves the editor mounted on its forked document.
@@ -4308,8 +4640,25 @@ attempts` projects a lagging room first, D9) and fresh reads see what a Save
 would have stored. The projection also names every editor asset either
 document references (`assetIds`), so an image in an incomplete question stays
 in use. The two documents count together against the material's limits: each
-room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
-projection over a limit unless it shrank. Admission checks structure, value
+loaded room keeps its document's bound in `App::quiz_bounds` (`QuizBounds`),
+reads the other room's there when it admits an update, and takes its own new
+bound against the other's as it stands then, under one lock, so two writers
+growing both documents at once never pass a limit the two share. The second
+to take its growth is refused with the size limit, as one writer past it is,
+and the first keeps its edit; before this, each room read the other's bound
+from a message a flush late, both were admitted, and the stores refused both
+documents and reset both rooms. An update admitted against the other's bound
+as it still stands is taken as admitted, a shrink past a limit included; only
+when the other's moved meanwhile is growth past a shared limit refused, a
+shrink measured against the bound the other room counted for this one when
+the validator holds none (review of 43fae032a, finding 5). A room that
+unloads leaves its bound while the other room is loaded (it stored
+everything, so the bound holds for the stored document), and the last of the
+two to unload takes both away (finding 4: an unload that forgot its bound
+left the other room counting the document as it read it at its own load).
+An unloaded room's bound is overwritten by a server edit's store, and an
+unloaded room is otherwise read from the store at its load. The store checks with the same bound, and
+Go refuses a quiz projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
 units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
 descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
@@ -4474,8 +4823,9 @@ which names their lineage (REVIEW5 B1). A quiz's keys document stores under
 its own key (`<key>:keys`). An
 update the server refuses (or a store refusal for the room) ends the room
 here: its edits become a refused draft, a toast says so, and a fresh room
-opens with the draft read-only for copying until Reload (`QuizRecovery`,
-`LiveFlashcards`); it never rejoins with what was refused. A fresh token
+opens with the draft read-only for copying until Discard, beside Download of
+what shows (`QuizRecovery`, `LiveFlashcards`, `downloadRecovery`, Epo
+2026-11-23); it never rejoins with what was refused. A fresh token
 naming another room (a discard) does the same with the edits as a draft of
 the old lineage. An eviction notice's `mode` decides its close: a drain
 (access widened; the room stored first) rejoins with the document as it is,
@@ -6350,8 +6700,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       (another person deleted it), those alone are kept as one hidden refused
       row and shown in the copy-only recovery (`merged`, the `changed` strip)
       while the room runs on; anything else hidden (typing into a text another
-      person replaced) offers the whole early board there. Reload (asking
-      first) drops it and shows the room. Until the hidden row is stored the
+      person replaced) offers the whole early board there. Discard (asking
+      first) drops it and shows the room; Download saves it as an image. Until the hidden row is stored the
       early rows stay; if it cannot be, they stay as its copy. Flags that
       cannot be stored keep the edits as they are, the board read-only under
       the note's `late-unloaded` strip ("Couldn't sync your edits. Retry or
@@ -6386,7 +6736,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       error id (Q612); a board whose mount throws says the canvas couldn't be opened,
       and both reach Sentry (`canvas-open`, `canvas-board`; an API failure is the
       server's to log). A canvas opened offline with no copy waits ("Waiting for
-      connection") and opens by itself when the connection returns; with the browser
+      connection") and opens by itself when the connection returns, also when its
+      read, sent offline, fails only once the connection is back (error-handling
+      "Asked offline, failed once back"); with the browser
       online and the service down, the loader stays and at 30 s from the join's start
       the strip reads "The live collaboration service is unavailable." with Retry
       (Epo 2026-11-04, D5, C9; `unreachable` and `retry` in `itemRoom.ts`). A
@@ -6415,9 +6767,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       An edit the room refuses for good, one taking the board past its cap
       included, is kept on this device as one refused row and opens read-only for
       copying, as any item's (Developer 2026-09-30; Epo 2026-11-18, nothing deleted
-      without acknowledgement), under the recovery strip; Reload asks first ("Discard
+      without acknowledgement), under the recovery strip; its Discard asks first ("Discard
       these edits and reload?", the note's discard words), then drops them and
-      opens the room afresh. The 7-day toast's Download gives a board's edits as its
+      opens the room afresh, and its Download saves the board as an image
+      (`saveRecoveryFile`, Epo 2026-11-23). The 7-day toast's Download gives a board's edits as its
       blocks in JSON, named after the canvas (`draftFile`).
     - **Save status and size (Epo 2026-11-18, 1B and 2B, mocks `StatusB`,
       `StatusPhone`, `SizeB`, `SizeFull`).** The board's save status sits just left

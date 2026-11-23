@@ -17,6 +17,7 @@ import {
   LiveStatus,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import { downloadRecovery } from '@/features/collaboration/recoveryDownload';
 import { UndoSink, type UndoTarget } from '@/features/collaboration/undo';
 import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
 import { duplicateQuestion } from '@/features/questions/questionEdits';
@@ -150,18 +151,21 @@ export function QuizForm({
 }
 
 /** A quiz's stored edits that cannot join its rooms (refused, or left
- * behind by a room that moved on), read-only to copy until Reload, as a
- * note's are (Epo 2026-10-04). A document without such edits reads live,
- * except a deleted quiz's content, which no room serves: its questions are
- * the page's last read (`stored`), beside the keys' edits. */
+ * behind by a room that moved on), read-only to copy until Discard, as a
+ * note's are (Epo 2026-10-04); its page (`title`) downloads them too (Epo
+ * 2026-11-23). A document without such edits reads live, except a deleted
+ * quiz's content, which no room serves: its questions are the page's last
+ * read (`stored`), beside the keys' edits. */
 export function QuizRecovery({
   recovery,
   rooms,
   stored,
+  title,
 }: {
   recovery: NonNullable<QuizRooms['recovery']>;
   rooms: QuizRooms;
   stored?: LearnerQuestion[];
+  title?: string;
 }) {
   const read = rooms.deleted && !recovery.content ? stored : undefined;
   const lastRead = useMemo(() => {
@@ -171,17 +175,29 @@ export function QuizRecovery({
     return content;
   }, [read]);
   useEffect(() => () => lastRead?.destroy(), [lastRead]);
-  const questions = useQuizQuestions(
-    lastRead ?? recovery.content?.doc ?? rooms.content?.doc,
-    recovery.keys?.doc ?? rooms.keys?.doc
-  );
+  const content = lastRead ?? recovery.content?.doc ?? rooms.content?.doc;
+  const keys = recovery.keys?.doc ?? rooms.keys?.doc;
+  const questions = useQuizQuestions(content, keys);
   const state = recoveryBanner({
     deleted: !!(recovery.content?.deleted || recovery.keys?.deleted),
     refused: !!(recovery.content?.refused || recovery.keys?.refused),
   });
   return (
     <div className="grid gap-6">
-      <SaveBanner onReload={recovery.reload} state={state} />
+      <SaveBanner
+        onDiscard={recovery.reload}
+        onDownload={
+          title === undefined
+            ? undefined
+            : () =>
+                void downloadRecovery(
+                  { kind: 'quiz', name: title },
+                  content ?? null,
+                  keys ?? null
+                )
+        }
+        state={state}
+      />
       <QuizQuestionList disabled questions={questions} showAnswerKey />
     </div>
   );

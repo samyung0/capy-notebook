@@ -26,9 +26,10 @@ export interface MarkedRoom {
   unsentFrom(version: number): void;
 }
 
-// Code that did not load while the browser was online is reported once per
+// Code asked for and failed while the browser was online is reported once per
 // page: a cause no retry fixes (a CSP block, a broken build) shows only
-// here (review r3 L3).
+// here (review r3 L3). One asked offline is the connection's, even when its
+// failure lands once the browser is back.
 let unloadedReported = false;
 
 /**
@@ -67,6 +68,7 @@ export function mergeLate(
       reject(signal.reason);
       return;
     }
+    const askedOffline = !navigator.onLine;
     const worker = new Worker(
       new URL('./lateMerge.worker.ts', import.meta.url),
       {
@@ -86,7 +88,7 @@ export function mergeLate(
         return;
       }
       const error = new LateMergeUnloaded(message);
-      if (navigator.onLine && !unloadedReported) {
+      if (!askedOffline && navigator.onLine && !unloadedReported) {
         unloadedReported = true;
         captureException(error, {
           tags: { component: 'late-merge', stage: 'load' },

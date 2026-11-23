@@ -70,3 +70,29 @@ it('moves to the next view across a swap: the old outlet is told, the new one ha
   expect(drawn()).toBeNull();
   await act(async () => root.unmount());
 });
+
+// Round 4, finding 8: an inline strip's message wraps on phones instead of
+// being cut to fit its actions at 360 px; from `sm` up it keeps one row,
+// scrolling sideways. Fails with the message kept on one row at every width.
+it("wraps an inline strip's message on phones and keeps one row from sm up", async () => {
+  const root = createRoot(document.getElementById('root') as never);
+  await act(async () =>
+    root.render(
+      <FileBanner
+        actions={[{ label: 'Retry', onClick: () => {} }]}
+        closeable={false}
+        inline
+        message="Couldn't sync your edits. Retry or reload the page."
+        testId="strip"
+      />
+    )
+  );
+  const strip = drawn() as HTMLElement;
+  const message = strip.firstElementChild as HTMLElement;
+  expect(message.textContent).toContain("Couldn't sync");
+  expect(message.classList.contains('whitespace-nowrap')).toBe(false);
+  expect(message.classList.contains('sm:whitespace-nowrap')).toBe(true);
+  expect(strip.classList.contains('h-9')).toBe(false);
+  expect(strip.classList.contains('sm:h-9')).toBe(true);
+  await act(async () => root.unmount());
+});

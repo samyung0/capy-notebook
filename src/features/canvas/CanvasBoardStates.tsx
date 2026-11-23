@@ -101,13 +101,10 @@ function CanvasBoardStatus({
  * with Download, access lost, the service unreachable, saving delayed), why
  * the board is read-only, or the Trash's Restore. The board under it is read-only whenever the strip says it
  * takes no edits. A strip the person closed draws nothing, and its outline
- * goes with it (`empty:hidden`). Reload in recovery, the deleted strip's
- * Discard, asks before it drops the edits, as a note's Discard does; its
- * confirm reads the word of the strip it was opened from, kept through the
- * close animation. */
+ * goes with it (`empty:hidden`). Discard, in recovery and on the unsynced
+ * strip, asks before it drops the edits, as a note's Discard does. */
 export function CanvasBoardStrip({ strip }: { strip: CanvasStrip | null }) {
   const [asking, setAsking] = useState<{
-    label: string;
     open: boolean;
     run: () => void;
   } | null>(null);
@@ -131,22 +128,17 @@ export function CanvasBoardStrip({ strip }: { strip: CanvasStrip | null }) {
         ) : (
           <DeletedDownload.Provider value={strip.onDownload ?? null}>
             <SaveBanner
-              onReload={
-                strip.onReload &&
+              onDiscard={
+                strip.onDiscard &&
                 (() => {
-                  const run = strip.onReload;
+                  const run = strip.onDiscard;
                   if (!run) return;
-                  setAsking({
-                    label:
-                      strip.state === 'deleted'
-                        ? m.action_discard()
-                        : m.error_action_reload(),
-                    open: true,
-                    run,
-                  });
+                  setAsking({ open: true, run });
                 })
               }
+              onDownload={strip.onDownload}
               onRetry={strip.onRetry}
+              retrying={strip.retrying}
               state={strip.state}
             />
           </DeletedDownload.Provider>
@@ -154,7 +146,7 @@ export function CanvasBoardStrip({ strip }: { strip: CanvasStrip | null }) {
       </div>
       <ConfirmDialog
         body={m.merge_discard_body()}
-        confirmLabel={asking?.label}
+        confirmLabel={m.action_discard()}
         onClose={() => setAsking((last) => last && { ...last, open: false })}
         onConfirm={() => asking?.run()}
         open={!!asking?.open}

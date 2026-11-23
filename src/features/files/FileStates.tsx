@@ -130,7 +130,7 @@ export function FileEmpty({
  * A newer version was published while this saved editor stayed open, or the
  * maintenance pause closed it (`paused`). The view stays as it is, read-only;
  * reloading the page opens the new version. One row, with Reload in the close
- * button's place, as the recovery banner.
+ * button's place.
  */
 export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
   return (
@@ -170,24 +170,35 @@ export function SourceBanners({
   actions,
   banner,
   error,
-  onReload,
+  discarding,
+  onDiscard,
+  onDownload,
+  onRetry,
   paused,
   pausedAtOpen,
   readOnly = false,
-  reloading,
   replaced,
+  retrying,
   storageFull,
 }: {
   actions: FileBannerAction[];
   banner: SaveBannerState | null;
+  /** A Discard is under way. */
+  discarding: boolean;
   error: string | null;
-  /** Leaves the recovery view for the last saved version. */
-  onReload: () => void;
+  /** Recovery's and the `unsynced` strip's Discard: the edits go, for the
+   * last saved version (Epo 2026-11-23). */
+  onDiscard: () => void;
+  /** Recovery's Download: the editor's draft as it shows. */
+  onDownload?: () => void;
+  /** The `unsynced` strip's Retry. */
+  onRetry?: () => void;
+  /** Its join is pending. */
+  retrying?: boolean;
   paused: boolean;
   pausedAtOpen: boolean;
   /** The room turned read-only (a frozen account). */
   readOnly?: boolean;
-  reloading: boolean;
   replaced: boolean;
   /** The file's payer is at its storage limit, so it opens view-only. */
   storageFull?: StorageFullBy;
@@ -200,10 +211,16 @@ export function SourceBanners({
         readOnly && <FileBanner message={m.editor_read_only_strip()} />
       )}
       {banner && (
-        <SaveBanner onReload={onReload} reloading={reloading} state={banner} />
+        <SaveBanner
+          discarding={discarding}
+          onDiscard={onDiscard}
+          onDownload={onDownload}
+          onRetry={onRetry}
+          retrying={retrying}
+          state={banner}
+        />
       )}
-      {/* Recovery content is only copied: no draft download here (a deleted
-          item's strip has its own Download, DeletedDownload). */}
+      {/* Recovery's strip has its own Download: none here. */}
       {error && (
         <FileBanner
           actions={isRecoveryBanner(banner) ? [] : actions}
