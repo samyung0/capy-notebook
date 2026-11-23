@@ -2935,6 +2935,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   such a tab's group would be dropped as late behind a long frame.
   Its deploy request names "client protocol 40 -> 41, material 38 -> 41,
   source 40 -> 41".
+  The DOCX worker and caret pin (pin 45d220dcd, Q815 C step 1: the DOCX
+  editor's engine worker starts as the session opens and loads the state the
+  page loaded, so its first frame request ships only what changed since;
+  Q833 B: an edit the reader makes before the session's first caret pass,
+  typed or from the ribbon, Find or Undo, brings the caret into view) raised
+  `CLIENT_PROTOCOL` to 42 and `MIN_SOURCE` to 42, so source tabs from before
+  it (protocol 41) reload; `MIN_MATERIAL` stays 41 and
+  `OFFICE_PROTOCOL_VERSION` stays 15. It took the next number after the
+  groups of pieces (the first of the two to land takes the next number).
+  Its deploy request names "client protocol 41 -> 42, source 41 -> 42".
 
 #### When to bump
 
