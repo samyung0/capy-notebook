@@ -869,6 +869,12 @@ test('a DOCX edit that keeps the caret brings it back into view', async ({
   test.setTimeout(300_000);
   await openDocxOnPage4(page, true);
   expect(await pageInView(page, 'live', 0)).toBe(false);
+  // The editor draws its caret on its first caret pass; an edit made before
+  // that pass is taken as part of the document's first frame, which keeps
+  // the view (Epo 2026-10-22), so the press waits for the caret.
+  await expect(
+    page.frameLocator('[data-office-view="live"] iframe').getByTestId('caret')
+  ).toBeAttached({ timeout: 60_000 });
   await page.keyboard.press('Delete');
   await expect.poll(() => pageInView(page, 'live', 0)).toBe(true);
 });
