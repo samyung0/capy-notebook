@@ -2627,6 +2627,20 @@ design, option d), and the nudge's release file on 2026-10-17.
   `MIN_MATERIAL` stays 38 and `OFFICE_PROTOCOL_VERSION` stays 15. The number
   is set at merge, since other branches also want 39. Its deploy request
   names "client protocol 38 -> 39, source 36 -> 39".
+  The DOCX Find pin and the agent admission land together (pin f18e63f35,
+  Q825 A and Q828 A: DOCX Find focuses its box the moment it opens and loads
+  with the editor, so the keys typed right after Ctrl+F reach it, and every
+  Ctrl+F opens it seeded from the editor's selection; Q826 A and Q827 A: an
+  agent edit a room opened for goes through that room's admission, and a
+  person's update refused for size and the store's size reset carry
+  `reason: "source_state_bytes"` on `source-checkpoint-failed`, which a
+  source tab shows as the size-limit banner, while `authorization-revoked`
+  naming a source tab's room sends its unsaved edits to recovery). They
+  raised `CLIENT_PROTOCOL` to 40 and `MIN_SOURCE` to 40, so source tabs from
+  before them (protocol 39) reload; `MIN_MATERIAL` stays 38 and
+  `OFFICE_PROTOCOL_VERSION` stays 15 (the runtime messages keep their
+  shape). Their deploy request names "client protocol 39 -> 40, source
+  39 -> 40".
 
 #### When to bump
 

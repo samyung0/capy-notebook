@@ -154,13 +154,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 39;
+pub const CLIENT_PROTOCOL: u32 = 40;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
 pub const MIN_MATERIAL: u32 = 38;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 39;
+pub const MIN_SOURCE: u32 = 40;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -501,15 +501,15 @@ mod tests {
     /// catalog changed and every viewer reads a canvas by the board rules,
     /// drawing what breaks them as a placeholder a tab from before (37) draws
     /// otherwise. Material rooms refuse both as outdated and they reload;
-    /// source rooms follow the BetterOffice pin, raised to 39 by the yrs
-    /// decode patch.
+    /// source rooms follow the BetterOffice pin, raised to 40 by the DOCX
+    /// Find pin.
     #[test]
     fn a_material_tab_from_before_the_board_rules_is_outdated() {
         assert!(outdated(MIN_MATERIAL, Some(36)));
         assert!(outdated(MIN_MATERIAL, Some(37)));
         assert!(!outdated(MIN_MATERIAL, Some(38)));
-        assert!(outdated(MIN_SOURCE, Some(38)));
-        assert!(!outdated(MIN_SOURCE, Some(39)));
+        assert!(outdated(MIN_SOURCE, Some(39)));
+        assert!(!outdated(MIN_SOURCE, Some(40)));
     }
 
     #[test]
