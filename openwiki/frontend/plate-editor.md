@@ -1778,15 +1778,23 @@ and its rounds 2 to 4, all wrong behaviour with no product decision):
   `Room::drop_late_groups`; round 4, finding 9). A browser sends a 2 MiB
   piece as one frame, so a slow but live uplink lands it however long it
   takes, and a group whose pieces wait behind another message lives on too.
-  Pongs come whole, so they never renew it. The time the socket spent
-  sending since, when it read nothing, moves the deadline as far
-  (`Traffic::sending`; round 5, finding 1): a long send to the client
-  (another room's whole state, a peer's large update) holds back its pieces
-  and the acknowledgement its group's rest waits for, which stays in the
-  socket's one ordered outbox (moving it ahead would reorder it against the
-  channel's `stored` notices, whose order after an acknowledgement the
-  provider counts). The total may dip for a moment as a send ends, so the
-  most seen stands (round 6, finding 5). Neither renews a group past its
+  Pongs come whole, so they never renew it. While its first piece waits
+  for its acknowledgement (nothing more of it came), the tab's heartbeat
+  renews it too (a text frame every 20 s, `HEARTBEAT`; round 5, finding 1,
+  and the CI rerun of 2026-11-23): a long send to the client (another
+  room's whole state, a peer's large update) holds back that
+  acknowledgement, which stays in the socket's one ordered outbox (moving
+  it ahead would reorder it against the channel's `stored` notices, whose
+  order after an acknowledgement the provider counts), and the heartbeat
+  says the tab's code still runs. That is the one wait a long send causes,
+  so a group stalled after its second piece gets nothing from heartbeats
+  and is dropped as late (review of 2026-11-24: else a live tab's stalled
+  group held its user's one slot to its limit, minutes on a note, hours on
+  a source file). The socket reads while it sends, so a heartbeat is heard
+  however long a send to a slow downlink takes, and the time a send takes
+  counts for nothing: behind cloudflared or Traefik, and on Linux's large
+  socket buffers, the server's send ends at once whatever the client's
+  link. None of these renews a group past its
   limit, its room's group cap at the slowest uplink (8 KB/s, or its carry
   if longer) plus the slack (`Room::group_limit`; round 6, finding 4): a
   client that reads slowly or trickles bytes holds its user's slot and its
@@ -2005,11 +2013,38 @@ once would close the user's next oldest. The server pings every socket every
 `COLLABORATION_PING_SECONDS`, `COLLABORATION_SILENT_SECONDS`; Epo 2026-10-20).
 Any byte counts: the browser's automatic pong, a frame that waited while the
 socket was busy elsewhere, and a frame still arriving, since a slow uplink's
-2 MiB piece is one frame its pong waits behind (round 4, finding 9). The
-time the socket spent sending since the last byte came does not count, as it
-read nothing meanwhile (`Traffic::quiet_until`, round 5, finding 1): a long
-send to a slow downlink closes nothing, and a ping's send takes no time, so
-a dead connection still closes. So a
+2 MiB piece is one frame its pong waits behind (round 4, finding 9). A long
+send to a slow downlink holds back the server's pings, so the tab sends its
+own heartbeat, a text frame of `HEARTBEAT` every 20 s while its socket is
+open (`CollabSocket`, `HEARTBEAT_MS`; protocol 41), straight on the socket
+past the update allowance. Its clock is a dedicated worker's timer, one a
+tab, running while any socket is open (`heartbeat.ts`; the worker is built
+from an inline blob, its URL revoked once it starts, so a tab whose first
+socket opens after a deploy changed the bundle's hashes still starts it;
+`worker-src blob:`): Chrome runs the
+timers of a page hidden for 5 minutes once a minute (intensive wake-up
+throttling, which its documentation scopes to the page's `setTimeout` and
+`setInterval`), right at the silent window, and a hidden tab that keeps its
+socket (unsent edits, an Office or text file) is the one with a group to
+lose. A worker that cannot start or fails is reported to Sentry (an
+`Error` saying so; a load failure's event has no message) and no heartbeat
+goes; no page timer stands in. The bench's Node clients pass their own
+`setInterval` clock to `CollabSocket.create` (`nodeHeartbeat.ts`), a
+dependency the bench gives, not an app fallback. Each socket logs one Info
+line at close, `socket heartbeats`, with its `beats` and
+`longest_beat_gap_ms`, so a hidden tab's beats are checked on UAT from the
+logs (deployment-runbook). The server reads while it sends
+(`Connection::write`, `seats::send_reading`), so it hears the heartbeats
+however long the send takes and however the kernels and proxies between
+buffer it; a client that sends nothing, not even a heartbeat, closes at the
+window during a send too. Meanwhile the socket's other work (token timers,
+closings, auth and join answers) waits for the send to end; the writer
+recheck, every 5 s on a writer's updates, still enforces access, so an
+expired token only stretches its grace. The server refuses to start with
+`COLLABORATION_SILENT_SECONDS` or `COLLABORATION_GROUP_SLACK_MS` under two
+heartbeats (40 s, 40,000 ms; `config.rs`; a debug build takes
+`COLLABORATION_IT_HEARTBEAT_MS` for the 20 s, so the rooms tests scale their
+windows down, and a release build refuses it). So a
 dead connection (a laptop that
 changed networks) frees its places through the normal close; the client takes
 that close (1001) like any drop and reconnects. A send has no total time limit,
@@ -2891,7 +2926,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   and a tab after it sends the rest only on that acknowledgement, which a
   server before it never sends, so its group would stall; a channel's busy group
   waits under its JOIN session; a draft piece the group does not expect
-  answers `unavailable` without dropping the group.
+  answers `unavailable` without dropping the group. The heartbeat rides the
+  same bump (2026-11-24): a tab sends the text frame `HEARTBEAT` every 20 s
+  (`HEARTBEAT` and `HEARTBEAT_MS` in protocol.rs and protocol.ts, a test
+  keeps them equal), which keeps its socket open, and its group alive while
+  the first piece's acknowledgement waits, through a long frame to it. A
+  server before it ignores text frames, and a tab before it sends none, so
+  such a tab's group would be dropped as late behind a long frame.
   Its deploy request names "client protocol 40 -> 41, material 38 -> 41,
   source 40 -> 41".
 

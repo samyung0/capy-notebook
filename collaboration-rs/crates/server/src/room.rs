@@ -515,18 +515,17 @@ struct Group {
     /// dropped.
     claim: Option<GroupClaim>,
     started: Instant,
-    /// When it is dropped unless its next piece came ([Room::group_carry])
-    /// or a message is still arriving on its socket.
+    /// When it is dropped unless its next piece came ([Room::group_carry]),
+    /// a message is still arriving on its socket or, while its first piece
+    /// waits for its acknowledgement, its tab's heartbeat came.
     deadline: Instant,
-    /// The latest its deadline may be, however much its socket hears or
-    /// sends ([Room::group_limit]).
+    /// The latest its deadline may be, however much its socket hears
+    /// ([Room::group_limit]).
     limit: Instant,
-    /// The bytes its socket had heard at its latest piece or renewal
-    /// ([Room::drop_late_groups]).
+    /// The bytes and heartbeats its socket had read at its latest piece or
+    /// renewal ([Room::drop_late_groups]).
     heard: u64,
-    /// The most its socket's time in sends was then
-    /// ([crate::seats::Traffic::sending]).
-    sending: Duration,
+    beats: u64,
 }
 
 /// A draft send's group (`X-Capy-Group`): its pieces kept by the room until
@@ -582,17 +581,6 @@ fn too_many_pieces(count: u64, bytes: usize, cap: usize) -> String {
         "a group of {count} pieces ({bytes} bytes so far) has more than the {} one within the room's group cap may have",
         max_pieces(cap)
     )
-}
-
-/// What a channel's socket's time in sends (`sending`, its running total)
-/// adds to its group's deadline since `mark`, the most it had seen before,
-/// which it then keeps: the total may dip for a moment as a send ends
-/// (`Traffic::end_send`), which must not count that send again (round 6,
-/// finding 5).
-fn send_credit(mark: &mut Duration, sending: Duration) -> Duration {
-    let credit = sending.saturating_sub(*mark);
-    *mark = (*mark).max(sending);
-    credit
 }
 
 /// The group slot a channel's groups claim ([GroupClaim::channel]): its
@@ -1521,12 +1509,16 @@ impl Room {
     /// Unfinished groups past their deadline are dropped: a channel's is
     /// acknowledged and its channel told ([GROUP_DROPPED_TYPE]), a draft
     /// group's next piece finds nothing to join (`unavailable`). A channel's
-    /// group whose socket heard bytes since its mark, after the socket's
-    /// last whole message, has a message still arriving (a slow uplink's
-    /// piece, or another message its pieces wait behind), and lives on for
-    /// the slack; pongs alone never renew it, as they come whole (round 4,
-    /// finding 9). Its socket's time in sends since its mark does not count
-    /// against it (round 5, finding 1). Neither renews it past its limit
+    /// group lives on for the slack when its socket heard bytes since its
+    /// mark, after the socket's last whole message: a message is still
+    /// arriving (a slow uplink's piece, or another message its pieces wait
+    /// behind); pongs alone never renew it, as they come whole (round 4,
+    /// finding 9). While its first piece is held and nothing more came, it
+    /// lives on too when its tab's heartbeat came since
+    /// ([crate::protocol::HEARTBEAT]): a long send to the client holds back
+    /// the acknowledgement its rest waits for, and its tab's code runs,
+    /// which a frozen tab's never does; a group stalled after its second
+    /// piece gets no renewal from beats. Neither renews it past its limit
     /// ([Room::group_limit]). A draft group waits for one whole
     /// piece at the slowest uplink ([Room::draft_wait]), and lives on while
     /// its piece's body arrives ([RoomCmd::DraftArriving]), up to the same
@@ -1544,14 +1536,13 @@ impl Room {
                 continue;
             };
             let traffic = member.out.traffic();
-            // The time its socket spent sending since, reading nothing,
-            // moves the deadline as far: a long send to its client holds its
-            // pieces and the acknowledgement its rest waits for (round 5,
-            // finding 1).
-            group.deadline += send_credit(&mut group.sending, traffic.sending());
-            let heard = traffic.heard();
-            if group.deadline <= now && heard > group.heard && traffic.arriving() {
-                group.heard = heard;
+            let (heard, beats) = (traffic.heard(), traffic.beats());
+            // Only its held first piece's acknowledgement can wait behind a
+            // long send; a group stalled later holds its user's one slot no
+            // longer for its tab's beats.
+            let waiting = group.next == 1;
+            if (heard > group.heard && traffic.arriving()) || (waiting && beats > group.beats) {
+                (group.heard, group.beats) = (heard, beats);
                 group.deadline = now + slack;
             }
             // Never past its limit (round 6, finding 4).
@@ -3791,7 +3782,7 @@ impl Room {
                 deadline: now + carry + slack,
                 limit: now + limit,
                 heard: member.out.traffic().heard(),
-                sending: member.out.traffic().sending(),
+                beats: member.out.traffic().beats(),
             });
             if busy {
                 // Before the acknowledgement, which admits none of it.
@@ -3811,7 +3802,7 @@ impl Room {
             // The rest of the stray piece's group is let go as it comes.
             if let Some(member) = self.members.get_mut(&key) {
                 let traffic = member.out.traffic();
-                let (heard, sending) = (traffic.heard(), traffic.sending());
+                let (heard, beats) = (traffic.heard(), traffic.beats());
                 member.group = (piece.index + 1 < piece.count).then(|| Group {
                     step2,
                     count: piece.count,
@@ -3824,7 +3815,7 @@ impl Room {
                     deadline: now,
                     limit: now,
                     heard,
-                    sending,
+                    beats,
                 });
             }
             return;
@@ -3862,7 +3853,7 @@ impl Room {
         }
         group.deadline = ((group.started + carry).max(now) + slack).min(group.limit);
         group.heard = member.out.traffic().heard();
-        group.sending = group.sending.max(member.out.traffic().sending());
+        group.beats = member.out.traffic().beats();
         if !last {
             // The first piece held: its acknowledgement tells the client to
             // send the rest, so a busy answer costs it one piece, not its
@@ -6722,17 +6713,6 @@ fn presence_entry(member: &Member, person: u64) -> Value {
 #[cfg(test)]
 mod pace_tests {
     use super::*;
-
-    /// Round 6, finding 5: a dip in the socket's send total as a send ends
-    /// credits nothing, and the send is credited once: 10 s seen, a dip to
-    /// 8 s, then 12 s, add 2 s in all. Fails with the dip taken as the mark
-    /// (4 s more for the same 2 s).
-    #[test]
-    fn a_send_is_credited_once_across_a_dip() {
-        let mut mark = Duration::from_secs(10);
-        let credits = [8, 12].map(|total| send_credit(&mut mark, Duration::from_secs(total)));
-        assert_eq!(credits, [Duration::ZERO, Duration::from_secs(2)]);
-    }
 
     const MIB: usize = 1024 * 1024;
 

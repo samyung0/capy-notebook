@@ -1,7 +1,8 @@
 import { Allowance, tabAllowance } from './allowance';
+import { type HeartbeatClock, onHeartbeat } from './heartbeat';
 import { setHeld } from './held';
 import { watchIdle } from './idle';
-import { decodeFrame, type Message, MessageKind } from './protocol';
+import { decodeFrame, HEARTBEAT, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
@@ -47,9 +48,10 @@ export class CollabSocket {
   private static idleWatched = false;
 
   /** A socket of its own (a load generator's peer), not the tab's shared
-   * one, pacing its updates under an allowance of its own. */
-  static create(url: string): CollabSocket {
-    return new CollabSocket(url, new Allowance());
+   * one, pacing its updates under an allowance of its own and beating on
+   * the `heartbeat` clock it is given (a Node peer has no worker). */
+  static create(url: string, heartbeat: HeartbeatClock): CollabSocket {
+    return new CollabSocket(url, heartbeat, new Allowance());
   }
 
   static for(url: string): CollabSocket {
@@ -69,7 +71,7 @@ export class CollabSocket {
           },
         });
       }
-      socket = new CollabSocket(url);
+      socket = new CollabSocket(url, onHeartbeat);
       CollabSocket.sockets.set(url, socket);
     }
     return socket;
@@ -119,15 +121,24 @@ export class CollabSocket {
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
+  /** Stops its heartbeat, sent while it is open (`onHeartbeat`). */
+  private stopHeartbeat: (() => void) | undefined;
   /** Closed while the page is idle (`sleep`): it opens again only on `wake`. */
   private asleep = false;
 
   readonly url: string;
   /** Its own allowance; the tab's (`tabAllowance`) when none. */
   private readonly allowance: Allowance | null;
+  /** The clock its heartbeat goes by while it is open. */
+  private readonly heartbeat: HeartbeatClock;
 
-  private constructor(url: string, allowance: Allowance | null = null) {
+  private constructor(
+    url: string,
+    heartbeat: HeartbeatClock,
+    allowance: Allowance | null = null
+  ) {
     this.url = url;
+    this.heartbeat = heartbeat;
     this.allowance = allowance;
     // Back online: reconnect now instead of waiting out the backoff.
     if (typeof window !== 'undefined')
@@ -347,8 +358,10 @@ export class CollabSocket {
 
   /** The socket ended: what waited is dropped, the group turn with it, and a
    * timeout is forgotten (rooms resync on rejoin; the server tells them
-   * again if it runs). */
+   * again if it runs). Its heartbeat stops. */
   private dropOutbox() {
+    this.stopHeartbeat?.();
+    this.stopHeartbeat = undefined;
     clearTimeout(this.draining);
     this.draining = undefined;
     this.outbox = [];
@@ -396,6 +409,10 @@ export class CollabSocket {
       if (this.ws !== ws) return;
       this.status = 'connected';
       this.attempts = 0;
+      // Straight on the socket, past the outbox: the allowance never holds
+      // it, and it shows the server this tab's code runs while a long frame
+      // to it holds back the pings.
+      this.stopHeartbeat = this.heartbeat(() => ws.send(HEARTBEAT));
       for (const handler of [...this.handlers]) handler.onSocketOpen();
     };
     ws.onmessage = (event) => {

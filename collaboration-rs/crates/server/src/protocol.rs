@@ -65,6 +65,20 @@ pub enum FrameError {
 /// The most messages one client frame may carry (clients send one each).
 pub const MAX_FRAME_MESSAGES: usize = 64;
 
+/// A client's heartbeat (protocol 41): a WebSocket text frame of exactly
+/// this, which its socket sends every [HEARTBEAT_MS] while open (`HEARTBEAT`
+/// and `HEARTBEAT_MS` in src/features/collaboration/protocol.ts, a test
+/// keeps them equal). It proves the tab's code runs, which the browser's
+/// automatic pongs do not: a long send to the client holds back the
+/// server's pings and the acknowledgement a group's rest waits for, so its
+/// heartbeats keep the socket heard (`socket.rs`) and renew a group waiting
+/// on its first piece's acknowledgement, up to the group's limit
+/// (`Room::drop_late_groups`). Any other text frame is ignored.
+pub const HEARTBEAT: &str = "heartbeat";
+/// How often a client sends its [HEARTBEAT]: the silent window and a
+/// group's slack hold at least two (`config.rs` refuses less).
+pub const HEARTBEAT_MS: u64 = 20_000;
+
 pub fn write_var(out: &mut impl BufMut, mut value: u64) {
     loop {
         let byte = (value & 0x7f) as u8;

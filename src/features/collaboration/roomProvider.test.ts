@@ -7,6 +7,7 @@ import { createSourceProvider } from '@/features/files/sourceProvider';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import { draftsVersion, readDrafts, recordDrafts } from '@/lib/editDrafts';
 import { resetAllowance, tabAllowance } from './allowance';
+import { onHeartbeat } from './heartbeat';
 import { isHeld } from './held';
 import { NoteSeat } from './noteSeat';
 import { PIECE_BYTES } from './pieces';
@@ -14,6 +15,8 @@ import {
   CLIENT_PROTOCOL,
   closedPayload,
   decodeFrame,
+  HEARTBEAT,
+  HEARTBEAT_MS,
   type Message,
   MessageKind,
   message,
@@ -37,6 +40,18 @@ import { CollabSocket } from './socket';
 
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
 
+// The tab's heartbeat clock (`heartbeat.ts`, a worker), ticked by the test.
+const heartbeat = vi.hoisted(() => new Set<() => void>());
+vi.mock('./heartbeat', () => ({
+  onHeartbeat: (onBeat: () => void) => {
+    heartbeat.add(onBeat);
+    return () => heartbeat.delete(onBeat);
+  },
+}));
+const tickHeartbeat = () => {
+  for (const onBeat of [...heartbeat]) onBeat();
+};
+
 /** An in-page WebSocket the test plays the server through. */
 class FakeSocket {
   static instances: FakeSocket[] = [];
@@ -44,6 +59,8 @@ class FakeSocket {
   readyState = 0;
   binaryType = 'blob';
   sent: Message[] = [];
+  /** Text frames sent: the heartbeats. */
+  texts: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
   onclose: ((event: { code: number }) => void) | null = null;
@@ -52,8 +69,9 @@ class FakeSocket {
     this.url = url;
     FakeSocket.instances.push(this);
   }
-  send(bytes: Uint8Array) {
-    this.sent.push(...decodeFrame(bytes));
+  send(data: Uint8Array | string) {
+    if (typeof data === 'string') this.texts.push(data);
+    else this.sent.push(...decodeFrame(data));
   }
   close(code = 1005) {
     this.readyState = 3;
@@ -112,6 +130,7 @@ const clientIdOf = (name: string) =>
   1;
 
 const PADDING = /[=]+$/;
+const RUST_HEARTBEAT_MS = /pub const HEARTBEAT_MS: u64 = ([\d_]+);/;
 
 /** A token as the API mints one, as far as the client reads it: its claims
  * offer a client id (Q213) and, for a DOCX session, its layout worker's
@@ -1878,6 +1897,37 @@ it('speaks the collaboration server’s client protocol', () => {
   expect(rust).toContain(
     `pub const CLIENT_PROTOCOL: u32 = ${CLIENT_PROTOCOL};`
   );
+  expect(rust).toContain(`pub const HEARTBEAT: &str = "${HEARTBEAT}";`);
+  const every = RUST_HEARTBEAT_MS.exec(rust)?.[1];
+  expect(Number(every?.replaceAll('_', ''))).toBe(HEARTBEAT_MS);
+});
+
+// The tab's heartbeat (protocol 41): a long frame to the tab holds back the
+// server's pings, so an open socket sends `HEARTBEAT` on each of the tab's
+// heartbeats (the clock it is given, the tab's in the app), straight on the
+// socket, and none before it opens or once it closed. Fails without the
+// heartbeat, or if it outlives its socket.
+it('sends the heartbeat on each tick while its socket is open, and none once closed', () => {
+  const socket = CollabSocket.create(`wss://collab.test/${url++}`, onHeartbeat);
+  const room = {
+    onMessage() {},
+    onResume() {},
+    onSleep() {},
+    onSocketClose() {},
+    onSocketOpen() {},
+  };
+  socket.attach(room);
+  const ws = FakeSocket.instances.at(-1) as FakeSocket;
+  tickHeartbeat();
+  expect(ws.texts).toEqual([]);
+  ws.open();
+  tickHeartbeat();
+  tickHeartbeat();
+  expect(ws.texts).toEqual([HEARTBEAT, HEARTBEAT]);
+  ws.close();
+  tickHeartbeat();
+  expect(ws.texts).toEqual([HEARTBEAT, HEARTBEAT]);
+  socket.detach(room);
 });
 
 /** The room's presence (Epo 2026-10-20) reaches `onPresence`, never the

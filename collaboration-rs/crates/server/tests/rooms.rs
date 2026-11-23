@@ -239,6 +239,11 @@ async fn launch(env: &Env, api: Option<&str>, extra: &[(&str, &str)], stdout: St
         // A disk store per server (it wipes its folder at start), UAT's cap.
         .env("COLLABORATION_SOURCE_DISK_DIR", disk_dir(port))
         .env("COLLABORATION_SOURCE_DISK_BYTES", "5368709120")
+        // The tests scale the silent window and group slack down from
+        // production's, under the startup bound of two 20 s heartbeats: in a
+        // debug build this only scales that bound. Nothing beats at it; the
+        // clients here that beat send one every 1 s themselves.
+        .env("COLLABORATION_IT_HEARTBEAT_MS", "100")
         .envs(extra.iter().copied())
         .stdout(stdout)
         .spawn()
@@ -684,37 +689,42 @@ impl Client {
                 .ok()??
                 .ok()?;
             let Ws::Binary(bytes) = next else { continue };
-            self.received.extend_from_slice(&bytes);
-            let mut at = 0;
-            let mut found = None;
-            while at < bytes.len() {
-                let _channel = read_var(&bytes, &mut at);
-                let message_kind = bytes[at];
-                at += 1;
-                let len = read_var(&bytes, &mut at) as usize;
-                let payload = bytes[at..at + len].to_vec();
-                at += len;
-                // Syncs apply as they arrive; they wait in the inbox only
-                // when asked for.
-                if message_kind == 5 {
-                    self.on_sync(&payload).await;
-                    if kind != 5 {
-                        continue;
-                    }
-                }
-                if message_kind == kind && found.is_none() {
-                    found = Some(payload);
-                } else {
-                    self.inbox.push(Msg {
-                        kind: message_kind,
-                        payload,
-                    });
-                }
-            }
-            if found.is_some() {
-                return found;
+            if let Some(found) = self.took(&bytes, kind).await {
+                return Some(found);
             }
         }
+    }
+
+    /// Takes a frame the room sent: its first message of `kind` comes back,
+    /// the rest wait in the inbox, and syncs apply as they arrive (waiting in
+    /// the inbox only when asked for).
+    async fn took(&mut self, bytes: &[u8], kind: u8) -> Option<Vec<u8>> {
+        self.received.extend_from_slice(bytes);
+        let mut at = 0;
+        let mut found = None;
+        while at < bytes.len() {
+            let _channel = read_var(bytes, &mut at);
+            let message_kind = bytes[at];
+            at += 1;
+            let len = read_var(bytes, &mut at) as usize;
+            let payload = bytes[at..at + len].to_vec();
+            at += len;
+            if message_kind == 5 {
+                self.on_sync(&payload).await;
+                if kind != 5 {
+                    continue;
+                }
+            }
+            if message_kind == kind && found.is_none() {
+                found = Some(payload);
+            } else {
+                self.inbox.push(Msg {
+                    kind: message_kind,
+                    payload,
+                });
+            }
+        }
+        found
     }
 
     /// Reads (applying syncs) until `check` holds, for up to 5 s.
@@ -20421,7 +20431,9 @@ async fn a_source_groups_pieces_reach_peers_each_on_its_own() {
         .expect("apply");
     let two = typed_as(&writer, writer.id(), "two-");
     writer.send_pieces(2, &[&one, &two]).await;
-    assert_eq!(writer.acked_count().await, 2);
+    // The held first piece's ACK goes alone when the room's flush comes
+    // before the last piece (a loaded machine), with it otherwise.
+    assert_eq!(writer.acked_total(2).await, 2);
     let mut texts = Vec::new();
     while !texts.iter().any(|text| text == "two-one-base") {
         let more = peer.texts_per_update(5000, source_text).await;
@@ -21565,10 +21577,11 @@ async fn a_draft_groups_next_piece_long_after_the_slack_lands() {
 }
 
 /// A TCP proxy to the server whose downlink (server to client) moves its next
-/// `slow` bytes at `rate` bytes a second, then as fast as it goes. Its socket
-/// to the server reads into a 16 KiB buffer, so the server's sends to the
-/// client wait on it as on a slow link; the fast rest drains at once what
-/// the server's kernel still holds when its send ends.
+/// `slow` bytes at `rate` bytes a second, then as fast as it goes. It takes
+/// all the server sends at once and holds it, as cloudflared and Traefik in
+/// front of the server do (and Linux's socket buffers: a 2 MiB send there
+/// ends at once), so the server's send ends long before its client has it.
+/// A send that waits on its client is `seats.rs`'s to test (`send_reading`).
 struct SlowDownlink {
     port: u16,
     rate: std::sync::Arc<std::sync::atomic::AtomicU64>,
@@ -21589,9 +21602,7 @@ async fn slow_downlink(server: u16) -> SlowDownlink {
     let (at, left) = (rate.clone(), slow.clone());
     tokio::spawn(async move {
         while let Ok((client, _)) = listener.accept().await {
-            let socket = tokio::net::TcpSocket::new_v4().expect("socket");
-            socket.set_recv_buffer_size(16 << 10).expect("buffer");
-            let Ok(upstream) = socket.connect(([127, 0, 0, 1], server).into()).await else {
+            let Ok(upstream) = tokio::net::TcpStream::connect(("127.0.0.1", server)).await else {
                 return;
             };
             let (mut from_client, mut to_client) = client.into_split();
@@ -21599,18 +21610,27 @@ async fn slow_downlink(server: u16) -> SlowDownlink {
             tokio::spawn(async move {
                 let _ = tokio::io::copy(&mut from_client, &mut to_server).await;
             });
-            let (at, left) = (at.clone(), left.clone());
+            let (chunks, mut queued) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             tokio::spawn(async move {
                 let mut chunk = vec![0u8; 16 << 10];
                 while let Ok(read @ 1..) = from_server.read(&mut chunk).await {
-                    if to_client.write_all(&chunk[..read]).await.is_err() {
+                    if chunks.send(chunk[..read].to_vec()).is_err() {
+                        return;
+                    }
+                }
+            });
+            let (at, left) = (at.clone(), left.clone());
+            tokio::spawn(async move {
+                while let Some(chunk) = queued.recv().await {
+                    if to_client.write_all(&chunk).await.is_err() {
                         return;
                     }
                     let slow = left.load(Relaxed);
                     if slow > 0 {
-                        left.store(slow.saturating_sub(read as u64), Relaxed);
+                        left.store(slow.saturating_sub(chunk.len() as u64), Relaxed);
                         let rate = at.load(Relaxed) as f64;
-                        tokio::time::sleep(Duration::from_secs_f64(read as f64 / rate)).await;
+                        tokio::time::sleep(Duration::from_secs_f64(chunk.len() as f64 / rate))
+                            .await;
                     }
                 }
             });
@@ -21620,14 +21640,12 @@ async fn slow_downlink(server: u16) -> SlowDownlink {
 }
 
 /// The text [long_send_room] holds: 1.875 MiB, under the 2 MiB text cap by
-/// the room its edits take. Its whole state goes at 100 KiB/s but for its
-/// last 512 KiB, more than the server's kernel holds once its send ends (as
-/// measured on macOS, about 360 KB): a send that slow still moves bytes
-/// every 3 s at most, inside its stall window.
+/// the room its edits take. Its whole state reaches the client in about
+/// 14 s: at 100 KiB/s but for its last 512 KiB.
 const LONG_TEXT: usize = 15 << 17;
 
 /// A text file of [LONG_TEXT] and its writer through a [SlowDownlink],
-/// joined and synced, on a server of [SLOW_LINK]'s pings with a 6 s silent
+/// joined and synced, on a server pinging every second with a 6 s silent
 /// window and 6 s of slack (no carry).
 async fn long_send_room(env: &Env) -> (Gateway, Server, SlowDownlink, String, String, Client) {
     let gateway = gateway(env).await;
@@ -21652,12 +21670,48 @@ async fn long_send_room(env: &Env) -> (Gateway, Server, SlowDownlink, String, St
     (gateway, server, downlink, user, room, writer)
 }
 
+/// The client heartbeat of `protocol.rs` (protocol 41).
+fn heartbeat() -> &'static str {
+    include_str!("../src/protocol.rs")
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("pub const HEARTBEAT: &str = \"")?
+                .strip_suffix("\";")
+        })
+        .expect("HEARTBEAT in protocol.rs")
+}
+
 impl Client {
+    /// Reads for up to 200 ms, applying what comes and answering pings,
+    /// after sending its heartbeat if the next one's time (`beat`, none when
+    /// it sends none) came, a second after the last: false once the socket
+    /// closed.
+    async fn read_beating(&mut self, beat: &mut Option<tokio::time::Instant>) -> bool {
+        if let Some(at) = beat
+            && *at <= tokio::time::Instant::now()
+        {
+            *at += Duration::from_secs(1);
+            if self.ws.send(Ws::text(heartbeat())).await.is_err() {
+                return false;
+            }
+        }
+        match tokio::time::timeout(Duration::from_millis(200), self.ws.next()).await {
+            Err(_) | Ok(Some(Ok(Ws::Ping(_) | Ws::Pong(_) | Ws::Text(_) | Ws::Frame(_)))) => true,
+            Ok(Some(Ok(Ws::Binary(bytes)))) => {
+                self.took(&bytes, u8::MAX).await;
+                true
+            }
+            Ok(Some(Ok(Ws::Close(_)) | Err(_)) | None) => false,
+        }
+    }
+
     /// Asks the room for its whole state again (a step 1 naming nothing),
-    /// all but its last 512 KiB at 100 KiB/s, about 14 s, and reads until all
-    /// of it came. The server's send of it takes that long, its socket reading
-    /// nothing meanwhile, and this client sends nothing until it is through.
-    async fn whole_state_slowly(&mut self, downlink: &SlowDownlink) {
+    /// about 14 s through its [SlowDownlink], and reads until all of it came:
+    /// false if the socket closed first. A client that `beats` sends its
+    /// heartbeat every second meanwhile (a tab's every 20 s, under the 60 s
+    /// silent window); one that does not sends nothing until through, as the
+    /// server's pings wait behind the frame.
+    async fn whole_state_slowly(&mut self, downlink: &SlowDownlink, beats: bool) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
         let empty = StateVector::default().encode_v1();
         downlink.rate.store(100 << 10, Relaxed);
@@ -21665,30 +21719,53 @@ impl Client {
         let before = self.received.len();
         self.send(5, &sync(0, &empty)).await;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-        while self.received.len() < before + LONG_TEXT && tokio::time::Instant::now() < deadline {
-            // Reads for up to 5 s, applying what comes; back at once, the
-            // socket closed.
-            let read = tokio::time::Instant::now();
-            if self.until(u8::MAX).await.is_none() && read.elapsed() < Duration::from_secs(4) {
-                break;
+        let mut beat = beats.then(|| tokio::time::Instant::now() + Duration::from_secs(1));
+        while self.received.len() < before + LONG_TEXT {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the state never came"
+            );
+            if !self.read_beating(&mut beat).await {
+                return false;
             }
         }
-        assert!(
-            self.received.len() >= before + LONG_TEXT,
-            "{} bytes came",
-            self.received.len() - before
-        );
+        true
+    }
+
+    /// Reads for `window` while sending its heartbeat every second: false
+    /// if the socket closed.
+    async fn beat_for(&mut self, window: Duration) -> bool {
+        let end = tokio::time::Instant::now() + window;
+        let mut beat = Some(tokio::time::Instant::now());
+        while tokio::time::Instant::now() < end {
+            if !self.read_beating(&mut beat).await {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// The `group-` notices in its inbox.
+    fn group_notices(&self) -> Vec<String> {
+        self.inbox
+            .iter()
+            .filter(|message| message.kind == 9)
+            .map(|message| text_payload(&message.payload))
+            .filter(|notice| notice.contains("group-"))
+            .collect()
     }
 }
 
-/// Round 5, finding 1: a client receiving a long frame while its group is
-/// gathering keeps its group. Its first piece held, it asks for the room's
-/// whole state again, which the server takes about 14 s to send, past the
-/// 6 s of slack, its socket reading nothing; its last piece then lands the
-/// group whole. Fails if the socket's time in sends counts
-/// against a group (dropped as late).
+/// Round 5, finding 1, as the tab's heartbeats settle it (the 2026-11-23 CI
+/// rerun): a client receiving a long frame while its group waits on its
+/// first piece's acknowledgement keeps its socket and its group while it
+/// sends heartbeats. Its first piece held, it asks for the room's whole
+/// state again, which takes about 14 s to come through a proxy that took
+/// the server's send at once, past the 6 s silent window and slack, with the
+/// server's pings waiting behind it; its last piece then lands the group
+/// whole. Fails if a heartbeat renews no group (dropped as late at 6 s).
 #[tokio::test]
-async fn a_client_receiving_a_long_frame_keeps_its_group() {
+async fn a_beating_client_keeps_its_group_through_a_long_frame() {
     let Some(env) = env() else { return };
     let (_gateway, server, downlink, user, room, mut writer) = long_send_room(&env).await;
     let one = typed_as(&writer, writer.id(), "one ");
@@ -21700,19 +21777,11 @@ async fn a_client_receiving_a_long_frame_keeps_its_group() {
     let two = typed_as(&writer, writer.id(), "two ");
     writer.send(5, &piece(2, 0, 2, &one)).await;
     assert_eq!(writer.acked_count().await, 1);
-    writer.whole_state_slowly(&downlink).await;
+    assert!(writer.whole_state_slowly(&downlink, true).await, "closed");
     writer.send(5, &piece(2, 1, 2, &two)).await;
     assert_eq!(writer.acked_count().await, 1, "its last piece's ack");
-    let notices: Vec<String> = writer
-        .inbox
-        .iter()
-        .filter(|message| message.kind == 9)
-        .map(|message| text_payload(&message.payload))
-        .collect();
-    assert!(
-        notices.iter().all(|notice| !notice.contains("group-")),
-        "{notices:?}"
-    );
+    let notices = writer.group_notices();
+    assert!(notices.is_empty(), "{notices:?}");
     let mut reader = Client::open(server.port).await;
     reader.joined(&room, &token(&room, &user, "write")).await;
     assert!(
@@ -21724,18 +21793,82 @@ async fn a_client_receiving_a_long_frame_keeps_its_group() {
     );
 }
 
-/// Round 5, finding 1: a client that sends nothing while a long send to it
-/// goes on is not closed as silent: the 14 s its room's whole state takes
-/// are past the 6 s silent window, and its socket stays open after. Fails if silence counts from the last byte heard alone (closed as
-/// soon as the send ends).
+/// The same long frame to a client that sends nothing, no heartbeat either,
+/// as a frozen tab whose browser only answers pings (which wait behind the
+/// frame): it is closed as silent and loses its group, so its user's next
+/// group, from a new socket, is not busy and lands. Fails if anything but
+/// the client's own bytes keeps a socket heard (round 5's send-time credit,
+/// where a send waits on its client, or a credit for a frame's expected
+/// delivery).
 #[tokio::test]
-async fn a_client_silent_through_a_long_send_to_it_stays_open() {
+async fn a_silent_client_loses_its_group_through_a_long_frame() {
     let Some(env) = env() else { return };
-    let (_gateway, _server, downlink, _user, _room, mut writer) = long_send_room(&env).await;
-    writer.whole_state_slowly(&downlink).await;
+    let (_gateway, server, downlink, user, room, mut writer) = long_send_room(&env).await;
+    let one = typed_as(&writer, writer.id(), "one ");
+    writer.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    writer.whole_state_slowly(&downlink, false).await;
     assert!(
-        writer.still_open(Duration::from_secs(8)).await,
-        "closed as silent"
+        !writer.still_open(Duration::from_secs(10)).await,
+        "a silent client stayed open"
+    );
+    let mut next = Client::open(server.port).await;
+    assert_eq!(next.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(next.settle(|c| source_text(c).len() == LONG_TEXT).await);
+    next.until(u8::MAX).await;
+    next.inbox.clear();
+    let three = typed_as(&next, next.id(), "three ");
+    next.doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&three).expect("three"))
+        .expect("apply");
+    let four = typed_as(&next, next.id(), "four ");
+    next.send(5, &piece(2, 0, 2, &three)).await;
+    assert_eq!(next.acked_count().await, 1);
+    next.send(5, &piece(2, 1, 2, &four)).await;
+    assert_eq!(next.acked_count().await, 1);
+    let notices = next.group_notices();
+    assert!(notices.is_empty(), "{notices:?}");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        reader
+            .settle(|c| source_text(c).starts_with("four three x"))
+            .await,
+        "{:?}",
+        &source_text(&reader)[..16]
+    );
+}
+
+/// The 2026-11-24 review: a tab's heartbeats renew its group only while its
+/// first piece's acknowledgement waits, the one wait a long send to it
+/// causes. A beating tab whose group of three stalls after its second piece
+/// gets the late drop at the 4 s slack ([SLOW_LINK], no carry) and keeps
+/// its socket. Fails if any heartbeat renews a group (it would hold its
+/// user's one group slot to the group's limit, minutes on a note).
+#[tokio::test]
+async fn a_beating_tabs_group_stalled_after_its_first_ack_is_dropped_as_late() {
+    let Some(env) = env() else { return };
+    let mut config = SLOW_LINK.to_vec();
+    config.push(("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"));
+    let server = start_configured(&env, env.api.as_deref(), &config).await;
+    let (_user, _room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let first = writer.typed("-one");
+    let second = writer.typed("-two");
+    writer.send(5, &piece(2, 0, 3, &first)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    writer.send(5, &piece(2, 1, 3, &second)).await;
+    assert!(
+        writer.beat_for(Duration::from_secs(8)).await,
+        "its socket was closed"
+    );
+    let notices = writer.group_notices();
+    assert!(
+        notices
+            .iter()
+            .any(|notice| notice.contains("group-dropped")),
+        "{notices:?}"
     );
 }
 

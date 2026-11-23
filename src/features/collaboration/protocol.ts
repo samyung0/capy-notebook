@@ -25,6 +25,19 @@ export type MessageKind = (typeof MessageKind)[keyof typeof MessageKind];
 /** y-sync v1 message types inside SYNC, and a piece (`pieceMessage`). */
 export const SyncKind = { Piece: 3, Step1: 0, Step2: 1, Update: 2 } as const;
 
+/**
+ * The socket's heartbeat (protocol 41): a text frame of exactly this, sent
+ * every `HEARTBEAT_MS` while the socket is open (`heartbeat.ts`; `HEARTBEAT`
+ * and `HEARTBEAT_MS` in protocol.rs, a test keeps them equal). The server's
+ * silent window and a group's slack hold at least two. It shows the tab's
+ * code runs, which the browser's automatic pongs do not: a long frame to the
+ * tab holds back the server's pings and the acknowledgement a group's rest
+ * waits for, so the heartbeats keep the socket open and a group waiting on
+ * its first piece's acknowledgement alive (up to its limit).
+ */
+export const HEARTBEAT = 'heartbeat';
+export const HEARTBEAT_MS = 20_000;
+
 export interface Message {
   channel: number;
   kind: number;
