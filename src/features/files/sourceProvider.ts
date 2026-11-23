@@ -3,7 +3,10 @@ import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import type { SourceSession } from '@/api/types';
 import type { PresenceConnection } from '@/features/collaboration/presence';
-import { RoomProvider } from '@/features/collaboration/roomProvider';
+import {
+  type HeldEdits,
+  RoomProvider,
+} from '@/features/collaboration/roomProvider';
 import { CollabSocket } from '@/features/collaboration/socket';
 
 /** Options for a source room's Y.Doc. An Office document skips Yjs's
@@ -43,6 +46,9 @@ export interface SourceProviderConfig {
   onDisconnect?: () => void;
   /** A room update as it arrived (`RoomProvider`, Q549). */
   onFrame?: (update: Uint8Array) => void;
+  /** A group dropped as late holds the edits until its Retry
+   * (`RoomProvider`). */
+  onHeld?: (held: HeldEdits | null) => void;
   /** The room's other editors (`RoomProvider`). */
   onPresence?: (connections: PresenceConnection[]) => void;
   /** The room's answer waits on the user's open budget (`RoomProvider`). */

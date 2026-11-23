@@ -152,7 +152,7 @@ async fn fallback(
         .read_buffer_size(READ_BUFFER)
         .max_message_size(max)
         .max_frame_size(max)
-        .on_upgrade(move |socket| crate::socket::serve(app, socket, seat, peer.sent))
+        .on_upgrade(move |socket| crate::socket::serve(app, socket, seat, peer.traffic))
 }
 
 /// Each socket's read buffer, allocated when it opens (tungstenite's default
@@ -775,6 +775,7 @@ pub(crate) mod tests {
             source_joins: Default::default(),
             markdown: None,
             quiz_bounds: Default::default(),
+            group_slots: Default::default(),
         })
     }
 

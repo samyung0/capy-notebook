@@ -916,7 +916,7 @@ at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
 one more closes their oldest, counted in
 `capy_collaboration_oldest_closed_total`), also left unset, as are
 `COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
-every socket is pinged and one silent that long closes, freeing its places. The address is the gateway limiter's
+every socket is pinged and one that sends no byte that long closes, freeing its places (the time the server spent sending to it does not count). `COLLABORATION_GROUP_SLACK_MS` (90,000, Epo 2026-11-23) is left unset too: an unfinished group of pieces is dropped once it waited that long past what the update allowance takes to carry its room's group cap, unless a message (or a draft piece's body) is still arriving for it, so a slow but live uplink lands any piece. `COLLABORATION_SLOWEST_UPLINK_BYTES` (8,000 bytes a second, the slowest uplink a group must land on, Epo 2026-11-23) is left unset as well: a draft group waits for its next piece the slack plus one 2 MiB piece at that rate, a busy group keeps its place in its user's line one such piece longer, and a channel's group lives at most its room's group cap at that rate plus the slack, however long its socket keeps hearing bytes. Each user has at most one unfinished group at a time across rooms (Epo 2026-11-23), so what one user holds is bounded by one room's group cap, with no setting of its own. The address is the gateway limiter's
 (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
 peer's; an IPv6 one by its /64), so the cap holds only while the origin is
 reachable through the Cloudflare tunnel alone, as it is for the gateway's

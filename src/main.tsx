@@ -18,6 +18,7 @@ import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppToaster } from './components/app/AppToaster';
 import { AppAuthProvider } from './components/app/AuthProvider';
+import { provideRecoveryWriter } from './features/collaboration/recoveryDownload';
 import { getLocale } from './i18n';
 import { initErrorReporting, reportReactError } from './lib/observability';
 import { router } from './router';
@@ -31,6 +32,15 @@ import { SourceTransferPanel } from './features/workspace/SourceTransferPanel';
 
 // Before the first render, so a crash during mount is still reported.
 initErrorReporting();
+
+// The recovery strip's file writer, handed in here as the drawing board must
+// never reach it (recoveryDownload.ts).
+provideRecoveryWriter(async () => {
+  const { saveRecoveryFile } = await import(
+    './features/collaboration/deletedEditsFile'
+  );
+  return saveRecoveryFile;
+});
 
 // The browser picks CJK fallback fonts by the page's language: without it a
 // Chinese UI could mix Japanese and Chinese faces (and their weights) in one

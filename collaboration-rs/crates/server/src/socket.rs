@@ -38,7 +38,7 @@ use crate::observe::{Level, log};
 use crate::protocol::{self, Kind, Message};
 use crate::rate::{TimedOut, Verdict};
 use crate::room::{self, RoomCmd};
-use crate::seats::{Closing, Membership, Seat, Sending, Sent};
+use crate::seats::{Closing, Membership, Seat, Sending, Traffic};
 
 /// A writer's access is revalidated at most this often per channel.
 const RECHECK: Duration = Duration::from_secs(5);
@@ -66,8 +66,10 @@ pub const LATE_REASON: &str = "collaboration-late";
 const JOIN_DEADLINE: Duration = Duration::from_secs(10);
 /// Every socket is pinged this often (`COLLABORATION_PING_SECONDS`), and one
 /// that sends nothing for [SILENT_CLOSE] (`COLLABORATION_SILENT_SECONDS`;
-/// any frame counts, the browser's automatic pong too) closes, freeing its
-/// places (Epo 2026-10-20): a dead connection would hold its user's caps.
+/// any byte counts, the browser's automatic pong too, and the time the
+/// socket spent sending to it does not, [Traffic::quiet_until]) closes,
+/// freeing its places (Epo 2026-10-20): a dead connection would hold its
+/// user's caps.
 pub const PING_EVERY: Duration = Duration::from_secs(30);
 pub const SILENT_CLOSE: Duration = Duration::from_secs(60);
 /// What a timed-out user's channels hear (`update-timeout` in
@@ -493,12 +495,12 @@ struct Connection {
 }
 
 /// Serves one socket; `_address` is its place among its client address's
-/// sockets, given back when it closes, and `sent` says when its connection
-/// last moved bytes out.
-pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sent>) {
+/// sockets, given back when it closes, and `traffic` says when its
+/// connection last moved bytes either way.
+pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, traffic: Arc<Traffic>) {
     let id = app.next_connection.fetch_add(1, Ordering::Relaxed);
     app.stats.connections.fetch_add(1, Ordering::Relaxed);
-    let (outbox, mut out_rx) = Outbox::new();
+    let (outbox, mut out_rx) = Outbox::new(traffic.clone());
     let overflow = outbox.overflow();
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel();
     let (join_tx, mut join_rx) = mpsc::unbounded_channel();
@@ -523,42 +525,49 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sen
     let (ping_every, silent) = (app.config.ping_every, app.config.silent_close);
     let mut ping = tokio::time::interval_at((Instant::now() + ping_every).into(), ping_every);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut heard = Instant::now();
     loop {
         let next_timer = connection.timers.keys().next().map(|(at, _)| *at);
         tokio::select! {
             incoming = socket.recv() => {
-                heard = Instant::now();
+                traffic.heard_whole();
                 if !connection.received(incoming).await {
                     break;
                 }
             }
             _ = ping.tick() => {
                 let message = WsMessage::Ping(Default::default());
-                if !send(&mut socket, message, &sent, silent, &connection.socket_id).await {
+                if !send(&mut socket, message, &traffic, silent, &connection.socket_id).await {
                     break;
                 }
             }
-            () = tokio::time::sleep_until((heard + silent).into()) => {
+            // Silent once no byte came for the window: a slow uplink's frame
+            // is heard as its bytes come, its pong waiting behind it (round
+            // 4, finding 9), and the time this task spent sending, when it
+            // read nothing, does not count (round 5, finding 1).
+            () = tokio::time::sleep_until(traffic.quiet_until(silent)) => {
                 // A frame that arrived while this task was busy in another
-                // arm counts (rate-limit review r7 N-1).
+                // arm counts (rate-limit review r7 N-1), and so do the bytes
+                // of one still arriving.
                 if let Some(incoming) = socket.recv().now_or_never() {
-                    heard = Instant::now();
+                    traffic.heard_whole();
                     if !connection.received(incoming).await {
                         break;
                     }
                     continue;
                 }
+                if traffic.quiet_until(silent) > tokio::time::Instant::now() {
+                    continue;
+                }
                 log(Level::Info, "silent socket closed", json!({ "socket_id": connection.socket_id }));
                 let close = WsMessage::Close(Some(CloseFrame { code: 1001, reason: "silent".into() }));
-                send(&mut socket, close, &sent, silent, &connection.socket_id).await;
+                send(&mut socket, close, &traffic, silent, &connection.socket_id).await;
                 break;
             }
             Some(out) = out_rx.recv() => match out {
                 Out::Frame(frame) => {
                     let len = frame.len();
                     let frame = WsMessage::Binary(frame);
-                    let delivered = send(&mut socket, frame, &sent, silent, &connection.socket_id).await;
+                    let delivered = send(&mut socket, frame, &traffic, silent, &connection.socket_id).await;
                     connection.outbox.sent(len);
                     if !delivered {
                         break;
@@ -598,7 +607,7 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sen
                 }
                 log(Level::Warn, "socket closed before any join", json!({ "socket_id": connection.socket_id }));
                 let close = WsMessage::Close(Some(CloseFrame { code: 1008, reason: "no room joined".into() }));
-                send(&mut socket, close, &sent, silent, &connection.socket_id).await;
+                send(&mut socket, close, &traffic, silent, &connection.socket_id).await;
                 break;
             }
         }
@@ -613,11 +622,11 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sen
 async fn send(
     socket: &mut WebSocket,
     message: WsMessage,
-    sent: &Sent,
+    traffic: &Traffic,
     silent: Duration,
     socket_id: &str,
 ) -> bool {
-    match crate::seats::watched(socket.send(message), sent, silent).await {
+    match crate::seats::watched(socket.send(message), traffic, silent).await {
         Sending::Sent => true,
         Sending::Failed => false,
         Sending::Stalled => {

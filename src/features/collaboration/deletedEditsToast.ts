@@ -19,7 +19,9 @@ import {
  * Download; and the open page's Download of what it shows. Apart from
  * lostEdits, which open pages' rooms import, so they never reach the
  * Download's file writers (tsc follows a dynamic import too, and the board's
- * check would take in the note exporters). */
+ * check would take in the note exporters). Nothing the board reaches may
+ * import this module either: the recovery strip's Download, which a board's
+ * quizzes and sets show, is in `recoveryDownload`. */
 
 /** The open page's Download (Epo 2026-11-20), on the deleted strip and the
  * header's ⋮: the toast's file (`deletedEditsFile`) from the rows the page

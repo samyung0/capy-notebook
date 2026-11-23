@@ -19408,6 +19408,16 @@ impl Client {
         let ack = self.until(6).await.expect("an ack");
         read_var(&ack, &mut 0)
     }
+
+    /// The ACK counts that come until they add up to `count`: a group's first
+    /// piece is acknowledged on its own once held (round 4, finding 5).
+    async fn acked_total(&mut self, count: u64) -> u64 {
+        let mut total = 0;
+        while total < count {
+            total += self.acked_count().await;
+        }
+        total
+    }
 }
 
 /// An action sent in pieces lands whole or not at all: a group whose second
@@ -19442,9 +19452,10 @@ async fn a_group_whose_second_piece_is_refused_leaves_the_room_as_it_was() {
 }
 
 /// A group the room admits reaches its peers once, whole, after its last
-/// piece, and its writer hears one ACK counting every piece; nothing of it
-/// goes anywhere before. Fails if a piece is applied, broadcast or
-/// acknowledged on its own.
+/// piece, and its writer hears an ACK for its first piece once held (round
+/// 4, finding 5) and one counting the rest; nothing of it goes anywhere
+/// before. Fails if a piece is applied or broadcast on its own, or a later
+/// piece acknowledged before the last.
 #[tokio::test]
 async fn an_admitted_group_reaches_peers_once_whole_after_its_last_piece() {
     let Some(env) = env() else { return };
@@ -19454,19 +19465,22 @@ async fn an_admitted_group_reaches_peers_once_whole_after_its_last_piece() {
     let mut peer = synced(server.port, &room, &user, "base").await;
     let first = writer.typed("-one");
     let second = writer.typed("-two");
-    writer.send(5, &piece(2, 0, 2, &first)).await;
+    let third = writer.typed("-three");
+    writer.send(5, &piece(2, 0, 3, &first)).await;
+    assert_eq!(writer.acked_count().await, 1, "its first piece held");
+    writer.send(5, &piece(2, 1, 3, &second)).await;
     assert!(
         !writer.hears(6, 500).await,
-        "a piece was acknowledged alone"
+        "a later piece was acknowledged alone"
     );
     assert!(
         peer.update_within(500).await.is_none(),
         "the peer heard a piece"
     );
-    writer.send(5, &piece(2, 1, 2, &second)).await;
+    writer.send(5, &piece(2, 2, 3, &third)).await;
     assert_eq!(writer.acked_count().await, 2);
     peer.update_within(5000).await.expect("the group");
-    assert_eq!(peer.block_text(), "base-one-two");
+    assert_eq!(peer.block_text(), "base-one-two-three");
     // What follows (the room's contributor markers) holds none of it.
     let id = yrs::block::ClientID::new(writer.id());
     while let Some(later) = peer.update_within(500).await {
@@ -19523,12 +19537,13 @@ async fn a_step2_in_pieces_is_admitted_as_one_after_its_last_piece() {
     let first = writer.typed("-one");
     let second = writer.typed("-two");
     writer.send(5, &piece(1, 0, 2, &first)).await;
+    assert_eq!(writer.acked_count().await, 1, "its first piece held");
     assert!(
         peer.update_within(500).await.is_none(),
         "the peer heard a piece"
     );
     writer.send(5, &piece(1, 1, 2, &second)).await;
-    assert_eq!(writer.acked_count().await, 2);
+    assert_eq!(writer.acked_count().await, 1);
     assert!(
         peer.settle(|c| c.block_text() == "base-one-two").await,
         "{}",
@@ -19537,9 +19552,15 @@ async fn a_step2_in_pieces_is_admitted_as_one_after_its_last_piece() {
 }
 
 /// A note room's group gathers at most what one sync message may carry there
-/// (`NOTE_MAX_SYNC_BYTES`): the piece that takes it past is refused as a
-/// message over that cap, before anything of the group is read or applied.
-/// Fails if a group grows past the room's bound, or its first piece lands.
+/// (`NOTE_MAX_SYNC_BYTES`): the piece that takes it past is refused with the
+/// size limit, as a document past it is, before anything of the group is
+/// read or applied, so the editor shows its size refusal instead of joining
+/// again to resend the group in a loop (review of 43fae032a, finding 3). A
+/// group naming more pieces than that cap can hold is refused at its first,
+/// as an invalid document with its own reason and the bytes that came (round
+/// 3, finding 9). Fails if a group grows past the room's bound, its first
+/// piece lands, the size refusal is a malformed update, or the count's
+/// refusal is a size one.
 #[tokio::test]
 async fn a_group_past_the_rooms_bound_is_refused_whole() {
     let Some(env) = env() else { return };
@@ -19550,16 +19571,1732 @@ async fn a_group_past_the_rooms_bound_is_refused_whole() {
     let first = writer.typed("-one");
     let half = vec![0u8; 2 * 1024 * 1024];
     writer.send_pieces(2, &[&first, &half, &half]).await;
-    let closed = writer.until(4).await.expect("the channel closes");
-    assert!(
-        String::from_utf8_lossy(&closed).contains("malformed update"),
-        "{closed:?}"
-    );
+    let (notice, reason) = writer.rejected().await;
+    assert_eq!(notice["code"], "document_size_exceeded", "{notice}");
+    assert!(reason.contains("invalid material document"), "{reason}");
     assert!(
         peer.update_within(800).await.is_none(),
         "the peer heard a piece"
     );
     assert_eq!(peer.block_text(), "base");
+    assert_eq!(
+        notice["metrics"]["contentBytes"],
+        first.len() + 2 * half.len(),
+        "{notice}"
+    );
+    // Finding 1: 4 MiB holds at most 18 pieces (round 3, finding 9: a
+    // quarter of a MiB each at least); 1,000 are refused at once as
+    // malformed, with the bytes that came, never as a size past the limit.
+    let (_, _, mut many) = writer_of(&env, server.port, &user, &room).await;
+    many.send(5, &piece(2, 0, 1000, b"x")).await;
+    let (notice, reason) = many.rejected().await;
+    assert_eq!(notice["code"], "invalid_document", "{notice}");
+    assert!(reason.contains("1000 pieces (1 bytes so far)"), "{reason}");
+}
+
+/// Round 2, finding 6, and round 3, finding 9: bytes are a group's bound,
+/// its count only a sanity bound with margin. The browser's estimate counts
+/// a delete range as 16 bytes against its real 2 to 7, so a delete-heavy
+/// step 2 within the 4 MiB cap may come in more pieces than 4 MiB / 512 KiB
+/// + 2: twelve small pieces land whole. Fails with a count bound that
+/// assumes half a MiB a piece.
+#[tokio::test]
+async fn a_group_of_many_small_pieces_within_the_rooms_cap_lands() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut peer = synced(server.port, &room, &user, "base").await;
+    let pieces: Vec<Vec<u8>> = (0..12).map(|n| writer.typed(&format!("-{n}"))).collect();
+    let refs: Vec<&[u8]> = pieces.iter().map(Vec::as_slice).collect();
+    writer.send_pieces(2, &refs).await;
+    let mut acked = 0;
+    while acked < 12 {
+        acked += writer.acked_count().await;
+    }
+    assert_eq!(acked, 12);
+    let text: String = (0..12).map(|n| format!("-{n}")).collect();
+    assert!(
+        peer.settle(|c| c.block_text() == format!("base{text}"))
+            .await,
+        "{}",
+        peer.block_text()
+    );
+}
+
+/// A further writer of `room` (as `user`), joined and synced, its step 2
+/// acknowledged.
+async fn writer_of(env: &Env, port: u16, user: &str, room: &str) -> (String, String, Client) {
+    let _ = env;
+    let mut client = Client::open(port).await;
+    client.joined(room, &token(room, user, "write")).await;
+    client.until(6).await.expect("its step 2's ack");
+    (user.to_owned(), room.to_owned(), client)
+}
+
+/// Finding 1: a read-only channel's piece is checked on its own and never
+/// kept, so a reader pins no memory with groups it never finishes: one that
+/// changes anything is refused at once. Fails if a reader's pieces are kept
+/// until a last that never comes.
+#[tokio::test]
+async fn a_readers_piece_that_changes_anything_is_refused_at_once() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "read")).await;
+    assert!(reader.settle(|c| c.block_text() == "base").await);
+    let forged = typed_as(&writer, writer.id(), "forged");
+    reader.send(5, &piece(2, 0, 3, &forged)).await;
+    let closed = reader.until(4).await.expect("the reader closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("read-only connection sent a document update"),
+        "{closed:?}"
+    );
+}
+
+impl Client {
+    /// Whether the room sends this channel step 1 within `ms` (the client
+    /// answers it with its step 2, as a browser does).
+    async fn step1_within(&mut self, ms: u64) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(ms);
+        loop {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return false;
+            };
+            let mut at = 0;
+            let mut step1 = false;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                if kind == 5 {
+                    step1 |= read_var(&payload, &mut 0) == 0;
+                    self.on_sync(&payload).await;
+                } else {
+                    self.inbox.push(Msg { kind, payload });
+                }
+            }
+            if step1 {
+                return true;
+            }
+        }
+    }
+
+    /// The texts the room's next frame of updates leaves this client at,
+    /// one after each of its update messages (`text` reads the document).
+    async fn texts_per_update(&mut self, ms: u64, text: fn(&Client) -> String) -> Vec<String> {
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(ms);
+        loop {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return Vec::new();
+            };
+            let mut at = 0;
+            let mut texts = Vec::new();
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                if kind == 5 {
+                    let update = read_var(&payload, &mut 0) == 2;
+                    self.on_sync(&payload).await;
+                    if update {
+                        texts.push(text(self));
+                    }
+                } else {
+                    self.inbox.push(Msg { kind, payload });
+                }
+            }
+            if !texts.is_empty() {
+                return texts;
+            }
+        }
+    }
+}
+
+/// Finding 7: a piece out of its group's order (here one whose group never
+/// began) is acknowledged, and the channel hears step 1, whose answer
+/// carries what the room lacks, as for an update the room cannot place; the
+/// rest of that group is acknowledged and let go. Fails if the tab is left
+/// waiting for an acknowledgement that never comes.
+#[tokio::test]
+async fn a_piece_out_of_its_groups_order_is_acknowledged_and_its_channel_resynced() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut peer = synced(server.port, &room, &user, "base").await;
+    let one = writer.typed("-one");
+    let two = writer.typed("-two");
+    let three = writer.typed("-three");
+    writer.send(5, &piece(2, 1, 3, &two)).await;
+    assert!(writer.step1_within(2000).await, "no step 1");
+    writer.send(5, &piece(2, 2, 3, &three)).await;
+    // The stray piece, the step 2 answering the step 1, the group's last.
+    let mut acked = 0;
+    while acked < 3 {
+        acked += writer.acked_count().await;
+    }
+    assert_eq!(acked, 3);
+    assert!(!writer.hears(6, 300).await, "acknowledged twice");
+    // The step 2 the step 1 asked for brought all of it.
+    let _ = one;
+    assert!(
+        peer.settle(|c| c.block_text() == "base-one-two-three")
+            .await,
+        "{}",
+        peer.block_text()
+    );
+}
+
+/// Findings 1 and 7, round 2 finding 5: a group not finished by its deadline
+/// (what the allowance takes to carry the room's group cap, plus the slack
+/// after its latest piece) is dropped as late: its pieces are acknowledged
+/// after a `group-dropped` notice, its bytes let go, and no step 1 asks for
+/// a resend, which on an uplink too slow for one piece would be late again
+/// with no end (the client sends it after its next join). Fails if an
+/// abandoned group is kept, left unacknowledged, or answered with step 1.
+#[tokio::test]
+async fn an_unfinished_group_past_its_deadline_is_dropped_with_a_notice_and_no_resend() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_GROUP_SLACK_MS", "300"),
+            ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"),
+        ],
+    )
+    .await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut peer = synced(server.port, &room, &user, "base").await;
+    let first = writer.typed("-one");
+    writer.send(5, &piece(2, 0, 2, &first)).await;
+    // Its first piece is acknowledged as held, and nothing more after.
+    assert_eq!(writer.acked_count().await, 1);
+    let (notice, _) = writer.stateless("group-dropped").await;
+    assert_eq!(notice["room"], room.as_str(), "{notice}");
+    assert!(!writer.hears(6, 300).await, "acknowledged twice");
+    assert!(
+        !writer.step1_within(1000).await,
+        "a step 1 asked for the resend"
+    );
+    assert!(
+        peer.update_within(300).await.is_none(),
+        "a dropped piece landed"
+    );
+    assert_eq!(peer.block_text(), "base");
+}
+
+/// A note in a workspace that `count` users edit (the first owns it):
+/// (users, room).
+async fn note_of_users(env: &Env, text: &str, count: usize) -> (Vec<String>, String) {
+    let (owner, _, room) = shared_note(env, text).await;
+    let client = db(env).await;
+    let material = room
+        .strip_prefix("material:")
+        .and_then(|rest| rest.split(':').next())
+        .expect("material room");
+    let workspace: String = client
+        .query_one(
+            "SELECT workspace_id FROM materials WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("material")
+        .get(0);
+    let mut users = vec![owner];
+    while users.len() < count {
+        let editor = user(env).await;
+        client
+            .execute(
+                "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+                &[&workspace, &editor],
+            )
+            .await
+            .expect("member");
+        users.push(editor);
+    }
+    (users, room)
+}
+
+/// Finding 1, round 2: the room's unfinished groups hold at most twice its
+/// group cap. Two users' groups of 4 MiB fill a note room's 8 MiB, and a
+/// third user's piece drops that group alone as busy (round 3, finding 6):
+/// acknowledged after a `group-busy` notice, its later piece let go, no step
+/// 1 (whose resend would cross the bound again at once), and no one timed
+/// out for others' groups (their typing still lands). The allowance is
+/// raised so only the room's bound acts. Fails if the bound answers step 1
+/// or times the writer out.
+#[tokio::test]
+async fn a_group_past_the_rooms_bound_on_unfinished_groups_is_dropped_alone() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_UPDATE_BURST_BYTES", "67108864")],
+    )
+    .await;
+    let (users, room) = note_of_users(&env, "base", 3).await;
+    let (_, _, mut first) = writer_of(&env, server.port, &users[0], &room).await;
+    let (_, _, mut second) = writer_of(&env, server.port, &users[1], &room).await;
+    let (_, _, mut third) = writer_of(&env, server.port, &users[2], &room).await;
+    let half = vec![0u8; 2 * 1024 * 1024];
+    for client in [&mut first, &mut second] {
+        client.send(5, &piece(2, 0, 3, &half)).await;
+        client.send(5, &piece(2, 1, 3, &half)).await;
+    }
+    assert!(!first.hears(4, 300).await && !second.hears(4, 300).await);
+    third.send(5, &piece(2, 0, 2, b"x")).await;
+    let (notice, _) = third.stateless("group-busy").await;
+    assert_eq!(notice["room"], room.as_str(), "{notice}");
+    assert_eq!(third.acked_count().await, 1);
+    third.send(5, &piece(2, 1, 2, b"y")).await;
+    assert_eq!(third.acked_count().await, 1, "the busy group's last");
+    assert!(
+        !third.step1_within(500).await,
+        "a step 1 asked for the resend"
+    );
+    assert!(third.settle(|c| c.block_text() == "base").await);
+    let typed = third.typed("-three");
+    third.send(5, &sync(2, &typed)).await;
+    assert_eq!(third.acked_count().await, 1, "its typing was not taken");
+    let (_, _, mut reader) = writer_of(&env, server.port, &users[2], &room).await;
+    assert!(
+        reader.settle(|c| c.block_text() == "base-three").await,
+        "{}",
+        reader.block_text()
+    );
+}
+
+/// Finding 6: an admitted source group reaches peers as its pieces, each a
+/// message of its own that applies alone, in order, as they reached the
+/// room before groups, never as one whole that could close a slow reader.
+/// Fails if a group goes out merged.
+#[tokio::test]
+async fn a_source_groups_pieces_reach_peers_each_on_its_own() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut clients = Vec::new();
+    for _ in 0..2 {
+        let mut client = Client::open(server.port).await;
+        assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+        assert!(client.settle(|c| source_text(c) == "base").await);
+        client.until(6).await.expect("its step 2's ack");
+        clients.push(client);
+    }
+    let (mut writer, mut peer) = (clients.remove(0), clients.remove(0));
+    let one = typed_as(&writer, writer.id(), "one-");
+    writer
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&one).expect("one"))
+        .expect("apply");
+    let two = typed_as(&writer, writer.id(), "two-");
+    writer.send_pieces(2, &[&one, &two]).await;
+    assert_eq!(writer.acked_count().await, 2);
+    let mut texts = Vec::new();
+    while !texts.iter().any(|text| text == "two-one-base") {
+        let more = peer.texts_per_update(5000, source_text).await;
+        assert!(!more.is_empty(), "the group never came: {texts:?}");
+        texts.extend(more);
+    }
+    assert!(texts.iter().any(|text| text == "one-base"), "{texts:?}");
+}
+
+/// The updates of a draft group in pieces: `edits`, each typed into the
+/// note's first block after the one before, by the session of `from`, as
+/// one update each (the first carries the state it grew from).
+fn drafted_pieces(from: &Doc, edits: &[&str]) -> Vec<Vec<u8>> {
+    let doc = Doc::with_options(ydoc::doc_options(from.client_id().get()));
+    let state = from
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    let mut before = StateVector::default();
+    let mut pieces = Vec::new();
+    for edit in edits {
+        typed_into_note(edit)(&doc);
+        pieces.push(doc.transact().encode_state_as_update_v1(&before));
+        before = doc.transact().state_vector();
+    }
+    pieces
+}
+
+/// Finding 2: a draft group sent in pieces (one request each, Epo 2026-10-18)
+/// lands whole after its last or not at all. Its first piece answers
+/// `piece-held` and reaches no one; the last lands both. A group whose
+/// later piece is refused leaves nothing of it in the room or the store,
+/// and a piece whose group the room does not hold is refused `unavailable`,
+/// for the page to send the whole group again. Fails if a draft piece is
+/// admitted alone.
+#[tokio::test]
+async fn a_draft_group_lands_whole_after_its_last_piece_or_not_at_all() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut editor = synced(server.port, &room, &user, "base").await;
+    let room_token = token(&room, &user, "write");
+    let send = |body: Vec<u8>, group: &'static str| {
+        let (room, token) = (room.clone(), room_token.clone());
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let pieces = drafted_pieces(&editor.doc, &[" one", " two"]);
+    let (status, held) = send(pieces[0].clone(), "g1,0,2").await;
+    assert_eq!(
+        (status, held["type"].as_str()),
+        (200, Some("piece-held")),
+        "{held}"
+    );
+    assert!(
+        editor.update_within(800).await.is_none(),
+        "the editor heard a held piece"
+    );
+    let rows = log_rows(&env, &material).await;
+    let (status, receipt) = send(pieces[1].clone(), "g1,1,2").await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["type"], "checkpoint-persisted");
+    assert!(
+        editor.settle(|c| c.block_text() == "base one two").await,
+        "{}",
+        editor.block_text()
+    );
+    assert!(log_rows(&env, &material).await > rows);
+
+    let lost = drafted_pieces(&editor.doc, &[" lost"]);
+    let (status, _) = send(lost[0].clone(), "g2,0,2").await;
+    assert_eq!(status, 200);
+    let (status, refusal) = send(typed_under(fresh_client_id(), "x"), "g2,1,2").await;
+    assert_eq!(
+        (status, refusal["class"].as_str()),
+        (409, Some("unassigned")),
+        "{refusal}"
+    );
+    // Round 2, finding 7: what the editor hears meanwhile (g1's store under
+    // load) is fine; none of it may hold the refused group's text.
+    while editor.update_within(800).await.is_some() {}
+    assert_eq!(editor.block_text(), "base one two");
+    let (status, refusal) = send(lost[0].clone(), "g3,1,2").await;
+    assert_eq!(
+        (status, refusal["class"].as_str()),
+        (503, Some("unavailable")),
+        "{refusal}"
+    );
+}
+
+/// Round 2, findings 1 and 4: a draft group's id is the same for every
+/// send of the same rows, so a piece the room already holds (its answer
+/// lost, another tab sending the same rows, a resend from piece 0) is taken
+/// as held, not charged or kept twice, and the group goes on where it was;
+/// its last lands the whole once. Fails if a repeated piece breaks the group.
+#[tokio::test]
+async fn a_draft_groups_repeated_pieces_are_taken_as_held() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut editor = synced(server.port, &room, &user, "base").await;
+    let room_token = token(&room, &user, "write");
+    let send = |body: Vec<u8>, group: &'static str| {
+        let (room, token) = (room.clone(), room_token.clone());
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let pieces = drafted_pieces(&editor.doc, &[" one", " two", " three"]);
+    for (index, place) in [
+        (0, "g,0,3"),
+        (1, "g,1,3"),
+        (1, "g,1,3"),
+        (0, "g,0,3"),
+        (1, "g,1,3"),
+    ] {
+        let (status, held) = send(pieces[index].clone(), place).await;
+        assert_eq!(
+            (status, held["type"].as_str()),
+            (200, Some("piece-held")),
+            "{place}: {held}"
+        );
+    }
+    let (status, receipt) = send(pieces[2].clone(), "g,2,3").await;
+    assert_eq!(
+        (status, receipt["type"].as_str()),
+        (200, Some("checkpoint-persisted")),
+        "{receipt}"
+    );
+    assert!(
+        editor
+            .settle(|c| c.block_text() == "base one two three")
+            .await,
+        "{}",
+        editor.block_text()
+    );
+}
+
+/// Round 2, finding 1: a draft piece taking the room's unfinished groups
+/// past twice its group cap drops that group alone as `busy` (round 3,
+/// finding 6: the page sends it again 10 s later, not at its next load),
+/// and its user is not timed out for others' groups: their next draft
+/// lands. Fails if the bound answers anything but busy, or times them out.
+#[tokio::test]
+async fn a_draft_group_past_the_rooms_bound_is_dropped_without_a_timeout() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_UPDATE_BURST_BYTES", "67108864")],
+    )
+    .await;
+    let (users, room) = note_of_users(&env, "base", 3).await;
+    let (_, _, mut first) = writer_of(&env, server.port, &users[0], &room).await;
+    let (_, _, mut second) = writer_of(&env, server.port, &users[1], &room).await;
+    let (_, _, drafter) = writer_of(&env, server.port, &users[2], &room).await;
+    let half = vec![0u8; 2 * 1024 * 1024];
+    for client in [&mut first, &mut second] {
+        client.send(5, &piece(2, 0, 3, &half)).await;
+        client.send(5, &piece(2, 1, 3, &half)).await;
+    }
+    assert!(!first.hears(4, 300).await && !second.hears(4, 300).await);
+    let room_token = token(&room, &users[2], "write");
+    let send = |body: Vec<u8>, group: Option<&'static str>| {
+        let (room, token) = (room.clone(), room_token.clone());
+        async move {
+            let headers: Vec<(&str, &str)> = group
+                .map(|group| ("x-capy-group", group))
+                .into_iter()
+                .collect();
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &headers,
+                body,
+            )
+            .await
+        }
+    };
+    let pieces = drafted_pieces(&drafter.doc, &[" one", " two"]);
+    let (status, refusal) = send(pieces[0].clone(), Some("g,0,2")).await;
+    assert_eq!(
+        (status, refusal["class"].as_str()),
+        (409, Some("busy")),
+        "{refusal}"
+    );
+    let whole = drafted_pieces(&drafter.doc, &[" one"]);
+    let (status, receipt) = send(whole[0].clone(), None).await;
+    assert_eq!(
+        (status, receipt["type"].as_str()),
+        (200, Some("checkpoint-persisted")),
+        "{receipt}"
+    );
+}
+
+/// Round 2, finding 2: an admitted draft group reaches a source room's
+/// peers as its pieces, each a message of its own that applies alone, as a
+/// channel's group does (finding 6), never as one whole that could close a
+/// slow reader. Fails if a draft group goes out merged.
+#[tokio::test]
+async fn a_source_draft_groups_pieces_reach_peers_each_on_its_own() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut clients = Vec::new();
+    for _ in 0..2 {
+        let mut client = Client::open(server.port).await;
+        assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+        assert!(client.settle(|c| source_text(c) == "base").await);
+        client.until(6).await.expect("its step 2's ack");
+        clients.push(client);
+    }
+    let (writer, mut peer) = (clients.remove(0), clients.remove(0));
+    let one = typed_as(&writer, writer.id(), "one-");
+    writer
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&one).expect("one"))
+        .expect("apply");
+    let two = typed_as(&writer, writer.id(), "two-");
+    let room_token = token(&room, &user, "write");
+    for (body, place) in [(one, "g,0,2"), (two, "g,1,2")] {
+        let (status, answer) = send_drafts_over(
+            server.port,
+            &room,
+            Some(&room_token),
+            Some(ORIGIN),
+            &[("x-capy-group", place)],
+            body,
+        )
+        .await;
+        assert_eq!(status, 200, "{place}: {answer}");
+    }
+    let mut texts = Vec::new();
+    while !texts.iter().any(|text| text == "two-one-base") {
+        let more = peer.texts_per_update(5000, source_text).await;
+        assert!(!more.is_empty(), "the group never came: {texts:?}");
+        texts.extend(more);
+    }
+    assert!(texts.iter().any(|text| text == "one-base"), "{texts:?}");
+}
+
+/// Epo 2026-11-23: a user has one unfinished group at a time. Their group's
+/// first piece in another room meanwhile is busy: the channel hears
+/// `group-busy`, the group's pieces are acknowledged and let go, and nothing
+/// reaches the peer; once the first group lands, the same group sent again
+/// (the tab's resend 10 s later) lands. Fails with two groups held at once.
+#[tokio::test]
+async fn a_users_second_group_is_busy_until_the_first_lands() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, mut first) = writer(&env, server.port, "base").await;
+    first.until(6).await.expect("its step 2's ack");
+    let other = format!("material:{}:schema:1", note_for(&env, &user, "base").await);
+    let (_, _, mut second) = writer_of(&env, server.port, &user, &other).await;
+    assert!(second.settle(|c| c.block_text() == "base").await);
+    let mut peer = synced(server.port, &other, &user, "base").await;
+    let (one, two) = (first.typed("-one"), first.typed("-two"));
+    first.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(first.acked_count().await, 1, "its first piece held");
+    let (three, four) = (second.typed("-three"), second.typed("-four"));
+    second.send(5, &piece(2, 0, 2, &three)).await;
+    let (notice, _) = second.stateless("group-busy").await;
+    assert_eq!(notice["room"], other.as_str(), "{notice}");
+    second.send(5, &piece(2, 1, 2, &four)).await;
+    let mut acked = 0;
+    while acked < 2 {
+        acked += second.acked_count().await;
+    }
+    assert!(
+        peer.update_within(300).await.is_none(),
+        "a busy group landed"
+    );
+    assert_eq!(peer.block_text(), "base");
+    first.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(first.acked_count().await, 1);
+    second.send_pieces(2, &[&three, &four]).await;
+    assert_eq!(second.acked_total(2).await, 2);
+    assert!(
+        peer.settle(|c| c.block_text() == "base-three-four").await,
+        "{}",
+        peer.block_text()
+    );
+}
+
+/// Epo 2026-11-23, for draft sends: a second draft group of the user's in
+/// another room is `busy` while their first is unfinished, then lands
+/// whole once the first did. Fails with two draft groups held at once.
+#[tokio::test]
+async fn a_users_second_draft_group_is_busy_until_the_first_lands() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let rooms = [
+        format!("material:{material}:schema:1"),
+        format!("material:{}:schema:1", note_for(&env, &user, "base").await),
+    ];
+    let editors = [
+        synced(server.port, &rooms[0], &user, "base").await,
+        synced(server.port, &rooms[1], &user, "base").await,
+    ];
+    let send = |at: usize, body: Vec<u8>, group: &'static str| {
+        let room = rooms[at].clone();
+        let token = token(&room, &user, "write");
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let first = drafted_pieces(&editors[0].doc, &[" one", " two"]);
+    let second = drafted_pieces(&editors[1].doc, &[" three", " four"]);
+    let (status, held) = send(0, first[0].clone(), "a,0,2").await;
+    assert_eq!(
+        (status, held["type"].as_str()),
+        (200, Some("piece-held")),
+        "{held}"
+    );
+    let (status, busy) = send(1, second[0].clone(), "b,0,2").await;
+    assert_eq!(
+        (status, busy["class"].as_str()),
+        (409, Some("busy")),
+        "{busy}"
+    );
+    let (status, receipt) = send(0, first[1].clone(), "a,1,2").await;
+    assert_eq!(status, 200, "{receipt}");
+    for (body, place) in [(second[0].clone(), "b,0,2"), (second[1].clone(), "b,1,2")] {
+        let (status, answer) = send(1, body, place).await;
+        assert_eq!(status, 200, "{place}: {answer}");
+    }
+    let [_, mut editor] = editors;
+    assert!(
+        editor.settle(|c| c.block_text() == "base three four").await,
+        "{}",
+        editor.block_text()
+    );
+}
+
+/// Round 5, finding 4: a draft group refused for good waits in its user's
+/// line no more. A user's draft group holds their slot; another's first
+/// piece is `busy`, then refused (sent again naming 1,000 pieces:
+/// `malformed`); once the first lands, a third room's draft group takes the
+/// freed slot. Fails with the refused group left heading the line (the
+/// third then `busy`).
+#[tokio::test]
+async fn a_draft_group_refused_for_good_waits_no_more() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let rooms = [
+        format!("material:{material}:schema:1"),
+        format!("material:{}:schema:1", note_for(&env, &user, "base").await),
+        format!("material:{}:schema:1", note_for(&env, &user, "base").await),
+    ];
+    let editors = [
+        synced(server.port, &rooms[0], &user, "base").await,
+        synced(server.port, &rooms[1], &user, "base").await,
+        synced(server.port, &rooms[2], &user, "base").await,
+    ];
+    let send = |at: usize, body: Vec<u8>, group: &'static str| {
+        let room = rooms[at].clone();
+        let token = token(&room, &user, "write");
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let first = drafted_pieces(&editors[0].doc, &[" one", " two"]);
+    let second = drafted_pieces(&editors[1].doc, &[" three"]);
+    let third = drafted_pieces(&editors[2].doc, &[" four", " five"]);
+    let (status, held) = send(0, first[0].clone(), "a,0,2").await;
+    assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    let (status, busy) = send(1, second[0].clone(), "b,0,2").await;
+    assert_eq!((status, busy["class"].as_str()), (409, Some("busy")));
+    let (status, refused) = send(1, second[0].clone(), "b,0,1000").await;
+    assert_eq!(
+        (status, refused["class"].as_str()),
+        (400, Some("malformed"))
+    );
+    let (status, receipt) = send(0, first[1].clone(), "a,1,2").await;
+    assert_eq!(status, 200, "{receipt}");
+    let (status, held) = send(2, third[0].clone(), "c,0,2").await;
+    assert_eq!(
+        (status, held["type"].as_str()),
+        (200, Some("piece-held")),
+        "{held}"
+    );
+}
+
+/// Round 6, finding 6: a draft group refused before its room hears it (here
+/// sent under a read-only token: `permission`) waits in its user's line no
+/// more, as one its room refuses. A user's draft group holds their slot;
+/// another's first piece is `busy`, then refused; once the first lands, a
+/// third room's draft group takes the freed slot. Fails with the refused
+/// group left heading the line (the third then `busy`).
+#[tokio::test]
+async fn a_draft_group_refused_before_its_room_waits_no_more() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let rooms = [
+        format!("material:{material}:schema:1"),
+        format!("material:{}:schema:1", note_for(&env, &user, "base").await),
+        format!("material:{}:schema:1", note_for(&env, &user, "base").await),
+    ];
+    let editors = [
+        synced(server.port, &rooms[0], &user, "base").await,
+        synced(server.port, &rooms[1], &user, "base").await,
+        synced(server.port, &rooms[2], &user, "base").await,
+    ];
+    let send = |at: usize, body: Vec<u8>, group: &'static str, access: &'static str| {
+        let room = rooms[at].clone();
+        let token = token(&room, &user, access);
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let first = drafted_pieces(&editors[0].doc, &[" one", " two"]);
+    let second = drafted_pieces(&editors[1].doc, &[" three"]);
+    let third = drafted_pieces(&editors[2].doc, &[" four", " five"]);
+    let (status, held) = send(0, first[0].clone(), "a,0,2", "write").await;
+    assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    let (status, busy) = send(1, second[0].clone(), "b,0,2", "write").await;
+    assert_eq!((status, busy["class"].as_str()), (409, Some("busy")));
+    let (_, refused) = send(1, second[0].clone(), "b,0,2", "read").await;
+    assert_eq!(refused["class"].as_str(), Some("permission"), "{refused}");
+    let (status, receipt) = send(0, first[1].clone(), "a,1,2", "write").await;
+    assert_eq!(status, 200, "{receipt}");
+    let (status, held) = send(2, third[0].clone(), "c,0,2", "write").await;
+    assert_eq!(
+        (status, held["type"].as_str()),
+        (200, Some("piece-held")),
+        "{held}"
+    );
+}
+
+/// Round 6, finding 1: two draft groups of one room (a document's rows of
+/// two lineages, which one sweep sends), busy behind another group of their
+/// user's, stand in for each other at the head of the line: once that group
+/// lands, the first of them back takes the slot. Fails with each replacing
+/// the other at the head (`busy` for good).
+#[tokio::test]
+async fn two_draft_groups_of_a_room_take_a_freed_slot() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let rooms = [
+        format!("material:{material}:schema:1"),
+        format!("material:{}:schema:1", note_for(&env, &user, "base").await),
+    ];
+    let editors = [
+        synced(server.port, &rooms[0], &user, "base").await,
+        synced(server.port, &rooms[1], &user, "base").await,
+    ];
+    let send = |at: usize, body: Vec<u8>, group: &'static str| {
+        let room = rooms[at].clone();
+        let token = token(&room, &user, "write");
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let first = drafted_pieces(&editors[0].doc, &[" one", " two"]);
+    let ones = drafted_pieces(&editors[1].doc, &[" three", " four"]);
+    let twos = drafted_pieces(&editors[1].doc, &[" five", " six"]);
+    let (status, held) = send(0, first[0].clone(), "h,0,2").await;
+    assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    for _ in 0..2 {
+        for (body, group) in [(&ones[0], "one,0,2"), (&twos[0], "two,0,2")] {
+            let (status, busy) = send(1, body.clone(), group).await;
+            assert_eq!((status, busy["class"].as_str()), (409, Some("busy")));
+        }
+    }
+    let (status, receipt) = send(0, first[1].clone(), "h,1,2").await;
+    assert_eq!(status, 200, "{receipt}");
+    let (status, held) = send(1, ones[0].clone(), "one,0,2").await;
+    assert_eq!(
+        (status, held["type"].as_str()),
+        (200, Some("piece-held")),
+        "{held}"
+    );
+}
+
+/// Epo 2026-11-23: busy is not abuse. A user whose draft group finds their
+/// channel's group unfinished is answered `busy` and never timed out: their
+/// typing in a third room and a whole draft in the second still land, and
+/// the channel's group lands after. Fails if busy times the user out.
+#[tokio::test]
+async fn a_busy_answer_never_times_its_user_out() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, mut first) = writer(&env, server.port, "base").await;
+    first.until(6).await.expect("its step 2's ack");
+    let second = format!("material:{}:schema:1", note_for(&env, &user, "base").await);
+    let third = format!("material:{}:schema:1", note_for(&env, &user, "base").await);
+    let editor = synced(server.port, &second, &user, "base").await;
+    let (_, _, mut typist) = writer_of(&env, server.port, &user, &third).await;
+    assert!(typist.settle(|c| c.block_text() == "base").await);
+    let (one, two) = (first.typed("-one"), first.typed("-two"));
+    first.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(first.acked_count().await, 1, "its first piece held");
+    let room_token = token(&second, &user, "write");
+    let pieces = drafted_pieces(&editor.doc, &[" three", " four"]);
+    let (status, busy) = send_drafts_over(
+        server.port,
+        &second,
+        Some(&room_token),
+        Some(ORIGIN),
+        &[("x-capy-group", "g,0,2")],
+        pieces[0].clone(),
+    )
+    .await;
+    assert_eq!(
+        (status, busy["class"].as_str()),
+        (409, Some("busy")),
+        "{busy}"
+    );
+    let typed = typist.typed("-typed");
+    typist.send(5, &sync(2, &typed)).await;
+    assert_eq!(typist.acked_count().await, 1, "its typing was not taken");
+    let whole = drafted_pieces(&editor.doc, &[" whole"]);
+    let (status, receipt) = send_drafts_over(
+        server.port,
+        &second,
+        Some(&room_token),
+        Some(ORIGIN),
+        &[],
+        whole[0].clone(),
+    )
+    .await;
+    assert_eq!(
+        (status, receipt["type"].as_str()),
+        (200, Some("checkpoint-persisted")),
+        "{receipt}"
+    );
+    first.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(first.acked_count().await, 1);
+}
+
+/// Whether `client` heard `group-busy`.
+fn busy_noticed(client: &Client) -> bool {
+    client
+        .inbox
+        .iter()
+        .any(|m| m.kind == 9 && text_payload(&m.payload).contains("group-busy"))
+}
+
+/// Round 4, finding 1: a group on a live connection is never taken over,
+/// however long its next piece takes (below about 70 KB/s a 2 MiB piece
+/// outlasts the pings, here 1 s): another tab's group in the room is busy,
+/// and the slow group lands whole after it. Fails when a quiet connection's
+/// group gives way to the user's next.
+#[tokio::test]
+async fn a_slow_live_connections_group_is_never_taken_over() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_PING_SECONDS", "1"),
+            ("COLLABORATION_SILENT_SECONDS", "30"),
+        ],
+    )
+    .await;
+    let (user, room, mut slow) = writer(&env, server.port, "base").await;
+    slow.until(6).await.expect("its step 2's ack");
+    let (one, two) = (slow.typed("-one"), slow.typed("-two"));
+    slow.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(slow.acked_count().await, 1, "its first piece held");
+    // The slow tab reads nothing from here on, so it answers no ping.
+    let (_, _, mut other) = writer_of(&env, server.port, &user, &room).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let three = other.typed("-three");
+    other.send(5, &piece(2, 0, 2, &three)).await;
+    let (notice, _) = other.stateless("group-busy").await;
+    assert_eq!(notice["room"], room.as_str(), "{notice}");
+    slow.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(slow.acked_count().await, 1);
+    synced(server.port, &room, &user, "base-one-two").await;
+}
+
+/// Round 4, finding 2: a busy channel that leaves waits no more, so the
+/// user's next group takes the freed slot at once instead of waiting out
+/// the gone channel's patience. Fails when the gone channel still heads the
+/// line.
+#[tokio::test]
+async fn a_busy_channel_that_left_holds_up_no_group_after_it() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut holder) = writer(&env, server.port, "base").await;
+    holder.until(6).await.expect("its step 2's ack");
+    let (one, two) = (holder.typed("-one"), holder.typed("-two"));
+    holder.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(holder.acked_count().await, 1);
+    let (_, _, mut gone) = writer_of(&env, server.port, &user, &room).await;
+    let lost = gone.typed("-lost");
+    gone.send(5, &piece(2, 0, 2, &lost)).await;
+    gone.stateless("group-busy").await;
+    gone.leave(true).await;
+    drop(gone);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    holder.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(holder.acked_count().await, 1);
+    let (_, _, mut next) = writer_of(&env, server.port, &user, &room).await;
+    assert!(next.settle(|c| c.block_text() == "base-one-two").await);
+    let (three, four) = (next.typed("-three"), next.typed("-four"));
+    next.send_pieces(2, &[&three, &four]).await;
+    assert_eq!(next.acked_total(2).await, 2);
+    assert!(!busy_noticed(&next), "the next group was busy");
+    synced(server.port, &room, &user, "base-one-two-three-four").await;
+}
+
+/// Round 4, finding 2: a busy tab keeps its place in line on its next
+/// connection, as its waiter is its JOIN session's: a reconnect whose old
+/// connection the room has not seen close (its document's id changed, so
+/// the JOIN takes nothing over, Q472) takes the freed slot before another
+/// tab's group that asked after it. Fails when each connection waits on its
+/// own.
+#[tokio::test]
+async fn a_busy_tab_keeps_its_place_in_line_on_its_next_connection() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut holder) = writer(&env, server.port, "base").await;
+    holder.until(6).await.expect("its step 2's ack");
+    let (one, two) = (holder.typed("-one"), holder.typed("-two"));
+    holder.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(holder.acked_count().await, 1);
+    let session = session_id();
+    let (old_id, new_id) = (fresh_client_id(), fresh_client_id());
+    let offer = |id| token_offering(&room, &user, "write", id);
+    let mut old = session_on(server.port, &room, &offer(old_id), old_id, session).await;
+    let lost = old.typed("-lost");
+    old.send(5, &piece(2, 0, 2, &lost)).await;
+    old.stateless("group-busy").await;
+    let mut new = session_on(server.port, &room, &offer(new_id), new_id, session).await;
+    new.until(6).await.expect("its step 2's ack");
+    let (_, _, mut later) = writer_of(&env, server.port, &user, &room).await;
+    let late = later.typed("-late");
+    later.send(5, &piece(2, 0, 2, &late)).await;
+    later.stateless("group-busy").await;
+    holder.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(holder.acked_count().await, 1);
+    assert!(new.settle(|c| c.block_text() == "base-one-two").await);
+    later.send(5, &piece(2, 0, 2, &late)).await;
+    later.stateless("group-busy").await;
+    let (three, four) = (new.typed("-three"), new.typed("-four"));
+    new.send_pieces(2, &[&three, &four]).await;
+    assert_eq!(new.acked_total(2).await, 2);
+    assert!(!busy_noticed(&new), "the reconnect lost its place");
+    synced(server.port, &room, &user, "base-one-two-three-four").await;
+}
+
+/// Round 4, finding 5: a group's first piece is acknowledged once the room
+/// holds it, so its client sends the rest only then and a busy answer costs
+/// it one piece; the rest is acknowledged with the last, and nothing reaches
+/// the peer before it. A step 2 in pieces too. Fails when the first piece's
+/// acknowledgement waits for the last.
+#[tokio::test]
+async fn a_groups_first_piece_is_acknowledged_once_held() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut peer = synced(server.port, &room, &user, "base").await;
+    let (one, two) = (writer.typed("-one"), writer.typed("-two"));
+    writer.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(writer.acked_count().await, 1, "its first piece held");
+    assert!(
+        peer.update_within(300).await.is_none(),
+        "a held piece went out"
+    );
+    writer.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    assert!(peer.settle(|c| c.block_text() == "base-one-two").await);
+    let (three, four) = (writer.typed("-three"), writer.typed("-four"));
+    writer.send(5, &piece(1, 0, 2, &three)).await;
+    assert_eq!(writer.acked_count().await, 1, "a step 2's first piece held");
+    writer.send(5, &piece(1, 1, 2, &four)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    assert!(
+        peer.settle(|c| c.block_text() == "base-one-two-three-four")
+            .await
+    );
+}
+
+/// Round 4, finding 6: a draft piece its group does not expect (another
+/// tab's send of the same rows, further along) is `unavailable` and leaves
+/// the group the room holds as it is: the first sender's next pieces land
+/// it. Fails when the stray piece drops the held group.
+#[tokio::test]
+async fn a_stray_draft_piece_leaves_the_group_another_send_builds() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut editor = synced(server.port, &room, &user, "base").await;
+    let room_token = token(&room, &user, "write");
+    let send = |body: Vec<u8>, group: &'static str| {
+        let (room, token) = (room.clone(), room_token.clone());
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let pieces = drafted_pieces(&editor.doc, &[" one", " two", " three"]);
+    let (status, held) = send(pieces[0].clone(), "g,0,3").await;
+    assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    let (status, stray) = send(pieces[2].clone(), "g,2,3").await;
+    assert_eq!(
+        (status, stray["class"].as_str()),
+        (503, Some("unavailable")),
+        "{stray}"
+    );
+    let (status, held) = send(pieces[1].clone(), "g,1,3").await;
+    assert_eq!(
+        (status, held["type"].as_str()),
+        (200, Some("piece-held")),
+        "{held}"
+    );
+    let (status, receipt) = send(pieces[2].clone(), "g,2,3").await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["type"], "checkpoint-persisted");
+    assert!(
+        editor
+            .settle(|c| c.block_text() == "base one two three")
+            .await,
+        "{}",
+        editor.block_text()
+    );
+}
+
+/// A slow uplink's windows, scaled down from production's (pings every 30 s,
+/// the silent close at 60 s, 90 s of group slack): pings every second, the
+/// silent close at 4 s, 4 s of slack, wide enough that a loaded machine's
+/// pauses between a test's writes do not pass for a stall.
+const SLOW_LINK: &[(&str, &str)] = &[
+    ("COLLABORATION_PING_SECONDS", "1"),
+    ("COLLABORATION_SILENT_SECONDS", "4"),
+    ("COLLABORATION_GROUP_SLACK_MS", "4000"),
+];
+
+/// `message` as a browser's binary frame goes on the wire, masked with a
+/// zero key (the payload as it is).
+fn raw_frame(message: &[u8]) -> Vec<u8> {
+    let len = message.len();
+    let mut out = vec![0x82];
+    if len < 126 {
+        out.push(0x80 | len as u8);
+    } else if let Ok(short) = u16::try_from(len) {
+        out.push(0x80 | 126);
+        out.extend_from_slice(&short.to_be_bytes());
+    } else {
+        out.push(0x80 | 127);
+        out.extend_from_slice(&(len as u64).to_be_bytes());
+    }
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(message);
+    out
+}
+
+impl Client {
+    /// Writes `wire` under the WebSocket layer as a slow uplink sends it:
+    /// `chunk` bytes every `every`. It reads nothing meanwhile, so the
+    /// server's pings go unanswered, as a browser's pong waits behind the
+    /// frame it is sending.
+    async fn trickle(&mut self, wire: &[u8], chunk: usize, every: Duration) {
+        use tokio::io::AsyncWriteExt;
+        let MaybeTlsStream::Plain(stream) = self.ws.get_mut() else {
+            panic!("a plain socket");
+        };
+        for part in wire.chunks(chunk) {
+            stream.write_all(part).await.expect("trickle");
+            tokio::time::sleep(every).await;
+        }
+    }
+}
+
+/// Round 4, finding 9: a slow but live uplink lands a large edit. A piece
+/// of 1.8 MB (a note holds 2 MiB of content) goes in about 9 s, past the
+/// scaled silent window and the group's deadline (2 s of carry and 4 s of
+/// slack, [SLOW_LINK]) as a 2 MiB piece at 20 KB/s (105 s) is past
+/// production's, with no pong meanwhile:
+/// the socket stays open, as its bytes are heard, its group lives on while
+/// the piece arrives, and the group lands whole. Fails if only whole
+/// messages count as heard (closed as silent) or the group's deadline
+/// ignores a message arriving (dropped as late).
+#[tokio::test]
+async fn a_slow_live_uplink_lands_a_large_piece() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), SLOW_LINK).await;
+    let (user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let first = writer.typed("-one");
+    writer.send(5, &piece(2, 0, 2, &first)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    let large = "x".repeat(1_800_000);
+    let update = writer.typed(&large);
+    let wire = raw_frame(&frame(writer.channel, 5, &piece(2, 1, 2, &update)));
+    writer
+        .trickle(&wire, 48 << 10, Duration::from_millis(250))
+        .await;
+    assert_eq!(writer.acked_count().await, 1, "its last piece's ack");
+    // A dropped group's last piece is acknowledged too: no notice said so.
+    let notices: Vec<String> = writer
+        .inbox
+        .iter()
+        .filter(|message| message.kind == 9)
+        .map(|message| text_payload(&message.payload))
+        .collect();
+    assert!(
+        notices.iter().all(|notice| !notice.contains("group-")),
+        "{notices:?}"
+    );
+    let text = format!("base-one{large}");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    // A large state may take a while to open on a loaded machine.
+    let mut landed = false;
+    for _ in 0..4 {
+        landed = reader.settle(|c| c.block_text() == text).await;
+        if landed {
+            break;
+        }
+    }
+    assert!(landed, "{} bytes landed", reader.block_text().len());
+}
+
+/// Round 4, finding 9: a tab that stops sending its group's pieces while its
+/// browser still answers pings (a frozen tab) gets the late drop, and keeps
+/// its socket: its pongs are heard, so it is not silent, but each comes
+/// whole, so no message is arriving to keep the group. Fails if any byte
+/// heard renews a group (it would never drop).
+#[tokio::test]
+async fn a_tab_that_stops_sending_gets_the_late_drop_while_its_pongs_come() {
+    let Some(env) = env() else { return };
+    let mut config = SLOW_LINK.to_vec();
+    // No carry for the allowance: the group's deadline is its slack.
+    config.push(("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"));
+    let server = start_configured(&env, env.api.as_deref(), &config).await;
+    let (_user, room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let first = writer.typed("-one");
+    writer.send(5, &piece(2, 0, 2, &first)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    // Reading answers the pings meanwhile.
+    let dropped = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let Some(payload) = writer.until(9).await else {
+                continue;
+            };
+            let notice: serde_json::Value =
+                serde_json::from_str(&text_payload(&payload)).expect("json");
+            if notice["type"] == "group-dropped" {
+                return notice;
+            }
+        }
+    })
+    .await
+    .expect("dropped as late");
+    assert_eq!(dropped["room"], room.as_str(), "{dropped}");
+    assert!(
+        writer.still_open(Duration::from_secs(3)).await,
+        "its socket was closed"
+    );
+}
+
+/// Round 4, finding 9: a connection that dies mid-piece is closed as silent
+/// once its bytes stop: half a frame comes over 2 s, then nothing, no pong
+/// either, for longer than the silent window ([SLOW_LINK]). Fails if a
+/// message left arriving keeps its socket open.
+#[tokio::test]
+async fn a_connection_dead_mid_piece_is_closed_as_silent() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), SLOW_LINK).await;
+    let (_user, _room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let first = writer.typed("-one");
+    writer.send(5, &piece(2, 0, 2, &first)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    let update = writer.typed(&"x".repeat(256 << 10));
+    let wire = raw_frame(&frame(writer.channel, 5, &piece(2, 1, 2, &update)));
+    writer
+        .trickle(
+            &wire[..wire.len() / 2],
+            16 << 10,
+            Duration::from_millis(250),
+        )
+        .await;
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    assert!(
+        !writer.still_open(Duration::from_secs(1)).await,
+        "the socket stayed open"
+    );
+}
+
+/// Round 6, finding 4: a channel's group lives no longer than its room's
+/// group cap takes at the slowest uplink, and the slack, however long a
+/// message keeps arriving: a client trickling a piece's bytes for 12 s,
+/// past a note's 4 MiB at 1 MiB/s and 4 s of slack ([SLOW_LINK]), gets the
+/// late drop while it trickles. Fails with no limit (dropped only once its
+/// bytes stop, 4 s after).
+#[tokio::test]
+async fn a_group_trickled_past_its_limit_is_dropped() {
+    let Some(env) = env() else { return };
+    let mut config = SLOW_LINK.to_vec();
+    // No carry for the allowance: the group's limit is its cap's time.
+    config.push(("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"));
+    config.push(("COLLABORATION_SLOWEST_UPLINK_BYTES", "1048576"));
+    let server = start_configured(&env, env.api.as_deref(), &config).await;
+    let (_user, _room, mut writer) = writer(&env, server.port, "base").await;
+    writer.until(6).await.expect("its step 2's ack");
+    let first = writer.typed("-one");
+    writer.send(5, &piece(2, 0, 2, &first)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    let update = writer.typed(&"x".repeat(256 << 10));
+    let wire = raw_frame(&frame(writer.channel, 5, &piece(2, 1, 2, &update)));
+    // 1 KiB each 100 ms: its socket hears bytes all along.
+    writer
+        .trickle(&wire[..120 << 10], 1 << 10, Duration::from_millis(100))
+        .await;
+    // Already told, before the trickle ended.
+    let dropped = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(payload) = writer.until(9).await
+                && text_payload(&payload).contains("group-dropped")
+            {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(dropped.is_ok(), "not dropped while its piece trickled");
+}
+
+/// Round 6 review: a draft group lives no longer than a channel's, its
+/// room's group cap at the slowest uplink and the slack (a note's 4 MiB at
+/// 1 MiB/s and 4 s of slack: 8 s), however often its held piece comes
+/// again. Sent again at 2, 4 and 6 s, each renewing it 6 s on (the slack
+/// and one 2 MiB piece at that rate), it is dropped at 8 s, and its last
+/// piece at 10 s finds nothing to join (`unavailable`). Fails with no limit
+/// (the last piece lands).
+#[tokio::test]
+async fn a_draft_group_renewed_past_its_limit_is_dropped() {
+    let Some(env) = env() else { return };
+    let mut config = SLOW_LINK.to_vec();
+    // No carry for the allowance: the group's limit is its cap's time.
+    config.push(("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"));
+    config.push(("COLLABORATION_SLOWEST_UPLINK_BYTES", "1048576"));
+    let server = start_configured(&env, env.api.as_deref(), &config).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let editor = synced(server.port, &room, &user, "base").await;
+    let token = token(&room, &user, "write");
+    let send = |body: Vec<u8>, group: &'static str| {
+        let (room, token) = (room.clone(), token.clone());
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&token),
+                Some(ORIGIN),
+                &[("x-capy-group", group)],
+                body,
+            )
+            .await
+        }
+    };
+    let pieces = drafted_pieces(&editor.doc, &[" one", " two"]);
+    let started = tokio::time::Instant::now();
+    for at in [0, 2, 4, 6] {
+        tokio::time::sleep_until(started + Duration::from_secs(at)).await;
+        let (status, held) = send(pieces[0].clone(), "renewed,0,2").await;
+        assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    }
+    tokio::time::sleep_until(started + Duration::from_secs(10)).await;
+    let (status, answer) = send(pieces[1].clone(), "renewed,1,2").await;
+    assert_eq!(
+        answer["class"].as_str(),
+        Some("unavailable"),
+        "{status} {answer}"
+    );
+}
+
+/// Round 4, finding 9: a draft piece whose body arrives slower than its
+/// group's slack lands: the room keeps the group while the body comes. The
+/// first piece is held; the second's body comes over about 8 s, past the
+/// group's deadline (2 s of carry, 4 s of slack, [SLOW_LINK]), and the
+/// group lands whole. Fails if a body arriving renews nothing (the last
+/// piece then finds no group: `unavailable`).
+#[tokio::test]
+async fn a_draft_piece_on_a_slow_uplink_lands() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), SLOW_LINK).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut editor = synced(server.port, &room, &user, "base").await;
+    let long = " two".repeat(16_000);
+    let pieces = drafted_pieces(&editor.doc, &[" one", &long]);
+    // The editor's channel stays, answering pings, so its client id stays
+    // bound while the drafts made under it land.
+    let live = tokio::spawn(async move { editor.still_open(Duration::from_secs(60)).await });
+    let write = token(&room, &user, "write");
+    let (status, held) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&write),
+        Some(ORIGIN),
+        &[("x-capy-group", "slow,0,2")],
+        pieces[0].clone(),
+    )
+    .await;
+    assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    let mut stream = TcpStream::connect(("127.0.0.1", server.port))
+        .await
+        .expect("connect");
+    let head = format!(
+        "POST /drafts HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: {ORIGIN}\r\nAuthorization: Bearer {write}\r\nX-Capy-Room: {room}\r\nX-Capy-Protocol: {}\r\nX-Capy-Version: 1\r\nX-Capy-Group: slow,1,2\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        client_protocol(),
+        pieces[1].len()
+    );
+    stream.write_all(head.as_bytes()).await.expect("head");
+    let every = pieces[1].len().div_ceil(16);
+    for part in pieces[1].chunks(every) {
+        stream.write_all(part).await.expect("part");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .await
+        .expect("response");
+    live.abort();
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    assert!(response.contains("checkpoint-persisted"), "{response}");
+    let reader = synced(server.port, &room, &user, &format!("base one{long}")).await;
+    assert!(reader.block_text().ends_with(" two"));
+}
+
+/// Round 5, finding 2: a draft group waits for its next piece past the
+/// slack as long as one whole piece takes at the slowest uplink, as an edge
+/// may take a request's body before the room hears any of it. Scaled: 4 s
+/// of slack and a 2 MiB piece at 350 KB/s (6 s) stand for 90 s and the 262 s
+/// of 8 KB/s; the second piece comes 9 s after the first (150 s in
+/// production) and lands the group. Fails with a wait of the slack alone
+/// (the second piece then finds no group: `unavailable`).
+#[tokio::test]
+async fn a_draft_groups_next_piece_long_after_the_slack_lands() {
+    let Some(env) = env() else { return };
+    let mut config = SLOW_LINK.to_vec();
+    config.push(("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"));
+    config.push(("COLLABORATION_SLOWEST_UPLINK_BYTES", "350000"));
+    let server = start_configured(&env, env.api.as_deref(), &config).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut editor = synced(server.port, &room, &user, "base").await;
+    let pieces = drafted_pieces(&editor.doc, &[" one", " two"]);
+    let live = tokio::spawn(async move { editor.still_open(Duration::from_secs(60)).await });
+    let write = token(&room, &user, "write");
+    let send = |body: Vec<u8>, place: &'static str| {
+        let (room, write) = (room.clone(), write.clone());
+        async move {
+            send_drafts_over(
+                server.port,
+                &room,
+                Some(&write),
+                Some(ORIGIN),
+                &[("x-capy-group", place)],
+                body,
+            )
+            .await
+        }
+    };
+    let (status, held) = send(pieces[0].clone(), "late,0,2").await;
+    assert_eq!((status, held["type"].as_str()), (200, Some("piece-held")));
+    tokio::time::sleep(Duration::from_secs(9)).await;
+    let (status, receipt) = send(pieces[1].clone(), "late,1,2").await;
+    live.abort();
+    assert_eq!(status, 200, "{receipt}");
+    synced(server.port, &room, &user, "base one two").await;
+}
+
+/// A TCP proxy to the server whose downlink (server to client) moves its next
+/// `slow` bytes at `rate` bytes a second, then as fast as it goes. Its socket
+/// to the server reads into a 16 KiB buffer, so the server's sends to the
+/// client wait on it as on a slow link; the fast rest drains at once what
+/// the server's kernel still holds when its send ends.
+struct SlowDownlink {
+    port: u16,
+    rate: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    slow: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+async fn slow_downlink(server: u16) -> SlowDownlink {
+    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("address").port();
+    let (rate, slow) = (
+        std::sync::Arc::new(AtomicU64::new(0)),
+        std::sync::Arc::new(AtomicU64::new(0)),
+    );
+    let (at, left) = (rate.clone(), slow.clone());
+    tokio::spawn(async move {
+        while let Ok((client, _)) = listener.accept().await {
+            let socket = tokio::net::TcpSocket::new_v4().expect("socket");
+            socket.set_recv_buffer_size(16 << 10).expect("buffer");
+            let Ok(upstream) = socket.connect(([127, 0, 0, 1], server).into()).await else {
+                return;
+            };
+            let (mut from_client, mut to_client) = client.into_split();
+            let (mut from_server, mut to_server) = upstream.into_split();
+            tokio::spawn(async move {
+                let _ = tokio::io::copy(&mut from_client, &mut to_server).await;
+            });
+            let (at, left) = (at.clone(), left.clone());
+            tokio::spawn(async move {
+                let mut chunk = vec![0u8; 16 << 10];
+                while let Ok(read @ 1..) = from_server.read(&mut chunk).await {
+                    if to_client.write_all(&chunk[..read]).await.is_err() {
+                        return;
+                    }
+                    let slow = left.load(Relaxed);
+                    if slow > 0 {
+                        left.store(slow.saturating_sub(read as u64), Relaxed);
+                        let rate = at.load(Relaxed) as f64;
+                        tokio::time::sleep(Duration::from_secs_f64(read as f64 / rate)).await;
+                    }
+                }
+            });
+        }
+    });
+    SlowDownlink { port, rate, slow }
+}
+
+/// The text [long_send_room] holds: 1.875 MiB, under the 2 MiB text cap by
+/// the room its edits take. Its whole state goes at 100 KiB/s but for its
+/// last 512 KiB, more than the server's kernel holds once its send ends (as
+/// measured on macOS, about 360 KB): a send that slow still moves bytes
+/// every 3 s at most, inside its stall window.
+const LONG_TEXT: usize = 15 << 17;
+
+/// A text file of [LONG_TEXT] and its writer through a [SlowDownlink],
+/// joined and synced, on a server of [SLOW_LINK]'s pings with a 6 s silent
+/// window and 6 s of slack (no carry).
+async fn long_send_room(env: &Env) -> (Gateway, Server, SlowDownlink, String, String, Client) {
+    let gateway = gateway(env).await;
+    let config = [
+        ("COLLABORATION_PING_SECONDS", "1"),
+        ("COLLABORATION_SILENT_SECONDS", "6"),
+        ("COLLABORATION_GROUP_SLACK_MS", "6000"),
+        ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1073741824"),
+    ];
+    let server = start_configured(env, Some(&gateway.url), &config).await;
+    let base = "x".repeat(LONG_TEXT);
+    let (user, file) = text_file(env, &gateway, &base).await;
+    let room = format!("source:{file}:epoch:1");
+    let downlink = slow_downlink(server.port).await;
+    let mut writer = Client::open(downlink.port).await;
+    assert_eq!(writer.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(writer.settle(|c| source_text(c).len() == base.len()).await);
+    // Whatever the join still sends (an ACK of its step 2, if any) is read
+    // and set aside, so the next ACK read is a piece's.
+    writer.until(u8::MAX).await;
+    writer.inbox.clear();
+    (gateway, server, downlink, user, room, writer)
+}
+
+impl Client {
+    /// Asks the room for its whole state again (a step 1 naming nothing),
+    /// all but its last 512 KiB at 100 KiB/s, about 14 s, and reads until all
+    /// of it came. The server's send of it takes that long, its socket reading
+    /// nothing meanwhile, and this client sends nothing until it is through.
+    async fn whole_state_slowly(&mut self, downlink: &SlowDownlink) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let empty = StateVector::default().encode_v1();
+        downlink.rate.store(100 << 10, Relaxed);
+        downlink.slow.store(LONG_TEXT as u64 - (512 << 10), Relaxed);
+        let before = self.received.len();
+        self.send(5, &sync(0, &empty)).await;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+        while self.received.len() < before + LONG_TEXT && tokio::time::Instant::now() < deadline {
+            // Reads for up to 5 s, applying what comes; back at once, the
+            // socket closed.
+            let read = tokio::time::Instant::now();
+            if self.until(u8::MAX).await.is_none() && read.elapsed() < Duration::from_secs(4) {
+                break;
+            }
+        }
+        assert!(
+            self.received.len() >= before + LONG_TEXT,
+            "{} bytes came",
+            self.received.len() - before
+        );
+    }
+}
+
+/// Round 5, finding 1: a client receiving a long frame while its group is
+/// gathering keeps its group. Its first piece held, it asks for the room's
+/// whole state again, which the server takes about 14 s to send, past the
+/// 6 s of slack, its socket reading nothing; its last piece then lands the
+/// group whole. Fails if the socket's time in sends counts
+/// against a group (dropped as late).
+#[tokio::test]
+async fn a_client_receiving_a_long_frame_keeps_its_group() {
+    let Some(env) = env() else { return };
+    let (_gateway, server, downlink, user, room, mut writer) = long_send_room(&env).await;
+    let one = typed_as(&writer, writer.id(), "one ");
+    writer
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&one).expect("one"))
+        .expect("apply");
+    let two = typed_as(&writer, writer.id(), "two ");
+    writer.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(writer.acked_count().await, 1);
+    writer.whole_state_slowly(&downlink).await;
+    writer.send(5, &piece(2, 1, 2, &two)).await;
+    assert_eq!(writer.acked_count().await, 1, "its last piece's ack");
+    let notices: Vec<String> = writer
+        .inbox
+        .iter()
+        .filter(|message| message.kind == 9)
+        .map(|message| text_payload(&message.payload))
+        .collect();
+    assert!(
+        notices.iter().all(|notice| !notice.contains("group-")),
+        "{notices:?}"
+    );
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        reader
+            .settle(|c| source_text(c).starts_with("two one x"))
+            .await,
+        "{:?}",
+        &source_text(&reader)[..16]
+    );
+}
+
+/// Round 5, finding 1: a client that sends nothing while a long send to it
+/// goes on is not closed as silent: the 14 s its room's whole state takes
+/// are past the 6 s silent window, and its socket stays open after. Fails if silence counts from the last byte heard alone (closed as
+/// soon as the send ends).
+#[tokio::test]
+async fn a_client_silent_through_a_long_send_to_it_stays_open() {
+    let Some(env) = env() else { return };
+    let (_gateway, _server, downlink, _user, _room, mut writer) = long_send_room(&env).await;
+    writer.whole_state_slowly(&downlink).await;
+    assert!(
+        writer.still_open(Duration::from_secs(8)).await,
+        "closed as silent"
+    );
+}
+
+/// Round 3, finding 5: an admitted source group's pieces go with its update
+/// to the broadcast, never left beside it: a group whose admission panics
+/// (a debug hook) closes its writer, and the next writer's typing reaches
+/// the peer as itself, with nothing of the panicked group. Fails if a
+/// panic leaves the group's pieces for the next broadcast.
+#[tokio::test]
+async fn a_panicked_groups_pieces_never_reach_peers() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let source = async || {
+        let mut client = Client::open(server.port).await;
+        assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+        assert!(client.settle(|c| source_text(c) == "base").await);
+        client.until(6).await.expect("its step 2's ack");
+        client
+    };
+    let mut panicking = source().await;
+    let mut typist = source().await;
+    let mut peer = source().await;
+    let one = typed_as(&panicking, panicking.id(), "capy-it-panic-group ");
+    panicking
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&one).expect("one"))
+        .expect("apply");
+    let two = typed_as(&panicking, panicking.id(), "more ");
+    panicking.send_pieces(2, &[&one, &two]).await;
+    let closed = panicking.until(4).await.expect("the writer closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("update cannot be checked"),
+        "{closed:?}"
+    );
+    let typed = typed_as(&typist, typist.id(), "typed-");
+    typist.send(5, &sync(2, &typed)).await;
+    assert_eq!(typist.acked_count().await, 1);
+    assert!(
+        peer.settle(|c| source_text(c) == "typed-base").await,
+        "{}",
+        source_text(&peer)
+    );
+}
+
+/// Round 3, finding 9: a draft group naming more pieces than one within the
+/// room's group cap may have is `malformed` (its logged message names the
+/// count and the bytes that came). Fails if it is refused as a size limit.
+#[tokio::test]
+async fn a_draft_group_of_too_many_pieces_is_malformed() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let editor = synced(server.port, &room, &user, "base").await;
+    let pieces = drafted_pieces(&editor.doc, &[" one"]);
+    let (status, refusal) = send_drafts_over(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        &[("x-capy-group", "g,0,1000")],
+        pieces[0].clone(),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["class"].as_str()),
+        (400, Some("malformed")),
+        "{refusal}"
+    );
 }
 
 /// A source room's pieces (pieced Office updates, the Windows Editor's case)
@@ -19612,12 +21349,13 @@ async fn a_source_rooms_pieces_land_whole_or_not_at_all() {
         .expect("apply");
     let two = typed_as(&writer, writer.id(), "two-");
     writer.send(5, &piece(2, 0, 2, &one)).await;
+    assert_eq!(writer.acked_count().await, 1, "its first piece held");
     assert!(
         peer.update_within(500).await.is_none(),
         "the peer heard a piece"
     );
     writer.send(5, &piece(2, 1, 2, &two)).await;
-    assert_eq!(writer.acked_count().await, 2);
+    assert_eq!(writer.acked_count().await, 1);
     peer.update_within(5000).await.expect("the group");
     assert_eq!(source_text(&peer), "two-one-base");
     drop((writer, peer, refused));
@@ -19726,4 +21464,99 @@ async fn two_writers_growing_a_quizs_documents_at_once_stay_within_their_shared_
             .any(|line| line.ends_with("refused \"document_size_exceeded\"")),
         "{heard:?}"
     );
+}
+
+/// Finding 4: a quiz room whose other room unloaded counts that document as
+/// its room left it (it stored everything), not as it read it at its own
+/// load: keys grown by 1.1 MB, stored, and unloaded, then content grown by
+/// as much, is refused past the 2 MiB the two share. Fails if the unload
+/// forgets the keys' bound, so the content room counts the keys as they
+/// were when it loaded and admits the growth.
+#[tokio::test]
+async fn a_quiz_room_counts_its_other_document_as_stored_once_that_room_unloads() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let content_room = format!("material:{quiz}:schema:1");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut content = Client::open(server.port).await;
+    let mut keys = Client::open(server.port).await;
+    content
+        .joined(&content_room, &token(&content_room, &owner, "write"))
+        .await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q1"]).is_some())
+            .await
+    );
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q1-p"]).is_some())
+            .await
+    );
+    content.until(6).await.expect("its step 2's ack");
+    keys.until(6).await.expect("its step 2's ack");
+    // 31 blocks of 12,000 three-byte characters: about 1.1 MB each time.
+    let text = "漢".repeat(12_000);
+    let blocks: Vec<serde_json::Value> = (0..31)
+        .map(|_| serde_json::json!({ "type": "text", "text": text }))
+        .collect();
+    let grow = |content: &Doc, keys: &Doc, part: &str| {
+        let (content_before, keys_before) = (
+            content.transact().state_vector(),
+            keys.transact().state_vector(),
+        );
+        {
+            let mut content_txn = content.transact_mut();
+            let mut keys_txn = keys.transact_mut();
+            let mut questions = items::quiz::questions_json(
+                &content_txn,
+                Some(&items::quiz::KeysRead::new(&keys_txn)),
+            );
+            questions[0]["parts"][0][part] = blocks.clone().into();
+            items::quiz::set_questions(&mut content_txn, &mut keys_txn, &questions)
+                .expect("questions");
+        }
+        (
+            content
+                .transact()
+                .encode_state_as_update_v1(&content_before),
+            keys.transact().encode_state_as_update_v1(&keys_before),
+        )
+    };
+    // The content written alongside is not sent: a copy takes it.
+    let copy = Doc::new();
+    let state = content
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    let (_, grown_keys) = grow(&copy, &keys.doc, "solution");
+    keys.send(5, &sync(2, &grown_keys)).await;
+    assert!(keys.acked_or_closed().await, "the keys' growth was refused");
+    loop {
+        let word = text_payload(&keys.until(9).await.expect("a store's word"));
+        if word.contains("checkpoint-persisted") {
+            break;
+        }
+        assert!(!word.contains("document-rejected"), "{word}");
+    }
+    let keys_doc = std::mem::replace(&mut keys.doc, Doc::new());
+    drop(keys);
+    for _ in 0..50 {
+        if active_rooms(server.port).await == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(active_rooms(server.port).await, 1, "the keys room stayed");
+    let (grown_content, _) = grow(&content.doc, &keys_doc, "blocks");
+    content.send(5, &sync(2, &grown_content)).await;
+    assert!(!content.acked_or_closed().await, "admitted past the limit");
+    let (notice, _) = content.stateless("document-rejected").await;
+    assert_eq!(notice["code"], "document_size_exceeded", "{notice}");
 }

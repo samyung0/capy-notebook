@@ -4,7 +4,7 @@
 //! past the cap closes the key's oldest joined channel instead. A [Seat] or
 //! [Membership] is held while its socket or channel lives and gives its
 //! place back when dropped. A socket whose sends move no bytes for the
-//! silent window closes, giving its places back ([Sent], [watched]).
+//! silent window closes, giving its places back ([Traffic], [watched]).
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
@@ -182,42 +182,139 @@ impl Drop for Membership {
     }
 }
 
-/// When a connection's kernel last took bytes to send (Epo 2026-10-20,
-/// rate-limit review r7): a send has no total time limit, since a whole-state
-/// answer is one frame that a slow link takes long to receive, but one that
-/// moves no bytes for the silent window closes its socket ([watched]).
+/// What a connection's IO moved, either way.
+/// - Out: when its kernel last took bytes to send (Epo 2026-10-20, rate-limit
+///   review r7). A send has no total time limit, since a whole-state answer
+///   is one frame that a slow link takes long to receive, but one that moves
+///   no bytes for the silent window closes its socket ([watched]).
+/// - In: when bytes last came and how many, and how many had come when its
+///   socket last read a whole message (round 4, finding 9). A browser sends
+///   a 2 MiB piece as one frame, its pongs waiting behind it, so a slow
+///   uplink is heard by its bytes: a socket closes as silent only once no
+///   byte came for the window (`socket.rs`), and a group of pieces lives on
+///   while a message is arriving (`room.rs`), which pongs alone never are.
+/// - Its socket's time in sends ([watched]), when it reads nothing: a long
+///   send to the client (another room's whole state, a peer's large update)
+///   holds back what the client sends and the acknowledgement its group's
+///   rest waits for, so that time counts neither towards its silence nor
+///   against its group (round 5, finding 1). A send to a dead connection
+///   still stalls ([Sending::Stalled]), and a ping's takes no time.
 #[derive(Debug)]
-pub struct Sent {
+pub struct Traffic {
     born: Instant,
     /// Milliseconds after `born`.
-    at: AtomicU64,
+    sent_at: AtomicU64,
+    heard_at: AtomicU64,
+    /// Bytes read in all.
+    heard: AtomicU64,
+    /// `heard` when the socket last read a whole message.
+    whole: AtomicU64,
+    /// Milliseconds in finished sends, and when the one under way began
+    /// (one past its millisecond after `born`; 0 while none is).
+    send_ms: AtomicU64,
+    send_began: AtomicU64,
+    /// [Traffic::sending] when the connection last read a byte.
+    heard_sending: AtomicU64,
 }
 
-impl Default for Sent {
+impl Default for Traffic {
     fn default() -> Self {
-        Sent {
+        Traffic {
             born: Instant::now(),
-            at: AtomicU64::new(0),
+            sent_at: AtomicU64::new(0),
+            heard_at: AtomicU64::new(0),
+            heard: AtomicU64::new(0),
+            whole: AtomicU64::new(0),
+            send_ms: AtomicU64::new(0),
+            send_began: AtomicU64::new(0),
+            heard_sending: AtomicU64::new(0),
         }
     }
 }
 
-impl Sent {
-    fn mark(&self) {
-        let at = u64::try_from(self.born.elapsed().as_millis()).unwrap_or(u64::MAX);
-        self.at.store(at, Ordering::Relaxed);
+impl Traffic {
+    fn now(&self) -> u64 {
+        u64::try_from(self.born.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
-    fn last(&self) -> Instant {
-        self.born + Duration::from_millis(self.at.load(Ordering::Relaxed))
+    fn sent(&self) {
+        self.sent_at.store(self.now(), Ordering::Relaxed);
+    }
+
+    fn last_sent(&self) -> Instant {
+        self.born + Duration::from_millis(self.sent_at.load(Ordering::Relaxed))
+    }
+
+    fn hear(&self, bytes: usize) {
+        self.heard.fetch_add(bytes as u64, Ordering::Relaxed);
+        self.heard_at.store(self.now(), Ordering::Relaxed);
+        self.heard_sending
+            .store(self.sending_ms(), Ordering::Relaxed);
+    }
+
+    fn begin_send(&self) {
+        self.send_began.store(self.now() + 1, Ordering::Relaxed);
+    }
+
+    fn end_send(&self) {
+        let began = self.send_began.swap(0, Ordering::Relaxed);
+        if began > 0 {
+            let spent = self.now().saturating_sub(began - 1);
+            self.send_ms.fetch_add(spent, Ordering::Relaxed);
+        }
+    }
+
+    fn sending_ms(&self) -> u64 {
+        let began = self.send_began.load(Ordering::Relaxed);
+        let current = match began {
+            0 => 0,
+            began => self.now().saturating_sub(began - 1),
+        };
+        self.send_ms.load(Ordering::Relaxed) + current
+    }
+
+    /// The time its socket spent in sends in all, the one under way
+    /// included: time it read nothing.
+    pub fn sending(&self) -> Duration {
+        Duration::from_millis(self.sending_ms())
+    }
+
+    /// When the connection counts as silent: `silent` after it last read a
+    /// byte, and the time its socket spent sending since.
+    pub fn quiet_until(&self, silent: Duration) -> Instant {
+        let since = self
+            .sending_ms()
+            .saturating_sub(self.heard_sending.load(Ordering::Relaxed));
+        self.last_heard() + silent + Duration::from_millis(since)
+    }
+
+    /// When the connection last read a byte (its open, before any).
+    pub fn last_heard(&self) -> Instant {
+        self.born + Duration::from_millis(self.heard_at.load(Ordering::Relaxed))
+    }
+
+    /// The bytes it read in all.
+    pub fn heard(&self) -> u64 {
+        self.heard.load(Ordering::Relaxed)
+    }
+
+    /// Its socket read a whole message: every byte so far is in one.
+    pub fn heard_whole(&self) {
+        self.whole.store(self.heard(), Ordering::Relaxed);
+    }
+
+    /// Bytes came after the last whole message: one is arriving.
+    pub fn arriving(&self) -> bool {
+        self.heard() > self.whole.load(Ordering::Relaxed)
     }
 }
 
-/// A connection's IO, marking its [Sent] whenever a write takes bytes.
+/// A connection's IO, marking its [Traffic] whenever a write takes bytes or
+/// a read gives some.
 #[derive(Debug)]
 pub struct Tracked<T> {
     io: T,
-    sent: Arc<Sent>,
+    traffic: Arc<Traffic>,
 }
 
 impl<T: AsyncRead + Unpin> AsyncRead for Tracked<T> {
@@ -226,7 +323,13 @@ impl<T: AsyncRead + Unpin> AsyncRead for Tracked<T> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_read(cx, buf)
+        let before = buf.filled().len();
+        let polled = Pin::new(&mut self.io).poll_read(cx, buf);
+        let read = buf.filled().len() - before;
+        if read > 0 {
+            self.traffic.hear(read);
+        }
+        polled
     }
 }
 
@@ -238,7 +341,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Tracked<T> {
     ) -> Poll<io::Result<usize>> {
         let polled = Pin::new(&mut self.io).poll_write(cx, buf);
         if let Poll::Ready(Ok(1..)) = &polled {
-            self.sent.mark();
+            self.traffic.sent();
         }
         polled
     }
@@ -250,7 +353,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Tracked<T> {
     ) -> Poll<io::Result<usize>> {
         let polled = Pin::new(&mut self.io).poll_write_vectored(cx, bufs);
         if let Poll::Ready(Ok(1..)) = &polled {
-            self.sent.mark();
+            self.traffic.sent();
         }
         polled
     }
@@ -277,8 +380,8 @@ impl Listener for TrackedListener {
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         let (io, address) = Listener::accept(&mut self.0).await;
-        let sent = Arc::default();
-        (Tracked { io, sent }, address)
+        let traffic = Arc::default();
+        (Tracked { io, traffic }, address)
     }
 
     fn local_addr(&self) -> io::Result<Self::Addr> {
@@ -286,18 +389,18 @@ impl Listener for TrackedListener {
     }
 }
 
-/// A connection's client address and its [Sent] (axum's connect info).
+/// A connection's client address and its [Traffic] (axum's connect info).
 #[derive(Clone, Debug)]
 pub struct Peer {
     pub address: SocketAddr,
-    pub sent: Arc<Sent>,
+    pub traffic: Arc<Traffic>,
 }
 
 impl Connected<IncomingStream<'_, TrackedListener>> for Peer {
     fn connect_info(stream: IncomingStream<'_, TrackedListener>) -> Self {
         Peer {
             address: *stream.remote_addr(),
-            sent: stream.io().sent.clone(),
+            traffic: stream.io().traffic.clone(),
         }
     }
 }
@@ -311,18 +414,27 @@ pub enum Sending {
     Stalled,
 }
 
-/// Waits for `sending`, a send on the connection whose writes mark `sent`:
-/// it stalls once the connection's kernel took no bytes for `stall` since the
-/// send began, however long a send that keeps moving takes.
+/// Waits for `sending`, a send on the connection whose writes mark
+/// `traffic`: it stalls once the connection's kernel took no bytes for
+/// `stall` since the send began, however long a send that keeps moving takes.
+/// Its time counts as the socket's in sends ([Traffic::sending]).
 pub async fn watched<E>(
     sending: impl Future<Output = Result<(), E>>,
-    sent: &Sent,
+    traffic: &Traffic,
     stall: Duration,
 ) -> Sending {
+    struct Busy<'a>(&'a Traffic);
+    impl Drop for Busy<'_> {
+        fn drop(&mut self) {
+            self.0.end_send();
+        }
+    }
+    traffic.begin_send();
+    let _busy = Busy(traffic);
     let began = Instant::now();
     tokio::pin!(sending);
     loop {
-        let deadline = sent.last().max(began) + stall;
+        let deadline = traffic.last_sent().max(began) + stall;
         if deadline <= Instant::now() {
             return Sending::Stalled;
         }
@@ -345,21 +457,21 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::protocol::Role;
 
-    /// A server socket over a pipe holding 64 KiB, its [Sent], and the
+    /// A server socket over a pipe holding 64 KiB, its [Traffic], and the
     /// peer's end.
     async fn piped() -> (
         WebSocketStream<Tracked<DuplexStream>>,
-        Arc<Sent>,
+        Arc<Traffic>,
         DuplexStream,
     ) {
         let (ours, peer) = tokio::io::duplex(64 * 1024);
-        let sent = Arc::new(Sent::default());
+        let traffic = Arc::new(Traffic::default());
         let io = Tracked {
             io: ours,
-            sent: sent.clone(),
+            traffic: traffic.clone(),
         };
         let socket = WebSocketStream::from_raw_socket(io, Role::Server, None).await;
-        (socket, sent, peer)
+        (socket, traffic, peer)
     }
 
     /// Security regression (Epo 2026-10-20, rate-limit review r7): a 1 MiB
@@ -371,13 +483,15 @@ mod tests {
     async fn a_send_moving_no_bytes_stalls_while_a_slow_one_goes_out() {
         let stall = Duration::from_secs(60);
         let frame = Message::binary(vec![0u8; 1 << 20]);
-        let (mut socket, sent, _reads_nothing) = piped().await;
-        let stalled =
-            tokio::time::timeout(stall * 2, watched(socket.send(frame.clone()), &sent, stall))
-                .await;
+        let (mut socket, traffic, _reads_nothing) = piped().await;
+        let stalled = tokio::time::timeout(
+            stall * 2,
+            watched(socket.send(frame.clone()), &traffic, stall),
+        )
+        .await;
         assert_eq!(stalled.ok(), Some(Sending::Stalled));
 
-        let (mut socket, sent, mut peer) = piped().await;
+        let (mut socket, traffic, mut peer) = piped().await;
         let reader = tokio::spawn(async move {
             let mut chunk = vec![0u8; 16 * 1024];
             let mut read = 0;
@@ -388,11 +502,71 @@ mod tests {
         });
         let began = Instant::now();
         assert_eq!(
-            watched(socket.send(frame), &sent, stall).await,
+            watched(socket.send(frame), &traffic, stall).await,
             Sending::Sent
         );
         assert!(began.elapsed() > Duration::from_secs(600));
         reader.abort();
+    }
+
+    /// Round 5, finding 1: a send's time counts as the socket's in sends, and
+    /// the connection's silence waits as long, while a send that takes no
+    /// time (a ping's) moves neither. Fails if silence counts from the last
+    /// byte heard alone.
+    #[tokio::test(start_paused = true)]
+    async fn the_time_a_send_takes_pauses_the_connections_silence() {
+        let silent = Duration::from_secs(60);
+        let (mut socket, traffic, mut peer) = piped().await;
+        let quiet = traffic.quiet_until(silent);
+        let reader = tokio::spawn(async move {
+            let mut chunk = vec![0u8; 16 * 1024];
+            let mut read = 0;
+            while read < 1 << 20 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                read += peer.read(&mut chunk).await.unwrap_or(0);
+            }
+            peer
+        });
+        let frame = Message::binary(vec![0u8; 1 << 20]);
+        assert_eq!(
+            watched(socket.send(frame), &traffic, silent).await,
+            Sending::Sent
+        );
+        let spent = traffic.sending();
+        assert!(spent > Duration::from_secs(50), "{spent:?}");
+        assert!(traffic.quiet_until(silent) >= quiet + spent);
+        let _peer = reader.await.expect("the reader");
+        let before = (traffic.sending(), traffic.quiet_until(silent));
+        let ping = Message::Ping(vec![1].into());
+        assert_eq!(
+            watched(socket.send(ping), &traffic, silent).await,
+            Sending::Sent
+        );
+        assert_eq!((traffic.sending(), traffic.quiet_until(silent)), before);
+    }
+
+    /// Round 4, finding 9: a read marks its bytes heard, and a message part
+    /// of which came is arriving until the socket reads it whole. Fails if
+    /// reads go unmarked.
+    #[tokio::test]
+    async fn a_read_is_heard_and_a_message_arrives_until_whole() {
+        use futures::StreamExt;
+        use tokio::io::AsyncWriteExt;
+        let (mut socket, traffic, mut peer) = piped().await;
+        // A binary frame of 4 bytes, masked with a zero key, as a browser
+        // sends it: its header and half its payload first.
+        let wire = [0x82, 0x84, 0, 0, 0, 0, 1, 2, 3, 4];
+        peer.write_all(&wire[..8]).await.expect("half");
+        let read = tokio::time::timeout(Duration::from_millis(50), socket.next()).await;
+        assert!(read.is_err(), "a whole message before its end");
+        assert_eq!(traffic.heard(), 8);
+        assert!(traffic.arriving());
+        peer.write_all(&wire[8..]).await.expect("rest");
+        let message = socket.next().await.expect("a message").expect("read");
+        assert_eq!(message, Message::binary(vec![1, 2, 3, 4]));
+        traffic.heard_whole();
+        assert_eq!(traffic.heard(), 10);
+        assert!(!traffic.arriving());
     }
 
     #[test]

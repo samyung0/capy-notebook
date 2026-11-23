@@ -79,6 +79,7 @@ import {
   tabHidden,
 } from './roomSwap';
 import { toastSaveUndone } from './saveFailure';
+import { useHeldEdits } from './useHeldEdits';
 
 // The merge view's sheet loads only once there are pieces to review.
 const NoteMergeView = lazy(() => import('./merge/NoteMergeView'));
@@ -290,13 +291,6 @@ function CollaborativeNoteEditor({
     (retry: (() => void) | null) => setLateRetry(retry && { retry }),
     []
   );
-  // One strip at a time, by priority (Q252, Q420).
-  const banner: SaveBannerState | null =
-    outdated ??
-    offline ??
-    (lateRetry ? 'late-unloaded' : null) ??
-    (saveDelayed ? 'delayed' : null) ??
-    (merge.unresolved ? 'review' : null);
   const closeReview = useCallback(() => {
     setReviewing(false);
     mergeStore?.close();
@@ -312,14 +306,16 @@ function CollaborativeNoteEditor({
         | 'invalid_document'
         | 'unassigned'
         | 'revoked'
-        | 'late',
+        | 'late'
+        | 'discarded',
       edits: 'none' | 'kept' | 'lost'
     ) => {
       if (
         code !== 'invalid_document' &&
         code !== 'unassigned' &&
         code !== 'revoked' &&
-        code !== 'late'
+        code !== 'late' &&
+        code !== 'discarded'
       )
         userToast({
           description: m.editor_too_large_body({
@@ -549,6 +545,16 @@ function CollaborativeNoteEditor({
         }
       : null;
   const swap = useRoomSwap(ready, wanted, onShown);
+  // The room dropped a group of pieces as late: its Retry (Epo 2026-11-23).
+  const [held, setHeld] = useHeldEdits(swap.pending);
+  // One strip at a time, by priority (Q252, Q420).
+  const banner: SaveBannerState | null =
+    outdated ??
+    offline ??
+    (lateRetry ? 'late-unloaded' : null) ??
+    (held ? 'unsynced' : null) ??
+    (saveDelayed ? 'delayed' : null) ??
+    (merge.unresolved ? 'review' : null);
   const previewing = useContext(EditorPreviewing);
   const previewHost = useContext(NotePreviewHost);
   // The room answered late (in-place GC): the paused editor's document goes
@@ -615,6 +621,7 @@ function CollaborativeNoteEditor({
       material={material}
       onDocumentRejected={onDocumentRejected}
       onEditorStatusChange={onEditorStatusChange}
+      onHeld={setHeld}
       onJoinFailed={setMountFailed}
       onLate={onLate}
       onLateUnloaded={onLateUnloaded}
@@ -650,12 +657,17 @@ function CollaborativeNoteEditor({
           >
             {banner && (
               <SaveBanner
-                onDiscard={() => setDiscarding(true)}
-                onRetry={lateRetry?.retry}
+                onDiscard={
+                  banner === 'unsynced'
+                    ? held?.discard
+                    : () => setDiscarding(true)
+                }
+                onRetry={banner === 'unsynced' ? held?.retry : lateRetry?.retry}
                 onReview={() => {
                   previewHost?.exit();
                   setReviewing(true);
                 }}
+                retrying={banner === 'unsynced' && !!held?.retrying}
                 state={banner}
               />
             )}

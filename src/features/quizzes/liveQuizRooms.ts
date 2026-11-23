@@ -14,6 +14,7 @@ import {
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
 import type { InNote } from '@/features/collaboration/noteSeat';
+import type { HeldStrip } from '@/features/collaboration/roomProvider';
 import { pairedUndo, type UndoTarget } from '@/features/collaboration/undo';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { Question } from '@/features/questions/types';
@@ -37,6 +38,11 @@ export interface QuizRooms {
   /** The quiz was deleted (`item_deleted`, Q39): either document's stored
    * edits show as its recovery. */
   deleted: boolean;
+  /** Either room dropped a group of pieces as late: the `unsynced` strip's
+   * Retry joins both again (Epo 2026-11-23), pending while either's join
+   * is, and its Discard drops both rooms' held edits; none while neither
+   * did. */
+  held: HeldStrip | null;
   /** The keys document, in Edit for editors who can write. */
   keys: ItemRoom | null;
   /** The device's copy of the keys: undefined while it reads, null with none. */
@@ -49,7 +55,7 @@ export interface QuizRooms {
   readOnlyCode: ReadOnlyCode | null;
   /** Both documents hold their rooms' state (editable). */
   ready: boolean;
-  /** Stored edits that cannot join a room, shown for copying until Reload
+  /** Stored edits that cannot join a room, shown for copying until Discard
    * (either document's; the other one reads live). */
   recovery: {
     content: ItemRecovery | null;
@@ -174,10 +180,30 @@ export function useQuizRooms(
       state === content.snapshot.offline ||
       (withKeys && state === keys.snapshot.offline)
   );
+  const contentHeld = content.snapshot.held;
+  const keysHeld = withKeys ? keys.snapshot.held : null;
+  const held = useMemo(
+    () =>
+      contentHeld || keysHeld
+        ? {
+            discard: () => {
+              contentHeld?.discard();
+              keysHeld?.discard();
+            },
+            retry: () => {
+              contentHeld?.retry();
+              keysHeld?.retry();
+            },
+            retrying: !!(contentHeld?.retrying || keysHeld?.retrying),
+          }
+        : null,
+    [contentHeld, keysHeld]
+  );
   return {
     access: keysRead ? 'read' : content.snapshot.access,
     content: content.room,
     deleted: deleted || keysDeleted,
+    held,
     keys: withKeys ? keys.room : null,
     keysSeed,
     offline: offline ?? null,

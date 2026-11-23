@@ -76,7 +76,27 @@ pub struct Config {
     /// before it closes (`socket.rs`); tests shorten them.
     pub ping_every: Duration,
     pub silent_close: Duration,
+    /// How long an unfinished group of pieces may wait for its next piece
+    /// past what the update allowance takes to carry its room's group cap
+    /// (`Room::group_carry`), while no message arrives for it. 90 s by
+    /// default (Epo 2026-11-23). Tests shorten it.
+    pub group_slack: Duration,
+    /// The slowest uplink a group must still land on, in bytes a second
+    /// ([SLOWEST_UPLINK], `COLLABORATION_SLOWEST_UPLINK_BYTES`): a draft
+    /// group waits for one whole piece at it past the slack
+    /// (`Room::draft_wait`). Tests raise it.
+    pub slowest_uplink: u64,
 }
+
+/// The slowest uplink a group of pieces must still land on: 8 KB/s (64
+/// kbit/s), half the 128 kbit/s carriers throttle to past a data cap (round
+/// 5; Epo 2026-11-23). The browser's `SLOWEST_UPLINK`
+/// (src/lib/draftUpload.ts) is the same.
+pub const SLOWEST_UPLINK: u64 = 8_000;
+
+/// The most a browser sends in one piece, of a channel's group or a draft
+/// send's (Epo 2026-10-18, `splitUpdate`).
+pub const PIECE_BYTES: usize = 2 << 20;
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
 pub mod dev {
@@ -140,6 +160,12 @@ fn flag(env: &HashMap<String, String>, name: &str) -> Result<bool, ConfigError> 
 }
 
 impl Config {
+    /// How long one whole piece takes at the slowest uplink a group must
+    /// land on: 262 s for 2 MiB at 8 KB/s.
+    pub fn slowest_piece(&self) -> Duration {
+        Duration::from_secs_f64(PIECE_BYTES as f64 / self.slowest_uplink as f64)
+    }
+
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::load(&std::env::vars().collect())
     }
@@ -252,6 +278,8 @@ impl Config {
             )?,
             ping_every,
             silent_close,
+            group_slack: millis(env, "COLLABORATION_GROUP_SLACK_MS", 90_000)?,
+            slowest_uplink: positive(env, "COLLABORATION_SLOWEST_UPLINK_BYTES", SLOWEST_UPLINK)?,
         })
     }
 
@@ -295,6 +323,8 @@ mod tests {
         assert_eq!(config.port, 1234);
         assert_eq!(config.projection_idle, Duration::from_secs(30));
         assert_eq!(config.projection_cadence, Duration::from_secs(300));
+        assert_eq!(config.group_slack, Duration::from_secs(90));
+        assert_eq!(config.slowest_uplink, 8_000);
         assert_eq!(
             config.update_limits,
             crate::rate::Limits {
