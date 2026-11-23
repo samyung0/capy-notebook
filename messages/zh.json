@@ -1701,6 +1701,7 @@
   "pdf_private_annotations": "私人批注",
   "pdf_annotation_color": "批注颜色 {color}",
   "source_edit_recovery": "无法保存这些更改。请下载一份副本，或放弃这些更改。",
+  "source_edit_recovery_size": "此文件已达到大小上限，因此这些更改无法保存。请下载一份副本，或放弃这些更改。",
   "source_edit_session_changed": "编辑会话已更改，请重新打开文件。",
   "source_edit_save_failed": "无法保存更改，草稿仍然保留。",
   "source_edit_offline": "离线，更改已保存在此设备上。",

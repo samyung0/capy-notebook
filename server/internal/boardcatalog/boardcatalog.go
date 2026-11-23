@@ -1,8 +1,8 @@
 // Package boardcatalog lists every kind of thing a drawing board may hold: the canvas
 // elements and blocks, which board takes each (a question's answer board or the
-// workspace canvas), and the limits their checks use. `pnpm gen:openapi` writes it
-// for the browser, whose loader, toolbar and preview read it (openwiki/frontend/
-// plate-editor.md, Epo 2026-11-09).
+// workspace canvas), the limits their checks use and the picture emoji. `pnpm
+// gen:openapi` writes it for the browser, whose loader, toolbar and preview read it
+// (openwiki/frontend/plate-editor.md, Epo 2026-11-09).
 package boardcatalog
 
 import (
@@ -45,6 +45,9 @@ type Catalog struct {
 	Elements []Element        `json:"elements"`
 	Blocks   []Block          `json:"blocks"`
 	Limits   map[string]int64 `json:"limits"`
+	// The emoji a picture may show, by code points: Noto Animated Emoji (Google, CC
+	// BY 4.0, credited on the Credits page), resized in public/emoji/noto.
+	Emoji []string `json:"emoji"`
 }
 
 // Get is the catalog.
@@ -70,7 +73,9 @@ func Get() Catalog {
 			{Flavour: "affine:note", Parents: []string{"affine:page"}, Boards: both},
 			{Flavour: "affine:paragraph", Parents: []string{"affine:note", "affine:paragraph", "affine:list"}, Boards: both},
 			{Flavour: "affine:list", Parents: []string{"affine:note", "affine:paragraph", "affine:list"}, Boards: both},
-			{Flavour: "affine:image", Parents: []string{"affine:surface", "affine:note"}, Boards: both},
+			// Also under a paragraph, a list or an image: BlockSuite's paste into an
+			// indented line and Tab nest one there.
+			{Flavour: "affine:image", Parents: []string{"affine:surface", "affine:note", "affine:paragraph", "affine:list", "affine:image"}, Boards: both},
 			// A picture that plays by itself: an animated emoji, or a KLIPY GIF by link.
 			{Flavour: "affine:embed-capy-picture", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
 			// A link card (a YouTube video shows its poster) and a workspace quiz or set.
@@ -106,6 +111,14 @@ func Get() Catalog {
 			// (the workspace canvas's are editor assets, under the plan's image cap).
 			"BOARD_IMAGE_MAX":  fieldlimits.BoardPictureBytes,
 			"BOARD_IMAGES_MAX": fieldlimits.BoardPictures,
+		},
+		Emoji: []string{
+			"1f600", "1f602", "1f923", "1f60a", "1f60d", "1f929", "1f973", "1f60e",
+			"1f913", "1f914", "1f9d0", "1f62e", "1f631", "1f62d", "1f622", "1f644",
+			"1f971", "1f634", "1fae1", "1f917", "1fae0", "1f92f", "1f44d", "1f44e",
+			"1f44f", "1f64c", "1f64f", "1f4aa", "1f44b", "2764_fe0f", "1f525", "1f4af",
+			"2728", "2b50", "1f389", "2705", "274c", "1f4a1", "1f9e0", "1f4da",
+			"1f3af", "1f680", "1f3c6", "1f947", "23f0", "1f4c8", "1f440", "1f308",
 		},
 	}
 }

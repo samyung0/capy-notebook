@@ -92,6 +92,8 @@ export type SourceSaveState =
   /** Its room refused this editor: the page stays, read-only under a strip. */
   | 'access-lost';
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
+/** A `source-checkpoint-failed` for the file's size limit (Q827 A). */
+const SOURCE_SIZE_REASON = 'source_state_bytes';
 const RESTORE_ORIGIN = Symbol('restore');
 const LINEAGE_EPOCH = /:epoch:(\d+)@/;
 
@@ -689,6 +691,10 @@ export function useSourceSession(
       let lastToken: string | undefined;
       // Set by reset() and refuse(): later typing changes nothing stored.
       let discarded = false;
+      // While a save lost for a gone file asks what happened
+      // (`lostAfterAsking`): the room's reset after it is that save's, and
+      // the lost-access handling answers it (Q831 A).
+      let losing = false;
       // Set by stale(): a late change (the frame's last input) is stored
       // and nothing more is sent.
       let refusedBuild = false;
@@ -795,7 +801,9 @@ export function useSourceSession(
       // every session's drafts dropped, and no answer keeps them for the
       // file's read.
       const lostAfterAsking = async () => {
+        losing = true;
         const answer = await askSourceToken(fileId);
+        losing = false;
         if (cancelled) return;
         if (answer === null || isConflict(answer)) reconnect.refused();
         else if (isApiError(answer) && answer.status === 404)
@@ -861,8 +869,9 @@ export function useSourceSession(
       // good save. Unsaved edits stay in this session's drafts, marked
       // refused so no later open merges them back (they would replay the
       // refused state), and the editor shows them read-only for copying until
-      // Reload (discardDraft) reopens the last good save.
-      const refuse = () => {
+      // Discard (discardDraft) reopens the last good save. `sizeLimit`: the
+      // file reached its size limit, which the banner says (Q827 A).
+      const refuse = (sizeLimit = false) => {
         if (cancelled || active.recovery) return;
         if (sourceChangesCovered(active) && !bufferDirtyRef.current) {
           reset();
@@ -878,7 +887,7 @@ export function useSourceSession(
         active.recovery = true;
         void show();
         setStatus('recovery');
-        setBanner('refused');
+        setBanner(sizeLimit ? 'refused-size' : 'refused');
         setSynced(false);
         provider?.disconnect();
       };
@@ -1098,6 +1107,7 @@ export function useSourceSession(
             message?: string;
             recoverable?: boolean;
             lostAccess?: 'forbidden' | 'not_found';
+            reason?: string;
             room?: string;
             workspaceId?: string;
             evictionId?: string;
@@ -1112,6 +1122,14 @@ export function useSourceSession(
           // The collaboration server names the room, not the file.
           if (event.type === 'room-read-only') {
             if (event.room === session.room) replace('readOnly');
+            return;
+          }
+          // The room was reset (a save refused for good, a server error):
+          // unsaved edits go to recovery, as after a refused save (Q827 A),
+          // unless the save was lost for a gone file, whose own handling
+          // decides (Q831 A).
+          if (event.type === 'authorization-revoked') {
+            if (event.room === session.room && !losing) refuse();
             return;
           }
           if (event.fileId !== fileId) return;
@@ -1183,7 +1201,7 @@ export function useSourceSession(
             if (event.recoverable === false) {
               if (event.lostAccess === 'not_found') void lostAfterAsking();
               else if (event.lostAccess) reset(event.lostAccess);
-              else refuse();
+              else refuse(event.reason === SOURCE_SIZE_REASON);
               return;
             }
             // A slow failure: the server retries this save with backoff and

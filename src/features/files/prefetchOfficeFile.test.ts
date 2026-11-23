@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prefetchSourceOpen, rows } = vi.hoisted(() => ({
   prefetchSourceOpen: vi.fn(),
@@ -35,17 +35,10 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/** The route loads `fileId` (URL `mode`, a navigation unless `preload`). */
-function load(
-  fileId: string,
-  { mode, preload = false }: { mode?: string; preload?: boolean } = {}
-) {
+/** The route loads `fileId` (a navigation unless `preload`). */
+function load(fileId: string, { preload = false }: { preload?: boolean } = {}) {
   const abortController = new AbortController();
-  prefetchOfficeFile(new QueryClient(), fileId, {
-    abortController,
-    location: { search: mode ? { mode } : {} },
-    preload,
-  });
+  prefetchOfficeFile(new QueryClient(), fileId, { abortController, preload });
   return abortController;
 }
 
@@ -59,49 +52,46 @@ beforeEach(() => {
   rows.clear();
   rows.set('workspace:ws_1', async () => WORKSPACE);
 });
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const DECK = { hasBytes: true, name: 'deck.pptx', workspaceId: 'ws_1' };
 
 describe("an Office file's open from its route", () => {
-  it("starts the open in the URL's mode once the rows arrive", async () => {
+  // Q608 A: View always, Edit beside it whenever the capability allows,
+  // whatever mode the view then shows (a `?mode=` link or the saved one).
+  it('starts View and, for an editor, Edit once the rows arrive', async () => {
     rows.set('file:f_deck', async () => DECK);
-    load('f_deck', { mode: 'edit' });
+    load('f_deck');
     await vi.waitFor(() =>
-      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_deck', 'edit')
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_deck', true)
     );
-  });
-
-  it('opens Edit only for an editor, and the saved mode when the URL names none', async () => {
-    rows.set('file:f_deck', async () => DECK);
     rows.set('workspace:ws_1', async () => ({
       capabilities: { canEditContent: false },
     }));
-    load('f_deck', { mode: 'edit' });
-    await vi.waitFor(() =>
-      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_deck', 'view')
-    );
-    rows.set('workspace:ws_1', async () => WORKSPACE);
-    vi.stubGlobal('localStorage', { getItem: () => 'edit' });
     load('f_deck');
     await vi.waitFor(() =>
-      expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_deck', 'edit')
+      expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_deck', false)
     );
   });
 
-  it('opens a standalone file in Edit for its owner, in View while frozen', async () => {
+  it('starts View alone for a file opened from the Trash', async () => {
+    rows.set('file:f_trashed', async () => ({ ...DECK, trash: {} }));
+    load('f_trashed');
+    await vi.waitFor(() =>
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_trashed', false)
+    );
+  });
+
+  it('opens a standalone file for editing by its owner, View alone while frozen', async () => {
     rows.set('file:f_own', async () => ({ ...DECK, workspaceId: '' }));
     rows.set('me', async () => ({ account: { state: 'active' } }));
-    load('f_own', { mode: 'edit' });
+    load('f_own');
     await vi.waitFor(() =>
-      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_own', 'edit')
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_own', true)
     );
     rows.set('me', async () => ({ account: { state: 'over_quota_frozen' } }));
-    load('f_own', { mode: 'edit' });
+    load('f_own');
     await vi.waitFor(() =>
-      expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_own', 'view')
+      expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_own', false)
     );
   });
 
@@ -121,7 +111,7 @@ describe("an Office file's open from its route", () => {
   it('starts no open once the route was left before the file row arrived', async () => {
     const file = deferred<unknown>();
     rows.set('file:f_left', () => file.promise);
-    const route = load('f_left', { mode: 'edit' });
+    const route = load('f_left');
     route.abort();
     file.resolve(DECK);
     await settle();

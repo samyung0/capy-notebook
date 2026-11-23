@@ -15,6 +15,7 @@ export * from './insert';
 export * from './is-abort-error';
 export * from './math';
 export * from './model';
+export * from './note-size-writes';
 export * from './number-prefix';
 export * from './popper-position';
 export * from './print-to-pdf';

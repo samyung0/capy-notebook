@@ -190,6 +190,12 @@ a standalone cargo crate; `run.sh <out-dir>`): memory held by the room's yrs
 document, encoded state, whole-state encode time, folds and the XLSX replica,
 after 1,000 and 10,000 edits made through docx-edit, pptx-edit and the XLSX
 workbook.
+The [2026-11-22 room memory run](collaboration/reports/2026-11-22-room-memory.md)
+names everything a canvas room's yrs document holds, by kind of content, on
+the Mac and on Linux glibc, and prototyped the cuts that landed after it (the
+load into one document, board note sizes saved on a pause, the fork's yrs
+decoding value lists without spare capacity). Its scratch crate builds on a
+patched copy of yrs and is not in the repository.
 
 `bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
 `playwright.rates.config.ts`) measures what one user's editing sends: the
@@ -219,8 +225,8 @@ with its undo history, a second document sent every update (what a room
 holds), and the copy the save stores. It reports bytes per action, and per
 minute at the pace assumed for each kind, into the gitignored
 `collaboration/.results/board-growth.jsonl`; `GROWTH_BASE_URL` measures a dev
-server already running on another checkout. It is the input for the canvas
-room's size cap
+server already running on another checkout, and `GROWTH_MINUTES` shortens the
+mixed hour for a quick run. It is the input for the canvas room's size cap
 ([2026-11-18 report](collaboration/reports/2026-11-18-board-live-growth.md), its
 record in `collaboration/reports/2026-11-18-mac-m1/board-growth.jsonl`).
 

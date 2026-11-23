@@ -10,18 +10,19 @@ import { FileBanner, type FileBannerAction } from './FileBanner';
  *   `offline-unstored`: and this device cannot store them (private mode, a
  *   full disk). `offline-limit`: the device holds as much as the file allows,
  *   and the editor stops taking edits until it reconnects.
- * - `refused`: a save was refused for good. `changed`: the file moved on
+ * - `refused`: a save was refused for good; `refused-size`: an Office or
+ *   text file's, for its size limit (Q827 A). `changed`: the file moved on
  *   (a newer version, a room reset) while the edits waited to sync.
  *   `expired`: the edits are past the 7-day expiry, too old to sync.
  *   `deleted`: the item was deleted with unsent edits on this device (Q39).
- *   All four show the edits read-only for copying (Office and text files and
- *   item rooms; a note opens the merge view instead of the first three,
- *   Q251) and cannot be closed. Their Discard (ghost-hover, first) drops the
- *   edits and continues from the last saved version, and their Download
- *   (dark) saves what shows, deleting nothing (Epo 2026-11-20, 2026-11-21,
- *   and 2026-11-23 for the first three in place of Reload): the editor's
- *   own (`onDownload`), a deleted item's its page's (`DeletedDownload`)
- *   first; with none, Discard stands alone.
+ *   All of these show the edits read-only for copying (Office and text files
+ *   and item rooms; a note opens the merge view instead, except when
+ *   deleted, Q251) and cannot be closed. Their Discard (ghost-hover, first)
+ *   drops the edits and continues from the last saved version, and their
+ *   Download (dark) saves what shows, deleting nothing (Epo 2026-11-20,
+ *   2026-11-21, and 2026-11-23 for all but `deleted`, in place of Reload):
+ *   the editor's own (`onDownload`), a deleted item's its page's
+ *   (`DeletedDownload`) first; with none, Discard stands alone.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
@@ -52,6 +53,7 @@ export type SaveBannerState =
   | 'offline-unstored'
   | 'offline-limit'
   | 'refused'
+  | 'refused-size'
   | 'changed'
   | 'expired'
   | 'outdated'
@@ -67,6 +69,7 @@ export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
 export function isRecoveryBanner(state: SaveBannerState | null) {
   return (
     state === 'refused' ||
+    state === 'refused-size' ||
     state === 'changed' ||
     state === 'expired' ||
     state === 'deleted'
@@ -103,6 +106,7 @@ const MESSAGES: Record<
   'offline-limit': () => m.editor_offline_limit(),
   'offline-unstored': () => m.editor_offline_unstored(),
   refused: () => m.source_edit_recovery(),
+  'refused-size': () => m.source_edit_recovery_size(),
   review: () => m.merge_strip(),
   unreachable: () => m.editor_collab_unavailable(),
   unsynced: () => m.editor_late_unloaded(),

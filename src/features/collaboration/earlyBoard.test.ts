@@ -613,8 +613,9 @@ async function twoSquares(id: string) {
   const first = await open(id);
   await synced(first);
   const peer = mockBoardPeer(id);
-  peer.add('from', { index: 'a0', type: 'shape', xywh: '[0,0,100,100]' });
-  peer.add('to', { index: 'a1', type: 'shape', xywh: '[400,0,100,100]' });
+  const square = { shapeType: 'rect', type: 'shape' };
+  peer.add('from', { ...square, index: 'a0', xywh: '[0,0,100,100]' });
+  peer.add('to', { ...square, index: 'a1', xywh: '[400,0,100,100]' });
   const copy = copyOf(id, first.doc);
   first.destroy();
   return { copy, peer };
@@ -933,7 +934,12 @@ it('lands a move of a shape a peer moved meanwhile: one of the two places stands
   const first = await open(id);
   await synced(first);
   const peer = mockBoardPeer(id);
-  peer.add('square', { index: 'a0', type: 'shape', xywh: '[0,0,100,100]' });
+  peer.add('square', {
+    index: 'a0',
+    shapeType: 'rect',
+    type: 'shape',
+    xywh: '[0,0,100,100]',
+  });
   const copy = copyOf(id, first.doc);
   first.destroy();
   const onReplace = vi.fn();

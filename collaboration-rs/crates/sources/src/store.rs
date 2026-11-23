@@ -353,6 +353,8 @@ pub struct Sources {
     disk: Arc<DiskStore>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
     generations: std::sync::atomic::AtomicU64,
+    /// No-room agent commits in flight, which a room's load waits for (Q826 A).
+    pub(crate) commits: crate::edit::Commits,
     /// The engine program, and its build's hash once a read needed it
     /// ([crate::pending]).
     pub(crate) engine_program: std::path::PathBuf,
@@ -387,6 +389,7 @@ impl Sources {
             disk,
             rooms: Mutex::new(HashMap::new()),
             generations: std::sync::atomic::AtomicU64::new(0),
+            commits: Default::default(),
             engine_version: tokio::sync::OnceCell::new(),
         })
     }
@@ -655,13 +658,15 @@ impl Sources {
     /// remembers the room for its saves. The room holds its base and seed in
     /// the disk store while it keeps [`Loaded::hold`]; a failed load drops
     /// it at once. A store its loaded rooms' files fill refuses the load
-    /// ([`SourceError::StoreFull`]).
+    /// ([`SourceError::StoreFull`]). A no-room agent edit committing to the
+    /// room goes first, so the room holds its row (Q826 A).
     pub async fn load(
         &self,
         room: &SourceRoom,
         actor: &str,
         doc: &Doc,
     ) -> Result<Loaded, SourceError> {
+        self.commits.settled(&room.name()).await;
         let generation = self
             .generations
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

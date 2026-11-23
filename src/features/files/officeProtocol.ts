@@ -10,7 +10,7 @@ import {
   type OfficeRibbon,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 14 as const;
+export const OFFICE_PROTOCOL_VERSION = 15 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -50,13 +50,15 @@ export interface OfficeParagraphPoint {
 }
 
 /**
- * Where a reader is in an editor, by content, so a room swap's next view
- * opens there (Epo 2026-10-22): DOCX the scroll offset, the first body
- * paragraph showing at the top (its fragment by first line) and how far
- * below the top edge it starts, and the selection; XLSX the sheet (by id)
- * and selected cells; PPTX the slide (1-based).
+ * Where a reader is in a viewer or editor, by content, so a room swap's next
+ * view opens there (Epo 2026-10-22), and the editor after View (Q608 A): DOCX
+ * the scroll offset, the first body paragraph showing at the top (its
+ * fragment by first line) and how far below the top edge it starts, and the
+ * selection; XLSX the sheet and selected cells, the sheet by id from an
+ * editor and by name from View, which has no room's ids; PPTX the slide
+ * (1-based). `zoom` is the frame's, applied first.
  */
-export type OfficePosition =
+export type OfficePosition = (
   | {
       format: 'docx';
       scrollTop: number;
@@ -66,8 +68,12 @@ export type OfficePosition =
         head: OfficeParagraphPoint;
       } | null;
     }
-  | { format: 'xlsx'; sheet: string; anchor: OfficeCell; head: OfficeCell }
-  | { format: 'pptx'; slide: number };
+  | ({ format: 'xlsx'; anchor: OfficeCell; head: OfficeCell } & (
+      | { sheet: string }
+      | { sheetName: string }
+    ))
+  | { format: 'pptx'; slide: number }
+) & { zoom?: OfficeZoom };
 
 /**
  * An editor's cursor as it goes between Capy and the frame (Epo 2026-10-20):
@@ -369,8 +375,8 @@ export type OfficeRuntimeMessage =
       timings?: OfficeReadyTimings;
     }
   /**
-   * DOCX View painted its first pages, before the rest are in (`ready`); the
-   * page count is known from the layout.
+   * DOCX View painted its first pages, before the rest are in (`ready`), and
+   * again as more come: the page count so far (Q801 B).
    */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -789,6 +795,7 @@ const isParagraphPoint = (value: unknown): value is OfficeParagraphPoint =>
 export function isOfficePosition(value: unknown): value is OfficePosition {
   if (!value || typeof value !== 'object') return false;
   const position = value as Record<string, unknown>;
+  if (position.zoom !== undefined && !isOfficeZoom(position.zoom)) return false;
   if (position.format === 'docx') {
     const selection = position.selection as Record<string, unknown> | null;
     const top = position.top as Record<string, unknown> | null;
@@ -811,7 +818,11 @@ export function isOfficePosition(value: unknown): value is OfficePosition {
   }
   if (position.format === 'xlsx')
     return (
-      isText(position.sheet) && isCell(position.anchor) && isCell(position.head)
+      (position.sheet === undefined
+        ? isText(position.sheetName)
+        : isText(position.sheet)) &&
+      isCell(position.anchor) &&
+      isCell(position.head)
     );
   return position.format === 'pptx' && isCount(position.slide);
 }

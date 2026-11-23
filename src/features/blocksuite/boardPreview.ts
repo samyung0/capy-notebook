@@ -28,12 +28,8 @@ import {
   unite,
   type Vec,
 } from './boardGeometry';
-import {
-  type BoardKind,
-  BoardLoadError,
-  checkSavedBoard,
-  type Fields,
-} from './boardLoad';
+import { BoardLoadError, checkSavedBoard } from './boardLoad';
+import { type BoardKind, type Fields, isPlace } from './boardRules';
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
@@ -71,7 +67,9 @@ export function drawBoardPreview(
         (block['sys:flavour'] === 'affine:note' &&
           block['prop:displayMode'] !== 'doc') ||
         block['sys:flavour'] === MATERIAL_CARD ||
-        (block['sys:flavour'] === 'affine:image' && isOnCanvas(blocks, id))
+        (block['sys:flavour'] === 'affine:image' &&
+          isOnCanvas(blocks, id) &&
+          isPlace(block['prop:xywh']))
     ),
   ];
   const boxById = new Map(

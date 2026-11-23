@@ -2790,16 +2790,72 @@ design, option d), and the nudge's release file on 2026-10-17.
   The two 33s met in one merge before either was deployed, so 33 covers both:
   `MIN_MATERIAL` and `MIN_SOURCE` are both 33, and their deploy request names
   "client protocol 32 -> 33, material 31 -> 33, source 32 -> 33".
+  The first Q608 landing and the Q667 pin land together (Office protocol 15:
+  every reader place carries its frame's zoom, viewers answer
+  `position-request`, and an XLSX place may name its sheet by name; pin
+  eb7d8b4f7: chat citations are highlighted inside the DOCX, XLSX and PPTX
+  editors). They raised `OFFICE_PROTOCOL_VERSION` to 15, `CLIENT_PROTOCOL` to
+  34 and `MIN_SOURCE` to 34, so source tabs from before them (protocol 33)
+  reload; `MIN_MATERIAL` stays 33. Their deploy request names "client protocol
+  33 -> 34, source 33 -> 34".
+  The Q801 pin (bda081c71: DOCX View lays out the first screen of pages
+  before the rest, the page count and scroll height growing as pages come,
+  and `painted` sent again as the count grows; short files, bodies all in
+  columns, cited opens and prints lay out whole) raised `CLIENT_PROTOCOL` to
+  35 and `MIN_SOURCE` to 35, so source tabs on the older pin (protocol 34)
+  reload; `MIN_MATERIAL` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 15 (the
+  runtime messages keep their shape). Its deploy request names "client
+  protocol 34 -> 35, source 34 -> 35".
+  The Q813 and Q814 pin (ccb90cc2d: the DOCX editor's worker lays out every
+  pass and the page adopts its layout, the table-of-contents pass and a
+  failed worker laying out on the page; a pass over an unchanged input, such
+  as a web-font load, is skipped in the worker and in the page's engine)
+  raised `CLIENT_PROTOCOL` to 36 and `MIN_SOURCE` to 36, so source tabs on the
+  older pin (protocol 35) reload; `MIN_MATERIAL` stays 33 and
+  `OFFICE_PROTOCOL_VERSION` stays 15 (the runtime messages keep their shape).
+  Its deploy request names "client protocol 35 -> 36, source 35 -> 36".
   Merges past a cap (Epo 2026-11-22, "Yes, A everywhere": readers, the room
   and the stores keep a list or text two people's edits merged past its cap,
-  up to twice it, and editors stop at the cap) raised `CLIENT_PROTOCOL` to 34
-  and `MIN_MATERIAL` to 34. A tab from before reads a chart's series and a
+  up to twice it, and editors stop at the cap) raised `CLIENT_PROTOCOL` to 37
+  and `MIN_MATERIAL` to 37. A tab from before reads a chart's series and a
   graph's elements cut to the cap, and its whole-figure write deletes the ones
   it left out, a peer's merged edits; its validators hide a quiz question a
   merge took past a cap and its question text fields undo typing in a text
   over one. The tab from before reloads instead. No source room changed, so
-  `MIN_SOURCE` stays 33 and `OFFICE_PROTOCOL_VERSION` stays 14. Its deploy
-  request names "client protocol 33 -> 34, material 33 -> 34".
+  `MIN_SOURCE` stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy
+  request names "client protocol 36 -> 37, material 33 -> 37".
+  The board rules in the browser (Epo 2026-11-22, B: every viewer reads a
+  canvas by one strict rule set, `boardRules.ts`, and draws what breaks it as
+  "This block cannot be shown"; the room-side content check was dropped)
+  raised `CLIENT_PROTOCOL` to 38 and `MIN_MATERIAL` to 38. The board catalog
+  changed (the emoji list; images under a paragraph, list or image in a
+  note), and a tab from before draws content the rules refuse, such as a
+  chart axis top past `AXIS_MAX`, where a new tab shows the placeholder. The
+  tab from before reloads instead. No source room changed, so `MIN_SOURCE`
+  stays 36 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
+  "client protocol 37 -> 38, material 37 -> 38".
+  The yrs decode pin (capy/yrs-decode-capacity: a decoded list of values
+  reserves its declared length up to the bytes left, so its `Vec` keeps no
+  spare capacity; room memory report cut 3) raised `CLIENT_PROTOCOL` to 39
+  and `MIN_SOURCE` to 39, as every pin bump does (office-files "Pin bump
+  checklist"); the wire format and every stored shape are unchanged, so
+  `MIN_MATERIAL` stays 38 and `OFFICE_PROTOCOL_VERSION` stays 15. The number
+  is set at merge, since other branches also want 39. Its deploy request
+  names "client protocol 38 -> 39, source 36 -> 39".
+  The DOCX Find pin and the agent admission land together (pin f18e63f35,
+  Q825 A and Q828 A: DOCX Find focuses its box the moment it opens and loads
+  with the editor, so the keys typed right after Ctrl+F reach it, and every
+  Ctrl+F opens it seeded from the editor's selection; Q826 A and Q827 A: an
+  agent edit a room opened for goes through that room's admission, and a
+  person's update refused for size and the store's size reset carry
+  `reason: "source_state_bytes"` on `source-checkpoint-failed`, which a
+  source tab shows as the size-limit banner, while `authorization-revoked`
+  naming a source tab's room sends its unsaved edits to recovery). They
+  raised `CLIENT_PROTOCOL` to 40 and `MIN_SOURCE` to 40, so source tabs from
+  before them (protocol 39) reload; `MIN_MATERIAL` stays 38 and
+  `OFFICE_PROTOCOL_VERSION` stays 15 (the runtime messages keep their
+  shape). Their deploy request names "client protocol 39 -> 40, source
+  39 -> 40".
   Groups of pieces (2026-11-22, a wrong behaviour with no product decision:
   a room admitted an action's pieces one by one, so a later piece refused
   left the earlier ones with peers and in the store) add SYNC type 3,
@@ -2807,9 +2863,9 @@ design, option d), and the nudge's release file on 2026-10-17.
   [Connection lifetime and refusals](#connection-lifetime-and-refusals)),
   in both families. A server before it refuses a piece as a malformed sync
   message, and a tab before it sends its pieces as plain updates the room
-  admits one by one, the partial actions again. It raises `CLIENT_PROTOCOL`
-  by one and both minimums to it, `OFFICE_PROTOCOL_VERSION` staying 14; the
-  branch still reads 34, 34 and 33, and the numbers are set when it lands.
+  admits one by one, the partial actions again. It raised `CLIENT_PROTOCOL`
+  to 41 and both minimums to it (material 38 -> 41, source 40 -> 41),
+  `OFFICE_PROTOCOL_VERSION` staying 15.
   Draft sends name their group on the same change (`X-Capy-Group` on each
   piece of a group of more than one, listed by the preflight): a page
   before it, whose pieces a room would admit one by one, is refused as
@@ -2836,6 +2892,8 @@ design, option d), and the nudge's release file on 2026-10-17.
   server before it never sends, so its group would stall; a channel's busy group
   waits under its JOIN session; a draft piece the group does not expect
   answers `unavailable` without dropping the group.
+  Its deploy request names "client protocol 40 -> 41, material 38 -> 41,
+  source 40 -> 41".
 
 #### When to bump
 
@@ -4266,7 +4324,14 @@ reference's `pending` held at null as absent, as the store and Go do.
 The durable content authority is `material_yjs_documents.state` (the base, an
 encoded Y.Doc) plus the update log `material_yjs_updates`: a store appends one
 row, the change since the room's durable state, and `stored_version` (monotonic)
-names it. A room loads by replaying base and rows, and folds the log into the
+names it. A room loads by replaying base and rows straight into its own
+document (`room::loaded_doc`): they are decoded first, the room takes a client
+id none of them names and no user was assigned, and they are applied in one
+transaction, nothing left pending. No scratch copy is built beside it and no
+whole state encoded: a scratch kept alive while the room's document was built
+doubled a loaded room's RSS on glibc, and the direct replay is about twice as
+fast ([room memory report](../../bench/collaboration/reports/2026-11-22-room-memory.md)
+cut 1). It folds the log into the
 base when it unloads or the log passes `max(256 KiB, base bytes)` or 1,000
 rows. The server converts the `content` root to a Plate envelope and calls the
 internal Go projection endpoint: once a store is followed by 30 s without a
@@ -5761,7 +5826,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   plane takes at most 100 elements from its tools, as every graph, its labels up to 60
   characters and a curve up to 100 points, where its tool finishes it (the question
   bounds `QUESTION_GRAPH_*`, D7); the load check takes up to twice the 100 elements
-  (`mergedCap` in `boardLoad.ts`, Epo 2026-11-22, "sure A"), as two people's adds at
+  (`mergedCap` in `boardRules.ts`, Epo 2026-11-22, "sure A"), as two people's adds at
   the same moment merge a plane past its cap, and runs the graph model's one element check
   (`graphElementSchema`, the same as quiz and note graphs and Go and Rust) on each
   element of a kind the plane makes (`PLANE_KINDS`); a board saved with the old
@@ -5992,13 +6057,15 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   erased stays erased; only a new pie label takes the place where the field opened. A
   pie's first line has one id on every pie (`FIRST_SPOKE`), which a new pie,
   Clear all and "+ Slice" on a pie with no line all use, so two Clear alls at once, or
-  one crossing a peer's turn or fill of that line, leave one line. The load check (`boardLoad.ts`) takes each map as it takes a
+  one crossing a peer's turn or fill of that line, leave one line. The load check (`boardRules.ts`) takes each map as it takes a
   plane's: every key its item's id, at most twice `BARS_MAX`, `LABELS_MAX` and
   `SPOKES_MAX` items (48, 120 and 120, `mergedCap`), finite values and angles, and a line's `fill` a board colour. They
   move, turn and resize like a plane card, the eraser leaves them alone, and their editor fills
   the board on the same shell. Bar chart: numbers on the value axis only, up to a top and
   step the student types (Fit, in the menu, takes the top to the first line above the
-  tallest bar). The wheel or a pinch zooms the value axis: its top moves, the step
+  tallest bar, and typing a bar past the top lifts it the same way; neither passes
+  `AXIS_MAX` or 100 lines, falling back to a rounder step, `axisAbove` in `boardChart.ts`,
+  since the board's rules draw a chart past its limits as a placeholder). The wheel or a pinch zooms the value axis: its top moves, the step
   following in 1, 2, 2.5 or 5 for about five lines, bars staying on 0; the zoom is
   written as one undo step once it rests 300 ms. Hovering shows where a press would set the bar, a dashed line with its
   value, as the plane shows where a point would go. Dragging in a place sets its bar, in half steps, with the value in the chip; a free place
@@ -6087,7 +6154,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
     line from it); highlighter strokes from the pen menu are rounded the same way. The
     answer flow refuses past Epo's 250 KB on Done.
-  - `saved` is checked before anything mounts (`boardLoad.ts`), as BlockSuite's store
+  - `saved` is checked before anything mounts (`boardLoad.ts`, by the board's rules in
+    `boardRules.ts`, below), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
     only the blocks and elements the **board catalog** lists for that board (the pen
     menu's highlighter included, which the preview draws as a see-through stroke), each
@@ -6274,19 +6342,46 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `pnpm gen:openapi` writes it to `src/api/board.generated.ts` (`BOARD_CATALOG`);
     `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
     `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
-    `boardData.ts` come from it. The server keeps a saved board as opaque bytes, so
-    the browser is the only reader for now.
+    `boardData.ts` come from it, as does the picture emoji list (`emoji`, read by
+    `boardPictureData.ts`). The server keeps a saved board as opaque bytes and
+    checks no canvas room's content (below), so the browser is the only reader.
+  - **The board's rules** (2026-11-22): `src/features/blocksuite/boardRules.ts`, read by
+    the load check, the live board's placeholders, the preview and `keepToCatalog`. A
+    corpus test (`boardRules.corpus.test.ts`) builds what every tool, editor and paste
+    writes through BlockSuite's own model code and holds it fitting, and one broken case
+    per rule not. An element or block is
+    read from its own Y.Map's entries, never `toJSON()`, so a string where a Y.Text
+    belongs is told apart: keys are strict per element type and block flavour (only
+    the fields BlockSuite or the card stores), each value of its kind (colours, places,
+    finite numbers, BlockSuite's enums, points, connector ends, label styles, a note's
+    nested `edgeless` and colour maps; a colour with both `dark` and `light` holds strings
+    in both), required fields present (a place on everything that stores one, a shape's
+    `shapeType`, a connector's ends and mode, a group's children and title, a mind map's
+    children, style and layout, a text element's text, a note's `edgeless.style`, each
+    card's own), a block prop holding `undefined` only where BlockSuite's default is
+    `undefined` (loading fills only absent props), text
+    as string runs with plain-valued formats (no embeds or nested types; a reference or
+    footnote format is an object), keyed lists up to twice their caps, ids of
+    `[A-Za-z0-9_-]{1,128}` and never `__proto__` (nor a `__proto__` key inside a plain
+    value; a run of overwritten values at one key is read by its last). The tree and a
+    mind map's nodes are checked as before (the load check's tree, `mindmapNodesFit`).
+    What breaks the rules is drawn as "This block cannot be shown" and never removed
+    unless it is the tab's own add (Epo 2026-11-18); the canvas room checks none of it
+    (Epo 2026-11-22, "maybe drop the cnvas content check if its not that useful").
   - **Holding to the catalog after load** (Epo 2026-11-09): the load check runs
     once, so a mounted board also drops what its catalog leaves out whatever adds it
-    (a paste, a duplicate, later a peer): `keepToCatalog` in `drawingBoard.ts` deletes
-    such an element or block right after it lands, and any element the load check's
-    per-element and mind map checks would refuse (`addedElementFits`), so a mind map copied from the
+    (a paste, a duplicate, later a peer): `keepToCatalog` in `boardKeep.ts` deletes
+    such an element or block right after it lands, and any element the board's rules
+    and the mind map's node check would refuse (`storedElementFits`), so a mind map copied from the
     workspace canvas and pasted into an answer goes with its node shapes, as does a capy
-    embed. A saved mind map's nodes are checked too (`mindmapFits`): each a shape on
+    embed. A saved mind map's nodes are checked too (`mindmapNodesFit`): each a shape on
     the canvas no other mind map or group holds, under a parent among its own nodes,
-    one root, no cycle, layout 0–2. A board whose JSON would hide a key (`__proto__`,
-    which Yjs's `toJSON` turns into the object's prototype while BlockSuite still loads
-    the entry) is refused. Emoji, GIFs and cards copy, paste and duplicate on
+    one root, no cycle. A person's copy, paste or Duplicate never carries a placeholder:
+    a clipboard middleware drops `capy:unknown` and `capy:unknown-card` blocks from what a
+    copy exports and a paste or Duplicate imports (`placeholdersLeftOut` in
+    `boardUnknown.ts`), and BlockSuite's canvas copy and clone leave out placeholder
+    elements, stand-in cards and groups left empty (vendor local change 74), a group
+    keeping only the children copied with it. Emoji, GIFs and cards copy, paste and duplicate on
     the workspace canvas through a clipboard config each (`boardClipboard.ts`), which
     re-adds only a block the load check would take (`embedFits`, the same check), since
     any page can write the clipboard. Their renderers check again what they use: a link
@@ -6349,8 +6444,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       contract adds a rule the code does not hold: from here a change to the board
       catalog (`server/internal/boardcatalog`) raises both together.
     - **What the room admits.** A board has no rule on what its content is (Epo
-      2026-11-18, "reject nothing"): admission bounds what an update may cost, never
-      its shape. After the checks every material room makes (the 4 MiB sync message,
+      2026-11-18, "reject nothing"; a content check built 2026-11-22 was dropped the
+      same day, Epo: "maybe drop the cnvas content check if its not that useful"):
+      admission bounds what an update may cost, never its shape. After the checks every material room makes (the 4 MiB sync message,
       the token, the client-id rule, the marker root), `admit_board` takes an update
       that:
       - the room can place (`ydoc::inspect_bounded`): no struct or deleted range
@@ -6822,7 +6918,50 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   side handles, and an empty one shows its whole placeholder (local change 53). Card
   keeps its lines, widening it by the card's padding. An inline note's toolbar has no
   Style button (a card's). A note has no custom height or fold: it is always as tall
-  as its text (local change 55). A card's sides set its width, its text rewrapping and
+  as its text (local change 55). Its measured width (while inline) and height
+  are written by the tab whose person changed the note, once that pauses (local
+  change 75): the tab editing it, or the one whose own change that can resize the
+  note (its text or blocks, an Undo of them, the Inline toggle, a resize's last
+  rewrap, a new note; not a move, a turn or a colour) came less than 500 ms before
+  the measure. It saves 500 ms after the last
+  new measure, at most 2 s after the first unsaved one, and at once, untracked,
+  when editing ends, the note's view goes, the page is hidden, the board is saved
+  or snapshotted (`saveNoteSizes`), a drag, resize or turn starts, or any tracked
+  step of the board's store starts (align, `updateBlock`), so undoing the step or
+  the gesture keeps the typed height; the arrow keys' nudge, a plain write of the
+  model, stores the size with it. Until then the size is that tab's alone
+  (`xywh` stashed), so its frame, selection box and connector paths follow the
+  text at once while other tabs see the size up to 2 s later. A gesture's end
+  measures the note again, so a size its own write left out still goes in. A
+  peer's move or resize shows during the wait, the measured size over it. A tab
+  not editing the note holds nothing and writes nothing per key: it writes what
+  it measures only after 3 s of differing from the stored size with no new size
+  arriving (or as it starts a drag, resize or turn of the note), so a note no one
+  edits still gets its size. Size saves take no undo step. A read-only board
+  writes none (a lock drops a waiting size before the selection's end could save
+  it), and unlocking measures every note again, a size the lock dropped going in
+  as this tab's. A locked note (BlockSuite's lock, its own or a group's, as a
+  Canvas question's elements on a student's copy) keeps its stored size in every
+  tab, since the lock stops only a person's edits: no tab holds, saves or writes
+  it, a lock arriving while a size waits drops that size, and unlocking measures
+  the note again as by a tab not editing it (written after 3 s). Locks are checked
+  only after a change that can lock or unlock a note (a lock, a group's or frame's
+  children, an element or block added or gone), never per typed key. A lock made
+  as a tracked step in the tab holding a size stores it first, as any step does,
+  so a tab making a copy with locked elements adds and locks them in one
+  transaction (or the copy is built before the board mounts, or on the server): a
+  note it adds counts as its own change, and a later lock would store the size it
+  measured in between. Before the board's document goes, its waiting sizes are saved,
+  or dropped when the room was lost, refused the person or was replaced by a
+  recovery copy, and every wait stops, so nothing is written after the board is
+  gone. Leaving the page, each note saves its size as React takes the board's
+  DOM away, before any effect's cleanup; a room that goes while the board stays
+  closes them in its `onLeave`, before its teardown (`drop` while locked); the
+  drawing answer closes them before its last draft write. Connector labels move at the save, inside its
+  transaction, not per key. Saved on every key, in every tab, each size
+  took the clock between two typed characters, so a typed note held a struct per
+  character and a deleted size per key ([room memory
+  report](../../bench/collaboration/reports/2026-11-22-room-memory.md) cut 2). A card's sides set its width, its text rewrapping and
   its height following, down to 40 (times its scale), and its corners scale it. A note
   turns by the frame's knob about its middle (`rotate`, local change 56). Its links
   are underlined; hovering one while no note is typed in (or a tap on a touch

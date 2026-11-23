@@ -7,6 +7,13 @@ import { ImageStoreExtension } from '@blocksuite/affine/blocks/image/store';
 import { ImageViewExtension } from '@blocksuite/affine/blocks/image/view';
 import { ListStoreExtension } from '@blocksuite/affine/blocks/list/store';
 import { ListViewExtension } from '@blocksuite/affine/blocks/list/view';
+import {
+  closeNoteSizes,
+  dropNoteSizes,
+  measureNoteSizesAgain,
+  openNoteSizes,
+  saveNoteSizes,
+} from '@blocksuite/affine/blocks/note';
 import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { NoteViewExtension } from '@blocksuite/affine/blocks/note/view';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
@@ -167,12 +174,13 @@ import {
 } from './boardCards';
 import { closeBoardEditor, watchBoardEditor } from './boardEditorShell';
 import { keepToCatalog, savedCopy } from './boardKeep';
-import { type BoardKind, checkSavedBoard } from './boardLoad';
+import { checkSavedBoard } from './boardLoad';
 import { BoardMenu } from './boardMenu';
 import { PictureStoreExtension, pictureViews } from './boardPicture';
 import { setPlaneOpener } from './boardPlaneEditor';
 import { boardPresenceView } from './boardPresenceView';
 import { readOnlyCopy, TapPanTool } from './boardReadOnly';
+import type { BoardKind } from './boardRules';
 import {
   boardToolbar,
   markBoard,
@@ -653,6 +661,9 @@ export function mountDrawingBoard(
     : memoryBoardStore(saved, blobs, storeExtensions);
   store.resetHistory();
   store.readonly = readOnly;
+  // Its person's own changes to notes, a first note's creation too, count as
+  // editing for the note's size (vendor/blocksuite local change 75).
+  openNoteSizes(store);
   const { onChange } = options;
   if (onChange) store.spaceDoc.on('update', onChange);
   const imageBlocks = () =>
@@ -1302,6 +1313,11 @@ export function mountDrawingBoard(
   return {
     /** Leaves the open plane or chart, writing it as Done does. */
     closeEditor: () => closeBoardEditor(gfx),
+    /** Saves a note's size waiting on a pause in typing, or drops it when the
+     * room lost, refused or replaced the board, and stops every wait: nothing
+     * more is measured or written (local change 75). For a host whose last
+     * write, or whose document's end, comes before `unmount`. */
+    closeNoteSizes: (sizes: 'save' | 'drop') => closeNoteSizes(store, sizes),
     /** The first view again, with this room around it: a board mounted ahead, shown
      * at the screen's width then (a tablet turned since). Before the first view, it
      * only sets that view's room. */
@@ -1373,6 +1389,8 @@ export function mountDrawingBoard(
     /** The board to store, with no undo history and rounded (savedCopy). */
     save: () => {
       finishPlot();
+      // A note's size waiting on a pause in typing goes in (local change 75).
+      saveNoteSizes(store);
       const update = savedCopy(store.spaceDoc, options.board);
       return { bytes: update.byteLength, doc: toBase64(update) };
     },
@@ -1385,12 +1403,19 @@ export function mountDrawingBoard(
     setLocked: (locked: boolean) => {
       if (!tools || locked === readOnly) return;
       if (locked) {
+        // Before a note's editing ends (the tool change, the selection's
+        // clear) and saves its waiting size into a room just lost or refused
+        // (local change 75).
+        dropNoteSizes(store);
         finishPlot();
         gfx.selection.clear();
       }
       readOnly = locked;
       blobs.readonly = locked;
       store.readonly = locked;
+      // Nothing measures a note again by itself: a size the lock dropped
+      // would stay unwritten (local change 75).
+      if (!locked) measureNoteSizesAgain(store);
       if (locked) readingTool();
       else gfx.tool.setTool(DefaultTool);
       if (menu.open) menu.draw();
@@ -1417,8 +1442,12 @@ export function mountDrawingBoard(
         );
       refuseTool(false);
     },
-    /** The board as it is, leaving a tool in use alone. */
-    snapshot: () => toBase64(Y.encodeStateAsUpdate(store.spaceDoc)),
+    /** The board as it is, leaving a tool in use alone; a note's size waiting
+     * on a pause in typing goes in. */
+    snapshot: () => {
+      saveNoteSizes(store);
+      return toBase64(Y.encodeStateAsUpdate(store.spaceDoc));
+    },
     stats: () => {
       const { bound } = framing();
       return {
@@ -1449,7 +1478,12 @@ export function mountDrawingBoard(
         { quality: 0.75 }
       );
     },
-    unmount: () => {
+    /** `sizes`: a note's size waiting on a pause in typing is saved, or
+     * dropped when the room lost, refused or replaced the board (local change
+     * 75); every wait stops either way. */
+    unmount: (sizes: 'save' | 'drop') => {
+      // While `onChange` still hears it.
+      closeNoteSizes(store, sizes);
       blobs.close();
       cancelAnimationFrame(frame);
       subscription.unsubscribe();

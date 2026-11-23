@@ -666,7 +666,7 @@ async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attem
         undo: None,
     };
     let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
-    let Err(error) = h.sources.apply_edit(input, live).await else {
+    let Err(error) = h.sources.apply_edit(&input, live, |_| false).await else {
         panic!("the edit committed");
     };
     assert_eq!(error.status(), Some(409), "{error:?}");
@@ -745,7 +745,7 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
         undo: None,
     };
     let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
-    let Err(error) = h.sources.apply_edit(input, live).await else {
+    let Err(error) = h.sources.apply_edit(&input, live, |_| false).await else {
         panic!("the edit committed");
     };
     assert_eq!(error.status(), Some(413), "{error:?}");
@@ -773,6 +773,31 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
             - bytes.len() as u64
             - sources::STATE_GROWTH_MARGIN_BYTES
     );
+}
+
+/// Q826 A: a no-room agent edit that finds a room opened before its commit
+/// commits nothing and answers none, for that room's admission to take it.
+/// Fails if it commits past the room.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_no_room_edit_commits_nothing_once_a_room_opened() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"abc").await;
+    let input = EditInput {
+        actor_user_id: h.user.clone(),
+        commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": unique("op"), "requestHash": "h1" }),
+        undo: None,
+    };
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let opened = h
+        .sources
+        .apply_edit(&input, live, |name| name == room.name())
+        .await
+        .unwrap();
+    assert!(opened.is_none());
+    assert_eq!(h.row(&room).await.get::<_, i64>(0), 0, "nothing was stored");
 }
 
 /// A trashed file waits for no rebuild, though its room unloading (its
@@ -1154,9 +1179,10 @@ async fn an_office_undo_with_no_room_counts_its_edited_text() {
     let insert = json!({ "type": "insert_paragraph", "afterId": id, "text": "a".repeat(400) });
     let edited = h
         .sources
-        .apply_edit(input("op_counted", vec![insert], None), live)
+        .apply_edit(&input("op_counted", vec![insert], None), live, |_| false)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("no room");
     let after_edit = net_tokens(&h, &room).await;
     assert!(after_edit > 0, "the edit counted its text");
     let undo = SentBack {
@@ -1165,7 +1191,11 @@ async fn an_office_undo_with_no_room_counts_its_edited_text() {
         undo_of: "op_counted".into(),
     };
     h.sources
-        .apply_edit(input("op_counted_undo", Vec::new(), Some(undo)), live)
+        .apply_edit(
+            &input("op_counted_undo", Vec::new(), Some(undo)),
+            live,
+            |_| false,
+        )
         .await
         .unwrap();
     assert_eq!(net_tokens(&h, &room).await, 2 * after_edit);
@@ -1659,7 +1689,7 @@ async fn a_file_with_no_workspace_is_inspected_and_edited() {
         operation: json!({ "id": unique("op"), "requestHash": "h1" }),
         undo: None,
     };
-    h.sources.apply_edit(input, live).await.unwrap();
+    h.sources.apply_edit(&input, live, |_| false).await.unwrap();
     assert_eq!(*h.fake.saved_in.lock().unwrap(), [Some(String::new())]);
     assert_eq!(inspect().await.as_deref(), Some("abd"));
 }

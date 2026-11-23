@@ -4,6 +4,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import {
   officeEditMenu,
   officeMenu,
+  officePosition,
   officeTab,
   postToOfficeRuntime,
   ribbonCommand,
@@ -898,6 +899,123 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   });
 }
 
+// Q608 A: View says where its reader is as the editor names it, so the editor
+// after View can open there at View's zoom: the DOCX selection by paragraph id
+// and offset (a click in View's text reads as the same click in the
+// editor), the XLSX sheet by name and its cell, the slide. The editor's
+// `set-position` applies the zoom first.
+for (const format of ['docx', 'xlsx', 'pptx'] as const)
+  test(`${format} View's reader place and zoom are the editor's`, async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=view`);
+    const frame = page.frameLocator('[data-office-view="live"] iframe');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 120_000,
+    });
+    await officeMenu(page, format, 'View').click();
+    await page.getByRole('menuitem', { name: 'Zoom' }).click();
+    await page
+      .getByRole('menuitemcheckbox', { exact: true, name: '150%' })
+      .click();
+    const nameBox = frame.getByRole('textbox', {
+      name: m.files_office_spreadsheet_name_box(),
+    });
+    // DOCX: a point in a glyph inside a body paragraph's text on page 1 (its
+    // left quarter, so the caret goes before it), by its place on the page,
+    // so the editor's same point can be clicked.
+    let point: { x: number; y: number } | null = null;
+    if (format === 'docx') {
+      await page.waitForTimeout(1000);
+      point = await frame.locator('.docx-runtime-viewer').evaluate((area) => {
+        const canvas = area.querySelector('canvas[data-page-index="0"]');
+        const box = canvas?.getBoundingClientRect();
+        if (!box) return null;
+        for (const run of area.querySelectorAll<HTMLElement>(
+          '.canvas-page-mirror--selectable .layout-page-content [data-para-id] .layout-run-text[data-doc-start]'
+        )) {
+          const rect = run.getBoundingClientRect();
+          if (
+            run.closest('[role="cell"]') ||
+            !run.textContent?.trim() ||
+            !run.previousElementSibling?.textContent?.trim() ||
+            // In the top half, so the editor's ribbon leaves it on screen.
+            rect.top < box.top ||
+            rect.bottom > window.innerHeight / 2
+          )
+            continue;
+          return {
+            x: rect.left + rect.width / 4 - box.left,
+            y: rect.top + rect.height / 2 - box.top,
+          };
+        }
+        return null;
+      });
+      expect(point).not.toBeNull();
+    }
+    const pageBox = async () =>
+      (await frame
+        .locator('canvas[data-page-index="0"]')
+        .first()
+        .boundingBox())!;
+    if (format === 'docx') {
+      const box = await pageBox();
+      await page.mouse.click(box.x + point!.x, box.y + point!.y);
+    } else if (format === 'xlsx') {
+      await frame.getByRole('tab', { name: 'Summary' }).click();
+      await nameBox.fill('c4');
+      await nameBox.press('Enter');
+      await expect(nameBox).toHaveValue('C4');
+    } else await frame.locator('aside button').nth(2).click();
+    const view = (await officePosition(page)) as Record<string, unknown>;
+    expect(view.zoom).toBe(1.5);
+    if (format === 'xlsx')
+      expect(view).toMatchObject({
+        anchor: { col: 2, row: 3 },
+        head: { col: 2, row: 3 },
+        sheetName: 'Summary',
+      });
+    if (format === 'pptx') expect(view).toMatchObject({ slide: 3 });
+
+    await page.getByRole('button', { name: m.material_mode() }).click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });
+    if (format === 'docx') {
+      // The same point clicked in the editor, at the same zoom.
+      await expect(
+        frame.locator(
+          '.docx-editor__scroll-container canvas[data-page-index="0"]'
+        )
+      ).toBeVisible({ timeout: 120_000 });
+      await page.waitForTimeout(1000);
+      const box = await pageBox();
+      await page.mouse.click(box.x + point!.x, box.y + point!.y);
+      const edit = (await officePosition(page)) as Record<string, unknown>;
+      expect(edit.selection).toEqual(view.selection);
+      expect(view.selection).not.toBeNull();
+    }
+    // Back at 100%, the editor goes to View's place and zoom.
+    await zoomInRibbon(page, format, '100%');
+    const shown = (await officePosition(page, view)) as Record<string, unknown>;
+    if (format === 'xlsx')
+      await expect(ribbonZoom(page, format)).toHaveValue('150%');
+    else await expect(ribbonZoom(page, format)).toContainText('150%');
+    if (format === 'docx') expect(shown.selection).toEqual(view.selection);
+    if (format === 'xlsx') {
+      await expect(frame.getByRole('tab', { name: 'Summary' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await expect(nameBox).toHaveValue('C4');
+    }
+    if (format === 'pptx')
+      await expect(frame.locator('aside button').nth(2)).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+  });
+
 test.describe('DOCX on a phone', () => {
   // Touch, so a pinch reaches the runtime frame as touches.
   test.use({
@@ -1177,6 +1295,45 @@ test.describe('DOCX on a phone', () => {
     await resize(page, 360);
     await fitted(frame);
     closeTo(await highlightOnPage(frame), expected);
+  });
+
+  // Q811 A: the editor's centring waits for its pages and their fitted zoom.
+  test('a chat citation carries into Edit fitted, with its passage in view', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    await page.goto('/workspaces/ws_bio?view=chats');
+    await page
+      .getByRole('button', { name: 'Answer: Office citation' })
+      .click({ timeout: 60_000 });
+    await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(
+      frame.locator('[data-citation-highlight]').first()
+    ).toBeAttached({ timeout: 120_000 });
+    await editMode(page);
+    await fitted(frame);
+    const highlight = frame
+      .locator('.docx-editor [data-citation-highlight]')
+      .first();
+    await expect
+      .poll(
+        () =>
+          highlight.evaluate((node) => {
+            const pane = node.closest<HTMLElement>(
+              '.docx-editor__scroll-container'
+            );
+            if (!pane) throw new Error('Missing scroll container');
+            const box = node.getBoundingClientRect();
+            const view = pane.getBoundingClientRect();
+            return {
+              sideways: pane.scrollWidth - pane.clientWidth,
+              visible: box.top >= view.top && box.bottom <= view.bottom,
+            };
+          }),
+        { timeout: 60_000 }
+      )
+      .toEqual({ sideways: 0, visible: true });
   });
 
   test('a DOCX with comments opens fitted below md with its comments sidebar closed and no sideways scroll, and at md with it open', async ({
@@ -1630,6 +1787,140 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
   expect(await position()).toEqual([0, 0]);
 });
 
+// Q667, Q799: the editors mark a citation as View does, display only, so the
+// highlight carries from View into Edit and leaves nothing to undo or save.
+// Q809 A: it stays on its paragraph through other typing and goes once the
+// paragraph no longer holds the quote.
+test('a DOCX citation carries from View into Edit, highlighted in view, with nothing to undo, until its paragraph is replaced', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  await showChatHistory(page);
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('[data-citation-highlight]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const highlight = frame
+    .locator('.docx-editor [data-citation-highlight]')
+    .first();
+  await expect(highlight).toBeVisible({ timeout: 60_000 });
+  await expect
+    .poll(() =>
+      highlight.evaluate((node) => {
+        const pane = node.closest('.docx-editor__scroll-container');
+        if (!pane) throw new Error('Missing scroll container');
+        const box = node.getBoundingClientRect();
+        const view = pane.getBoundingClientRect();
+        return box.top >= view.top && box.bottom <= view.bottom;
+      })
+    )
+    .toBe(true);
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+
+  // Its paragraph replaced (a triple click near the line's start, left of
+  // the chat window over the page): the quote is gone, and so is the mark.
+  const box = await highlight.boundingBox();
+  if (!box) throw new Error('Missing highlight');
+  await page.mouse.click(box.x + 8, box.y + box.height / 2, { clickCount: 3 });
+  await page.keyboard.type('X');
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeEnabled();
+  await expect(frame.locator('[data-citation-highlight]')).toHaveCount(0);
+});
+
+// The host's set-citation reaching an editor already open: the open file's
+// row in Files drops the citation target while the file stays open in Edit,
+// and the host's null citation clears the editor's highlight in that frame.
+test('the host clears a DOCX citation in the editor already open', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.goto('/workspaces/ws_bio');
+  await showChatHistory(page);
+  await page.getByRole('button', { name: 'Answer: Office citation' }).click();
+  await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('[data-citation-highlight]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const highlight = frame.locator('.docx-editor [data-citation-highlight]');
+  await expect(highlight.first()).toBeVisible({ timeout: 60_000 });
+  const editor = await page
+    .locator('iframe[src*="office-runtime"]')
+    .elementHandle();
+  await showPanelView(page, m.workspace_tab_files());
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=bio-office-docx"]')
+    .click();
+  await expect(highlight).toHaveCount(0, { timeout: 30_000 });
+  expect(
+    await page
+      .locator('iframe[src*="office-runtime"]')
+      .evaluate((node, before) => node === before, editor)
+  ).toBe(true);
+  await expect(officeEditMenu(page)).toBeVisible();
+});
+
+for (const [format, quote] of [
+  ['xlsx', 'Critical Zones: Our Toxic Environment'],
+  ['pptx', 'UAT_RUN_MARKER'],
+] as const) {
+  test(`a ${format} citation in Edit highlights its passage with nothing to undo`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=edit`);
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    // XLSX (Q810 B): the cell is marked, not selected.
+    const nameBox = frame.getByTestId('xlsx-name-box');
+    const selected = format === 'xlsx' ? await nameBox.inputValue() : null;
+    await postToOfficeRuntime(page, {
+      citation: { quote },
+      type: 'set-citation',
+    });
+    await expect(
+      frame.locator('[data-citation-highlight]').first()
+    ).toBeVisible({ timeout: 30_000 });
+    if (selected !== null) await expect(nameBox).toHaveValue(selected);
+    await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+    // No citation, no mark: as in View.
+    await postToOfficeRuntime(page, { citation: null, type: 'set-citation' });
+    await expect(frame.locator('[data-citation-highlight]')).toHaveCount(0);
+  });
+}
+
+// Q812 B: a cell on another sheet switches the editor there, as a tab click
+// does (the switch's own selection, A1), then marks the cell unselected.
+test('an XLSX citation on another sheet switches to it in Edit and marks the cell unselected', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  const tab = frame.getByRole('tab', { name: 'Faculty Database' });
+  await expect(tab).toHaveAttribute('aria-selected', 'false');
+  await postToOfficeRuntime(page, {
+    citation: { quote: 'Mathematics, Statistics, Risk Management' },
+    type: 'set-citation',
+  });
+  await expect(tab).toHaveAttribute('aria-selected', 'true', {
+    timeout: 30_000,
+  });
+  await expect(frame.locator('[data-citation-highlight]')).toBeVisible();
+  await expect(frame.getByTestId('xlsx-name-box')).toHaveValue('A1');
+  await expect(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+});
+
 // A paused editor is read-only in every pause state; a replaced session is
 // the one the mocks drive.
 for (const [format, text] of [
@@ -1723,7 +2014,8 @@ for (const [format, text] of [
       // Find opens and takes typing; Replace stays disabled.
       await runRibbonCommand(page, 'edit', 'find-replace');
       const find = frame.getByLabel('Find text');
-      await find.click();
+      // The dialog focuses its box and selects its text as it opens (Q825 A).
+      await expect(find).toBeFocused();
       await page.keyboard.type('Course');
       await expect(find).toHaveValue('Course');
       await expect(
@@ -1811,6 +2103,145 @@ for (const [format, text] of [
     expect(await copySelectAll()).toBe(before);
   });
 }
+
+// Q825 A: every key typed after Ctrl+F reaches Find, as in Google Docs, on the
+// first open after the file loads too: Find loads with the editor and focuses
+// its box as it opens. Late keys went into the document while editing (sent
+// to collaborators) and were dropped while paused.
+for (const paused of [false, true]) {
+  test(`the first Ctrl+F in ${paused ? 'a paused' : 'an editable'} docx takes the keys typed straight after it`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    await saveOffice(page, 'docx');
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+    if (paused) {
+      await page.evaluate(async (id) => {
+        const modulePath = '/src/mocks/collaboration.ts';
+        const { announceSourcePaused } = (await import(
+          modulePath
+        )) as typeof import('../../src/mocks/collaboration');
+        announceSourcePaused(id);
+      }, 'bio-office-docx');
+      await expect(frame.getByText(m.source_edit_paused())).toBeVisible();
+    }
+    await page
+      .context()
+      .grantPermissions(['clipboard-read', 'clipboard-write']);
+    const copySelectAll = async () => {
+      await page.evaluate(() => navigator.clipboard.writeText('EMPTY'));
+      await runRibbonCommand(page, 'edit', 'select-all');
+      await page.keyboard.press('ControlOrMeta+C');
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .not.toBe('EMPTY');
+      return page.evaluate(() => navigator.clipboard.readText());
+    };
+    const before = await copySelectAll();
+    await frame
+      .locator('canvas')
+      .first()
+      .click({ position: { x: 300, y: 300 } });
+    await expect(frame.getByLabel('Document input')).toBeFocused();
+    const updates = await page.evaluateHandle(() => {
+      const seen = { count: 0 };
+      window.addEventListener('message', (event) => {
+        if (event.data?.type === 'update') seen.count += 1;
+      });
+      return seen;
+    });
+
+    await page.keyboard.press('ControlOrMeta+f');
+    await page.keyboard.type('Course');
+    const find = frame.getByLabel('Find text');
+    await expect(find).toHaveValue('Course');
+    if (paused) return;
+    await page.waitForTimeout(1500);
+    expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+    await find.press('Escape');
+    await expect(find).toHaveCount(0);
+    expect(await copySelectAll()).toBe(before);
+  });
+}
+
+// Q828 A, as in Google Docs: Ctrl+F and Ctrl+H fill Find with the document's
+// selected text, a repeat Ctrl+F from the document takes the keys typed
+// straight after it, and switching to Replace keeps the typed query.
+test('docx Find takes the selected text, a repeat Ctrl+F from the document and a switch to Replace', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await saveOffice(page, 'docx');
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  const find = frame.getByLabel('Find text');
+  const replace = frame.getByLabel('Replace text');
+  // Left of Find, which opens at the frame's top right.
+  const backToDocument = async () => {
+    await frame
+      .locator('canvas')
+      .first()
+      .click({ position: { x: 150, y: 400 } });
+    await expect(frame.getByLabel('Document input')).toBeFocused();
+  };
+  // The title's first word, `2022`, after its two spaces.
+  const selectFirstWord = async () => {
+    await page.keyboard.press('ControlOrMeta+Home');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    for (let index = 0; index < 4; index += 1)
+      await page.keyboard.press('Shift+ArrowRight');
+  };
+  const updates = await page.evaluateHandle(() => {
+    const seen = { count: 0 };
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'update') seen.count += 1;
+    });
+    return seen;
+  });
+
+  await backToDocument();
+  await selectFirstWord();
+  await page.keyboard.press('ControlOrMeta+f');
+  await expect(find).toHaveValue('2022');
+  await expect(find).toBeFocused();
+  expect(
+    await find.evaluate((input: HTMLInputElement) => [
+      input.selectionStart,
+      input.selectionEnd,
+    ])
+  ).toEqual([0, 4]);
+
+  // Find stays open: Ctrl+F from the document goes back to its box.
+  await backToDocument();
+  await page.keyboard.press('ControlOrMeta+f');
+  await page.keyboard.type('Course');
+  await expect(find).toHaveValue('Course');
+
+  await page.keyboard.press('ControlOrMeta+h');
+  await expect(replace).toBeVisible();
+  await expect(find).toHaveValue('Course');
+  await expect(find).toBeFocused();
+
+  await backToDocument();
+  await selectFirstWord();
+  await page.keyboard.press('ControlOrMeta+h');
+  await expect(find).toHaveValue('2022');
+  await expect(find).toBeFocused();
+  await page.waitForTimeout(1500);
+  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+});
 
 // One open DOCX (exchange-plan.docx) for these focus checks: the runtime
 // boots once. Its load arrives 5 s late on every open (the init script), so
@@ -1952,7 +2383,8 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await page.waitForTimeout(1000);
     await runRibbonCommand(page, 'edit', 'find-replace');
     const find = frame.getByLabel('Find text');
-    await find.click();
+    // The dialog focuses its box and selects its text as it opens (Q825 A).
+    await expect(find).toBeFocused();
     await page.keyboard.type('Cours');
     await capabilities(true);
     await page.waitForTimeout(1000);

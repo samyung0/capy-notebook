@@ -22,6 +22,7 @@ import * as Y from 'yjs';
  * A phase's per-minute figure is its per-action figure at the pace assumed for
  * it below; change the pace and the figure scales. Each record is printed and
  * appended to bench/collaboration/.results/board-growth.jsonl.
+ * GROWTH_MINUTES shortens the mixed hour (60 minutes) for a quick run.
  */
 
 /** Pointer moves in a stroke: two thirds of a second at 60 moves a second. */
@@ -53,7 +54,11 @@ const SETTLE_MS = 400;
  * fourth edits its note first, and every tenth deletes its shape and note and
  * starts a new plane. That is about 14 gestures and 45 keys a minute.
  */
-const MIXED = { minutes: 60, strokes: 8, typed: 40 };
+const MIXED = {
+  minutes: Number(process.env.GROWTH_MINUTES ?? 60),
+  strokes: 8,
+  typed: 40,
+};
 
 type Vec = readonly [number, number];
 type Box = { h: number; w: number; x: number; y: number };
@@ -469,7 +474,7 @@ async function openPlane(page: Page, id: string) {
     root.gfx.viewport.setCenter(x + w / 2, y + h / 2);
   }, id);
   await page.mouse.dblclick(...middle(await boxOf(page, id)));
-  const editor = page.locator('.capy-plane-editor');
+  const editor = page.locator('.capy-graph-editor');
   await editor.waitFor();
   const list = editor.getByRole('button', { name: 'Objects' });
   if ((await list.getAttribute('aria-pressed')) === 'true') await list.click();
@@ -483,7 +488,7 @@ async function openPlane(page: Page, id: string) {
 
 async function closePlane(page: Page) {
   await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.locator('.capy-plane-editor')).toHaveCount(0);
+  await expect(page.locator('.capy-graph-editor')).toHaveCount(0);
 }
 
 const planeTool = (page: Page, name: string) =>
@@ -494,7 +499,7 @@ const planeTool = (page: Page, name: string) =>
 const planePoints = (page: Page, id: string) =>
   rootOf(page).evaluate((root: Root, id) => {
     const card = root.gfx.getElementById(id) as PlaneCard;
-    const editor = document.querySelector('.capy-plane-editor');
+    const editor = document.querySelector('.capy-graph-editor');
     if (!editor) throw new Error('no plane editor');
     const box = editor.getBoundingClientRect();
     const centre = [

@@ -814,6 +814,10 @@ struct Store {
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
 }
 
+/// Why a source update or save was refused for the room's size, on its
+/// `source-checkpoint-failed` (Q827 A) and its incident.
+const SIZE_REASON: &str = "source_state_bytes";
+
 /// See `sync_message`: not a valid update, so a release build refuses it.
 #[cfg(debug_assertions)]
 const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
@@ -833,8 +837,9 @@ const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 #[cfg(debug_assertions)]
 pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 
-/// See `start_store`: a store of a material whose id holds this commits a
-/// second late, in debug builds only.
+/// See `start_store` and `start_source_store`: a store of a material or
+/// source file whose id holds this commits a second late, in debug builds
+/// only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_STORE: &str = "capy-it-slow-store";
 
@@ -849,6 +854,24 @@ pub const IT_SLOW_COMPUTE: &str = "capy-it-slow-compute";
 /// builds only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_RECHECK: &str = "capy-it-slow-recheck";
+
+/// See `edits::it_hold`: a no-room agent edit of a source file or material
+/// whose id holds this waits after its snapshot of the live room, before it
+/// computes, until the test releases it, in debug builds only (Q826 A: a
+/// room opens meanwhile).
+#[cfg(debug_assertions)]
+pub const IT_HOLD_NO_ROOM: &str = "capy-it-hold-no-room";
+
+/// See `edits::opened`: a source file whose id holds this looks loaded to a
+/// no-room agent edit's last look and is never loaded for its Q402 path, as
+/// if its rooms kept opening and unloading, in debug builds only (Q829 A).
+#[cfg(debug_assertions)]
+pub const IT_ROOM_FLAPS: &str = "capy-it-room-flaps";
+
+/// See `RoomCmd::Snapshot`: a room whose name holds this answers no snapshot
+/// within its 10 s, in debug builds only (Q829 A).
+#[cfg(debug_assertions)]
+const IT_SLOW_SNAPSHOT: &str = "capy-it-slow-snapshot";
 
 /// See `RoomCmd::AgentKeys`: the keys room of a quiz whose id holds this
 /// refuses an agent edit's part, in debug builds only.
@@ -983,15 +1006,29 @@ fn stored_bytes(kind: &Kindly) -> i64 {
     }
 }
 
-/// Picks a client id the loaded state does not hold and no user was
-/// assigned (Q226): markers and server edits are written under it.
-fn fresh_doc(held: &StateVector, assigned: &HashSet<u64>) -> Doc {
+/// A document under a random client id `taken` refuses.
+fn fresh_doc(taken: impl Fn(u64) -> bool) -> Doc {
     loop {
         let doc = Doc::with_options(ydoc::doc_options(0));
-        if held.get(&doc.client_id()) == 0 && !assigned.contains(&doc.client_id().get()) {
+        if !taken(doc.client_id().get()) {
             return doc;
         }
     }
+}
+
+/// A material room's document: the stored base and rows replayed straight
+/// into it, under a client id they name nowhere and no user was assigned
+/// (Q226): markers and server edits are written under it. No scratch copy
+/// is held beside it and no whole state encoded (a scratch alive while the
+/// room's document was built doubled a loaded room's RSS on glibc,
+/// room-memory report cut 1).
+fn loaded_doc(base: Vec<u8>, rows: Vec<Vec<u8>>, assigned: &HashSet<u64>) -> Result<Doc, String> {
+    let stored = ydoc::Stored::decode(&base, &rows).map_err(|error| error.to_string())?;
+    drop((base, rows));
+    let named = stored.clients();
+    let doc = fresh_doc(|id| named.contains(&id) || assigned.contains(&id));
+    stored.replay(&doc).map_err(|error| error.to_string())?;
+    Ok(doc)
 }
 
 /// What a join waiting on a source room load the disk store refused is
@@ -1067,19 +1104,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
             let material_kind = kind.clone();
             let (doc, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
-                    let scratch = ydoc::scratch_doc();
-                    ydoc::replay(&scratch, &loaded.base, &loaded.rows)
-                        .map_err(|error| error.to_string())?;
-                    let held = scratch.transact().state_vector();
-                    let state = scratch
-                        .transact()
-                        .encode_state_as_update_v1(&StateVector::default());
-                    let doc = fresh_doc(&held, &assigned);
-                    {
-                        let mut txn = doc.transact_mut();
-                        txn.apply_update(ydoc::decode(&state).map_err(|error| error.to_string())?)
-                            .map_err(|error| error.to_string())?;
-                    }
+                    let doc = loaded_doc(loaded.base, loaded.rows, &assigned)?;
                     let txn = doc.transact();
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
@@ -1179,7 +1204,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
             let room = name
                 .source_room()
                 .ok_or_else(|| "invalid source room".to_owned())?;
-            let doc = fresh_doc(&StateVector::default(), &assigned);
+            let doc = fresh_doc(|id| assigned.contains(&id));
             let loaded = match app.sources.load(&room, actor, &doc).await {
                 Ok(loaded) => loaded,
                 // Expected while loaded rooms fill the disk store: logged and
@@ -1837,6 +1862,16 @@ impl Room {
                 }
             }
             RoomCmd::Snapshot(reply) => {
+                // Debug builds only: the integration test's room whose
+                // snapshot answers past its wait.
+                #[cfg(debug_assertions)]
+                if self.name.contains(IT_SLOW_SNAPSHOT) {
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(11)).await;
+                        drop(reply);
+                    });
+                    return;
+                }
                 let state = self.encoded(StateVector::default()).await;
                 let _ = reply.send(state);
             }
@@ -4656,17 +4691,21 @@ impl Room {
         let Kindly::Source(source) = &self.kind else {
             return Outcome::refused(Class::Malformed, refusal.message());
         };
-        let payload = json!({
+        let mut payload = json!({
             "checkpointIds": [],
             "epoch": source.room.epoch,
             "fileId": source.room.file_id,
             "recoverable": false,
             "type": "source-checkpoint-failed",
-        })
-        .to_string();
+        });
+        // The tab's recovery names the size limit (Q827 A).
+        if matches!(refusal, sources::Refusal::StateBytes) {
+            payload["reason"] = json!(SIZE_REASON);
+        }
+        let payload = payload.to_string();
         let (cause, class) = match refusal {
             sources::Refusal::StateBytes => (
-                Cause::new(IncidentKind::OverLimit, "source_state_bytes"),
+                Cause::new(IncidentKind::OverLimit, SIZE_REASON),
                 Class::Limit,
             ),
             _ => (
@@ -5706,6 +5745,12 @@ impl Room {
         self.view_dirty = true;
         let app = self.app.clone();
         tokio::spawn(async move {
+            // Debug builds only: the integration tests' store that commits
+            // a second late, so a request comes while it runs.
+            #[cfg(debug_assertions)]
+            if room.file_id.contains(IT_SLOW_STORE) {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
             let result = app
                 .sources
                 .store(&room, save)
@@ -5816,7 +5861,15 @@ impl Room {
                     source.log_bytes += row_bytes as i64;
                     source.log_rows += 1;
                 }
-                self.source_receipt(&claimed, version as u64);
+                // Claimed receipts, and every waiting one when no writer's
+                // update reached the room after the snapshot, as a note's: a
+                // flush that came while this store ran waits for no other.
+                let answered = if !self.store.dirty && !markers::pending(&self.doc) {
+                    self.receipts.clone()
+                } else {
+                    claimed
+                };
+                self.source_receipt(&answered, version as u64);
             }
         }
         if let (Some(through), Some(written)) = (sessions, &mut self.sessions) {
@@ -5975,6 +6028,11 @@ impl Room {
             });
             if let Some(lost) = error.lost_access_field() {
                 payload["lostAccess"] = json!(lost);
+            }
+            // A state over its cap: the tab's recovery names the size limit
+            // (Q827 A).
+            if error.status() == Some(413) {
+                payload["reason"] = json!(SIZE_REASON);
             }
             payload
         };
@@ -6779,5 +6837,261 @@ mod pace_tests {
         let paced: VecDeque<Outgoing> = (0..2).map(|_| out(2 * MIB, true)).collect();
         let window = vec![out(MIB, true), out(10, false)];
         assert_eq!(waiting_pieces(&window, &paced), 5 * MIB);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::collections::HashSet;
+
+    use serde_json::json;
+    use yrs::types::text::YChange;
+    use yrs::{
+        Any, Doc, Map, MapRef, Out, ReadTxn, StateVector, Text, TextRef, Transact, XmlTextRef,
+    };
+
+    use crate::markers;
+    use crate::model::{BOARD_ROOT, Model};
+
+    /// A room's document as its load built it before cut 1: the stored state
+    /// replayed into a scratch document, encoded whole and applied into the
+    /// room's document, here under `client`.
+    fn loaded_as_before(base: &[u8], rows: &[Vec<u8>], client: u64) -> Doc {
+        let scratch = ydoc::scratch_doc();
+        ydoc::replay(&scratch, base, rows).unwrap();
+        let doc = Doc::with_options(ydoc::doc_options(client));
+        ydoc::replay(&doc, &whole(&scratch), &[] as &[Vec<u8>]).unwrap();
+        doc
+    }
+
+    fn whole(doc: &Doc) -> Vec<u8> {
+        doc.transact()
+            .encode_state_as_update_v1(&StateVector::default())
+    }
+
+    /// The root a kind's tabs edit under.
+    #[derive(Clone, Copy)]
+    enum Root {
+        Text(&'static str),
+        Map(&'static str),
+    }
+
+    impl Root {
+        fn of(self, doc: &Doc) -> Out {
+            match self {
+                Root::Text(name) => Out::YText(doc.get_or_insert_text(name)),
+                Root::Map(name) => Out::YMap(doc.get_or_insert_map(name)),
+            }
+        }
+    }
+
+    /// Where a tab types: the first text, depth first, that embeds no other
+    /// (a note's first paragraph, a card's face, a board page's title).
+    enum Typed {
+        Text(TextRef),
+        Xml(XmlTextRef),
+    }
+
+    fn sorted<T: ReadTxn>(txn: &T, map: &MapRef) -> Vec<(String, Out)> {
+        let mut entries: Vec<(String, Out)> = map
+            .iter(txn)
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries
+    }
+
+    fn text_in<T: ReadTxn>(txn: &T, out: Out) -> Option<Typed> {
+        let embedded = |chunks: Vec<yrs::types::text::Diff<YChange>>| {
+            chunks
+                .into_iter()
+                .find_map(|chunk| text_in(txn, chunk.insert))
+        };
+        match out {
+            Out::YMap(map) => sorted(txn, &map)
+                .into_iter()
+                .find_map(|(_, value)| text_in(txn, value)),
+            Out::YText(text) => {
+                embedded(text.diff(txn, YChange::identity)).or(Some(Typed::Text(text)))
+            }
+            Out::YXmlText(text) => {
+                embedded(text.diff(txn, YChange::identity)).or(Some(Typed::Xml(text)))
+            }
+            _ => None,
+        }
+    }
+
+    /// The first scalar value of a map, depth first: rewritten as it is, it
+    /// leaves a deleted value as a board note's size does.
+    fn scalar_in<T: ReadTxn>(txn: &T, out: Out) -> Option<(MapRef, String, Any)> {
+        let Out::YMap(map) = out else { return None };
+        sorted(txn, &map)
+            .into_iter()
+            .find_map(|(key, value)| match value {
+                Out::Any(any @ (Any::String(_) | Any::Number(_) | Any::Bool(_))) => {
+                    Some((map.clone(), key, any))
+                }
+                value => scalar_in(txn, value),
+            })
+    }
+
+    /// Types `typed` at the start of the first text and deletes `deleted`
+    /// units after it, then rewrites the first scalar: one update.
+    fn edit(doc: &Doc, root: Root, typed: &str, deleted: u32) -> Vec<u8> {
+        let before = doc.transact().state_vector();
+        let out = root.of(doc);
+        let (text, scalar) = {
+            let txn = doc.transact();
+            (text_in(&txn, out.clone()), scalar_in(&txn, out))
+        };
+        assert!(text.is_some() || scalar.is_some(), "nothing to edit");
+        let mut txn = doc.transact_mut();
+        match text {
+            Some(Typed::Text(text)) => {
+                text.insert(&mut txn, 0, typed);
+                text.remove_range(&mut txn, typed.len() as u32, deleted);
+            }
+            Some(Typed::Xml(text)) => {
+                text.insert(&mut txn, 0, typed);
+                text.remove_range(&mut txn, typed.len() as u32, deleted);
+            }
+            None => {}
+        }
+        if let Some((map, key, value)) = scalar {
+            map.insert(&mut txn, key, value);
+        }
+        drop(txn);
+        doc.transact().encode_state_as_update_v1(&before)
+    }
+
+    fn tab(state: &[u8], client: u64) -> Doc {
+        let tab = Doc::with_options(ydoc::doc_options(client));
+        ydoc::replay(&tab, state, &[] as &[Vec<u8>]).unwrap();
+        tab
+    }
+
+    /// Stored rows as two tabs write them: concurrent typing, a deletion of
+    /// the other tab's letters and map values written over.
+    fn rows(base: &[u8], root: Root) -> Vec<Vec<u8>> {
+        let (one, two) = (tab(base, 41), tab(base, 42));
+        let first = edit(&one, root, "ab", 0);
+        let second = edit(&two, root, "cd", 0);
+        ydoc::replay(&one, &second, &[] as &[Vec<u8>]).unwrap();
+        let third = edit(&one, root, "e", 2);
+        let fourth = edit(&two, root, "f", 1);
+        vec![first, second, third, fourth]
+    }
+
+    /// Cut 1: a material room replays its stored base and rows straight into
+    /// its own document. For every room kind that loads so, the room holds
+    /// the state the scratch copy gave, passes the same load checks, and
+    /// answers the next peer write and writes its own as before, under a
+    /// client id no stored struct or deletion names and no user was
+    /// assigned. Fails if the replay loses or reshapes a struct, or the room
+    /// takes a client id its state holds.
+    #[test]
+    fn a_loaded_room_holds_the_state_the_scratch_copy_gave() {
+        let face = |kind: &str, text: &str| json!({ "type": kind, "children": [{ "text": text }] });
+        let question = json!({
+            "id": "q1", "labels": "letters", "layout": "paper",
+            "stem": [{ "type": "text", "text": "Stem" }],
+            "parts": [{
+                "id": "q1:part:1", "marks": 1, "solution": [],
+                "blocks": [{ "type": "text", "text": "True?" }],
+                "answer": { "type": "boolean", "correct": true },
+            }],
+        });
+        let quiz = [json!({ "type": "quiz", "id": "quiz", "children": [{
+            "type": "quiz_question", "id": "q1", "question": question,
+            "children": [{ "text": "" }],
+        }] })];
+        let (quiz_content, quiz_keys) = items::quiz::states_from_value(&quiz, 0);
+        let note = [json!({ "type": "p", "id": "b1", "children": [{ "text": "Body text" }] })];
+        let set = [json!({
+            "type": "flashcards", "id": "set", "children": [{
+                "type": "flashcard", "id": "c1",
+                "children": [face("flashcard_front", "Front"), face("flashcard_back", "Back")],
+            }],
+        })];
+        let cases = [
+            (
+                "note",
+                Model::Note,
+                Root::Text(notes::CONTENT_ROOT),
+                Model::Note.state_from_value(&note),
+            ),
+            (
+                "flashcards",
+                Model::Item(items::Kind::Flashcards),
+                Root::Map(items::flashcards::ROOT),
+                Model::Item(items::Kind::Flashcards).state_from_value(&set),
+            ),
+            (
+                "quiz",
+                Model::Item(items::Kind::Quiz),
+                Root::Map(items::quiz::QUESTIONS_ROOT),
+                quiz_content,
+            ),
+            (
+                "quiz",
+                Model::Item(items::Kind::QuizKeys),
+                Root::Map(items::quiz::KEYS_ROOT),
+                quiz_keys,
+            ),
+            (
+                "canvas",
+                Model::Board,
+                Root::Map(BOARD_ROOT),
+                Model::Board.state_from_value(&[]),
+            ),
+        ];
+        let assigned: HashSet<u64> = [41, 7].into();
+        for (kind, model, root, base) in cases {
+            let rows = rows(&base, root);
+            assert!(
+                rows.iter().all(|row| row.len() > 2),
+                "{kind}: an empty edit"
+            );
+            let room = super::loaded_doc(base.clone(), rows.clone(), &assigned).unwrap();
+            let own = room.client_id();
+            let before = loaded_as_before(&base, &rows, own.get());
+            let held = room.transact().state_vector();
+            assert_eq!(held.get(&own), 0, "{kind}: the room's id is in its state");
+            assert!(!assigned.contains(&own.get()), "{kind}: an assigned id");
+            assert_eq!(whole(&room), whole(&before), "{kind}: another state");
+            assert_eq!(held, before.transact().state_vector(), "{kind}");
+            for doc in [&room, &before] {
+                model.assert_roots(&doc.transact()).unwrap();
+            }
+            let checks = |doc: &Doc| {
+                let txn = doc.transact();
+                let durable = ydoc::Durable::of(&txn);
+                (
+                    markers::contributors_in(&txn).unwrap(),
+                    model.measure(&txn).unwrap(),
+                    model.stored(kind, &txn).unwrap(),
+                    durable.state_vector,
+                    durable.delete_set,
+                )
+            };
+            assert_eq!(checks(&room), checks(&before), "{kind}: other load checks");
+            // The next writes: a peer's, as the room applies and broadcasts
+            // it, then the room's own.
+            let peer = edit(&tab(&whole(&room), 43), root, "g", 1);
+            let broadcast = |doc: &Doc| ydoc::apply(doc, ydoc::decode(&peer).unwrap()).unwrap();
+            assert_eq!(
+                broadcast(&room),
+                broadcast(&before),
+                "{kind}: another broadcast"
+            );
+            assert_eq!(
+                edit(&room, root, "h", 1),
+                edit(&before, root, "h", 1),
+                "{kind}: another server write"
+            );
+            assert_eq!(whole(&room), whole(&before), "{kind}");
+        }
     }
 }

@@ -261,9 +261,14 @@ export function useCanvasBoard(
       // A room replaced under an open plane or chart (moved, refused): what
       // the editor writes as it closes goes into the document while it still
       // stands. The fresh room's board opens the editor again from the URL.
+      // A note's size waiting on a pause in typing too (local change 75), for
+      // a room that goes while the board stays (replaced, no longer enabled):
+      // the board's unmount comes after the room's teardown. Leaving the page,
+      // each note saved it as React took the board's DOM away.
       onLeave: () => {
         leaving.current = true;
         shown.current?.closeEditor();
+        shown.current?.closeNoteSizes(locked.current ? 'drop' : 'save');
       },
       seed,
     }
@@ -455,7 +460,12 @@ export function useCanvasBoard(
       view.current = drawing.view() ?? view.current;
       unkeep();
       latest.current.onBoard?.(null);
-      drawing.unmount();
+      // Its room's `onLeave` closed its note sizes first when the room went
+      // under it.
+      // Lost, kicked or replaced by a recovery copy, the board leaves in the
+      // render that locks it, before `setLocked` runs: what its notes measured
+      // goes nowhere then.
+      drawing.unmount(locked.current ? 'drop' : 'save');
       if (import.meta.env.DEV) Object.assign(window, { __board: undefined });
       editor.current = null;
       shown.current = null;

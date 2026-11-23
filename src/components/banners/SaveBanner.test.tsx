@@ -26,11 +26,17 @@ it('shows the outdated strip as one row, Reload in the close button’s place', 
   expect(html).not.toContain(m.action_close());
 });
 
-// Epo 2026-11-23: the refused, changed and expired strips offer the deleted
-// strip's Discard and Download in place of Reload, the page's own Download
-// first. Fails with Reload kept, or with Download missing or out of order.
+// Epo 2026-11-23: the refused (the size limit's too, Q827 A), changed and
+// expired strips offer the deleted strip's Discard and Download in place of
+// Reload, the page's own Download first. Fails with Reload kept, or with
+// Download missing or out of order.
 it('offers Discard then the page’s dark Download on every recovery strip', () => {
-  for (const state of ['refused', 'changed', 'expired'] as const) {
+  for (const state of [
+    'refused',
+    'refused-size',
+    'changed',
+    'expired',
+  ] as const) {
     const html = renderToStaticMarkup(
       <DeletedDownload.Provider value={null}>
         <SaveBanner

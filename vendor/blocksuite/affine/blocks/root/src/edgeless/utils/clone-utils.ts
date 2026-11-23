@@ -18,6 +18,7 @@ import {
   type GfxPrimitiveElementModel,
   isGfxGroupCompatibleModel,
   type SerializedElement,
+  UnknownElementModel,
 } from '@blocksuite/std/gfx';
 import type { BlockSnapshot, Transformer } from '@blocksuite/store';
 
@@ -48,11 +49,38 @@ export function prepareCloneData(elements: GfxModel[], std: BlockStdScope) {
   return res.filter((d): d is SerializedElement | BlockSnapshot => !!d);
 }
 
+/* Capy (vendor/blocksuite/README.md, local change 74): a copy, Duplicate or
+ * Alt-drag clone carries no placeholder (local change 62: an element's own
+ * model, or a block read through a stand-in schema) and no group left with
+ * nothing in it, and a group carries only the children it is copied with. */
+function leftOut(element: GfxModel): boolean {
+  if (element instanceof GfxBlockElementModel)
+    return element.flavour !== element.yBlock.get('sys:flavour');
+  return (
+    element instanceof UnknownElementModel ||
+    (element instanceof GroupElementModel &&
+      element.childElements.every(leftOut))
+  );
+}
+
+function serializeGroup(group: GroupElementModel) {
+  const serialized = group.serialize();
+  const kept = new Set(
+    group.childElements.filter(child => !leftOut(child)).map(({ id }) => id)
+  );
+  serialized.children = Object.fromEntries(
+    Object.entries(serialized.children).filter(([id]) => kept.has(id))
+  );
+  return serialized;
+}
+
 export function serializeElement(
   element: GfxModel,
   elements: GfxModel[],
   job: Transformer
 ) {
+  if (leftOut(element)) return;
+  if (element instanceof GroupElementModel) return serializeGroup(element);
   if (element instanceof GfxBlockElementModel) {
     const snapshot = job.blockToSnapshot(element);
     if (!snapshot) {

@@ -155,13 +155,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 34;
+pub const CLIENT_PROTOCOL: u32 = 41;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
-pub const MIN_MATERIAL: u32 = 34;
+pub const MIN_MATERIAL: u32 = 41;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 33;
+pub const MIN_SOURCE: u32 = 41;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -562,16 +562,24 @@ mod tests {
         assert!(outdated(CLIENT_PROTOCOL + 1, Some(CLIENT_PROTOCOL)));
     }
 
-    /// Since protocol 34 (Epo 2026-11-22, "Yes, A everywhere") readers keep
-    /// lists and texts two people's edits merged past a cap, up to twice it.
-    /// A tab from before (33) reads a figure cut to the cap and its
-    /// whole-figure write deletes what it did not read, so material rooms
-    /// refuse it as outdated and it reloads; source rooms keep 33.
+    /// Since protocol 37 (Epo 2026-11-22, "Yes, A everywhere") readers keep
+    /// lists and texts two people's edits merged past a cap, up to twice it;
+    /// a tab from before (36) reads a figure cut to the cap and its
+    /// whole-figure write deletes what it did not read. Since 38 the board
+    /// catalog changed and every viewer reads a canvas by the board rules,
+    /// drawing what breaks them as a placeholder a tab from before (37) draws
+    /// otherwise. Material rooms refuse both as outdated and they reload.
+    /// Since 41 a long action goes as one group of pieces (SYNC type 3), which
+    /// a tab from before (40) sends one by one and a room would admit apart, so
+    /// both families refuse it.
     #[test]
-    fn a_material_tab_from_before_merged_caps_is_outdated() {
-        assert!(outdated(MIN_MATERIAL, Some(33)));
-        assert!(!outdated(MIN_MATERIAL, Some(34)));
-        assert!(!outdated(MIN_SOURCE, Some(33)));
+    fn a_material_tab_from_before_the_board_rules_is_outdated() {
+        assert!(outdated(MIN_MATERIAL, Some(36)));
+        assert!(outdated(MIN_MATERIAL, Some(37)));
+        assert!(outdated(MIN_MATERIAL, Some(40)));
+        assert!(!outdated(MIN_MATERIAL, Some(41)));
+        assert!(outdated(MIN_SOURCE, Some(40)));
+        assert!(!outdated(MIN_SOURCE, Some(41)));
     }
 
     #[test]

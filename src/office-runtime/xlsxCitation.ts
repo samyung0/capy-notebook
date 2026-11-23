@@ -1,6 +1,7 @@
 import type { WorkbookViewerHandle } from '@betteroffice/xlsx/viewer';
+import type { XlsxEditorApi } from '@betteroffice/xlsx-react';
 import { strFromU8, unzipSync } from 'fflate';
-import { uniqueCitation } from './citations';
+import { quoteProbe, uniqueCitation } from './citations';
 
 const RELEVANT_PART =
   /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|worksheets\/[^/]+\.xml)$/;
@@ -89,6 +90,35 @@ export function xlsxCitation(
       }
     }
     return uniqueCitation(candidates, quote);
+  } catch {
+    return null;
+  }
+}
+
+/** The editor's: the same rule over the open workbook's current cells. The
+ * candidates are the cells whose shown text holds the quote's longest piece
+ * without whitespace or hyphens (the search ignores case), so a cell whose
+ * text breaks that piece with a space or a compatibility character is missed. */
+export async function liveXlsxCitation(
+  handle: Pick<XlsxEditorApi['handle'], 'searchText'>,
+  quote: string
+): Promise<(CellCitation & { sheetId: string }) | null> {
+  const probe = quoteProbe(quote);
+  if (!probe) return null;
+  try {
+    const cells = await handle.searchText(probe, { limit: 20_000 });
+    // ponytail: bounded as the viewer's 20,000 cells.
+    if (cells.length >= 20_000) return null;
+    const match = uniqueCitation(cells, quote);
+    return (
+      match && {
+        address: match.a1,
+        col: match.col,
+        row: match.row,
+        sheet: match.sheet,
+        sheetId: match.sheetId,
+      }
+    );
   } catch {
     return null;
   }

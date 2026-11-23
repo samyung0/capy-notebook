@@ -128,9 +128,10 @@ Per file it reports:
   a viewer sends once its first pages, grid or slide (pictures included) are
   painted, with the runtime's own `timings` (`loadMs` frame start to `load`,
   `paintMs` `load` to that paint; `OfficeReadyTimings`): `ready` for XLSX and
-  PPTX, `painted` for DOCX, whose View paints its first pages before the rest
-  are in. DOCX also reports the click to `ready`, every page in, as
-  `open.allPagesMs` (report-only). Its `openFirstPaintMs` budget still comes
+  PPTX, the first `painted` for DOCX, whose View paints its first pages before
+  the rest are in (and sends `painted` again as its page count grows). DOCX
+  also reports the click to `ready`, every page in, as `open.allPagesMs`
+  (report-only), and its page count from `ready`. Its `openFirstPaintMs` budget still comes
   from medians measured to `ready`, until recalibrated from three CI runs
   (Q804 A);
 - View to Edit: the mode toggle click to the edit frame's `ready`, its first
@@ -343,6 +344,12 @@ The bench's earlier medians (2026-11-07 on 97e63a68a, Q692; 2026-10-04 before
 the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
 sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
+
+Since the Q813 and Q814 pin (2026-11-22) the DOCX editor's resident worker
+does every layout and the page adopts it, where the page used to lay each
+pass out as well, and a pass over an unchanged input (a web-font load) is
+skipped (Q813 A, Q814 A, Q824 A). The DOCX medians above were measured
+before it.
 
 Heap and download figures stay report-only: they go to the results JSON
 (`budget.heap`, `budget.downloads`, and `budget: "report-only"` in the heap and
