@@ -893,6 +893,26 @@ Outside this directory, for BlockSuite:
       while read-only too, and unlocking measures every note again with its
       last size (`measureNoteSizesAgain`), a size the lock dropped as this
       tab's own.
+    - **A locked note** (`sizeIsFixed`: BlockSuite's `isLocked()`, the note's
+      own lock or a group's, as a Canvas question's elements on a student's
+      copy) keeps its stored size. The lock stops a person's edits, not code's,
+      so without this a tab whose fonts measure differently would rewrite it.
+      No tab holds, saves or writes its size. After a transaction of the store
+      that can lock or unlock a note, this tab's or a peer's (`changesLocks`: a
+      block's `prop:lockedBySelf` or `prop:childElementIds`, a block added or
+      gone, a surface element's `lockedBySelf` or `children`, a group's
+      children, an element added or gone; never a typed key, a shape's text or
+      a move, so typing checks no lock), a waiting note locked since drops its
+      size (the stored one shows again, nothing is written), and a note
+      unlocked since is measured again with its last size as by a tab not
+      editing it, so it is written after 3 s if that still differs. A lock made
+      as a tracked step in the tab holding the size (the toolbar's Lock) stores
+      the size first, as every tracked step does, since it was measured
+      unlocked. So a tab that makes a copy whose elements are locked (a
+      student's copy of a Canvas question) must add and lock them in one
+      transaction, or the copy is built before the board mounts or on the
+      server: a note this tab adds counts as its own change, so a lock in a
+      later step would first store the size measured in between.
     - A board's sizes close (`closeNoteSizes`) before its document goes:
       saved, or dropped when the room lost, refused or replaced the board, and
       every wait stops, a viewer's too, with nothing more measured or written
