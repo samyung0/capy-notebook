@@ -71,8 +71,8 @@ export class EdgelessNoteBlockComponent extends toGfxBlockComponent(
     super.disconnectedCallback();
   }
 
-  // Capy (local change 75): a drag starts from the saved size, so its stash
-  // and its tracked pop are its own.
+  // Capy (local change 75): a drag starts from the size shown, which its
+  // tracked pop writes with the move.
   override onDragStart() {
     noteGestureStarts(this.model);
     super.onDragStart();
@@ -263,7 +263,7 @@ export const EdgelessNoteInteraction =
             });
           },
           onResizeStart(context): void {
-            // Capy (local change 75): from the saved size.
+            // Capy (local change 75): from the size shown.
             noteGestureStarts(model);
             context.default(context);
             model.stash('edgeless');
@@ -306,7 +306,7 @@ export const EdgelessNoteInteraction =
           },
         };
       },
-      // Capy (local change 75): a turn starts from the saved size.
+      // Capy (local change 75): a turn starts from the size shown.
       handleRotate: ({ model }) => ({
         onRotateStart(context): void {
           noteGestureStarts(model);

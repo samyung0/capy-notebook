@@ -13,6 +13,7 @@ import {
   measureNoteSizesAgain,
   openNoteSizes,
   saveNoteSizes,
+  selectNoteSizes,
 } from '@blocksuite/affine/blocks/note';
 import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { NoteViewExtension } from '@blocksuite/affine/blocks/note/view';
@@ -742,6 +743,8 @@ export function mountDrawingBoard(
     ? followTextEditors(board, options.room.doc)
     : null;
   const gfx = std.get(GfxControllerIdentifier);
+  // A step stores the sizes its selected notes show (an align's), no others.
+  selectNoteSizes(store, () => gfx.selection.selectedElements);
   if (options.openPlane) setPlaneOpener(gfx, options.openPlane);
   const unguard = tools
     ? keepToCatalog(store, gfx.surface, options.board)

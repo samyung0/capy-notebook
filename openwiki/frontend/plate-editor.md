@@ -6623,18 +6623,45 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   (`xywh` stashed), so its frame, selection box and connector paths follow the
   text at once while other tabs see the size up to 2 s later. A gesture's end
   measures the note again, so a size its own write left out still goes in. A
-  peer's move or resize shows during the wait, the measured size over it. A tab
-  not editing the note holds nothing and writes nothing per key: it writes what
-  it measures only after 3 s of differing from the stored size with no new size
-  arriving (or as it starts a drag, resize or turn of the note), so a note no one
-  edits still gets its size. Size saves take no undo step. A read-only board
-  writes none (a lock drops a waiting size before the selection's end could save
-  it), and unlocking measures every note again, a size the lock dropped going in
-  as this tab's. A locked note (BlockSuite's lock, its own or a group's, as a
-  Canvas question's elements on a student's copy) keeps its stored size in every
-  tab, since the lock stops only a person's edits: no tab holds, saves or writes
-  it, a lock arriving while a size waits drops that size, and unlocking measures
-  the note again as by a tab not editing it (written after 3 s). Locks are checked
+  peer's move or resize shows during the wait, the measured size over it. Every
+  other tab (not editing the note, read-only, or the note locked) shows what it
+  measures at once too, as a size only it shows, so its hit tests, selection box
+  and connector paths match the text it shows (2026-11-24: holding nothing, a
+  note whose text outgrew its stored height took a double click on its last
+  lines as empty board, for 3 s in an editor's tab and for good in a viewer's).
+  A peer's or an Undo's write shows at once with that tab's measure over it. A
+  writable tab stores the size a note shows, untracked, before a drag, resize
+  or turn of it (one note or several) and before a tracked step that can act on
+  it (the note selected, or in a selected group or frame: an align), so the
+  step starts from the bound shown without the frame jumping, holds only what
+  it changes, and its Undo keeps the size, and previews and tabs that have not
+  drawn the note see it as shown. No other note is stored around a step: Yjs's
+  Undo never writes over another client's later write, so a stroke that
+  stored every shown size took a peer's move out of the peer's Undo. A step
+  that writes a note it did not store writes the stored size with it; the
+  arrow keys' nudge stores the size shown with the move. A read-only tab never writes
+  one, a local write of the note included. Copy, Duplicate and an Alt-drag's
+  clone take the size shown. Such a tab writes nothing per key: it writes what
+  it measures only after 3 s of differing from the stored size, so a note no
+  one edits (a card code added) still gets its size. A size someone else writes
+  meanwhile ends the wait, the tab showing its own measure and writing nothing
+  (2026-11-24: the wait started again, and its later write took a peer's move
+  of the note out of that peer's Undo). Its own write ends the wait too, so two
+  tabs whose fonts disagree write once at most, not back and forth; only a step
+  that acts on the note stores a tab's own size again, one write per step.
+  A connector's label shows at its stored offset along the path the tab shows,
+  in drawing and hit tests, so it stays on its line where a shown size moved the
+  path and no tab placed the label (2026-11-24: it stayed where the document had
+  it, off its line); nothing is written, and the label editor, a label drag and
+  their Undo write as before. Size saves take no undo step. A read-only
+  board writes none (a lock drops a waiting size before the selection's end
+  could save it), and unlocking measures every note again, a size the lock
+  dropped going in as this tab's. A locked note (BlockSuite's lock, its own or a
+  group's, as a Canvas question's elements on a student's copy) keeps its stored
+  size in every tab, since the lock stops only a person's edits: no tab holds,
+  saves or writes it (each shows what it measures), a lock arriving while a size
+  waits drops that size, and unlocking measures the note again as by a tab not
+  editing it (written after 3 s). Locks are checked
   only after a change that can lock or unlock a note (a lock, a group's or frame's
   children, an element or block added or gone), never per typed key. A lock made
   as a tracked step in the tab holding a size stores it first, as any step does,

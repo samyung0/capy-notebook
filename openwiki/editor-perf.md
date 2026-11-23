@@ -69,7 +69,13 @@ dev setup before both MSW's pass-through and this.
 decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
 cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
 blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input
-p95 stays near 470-500 ms, held by other work.
+p95 stays near 470-500 ms, held by other work. On the Mac on 2026-11-23 that board's
+label keys took a p90 of 118 ms in dev and 52 ms in a production build at 4x with the
+whole board in view (no 470-500 ms): presentation delay, the canvas drawing every
+element on it again per key, until vendored local change 76 drew only the label's part
+(12 ms in production, 15 in dev); on the Canvas tab the mock room's per-key store held
+them too, 196 ms in dev, 23 once it answered as the service does
+(`bench/editor/reports/2026-11-23-board-typing.md`).
 
 ## Office runtime (`pnpm bench:office`)
 
@@ -380,6 +386,24 @@ always match the board's current format (Q686 A):
   3 shapes, 2 formulas and 2 note cards of two paragraphs below it.
 - **Large:** far past an answer: 200 strokes, 30 shapes, 10 formulas and 30
   note cards of three paragraphs over a 2400 by 1600 area.
+- **Dense** (2026-11-23): eight answers of 1920 by 1200, four to a row, as
+  the board of the 2026-11-06 label measurement: 25 plane cards with four
+  named points, a segment, a curve, a line and two labels each, 64 formula
+  cards, 32 note cards of two paragraphs, and in each answer 10 strokes, two
+  labelled shapes joined by a connector and a canvas label. Its notes sit
+  under every canvas element (notes placed before the drawing, as a
+  question's cards), so its 200 canvas elements share one canvas.
+
+Each board is saved once its note cards hold their measured heights
+(`saveMeasured`), as a board a person typed is saved. Saved at once, a card
+whose text wraps taller than the 120 it was added with keeps 120, and a tab
+opening the board writes the size it measures 3 s later (local change 75), a
+write of every card inside the measured inputs. Before each tab showed its
+measured size at once (2026-11-24), a double click on the card's last line
+met empty canvas until that write and started a text label. That is why the
+bench failed on main 9c5de0266 (runs 45174430580, 45174458165 and
+45174485643; it last passed on 2026-11-07): the large board's note typing
+never entered its card.
 
 What it measures:
 
@@ -401,14 +425,30 @@ What it measures:
   then show it and fit it as Draw does. Reported: each hidden mount's longest
   animation frame (the page's first, cold, and the second, warm) and showing to
   the first task after the next frame.
+- **The dense board at `CPU_RATE`:** its cold open (three, as the others),
+  and, each on a fresh page at the open's fit (every element in view), 30 keys
+  typed into a canvas label, a note card and a formula card on the first
+  answer (`startTyping` in `canvasBoards.ts`), and 40 moves (32 ms apart)
+  dragging the first point of a plane card in the plane's editor.
 - **Bytes:** the JS and CSS each cold open requested, raw and gzipped from the
   build, with the five largest chunks.
 
 Gated: the blank and typical cold opens, the typical board's four input
-p90s, the cold hidden mount's longest frame and Draw's first frame. Reported
-only: warm opens and mounts, the large board and the bytes. It fails on a
+p90s, the cold hidden mount's longest frame and Draw's first frame. The
+dense board's five figures (`denseOpenMs`, `denseLabelP90Ms`,
+`denseNoteP90Ms`, `denseFormulaP90Ms`, `densePlaneDragP90Ms`) are in
+`timings` but have no median yet, so the report lists them under
+`uncalibrated` and nothing gates them. To gate them, dispatch the Performance
+workflow with only `canvas` three times on one commit, put each figure's
+median of the three runs' `timings` in `MEDIANS` with the run ids, and check
+the three runs against each other first (one runner has come out 40-60%
+slower; leave such a run out and take another). A Mac run with the fixes
+(2026-11-23) measured the dense open at 1,532 ms and the label, note, formula
+and plane drag p90s at 11, 11, 41 and 6 ms. Reported only: warm opens
+and mounts, the large board and the bytes. It fails on a
 page error, an input with no painted frame, typing that doesn't reach the
-card, a stroke that draws no brush, or a missed budget. The budgets are 1.3x
+card, a stroke that draws no brush, a plane point that doesn't move, or a
+missed budget. The budgets are 1.3x
 the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to 5 ms below
 a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` holds three
 runs on 630705a96 (2026-11-07): blank open 805/821/807 ms, typical open
@@ -418,14 +458,26 @@ Draw (Epo 2026-11-07, "just put this into a perf gate", in place of splitting
 the cold mount) are the medians of three later runs on 3249ce018: longest frame
 539/728/738 ms, Draw 43/62/61 ms (warm mount 230/303/316,
 report-only), so the budgets are 950 and 80 ms. A Mac run on 805e3c1f1 measured
-381 and 23 ms. With `MEDIANS` null the
-bench reports `budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
+381 and 23 ms. A figure with no median in `MEDIANS` is reported, not gated
+(`uncalibrated`). The first calibration (7d470b2e5,
 three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
 open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower
 on every figure, so rerun before reading a miss as a regression.
 
 The boards both benches open are made by
 [`canvasBoards.ts`](../bench/editor/scripts/canvasBoards.ts).
+[`board-typing.canvas.ts`](../bench/editor/scripts/board-typing.canvas.ts)
+(`PERF_BOARD_TYPING=1 pnpm bench:canvas board-typing`, report only) times
+each place a student types on the dense board (a canvas label, a shape's
+label, a connector's label, a note card, a formula card and a plane card's
+label in its editor) with the first answer at 100% and with the whole board
+in view, and splits each key by Event Timing into input delay, processing and
+presentation delay. `PERF_CANVAS_BASE_URL` runs it against a running build or
+dev server, `PERF_TYPING_VIA=room` there types on the Canvas page through the
+mock collaboration room, and `PERF_PROFILE_DIR` writes a CPU profile summary
+per path. Its 2026-11-23 findings and the fixes they led to (vendored local
+change 76, the mock room's receipts) are in
+[the report](../bench/editor/reports/2026-11-23-board-typing.md).
 [`board-stages.canvas.ts`](../bench/editor/scripts/board-stages.canvas.ts)
 (`pnpm bench:canvas board-stages`, report only) answers how long the board takes
 to show (Epo 2026-11-07): the blank and typical boards' cold opens split into the

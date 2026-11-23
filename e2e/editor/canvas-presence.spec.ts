@@ -411,11 +411,13 @@ test("a note's waiting size is stored when editing ends or the board is saved, a
     expect(after.stored, step).toBe(before.shown);
   }
 
-  // The board locks while it is edited: the size is dropped, never written.
+  // The board locks while it is edited: the size is dropped, never written,
+  // and still shown in this tab alone.
   await typeNote(480, 'Chromosomes pair');
   const locked = await around('Chromosomes pair', 'lock');
   expect(locked.before.stored).not.toBe(locked.before.shown);
-  expect(locked.after.shown).toBe(locked.before.stored);
+  expect(locked.after.stored).toBe(locked.before.stored);
+  expect(locked.after.shown).toBe(locked.before.shown);
   await page.waitForTimeout(1000);
   const later = await around('Chromosomes pair', 'none');
   expect(later.before.stored).toBe(locked.before.stored);

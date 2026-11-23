@@ -122,7 +122,8 @@ export class ConnectorElementModel extends GfxPrimitiveElementModel<ConnectorEle
   override get elementBound() {
     let bounds = super.elementBound;
     if (this.hasLabel()) {
-      bounds = bounds.unite(Bound.fromXYWH(this.labelXYWH!));
+      // Capy (local change 75): where the label shows.
+      bounds = bounds.unite(Bound.fromXYWH(this.shownLabelXYWH!));
     }
     return bounds;
   }
@@ -142,8 +143,9 @@ export class ConnectorElementModel extends GfxPrimitiveElementModel<ConnectorEle
   override containsBound(bounds: Bound) {
     return (
       this.absolutePath.some(point => bounds.containsPoint(point)) ||
+      // Capy (local change 75): where the label shows.
       (this.hasLabel() &&
-        Bound.fromXYWH(this.labelXYWH!).points.some(p =>
+        Bound.fromXYWH(this.shownLabelXYWH!).points.some(p =>
           bounds.containsPoint(p)
         ))
     );
@@ -160,11 +162,12 @@ export class ConnectorElementModel extends GfxPrimitiveElementModel<ConnectorEle
       intersected = linePolylineIntersects(start, end, path);
     }
 
+    // Capy (local change 75): where the label shows.
     if (!intersected && this.hasLabel()) {
       intersected = linePolylineIntersects(
         start,
         end,
-        Bound.fromXYWH(this.labelXYWH!).points
+        Bound.fromXYWH(this.shownLabelXYWH!).points
       );
     }
 
@@ -300,6 +303,23 @@ export class ConnectorElementModel extends GfxPrimitiveElementModel<ConnectorEle
     );
   }
 
+  /**
+   * Capy (vendor/blocksuite/README.md, local change 75): where the label
+   * shows, for drawing and hit tests: its stored size, centred at its stored
+   * offset along the path this tab shows. Every place BlockSuite stores is that
+   * centre, so the two agree once a tab placed the label; a path moved with
+   * nothing stored (a note showing the size its text measures, in a tab that
+   * places no label) carries the label with it. Writes still read and write
+   * `labelXYWH`.
+   */
+  get shownLabelXYWH(): XYWH | undefined {
+    const stored = this.labelXYWH;
+    if (!stored || this.absolutePath.length < 2) return stored;
+    const [, , w, h] = stored;
+    const [x, y] = this.getPointByOffsetDistance(this.labelOffset.distance);
+    return [x - w / 2, y - h / 2, w, h];
+  }
+
   override includesPoint(
     x: number,
     y: number,
@@ -333,8 +353,10 @@ export class ConnectorElementModel extends GfxPrimitiveElementModel<ConnectorEle
   }
 
   labelIncludesPoint(point: IVec) {
+    // Capy (local change 75): where the label shows.
     return (
-      this.hasLabel() && Bound.fromXYWH(this.labelXYWH!).isPointInBound(point)
+      this.hasLabel() &&
+      Bound.fromXYWH(this.shownLabelXYWH!).isPointInBound(point)
     );
   }
 
