@@ -2170,6 +2170,79 @@ for (const paused of [false, true]) {
   });
 }
 
+// Q828 A, as in Google Docs: Ctrl+F and Ctrl+H fill Find with the document's
+// selected text, a repeat Ctrl+F from the document takes the keys typed
+// straight after it, and switching to Replace keeps the typed query.
+test('docx Find takes the selected text, a repeat Ctrl+F from the document and a switch to Replace', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await saveOffice(page, 'docx');
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  const find = frame.getByLabel('Find text');
+  const replace = frame.getByLabel('Replace text');
+  // Left of Find, which opens at the frame's top right.
+  const backToDocument = async () => {
+    await frame
+      .locator('canvas')
+      .first()
+      .click({ position: { x: 150, y: 400 } });
+    await expect(frame.getByLabel('Document input')).toBeFocused();
+  };
+  // The title's first word, `2022`, after its two spaces.
+  const selectFirstWord = async () => {
+    await page.keyboard.press('ControlOrMeta+Home');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    for (let index = 0; index < 4; index += 1)
+      await page.keyboard.press('Shift+ArrowRight');
+  };
+  const updates = await page.evaluateHandle(() => {
+    const seen = { count: 0 };
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'update') seen.count += 1;
+    });
+    return seen;
+  });
+
+  await backToDocument();
+  await selectFirstWord();
+  await page.keyboard.press('ControlOrMeta+f');
+  await expect(find).toHaveValue('2022');
+  await expect(find).toBeFocused();
+  expect(
+    await find.evaluate((input: HTMLInputElement) => [
+      input.selectionStart,
+      input.selectionEnd,
+    ])
+  ).toEqual([0, 4]);
+
+  // Find stays open: Ctrl+F from the document goes back to its box.
+  await backToDocument();
+  await page.keyboard.press('ControlOrMeta+f');
+  await page.keyboard.type('Course');
+  await expect(find).toHaveValue('Course');
+
+  await page.keyboard.press('ControlOrMeta+h');
+  await expect(replace).toBeVisible();
+  await expect(find).toHaveValue('Course');
+  await expect(find).toBeFocused();
+
+  await backToDocument();
+  await selectFirstWord();
+  await page.keyboard.press('ControlOrMeta+h');
+  await expect(find).toHaveValue('2022');
+  await expect(find).toBeFocused();
+  await page.waitForTimeout(1500);
+  expect(await updates.evaluate((seen) => seen.count)).toBe(0);
+});
+
 // One open DOCX (exchange-plan.docx) for these focus checks: the runtime
 // boots once. Its load arrives 5 s late on every open (the init script), so
 // typing in the chat box comes first.
