@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { officeEditMenu, officeFrame } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
@@ -867,6 +867,15 @@ async function reopenDocx(page: Page) {
   ).toHaveAttribute('aria-pressed', 'true');
 }
 
+/** A recovery strip's actions (round 4, item 10): Discard (ghost-hover),
+ * then a dark Download, in the close button's place. */
+async function expectRecoveryActions(banner: Locator) {
+  const actions = banner.getByRole('button');
+  await expect(actions).toHaveText([m.action_discard(), m.action_download()]);
+  await expect(actions.first()).toHaveAttribute('data-variant', 'ghost-hover');
+  await expect(actions.last()).toHaveAttribute('data-variant', 'dark');
+}
+
 /** The text a select-all copy takes from the DOCX on screen. */
 async function copiedDocx(page: Page) {
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -912,9 +921,11 @@ test('a DOCX edited offline in a closed tab opens copy-only after its room moved
     advanceScenarioSource(id);
   }, DOCX);
   await reopenDocx(reopened);
-  await expect(
-    officeFrame(reopened).getByTestId('save-banner')
-  ).toHaveAttribute('data-kind', 'changed', { timeout: 60_000 });
+  const banner = officeFrame(reopened).getByTestId('save-banner');
+  await expect(banner).toHaveAttribute('data-kind', 'changed', {
+    timeout: 60_000,
+  });
+  await expectRecoveryActions(banner);
   expect(await copiedDocx(reopened)).toContain('Typed before the move.');
 });
 
@@ -940,6 +951,7 @@ test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async
   await expect(banner).toHaveAttribute('data-kind', 'expired', {
     timeout: 60_000,
   });
+  await expectRecoveryActions(banner);
   expect(await copiedDocx(reopened)).toContain('Typed long ago.');
   await expect.poll(() => docxRows(reopened)).toBe(0);
   // Shown once: the next open is the live document.

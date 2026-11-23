@@ -88,8 +88,9 @@ export function BannerStack({ children }: { children: ReactNode }) {
 /**
  * Flat strip under a file or material header. Closing hides it until the
  * message changes or the page remounts it; nothing is remembered. `inline`
- * keeps it one row high: the message scrolls sideways and the actions take
- * the close button's place. `closeable={false}` leaves the button out.
+ * puts the actions in the close button's place beside the message, which
+ * wraps on phones (round 4, finding 8: cut to fit two actions at 360 px)
+ * and from `sm` up keeps one row, scrolling sideways. `closeable={false}` leaves the button out.
  * Inside a `BannerStack` only the newest strip shows. `kind` names the
  * strip's state for tests (`data-kind`).
  */
@@ -171,9 +172,12 @@ export function FileBanner({
   return (
     <div
       className={cn(
-        // Less inset on phones.
-        'flex shrink-0 gap-3 border-b pr-1.5 pl-3 text-fg text-sm sm:pr-2 sm:pl-4',
-        inline ? 'h-9 items-center' : 'items-start py-1',
+        // Less inset on phones. `min-w-0`: its one-row message scrolls
+        // instead of widening a grid or row it sits in.
+        'flex min-w-0 shrink-0 gap-3 border-b pr-1.5 pl-3 text-fg text-sm sm:pr-2 sm:pl-4',
+        inline
+          ? 'min-h-9 items-center py-1 sm:h-9 sm:py-0'
+          : 'items-start py-1',
         tone === 'error'
           ? 'border-solid-error/40 bg-tint-error'
           : 'border-divider bg-surface-hover-bg'
@@ -185,7 +189,7 @@ export function FileBanner({
       {inline ? (
         <>
           <div
-            className="scroll-fade-x min-w-0 flex-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="scroll-fade-x min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] sm:whitespace-nowrap [&::-webkit-scrollbar]:hidden"
             ref={scrollRef}
           >
             {message}

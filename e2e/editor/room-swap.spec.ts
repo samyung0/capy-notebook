@@ -389,6 +389,62 @@ test("a refused update's edits come back as pieces after the swap", async ({
   await expect(strip).toBeVisible();
 });
 
+// Review of 43fae032a, finding 3: a group of pieces past the note room's
+// bound is refused as over the document's size, its channel closed, and the
+// editor keeps the edits for review: one join for the remount, none to send
+// them again (refused as a malformed update, it rejoined and resent them in
+// a loop).
+test('a group refused past the room bound keeps its edits and joins once more', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_scenarios?material=mock-scenario-note');
+  const editor = page.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText(SCENARIO_SEED, { timeout: 30_000 });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  // Loaded first: the refusal has to land within the save's 1 s debounce.
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    await import(path);
+  });
+  await clickTextEnd(editor.getByText(SCENARIO_SEED));
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' Refused text.');
+  const joins = () =>
+    page.evaluate(async () => {
+      const path = '/src/mocks/collaboration.ts';
+      const { mockNoteJoins } = (await import(
+        path
+      )) as typeof import('../../src/mocks/collaboration');
+      return mockNoteJoins('mock-scenario-note');
+    });
+  const before = await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockNoteJoins, refuseMockNoteGroup } = (await import(
+      path
+    )) as typeof import('../../src/mocks/collaboration');
+    const count = mockNoteJoins('mock-scenario-note');
+    refuseMockNoteGroup('mock-scenario-note');
+    return count;
+  });
+  const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
+  await expect(strip).toBeVisible({ timeout: 30_000 });
+  await expect.poll(joins).toBe(before + 1);
+  await expect(editor).toContainText(SCENARIO_SEED);
+  // A loop would have joined again by now.
+  await page.waitForTimeout(3000);
+  expect(await joins()).toBe(before + 1);
+  await expect(editor).not.toContainText('Refused text.');
+  const roomText = await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockNoteRoomText } = (await import(
+      path
+    )) as typeof import('../../src/mocks/collaboration');
+    return mockNoteRoomText('mock-scenario-note');
+  });
+  expect(roomText).not.toContain('Refused text.');
+});
+
 // The reading place wins over a restored caret, and the focus the editor
 // held as it paused comes back with the selection (review r2 M1/M2): the
 // caret in the intro near the top, the reader half way down.
@@ -750,7 +806,7 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   const strip = officeFrame(page);
   await expect(strip.getByText(m.source_edit_replaced())).toHaveCount(0);
   await expect(
-    strip.getByRole('button', { exact: true, name: m.error_action_reload() })
+    strip.getByRole('button', { exact: true, name: m.action_discard() })
   ).toHaveCount(0);
   // Editing goes on in the new epoch: File › Save is enabled again.
   await officeMenu(page, 'docx', 'File').click();

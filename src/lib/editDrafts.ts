@@ -34,6 +34,7 @@ import {
   type StorageError,
   versionOf,
 } from './draftStore';
+import { postDraft } from './draftUpload';
 
 export { draftsVersion } from './draftStore';
 
@@ -501,7 +502,7 @@ export function draftBytes(rows: readonly EditDraft[]) {
 /**
  * Reports a recovery group entering recovery, once: its rows are marked
  * `reported`, so an open in a later page load shows it without reporting it
- * again (Reload deletes them, mark and all). A group with an unmarked row is
+ * again (Discard deletes them, mark and all). A group with an unmarked row is
  * a new episode (a marked row the epoch kept, then newer edits) and is
  * reported. A group of another lineage is `reopen`. This lineage's copy-only
  * group (`refused` from draftGroups) reports only its held rows (`held`,
@@ -1436,8 +1437,11 @@ function roomToken(
  * - `waits`: only the editor can send it (a piece over the service's cap, a
  *   base the room lacks, another lineage or Office base), at the file's next
  *   open; `hidden` too, its rows marked as typing into a deleted block;
- * - `later`: the service answered something else (busy, failing, lost
- *   access): tried again at the next page load;
+ * - `later`: the service answered something else (unavailable, failing,
+ *   lost access): tried again at the next page load;
+ * - `busy`: another group of pieces of the user's is unfinished, in any
+ *   room (one at a time, Epo 2026-11-23): tried again `BUSY_RETRY_MS`
+ *   later, silently;
  * - `late`: the rows grew from a state older than the room's collection
  *   window (in-place GC): the editor merges them at the file's next open;
  * - `retry`: no answer (offline), the rows changed, or the user is in a
@@ -1453,7 +1457,12 @@ type Sent =
   | 'late'
   | 'later'
   | 'retry'
+  | 'busy'
   | 'outdated';
+
+/** How long a group answered `busy` waits for its next try (Epo
+ * 2026-11-23). */
+export const BUSY_RETRY_MS = 10_000;
 
 // Set once a send was refused as outdated: sweeps stop for the page load.
 let outdated = false;
@@ -1508,12 +1517,36 @@ function sendableGroups(rows: DraftInfo[], room: string, late = false) {
   }));
 }
 
+/** Where a group's send stopped with no answer (offline, its time limit,
+ * `too_fast`), by group id: its next send goes on from that piece, as the
+ * room may hold the ones before (review of 43fae032a round 2, finding 4);
+ * a room that dropped them answers `unavailable` (`sendGroup`). */
+const resumeAt = new Map<string, { count: number; index: number }>();
+
+/** A group's name for the room (`x-capy-group`): the same for every send
+ * of the same rows, from any tab, so a resend adds to the group the room
+ * holds instead of beside it (round 2, finding 1). */
+async function groupId(refs: DraftRef[]) {
+  const rows = refs.map(({ id, key, seq }) => `${key}\n${id}\n${seq}`);
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(rows.join('\n\n'))
+  );
+  return Array.from(new Uint8Array(digest).subarray(0, 16), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  ).join('');
+}
+
 /** POST one group to the collaboration service's `/drafts` (its WebSocket
  * URL's host) with the editor's token, merged in the drafts worker and sent
  * as its pieces of at most 2 MiB, in order, each paced under the user's
- * update allowance (Epo 2026-10-18). A piece the service does not take stops
- * the send; the pieces before it are in the room, so the group's rows become
- * one row of the pieces not sent (Epo 2026-10-18), which `refs` names. */
+ * update allowance (Epo 2026-10-18). Pieces name their group, place and
+ * count (`x-capy-group`): the room holds them until the last and admits the
+ * whole or none of it, so a piece the service does not take stops the send
+ * and every row stays. A send stopped with no answer goes on from its
+ * piece at the next try (`resumeAt`), and starts over at once if the room
+ * dropped the group meanwhile (`unavailable`); any other answer starts the
+ * next send of the group over. */
 async function sendGroup(
   token: RoomToken,
   group: { base?: string; grants: string[]; refs: DraftRef[]; version: number }
@@ -1529,35 +1562,41 @@ async function sendGroup(
     return { refs: group.refs, sent: 'waits' };
   }
   if (!pieces) return { refs: group.refs, sent: 'retry' };
-  for (const [index, piece] of pieces.entries()) {
-    const sent = await sendPiece(token, group, piece);
+  const id = await groupId(group.refs);
+  const resume = resumeAt.get(id);
+  resumeAt.delete(id);
+  let from = resume?.count === pieces.length ? resume.index : 0;
+  for (let index = from; index < pieces.length; index += 1) {
+    const place =
+      pieces.length > 1 ? `${id},${index},${pieces.length}` : undefined;
+    const sent = await sendPiece(token, group, pieces[index], place);
     if (sent === 'sent') continue;
-    if (index === 0) return { refs: group.refs, sent };
-    const kept = await call<DraftRef | null>({
-      from: index,
-      op: 'unsent',
-      rows: group.refs,
-    });
-    return kept ? { refs: [kept], sent } : { refs: group.refs, sent: 'retry' };
+    // A resumed send whose group the room dropped meanwhile (an allowance
+    // refusal or its deadline drops it) starts over from its first piece,
+    // once (review of 43fae032a round 3, finding 3).
+    if (sent === 'unavailable' && from > 0) {
+      from = 0;
+      index = -1;
+      continue;
+    }
+    if (sent === 'retry' && place !== undefined)
+      resumeAt.set(id, { count: pieces.length, index });
+    return { refs: group.refs, sent: sent === 'unavailable' ? 'later' : sent };
   }
   return { refs: group.refs, sent: 'sent' };
-}
-
-/** How long one `/drafts` request of `bytes` may take: 30 s plus its upload
- * at 100 KB/s (100 bytes a millisecond), at most 3 minutes, so a 2 MiB piece
- * on a slow uplink still lands (Epo 2026-10-25, Q360, Q365). */
-export function draftSendTimeout(bytes: number) {
-  return Math.min(30_000 + Math.ceil(bytes / 100), 180_000);
 }
 
 /** What a draft send waiting for the allowance holds the tab back with. */
 const DRAFT_PACING = {};
 
+/** A piece's answer: `unavailable` is `later` but for a resumed group, which
+ * starts over (`sendGroup`). */
 async function sendPiece(
   token: RoomToken,
   group: { base?: string; grants: string[]; version: number },
-  body: Uint8Array<ArrayBuffer>
-): Promise<Sent> {
+  body: Uint8Array<ArrayBuffer>,
+  place: string | undefined
+): Promise<Sent | 'unavailable'> {
   // Over the service's cap (a struct that cannot be cut): never sendable as
   // it is, so the editor gets it.
   if (body.byteLength > MAX_UPDATE_BYTES) return 'waits';
@@ -1576,21 +1615,19 @@ async function sendPiece(
     'x-capy-version': String(group.version),
   };
   if (group.base !== undefined) headers['x-capy-base'] = group.base;
+  // A piece of a group: `<id>,<index>,<count>`.
+  if (place !== undefined) headers['x-capy-group'] = place;
   // The drafts' own client ids (Q288): a tab whose edits never reached the
   // room had them recorded for no one.
   if (group.grants.length) headers['x-capy-grants'] = group.grants.join(',');
   let response: Response;
   try {
     // A send that stalls (a captive portal, a half-open connection) fails
-    // as a try after its time limit (Q360, Q365).
-    response = await fetch(
+    // as a try; a slow one that keeps moving is never cut (`postDraft`).
+    response = await postDraft(
       new URL('/drafts', token.url.replace(WEBSOCKET_SCHEME, 'http')),
-      {
-        body,
-        headers,
-        method: 'POST',
-        signal: AbortSignal.timeout(draftSendTimeout(body.byteLength)),
-      }
+      body,
+      headers
     );
   } catch {
     return 'retry';
@@ -1618,6 +1655,10 @@ async function sendPiece(
       return 'outdated';
     case 'too_fast':
       return 'retry';
+    case 'busy':
+      return 'busy';
+    case 'unavailable':
+      return 'unavailable';
     default:
       return 'later';
   }
@@ -1709,8 +1750,14 @@ async function sweepDocument(
       return true;
     }
   const sent = await sendGroups(key, token, current);
-  return sent !== null && !sent.includes('retry');
+  if (sent?.includes('busy')) busySweep = true;
+  return sent !== null && !sent.includes('retry') && !sent.includes('busy');
 }
+
+// A sweep met a group answered `busy`: the sweep goes again BUSY_RETRY_MS
+// after it ends (`sweepDrafts`).
+let busySweep = false;
+let busyTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Sends a document's groups its room takes now (`only`: of these rows), as
  * `sweepDocument` says: sent rows go, a refused group or one only the editor
@@ -1736,6 +1783,10 @@ async function sendGroups(
       return null;
     }
     answers.push(sent);
+    // The user's slot is taken: every later group would be busy too, and
+    // sending them would only upload their first pieces for nothing (round
+    // 6, finding 1). The busy retry sends them all.
+    if (sent === 'busy') break;
     if (sent === 'sent') {
       for (const ref of group.refs) admitted?.add(ref.id);
       await deleteDrafts(refs);
@@ -1828,6 +1879,8 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
   let flight: Promise<void> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let delay = DRAFT_SEND_RETRY_MS;
+  // The last try's group found another of the user's unfinished.
+  let busy = false;
   let settle = () => {};
   const settled = new Promise<void>((resolve) => {
     settle = resolve;
@@ -1862,13 +1915,16 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
           (sent) => sent === 'refused' || sent === 'waits' || sent === 'hidden'
         );
         late ||= !!answers?.includes('late');
+        busy = !!answers?.includes('busy');
         // A late group settles the send at once: the editor's late merge
         // takes every row, so no hold applies one raw (review r4 N5).
         again =
           !stopped &&
           !outdated &&
           !late &&
-          !!answers?.some((sent) => sent === 'later' || sent === 'retry');
+          !!answers?.some(
+            (sent) => sent === 'later' || sent === 'retry' || sent === 'busy'
+          );
       } catch (error) {
         console.warn('Drafts cannot be sent:', error);
       }
@@ -1876,6 +1932,10 @@ export function draftSender(key: string, token: () => Promise<RoomToken>) {
       if (stopped) return;
       if (again && rerun) {
         attempt();
+        return;
+      }
+      if (again && busy) {
+        timer = setTimeout(attempt, BUSY_RETRY_MS);
         return;
       }
       if (again) {
@@ -1941,6 +2001,7 @@ export async function sweepDrafts(
   const { cleanup = true, current = () => true, onDeleted } = options;
   const locks = webLocks();
   const sweep = async () => {
+    busySweep = false;
     const documents = await call<Record<string, string[]>>({
       op: 'documents',
       prefix: `${actorId}:`,
@@ -1994,10 +2055,27 @@ export async function sweepDrafts(
         onDeleted?.(drafts);
     return kept;
   };
-  if (!locks) return sweep();
-  return locks.request(SWEEP_LOCK, { ifAvailable: true }, (lock) =>
-    lock ? sweep() : null
-  );
+  // A group answered busy goes again BUSY_RETRY_MS later, silently, with
+  // whatever else is unsettled then (one timer for every busy sweep).
+  const swept = async (kept: ReadonlySet<string> | null) => {
+    if (busySweep && current() && !outdated) {
+      busySweep = false;
+      clearTimeout(busyTimer);
+      busyTimer = setTimeout(() => {
+        if (!current() || outdated) return;
+        void sweepDrafts(actorId, api, { cleanup: false, current }).catch(
+          (error) => console.warn('Draft sweep failed:', error)
+        );
+      }, BUSY_RETRY_MS);
+    }
+    return kept;
+  };
+  if (!locks) return sweep().then(swept);
+  return locks
+    .request(SWEEP_LOCK, { ifAvailable: true }, (lock) =>
+      lock ? sweep() : null
+    )
+    .then(swept);
 }
 
 // The page load's sweep by account: what it kept (`sweepDrafts`), once it

@@ -18,9 +18,14 @@
 //! so open editors receive the update live. Either answer waits for the
 //! store that holds it and is the receipt for every row the request
 //! carried. The page sends a large group as pieces of at most 2 MiB, one
-//! request each, in order. A refusal answers its class alone (a timeout
-//! also the time it has left, `remainingMs`); its detail is logged and
-//! counted by class.
+//! request each, in order (Epo 2026-10-18), each naming its group, its place
+//! and the group's count (`X-Capy-Group`): the room holds them until the
+//! last, which admits the whole or none of it (review of 43fae032a, finding
+//! 2); a piece before it answers `piece-held` once held, again when it is
+//! sent again (the id is the rows', the same at every send, and a send goes
+//! on from the piece that failed, round 2 finding 4). A refusal answers
+//! its class alone (a timeout also the time it has left, `remainingMs`); its
+//! detail is logged and counted by class.
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
@@ -32,7 +37,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 
-use crate::app::Shared;
+use crate::app::{Shared, draft_slot};
 use crate::auth::{Access, Context, RoomName};
 use crate::observe::{Level, log};
 use crate::rate::Verdict;
@@ -47,6 +52,8 @@ const PROTOCOL_HEADER: &str = "x-capy-protocol";
 const GRANTS_HEADER: &str = "x-capy-grants";
 /// The stored version the group's oldest row was made at (`sessions.rs`).
 const VERSION_HEADER: &str = "x-capy-version";
+/// A piece of a group: `<id>,<index>,<count>` (`room::DraftPiece`).
+const GROUP_HEADER: &str = "x-capy-group";
 /// How long a browser keeps the preflight's answer (Chromium caps it at 2 h).
 const PREFLIGHT_MAX_AGE: &str = "7200";
 
@@ -83,7 +90,8 @@ pub enum Class {
     /// would never show (Q237): held for the editor, whose join shows it for
     /// review.
     Hidden,
-    /// The room or a lookup is busy or failing: try at a later page load.
+    /// The room or a lookup is overloaded or failing, or the room dropped the
+    /// group the piece belongs to: try at a later page load.
     Unavailable,
     /// The page's client protocol is outside its room family's (a stale
     /// tab): nothing more goes until the page reloads.
@@ -91,10 +99,14 @@ pub enum Class {
     /// The user is in a timeout (over their update allowance, or sending an
     /// update over the cap): tried again at the sweep's next trigger.
     TooFast,
+    /// Another group of pieces of the user's is unfinished, a channel's or a
+    /// draft send's (one at a time, Epo 2026-11-23): not abuse, so no
+    /// timeout; the sweep tries the group again 10 s later.
+    Busy,
 }
 
 impl Class {
-    pub const ALL: [Class; 12] = [
+    pub const ALL: [Class; 13] = [
         Class::Lineage,
         Class::Late,
         Class::Limit,
@@ -107,6 +119,7 @@ impl Class {
         Class::Unavailable,
         Class::Outdated,
         Class::TooFast,
+        Class::Busy,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -123,14 +136,18 @@ impl Class {
             Class::Unavailable => "unavailable",
             Class::Outdated => "outdated",
             Class::TooFast => "too_fast",
+            Class::Busy => "busy",
         }
     }
 
     fn status(self) -> StatusCode {
         match self {
-            Class::Lineage | Class::Late | Class::Unheld | Class::Unassigned | Class::Hidden => {
-                StatusCode::CONFLICT
-            }
+            Class::Lineage
+            | Class::Late
+            | Class::Unheld
+            | Class::Unassigned
+            | Class::Hidden
+            | Class::Busy => StatusCode::CONFLICT,
             Class::Limit => StatusCode::UNPROCESSABLE_ENTITY,
             Class::Permission => StatusCode::FORBIDDEN,
             Class::Malformed => StatusCode::BAD_REQUEST,
@@ -213,8 +230,13 @@ fn refused(app: &Shared, room: Option<&str>, refusal: &Refused) -> Response {
         .into_response()
 }
 
-/// The body, or none when it is longer than `cap`.
-async fn read_within(body: Body, cap: usize) -> Result<Option<Bytes>, Refused> {
+/// The body, or none when it is longer than `cap`; `arriving` hears each
+/// part as it comes.
+async fn read_within(
+    body: Body,
+    cap: usize,
+    mut arriving: impl FnMut(),
+) -> Result<Option<Bytes>, Refused> {
     let mut stream = body.into_data_stream();
     let mut read = Vec::new();
     while let Some(chunk) = stream.next().await {
@@ -224,8 +246,41 @@ async fn read_within(body: Body, cap: usize) -> Result<Option<Bytes>, Refused> {
             return Ok(None);
         }
         read.extend_from_slice(&chunk);
+        arriving();
     }
     Ok(Some(read.into()))
+}
+
+/// How often a grouped piece's arriving body renews its group at most.
+const RENEW_EVERY: Duration = Duration::from_secs(1);
+
+/// What a grouped piece's arriving body does for its group (round 4, finding
+/// 9): the loaded room keeps it for its slack from now, at most every
+/// [RENEW_EVERY], as a channel's group lives on while its socket hears a
+/// message arriving. A body that stops renews nothing, and its group drops
+/// at its deadline. Nothing for a piece of no group, or a room not loaded
+/// (it holds no group).
+fn renewal<'a>(
+    app: &'a Shared,
+    name: &'a RoomName,
+    user: &'a str,
+    group: Option<&'a room::DraftPiece>,
+) -> impl FnMut() + 'a {
+    let mut last: Option<Instant> = None;
+    move || {
+        let Some(piece) = group else { return };
+        if last.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
+            return;
+        }
+        last = Some(Instant::now());
+        if let Some(handle) = app.rooms.get(&name.to_string()) {
+            // A full queue skips one renewal; the next part tries again.
+            let _ = handle.tx.try_send(RoomCmd::DraftArriving {
+                user: user.to_owned(),
+                id: piece.id.clone(),
+            });
+        }
+    }
 }
 
 fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -244,7 +299,7 @@ pub async fn preflight(State(app): State<Shared>, headers: HeaderMap) -> Respons
             (header::ACCESS_CONTROL_ALLOW_METHODS, "POST"),
             (
                 header::ACCESS_CONTROL_ALLOW_HEADERS,
-                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol, x-capy-grants, x-capy-version",
+                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol, x-capy-grants, x-capy-version, x-capy-group",
             ),
             (header::ACCESS_CONTROL_MAX_AGE, PREFLIGHT_MAX_AGE),
         ],
@@ -260,26 +315,58 @@ pub async fn send(State(app): State<Shared>, headers: HeaderMap, body: Body) -> 
         return refused(&app, room.as_deref(), &refusal);
     };
     let response = match stored(&app, room.as_deref(), &headers, body).await {
-        Ok(()) => (
+        Ok(answer) => (
             StatusCode::OK,
             [(header::CONTENT_TYPE, "application/json")],
-            json!({ "room": room, "type": "checkpoint-persisted" }).to_string(),
+            json!({ "room": room, "type": answer }).to_string(),
         )
             .into_response(),
-        Err(refusal) => refused(&app, room.as_deref(), &refusal),
+        Err(refusal) => {
+            leave_line(&app, room.as_deref(), &headers, &refusal);
+            refused(&app, room.as_deref(), &refusal)
+        }
     };
     with_origin(response, origin)
 }
 
+/// A draft group refused for good, here (the note moved on, the token is
+/// read-only, too many sends) or by its room, waits in its user's line no
+/// more (round 5, finding 4; round 6, finding 6); a busy one keeps its place.
+/// Its user is the token's, which the refusal may have come before checking.
+fn leave_line(app: &Shared, room: Option<&str>, headers: &HeaderMap, refusal: &Refused) {
+    if refusal.class == Class::Busy {
+        return;
+    }
+    let (Some(room), Ok(Some(piece)), Some(token)) = (room, draft_piece(headers), bearer(headers))
+    else {
+        return;
+    };
+    let (Some(name), Ok(claims)) = (
+        RoomName::parse(room),
+        crate::auth::verify(token, &app.config.secret, room, crate::auth::now_seconds()),
+    ) else {
+        return;
+    };
+    let slot = draft_slot(&name.to_string(), &piece.id);
+    app.group_slots.leave(&claims.sub, &slot);
+}
+
+fn bearer(headers: &HeaderMap) -> Option<&str> {
+    header_text(headers, header::AUTHORIZATION.as_str())
+        .and_then(|value| value.strip_prefix("Bearer "))
+}
+
 /// Checks the request as a writer's JOIN, reads the body within a writer's
-/// sync message cap, and answers once the room stored the update. A source
-/// send counts as joining its room meanwhile, so a rebuild waits for it.
+/// sync message cap, and answers once the room stored the update
+/// (`checkpoint-persisted`), or held a group's piece before its last
+/// (`piece-held`). A source send counts as joining its room meanwhile, so a
+/// rebuild waits for it.
 async fn stored(
     app: &Shared,
     room: Option<&str>,
     headers: &HeaderMap,
     body: Body,
-) -> Result<(), Refused> {
+) -> Result<&'static str, Refused> {
     let Some(room) = room else {
         return Err(Refused::new(Class::Malformed, "the room is required"));
     };
@@ -295,14 +382,45 @@ async fn stored(
     result
 }
 
+/// A group's piece as its header names it; malformed unless its id is 1-64
+/// letters, digits, `-` or `_` and its place is within a group of two or
+/// more.
+fn draft_piece(headers: &HeaderMap) -> Result<Option<room::DraftPiece>, Refused> {
+    let Some(value) = header_text(headers, GROUP_HEADER) else {
+        return Ok(None);
+    };
+    let malformed = || Refused::new(Class::Malformed, "the group header is malformed");
+    let mut parts = value.split(',');
+    let (Some(id), Some(index), Some(count), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(malformed());
+    };
+    let id_ok = (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    let (Ok(index), Ok(count)) = (index.parse::<u64>(), count.parse::<u64>()) else {
+        return Err(malformed());
+    };
+    if !id_ok || count < 2 || index >= count {
+        return Err(malformed());
+    }
+    Ok(Some(room::DraftPiece {
+        id: id.to_owned(),
+        index,
+        count,
+    }))
+}
+
 async fn checked_and_stored(
     app: &Shared,
     room: &str,
     headers: &HeaderMap,
     body: Body,
-) -> Result<(), Refused> {
-    let token = header_text(headers, header::AUTHORIZATION.as_str())
-        .and_then(|value| value.strip_prefix("Bearer "))
+) -> Result<&'static str, Refused> {
+    let group = draft_piece(headers)?;
+    let token = bearer(headers)
         .ok_or_else(|| Refused::new(Class::Permission, "a room token is required"))?;
     let protocol = header_text(headers, PROTOCOL_HEADER).and_then(|value| value.parse().ok());
     // The user's draft sends, counted before any lookup (Q360); a bad token
@@ -353,9 +471,10 @@ async fn checked_and_stored(
     let user = &context.user_id;
     // A body is held no longer than its token lives.
     let left = u64::try_from(context.expires_at - crate::auth::now_seconds()).unwrap_or(0);
+    let arriving = renewal(app, &name, user, group.as_ref());
     let read = tokio::time::timeout(
         Duration::from_secs(left),
-        read_within(body, ydoc::MAX_UPDATE_BYTES),
+        read_within(body, ydoc::MAX_UPDATE_BYTES, arriving),
     )
     .await
     .map_err(|_| Refused::new(Class::Permission, "collaboration token expired"))?;
@@ -397,9 +516,13 @@ async fn checked_and_stored(
                 "the drafts' version is missing or not a stored version",
             )
         })?;
-    let durable = admitted(app, &name, &context, update, base, granted, version).await?;
+    let held = group
+        .as_ref()
+        .is_some_and(|piece| piece.index + 1 < piece.count);
+    let durable = admitted(app, &name, &context, update, base, granted, version, group).await?;
     match durable.await {
-        Ok(Ok(())) => Ok(()),
+        Ok(Ok(())) if held => Ok("piece-held"),
+        Ok(Ok(())) => Ok("checkpoint-persisted"),
         Ok(Err(error)) => Err(Refused::new(Class::Unavailable, error)),
         Err(_) => Err(Refused::new(
             Class::Unavailable,
@@ -411,6 +534,7 @@ async fn checked_and_stored(
 /// Hands the draft to its room (loading it if need be) and waits for the
 /// admission. A room that unloaded before taking it drops the command: look
 /// up again once. A room whose load failed answers the failure.
+#[allow(clippy::too_many_arguments)]
 async fn admitted(
     app: &Shared,
     name: &RoomName,
@@ -419,6 +543,7 @@ async fn admitted(
     base: Option<String>,
     granted: Vec<u64>,
     version: u64,
+    group: Option<room::DraftPiece>,
 ) -> Result<Durable, Refused> {
     for _ in 0..2 {
         let handle = app.rooms.get_or_spawn(&name.to_string(), |id| {
@@ -431,6 +556,7 @@ async fn admitted(
             base: base.clone(),
             granted: granted.clone(),
             version,
+            group: group.clone(),
             reply,
         }));
         if handle.tx.send(command).await.is_err() {

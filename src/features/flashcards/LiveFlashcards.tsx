@@ -20,6 +20,7 @@ import {
   type PresenceConnection,
   useReportPresence,
 } from '@/features/collaboration/presence';
+import { downloadRecovery } from '@/features/collaboration/recoveryDownload';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
@@ -92,7 +93,8 @@ export function LiveFlashcards({
     setHeld(snapshot.status === 'syncing' || snapshot.status === 'offline');
   }, [snapshot.status]);
   const cards = useCards(room?.doc);
-  const recovered = useCards(snapshot.recovery?.doc);
+  const recoveryDoc = snapshot.recovery?.doc ?? null;
+  const recovered = useCards(recoveryDoc);
   useEffect(() => {
     const saveState = snapshot.recovery
       ? 'error'
@@ -127,7 +129,13 @@ export function LiveFlashcards({
     return (
       <div className="flex flex-col gap-4">
         <SaveBanner
-          onReload={() => void room.reload()}
+          onDiscard={() => void room.reload()}
+          onDownload={() =>
+            void downloadRecovery(
+              { kind: 'flashcards', name: title },
+              recoveryDoc
+            )
+          }
           state={recoveryBanner(snapshot.recovery)}
         />
         <FlashcardGrid
@@ -174,7 +182,18 @@ export function LiveFlashcards({
   );
   return (
     <div className="flex flex-col gap-4">
-      {snapshot.offline && <SaveBanner state={snapshot.offline} />}
+      {snapshot.offline ? (
+        <SaveBanner state={snapshot.offline} />
+      ) : (
+        snapshot.held && (
+          <SaveBanner
+            onDiscard={snapshot.held.discard}
+            onRetry={snapshot.held.retry}
+            retrying={snapshot.held.retrying}
+            state="unsynced"
+          />
+        )
+      )}
       {refused ||
       snapshot.access !== 'write' ||
       itemEditingStopped(snapshot) ? (

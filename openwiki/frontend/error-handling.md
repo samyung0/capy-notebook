@@ -947,14 +947,15 @@ change swaps a fully acknowledged editor to the new epoch with no strip
 enter recovery, as do drafts of another version found on open.
 
 Every recovery path shows a recovery banner: a save refused for good the
-`refused` one ("These changes couldn't be saved. Copy anything you need, then
-reload to continue from the last saved version."), and edits from another
+`refused` one ("Couldn't save these changes. Download a copy or discard
+them."), and edits from another
 lineage (a newer version over unsaved edits, a draft from another version, a
-note room that moved on) the `changed` one ("This file changed while your
-edits were waiting to sync. Copy anything you need, then reload."). Unsent
+note room that moved on) the `changed` one ("This file changed before your
+edits synced. Download a copy or discard them."). Unsent
 edits whose group was last edited over 7 days ago (Epo 2026-10-24) open an
-Office or text file once under the `expired` one ("These edits are more than 7
-days old and too old to sync. Copy anything you need, then reload."): their rows
+Office or text file once under the `expired` one ("These edits are over 7
+days old and can't sync. Download a copy or discard them.", Epo 2026-11-23,
+as are the other two): their rows
 are deleted as they open (reported as `draft_unrestorable` / `expired`) and no
 draft sweep sends them. A quiz, a set or a diagram opens as usual instead, under
 a toast with Download ("Some old edits can't sync. Download them now or they'll
@@ -967,9 +968,13 @@ meanwhile (Q229), open the live note with the merge view under the `review`
 strip ("Some of your edits couldn't sync into this note.", Review and
 Discard, not closeable, after every other strip; see
 [plate-editor.md](plate-editor.md#the-merge-view)). The
-unsaved content stays on screen read-only and selectable, with no download or
-discard; a page refresh reopens the same view, except an expired one. A recovery banner has no close
-button: its Reload, in the close button's place, is the only way out. It
+unsaved content stays on screen read-only and selectable; a page refresh
+reopens the same view, except an expired one. A recovery banner has no close
+button: its Discard (`ghost-hover`) and Download (`dark`) take the close
+button's place (Epo 2026-11-23, in place of Reload). Download saves what shows
+through the page's own download (an Office or text file's `downloadDraft`, an
+item's file of its documents as drawn, `downloadRecovery`) and deletes
+nothing; a page with none shows Discard alone. Discard is the only way out. It
 clears the drafts on display (matching exact rows, so another tab's newer
 write stays) and reopens the last saved version, after any other retained
 draft group. A text source shows the content in a read-only

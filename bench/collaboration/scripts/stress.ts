@@ -76,6 +76,7 @@ import * as Y from 'yjs';
 import { RoomProvider } from '../../../src/features/collaboration/roomProvider';
 import { CollabSocket } from '../../../src/features/collaboration/socket';
 import { buildBiologyLoadTestValue } from '../../../src/mocks/noteContent/loadTest';
+import { nodeHeartbeat } from './nodeHeartbeat';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const REMOTE = process.env.STRESS_TARGET === 'uat';
@@ -912,7 +913,7 @@ async function join(room: Room, name: string): Promise<Peer> {
   let failed: (error: Error) => void = () => undefined;
   const stateless = new Set<(payload: string) => void>();
   // Each peer is a browser of its own: its own socket.
-  const socket = CollabSocket.create(first.url);
+  const socket = CollabSocket.create(first.url, nodeHeartbeat);
   const provider = new RoomProvider({
     document: doc,
     name: first.room,

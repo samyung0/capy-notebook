@@ -1,13 +1,16 @@
 import { Allowance, tabAllowance } from './allowance';
+import { type HeartbeatClock, onHeartbeat } from './heartbeat';
 import { setHeld } from './held';
 import { watchIdle } from './idle';
-import { decodeFrame, type Message, MessageKind } from './protocol';
+import { decodeFrame, HEARTBEAT, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
   /** Whether its tab may sleep now that it hid: a note's or an item's room
    * with nothing unsent. None says no. */
   mayHide?(): boolean;
+  /** Its turn to send a group of pieces came (`groupTurn`). */
+  onGroupTurn?(): void;
   onMessage(message: Message): void;
   /** The user's timeout ended: a room paused by it joins again and resyncs. */
   onResume(): void;
@@ -45,9 +48,10 @@ export class CollabSocket {
   private static idleWatched = false;
 
   /** A socket of its own (a load generator's peer), not the tab's shared
-   * one, pacing its updates under an allowance of its own. */
-  static create(url: string): CollabSocket {
-    return new CollabSocket(url, new Allowance());
+   * one, pacing its updates under an allowance of its own and beating on
+   * the `heartbeat` clock it is given (a Node peer has no worker). */
+  static create(url: string, heartbeat: HeartbeatClock): CollabSocket {
+    return new CollabSocket(url, heartbeat, new Allowance());
   }
 
   static for(url: string): CollabSocket {
@@ -67,7 +71,7 @@ export class CollabSocket {
           },
         });
       }
-      socket = new CollabSocket(url);
+      socket = new CollabSocket(url, onHeartbeat);
       CollabSocket.sockets.set(url, socket);
     }
     return socket;
@@ -96,12 +100,19 @@ export class CollabSocket {
   private readonly pending = new Set<number>();
   private queued: { bytes: Uint8Array<ArrayBuffer>; channel: number }[] = [];
   /** Frames waiting for the allowance (`reserve`), in order, each with the
-   * time it may go; a frame sent behind them waits its turn. */
+   * time it may go, its channel and what it reserved (bytes; none for a free
+   * frame); a frame sent behind them waits its turn. */
   private outbox: {
     at: number;
     bytes: Uint8Array<ArrayBuffer>;
+    channel: number | undefined;
     charged: boolean;
+    reserved: number | null;
   }[] = [];
+  /** The room sending a group of pieces, until the room acknowledged it, and
+   * the rooms waiting to send theirs, in order (`groupTurn`). */
+  private turn: ChannelHandler | null = null;
+  private turnWaiting: ChannelHandler[] = [];
   private draining: ReturnType<typeof setTimeout> | undefined;
   /** The user's timeout: it ends at this timer (`timeOut`). */
   private timeout: ReturnType<typeof setTimeout> | undefined;
@@ -110,15 +121,24 @@ export class CollabSocket {
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
+  /** Stops its heartbeat, sent while it is open (`onHeartbeat`). */
+  private stopHeartbeat: (() => void) | undefined;
   /** Closed while the page is idle (`sleep`): it opens again only on `wake`. */
   private asleep = false;
 
   readonly url: string;
   /** Its own allowance; the tab's (`tabAllowance`) when none. */
   private readonly allowance: Allowance | null;
+  /** The clock its heartbeat goes by while it is open. */
+  private readonly heartbeat: HeartbeatClock;
 
-  private constructor(url: string, allowance: Allowance | null = null) {
+  private constructor(
+    url: string,
+    heartbeat: HeartbeatClock,
+    allowance: Allowance | null = null
+  ) {
     this.url = url;
+    this.heartbeat = heartbeat;
     this.allowance = allowance;
     // Back online: reconnect now instead of waiting out the backoff.
     if (typeof window !== 'undefined')
@@ -206,27 +226,85 @@ export class CollabSocket {
    * it covers. In a timeout a charged frame is not sent (the server would
    * drop it; the rooms resync after). A JOIN (`join`) costs the server one
    * message and none of its bytes; it goes in a timeout too (the server
-   * answers it with the notice).
+   * answers it with the notice). `channel`: the room's, so its waiting
+   * frames can be dropped (`dropQueued`).
    */
   send(
     bytes: Uint8Array<ArrayBuffer>,
-    cost: 'free' | 'charged' | 'join' = 'free'
+    cost: 'free' | 'charged' | 'join' = 'free',
+    channel?: number
   ) {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     const charged = cost === 'charged';
     if (charged && this.timeout) return;
     const now = performance.now();
-    const allowance = this.allowance ?? tabAllowance;
-    const wait =
-      cost === 'free' ? 0 : allowance.reserve(charged ? bytes.byteLength : 0);
+    const reserved = cost === 'free' ? null : charged ? bytes.byteLength : 0;
+    const wait = reserved === null ? 0 : this.reserve(reserved);
     const at = Math.max(now + wait, this.outbox.at(-1)?.at ?? 0);
     if (at <= now && !this.outbox.length) {
       this.ws.send(bytes);
       return;
     }
-    this.outbox.push({ at, bytes, charged });
+    this.outbox.push({ at, bytes, channel, charged, reserved });
     this.drainLater();
     this.updateHeld();
+  }
+
+  private reserve(bytes: number) {
+    return (this.allowance ?? tabAllowance).reserve(bytes);
+  }
+
+  /**
+   * A room's group was dropped (busy, or late; review of 43fae032a round 3,
+   * finding 2): its channel's charged frames still waiting are dropped, as
+   * a timeout drops them, so they neither upload for nothing nor hold back
+   * every other room's frames and its own rejoin. What they reserved goes
+   * back to the allowance, and the frames kept behind them reserve again in
+   * order, from now.
+   */
+  dropQueued(channel: number) {
+    const dropped = (frame: (typeof this.outbox)[number]) =>
+      frame.charged && frame.channel === channel;
+    if (!this.outbox.some(dropped)) return;
+    const allowance = this.allowance ?? tabAllowance;
+    for (const frame of this.outbox)
+      if (frame.reserved !== null) allowance.refund(frame.reserved);
+    const now = performance.now();
+    let last = now;
+    this.outbox = this.outbox
+      .filter((frame) => !dropped(frame))
+      .map((frame) => {
+        const wait = frame.reserved === null ? 0 : this.reserve(frame.reserved);
+        last = Math.max(now + wait, last);
+        return { ...frame, at: last };
+      });
+    clearTimeout(this.draining);
+    this.draining = undefined;
+    this.drainLater();
+    this.updateHeld();
+  }
+
+  /**
+   * Whether `room` may send a group of pieces now: one group at a time on a
+   * socket, until the room acknowledged it (round 3, finding 4), as the
+   * server holds one unfinished group per user and answers another busy.
+   * Otherwise the room waits in line, and `onGroupTurn` tells it its turn
+   * came.
+   */
+  groupTurn(room: ChannelHandler) {
+    if (this.turn === null) this.turn = room;
+    if (this.turn === room) return true;
+    if (!this.turnWaiting.includes(room)) this.turnWaiting.push(room);
+    return false;
+  }
+
+  /** The room's group was acknowledged or dropped, or it no longer waits:
+   * the next room in line takes the turn. */
+  endGroupTurn(room: ChannelHandler) {
+    this.turnWaiting = this.turnWaiting.filter((each) => each !== room);
+    if (this.turn !== room) return;
+    this.turn = this.turnWaiting.shift() ?? null;
+    this.turn?.onGroupTurn?.();
   }
 
   /**
@@ -278,12 +356,17 @@ export class CollabSocket {
     setHeld(this, this.outbox.length > 0 || this.timeout !== undefined);
   }
 
-  /** The socket ended: what waited is dropped, and a timeout is forgotten
-   * (rooms resync on rejoin; the server tells them again if it runs). */
+  /** The socket ended: what waited is dropped, the group turn with it, and a
+   * timeout is forgotten (rooms resync on rejoin; the server tells them
+   * again if it runs). Its heartbeat stops. */
   private dropOutbox() {
+    this.stopHeartbeat?.();
+    this.stopHeartbeat = undefined;
     clearTimeout(this.draining);
     this.draining = undefined;
     this.outbox = [];
+    this.turn = null;
+    this.turnWaiting = [];
     clearTimeout(this.timeout);
     this.timeout = undefined;
     this.updateHeld();
@@ -326,6 +409,10 @@ export class CollabSocket {
       if (this.ws !== ws) return;
       this.status = 'connected';
       this.attempts = 0;
+      // Straight on the socket, past the outbox: the allowance never holds
+      // it, and it shows the server this tab's code runs while a long frame
+      // to it holds back the pings.
+      this.stopHeartbeat = this.heartbeat(() => ws.send(HEARTBEAT));
       for (const handler of [...this.handlers]) handler.onSocketOpen();
     };
     ws.onmessage = (event) => {

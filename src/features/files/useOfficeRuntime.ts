@@ -1267,6 +1267,8 @@ export function useOfficeRuntime({
     render,
     reopenEditor,
     replaced: source.replaced,
+    retryHeld: source.retryHeld,
+    retryingHeld: source.retryingHeld,
     retryView,
     runMenuCommand,
     saving: leaving || source.status === 'saving',

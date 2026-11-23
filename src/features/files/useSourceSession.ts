@@ -20,6 +20,7 @@ import {
   discardDeleted,
   showDeletedDrafts,
 } from '@/features/collaboration/lostEdits';
+import type { HeldEdits } from '@/features/collaboration/roomProvider';
 import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
@@ -301,8 +302,12 @@ export function useSourceSession(
   const [error, setError] = useState<string | null>(null);
   // Saves failing or unconfirmed (`delayed`), the room unreachable
   // (`offline…`), or recovery (`refused`, `changed`: the session shows unsaved
-  // content it cannot save read-only, for copying, until Reload).
+  // content it cannot save read-only, for copying, until Discard).
   const [banner, setBanner] = useState<SaveBannerState | null>(null);
+  // The room dropped a group of pieces as late: the `unsynced` strip's Retry
+  // until a join carries the edits, or its Discard (`discardDraft`) drops
+  // them (Epo 2026-11-23), under every strip but `delayed`.
+  const [heldRetry, setHeldRetry] = useState<HeldEdits | null>(null);
   // Offline past the bound this device may hold: the editor stops taking
   // edits until the room is back.
   const [offlineLimit, setOfflineLimit] = useState(false);
@@ -400,8 +405,8 @@ export function useSourceSession(
   useEffect(() => {
     if (!enabled || !fileId || !actorId) return;
     const draftKey = documentDraftKey(actorId, 'file', fileId);
-    // A stored group shown in recovery (Reload deletes it), or the live
-    // session's recorder (Reload discards what it wrote).
+    // A stored group shown in recovery (Discard deletes it), or the live
+    // session's recorder (Discard drops what it wrote).
     let recoveryDrafts: Pick<EditDraft, 'id' | 'key' | 'seq'>[] | null = null;
     let recorder: DraftRecorder | null = null;
     let cancelled = false;
@@ -537,6 +542,8 @@ export function useSourceSession(
       }
     };
     setStatus('connecting');
+    // The last session's held edits went with it (a Discard, a new file).
+    setHeldRetry(null);
     setDirty(false);
     setStorageFailing(false);
     setHandoff(false);
@@ -862,7 +869,7 @@ export function useSourceSession(
       // good save. Unsaved edits stay in this session's drafts, marked
       // refused so no later open merges them back (they would replay the
       // refused state), and the editor shows them read-only for copying until
-      // Reload (discardDraft) reopens the last good save. `sizeLimit`: the
+      // Discard (discardDraft) reopens the last good save. `sizeLimit`: the
       // file reached its size limit, which the banner says (Q827 A).
       const refuse = (sizeLimit = false) => {
         if (cancelled || active.recovery) return;
@@ -873,7 +880,7 @@ export function useSourceSession(
         discarded = true;
         clearTimeout(timer);
         // One refused row of the whole state replaces this session's rows;
-        // Reload deletes it.
+        // Discard deletes it.
         const refused = recorder?.refuse();
         recoveryDrafts = refused ? [refused] : [];
         rejectWaiters(new SourceSessionError(m.source_edit_recovery()));
@@ -956,7 +963,7 @@ export function useSourceSession(
           setReplaced(true);
         } else {
           // The file moved on while edits waited: they open read-only, and
-          // this session's rows stay until Reload discards them, with the
+          // this session's rows stay until Discard drops them, with the
           // whole document a later open draws them over.
           active.recovery = true;
           void recorder?.snapshot();
@@ -1063,6 +1070,10 @@ export function useSourceSession(
           }
         },
         onFrame: frames.emit,
+        // A session that ends held clears its strip as it goes.
+        onHeld: (held) => {
+          if (!(held && cancelled)) setHeldRetry(held);
+        },
         onPresence: (connections) => {
           if (cancelled) return;
           reportPresence.current?.(connections);
@@ -1445,7 +1456,10 @@ export function useSourceSession(
   return {
     ...loaded,
     atSizeLimit,
-    banner,
+    banner:
+      heldRetry && (banner === null || banner === 'delayed')
+        ? ('unsynced' as const)
+        : banner,
     cursors,
     discardDraft,
     discarding,
@@ -1460,6 +1474,10 @@ export function useSourceSession(
     pendingInput,
     readOnly,
     replaced,
+    /** The `unsynced` strip's Retry (`RoomProviderConfig.onHeld`), and
+     * whether its join is pending. */
+    retryHeld: heldRetry?.retry,
+    retryingHeld: !!heldRetry?.retrying,
     save,
     slowed,
     status:

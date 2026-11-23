@@ -25,7 +25,10 @@ import {
 } from '@/features/collaboration/itemRoom';
 import type { PresenceConnection } from '@/features/collaboration/presence';
 import { tokenClientIds } from '@/features/collaboration/protocol';
-import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
+import type {
+  HeldEdits,
+  RoomProviderConfig,
+} from '@/features/collaboration/roomProvider';
 import {
   registerMockSourceProvider,
   type SourceProvider,
@@ -42,6 +45,7 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import {
+  COLLABORATION_FORBIDDEN_REASON,
   COLLABORATION_LATE_REASON,
   COLLABORATION_NOT_FOUND_REASON,
   COLLABORATION_OUTDATED_REASON,
@@ -84,6 +88,9 @@ interface Participant {
   access?: 'read' | 'write';
   awareness?: Awareness;
   document: Y.Doc;
+  /** A late drop holds this tab's edits (`MockHeld`): its updates wait
+   * there instead of reaching the room, until Retry hands them over. */
+  held?: MockHeld;
   identity?: MockIdentity;
   /** A board tab of the mock user: whether its person holds `client` (the
    * service's admission rule, `owns`), and the ids an admitted update wrote
@@ -458,8 +465,9 @@ export function join(room: Room, participant: Participant) {
   if (rooms.get(room.name) !== room) {
     throw new Error(`Mock room ${room.name} is no longer active`);
   }
-  const forward = (update: Uint8Array, origin: unknown) => {
-    if (origin === participant.origin) return;
+  // What the room takes of this participant's: a note room may refuse it on
+  // entry, and a board room admits it by its rules.
+  const take = (update: Uint8Array) => {
     const refused =
       room.target.kind === 'material'
         ? refusedNoteUpdates.get(room.target.id)
@@ -476,6 +484,11 @@ export function join(room: Room, participant: Participant) {
     )
       return;
     Y.applyUpdate(room.document, update, participant);
+  };
+  const forward = (update: Uint8Array, origin: unknown) => {
+    if (origin === participant.origin) return;
+    if (participant.held?.withholds(update)) return;
+    take(update);
   };
   // The room's state, encoded once: the joining document holds what it brings.
   const state = Y.encodeStateAsUpdate(room.document);
@@ -496,6 +509,7 @@ export function join(room: Room, participant: Participant) {
   }
   Y.applyUpdate(participant.document, state, participant.origin);
   participant.document.on('update', forward);
+  if (participant.held) participant.held.take = take;
 
   const awareness = participant.awareness;
   const relay = (
@@ -544,6 +558,7 @@ export function join(room: Room, participant: Participant) {
     participant.onPresence?.([]);
     announcePresence(room);
     participant.document.off('update', forward);
+    if (participant.held?.take === take) participant.held.take = null;
     if (awareness) {
       awareness.off('update', relay);
       // Like Hocuspocus on disconnect: the others forget this client, and this
@@ -804,6 +819,8 @@ interface MockCollaborationOptions {
   /** As the room provider's: the service closed the room on the open
    * socket (a deleted note's discard), which the editor rejoins. */
   onClose?: (event: { code: number }) => void;
+  /** As the room provider's: a group dropped as late (`holdMockNoteEdits`). */
+  onHeld?: (held: HeldEdits | null) => void;
   onPresence?: (connections: PresenceConnection[]) => void;
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
@@ -866,6 +883,123 @@ let buildRefused = false;
 // joins, unless every session is late (lateSessions).
 const lateMaterials = new Map<string, 'joined' | 'every'>();
 
+/** How long a held strip's Retry stays pending before its join (e2e). */
+const MOCK_HELD_RETRY_MS = 1500;
+
+/** How a held Retry fails for good (`refuseMockHeldRetry`): the room refuses
+ * the edits that waited, or this person lost access to the item. */
+export type HeldRefusal = 'refused' | 'access';
+
+/** The holds open now (`refuseMockHeldRetry`). */
+const holds = new Set<MockHeld>();
+
+/** A late drop's held edits in a mock room (`holdMockNoteEdits`,
+ * `holdMockItemEdits`, `holdMockSourceEdits`), reported as the room provider
+ * reports them: one unsynced change while held (`unsynced`, or the note's
+ * and source's counts; round 6, finding 3, and its review), the strip's Retry pending for a
+ * moment, then `rejoin` runs (or `refuse`, once `refuseMockHeldRetry` set
+ * how), and the hold ends with the channel or its next join (`release`).
+ * Meanwhile the room takes none of this tab's updates and answers none of
+ * its checkpoint requests: they wait here for the Retry's join
+ * (`handOver`), and go with the hold. */
+class MockHeld {
+  readonly id: string;
+  /** `refuseMockHeldRetry`: how the next Retry fails for good. */
+  refusal: HeldRefusal | null = null;
+  /** Hands an update to the room this tab is in, while it is in one. */
+  take: ((update: Uint8Array) => void) | null = null;
+  private holding = false;
+  private retrying = false;
+  private updates: Uint8Array[] = [];
+  private requests: string[] = [];
+  private readonly report: ((held: HeldEdits | null) => void) | undefined;
+  private readonly rejoin: () => void;
+  private readonly refuse: (how: HeldRefusal, requests: string[]) => void;
+  private readonly unsynced: ((count: number) => void) | undefined;
+
+  constructor(
+    id: string,
+    report: ((held: HeldEdits | null) => void) | undefined,
+    rejoin: () => void,
+    refuse: (how: HeldRefusal, requests: string[]) => void,
+    unsynced?: (count: number) => void
+  ) {
+    this.id = id;
+    this.report = report;
+    this.rejoin = rejoin;
+    this.refuse = refuse;
+    this.unsynced = unsynced;
+  }
+
+  get held() {
+    return this.holding;
+  }
+
+  /** Whether the room leaves this update of the tab's waiting. */
+  withholds(update: Uint8Array) {
+    if (this.holding) this.updates.push(update);
+    return this.holding;
+  }
+
+  /** Whether the room leaves this checkpoint request unanswered for now. */
+  defers(payload: string) {
+    if (this.holding) this.requests.push(payload);
+    return this.holding;
+  }
+
+  hold() {
+    if (this.holding) return;
+    this.holding = true;
+    holds.add(this);
+    this.unsynced?.(1);
+    this.report?.({ retry: this.retry, retrying: false });
+  }
+
+  private readonly retry = () => {
+    if (!this.holding || this.retrying) return;
+    this.retrying = true;
+    this.report?.({ retry: this.retry, retrying: true });
+    setTimeout(() => {
+      if (!this.holding) return;
+      const how = this.refusal;
+      if (!how) {
+        this.rejoin();
+        return;
+      }
+      // Refused for good: the room never takes what waited.
+      const requests = this.takeRequests();
+      this.release();
+      this.refuse(how, requests);
+    }, MOCK_HELD_RETRY_MS);
+  };
+
+  /** The checkpoint requests that waited, which a rejoin asks again. */
+  takeRequests() {
+    return this.requests.splice(0);
+  }
+
+  /** The Retry's join on the same channel: the room takes the updates that
+   * waited, the hold ends, and the requests that waited are answered. */
+  handOver(ask: (payload: string) => void) {
+    for (const update of this.updates.splice(0)) this.take?.(update);
+    const requests = this.takeRequests();
+    this.release();
+    for (const payload of requests) ask(payload);
+  }
+
+  release() {
+    if (!this.holding) return;
+    this.holding = false;
+    this.retrying = false;
+    this.refusal = null;
+    this.updates = [];
+    this.requests = [];
+    holds.delete(this);
+    this.unsynced?.(0);
+    this.report?.(null);
+  }
+}
+
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
   readonly document: Y.Doc;
@@ -878,6 +1012,8 @@ class MockCollaborationProvider implements UnifiedProvider {
     sendStateless: (payload: string) => void;
     /** The in-page socket is open while the service is reachable. */
     readonly socketStatus: 'connected' | 'disconnected';
+    /** As the room provider's: a held group counts one (round 6 review). */
+    readonly unsyncedChanges: number;
     unsentFrom: (version: number) => void;
   };
   readonly type = 'mock';
@@ -889,6 +1025,7 @@ class MockCollaborationProvider implements UnifiedProvider {
   private readonly onError?: (error: Error) => void;
   private readonly onSyncChange?: (isSynced: boolean) => void;
   private readonly options: MockCollaborationOptions;
+  private readonly heldEdits: MockHeld;
   private room?: Room;
   private leave?: () => void;
   // Connected unless disconnected on purpose: a lost service reconnects.
@@ -924,8 +1061,25 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.onError = onError;
     this.onSyncChange = onSyncChange;
     this.options = options;
+    this.heldEdits = new MockHeld(
+      options.materialId,
+      options.onHeld,
+      () => {
+        // A fresh JOIN brings the document whole, the updates that waited
+        // with it; the requests that waited are asked again once joined.
+        const requests = this.heldEdits.takeRequests();
+        this.drop();
+        this.connect();
+        for (const payload of requests) this.handleStateless(payload);
+      },
+      (how) => {
+        if (how === 'access') this.accessChanged();
+        else this.refusedGroup(options.materialId);
+      }
+    );
     const versions = versionsOf(options.materialId);
     versions.joins.push(options.unsentFrom ?? null);
+    const unsynced = () => (this.heldEdits.held ? 1 : 0);
     this.provider = {
       connect: () => this.connect(),
       disconnect: () => this.disconnect(),
@@ -938,6 +1092,9 @@ class MockCollaborationProvider implements UnifiedProvider {
       },
       unsentFrom: (version: number) => {
         versions.marks.push(version);
+      },
+      get unsyncedChanges() {
+        return unsynced();
       },
     };
     if (browser)
@@ -1014,12 +1171,15 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.leave = join(room, {
       awareness: this.awareness,
       document: this.document,
+      held: this.heldEdits,
       onPresence: this.options.onPresence,
       origin: this,
     });
     this.isConnected = true;
     this.isSynced = true;
     this.joined = true;
+    const { materialId } = this.options;
+    noteJoins.set(materialId, (noteJoins.get(materialId) ?? 0) + 1);
     this.onConnect?.();
     this.onSyncChange?.(true);
     // As the collaboration server joins a writer of a document holding a
@@ -1042,6 +1202,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   private drop() {
     if (!this.isConnected) return;
+    this.heldEdits.release();
     materialProviders.delete(this);
     this.leave?.();
     this.leave = undefined;
@@ -1080,6 +1241,25 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.closed(4000);
   }
 
+  /** The room dropped a group of this tab's pieces as late: whether it
+   * holds them. */
+  holdEdits(materialId: string) {
+    if (!(this.options.materialId === materialId && this.isConnected))
+      return false;
+    this.heldEdits.hold();
+    return true;
+  }
+
+  /** `refuseMockNoteGroup`: refused past a limit, its channel closed. */
+  refusedGroup(materialId: string) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.announce(materialId, {
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    });
+    this.closed(4000);
+  }
+
   /** The service closed this note's room on the open socket for an access
    * change (4403: a member removed, the note hidden from them), and the
    * editor's rejoin is refused at its token (`connect`). */
@@ -1102,6 +1282,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   /** The room closed on the open socket: a close, no disconnect. */
   private closed(code: number) {
+    this.heldEdits.release();
     materialProviders.delete(this);
     this.leave?.();
     this.leave = undefined;
@@ -1165,6 +1346,7 @@ class MockCollaborationProvider implements UnifiedProvider {
       return;
     }
     if (heldNoteReceipts.has(this.options.materialId)) return;
+    if (this.heldEdits.defers(payload)) return;
     try {
       const metrics = checkpointRoom(this.room);
       this.options.onStateless?.({
@@ -1197,10 +1379,14 @@ class MockSourceProvider implements SourceProvider {
   readonly awareness: Awareness;
   /** A DOCX editor's layout worker id (Q219): the mock room checks none. */
   readonly workerClientId = crypto.getRandomValues(new Uint32Array(1))[0] || 2;
-  // The in-page room applies updates synchronously.
-  readonly hasUnsyncedChanges = false;
+  // The in-page room applies updates synchronously; a held group counts one
+  // (round 6 review).
+  get hasUnsyncedChanges() {
+    return this.heldEdits.held;
+  }
   isAuthenticated = true;
   private readonly config: SourceProviderConfig;
+  private readonly heldEdits: MockHeld;
   private leave: () => void;
   room: Room;
   /** A drain closed the channel on an open socket (`announceMoved`): the
@@ -1215,11 +1401,19 @@ class MockSourceProvider implements SourceProvider {
       throw new Error(`Unknown mock source room ${config.name}`);
     }
     this.config = config;
+    this.heldEdits = new MockHeld(
+      room.target.id,
+      config.onHeld,
+      () => this.heldEdits.handOver((payload) => this.sendStateless(payload)),
+      (how, requests) => this.refusedRetry(how, requests),
+      (number) => config.onUnsyncedChanges?.({ number })
+    );
     this.room = room;
     this.awareness = new Awareness(config.document);
     this.leave = join(room, {
       awareness: this.awareness,
       document: config.document,
+      held: this.heldEdits,
       onPresence: config.onPresence,
       origin: this,
     });
@@ -1244,6 +1438,7 @@ class MockSourceProvider implements SourceProvider {
     }
     if (event.type !== 'checkpoint-request' || typeof event.id !== 'string')
       return;
+    if (this.heldEdits.defers(payload)) return;
     const fileId = this.room.target.id;
     if (lostSourceSaves.delete(fileId)) {
       this.room.retired = true;
@@ -1323,6 +1518,7 @@ class MockSourceProvider implements SourceProvider {
     this.leave = join(this.room, {
       awareness: this.awareness,
       document: this.config.document,
+      held: this.heldEdits,
       onPresence: this.config.onPresence,
       origin: this,
     });
@@ -1330,6 +1526,7 @@ class MockSourceProvider implements SourceProvider {
   }
 
   disconnect() {
+    this.heldEdits.release();
     sourceProviders.delete(this);
     this.isAuthenticated = false;
     this.leave();
@@ -1380,6 +1577,36 @@ class MockSourceProvider implements SourceProvider {
         type: 'room-read-only',
       }),
     });
+  }
+
+  /** The room dropped a group of this tab's pieces as late: whether it
+   * holds them. */
+  holdEdits(fileId: string) {
+    if (!(this.room.target.id === fileId && this.isAuthenticated)) return false;
+    this.heldEdits.hold();
+    return true;
+  }
+
+  /** A held Retry refused for good (`refuseMockHeldRetry`): the room goes
+   * back to its last checkpoint and refuses the save, so the session keeps
+   * its edits for recovery; or this person lost access, and the rejoin's
+   * token is refused (`announceRefused`). */
+  private refusedRetry(how: HeldRefusal, requests: string[]) {
+    if (how === 'access') {
+      this.announceRefused();
+      return;
+    }
+    this.room.retired = true;
+    const refusal = JSON.stringify({
+      checkpointIds: requests.map(
+        (payload) => (JSON.parse(payload) as { id: string }).id
+      ),
+      epoch: Number(this.config.name.split(':')[3]),
+      fileId: this.room.target.id,
+      recoverable: false,
+      type: 'source-checkpoint-failed',
+    });
+    queueMicrotask(() => this.config.onStateless?.({ payload: refusal }));
   }
 
   announcePaused(fileId: string) {
@@ -1493,6 +1720,25 @@ export function rejectMockNoteUpdate(
   for (const provider of [...materialProviders])
     provider.announce(materialId, { code, type: 'document-rejected' });
 }
+/** The room drops a group of the note's pieces as late in its open tabs:
+ * they show the `unsynced` strip until its Retry joins again. Returns how
+ * many hold them. */
+export function holdMockNoteEdits(materialId: string) {
+  return [...materialProviders].filter((provider) =>
+    provider.holdEdits(materialId)
+  ).length;
+}
+/** The room refuses a note's group of pieces past its bound as the service
+ * does any update past a limit: the notice, then the writer's channel closed
+ * on the open socket (review of 43fae032a, finding 3). */
+export function refuseMockNoteGroup(materialId: string) {
+  for (const provider of [...materialProviders])
+    provider.refusedGroup(materialId);
+}
+/** How many times a note's channels joined its rooms. */
+export const mockNoteJoins = (materialId: string) =>
+  noteJoins.get(materialId) ?? 0;
+const noteJoins = new Map<string, number>();
 type NoteRefusal = 'document_size_exceeded' | 'unassigned';
 const refusedNoteUpdates = new Map<string, NoteRefusal>();
 /** The room refuses the next update a tab of the note sends, on entry, as
@@ -1750,6 +1996,34 @@ export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
 }
+/** The room drops a group of the file's pieces as late in its open tabs:
+ * they show the `unsynced` strip until its Retry joins again. */
+export function holdMockSourceEdits(fileId: string) {
+  return [...sourceProviders].filter((provider) => provider.holdEdits(fileId))
+    .length;
+}
+/** The room drops a group of an item's pieces as late in its open tabs (a
+ * quiz's two rooms, a flashcard set's, a canvas's board): they show the
+ * `unsynced` strip, their edits waiting for its Retry. Returns how many
+ * rooms hold them (none before the item's rooms joined). */
+export function holdMockItemEdits(materialId: string) {
+  return [...itemProviders, ...boardProviders].filter((provider) =>
+    provider.holdEdits(materialId)
+  ).length;
+}
+/** The next Retry of `id`'s held edits (a note's, an item's or a file's,
+ * held now) fails for good: the room refuses what waited (`refused`), or
+ * this person lost access to it (`access`), the rejoin refused. Returns how
+ * many holds it set. */
+export function refuseMockHeldRetry(id: string, how: HeldRefusal) {
+  let count = 0;
+  for (const held of holds)
+    if (held.id === id) {
+      held.refusal = how;
+      count++;
+    }
+  return count;
+}
 /** The maintenance window paused Office editing: open editors keep their
  * view read-only under the paused banner. */
 export function announceSourcePaused(fileId: string) {
@@ -1984,6 +2258,7 @@ function persistItem(room: Room) {
 class MockItemProvider implements ItemProvider {
   private leave: () => void = () => undefined;
   private readonly config: RoomProviderConfig;
+  private readonly heldEdits: MockHeld;
   private joined = false;
   /** The first connect took the open's own token, as the room provider's. */
   private connected = false;
@@ -1993,7 +2268,18 @@ class MockItemProvider implements ItemProvider {
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
+    this.heldEdits = new MockHeld(
+      this.materialId,
+      config.onHeld,
+      () => this.heldEdits.handOver((payload) => this.sendStateless(payload)),
+      (how) => this.refusedRetry(how),
+      (number) => config.onUnsyncedChanges?.({ number })
+    );
     this.join();
+  }
+
+  get materialId() {
+    return this.config.name.split(':')[1] ?? '';
   }
 
   /** Joins the in-page room, synced at once. */
@@ -2003,6 +2289,7 @@ class MockItemProvider implements ItemProvider {
     const room = itemRoom(config.name);
     this.leave = join(room, {
       document: config.document,
+      held: this.heldEdits,
       onPresence: config.onPresence,
       origin: this,
     });
@@ -2025,10 +2312,12 @@ class MockItemProvider implements ItemProvider {
     if (this.joined) this.config.onStateless?.({ payload });
   }
 
-  /** A checkpoint request: the in-page room holds every edit already. */
+  /** A checkpoint request: the in-page room holds every edit already, held
+   * ones aside. */
   sendStateless(payload: string) {
     const request = JSON.parse(payload) as { id?: string; type?: string };
     if (request.type !== 'checkpoint-request' || !request.id) return;
+    if (this.heldEdits.defers(payload)) return;
     const receipt = JSON.stringify({
       checkpointIds: [request.id],
       materialId: this.config.name.split(':')[1],
@@ -2095,6 +2384,27 @@ class MockItemProvider implements ItemProvider {
     this.config.onClose?.({ code: 4000, reason: 'collaboration room evicted' });
   }
 
+  /** The room dropped a group of this tab's pieces as late: whether it
+   * holds them. */
+  holdEdits(materialId: string) {
+    if (!(this.joined && this.materialId === materialId)) return false;
+    this.heldEdits.hold();
+    return true;
+  }
+
+  /** A held Retry refused for good (`refuseMockHeldRetry`): the room closes
+   * the channel for the edits it refused, which the item keeps to copy; or
+   * this person lost access, and the rejoin's token is refused. */
+  private refusedRetry(how: HeldRefusal) {
+    if (how === 'access') {
+      refusedReaders.add(this.materialId);
+      this.accessChanged();
+      return;
+    }
+    this.disconnect();
+    this.config.onClose?.({ code: 4400, reason: 'document rejected' });
+  }
+
   announceReadOnly() {
     this.config.onStateless?.({
       payload: JSON.stringify({
@@ -2105,6 +2415,7 @@ class MockItemProvider implements ItemProvider {
   }
 
   disconnect() {
+    this.heldEdits.release();
     if (!this.joined) return;
     this.joined = false;
     itemProviders.delete(this);
@@ -2380,18 +2691,34 @@ class MockBoardProvider implements ItemProvider {
   /** Receipts the room holds back while its stores fail
    * (`mockBoardStoreFails`). */
   private held: string[] | null = null;
+  private readonly heldEdits: MockHeld;
   /** The room holds an update of this tab's as soon as it took it: nothing
-   * stays unacknowledged, and the room is asked for its receipt. */
+   * stays unacknowledged, and the room is asked for its receipt. A held
+   * one waits unacknowledged. */
   private readonly sent = (_: Uint8Array, origin: unknown) => {
-    if (origin === this) return;
-    queueMicrotask(() => {
-      if (this.leave) this.config.onUnsyncedChanges?.({ number: 0 });
-    });
+    if (origin === this || this.heldEdits.held) return;
+    this.acknowledge();
   };
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
+    this.heldEdits = new MockHeld(
+      this.materialId,
+      config.onHeld,
+      () => {
+        this.heldEdits.handOver((payload) => this.sendStateless(payload));
+        this.acknowledge();
+      },
+      (how) => this.refusedRetry(how),
+      (number) => config.onUnsyncedChanges?.({ number })
+    );
     boardProviders.add(this);
+  }
+
+  private acknowledge() {
+    queueMicrotask(() => {
+      if (this.leave) this.config.onUnsyncedChanges?.({ number: 0 });
+    });
   }
 
   get materialId() {
@@ -2451,6 +2778,14 @@ class MockBoardProvider implements ItemProvider {
         this.config.onAuthenticationFailed?.(refused);
         return;
       }
+      // Access lost at a held Retry (`refuseMockHeldRetry`): the service
+      // refuses the JOIN for good.
+      if (refusedReaders.has(this.materialId)) {
+        this.config.onAuthenticationFailed?.({
+          reason: COLLABORATION_FORBIDDEN_REASON,
+        });
+        return;
+      }
       const room = boardRoom(this.config.name, firstState);
       const refusal = this.bind(room);
       if (refusal) {
@@ -2467,6 +2802,7 @@ class MockBoardProvider implements ItemProvider {
         access,
         awareness: (!viewer && this.config.awareness) || undefined,
         document: this.config.document,
+        held: this.heldEdits,
         ids: {
           owns: (client) => this.owns(client),
           wrote: (clients) => {
@@ -2574,6 +2910,26 @@ class MockBoardProvider implements ItemProvider {
     this.close(4000, 'collaboration room evicted');
   }
 
+  /** The room dropped a group of this tab's pieces as late: whether it
+   * holds them. */
+  holdEdits(materialId: string) {
+    if (!(this.leave && this.materialId === materialId)) return false;
+    this.heldEdits.hold();
+    return true;
+  }
+
+  /** A held Retry refused for good (`refuseMockHeldRetry`): the room closes
+   * the channel for the edits it refused, which the board keeps to copy; or
+   * this person lost access (4403), and the rejoin is refused (`join`). */
+  private refusedRetry(how: HeldRefusal) {
+    if (how === 'access') {
+      refusedReaders.add(this.materialId);
+      this.close(4403, 'collaboration access changed');
+      return;
+    }
+    this.close(4400, 'document rejected');
+  }
+
   /** The service closed this channel alone. */
   close(code: number, reason: string) {
     if (!this.leave) return;
@@ -2596,6 +2952,7 @@ class MockBoardProvider implements ItemProvider {
   sendStateless(payload: string) {
     const request = JSON.parse(payload) as { id?: string; type?: string };
     if (request.type !== 'checkpoint-request' || !request.id) return;
+    if (this.heldEdits.defers(payload)) return;
     if (this.held) {
       this.held.push(request.id);
       return;
@@ -2644,6 +3001,7 @@ class MockBoardProvider implements ItemProvider {
   wake() {}
 
   private drop() {
+    this.heldEdits.release();
     this.config.document.off('update', this.sent);
     this.leave?.();
     this.leave = null;

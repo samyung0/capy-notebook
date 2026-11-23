@@ -1,6 +1,7 @@
 //! capy-sync 1 (DESIGN.md 1.3): `varuint channel` `u8 type` `varuint length`
 //! `payload`, several messages per WebSocket frame. Payloads of SYNC and
-//! AWARENESS are y-sync v1 and y-protocols awareness messages unchanged.
+//! AWARENESS are y-sync v1 and y-protocols awareness messages unchanged, but
+//! for SYNC's pieces of a step 2 or update cut in pieces (`sync::PIECE`).
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -63,6 +64,20 @@ pub enum FrameError {
 
 /// The most messages one client frame may carry (clients send one each).
 pub const MAX_FRAME_MESSAGES: usize = 64;
+
+/// A client's heartbeat (protocol 41): a WebSocket text frame of exactly
+/// this, which its socket sends every [HEARTBEAT_MS] while open (`HEARTBEAT`
+/// and `HEARTBEAT_MS` in src/features/collaboration/protocol.ts, a test
+/// keeps them equal). It proves the tab's code runs, which the browser's
+/// automatic pongs do not: a long send to the client holds back the
+/// server's pings and the acknowledgement a group's rest waits for, so its
+/// heartbeats keep the socket heard (`socket.rs`) and renew a group waiting
+/// on its first piece's acknowledgement, up to the group's limit
+/// (`Room::drop_late_groups`). Any other text frame is ignored.
+pub const HEARTBEAT: &str = "heartbeat";
+/// How often a client sends its [HEARTBEAT]: the silent window and a
+/// group's slack hold at least two (`config.rs` refuses less).
+pub const HEARTBEAT_MS: u64 = 20_000;
 
 pub fn write_var(out: &mut impl BufMut, mut value: u64) {
     loop {
@@ -154,13 +169,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 40;
+pub const CLIENT_PROTOCOL: u32 = 41;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
-pub const MIN_MATERIAL: u32 = 38;
+pub const MIN_MATERIAL: u32 = 41;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 40;
+pub const MIN_SOURCE: u32 = 41;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -282,20 +297,50 @@ pub fn ack(count: u64) -> Vec<u8> {
     out
 }
 
-/// y-sync v1 message types inside SYNC.
+/// y-sync v1 message types inside SYNC, and capy's pieces.
 pub mod sync {
     use super::{FrameError, read_var, write_var};
 
     pub const STEP1: u64 = 0;
     pub const STEP2: u64 = 1;
     pub const UPDATE: u64 = 2;
+    /// One piece of a step 2 or update the browser cut in pieces
+    /// (`splitUpdate`): a room admits a group's pieces as one update after
+    /// its last, or none of them.
+    pub const PIECE: u64 = 3;
 
-    /// A SYNC payload: its y-sync type and its body (a state vector for step
-    /// 1, an update otherwise).
+    /// A [PIECE]'s body: the kind of what was cut (step 2 or update), the
+    /// piece's place in its group and the group's count, then the piece.
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct Piece<'a> {
+        pub kind: u64,
+        pub index: u64,
+        pub count: u64,
+        pub update: &'a [u8],
+    }
+
+    /// A [PIECE]'s body, or none when it names no step 2 or update, a group
+    /// of fewer than two pieces or a place outside it.
+    pub fn piece(body: &[u8]) -> Option<Piece<'_>> {
+        let mut at = 0;
+        let kind = read_var(body, &mut at).ok()?;
+        let index = read_var(body, &mut at).ok()?;
+        let count = read_var(body, &mut at).ok()?;
+        let fits = matches!(kind, STEP2 | UPDATE) && count >= 2 && index < count;
+        fits.then(|| Piece {
+            kind,
+            index,
+            count,
+            update: &body[at..],
+        })
+    }
+
+    /// A SYNC payload: its type and its body (a state vector for step 1, an
+    /// update for step 2 and update, a [Piece] for a piece).
     pub fn decode(payload: &[u8]) -> Result<(u64, &[u8]), FrameError> {
         let mut at = 0;
         let kind = read_var(payload, &mut at)?;
-        if kind > UPDATE {
+        if kind > PIECE {
             return Err(FrameError::Payload);
         }
         let len = usize::try_from(read_var(payload, &mut at)?).map_err(|_| FrameError::Payload)?;
@@ -395,6 +440,43 @@ mod tests {
         assert_eq!(
             decode_text(&messages[2].payload).unwrap(),
             "{\"type\":\"x\"}"
+        );
+    }
+
+    #[test]
+    fn a_piece_names_its_kind_place_and_group() {
+        let mut body = Vec::new();
+        for value in [sync::STEP2, 1, 3] {
+            write_var(&mut body, value);
+        }
+        body.extend_from_slice(b"update");
+        let payload = sync::encode(sync::PIECE, &body);
+        let (kind, decoded) = sync::decode(&payload).unwrap();
+        assert_eq!(kind, sync::PIECE);
+        assert_eq!(
+            sync::piece(decoded),
+            Some(sync::Piece {
+                kind: sync::STEP2,
+                index: 1,
+                count: 3,
+                update: b"update",
+            })
+        );
+        // A step 1, a group of one or a place past the group is no piece.
+        for (kind, index, count) in [
+            (sync::STEP1, 0, 2),
+            (sync::UPDATE, 0, 1),
+            (sync::UPDATE, 2, 2),
+        ] {
+            let mut body = Vec::new();
+            for value in [kind, index, count] {
+                write_var(&mut body, value);
+            }
+            assert_eq!(sync::piece(&body), None, "{kind} {index} {count}");
+        }
+        assert_eq!(
+            sync::decode(&sync::encode(sync::PIECE + 1, b"")),
+            Err(FrameError::Payload)
         );
     }
 
@@ -500,16 +582,18 @@ mod tests {
     /// whole-figure write deletes what it did not read. Since 38 the board
     /// catalog changed and every viewer reads a canvas by the board rules,
     /// drawing what breaks them as a placeholder a tab from before (37) draws
-    /// otherwise. Material rooms refuse both as outdated and they reload;
-    /// source rooms follow the BetterOffice pin, raised to 40 by the DOCX
-    /// Find pin.
+    /// otherwise. Material rooms refuse both as outdated and they reload.
+    /// Since 41 a long action goes as one group of pieces (SYNC type 3), which
+    /// a tab from before (40) sends one by one and a room would admit apart, so
+    /// both families refuse it.
     #[test]
     fn a_material_tab_from_before_the_board_rules_is_outdated() {
         assert!(outdated(MIN_MATERIAL, Some(36)));
         assert!(outdated(MIN_MATERIAL, Some(37)));
-        assert!(!outdated(MIN_MATERIAL, Some(38)));
-        assert!(outdated(MIN_SOURCE, Some(39)));
-        assert!(!outdated(MIN_SOURCE, Some(40)));
+        assert!(outdated(MIN_MATERIAL, Some(40)));
+        assert!(!outdated(MIN_MATERIAL, Some(41)));
+        assert!(outdated(MIN_SOURCE, Some(40)));
+        assert!(!outdated(MIN_SOURCE, Some(41)));
     }
 
     #[test]

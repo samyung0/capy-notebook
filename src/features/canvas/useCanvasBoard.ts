@@ -33,6 +33,7 @@ import {
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
 import { deletedTarget } from '@/features/collaboration/lostEdits';
+import { downloadRecovery } from '@/features/collaboration/recoveryDownload';
 import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { m } from '@/i18n';
@@ -67,14 +68,17 @@ async function boardFirstState() {
 export type CanvasStrip =
   | {
       kind: 'save';
-      /** A deleted canvas's Download of the edits it shows, as an image
-       * (Epo 2026-11-20). */
+      /** Recovery's Discard (after asking), which leaves the copy-only
+       * edits for a fresh room, and `unsynced`'s, which drops the held ones
+       * (Epo 2026-11-23). */
+      onDiscard?: () => void;
+      /** Recovery's Download of the edits it shows, as an image (Epo
+       * 2026-11-20 and 2026-11-23). */
       onDownload?: () => void;
-      /** Recovery's Reload (after asking), which leaves the copy-only edits
-       * for a fresh room; a deleted canvas's Discard. */
-      onReload?: () => void;
-      /** `unreachable`'s and `late-unloaded`'s Retry. */
+      /** `unreachable`'s, `late-unloaded`'s and `unsynced`'s Retry. */
       onRetry?: () => void;
+      /** `unsynced`: its Retry's join is pending. */
+      retrying?: boolean;
       state: SaveBannerState;
     }
   /** The account is frozen, or this person was narrowed while it was open
@@ -566,18 +570,24 @@ export function useCanvasBoard(
       link.gone();
   }, [mounted, opened]);
 
-  // A deleted canvas's edits shown to copy: its strip's Download draws them as
-  // Download as image does (Epo 2026-11-20).
+  // Edits shown to copy: the strip's Download draws them as Download as image
+  // does (Epo 2026-11-20), a deleted canvas's from the rows it shows, any
+  // other's from the document the board paints (2026-11-23; a trashed
+  // canvas's stored board would come first, but its room, and so recovery,
+  // is off while it is in the Trash).
   const deletedDocs = recovery?.deleted
     ? deletedTarget(actorId ?? undefined, false, id)
     : null;
-  const deletedDownload = deletedDocs
+  const recoveryDownload = deletedDocs
     ? () =>
         void downloadShownEdits(deletedDocs, {
           kind: 'canvas',
           name: title.current,
         })
-    : undefined;
+    : recovery
+      ? () =>
+          void downloadRecovery({ kind: 'canvas', name: title.current }, doc)
+      : undefined;
 
   // Read-only for its account or its payer, said the way a note says it: a
   // full storage names whose, else the read-only strip (no cue for a viewer).
@@ -598,8 +608,8 @@ export function useCanvasBoard(
     : recovery
       ? {
           kind: 'save',
-          onDownload: deletedDownload,
-          onReload: () => void room?.reload(),
+          onDiscard: () => void room?.reload(),
+          onDownload: recoveryDownload,
           state: recoveryBanner(recovery),
         }
       : lost && !kicked && (snapshot.synced || !!mounted)
@@ -626,13 +636,23 @@ export function useCanvasBoard(
                     onRetry: () => room?.retry(),
                     state: 'late-unloaded',
                   }
-                : storageFull
-                  ? { by: storageFull, kind: 'storage' }
-                  : readOnlyStrip
-                    ? { kind: 'read-only' }
-                    : snapshot.delayed
-                      ? { kind: 'save', state: 'delayed' }
-                      : null;
+                : // A group of pieces dropped as late: Retry joins again,
+                  // Discard drops it (Epo 2026-11-23).
+                  snapshot.held
+                  ? {
+                      kind: 'save',
+                      onDiscard: snapshot.held.discard,
+                      onRetry: snapshot.held.retry,
+                      retrying: snapshot.held.retrying,
+                      state: 'unsynced',
+                    }
+                  : storageFull
+                    ? { by: storageFull, kind: 'storage' }
+                    : readOnlyStrip
+                      ? { kind: 'read-only' }
+                      : snapshot.delayed
+                        ? { kind: 'save', state: 'delayed' }
+                        : null;
   const unavailable =
     (refusedFirst || kicked) &&
     !trash &&
