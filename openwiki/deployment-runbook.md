@@ -4758,6 +4758,20 @@ value fails it too, with "a board's stored indexes cannot be read": sets whose
 runs or clients are out of order, overlap or are empty, heads or firsts out of
 order, or a sequence's first that is not one of its heads. Flipped bytes inside
 a value that keep its order (a place hash, a depth) still read; there is no
-checksum. Before that server reaches UAT, delete the UAT canvases by hand as
-0181 to 0183's section above does; until then the live-document room still
-opens them.
+checksum. Before that server reaches UAT, the UAT canvases stored before it
+(each with a `material_yjs_documents` row and no `base_indexes`; one never
+opened has no row and seeds afresh) are deleted by hand, and only once Epo
+has said yes to it (the bytes-room plan's follow-ups). As for 0181, count
+them and tell whoever drew them, then delete them just before the deploy; the
+cascade releases each charge and queues each blob:
+
+```sql
+SELECT m.owner_user_id, count(*) FROM materials m
+JOIN material_yjs_documents d ON d.material_id = m.id
+WHERE m.kind = 'canvas' AND d.base_indexes IS NULL GROUP BY m.owner_user_id;
+
+DELETE FROM materials m USING material_yjs_documents d
+WHERE d.material_id = m.id AND m.kind = 'canvas' AND d.base_indexes IS NULL;
+```
+
+Until then the live-document room still opens them.

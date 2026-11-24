@@ -37,7 +37,8 @@ const SLOW_WAIT: Duration = Duration::from_secs(5);
 /// The work a permit is for, in logs.
 #[derive(Clone, Copy, Debug)]
 pub enum WorkKind {
-    /// A board room's load: its stored base and rows replayed and measured.
+    /// A board room's load: its rows merged beside its base, which it never
+    /// decodes (`board::Board::load`).
     Load,
     /// A loaded board's fold of its log.
     Fold,

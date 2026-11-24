@@ -414,7 +414,18 @@ workspace or not (who holds it:
   2 MiB while it was provisional). It bounds the Yjs state, history included,
   not a saved copy, and the collaboration server enforces it at admission
   ([plate-editor](frontend/plate-editor.md#the-boards-tools), The canvas's
-  room). It equals the largest sync message the collaboration server takes
+  room). The room never encodes a board whole between folds: it holds a bound
+  of the state's bytes (at the load the base's length plus the most each row
+  can add, `board_growth`; exact after a fold or a trial; plus the most each
+  update since can add), which its receipts carry (`metrics.contentBytes`). An
+  update enters on the bound while the bound and the update's growth fit the
+  cap; past that, or flagged by the board's read, it is tried on a replica of
+  the board under the board work permit, and the state's exact size with it
+  decides: the cap is never passed, and an update that does not grow the
+  state (a deletion) always enters. Deletions leave the bound high until the
+  next trial or fold, so the browser keeps a size of its own (the writing
+  tab's encode or device copy plus every update since), which its menu shows
+  and its removals-only gate and offline stop read. It equals the largest sync message the collaboration server takes
   (`NOTE_MAX_SYNC_BYTES`, 4 MiB; a compile-time assert keeps the cap from
   passing it). The embed catalog carries the number to the Rust catalog and
   the board catalog to the browser. A store never refuses a board for size.
