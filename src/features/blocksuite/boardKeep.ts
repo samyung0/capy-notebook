@@ -3,6 +3,7 @@ import type { Store } from '@blocksuite/affine/store';
 import * as Y from 'yjs';
 import { storedElementFits } from './boardLoad';
 import { type BoardKind, holds, isPlace } from './boardRules';
+import { isStrokePoints, strokeView } from './strokePoints';
 
 /** Whether a change is this tab's own person's doing: made here, and not by an undo
  * or redo, which brings back what was there. An update applied from elsewhere (the
@@ -71,9 +72,11 @@ const roundPlace = (xywh: string) =>
     (JSON.parse(xywh) as number[]).map((value) => Math.round(value * 10) / 10)
   );
 
-/** The saved copy keeps strokes to whole pixels and places to a tenth: 60% of the
- * size with no change to see (drawing answers' measure, 2026-11-06, for Epo's "every
- * stored byte cut"). Pressure stays, as perfect-freehand draws the line from it.
+/** The saved copy keeps strokes to whole pixels and places to a tenth, with no change
+ * to see (drawing answers' measure, 2026-11-06, for Epo's "every stored byte cut"):
+ * a place's text gets shorter, and a stroke's Float32s, the same size either way,
+ * gzip to 40% as the bucket keeps them (2026-11-24). Pressure stays, as
+ * perfect-freehand draws the line from it.
  * Only what the board holds is rounded: a block or element it doesn't know is copied
  * as it is. */
 function roundPlaces(doc: Y.Doc, board: BoardKind) {
@@ -98,17 +101,17 @@ function roundPlaces(doc: Y.Doc, board: BoardKind) {
         if (!kinds.has(type)) continue;
         place(element, 'xywh');
         if (type !== 'brush' && type !== 'highlighter') continue;
-        const points = element.get('points') as number[][];
+        const points = element.get('points');
         // A stroke a peer wrote another way is copied as it is.
-        if (!(Array.isArray(points) && points.every(Array.isArray))) continue;
-        element.set(
-          'points',
-          points.map(([x, y, ...pressure]) => [
-            Math.round(x),
-            Math.round(y),
-            ...pressure,
-          ])
-        );
+        if (!isStrokePoints(points)) continue;
+        // A copy starts on its own buffer, so its view writes in place.
+        const rounded = points.slice();
+        const { stride, values } = strokeView(rounded);
+        for (let i = 0; i < values.length; i += stride) {
+          values[i] = Math.round(values[i]);
+          values[i + 1] = Math.round(values[i + 1]);
+        }
+        element.set('points', rounded);
       }
     }
   });

@@ -18793,10 +18793,15 @@ async fn a_pptx_undo_gets_the_peers_edits_back_through_the_relay() {
 const BOARD_FIRST_STATE: &[u8] = include_bytes!("../fixtures/board-first-state.bin");
 
 /// A canvas as Go's `CreateCanvas` makes one, with no Yjs row: `user`'s,
-/// drawn in `workspace` (none: on the account's Canvas page). Returns its
-/// material and room.
-async fn canvas_of(env: &Env, user: &str, workspace: Option<&str>) -> (String, String) {
-    let material = format!("m_it_{}", uuid_like());
+/// drawn in `workspace` (none: on the account's Canvas page), its material
+/// id starting with `prefix`. Returns its material and room.
+async fn canvas_of(
+    env: &Env,
+    user: &str,
+    workspace: Option<&str>,
+    prefix: &str,
+) -> (String, String) {
+    let material = format!("{prefix}_{}", uuid_like());
     let content = serde_json::json!({
         "schemaVersion": 1,
         "value": [{
@@ -18819,8 +18824,13 @@ async fn canvas_of(env: &Env, user: &str, workspace: Option<&str>) -> (String, S
 
 /// A fresh user's own canvas; returns (user, material, room).
 async fn canvas(env: &Env) -> (String, String, String) {
+    canvas_named(env, "m_it").await
+}
+
+/// A fresh user's own canvas whose material id starts with `prefix`.
+async fn canvas_named(env: &Env, prefix: &str) -> (String, String, String) {
     let user = user(env).await;
-    let (material, room) = canvas_of(env, &user, None).await;
+    let (material, room) = canvas_of(env, &user, None, prefix).await;
     (user, material, room)
 }
 
@@ -18858,7 +18868,7 @@ async fn workspace_canvas(env: &Env) -> WorkspaceCanvas {
         )
         .await
         .expect("members");
-    let (material, room) = canvas_of(env, &creator, Some(&workspace)).await;
+    let (material, room) = canvas_of(env, &creator, Some(&workspace), "m_it").await;
     WorkspaceCanvas {
         owner,
         creator,
@@ -18993,6 +19003,295 @@ async fn a_fresh_canvas_loads_to_the_first_state() {
         .expect("the board's row");
     assert_eq!(row.get::<_, Vec<u8>>(0), BOARD_FIRST_STATE);
     assert_eq!((row.get::<_, i64>(1), row.get::<_, i64>(2)), (1, 1));
+}
+
+/// The board work limit's gauges on `/metrics`, (held, queue), once
+/// `check` holds for them or 2 s passed.
+async fn board_work(port: u16, check: impl Fn((u64, u64)) -> bool) -> (u64, u64) {
+    let mut gauges = (u64::MAX, u64::MAX);
+    for _ in 0..40 {
+        let metrics = metrics_text(port).await;
+        let gauge = |name: &str| {
+            metrics
+                .lines()
+                .find_map(|line| line.strip_prefix(name)?.strip_prefix(' ')?.parse().ok())
+                .expect("board work gauge")
+        };
+        gauges = (
+            gauge("capy_collaboration_board_work_held"),
+            gauge("capy_collaboration_board_work_queue"),
+        );
+        if check(gauges) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    gauges
+}
+
+/// A board joined whose load keeps the board work permit 3 s (the debug
+/// hook `capy-it-hold-work`), once the server logged its `count`-th hold.
+async fn hold_board_work(env: &Env, port: u16, logs: &Logs, count: usize) -> Client {
+    let (holder, _, room) = canvas_named(env, "capy-it-hold-work").await;
+    let mut held = Client::open(port).await;
+    held.join(&room, &token(&room, &holder, "write")).await;
+    for _ in 0..100 {
+        if logs.count(&["it holds board work"]) >= count {
+            return held;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("no board held the work permit");
+}
+
+/// A board a join sent with [Client::join] went to, synced.
+async fn board_synced(board: &mut Client) {
+    assert_eq!(board.until(1).await.expect("joined")[0], 1);
+    let sv = board.doc.transact().state_vector().encode_v1();
+    board.send(5, &sync(0, &sv)).await;
+    assert!(board.settle(|c| c.board_blocks().len() >= 2).await);
+}
+
+/// A block text that makes its update heavy (past `ydoc::INLINE_BYTES`): its
+/// admission takes the board work permit and runs off the async workers.
+fn heavy_text() -> String {
+    "x".repeat(2 * ydoc::INLINE_BYTES)
+}
+
+/// Bytes-room step 1 (Epo 2026-11-24): one whole-board operation at a time
+/// in the process. While a board's load holds the board work permit (a debug
+/// hook keeps it 3 s), a second board's load waits for it, and a note still
+/// loads and acknowledges an edit meanwhile; the second board loads once the
+/// permit is back. The pending projection scan may take the permit a moment
+/// too (boards other tests left unprojected), so a waiter more is allowed.
+/// Fails if two boards load side by side, or a note waits behind a board.
+#[tokio::test]
+async fn a_boards_load_waits_for_another_boards_while_a_note_answers() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (waiter, _, waiting_room) = canvas(&env).await;
+    let (writer, note) = note(&env, "still answered").await;
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    let mut waiting = Client::open(server.port).await;
+    let asked = std::time::Instant::now();
+    waiting
+        .join(&waiting_room, &token(&waiting_room, &waiter, "write"))
+        .await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the second board waits: {gauges:?}");
+
+    let note_room = format!("material:{note}:schema:1");
+    let mut tab = Client::open(server.port).await;
+    assert_eq!(
+        tab.joined(&note_room, &token(&note_room, &writer, "write"))
+            .await,
+        1
+    );
+    assert!(tab.settle(|c| c.block_text() == "still answered").await);
+    tab.type_text("!").await;
+    assert!(
+        tab.until(6).await.is_some(),
+        "the note's edit is acknowledged"
+    );
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the second board still waits: {gauges:?}");
+
+    // The second board's state comes once the 3 s hold is over, well past
+    // a load of its own.
+    board_synced(&mut waiting).await;
+    assert!(
+        asked.elapsed() >= Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
+}
+
+/// Bytes-room step 1, the trial: a board's heavy update (over 64 KiB) waits
+/// for the board work permit while another board's load
+/// holds it, and a note still loads and acknowledges an edit meanwhile; the
+/// heavy update is acknowledged once the permit is back. Fails if a board's
+/// trial runs beside other whole-board work, or a note waits behind it.
+#[tokio::test]
+async fn a_heavy_board_update_waits_for_the_board_work_while_a_note_answers() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut board = Client::at_board(server.port, &room, &user).await;
+    board.until(6).await.expect("its step 2's ack");
+    let (writer, note) = note(&env, "still answered").await;
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    let sent = std::time::Instant::now();
+    board
+        .draw("big", "affine:note", &[("prop:text", &heavy_text())])
+        .await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the heavy update waits: {gauges:?}");
+
+    let note_room = format!("material:{note}:schema:1");
+    let mut tab = Client::open(server.port).await;
+    assert_eq!(
+        tab.joined(&note_room, &token(&note_room, &writer, "write"))
+            .await,
+        1
+    );
+    assert!(tab.settle(|c| c.block_text() == "still answered").await);
+    tab.type_text("!").await;
+    assert!(
+        tab.until(6).await.is_some(),
+        "the note's edit is acknowledged"
+    );
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the heavy update still waits: {gauges:?}");
+
+    assert_eq!(board.acked_count().await, 1);
+    assert!(
+        sent.elapsed() >= Duration::from_secs(2),
+        "{:?}",
+        sent.elapsed()
+    );
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
+}
+
+impl Client {
+    /// For each of the board blocks `ids`, the message (counted from here,
+    /// each applied as it comes) that first holds it; 5 s at most.
+    async fn first_seen(&mut self, ids: &[&str]) -> Vec<usize> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut seen: Vec<Option<usize>> = vec![None; ids.len()];
+        let mut index = 0;
+        while seen.iter().any(Option::is_none) {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                panic!("{ids:?} not all seen: {seen:?}");
+            };
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                index += 1;
+                if kind == 5 {
+                    self.on_sync(&payload).await;
+                } else {
+                    self.inbox.push(Msg { kind, payload });
+                }
+                let blocks = self.board_blocks();
+                for (id, seen) in ids.iter().zip(&mut seen) {
+                    if seen.is_none() && blocks.iter().any(|block| block == id) {
+                        *seen = Some(index);
+                    }
+                }
+            }
+        }
+        seen.into_iter().flatten().collect()
+    }
+}
+
+/// Bytes-room step 1, the trial: a board's heavy update waiting for the board
+/// work permit holds back what its channel sends after it. A heavy update and
+/// then a small one on the same channel, each sent while another board's load
+/// holds the permit, are acknowledged only once the heavy one is admitted,
+/// and a peer hears the heavy one no later than the small one; the same for a
+/// heavy group of pieces (its first piece is acknowledged once held, as for
+/// any group) and a small update after it. Fails if a small update overtakes
+/// the heavy one before it on its channel.
+#[tokio::test]
+async fn a_heavy_board_update_and_a_later_small_one_are_answered_in_order() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut peer = Client::at_board(server.port, &room, &user).await;
+
+    let _held = hold_board_work(&env, server.port, &logs, 1).await;
+    let sent = std::time::Instant::now();
+    writer
+        .draw("big", "affine:note", &[("prop:text", &heavy_text())])
+        .await;
+    writer.draw("small", "affine:note", &[]).await;
+    let first = writer.acked_count().await;
+    assert!(
+        sent.elapsed() >= Duration::from_secs(2),
+        "the small update was acknowledged first: {:?}",
+        sent.elapsed()
+    );
+    assert_eq!(first + writer.acked_total(2 - first).await, 2);
+    let [big, small] = peer.first_seen(&["big", "small"]).await[..] else {
+        unreachable!()
+    };
+    assert!(big <= small, "the peer heard the small update first");
+
+    // Half the heavy text in each piece: the group's whole is heavy.
+    let text = "x".repeat(ydoc::INLINE_BYTES);
+    let half = [("prop:text", text.as_str())];
+    let one = writer.edited(|doc| draw_block(doc, "big1", "affine:note", &half));
+    let two = writer.edited(|doc| draw_block(doc, "big2", "affine:note", &half));
+    let _held = hold_board_work(&env, server.port, &logs, 2).await;
+    let sent = std::time::Instant::now();
+    writer.send_pieces(2, &[&one, &two]).await;
+    writer.draw("small2", "affine:note", &[]).await;
+    // The group's first piece is acknowledged once held, on its own, or with
+    // the rest when the room took the second piece first.
+    let mut acked = writer.acked_count().await;
+    if acked == 1 {
+        acked += writer.acked_count().await;
+    }
+    assert!(
+        sent.elapsed() >= Duration::from_secs(2),
+        "the small update was acknowledged first: {:?}",
+        sent.elapsed()
+    );
+    assert_eq!(acked + writer.acked_total(3 - acked).await, 3);
+    let [group, small] = peer.first_seen(&["big2", "small2"]).await[..] else {
+        unreachable!()
+    };
+    assert!(group <= small, "the peer heard the small update first");
+}
+
+/// Bytes-room step 1, the trial's recheck: a heavy board update whose token
+/// expires while it waits for the board work permit (another board's load
+/// holds it 3 s; the token is issued for 3, which in whole seconds lasts 2 to
+/// 3 and so ends inside the hold) is refused once the permit is free, and the
+/// board never holds it. Fails if the admission after the wait trusts the
+/// checks made before it.
+#[tokio::test]
+async fn a_heavy_board_update_whose_token_expires_while_it_waits_is_refused() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut board = Client::open(server.port).await;
+    board
+        .joined(&room, &token_for(&room, &user, "write", 3))
+        .await;
+    assert!(board.settle(|c| c.board_blocks().len() >= 2).await);
+    board.until(6).await.expect("its step 2's ack");
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    board
+        .draw("big", "affine:note", &[("prop:text", &heavy_text())])
+        .await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the heavy update waits: {gauges:?}");
+    let closed = board.until(4).await.expect("closed at expiry");
+    assert!(String::from_utf8_lossy(&closed).contains("token expired"));
+
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
+    let fresh = Client::at_board(server.port, &room, &user).await;
+    assert_eq!(fresh.board_blocks(), ["page", "surface"]);
 }
 
 /// Two people draw on one shared canvas: each hears the other's block and

@@ -219,6 +219,12 @@ stays after a room unloads (pooled Postgres connections' buffers) and what
 `malloc_trim` gives back, behind the trim after each unload and the closing of
 large-message connections. Their scripts and raw records stay in the
 side-session notes.
+The [2026-11-24 binary pen points run](collaboration/reports/2026-11-24-binary-pen-points.md)
+compares a 6,000-stroke pen board with its points as number arrays and as one
+binary value: `collaboration/scripts/pen-points-heap.ts`
+(`pnpm exec tsx bench/collaboration/scripts/pen-points-heap.ts [zoom]`) builds
+the board both ways in yjs and prints the updates' and state's bytes and a
+fresh Y.Doc's heap; the yrs heap figures came from the side bench.
 
 `bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
 `playwright.rates.config.ts`) measures what one user's editing sends: the

@@ -129,11 +129,9 @@ export class BrushTool extends BaseTool {
       points: this._tryGetPressurePoints(e),
     });
 
-    if (
-      this._lastPopLength + BrushTool.BRUSH_POP_GAP <
-      this._draggingElement!.points.length
-    ) {
-      this._lastPopLength = this._draggingElement!.points.length;
+    // Capy (local change 79): the stored points are bytes; count the drawn ones.
+    if (this._lastPopLength + BrushTool.BRUSH_POP_GAP < points.length) {
+      this._lastPopLength = points.length;
       this.doc.withoutTransact(() => {
         this._draggingElement!.pop('points');
         this._draggingElement!.pop('xywh');

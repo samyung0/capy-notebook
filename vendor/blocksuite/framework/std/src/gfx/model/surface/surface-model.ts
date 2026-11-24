@@ -330,10 +330,56 @@ export class SurfaceBlockModel extends BlockModel<SurfaceBlockProps> {
     return hasPlace(element) ? UnknownElementModel : null;
   }
 
+  /* Capy (local change 79): a peer's write to an element's keys is read again, as
+   * `_storedCtor` reads the element on load: one the editor can no longer read (a
+   * stroke's points overwritten with a number array) would throw in its model on
+   * every frame and stop the canvas, so it becomes a placeholder, its data as it
+   * is. Only a key's write is read (a text's own edits carry no old values), and
+   * only by an editor that registered its say. Answers whether it was swapped. */
+  private _readAgain(model: GfxPrimitiveElementModel, payload: ElementUpdatedData) {
+    if (payload.local || model instanceof UnknownElementModel) return false;
+    if (!Object.keys(payload.oldValues).length) return false;
+    const readable = this.store.provider.getOptional(ElementReadableIdentifier);
+    const { id, type, yMap } = model;
+    const held = this._elementModels.get(id);
+    if (!readable || !held || readable(id, yMap)) return false;
+
+    // Out as a delete takes it out, its group's hold on it kept, as on load.
+    const same = this._elementTypeMap.get(type) ?? [];
+    if (same.includes(model)) same.splice(same.indexOf(model), 1);
+    if (isGfxGroupCompatibleModel(model)) {
+      this._removeGroupFromChildrenIndex(id);
+      this._groupLikeModels.delete(id);
+    }
+    this._elementModels.delete(id);
+    held.unmount();
+    this.elementRemoved.next({ id, type, model, local: false });
+    if (!hasPlace(yMap)) return true;
+
+    const placeholder = this._createElementFromYMap(
+      UnknownElementModel,
+      id,
+      yMap,
+      {
+        onChange: change =>
+          this._emitElementUpdated(placeholder.model, { ...change, id }),
+        skipFieldInit: true,
+      }
+    );
+    this._elementModels.set(id, placeholder);
+    const unknown = this._elementTypeMap.get(UNKNOWN_ELEMENT_TYPE) ?? [];
+    unknown.push(placeholder.model);
+    this._elementTypeMap.set(UNKNOWN_ELEMENT_TYPE, unknown);
+    placeholder.mount();
+    this.elementAdded.next({ id, local: false });
+    return true;
+  }
+
   private _emitElementUpdated(
     model: GfxPrimitiveElementModel,
     payload: ElementUpdatedData
   ) {
+    if (this._readAgain(model, payload)) return;
     if (
       isGfxGroupCompatibleModel(model) &&
       ('childIds' in payload.props || 'childIds' in payload.oldValues)

@@ -577,21 +577,23 @@ mod tests {
         *bound
     }
 
-    /// A stroke as the editor draws one: a block map holding its points.
+    /// A pen stroke's keys as the editor writes them, its 400 points one
+    /// binary value (`strokePoints.ts`: the header `[2, 0, 0, 0]`, then x and
+    /// y as little-endian f32s). The editor keeps strokes among the surface's
+    /// elements; the size checks read every map alike, so this one sits in
+    /// the blocks root, where the tests erase it.
     fn stroke(doc: &yrs::Doc, id: &str) {
-        let points: Vec<yrs::Any> = (0..400)
-            .map(|n| {
-                yrs::Any::Array(
-                    vec![(f64::from(n) * 1.37).into(), (f64::from(n) * 2.11).into()].into(),
-                )
-            })
-            .collect();
+        let mut points = vec![2u8, 0, 0, 0];
+        for n in (0..400u16).map(f32::from) {
+            points.extend_from_slice(&(n * 1.37).to_le_bytes());
+            points.extend_from_slice(&(n * 2.11).to_le_bytes());
+        }
         let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
         let mut txn = doc.transact_mut();
-        let block = blocks.insert(&mut txn, id, MapPrelim::default());
-        block.insert(&mut txn, "sys:flavour", "affine:brush");
-        block.insert(&mut txn, "prop:lineWidth", 4.0);
-        block.insert(&mut txn, "prop:points", yrs::Any::Array(points.into()));
+        let element = blocks.insert(&mut txn, id, MapPrelim::default());
+        element.insert(&mut txn, "type", "brush");
+        element.insert(&mut txn, "lineWidth", 4.0);
+        element.insert(&mut txn, "points", yrs::Any::Buffer(points.into()));
     }
 
     /// An update of deletions alone: `ranges` (clock, length) of `client`.
@@ -730,8 +732,8 @@ mod tests {
         ));
     }
 
-    /// Board review 3.2: a board of strokes (block maps holding point
-    /// arrays) drawn to its cap, then half of them erased, takes the next
+    /// Board review 3.2: a board of strokes (maps holding their points as
+    /// bytes) drawn to its cap, then half of them erased, takes the next
     /// stroke at once. The size estimate that came before counted an erased
     /// stroke as freeing nothing and refused that stroke 999 times. Fails if
     /// it is refused once.

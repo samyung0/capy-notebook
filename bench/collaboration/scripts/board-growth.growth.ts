@@ -86,7 +86,8 @@ type Root = HTMLElement & {
     getElementById(id: string): Item | null;
     layer: {
       blocks: Item[];
-      canvasElements: (Item & { points?: unknown[] })[];
+      // A stroke's points are bytes; `serialize` gives them as drawn.
+      canvasElements: (Item & { serialize(): { points?: unknown[] } })[];
     };
     tool: { currentToolName$: { value: string } };
     viewport: {
@@ -527,7 +528,9 @@ test('pen strokes', async ({ page }) => {
     stroke(page, at(520, 80 + i * 27), LONG_STROKE_MOVES)
   );
   const points = await rootOf(page).evaluate((root: Root) =>
-    root.gfx.layer.canvasElements.map((stroke) => stroke.points?.length)
+    root.gfx.layer.canvasElements.map(
+      (stroke) => stroke.serialize().points?.length
+    )
   );
   expect(points).toHaveLength(120);
   await record({
@@ -759,7 +762,7 @@ test('a mixed hour', async ({ page }) => {
         }
         // 41 a stroke, unless a busy machine merged pointer moves.
         const strokePoints = gfx.layer.canvasElements.reduce(
-          (sum, item) => sum + (item.points?.length ?? 0),
+          (sum, item) => sum + (item.serialize().points?.length ?? 0),
           0
         );
         return { on, strokePoints };
