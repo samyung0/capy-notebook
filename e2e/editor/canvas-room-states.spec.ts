@@ -775,9 +775,9 @@ test('a canvas another person filled to its cap goes removals-only from its size
   await room(page, 'mockFillBoard', CANVAS);
   await expect.poll(() => drawn(page)).toHaveLength(2);
   const board = page.locator('.capy-board');
-  // The room's size (its receipts, and what it heard since) reaches the cap's
-  // margin: the board takes only removals (client-limits A), and the pen goes
-  // back to select. A room's own refusal is the scenario canvas's test below.
+  // The room's size (the tab's own measure, and every update it applied
+  // since) reaches the cap's margin: the board takes only removals
+  // (client-limits A), and the pen goes back to select. A room's own refusal is the scenario canvas's test below.
   await expect(board).toHaveAttribute('data-full', '');
   await keep(page);
   await page.locator('edgeless-pen-tool-button').first().click();

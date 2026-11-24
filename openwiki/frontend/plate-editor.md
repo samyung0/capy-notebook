@@ -6871,17 +6871,30 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       drag overwrites a key), the size is encoded again once the tab is idle at the
       next store's receipt while it is at or past the lower of the menu's 75% line
       (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB margin, so a drag costs one
-      encode per store, not one per move; and at once when an update would take it
-      across either line, so neither the menu, the removals-only gate nor the
-      offline gate acts on a crossing deletions may have made false (offline, where
-      no receipt comes, too). A tab that may not write measures nothing. The page
-      hands the size to the board (`setRoomSize`), whose menu ends with it from 75%
-      and, at the cap, "Only edits that remove content will be saved." The server is
+      encode per store, not one per move, and never one per move however near a
+      line. Nothing acts on a size deletions may have left high: the page hands
+      the board its size with its check (`setRoomSize(size, checkSize)`, kept per
+      store in `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
+      picked, a paste, a drop, ⌘D, a formula, a piece), the tool switch after a
+      stroke at the cap and the menu as it opens call the check first. With
+      deletions since the last measure it encodes once and the exact size reaches
+      the board before it returns (`subscribeSize` is synchronous), so a board
+      that peers cleared takes an add with no receipt. A tab that may not write
+      measures nothing. The board's menu ends with the size from 75% and, at the
+      cap, "Only edits that remove content will be saved." The server is
       the judge of what removes content: an update whose state with it is no larger than without it (a
       deletion) is always admitted, and a growing one at the cap is refused and kept
       for copying as above. Offline, a board's work stops under the offline-limit
-      strip once its size is within 64 KiB of the cap (the space left), or at 4 MiB
-      of unsent updates (its cap, not the note's 2 MiB), whichever comes first.
+      strip when an update takes its size across the space its cap leaves (within
+      64 KiB of the cap; Epo 2026-11-18, client-limits A), or at 4 MiB of unsent
+      updates (its cap, not the note's 2 MiB), whichever comes first. Only an
+      upward crossing stops it: a board already past the line (as it goes offline,
+      or after a measure) stays under the removals-only gate, and removals and
+      moves on it never stop its work, since a removals-only backlog always fits;
+      an add that takes a freed board back across stops it. With deletions since
+      the last measure the crossing is encoded first, at once (once per crossing,
+      offline, with deletions waiting: an accepted, rare cost), and stops the work
+      only when the exact size is past the line.
     - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
       link on its own canvas page (the account's, or its workspace's with
       `view=canvas`): `useCanvasPicker` asks `GET /api/canvases/{id}` for a `c` the

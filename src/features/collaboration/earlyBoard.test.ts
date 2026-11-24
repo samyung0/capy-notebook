@@ -446,6 +446,28 @@ it('sizes an early board from its copy at once, and each early edit adds to it',
   room.destroy();
 });
 
+// Review 3 of the bytes room: a board opened from its device copy is sized
+// by the copy, so neither its open nor its sync encodes it; one opened with
+// no copy is encoded once, as it syncs.
+it('measures a board opened from its device copy never, and one without a copy once', async () => {
+  const id = canvas();
+  const { copy } = await drewAndLeft(id);
+  const measure = vi.spyOn(
+    ItemRoom.prototype as unknown as { measure: () => void },
+    'measure'
+  );
+  const room = await open(id, copy);
+  await synced(room);
+  expect(measure).not.toHaveBeenCalled();
+  expect(room.size()?.bytes).toBeGreaterThanOrEqual(copy.row.size);
+  room.destroy();
+  const fresh = await open(id);
+  await synced(fresh);
+  expect(measure).toHaveBeenCalledOnce();
+  fresh.destroy();
+  measure.mockRestore();
+});
+
 it('lands an early stroke drawn after an unclean leave, whose id the room kept', async () => {
   const id = canvas();
   const { copy } = await drewAndLeft(id, false);

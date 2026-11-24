@@ -155,7 +155,13 @@ import {
   openBlankFormula,
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
-import { refusesAdds, setBoardFull } from './boardFull';
+import {
+  boardFull,
+  checkBoardSize,
+  refusesAdds,
+  setBoardCheck,
+  setBoardFull,
+} from './boardFull';
 import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
@@ -752,12 +758,13 @@ export function mountDrawingBoard(
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
     gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
-  // The room's size and cap (`setRoomSize`, the tab's own measure of its
-  // document, encoded again before it crosses one of these lines after a
-  // deletion: `itemRoom.ts`): the menu's last row from 75% of the cap (`BOARD_SIZE_SHOWN`, Epo 2026-11-18, 2B), and from
-  // the cap less the room's margin (`BOARD_OFFLINE_MARGIN`, online too:
-  // client-limits A) the board takes only removals and the row says so in the
-  // error colour.
+  // The room's size and cap (`setRoomSize`: the tab's own measure of its
+  // document and every update since, an upper bound that deletions may leave
+  // high, so whatever refuses an add and the menu as it opens check it first,
+  // `boardFull.ts`): the menu's last row from 75% of the cap
+  // (`BOARD_SIZE_SHOWN`, Epo 2026-11-18, 2B), and from the cap less the room's
+  // margin (`BOARD_OFFLINE_MARGIN`, online too: client-limits A) the board
+  // takes only removals and the row says so in the error colour.
   let roomSize: { bytes: number; max: number } | null = null;
   const fullAt = (size: { bytes: number; max: number } | null) =>
     !!size && size.bytes >= size.max - BOARD_OFFLINE_MARGIN;
@@ -829,6 +836,8 @@ export function mountDrawingBoard(
       percent: { reset: () => zoomTo(1), value: () => gfx.viewport.zoom },
     },
   }));
+  // The size row it shows is checked as it opens.
+  menu.opening = () => checkBoardSize(store);
   // A canvas near its room's cap (`fullAt`) takes only edits that remove
   // content: select, the eraser, delete and moving stay; a tool that adds, a
   // paste, a drop, ⌘D and Duplicate (`duplicates`), an Alt-drag's copy, a
@@ -843,15 +852,15 @@ export function mountDrawingBoard(
     PanTool.toolName,
     TapPanTool.toolName,
   ]);
-  /** Back to select from a tool that adds, while gated: said when the
-   * person picked it, silent when the gate came on under it (the size row
-   * says why), and never under a stroke in progress, which ends first. */
+  /** Back to select from a tool that adds, while gated (the size checked
+   * first, `boardFull.ts`): said when the person picked it, silent when the
+   * gate came on under it (the size row says why), and never under a stroke
+   * in progress, which ends first. */
   let stillTool: (() => void) | null = null;
   const refuseTool = (picked: boolean) => {
     if (!full || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())) return;
     if (picked) {
-      gfx.tool.setTool(DefaultTool);
-      refusesAdds(store);
+      if (refusesAdds(store)) gfx.tool.setTool(DefaultTool);
       return;
     }
     stillTool?.();
@@ -860,7 +869,10 @@ export function mountDrawingBoard(
       queueMicrotask(() => {
         stillTool?.();
         stillTool = null;
-        if (full && !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()))
+        if (
+          !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()) &&
+          boardFull(store)
+        )
           gfx.tool.setTool(DefaultTool);
       });
     });
@@ -894,10 +906,9 @@ export function mountDrawingBoard(
                 target instanceof Element &&
                 target.localName === 'edgeless-auto-complete'
             )));
-    if (!adds) return;
+    if (!(adds && refusesAdds(store))) return;
     event.preventDefault();
     event.stopPropagation();
-    refusesAdds(store);
   };
   for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
     board.addEventListener(type, refuseAdd, true);
@@ -1441,9 +1452,13 @@ export function mountDrawingBoard(
       uploads?.changed();
       copying?.draw();
     },
-    /** The room's size against its cap, shown in the menu from 75%; null (no
-     * room) shows none. */
-    setRoomSize: (size: { bytes: number; max: number } | null) => {
+    /** The room's size against its cap, shown in the menu from 75%, and its
+     * check (`boardFull.ts`); null (no room) shows none. */
+    setRoomSize: (
+      size: { bytes: number; max: number } | null,
+      check?: () => void
+    ) => {
+      setBoardCheck(store, check ?? null);
       // Called on every update of the room: only a change of what the board
       // shows or takes does any work.
       const before = menu.open ? JSON.stringify(sizeNote()) : '';

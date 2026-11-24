@@ -576,9 +576,11 @@ export class ItemRoom {
 
   /** `ItemRoomOptions.board`: the board's size against its cap, null until
    * this tab measured it (`measured`); outside the snapshot, as it moves
-   * with each update. The room's receipts carry its own bound, which never
-   * comes down for a deletion between its exact measures: a receipt only
-   * asks for a measure (`remeasureSoon`). */
+   * with each update. Deletions since the last measure may leave it high:
+   * the board checks it before acting on it (`checkSize`), and a store's
+   * receipt asks for a measure (`remeasureSoon`). The room's receipts carry
+   * its own bound, which never comes down for a deletion between its exact
+   * measures, and never set it. */
   readonly size = () => {
     const { board } = this.options;
     if (!(board && this.measured)) return null;
@@ -595,6 +597,16 @@ export class ItemRoom {
     };
   };
 
+  /** Before the board acts on its size (a refusal of an add, the gate on a
+   * tool, its menu opening, `boardFull.ts`): one encode when deletions were
+   * applied since the last measure, the exact size reaching the board
+   * before this returns (`subscribeSize` is synchronous). */
+  readonly checkSize = () => {
+    if (!(this.measured && this.deletedSince)) return;
+    this.measure();
+    this.sized();
+  };
+
   private readonly grew = (
     update: Uint8Array,
     _origin: unknown,
@@ -607,38 +619,33 @@ export class ItemRoom {
     const before = measured.base + measured.since;
     measured.since += update.byteLength;
     if (transaction.deleteSet.clients.size > 0) this.deletedSince = true;
-    // A size crossing a line something acts on (the menu's 75%, or the cap
-    // less the margin, where the board takes only removals and offline work
-    // stops) with deletions applied since the last measure may be high by
-    // what they freed: the board is encoded first, at once, and acts on the
-    // exact size. Waiting for an idle encode with the old size held would
-    // leave the growth meanwhile uncounted (a delete then a paste offline
-    // passing the gate). It runs once per crossing, the next needing the
-    // same gap again, so only a board within a few hundred bytes of a line
-    // encodes often (a drag there).
-    const after = measured.base + measured.since;
-    const crosses = [
-      board.max * BOARD_SIZE_SHOWN,
-      board.max - BOARD_OFFLINE_MARGIN,
-    ].some((line) => before < line && after >= line);
-    if (crosses && this.deletedSince) this.measure();
+    // Offline, a board's work stops at the space its cap leaves (Epo
+    // 2026-11-18, client-limits A), once an update takes its size across that
+    // line: a board already past it (at the offline turn or a measure) is
+    // under the removals-only gate, and removals and moves on it never stop
+    // it, since a removals-only backlog always fits. With deletions applied
+    // since the last measure the crossing may be false, so the board is
+    // encoded first, at once: once per crossing, offline, with deletions
+    // waiting, a rare cost (a drag along the line pays it per crossing).
+    const line = board.max - BOARD_OFFLINE_MARGIN;
+    if (
+      this.snapshot.offline &&
+      !this.boardFull &&
+      before <= line &&
+      measured.base + measured.since > line
+    ) {
+      if (this.deletedSince) this.measure();
+      const size = this.size();
+      if (size && size.bytes > line) {
+        this.boardFull = true;
+        this.showOffline();
+      }
+    }
     this.sized();
   };
 
   private sized() {
     for (const listener of this.sizeListeners) listener();
-    // Offline, a board's work stops at the space its cap leaves (Epo
-    // 2026-11-18, client-limits A): a lone person's backlog always fits.
-    const size = this.size();
-    if (
-      size &&
-      this.snapshot.offline &&
-      !this.boardFull &&
-      size.bytes + BOARD_OFFLINE_MARGIN > size.max
-    ) {
-      this.boardFull = true;
-      this.showOffline();
-    }
   }
 
   /** One encode of the board's document (about 40 ms at 4 MiB on an M1):

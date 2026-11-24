@@ -1173,12 +1173,21 @@ it('measures a fresh board once as it syncs and holds a full one at its cap', as
   const max = 100_000;
   const { provider, room } = await boardRoom(max, 70_000);
   const before = encodes();
+  // The size is there when the room first says it synced, which is when the
+  // board takes edits.
+  let atSync: ReturnType<typeof room.size> | undefined;
+  room.subscribe(() => {
+    if (room.getSnapshot().synced && atSync === undefined) atSync = room.size();
+  });
   provider.config.onSynced?.({ state: true });
   expect(encodes()).toBe(before + 1);
-  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
-  expect(room.size()?.bytes).toBeGreaterThan(max - BOARD_OFFLINE_MARGIN);
+  expect(atSync).toEqual({ bytes: exact(room.doc), max });
+  expect(atSync?.bytes).toBeGreaterThan(max - BOARD_OFFLINE_MARGIN);
   boardReceipt(provider, max);
   await vi.advanceTimersByTimeAsync(0);
+  // A reconnect's sync measures nothing again.
+  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  provider.config.onSynced?.({ state: true });
   expect(encodes()).toBe(before + 1);
   room.destroy();
 });
@@ -1218,6 +1227,92 @@ it('measures a dragged board past the line at a receipt, not at each move', asyn
   room.destroy();
 });
 
+/** The exact size of a document of `filled` characters of text, as a board
+ * room's measures it. */
+function filledSize(filled: number) {
+  const doc = new Y.Doc();
+  doc.getText('t').insert(0, 'x'.repeat(filled));
+  return exact(doc) ?? 0;
+}
+
+// Review 3 finding 2: a drag along a line (every move overwrites a key, a
+// deletion) takes the size across it again and again; online no move
+// encodes, only a store's receipt, and the gates check before they act.
+it('never encodes a board at a drag move, even across a line', async () => {
+  const max = 100_000;
+  const line = max - BOARD_OFFLINE_MARGIN;
+  const filled = 34_000 - filledSize(34_000) + line - 200;
+  const { provider, room } = await boardRoom(max, filled);
+  provider.config.onSynced?.({ state: true });
+  const size = room.size()?.bytes ?? 0;
+  expect(line - size).toBeGreaterThan(100);
+  expect(line - size).toBeLessThan(300);
+  const before = encodes();
+  const block = room.doc.getMap('block');
+  for (let at = 0; at < 50; at++) block.set('xywh', `[${at},0,10,10]`);
+  expect(room.size()?.bytes).toBeGreaterThan(line);
+  expect(encodes()).toBe(before);
+  room.destroy();
+});
+
+// Review 3 finding 1: online, a full board leaves the full state with no
+// receipt. A refused add checks the size first (boardFull.test.ts): after
+// peers' deletions the check encodes once, and the size's listeners (the
+// canvas's gate) hear the exact size before it returns, so the gate reads it
+// at once. Fails if the check waits or leaves the stale size.
+it('checks a full board at once after deletions, its listeners hearing the exact size first', async () => {
+  const max = 100_000;
+  const line = max - BOARD_OFFLINE_MARGIN;
+  const { provider, room } = await boardRoom(max, 70_000);
+  let heard = 0;
+  room.subscribeSize(() => {
+    heard = room.size()?.bytes ?? 0;
+  });
+  provider.config.onSynced?.({ state: true });
+  const before = encodes();
+  // With nothing deleted, a check measures nothing.
+  room.checkSize();
+  expect(encodes()).toBe(before);
+  room.doc.getText('t').delete(0, 60_000);
+  expect(heard).toBeGreaterThan(line);
+  expect(encodes()).toBe(before);
+  room.checkSize();
+  expect(encodes()).toBe(before + 1);
+  expect(heard).toBe(exact(room.doc));
+  expect(heard).toBeLessThan(line);
+  room.destroy();
+});
+
+// Review 3 finding 1, client-limits A: offline, a board already past the
+// space its cap leaves takes only removals (its gate checks first), and
+// removals and moves on it never stop its work, however small their bytes.
+// Once removals freed it (its check measured), an add is taken, and one that
+// takes it back across the line stops its work.
+it('never stops an offline full board for removals, and stops it again for an add across the line', async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 50_000);
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  const text = room.doc.getText('t');
+  const before = encodes();
+  text.delete(0, 1000);
+  room.doc.getMap('block').set('xywh', '[1,0,10,10]');
+  text.delete(0, 39_000);
+  expect(room.getSnapshot().offline).toBe('offline');
+  expect(encodes()).toBe(before);
+  room.checkSize();
+  expect(encodes()).toBe(before + 1);
+  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
+  room.checkSize();
+  expect(encodes()).toBe(before + 1);
+  text.insert(0, 'y'.repeat(5000));
+  expect(room.getSnapshot().offline).toBe('offline');
+  text.insert(0, 'z'.repeat(30_000));
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  room.destroy();
+});
+
 // Epo 2026-11-18 (client-limits A), review 2 finding 3: offline, no receipt
 // comes. A size crossing the space the cap leaves with a deletion applied
 // since the last measure encodes at once and acts on the exact size: a
@@ -1240,6 +1335,24 @@ it('measures an offline board as it crosses a line after deletions, and stops it
   // With nothing deleted since, growth past the line acts at once.
   text.insert(0, 'z'.repeat(25_000));
   expect(encodes()).toBe(before + 1);
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  room.destroy();
+});
+
+// Review 3 finding 1: a crossing with deletions waiting measures once, and
+// stops the board's work when the exact size is past the line too.
+it('stops an offline board crossing the line after deletions when its exact size is past it', async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 30_000);
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  const text = room.doc.getText('t');
+  const before = encodes();
+  text.delete(0, 1000);
+  text.insert(0, 'y'.repeat(10_000));
+  expect(encodes()).toBe(before + 1);
+  expect(room.size()?.bytes).toBeGreaterThan(max - BOARD_OFFLINE_MARGIN);
   expect(room.getSnapshot().offline).toBe('offline-limit');
   room.destroy();
 });

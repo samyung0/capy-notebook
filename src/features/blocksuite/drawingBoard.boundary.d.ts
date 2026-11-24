@@ -95,8 +95,12 @@ export function mountDrawingBoard(
   save: () => { bytes: number; doc: string };
   setLocked: (locked: boolean) => void;
   /** The room's size against its cap: the menu's last row from 75% of it, in the
-   * error colour at it. null (no room) shows none. */
-  setRoomSize: (size: { bytes: number; max: number } | null) => void;
+   * error colour at it. null (no room) shows none. `check`: the room's check
+   * of that size, run before anything acts on it (`boardFull.ts`). */
+  setRoomSize: (
+    size: { bytes: number; max: number } | null,
+    check?: () => void
+  ) => void;
   snapshot: () => string;
   /** Resolves once the board first shows (`image` draws it from then). */
   ready: Promise<void>;
